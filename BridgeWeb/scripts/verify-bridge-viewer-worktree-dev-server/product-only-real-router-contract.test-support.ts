@@ -2,8 +2,8 @@ import {
 	bridgeViewerProductOnlySelectors,
 	type BridgeViewerProductOnlyJourneyProof,
 	type BridgeViewerProductRouteTranscriptEntry,
-	type BridgeViewerReviewPaintFailureSnapshot,
 } from './product-only-real-router-contract.ts';
+import type { BridgeViewerReviewPaintFailureSnapshot } from './product-only-real-router-review-paint.ts';
 
 export function paintSnapshotForTest(
 	overrides: Partial<BridgeViewerReviewPaintFailureSnapshot> = {},

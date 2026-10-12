@@ -723,54 +723,6 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING');
 	});
 
-	test('rejects a targeted Review item whose paint receipt never arrives', () => {
-		const passingProof = makePassingProductOnlyProof();
-		const reviewFreshRouteWithIncompleteCoverage = {
-			...passingProof.reviewFreshRoute,
-			paintLedger: passingProof.reviewFreshRoute.paintLedger.map((entry) =>
-				entry.itemId === 'review-item-3'
-					? {
-							...entry,
-							publicationId: null,
-							reason: 'receipt missing',
-							status: 'failed' as const,
-						}
-					: entry,
-			),
-		};
-		const proof: BridgeViewerProductOnlyJourneyProof = {
-			...passingProof,
-			reviewFreshRoute: reviewFreshRouteWithIncompleteCoverage,
-		};
-
-		// Act
-		const violationCodes = collectBridgeViewerProductOnlyContractViolations(proof).map(
-			(violation) => violation.code,
-		);
-
-		// Assert
-		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_VISIBLE_PAINT_COVERAGE_MISSING');
-		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING');
-	});
-
-	test('does not fail paint coverage for a passive un-targeted painted-set deficit', () => {
-		const passingProof = makePassingProductOnlyProof();
-		const proof: BridgeViewerProductOnlyJourneyProof = {
-			...passingProof,
-			reviewFreshRoute: {
-				...passingProof.reviewFreshRoute,
-				hydrationCoverage: {
-					...passingProof.reviewFreshRoute.hydrationCoverage,
-					observedHydratedNonSelectedItemIds: ['review-item-2'],
-				},
-			},
-		};
-		const violationCodes = collectBridgeViewerProductOnlyContractViolations(proof).map(
-			(violation) => violation.code,
-		);
-		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_PAINT_COVERAGE_MISSING');
-	});
-
 	test('rejects backward traversal that misses readable windows or painted coverage or changes selection', () => {
 		// Arrange
 		const passingProof = makePassingProductOnlyProof();
@@ -963,10 +915,10 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 
 	test('persists a scrubbed journey failure checkpoint before browser teardown', async () => {
 		// Arrange
-		const [journeySource, regressionSource, reviewProofSource] = await Promise.all([
+		const [journeySource, regressionSource, reviewFailureSource] = await Promise.all([
 			readFile(new URL('./product-only-real-router-page.ts', import.meta.url), 'utf8'),
 			readFile(new URL('./product-only-real-router-regression-runner.ts', import.meta.url), 'utf8'),
-			readFile(new URL('./product-only-real-router-review-proof.ts', import.meta.url), 'utf8'),
+			readFile(new URL('./product-only-real-router-review-failure.ts', import.meta.url), 'utf8'),
 		]);
 
 		// Act
@@ -984,9 +936,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(journeySource).toContain('failureTransportSnapshot()');
 		expect(journeySource).not.toContain('paneSessionId: entry.paneSessionId');
 		expect(journeySource).not.toContain('workerInstanceId: entry.workerInstanceId');
-		expect(reviewProofSource).toContain('readFreshReviewFailureSnapshot');
-		expect(reviewProofSource).toContain("'data-review-selected-demand-result-status'");
-		expect(reviewProofSource).toContain("'data-review-visible-demand-loaded-count'");
+		expect(reviewFailureSource).toContain('readFreshReviewFailureSnapshot');
+		expect(reviewFailureSource).toContain("'data-review-selected-demand-result-status'");
+		expect(reviewFailureSource).toContain("'data-review-visible-demand-loaded-count'");
 		expect(regressionSource).toContain('bridgeViewerProductOnlyJourneyFailureFromError');
 		expect(regressionSource).toContain('readonly journeyFailure:');
 		expect(regressionSource).toContain('journeyFailure,');

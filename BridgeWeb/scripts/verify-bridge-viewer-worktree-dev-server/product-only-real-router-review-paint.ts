@@ -1,11 +1,52 @@
 import type { Page } from 'playwright';
 
-import {
-	bridgeViewerProductOnlySelectors,
-	type BridgeViewerReviewPaintElementSnapshot,
-	type BridgeViewerReviewPaintFailureSnapshot,
-	type BridgeViewerReviewPaintLedgerEntry,
-} from './product-only-real-router-contract.ts';
+import { bridgeViewerProductOnlySelectors } from './product-only-real-router-contract.ts';
+import { observeReviewPaintReceipt } from './product-only-real-router-review-paint-observation.ts';
+
+export interface BridgeViewerReviewPaintElementSnapshot {
+	readonly contentState: string | null;
+	readonly paintedPublicationId: string | null;
+	readonly paintedSourceCorrelations: string | null;
+	readonly renderDispositionSettledOutcome: string | null;
+	readonly renderDispositionSettledPublicationId: string | null;
+}
+
+export interface BridgeViewerReviewPaintFailureSnapshot {
+	readonly actualScrollTop: number;
+	readonly captureError: 'snapshot-unavailable' | null;
+	readonly codeScroll: {
+		readonly clientHeight: number;
+		readonly scrollHeight: number;
+		readonly scrollTop: number;
+	};
+	readonly header: BridgeViewerReviewPaintElementSnapshot | null;
+	readonly headerRendered: boolean;
+	readonly itemElement: BridgeViewerReviewPaintElementSnapshot | null;
+	readonly itemInDom: boolean;
+	readonly itemRect: {
+		readonly bottom: number;
+		readonly height: number;
+		readonly left: number;
+		readonly right: number;
+		readonly top: number;
+		readonly width: number;
+	} | null;
+	readonly requestedScrollTop: number;
+	readonly viewportRelation: 'in-view' | 'partly-in-view' | 'out-of-view' | 'missing';
+	readonly workerLastPublishedVisibleItemIds: readonly string[] | null;
+}
+
+export interface BridgeViewerReviewPaintLedgerEntry {
+	readonly displayPath: string;
+	readonly itemId: string;
+	readonly actualScrollTop: number;
+	readonly requestedScrollTop: number;
+	readonly targetSnapshot: BridgeViewerReviewPaintFailureSnapshot;
+	readonly failureSnapshot?: BridgeViewerReviewPaintFailureSnapshot;
+	readonly publicationId: string | null;
+	readonly reason: string | null;
+	readonly status: 'failed' | 'painted' | 'targeted';
+}
 
 interface ReviewPaintViewportState {
 	readonly codeScroll: {
@@ -32,98 +73,148 @@ export async function collectReviewPaintLedger(props: {
 	) => Promise<{ readonly requestedScrollTop: number }>;
 	readonly selectedItemId: string | null;
 }): Promise<readonly BridgeViewerReviewPaintLedgerEntry[]> {
-	let state = await props.readViewportState();
-	const maximumScrollTop = (): number =>
-		Math.max(0, state.codeScroll.scrollHeight - state.codeScroll.clientHeight);
-	for (
-		let stepIndex = 0;
-		state.codeScroll.scrollTop > 1 && stepIndex < props.expectedItemIds.length * 4;
-		stepIndex += 1
-	) {
-		await props.scroll('backward', state);
-		state = await props.readViewportState();
-	}
 	const ledger: BridgeViewerReviewPaintLedgerEntry[] = [];
-	for (const itemId of props.expectedItemIds) {
-		if (itemId === props.selectedItemId) continue;
-		let requestedScrollTop = state.codeScroll.scrollTop;
-		let visibleItem = state.visibleItems.find((item) => item.itemId === itemId);
+	let state: ReviewPaintViewportState | null = null;
+	let pendingItemId: string | null =
+		props.expectedItemIds.find((itemId) => itemId !== props.selectedItemId) ?? null;
+	const observe = async <TValue>(promise: Promise<TValue>, label: string): Promise<TValue> =>
+		await (props.observeWait?.(promise, label) ?? promise);
+	try {
+		state = await observe(props.readViewportState(), 'Review paint initial viewport');
+		const maximumScrollTop = (): number =>
+			Math.max(0, (state?.codeScroll.scrollHeight ?? 0) - (state?.codeScroll.clientHeight ?? 0));
 		for (
 			let stepIndex = 0;
-			visibleItem === undefined && state.codeScroll.scrollTop < maximumScrollTop() - 1;
+			state.codeScroll.scrollTop > 1 && stepIndex < props.expectedItemIds.length * 4;
 			stepIndex += 1
 		) {
-			if (stepIndex >= props.expectedItemIds.length * 4) break;
-			requestedScrollTop = (await props.scroll('forward', state)).requestedScrollTop;
-			state = await props.readViewportState();
-			visibleItem = state.visibleItems.find((item) => item.itemId === itemId);
+			await observe(props.scroll('backward', state), 'Review paint return to top');
+			state = await observe(props.readViewportState(), 'Review paint return viewport');
 		}
-		const displayPath = visibleItem?.displayPath ?? itemId;
-		const targetSnapshot = await captureReviewPaintFailureSnapshot({
-			actualScrollTop: state.codeScroll.scrollTop,
-			itemId,
-			page: props.page,
-			requestedScrollTop,
-		});
-		const targetedEntry: BridgeViewerReviewPaintLedgerEntry = {
-			actualScrollTop: state.codeScroll.scrollTop,
-			displayPath,
-			itemId,
-			publicationId: null,
-			reason: null,
-			requestedScrollTop,
-			status: 'targeted',
-			targetSnapshot,
-		};
-		ledger.push(targetedEntry);
-		if (visibleItem === undefined) {
-			ledger[ledger.length - 1] = {
-				...targetedEntry,
-				reason: 'item did not become visible during product scroll traversal',
-				status: 'failed',
-			};
-			continue;
-		}
-		try {
-			const painted = await waitForPaintedReviewItem({
-				itemId,
-				observeWait: props.observeWait,
-				page: props.page,
-				path: displayPath,
-			});
-			ledger[ledger.length - 1] = {
-				...targetedEntry,
-				publicationId: painted.publicationId,
-				status: 'painted',
-			};
-		} catch (error: unknown) {
-			const failureSnapshot = await captureReviewPaintFailureSnapshot({
+		for (const itemId of props.expectedItemIds) {
+			if (itemId === props.selectedItemId) continue;
+			pendingItemId = itemId;
+			let requestedScrollTop = state.codeScroll.scrollTop;
+			const ledgerIndex = ledger.length;
+			ledger.push({
 				actualScrollTop: state.codeScroll.scrollTop,
+				displayPath: itemId,
 				itemId,
-				page: props.page,
+				publicationId: null,
+				reason: null,
 				requestedScrollTop,
+				status: 'targeted',
+				targetSnapshot: unavailableReviewPaintSnapshot(
+					state.codeScroll.scrollTop,
+					requestedScrollTop,
+				),
 			});
-			ledger[ledger.length - 1] = {
-				...targetedEntry,
-				failureSnapshot,
-				reason: error instanceof Error ? error.message : String(error),
-				status: 'failed',
+			let visibleItem = state.visibleItems.find((item) => item.itemId === itemId);
+			for (
+				let stepIndex = 0;
+				visibleItem === undefined && state.codeScroll.scrollTop < maximumScrollTop() - 1;
+				stepIndex += 1
+			) {
+				if (stepIndex >= props.expectedItemIds.length * 4) break;
+				requestedScrollTop = (
+					await observe(props.scroll('forward', state), `Review paint target ${itemId}`)
+				).requestedScrollTop;
+				state = await observe(props.readViewportState(), `Review paint target viewport ${itemId}`);
+				visibleItem = state.visibleItems.find((item) => item.itemId === itemId);
+			}
+			const displayPath = visibleItem?.displayPath ?? itemId;
+			const targetSnapshot = await observe(
+				captureReviewPaintFailureSnapshot({
+					actualScrollTop: state.codeScroll.scrollTop,
+					itemId,
+					page: props.page,
+					requestedScrollTop,
+				}),
+				`Review paint target snapshot ${displayPath}`,
+			);
+			const targetedEntry: BridgeViewerReviewPaintLedgerEntry = {
+				actualScrollTop: state.codeScroll.scrollTop,
+				displayPath,
+				itemId,
+				publicationId: null,
+				reason: null,
+				requestedScrollTop,
+				status: 'targeted',
+				targetSnapshot,
 			};
-			if (error instanceof Error && error.message.includes('BRIDGE_')) {
-				throw new BridgeViewerReviewPaintWaitFailure(error, failureSnapshot, ledger, itemId);
+			ledger[ledgerIndex] = targetedEntry;
+			if (visibleItem === undefined) {
+				ledger[ledgerIndex] = {
+					...targetedEntry,
+					reason: 'item did not become visible during product scroll traversal',
+					status: 'failed',
+				};
+				continue;
+			}
+			try {
+				const painted = await waitForPaintedReviewItem({
+					itemId,
+					observeWait: props.observeWait,
+					page: props.page,
+					path: displayPath,
+				});
+				ledger[ledgerIndex] = {
+					...targetedEntry,
+					publicationId: painted.publicationId,
+					status: 'painted',
+				};
+			} catch (error: unknown) {
+				if (error instanceof Error && error.message.includes('BRIDGE_')) throw error;
+				ledger[ledgerIndex] = {
+					...targetedEntry,
+					failureSnapshot: targetSnapshot,
+					reason: error instanceof Error ? error.message : String(error),
+					status: 'failed',
+				};
 			}
 		}
+		pendingItemId = null;
+		while (state.codeScroll.scrollTop < maximumScrollTop() - 1) {
+			await observe(props.scroll('forward', state), 'Review paint restore bottom');
+			state = await observe(props.readViewportState(), 'Review paint restore viewport');
+		}
+		return ledger;
+	} catch (error: unknown) {
+		const snapshot =
+			ledger.find((entry) => entry.itemId === pendingItemId)?.targetSnapshot ??
+			ledger.at(-1)?.targetSnapshot ??
+			unavailableReviewPaintSnapshot(state?.codeScroll.scrollTop ?? 0, 0);
+		throw new BridgeViewerReviewPaintWaitFailure(
+			error instanceof Error ? error : new Error(String(error)),
+			snapshot,
+			ledger,
+			pendingItemId,
+		);
 	}
-	while (state.codeScroll.scrollTop < maximumScrollTop() - 1) {
-		await props.scroll('forward', state);
-		state = await props.readViewportState();
-	}
-	return ledger;
+}
+
+function unavailableReviewPaintSnapshot(
+	actualScrollTop: number,
+	requestedScrollTop: number,
+): BridgeViewerReviewPaintFailureSnapshot {
+	return {
+		actualScrollTop,
+		captureError: 'snapshot-unavailable',
+		codeScroll: { clientHeight: 0, scrollHeight: 0, scrollTop: actualScrollTop },
+		header: null,
+		headerRendered: false,
+		itemElement: null,
+		itemInDom: false,
+		itemRect: null,
+		requestedScrollTop,
+		viewportRelation: 'missing',
+		workerLastPublishedVisibleItemIds: null,
+	};
 }
 
 export interface BridgeViewerReviewPaintFailureEvidence {
 	readonly paintLedger: readonly BridgeViewerReviewPaintLedgerEntry[];
-	readonly pendingPaintItemId: string;
+	readonly pendingPaintItemId: string | null;
 	readonly snapshot: BridgeViewerReviewPaintFailureSnapshot;
 }
 
@@ -159,7 +250,7 @@ export class BridgeViewerReviewPaintWaitFailure extends Error {
 		cause: Error,
 		snapshot: BridgeViewerReviewPaintFailureSnapshot,
 		paintLedger: readonly BridgeViewerReviewPaintLedgerEntry[],
-		pendingPaintItemId: string,
+		pendingPaintItemId: string | null,
 	) {
 		super(cause.message, { cause });
 		this.name = 'BridgeViewerReviewPaintWaitFailure';
@@ -328,61 +419,17 @@ async function waitForPaintedReviewItem(props: {
 	readonly page: Page;
 	readonly path: string;
 }): Promise<{ readonly publicationId: string }> {
-	const snapshotPromise = props.page.waitForFunction(
-		({ itemId }): { readonly publicationId: string } | false => {
-			for (const host of queryAllInOpenShadowRoots(document, 'diffs-container')) {
-				const marker = bridgeReviewHostElement(host, '[data-bridge-code-view-item-id]');
-				if (marker?.getAttribute('data-bridge-code-view-item-id') !== itemId) continue;
-				const publicationId = host.getAttribute('data-bridge-painted-publication-id');
-				const correlations = host.getAttribute('data-bridge-painted-source-correlations');
-				if (publicationId === null || correlations === null) continue;
-				try {
-					const parsed: unknown = JSON.parse(correlations);
-					if (
-						Array.isArray(parsed) &&
-						parsed.some(
-							(correlation): boolean =>
-								typeof correlation === 'object' &&
-								correlation !== null &&
-								Reflect.get(correlation, 'semanticItemId') === itemId &&
-								Reflect.get(correlation, 'publicationId') === publicationId,
-						)
-					) {
-						return { publicationId };
-					}
-				} catch {}
-			}
-			return false;
-
-			function bridgeReviewHostElement(host: Element, selector: string): Element | null {
-				return host.querySelector(selector) ?? host.shadowRoot?.querySelector(selector) ?? null;
-			}
-
-			function queryAllInOpenShadowRoots(
-				root: Document | Element | ShadowRoot,
-				selector: string,
-			): Element[] {
-				const matches = [...root.querySelectorAll(selector)];
-				for (const descendant of root.querySelectorAll('*')) {
-					if (descendant.shadowRoot !== null)
-						matches.push(...queryAllInOpenShadowRoots(descendant.shadowRoot, selector));
-				}
-				return matches;
-			}
-		},
-		{ itemId: props.itemId },
-	);
-	const snapshotHandle = await (props.observeWait?.(
-		snapshotPromise,
-		`Review item paint ${props.path}`,
-	) ?? snapshotPromise);
-	const rawSnapshot: unknown = await snapshotHandle.jsonValue();
-	const publicationId =
-		typeof rawSnapshot === 'object' && rawSnapshot !== null
-			? Reflect.get(rawSnapshot, 'publicationId')
-			: null;
-	if (typeof publicationId !== 'string' || publicationId.length === 0) {
-		throw new Error(`Review item paint receipt missing for ${props.path}`);
+	const snapshotPromise = props.page.evaluate(observeReviewPaintReceipt, { itemId: props.itemId });
+	try {
+		return await (props.observeWait?.(snapshotPromise, `Review item paint ${props.path}`) ??
+			snapshotPromise);
+	} finally {
+		// Resolve disconnects in-page; owner failure cancels before another item starts.
+		// A closed context has already retired its observer and event listeners.
+		await props.page
+			.evaluate((itemId): void => {
+				window.dispatchEvent(new CustomEvent('__bridge_review_paint_cancel', { detail: itemId }));
+			}, props.itemId)
+			.catch((): void => {});
 	}
-	return { publicationId };
 }

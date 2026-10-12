@@ -4,10 +4,11 @@ import {
 	makePassingProductOnlyProof,
 	paintSnapshotForTest,
 } from './product-only-real-router-contract.test-support.ts';
-import type { BridgeViewerReviewPaintFailureSnapshot } from './product-only-real-router-contract.ts';
+import { collectBridgeViewerProductOnlyContractViolations } from './product-only-real-router-contract.ts';
 import { reviewFailureSnapshotFromPaintFailureEvidence } from './product-only-real-router-review-failure.ts';
 import {
 	BridgeViewerReviewPaintWaitFailure,
+	type BridgeViewerReviewPaintFailureSnapshot,
 	bridgeViewerReviewPaintFailureEvidenceFromError,
 	bridgeViewerReviewPaintViewportRelation,
 } from './product-only-real-router-review-paint.ts';
@@ -90,5 +91,47 @@ describe('Bridge Viewer Review paint diagnostics', () => {
 				viewportRect: { bottom: 980, top: 0 },
 			}),
 		).toBe('in-view');
+	});
+
+	test('fails targeted paint coverage when a receipt is missing', () => {
+		const passingProof = makePassingProductOnlyProof();
+		const proof = {
+			...passingProof,
+			reviewFreshRoute: {
+				...passingProof.reviewFreshRoute,
+				paintLedger: passingProof.reviewFreshRoute.paintLedger.map((entry) =>
+					entry.itemId === 'review-item-3'
+						? {
+								...entry,
+								publicationId: null,
+								reason: 'receipt missing',
+								status: 'failed' as const,
+							}
+						: entry,
+				),
+			},
+		};
+		const violationCodes = collectBridgeViewerProductOnlyContractViolations(proof).map(
+			(violation) => violation.code,
+		);
+		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_VISIBLE_PAINT_COVERAGE_MISSING');
+	});
+
+	test('does not fail paint coverage for a passive painted-set deficit', () => {
+		const passingProof = makePassingProductOnlyProof();
+		const proof = {
+			...passingProof,
+			reviewFreshRoute: {
+				...passingProof.reviewFreshRoute,
+				hydrationCoverage: {
+					...passingProof.reviewFreshRoute.hydrationCoverage,
+					observedHydratedNonSelectedItemIds: ['review-item-2'],
+				},
+			},
+		};
+		const violationCodes = collectBridgeViewerProductOnlyContractViolations(proof).map(
+			(violation) => violation.code,
+		);
+		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_PAINT_COVERAGE_MISSING');
 	});
 });

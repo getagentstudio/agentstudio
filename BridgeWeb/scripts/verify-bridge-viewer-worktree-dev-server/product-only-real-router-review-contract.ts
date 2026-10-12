@@ -105,6 +105,7 @@ export function requireFreshReviewRoute(props: {
 	];
 	if (
 		failedHydrationMilestones.length > 0 ||
+		props.proof.hydrationCoverage.missingHydratedVisibleWindows.length > 0 ||
 		!requiredMilestoneLabels.every((label): boolean =>
 			props.proof.hydrationMilestones.some((milestone): boolean => milestone.label === label),
 		)
@@ -113,6 +114,7 @@ export function requireFreshReviewRoute(props: {
 			actual: {
 				failedHydrationMilestones,
 				hydrationMilestones: props.proof.hydrationMilestones,
+				missingReadableVisibleWindows: props.proof.hydrationCoverage.missingHydratedVisibleWindows,
 			},
 			code: 'REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING',
 			expected:
@@ -190,6 +192,7 @@ export function requireFreshReviewRoute(props: {
 	if (
 		backwardTraversal.completedScrollTop > 1 ||
 		backwardTraversal.hydrationCoverage.settledWindowCount === 0 ||
+		backwardTraversal.hydrationCoverage.missingHydratedVisibleWindows.length > 0 ||
 		backwardTraversal.mountedHeaderOrderViolations.length > 0 ||
 		backwardTraversal.selectedItemIdAtCompletion !== props.proof.selectedItemIdAtStart
 	) {

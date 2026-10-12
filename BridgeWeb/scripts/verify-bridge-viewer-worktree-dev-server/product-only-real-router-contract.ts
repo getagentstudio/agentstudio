@@ -2,6 +2,10 @@ import {
 	requireFreshReviewRoute,
 	requireReviewTreeSelection,
 } from './product-only-real-router-review-contract.ts';
+import type {
+	BridgeViewerReviewPaintFailureSnapshot,
+	BridgeViewerReviewPaintLedgerEntry,
+} from './product-only-real-router-review-paint.ts';
 
 export const bridgeProductStartupFixtureIdentities = {
 	invalid: 'e51803d06d8dafd56d6c694569ed238bb3dd8bddadfec6d26b2834b5d5892a68',
@@ -133,39 +137,6 @@ export interface BridgeViewerReviewFailureSnapshot {
 	readonly visibleItemCount: number;
 }
 
-export interface BridgeViewerReviewPaintElementSnapshot {
-	readonly contentState: string | null;
-	readonly paintedPublicationId: string | null;
-	readonly paintedSourceCorrelations: string | null;
-	readonly renderDispositionSettledOutcome: string | null;
-	readonly renderDispositionSettledPublicationId: string | null;
-}
-
-export interface BridgeViewerReviewPaintFailureSnapshot {
-	readonly actualScrollTop: number;
-	readonly captureError: 'snapshot-unavailable' | null;
-	readonly codeScroll: {
-		readonly clientHeight: number;
-		readonly scrollHeight: number;
-		readonly scrollTop: number;
-	};
-	readonly header: BridgeViewerReviewPaintElementSnapshot | null;
-	readonly headerRendered: boolean;
-	readonly itemElement: BridgeViewerReviewPaintElementSnapshot | null;
-	readonly itemInDom: boolean;
-	readonly itemRect: {
-		readonly bottom: number;
-		readonly height: number;
-		readonly left: number;
-		readonly right: number;
-		readonly top: number;
-		readonly width: number;
-	} | null;
-	readonly requestedScrollTop: number;
-	readonly viewportRelation: 'in-view' | 'partly-in-view' | 'out-of-view' | 'missing';
-	readonly workerLastPublishedVisibleItemIds: readonly string[] | null;
-}
-
 export interface BridgeViewerProductOnlyJourneyFailureCheckpoint {
 	readonly browserCleanup: BridgeViewerProductOnlyJourneyProof['browserCleanup'];
 	readonly browserDiagnostics: readonly BridgeViewerConsoleDiagnostic[];
@@ -261,18 +232,6 @@ export interface BridgeViewerReviewHydrationCoverage {
 	readonly missingHydratedVisibleWindows: readonly BridgeViewerReviewHydrationWindowFailure[];
 	readonly observedHydratedNonSelectedItemIds: readonly string[];
 	readonly settledWindowCount: number;
-}
-
-export interface BridgeViewerReviewPaintLedgerEntry {
-	readonly displayPath: string;
-	readonly itemId: string;
-	readonly actualScrollTop: number;
-	readonly requestedScrollTop: number;
-	readonly targetSnapshot: BridgeViewerReviewPaintFailureSnapshot;
-	readonly failureSnapshot?: BridgeViewerReviewPaintFailureSnapshot;
-	readonly publicationId: string | null;
-	readonly reason: string | null;
-	readonly status: 'failed' | 'painted' | 'targeted';
 }
 
 export interface BridgeViewerReviewMountedHeaderOrderViolation {
