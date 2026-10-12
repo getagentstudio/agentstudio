@@ -43,7 +43,7 @@ struct TitlePanePerformanceWorkloadScriptTests {
             source.contains(
                 "WORKLOAD_TRACE_TAGS=\"${AGENTSTUDIO_TRACE_TAGS:-performance,atoms,app.startup,terminal.startup}\""))
         #expect(source.contains("AGENTSTUDIO_TRACE_TAGS=\"$WORKLOAD_TRACE_TAGS\""))
-        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1"))
+        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=\"$IPC_DEBUG_ESCROW_PATH\""))
         for method in [
             "auth.login", "terminal.send", "terminal.wait", "pane.split", "pane.list", "pane.snapshot", "pane.close",
         ] {
@@ -71,7 +71,7 @@ struct TitlePanePerformanceWorkloadScriptTests {
         #expect(source.contains("def wait_for_terminal_pane(timeout=20):"))
         #expect(source.contains("item.get(\"contentKind\") == \"terminal\""))
         #expect(!source.contains("item.get(\"contentType\") == \"terminal\""))
-        #expect(source.contains("timed out waiting for sidebar-performance-proof terminal"))
+        #expect(source.contains("timed out waiting for verifier-created terminal"))
         #expect(source.contains("def wait_for_startup_diagnostic_completion(timeout=20):"))
         #expect(source.contains("startup diagnostic reported blocked"))
         #expect(source.contains("timed out waiting for startup diagnostic completion"))

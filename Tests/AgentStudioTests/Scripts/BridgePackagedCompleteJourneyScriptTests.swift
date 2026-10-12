@@ -156,7 +156,7 @@ struct BridgePackagedCompleteJourneyScriptTests {
         #expect(source.contains(#"/usr/bin/ditto "$launch_receipt_path" "$preserved_receipt_path""#))
         #expect(source.contains(#"AGENTSTUDIO_DEBUG_DIRECT_FALLBACK=0 \"#))
         #expect(source.contains(#"AGENTSTUDIO_DEBUG_DATA_DIR="$launch_data_root" \"#))
-        #expect(source.contains(#"AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \"#))
+        #expect(source.contains(#"AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$launch_escrow_path" \"#))
         #expect(source.contains(#"AGENTSTUDIO_STARTUP_WATCH_FOLDER="$fixture_root" \"#))
         #expect(source.contains(#"AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=bridge-product-paint-correlation \"#))
         #expect(source.contains(#"AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$launch_state_file" \"#))
