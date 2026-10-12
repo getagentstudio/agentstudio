@@ -336,7 +336,7 @@ function makeReviewItem(): BridgeMainCodeViewItem {
 			contentState: 'hydrated',
 			displayPath: 'Sources/App/View.swift',
 			itemId: 'item-source',
-			lineCount: 3,
+			lineCount: 253,
 			sourceDescriptorIdsByRole: {
 				base: 'handle-item-source-base',
 				diff: null,
