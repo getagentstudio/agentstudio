@@ -1,6 +1,7 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
 import Foundation
+import Testing
 
 @testable import AgentStudioCore
 
@@ -90,6 +91,8 @@ struct RemoteReferenceRefreshFixture {
 
 actor RemoteReferenceAcceptanceRecorder {
     private(set) var lastAcceptance: RemoteReferenceAcceptance?
+    private(set) var lastLocalAcceptance: RemoteReferenceAcceptance?
+    private(set) var invalidations: [RemoteReferenceAuthorityUpdate] = []
     private(set) var lastWorktreeIds: Set<UUID> = []
     private(set) var acceptanceCount = 0
     private(set) var localInstallationCount = 0
@@ -101,8 +104,10 @@ actor RemoteReferenceAcceptanceRecorder {
     func record(_ update: RemoteReferenceAuthorityUpdate) {
         switch update {
         case .invalidated:
+            invalidations.append(update)
             invalidationCount += 1
         case .localAccepted(let acceptance):
+            lastLocalAcceptance = acceptance
             localInstallationCount += 1
             localAcceptanceOrigins.append(acceptance.expectedOrigin)
         case .promoted(let acceptance, let worktreeIds):
@@ -111,6 +116,20 @@ actor RemoteReferenceAcceptanceRecorder {
             acceptanceCount += 1
             promotedAcceptanceOrigins.append(acceptance.expectedOrigin)
         }
+    }
+
+    func expectInvalidation(
+        after previousCount: Int, repoId expectedRepoId: UUID, priorAcceptance: RemoteReferenceAcceptance
+    ) throws {
+        #expect(invalidations.count == previousCount + 1)
+        let update = try #require(invalidations.last)
+        guard case .invalidated(let repoId, let topologyGeneration, let authorityRevision) = update else {
+            Issue.record("Expected an authority invalidation")
+            return
+        }
+        #expect(repoId == expectedRepoId)
+        #expect(topologyGeneration == priorAcceptance.topologyGeneration + 1)
+        #expect(authorityRevision > priorAcceptance.authorityRevision)
     }
 
     func recordRecomputation(_ acceptance: RemoteReferenceAcceptance) {
