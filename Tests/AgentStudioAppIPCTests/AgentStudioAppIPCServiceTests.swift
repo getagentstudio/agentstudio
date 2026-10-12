@@ -590,13 +590,9 @@ struct AgentStudioAppIPCServiceTests {
                     let responseData = try await withoutBlockingCooperativePool {
                         try connection.receive(maxBytes: 4096)
                     }
-                    if responseData.isEmpty {
-                        return
-                    }
-                    var decoder = NDJSONFrameDecoder(maxFrameBytes: 65_536)
-                    let frames = try decoder.append(responseData)
-                    let response = try JSONRPCCodec.decodeResponse(try #require(frames.first))
-                    #expect(response.error?.code == -32_001)
+                    // Authentication rejection is still traffic on a live socket.
+                    // Only EOF (or the transport error below) proves physical close.
+                    #expect(responseData.isEmpty, "stopped session must reach EOF, not return a JSON-RPC error")
                 } catch let error as UnixSocketTransportError {
                     #expect(error.reason == .writeFailed || error.reason == .readFailed)
                 }
