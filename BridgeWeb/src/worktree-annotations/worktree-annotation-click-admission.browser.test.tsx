@@ -346,6 +346,7 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 				if (pointerId !== 403 || scrolledLaterContextRow) return;
 				scrolledLaterContextRow = true;
 				_codeView.scrollTo({ type: 'position', position: 100_000, behavior: 'instant' });
+				_codeView.render(true);
 			},
 		);
 		await runWithOwnedCleanup(async (): Promise<void> => {
