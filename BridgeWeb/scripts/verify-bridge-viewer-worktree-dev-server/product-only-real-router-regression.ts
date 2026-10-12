@@ -5,8 +5,10 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { access } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
+import { BridgeWebViteResponseFacts } from '../dev-server/bridge-web-vite-response-facts.ts';
 import { reserveLoopbackPort } from '../dev-server/reserve-loopback-port.ts';
 const serverShutdownTimeoutMilliseconds = 10_000;
 const maximumServerLogTailCharacters = 8_192;
@@ -36,6 +38,7 @@ interface ChildProcessExit {
 }
 export class BridgeViewerOwnedViteServer {
 	readonly #child: ChildProcessWithoutNullStreams;
+	readonly responseFacts: BridgeWebViteResponseFacts;
 	readonly #exitPromise: Promise<ChildProcessExit>;
 	readonly stdoutTail: () => string;
 	readonly stderrTail: () => string;
@@ -46,12 +49,14 @@ export class BridgeViewerOwnedViteServer {
 
 	private constructor(props: {
 		readonly child: ChildProcessWithoutNullStreams;
+		readonly responseFacts: BridgeWebViteResponseFacts;
 		readonly stdoutTail: () => string;
 		readonly stderrTail: () => string;
 		readonly exitPromise: Promise<ChildProcessExit>;
 		readonly startProof: BridgeViewerViteServerStartProof;
 	}) {
 		this.#child = props.child;
+		this.responseFacts = props.responseFacts;
 		this.stdoutTail = props.stdoutTail;
 		this.stderrTail = props.stderrTail;
 		this.#exitPromise = props.exitPromise;
@@ -63,6 +68,7 @@ export class BridgeViewerOwnedViteServer {
 			readonly bridgeDevelopmentServerOrigin: string;
 			readonly bridgeWebRootPath: string;
 			readonly environment?: Readonly<Record<string, string>>;
+			readonly observeMetadataResponses?: boolean;
 			readonly onSpawn: (server: BridgeViewerOwnedViteServer) => void;
 		},
 		dependencies?: {
@@ -91,6 +97,8 @@ export class BridgeViewerOwnedViteServer {
 							),
 						),
 						processProps.cliPath,
+						'--config',
+						join(processProps.rootPath, 'scripts/dev-server/bridge-web-test-vite.config.ts'),
 						'--host',
 						'127.0.0.1',
 						'--port',
@@ -111,11 +119,19 @@ export class BridgeViewerOwnedViteServer {
 				...process.env,
 				BRIDGE_WEB_DEV_BACKEND_ORIGIN: props.bridgeDevelopmentServerOrigin,
 				...props.environment,
+				BRIDGE_WEB_TEST_RESPONSE_FACTS: props.observeMetadataResponses === true ? '1' : '0',
 			},
 		});
 		const exitPromise = new Promise<ChildProcessExit>((resolve): void => {
-			child.once('exit', (code, signal): void => resolve({ code, signal }));
+			child.once('close', (code, signal): void => resolve({ code, signal }));
 			child.once('error', (): void => resolve({ code: null, signal: null }));
+		});
+		const responseFacts = new BridgeWebViteResponseFacts();
+		const factLines = createInterface({ input: child.stdout });
+		factLines.on('line', (line): void => responseFacts.acceptLine(line));
+		void exitPromise.then((): void => {
+			responseFacts.end();
+			factLines.close();
 		});
 		let stdoutTail = '';
 		let stderrTail = '';
@@ -129,6 +145,7 @@ export class BridgeViewerOwnedViteServer {
 		});
 		const server = new BridgeViewerOwnedViteServer({
 			child,
+			responseFacts,
 			exitPromise,
 			stdoutTail: (): string => stdoutTail,
 			stderrTail: (): string => stderrTail,
@@ -170,6 +187,9 @@ export class BridgeViewerOwnedViteServer {
 			child: this.#child,
 			exitPromise: this.#exitPromise,
 		});
+		if (!cleanup.exitObserved) throw new Error('Owned Vite exit was not observed during teardown.');
+		this.responseFacts.end();
+		if (this.responseFacts.failure !== null) throw this.responseFacts.failure;
 		return {
 			exitCode: cleanup.exitCode,
 			exitSignal: cleanup.exitSignal,
