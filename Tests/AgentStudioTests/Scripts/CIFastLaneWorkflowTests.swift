@@ -648,7 +648,7 @@ struct CIFastLaneWorkflowTests {
         #expect(aggregateRunner.contains("while IFS= read -r aggregate_serial_suite_filter"))
         #expect(aggregateRunner.contains("done <<<\"$aggregate_serial_suite_filters\""))
         #expect(
-            aggregateRunner.contains(
+            fastRunner.contains(
                 "if ! aggregate_serial_suite_filters=\"$(aggregate_serial_non_webkit_suite_filters)\"; then"))
         #expect(aggregateRunner.contains("dispatch_isolated_suites fast \"${selected_filters[@]}\""))
         #expect(isolatedDispatcher.contains("swift_test_isolated_process_concurrency"))
@@ -741,7 +741,7 @@ struct CIFastLaneWorkflowTests {
                 separatedBy: "--skip \"$large_process_global_filter_pattern\""
             ).count - 1 == 1
         )
-        #expect(largeRunner.contains("fi\n\n  run_large_process_global_swift_tests"))
+        #expect(largeRunner.contains("run_large_process_global_swift_tests || phase_status=$?"))
         #expect(largeProcessGlobalRunner.contains("dispatch_isolated_suites large"))
         for suiteName in [
             "AgentStudioOTLPBootstrapSmokeTests",

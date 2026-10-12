@@ -1071,6 +1071,7 @@ large|SwiftLaneWebKitSuiteListGateTests|concurrent
 large|SwiftLaneReceiptTests|concurrent
 large|SwiftLaneReapingTests|concurrent
 large|SwiftLaneOutputRelayTests|concurrent
+large|SwiftLanePhaseContinuationTests|concurrent
 large|SwiftLaneRunnerReportTests|concurrent
 large|SwiftPackageSandboxScriptTests|concurrent
 large|SwiftTestFailureScannerScriptTests|concurrent
@@ -1697,6 +1698,7 @@ run_fast_serial_process_swift_tests() {
   testing_framework_path="$(swift_testing_framework_path)"
   local lane_inventory fast_process_global_suite_output fast_process_global_suite_filter
   local lane suite_type mode
+  local lane_status=0 phase_status=0
   local -a fast_process_global_suite_filters=()
 
   if ! lane_inventory="$(swift_test_suite_lane_inventory)"; then
@@ -1724,6 +1726,7 @@ run_fast_serial_process_swift_tests() {
     testing_framework_path="$(swift_testing_framework_path)"
     swift_testing_helper_environment "$testing_framework_path"
     timing_batch=$((timing_batch + 1))
+    phase_status=0
     LANE_TIMING_PHASE=fast-process-global LANE_TIMING_FILTER="$fast_process_global_suite_filter" \
       LANE_TIMING_BATCH="$timing_batch" LANE_TIMING_SLOT=1 \
       LANE_TIMING_ELIGIBLE_MS="$timing_eligible_ms" run_swift_with_timeout \
@@ -1733,8 +1736,19 @@ run_fast_serial_process_swift_tests() {
       "${SWIFT_TEST_HELPER_ENVIRONMENT[@]}" \
       "$swift_testing_helper" --test-bundle-path "$swift_test_bundle" \
       --filter "$(swift_test_isolated_suite_filter_pattern "$fast_process_global_suite_filter")" \
-      "$swift_test_bundle" --testing-library swift-testing
+      "$swift_test_bundle" --testing-library swift-testing || phase_status=$?
+    if [ "$phase_status" -ne 0 ]; then
+      swift_test_record_failed_isolated_suite "$fast_process_global_suite_filter" "$phase_status"
+    fi
+
+    if swift_test_phase_status_stops_lane "$phase_status"; then
+      return "$phase_status"
+    fi
+    if [ "$lane_status" -eq 0 ]; then
+      lane_status="$phase_status"
+    fi
   done
+  return "$lane_status"
 }
 
 prebuild_swift_tests() {
@@ -1748,13 +1762,9 @@ prebuild_swift_tests() {
 
 run_aggregate_serial_non_webkit_swift_tests() {
   local aggregate_serial_suite_filter
-  local aggregate_serial_suite_filters
+  local aggregate_serial_suite_filters="$1"
   local -a selected_filters=()
 
-  if ! aggregate_serial_suite_filters="$(aggregate_serial_non_webkit_suite_filters)"; then
-    printf '[test] failed to generate aggregate serial non-WebKit suite list\n' >&2
-    return 1
-  fi
   while IFS= read -r aggregate_serial_suite_filter; do
     [ -n "$aggregate_serial_suite_filter" ] || continue
     selected_filters+=("$aggregate_serial_suite_filter")
@@ -2088,6 +2098,10 @@ dispatch_isolated_suites() {
         swift_test_record_failed_isolated_suite "$suite_filter" "$completed_status" "$(swift_test_signal_name "$completed_status")" "$completed_reason"
       fi
     fi
+    if swift_test_phase_status_stops_lane "$completed_status"; then
+      lane_status="$completed_status"
+      break
+    fi
   done
 
   if [ "$active_count" -gt 0 ]; then
@@ -2157,14 +2171,29 @@ fast_non_webkit_skip_pattern() {
   return 0
 }
 
+# The runner's hang bound returns 124; lane interruption uses 128 + signal.
+# Other child failures, including crashes, still leave later phases runnable.
+swift_test_phase_status_stops_lane() {
+  case "$1" in
+    124|129|130|143) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
 run_fast_non_webkit_swift_tests() {
   # Swift Testing provides in-process case concurrency, bounded by the explicit
   # SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH exported below. SwiftPM's
   # --parallel harness is not used for the fast inventory; suites that need a
   # process of their own get one from the isolated phases that follow.
-  local fast_lane_skip_pattern
+  local fast_lane_skip_pattern aggregate_serial_suite_filters
+  local lane_status=0 phase_status=0
   if ! fast_lane_skip_pattern="$(fast_non_webkit_skip_pattern)"; then
     printf '[test] failed to prepare fast-lane skip pattern; no fast suites were started\n' >&2
+    return 1
+  fi
+
+  if ! aggregate_serial_suite_filters="$(aggregate_serial_non_webkit_suite_filters)"; then
+    printf '[test] failed to prepare fast-lane isolated suite list; no fast suites were started\n' >&2
     return 1
   fi
 
@@ -2172,14 +2201,41 @@ run_fast_non_webkit_swift_tests() {
     "native-concurrent fast non-WebKit suites" \
     "$TIMEOUT_SECONDS" \
     env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
-    --skip "$fast_lane_skip_pattern" --build-path "$BUILD_PATH"
+    --skip "$fast_lane_skip_pattern" --build-path "$BUILD_PATH" || phase_status=$?
 
-  run_aggregate_serial_non_webkit_swift_tests
-  run_fast_serial_process_swift_tests
+  if swift_test_phase_status_stops_lane "$phase_status"; then
+    return "$phase_status"
+  fi
+  if [ "$lane_status" -eq 0 ]; then
+    lane_status="$phase_status"
+  fi
+
+  phase_status=0
+  run_aggregate_serial_non_webkit_swift_tests "$aggregate_serial_suite_filters" || phase_status=$?
+
+  if swift_test_phase_status_stops_lane "$phase_status"; then
+    return "$phase_status"
+  fi
+  if [ "$lane_status" -eq 0 ]; then
+    lane_status="$phase_status"
+  fi
+
+  phase_status=0
+  run_fast_serial_process_swift_tests || phase_status=$?
+
+  if swift_test_phase_status_stops_lane "$phase_status"; then
+    return "$phase_status"
+  fi
+  if [ "$lane_status" -eq 0 ]; then
+    lane_status="$phase_status"
+  fi
+
+  return "$lane_status"
 }
 
 run_large_non_webkit_swift_tests() {
   local large_concurrent_filter_pattern large_serial_filter_pattern large_process_global_filter_pattern
+  local lane_status=0 phase_status=0
 
   if ! large_concurrent_filter_pattern="$(large_non_webkit_filter_pattern)"; then
     printf '[test] failed to prepare large concurrent filter; no large suites were started\n' >&2
@@ -2203,14 +2259,29 @@ run_large_non_webkit_swift_tests() {
       "${parallel_args[@]}" \
       --filter "$large_concurrent_filter_pattern" \
       --skip "$large_serial_filter_pattern|$large_process_global_filter_pattern" \
-      --build-path "$BUILD_PATH"
+      --build-path "$BUILD_PATH" || phase_status=$?
 
+    if swift_test_phase_status_stops_lane "$phase_status"; then
+      return "$phase_status"
+    fi
+    if [ "$lane_status" -eq 0 ]; then
+      lane_status="$phase_status"
+    fi
+
+    phase_status=0
     run_swift_with_timeout \
       "serial large process suites" \
       "$TIMEOUT_SECONDS" \
       env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
       --filter "$large_serial_filter_pattern" \
-      --build-path "$BUILD_PATH"
+      --build-path "$BUILD_PATH" || phase_status=$?
+
+    if swift_test_phase_status_stops_lane "$phase_status"; then
+      return "$phase_status"
+    fi
+    if [ "$lane_status" -eq 0 ]; then
+      lane_status="$phase_status"
+    fi
   else
     run_swift_with_timeout \
       "serial large non-WebKit suites" \
@@ -2218,10 +2289,27 @@ run_large_non_webkit_swift_tests() {
       env AGENT_STUDIO_BENCHMARK_MODE=off AGENTSTUDIO_TRACE_BACKEND="${SWIFT_TEST_TRACE_BACKEND:-jsonl}" $(swift_test_parallelization_env_word) swift test $(swift_package_sandbox_arguments) ${EXTRA_SWIFT_TEST_ARGS:-} --skip-build \
       --filter "$large_concurrent_filter_pattern|$large_serial_filter_pattern" \
       --skip "$large_process_global_filter_pattern" \
-      --build-path "$BUILD_PATH"
+      --build-path "$BUILD_PATH" || phase_status=$?
+
+    if swift_test_phase_status_stops_lane "$phase_status"; then
+      return "$phase_status"
+    fi
+    if [ "$lane_status" -eq 0 ]; then
+      lane_status="$phase_status"
+    fi
   fi
 
-  run_large_process_global_swift_tests
+  phase_status=0
+  run_large_process_global_swift_tests || phase_status=$?
+
+  if swift_test_phase_status_stops_lane "$phase_status"; then
+    return "$phase_status"
+  fi
+  if [ "$lane_status" -eq 0 ]; then
+    lane_status="$phase_status"
+  fi
+
+  return "$lane_status"
 }
 
 webkit_suite_filters() {
