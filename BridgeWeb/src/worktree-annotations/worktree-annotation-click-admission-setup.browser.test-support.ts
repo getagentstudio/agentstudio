@@ -3,7 +3,7 @@ type FirstHoverAction =
 	| 'pointerMoveBeforeSetup'
 	| 'pointerMoveAfterSetup';
 
-/** The test observes completion of Pierre's existing setup owner, not rendered rows. */
+/** The test observes Pierre setup plus retirement of the exact rendered row. */
 export class PierreInteractionSetupFacts {
 	readonly #readyPreNodes = new WeakSet<HTMLPreElement>();
 	readonly #preByManager = new WeakMap<object, HTMLPreElement>();
@@ -66,13 +66,14 @@ export class PierreInteractionSetupFacts {
 			throw new Error('Expected an interaction pre for retirement.');
 		let release: (() => void) | undefined;
 		let rejectWait: ((error: Error) => void) | undefined;
+		let retirementObserver: MutationObserver | undefined;
 		const promise = new Promise<void>((resolve, reject): void => {
 			release = resolve;
 			rejectWait = reject;
 		});
 		void promise.catch((): void => {});
 		const retireWait = (): void => {
-			signal.removeEventListener('abort', cancel);
+			remove();
 			release?.();
 		};
 		const cancel = (): void => {
@@ -81,9 +82,25 @@ export class PierreInteractionSetupFacts {
 		};
 		const remove = (): void => {
 			signal.removeEventListener('abort', cancel);
+			retirementObserver?.disconnect();
+			retirementObserver = undefined;
 			const waiters = this.#retirementWaiters.get(pre);
 			waiters?.delete(retireWait);
 			if (waiters?.size === 0) this.#retirementWaiters.delete(pre);
+		};
+		const rowWasReplaced = (): boolean =>
+			!row.isConnected || !pre.isConnected || row.closest('pre') !== pre;
+		const observeRowRetirement = (): void => {
+			if (rowWasReplaced()) {
+				retireWait();
+				return;
+			}
+			retirementObserver = new MutationObserver((): void => {
+				if (rowWasReplaced()) retireWait();
+			});
+			const observationRoot = pre.parentNode ?? document;
+			retirementObserver.observe(observationRoot, { childList: true, subtree: true });
+			if (rowWasReplaced()) retireWait();
 		};
 		if (!pre.isConnected || !this.#readyPreNodes.has(pre)) retireWait();
 		else {
@@ -92,6 +109,7 @@ export class PierreInteractionSetupFacts {
 			this.#retirementWaiters.set(pre, waiters);
 			signal.addEventListener('abort', cancel, { once: true });
 			if (signal.aborted) cancel();
+			else observeRowRetirement();
 		}
 		return { promise, dispose: remove };
 	}
