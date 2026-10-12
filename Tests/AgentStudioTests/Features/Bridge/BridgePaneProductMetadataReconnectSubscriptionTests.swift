@@ -9,12 +9,15 @@ import Testing
 struct BridgeMetadataReconnectTests {
     @Test("physical reconnect retains File E3 and resnapshots after a sealed batch was lost")
     func reconnectResnapshotsLostFileBatchWithoutReopeningSubscription() async throws {
-        let probe = ReconnectBootstrapCompletionProbe()
+        let probe = ReconnectFileLifecycleProbe()
         let recorder = try probe.source.attach()
-        let context = try await makeReconnectSubscriptionContext(lifecycleTraceRecorder: probe)
-        let initialClosed = try await recorder.expectNext(
-            in: 1, where: { $0.stage == .bootstrapFinished }, "initial File bootstrap finished"
+        let outcomeRecorder = try probe.initialFileOutcomes.attach()
+        let context = try await makeReconnectSubscriptionContext(
+            lifecycleTraceRecorder: probe, initialBootstrapRecorder: recorder,
+            initialFileOutcomeRecorder: outcomeRecorder,
+            recordCurrentFileRefreshFailure: { probe.recordInitialFileOutcome($0) }
         )
+        let initialClosed = try #require(context.initialBootstrapClose)
         let observedSequence = context.initialBatch.identity.frame.streamSequence
         let initialSubscription = context.retainedSubscription
         let disposition = await context.provider.publishFileChangeset(
@@ -97,7 +100,9 @@ struct BridgeMetadataReconnectTests {
         #expect(sourceDiagnostics.publicationCallCount == 1)
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
         probe.source.end()
+        probe.initialFileOutcomes.end()
         try await recorder.finish()
+        try await outcomeRecorder.finish()
     }
 
     @Test("metadata reattachment restores subscriptions reconciled while disconnected")
@@ -187,12 +192,15 @@ struct BridgeMetadataReconnectTests {
 
     @Test("retained reconciliation resnapshots the accepted File view on the replacement stream")
     func retainedReconciliationResnapshotsAcceptedFileView() async throws {
-        let probe = ReconnectBootstrapCompletionProbe()
+        let probe = ReconnectFileLifecycleProbe()
         let recorder = try probe.source.attach()
-        let context = try await makeReconnectSubscriptionContext(lifecycleTraceRecorder: probe)
-        let initialClosed = try await recorder.expectNext(
-            in: 1, where: { $0.stage == .bootstrapFinished }, "initial File bootstrap finished"
+        let outcomeRecorder = try probe.initialFileOutcomes.attach()
+        let context = try await makeReconnectSubscriptionContext(
+            lifecycleTraceRecorder: probe, initialBootstrapRecorder: recorder,
+            initialFileOutcomeRecorder: outcomeRecorder,
+            recordCurrentFileRefreshFailure: { probe.recordInitialFileOutcome($0) }
         )
+        let initialClosed = try #require(context.initialBootstrapClose)
         let before = await context.fileSource.diagnostics
         #expect(await context.firstStream.pump.cancel())
         let response = try await dispatchReconnectControl(
@@ -251,7 +259,9 @@ struct BridgeMetadataReconnectTests {
         #expect(completed.identity.frame.streamSequence > replayComplete.identity.frame.streamSequence)
         #expect(await context.harness.session.producerSnapshot().hasZeroResidue)
         probe.source.end()
+        probe.initialFileOutcomes.end()
         try await recorder.finish()
+        try await outcomeRecorder.finish()
     }
 
     @Test("retained reconciliation reattaches unchanged interests once after physical response retirement")
