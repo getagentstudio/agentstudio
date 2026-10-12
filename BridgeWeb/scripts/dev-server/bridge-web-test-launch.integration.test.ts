@@ -13,6 +13,97 @@ import { BridgeVerifierProductFileSession } from '../verify-bridge-viewer-worktr
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise, type HandledLaunchPromise } from './handled-launch-promise.ts';
 
+const viteCacheRetirementDriver = String.raw`
+import { createServer } from 'vite';
+import { mkdtemp, mkdir, readdir, rename, rm } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+const mode = process.env.BRIDGE_G4_CACHE_RETIREMENT_MODE;
+const root = await mkdtemp(join(tmpdir(), 'bridge-g4-vite-cache-'));
+const cacheDir = join(root, 'vite-cache');
+await mkdir(cacheDir);
+let unhandledReason = null;
+let cleanupFailure = null;
+let pendingTempObserved = false;
+process.on('unhandledRejection', (reason) => { unhandledReason = String(reason); });
+process.on('beforeExit', () => {
+  if (mode === 'legacy' && pendingTempObserved) {
+    process.stdout.write(JSON.stringify({ cleanupFailure, pendingTempObserved, unhandledReason }) + '\n');
+    process.exitCode = 0;
+  } else if (mode === 'isolated' && unhandledReason === null && cleanupFailure === null) {
+    process.stdout.write(JSON.stringify({ cleanupFailure: null, unhandledReason: null }) + '\n');
+    process.exitCode = 0;
+  } else {
+    process.stderr.write(JSON.stringify({ cleanupFailure, unhandledReason }) + '\n');
+    process.exitCode = 1;
+  }
+});
+const create = () => createServer({
+  configFile: false,
+  root: process.cwd(),
+  cacheDir,
+  optimizeDeps: { force: true, include: ['react'] },
+  server: { host: '127.0.0.1', hmr: false, port: 0, strictPort: false },
+});
+const first = await create();
+await first.listen();
+await first.close();
+const second = await create();
+await second.listen();
+await second.transformRequest('/src/main.tsx').catch(() => {});
+const cacheEntries = await readdir(cacheDir);
+pendingTempObserved = cacheEntries.some((entry) => entry.startsWith('deps_temp_'));
+if (!pendingTempObserved) throw new Error('Vite optimizer did not expose deps_temp_* before retirement');
+await second.close();
+try {
+  if (mode === 'isolated') {
+    const retirementRoot = root + '.retiring';
+    await rename(root, retirementRoot);
+    await rm(retirementRoot, { force: true, recursive: true });
+  } else {
+    await rm(root, { force: true, recursive: true });
+  }
+} catch (error) {
+  cleanupFailure = String(error);
+}
+`;
+
+test.each(['legacy', 'isolated'] as const)(
+	'Vite optimizer cache retirement is path-isolated: %s',
+	async (mode) => {
+		const child = spawn(
+			process.execPath,
+			['--input-type=module', '--eval', viteCacheRetirementDriver],
+			{
+				cwd: bridgeWebRootPath,
+				env: { ...process.env, BRIDGE_G4_CACHE_RETIREMENT_MODE: mode },
+				stdio: ['ignore', 'pipe', 'pipe'],
+			},
+		);
+		const exit = handleLaunchPromise(once(child, 'close'), `Vite cache retirement ${mode}`);
+		const stdout: string[] = [];
+		const stderr: string[] = [];
+		child.stdout?.setEncoding('utf8').on('data', (chunk: string): void => {
+			stdout.push(chunk);
+		});
+		child.stderr?.setEncoding('utf8').on('data', (chunk: string): void => {
+			stderr.push(chunk);
+		});
+		const [code] = await exit.value();
+		if (mode === 'legacy') {
+			expect({ code, stdout: stdout.join(''), stderr: stderr.join('') }).toMatchObject({
+				code: 0,
+				stdout: expect.stringContaining('"pendingTempObserved":true'),
+			});
+		} else {
+			expect(code).toBe(0);
+			expect(stdout.join('')).toContain('"unhandledReason":null');
+			expect(stdout.join('')).toContain('"cleanupFailure":null');
+		}
+	},
+);
+
 const bridgeWebRootPath = fileURLToPath(new URL('../../', import.meta.url));
 const driver = `import { createServer } from 'vite';
 const loader = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true }, server: { hmr: false, middlewareMode: true } });

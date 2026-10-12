@@ -1,4 +1,5 @@
-import { access, mkdtemp, rm } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { access, mkdtemp, rename, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -517,7 +518,13 @@ export class BridgeWebTestLaunch {
 			failureNames.push('data root creation');
 		} else
 			try {
-				await rm(this.dataRootPath, { force: true, recursive: true });
+				// Vite may have started an unjoined, path-addressed removal of
+				// vite-cache/deps_temp_* during optimizer commit. Move the complete
+				// root out of that pathname before recursive removal so that work can
+				// finish against the old name without touching this deletion.
+				const retirementRootPath = `${this.dataRootPath}.retiring-${randomUUID()}`;
+				await rename(this.dataRootPath, retirementRootPath);
+				await rm(retirementRootPath, { force: true, recursive: true });
 				try {
 					await access(this.dataRootPath);
 					throw new Error('Owned data root survived teardown.');
