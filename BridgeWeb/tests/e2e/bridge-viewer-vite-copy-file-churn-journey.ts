@@ -52,6 +52,7 @@ export interface CopyFileChurnReproductionObservations {
 export async function runCopyFileChurnReproduction(props: {
 	readonly testSignal: AbortSignal;
 	readonly retireEditedProjectionDuringRefresh?: boolean;
+	readonly retireEditedBeforeFileRefresh?: boolean;
 	readonly retireInitialDraftProjectionDuringRefresh?: boolean;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
 	readonly server: BridgeViewerOwnedViteProductServer;
@@ -100,7 +101,12 @@ export async function runCopyFileChurnReproduction(props: {
 				const retirement =
 					props.retireEditedProjectionDuringRefresh === true
 						? await holdAnnotationProjectionAcrossFileRefresh({
-								ordering: { kind: 'edited-save' },
+								ordering: {
+									kind:
+										props.retireEditedBeforeFileRefresh === true
+											? 'edited-save-before-file-refresh'
+											: 'edited-save',
+								},
 								expectedFileSha256: createHash('sha256')
 									.update(selectedBodyForBurst(selectedOriginalBody, 2))
 									.digest('hex'),
@@ -118,23 +124,35 @@ export async function runCopyFileChurnReproduction(props: {
 					}).settled;
 					completedBurstCount += 1;
 
+					const releaseEditWrites = deferred<void>();
+					if (props.retireEditedBeforeFileRefresh !== true) releaseEditWrites.resolve();
 					const editBurst = startChurnBurst({
+						beforeWrites: releaseEditWrites.promise,
 						auxiliaryOriginalBodies,
 						burstOrdinal: 2,
 						oracle: props.oracle,
 						page,
 						selectedOriginalBody,
 					});
-					await editBurst.writesCommitted;
+					if (props.retireEditedBeforeFileRefresh !== true) await editBurst.writesCommitted;
 					const editedBody = `${savedBody} Edited while File refresh is pending.`;
 					const [editResult, burstResult] = await Promise.allSettled([
-						editAndSaveCurrentAnnotation({ editedBody, page, savedBody }),
+						editAndSaveCurrentAnnotation({
+							editedBody,
+							page,
+							savedBody,
+							beforeSave:
+								props.retireEditedBeforeFileRefresh === true
+									? retirement?.waitForHeldProjection
+									: undefined,
+							afterCommittedSave: retirement?.releaseProjection,
+							afterSave: (): void => releaseEditWrites.resolve(),
+						}).finally((): void => releaseEditWrites.resolve()),
 						editBurst.settled,
 					]);
 					if (editResult.status === 'rejected') throw editResult.reason;
 					if (burstResult.status === 'rejected') throw burstResult.reason;
 					completedBurstCount += 1;
-					await retirement?.waitForRetirement();
 					return {
 						savedBody: editedBody,
 						selectedFileReadiness: editBurst.expectedReadiness,
@@ -292,6 +310,7 @@ export async function runCopyFileChurnReproduction(props: {
 }
 
 function startChurnBurst(props: {
+	readonly beforeWrites?: Promise<void>;
 	readonly auxiliaryOriginalBodies: ReadonlyMap<string, string>;
 	readonly burstOrdinal: number;
 	readonly oracle: BridgeViewerViteProductFixtureOracle;
@@ -307,15 +326,18 @@ function startChurnBurst(props: {
 		path: props.oracle.largeFilePath,
 		sha256: selectedSha256,
 	};
-	const settled = Promise.all([
-		writeFile(join(props.oracle.worktreeRoot, props.oracle.largeFilePath), selectedBody),
-		...Array.from(props.auxiliaryOriginalBodies, ([path, originalBody]) =>
-			writeFile(
-				join(props.oracle.worktreeRoot, path),
-				`${originalBody}\n// annotation-copy-churn-${props.burstOrdinal}-${path.length}\n`,
-			),
-		),
-	])
+	const settled = (props.beforeWrites ?? Promise.resolve())
+		.then(() =>
+			Promise.all([
+				writeFile(join(props.oracle.worktreeRoot, props.oracle.largeFilePath), selectedBody),
+				...Array.from(props.auxiliaryOriginalBodies, ([path, originalBody]) =>
+					writeFile(
+						join(props.oracle.worktreeRoot, path),
+						`${originalBody}\n// annotation-copy-churn-${props.burstOrdinal}-${path.length}\n`,
+					),
+				),
+			]),
+		)
 		.then((): void => writes.resolve())
 		.then(async (): Promise<void> => {
 			await waitForPaintedFileHash(props.page, selectedSha256);
@@ -347,6 +369,9 @@ function selectedFileLineCount(body: string): number {
 }
 
 async function editAndSaveCurrentAnnotation(props: {
+	readonly beforeSave?: (() => Promise<void>) | undefined;
+	readonly afterSave?: () => void;
+	readonly afterCommittedSave?: (() => void) | undefined;
 	readonly editedBody: string;
 	readonly page: Page;
 	readonly savedBody: string;
@@ -361,10 +386,12 @@ async function editAndSaveCurrentAnnotation(props: {
 	const flush = waitForCommittedAnnotationOutcome(props.page, 'draft.flush', 'file');
 	await editor.fill(props.editedBody);
 	await flush;
+	await props.beforeSave?.();
 	const save = waitForCommittedAnnotationOutcome(props.page, 'draft.save', 'file');
 	const committedSave = waitForCommittedAnnotationCommand(props.page, 'draft.save', 'file');
 	await message.getByRole('button', { name: 'Save annotation', exact: true }).click();
 	const [receipt] = await Promise.all([save, committedSave]);
+	props.afterCommittedSave?.();
 	// The File refresh can retire a successful query's descriptor before transfer.
 	// Installation of this receipt in the owning Main store survives that retirement.
 	await waitForAnnotationMainProjectionReceipt({
@@ -372,6 +399,7 @@ async function editAndSaveCurrentAnnotation(props: {
 		receipt,
 		messageState: 'saved',
 	});
+	props.afterSave?.();
 	await message
 		.getByText(props.editedBody, { exact: true })
 		.waitFor({ state: 'visible', timeout: churnTimeoutMilliseconds });

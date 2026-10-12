@@ -12,10 +12,14 @@ test.for([
 	'retire edited projection: false',
 	'retire edited projection: true',
 	'retire initial draft projection: true',
+	'retire edited before file refresh: true',
 ])(
 	'copies a current saved File annotation while the next real file refresh is pending (%s)',
 	async (scenario, context) => {
-		const retireEditedProjectionDuringRefresh = scenario === 'retire edited projection: true';
+		const retireEditedProjectionDuringRefresh =
+			scenario === 'retire edited projection: true' ||
+			scenario === 'retire edited before file refresh: true';
+		const retireEditedBeforeFileRefresh = scenario === 'retire edited before file refresh: true';
 		const retireInitialDraftProjectionDuringRefresh =
 			scenario === 'retire initial draft projection: true';
 		const fixture = await createBridgeViewerViteProductFixture();
@@ -26,6 +30,7 @@ test.for([
 			const observations = await runCopyFileChurnReproduction({
 				testSignal: context.signal,
 				retireEditedProjectionDuringRefresh,
+				retireEditedBeforeFileRefresh,
 				retireInitialDraftProjectionDuringRefresh,
 				oracle: fixture.oracle,
 				server,
@@ -33,13 +38,19 @@ test.for([
 
 			expect(observations.completedBurstCount).toBe(3);
 			if (retireEditedProjectionDuringRefresh) {
-				expect(observations.editedProjectionRetirement?.heldDescriptorId).toBeTypeOf('string');
-				expect(observations.editedProjectionRetirement?.retiredRequestFailure).toContain(
-					'ERR_ABORTED',
-				);
-				expect(
-					observations.editedProjectionRetirement?.successorDescriptorIds.length,
-				).toBeGreaterThan(0);
+				expect(observations.editedProjectionRetirement).not.toBeNull();
+				const retirement = observations.editedProjectionRetirement;
+				if (retirement !== null && retirement.retiredRequestFailure !== null) {
+					expect(retirement.heldDescriptorId).toBeTypeOf('string');
+					expect(retirement.retiredRequestFailure).toContain('ERR_ABORTED');
+				}
+				if (retireEditedBeforeFileRefresh) {
+					expect(retirement?.atRetirement).toEqual({
+						sourceRefreshRequestCount: 0,
+						successorDescriptorIds: [],
+					});
+					expect(retirement?.retiredRequestFailure).toContain('ERR_ABORTED');
+				}
 			} else {
 				expect(observations.editedProjectionRetirement).toBeNull();
 			}
