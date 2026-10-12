@@ -145,7 +145,9 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         var unreached: [String] = []
         var mismatchedResults: [String] = []
         for command in AppCommand.allCases {
-            for variant in command.ipcSpec.argumentVariants {
+            let variants = command.ipcSpec.argumentVariants
+            try #require(!variants.isEmpty, "Missing debug IPC argument variants for \(command.rawValue)")
+            for variant in variants {
                 let request = try AgentStudioIPCCommandCatalogProjection.exampleRequest(
                     for: command, variant: variant)
                 let observedBefore = workspaceOwner.headlessRequests.count
@@ -199,7 +201,9 @@ struct AgentStudioIPCCommandChannelCoverageTests {
 
         var admitted: [String] = []
         for command in debugOnly {
-            guard let variant = command.ipcSpec.argumentVariants.first else { continue }
+            let variant = try #require(
+                command.ipcSpec.argumentVariants.first,
+                "Missing debug-only IPC argument variant for \(command.rawValue)")
             let request = try AgentStudioIPCCommandCatalogProjection.exampleRequest(
                 for: command, variant: variant)
             do {
