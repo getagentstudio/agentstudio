@@ -8,6 +8,7 @@ import {
 	type BridgeViewerOwnedViteProductServer,
 	type BridgeViewerOwnedViteProductServerCleanup,
 } from './bridge-viewer-vite-product-fixture.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 // Run explicitly with BRIDGE_E2E_ABORT_PROBE=1 and a runner-configured test
 // hang bound. Time is the subject here: no per-operation timer or poll budget.
@@ -18,10 +19,6 @@ let browser: Browser | null = null;
 let waitFailureMessage = '';
 let cleanupReceipt: BridgeViewerOwnedViteProductServerCleanup | null = null;
 let runnerAborted = false;
-let finishCleanup: (() => void) | null = null;
-const cleanupFinished = new Promise<void>((resolve): void => {
-	finishCleanup = resolve;
-});
 
 beforeAll(async (): Promise<void> => {
 	if (!probeEnabled) return;
@@ -41,32 +38,28 @@ test
 	.fails(
 		'runner abort rejects missing readiness and executes owned cleanup',
 		async (context): Promise<void> => {
-			context.onTestFinished(async (): Promise<void> => {
-				await cleanupFinished;
-			});
-			try {
-				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-				const page = await browser.newPage();
-				if (server === null) throw new Error('Abort probe needs the owned backend');
-				await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
-				await page.getByTestId('bridge-pr-a-never-ready').waitFor({ state: 'visible' });
-			} catch (error: unknown) {
-				waitFailureMessage = String(error);
-				runnerAborted = context.signal.aborted;
-				console.info(`PR A abort wait: ${waitFailureMessage}`);
-				throw error;
-			} finally {
+			return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 				try {
+					browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+					const page = await browser.newPage();
+					if (server === null) throw new Error('Abort probe needs the owned backend');
+					server.testLaunch.startJourneyHangBound();
+					await page.goto(server.origin, { waitUntil: 'domcontentloaded' });
+					await page.getByTestId('bridge-pr-a-never-ready').waitFor({ state: 'visible' });
+				} catch (error: unknown) {
+					waitFailureMessage = String(error);
+					runnerAborted = context.signal.aborted;
+					console.info(`PR A abort wait: ${waitFailureMessage}`);
+					throw error;
+				} finally {
 					await browser?.close();
 					cleanupReceipt = (await server?.stop()) ?? null;
 					await fixture?.dispose();
 					console.info(
 						`PR A abort cleanup: ${JSON.stringify({ browserConnected: browser?.isConnected(), backend: cleanupReceipt })}`,
 					);
-				} finally {
-					finishCleanup?.();
 				}
-			}
+			});
 		},
 	);
 

@@ -28,6 +28,7 @@ import {
 	startBridgeStreamFaultProxy,
 	type BridgeStreamFaultProxy,
 } from './bridge-viewer-vite-stream-fault-proxy.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 interface ReviewContentRequestObservation {
 	readonly itemId: string | null;
@@ -37,213 +38,215 @@ interface ReviewContentRequestObservation {
 type BatchBegin = Extract<BridgeProductMetadataFrame, { readonly kind: 'subscription.batchBegin' }>;
 
 test('File and Review semantic part faults recover on the live Vite and Swift stream', async (context) => {
-	const fixture = await createBridgeViewerViteProductFixture();
-	let server: BridgeViewerOwnedViteProductServer | null = null;
-	let proxy: BridgeStreamFaultProxy | null = null;
-	let browser: Browser | null = null;
-	let page: Page | null = null;
-	let retention: Awaited<ReturnType<typeof observeSelectedFileRetention>> | null = null;
-	let primaryError: unknown;
-	const metadataFrames = observeMetadataFrames();
-	try {
-		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-		proxy = await startBridgeStreamFaultProxy(server.origin, {
-			onMetadataFrame: metadataFrames.record,
-			semanticBatchFaults: true,
-		});
-		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-		const activePage = page;
-		const reviewContentRequests = observeReviewContentRequests(page);
-		await page.goto(bridgeViewerViteProductFileUrl(proxy.origin, fixture.oracle.largeFilePath), {
-			waitUntil: 'domcontentloaded',
-		});
-		await waitForSelectedFileReady({ oracle: fixture.oracle, page });
-		retention = await observeSelectedFileRetention(page, fixture.oracle.largeFilePath);
-		const establishedStreamCount = proxy.snapshot().metadataRequestCount;
-		expect(establishedStreamCount).toBe(1);
-		expect(proxy.snapshot().semanticKindsByResponse).toEqual([
-			expect.arrayContaining(['file.metadata']),
-		]);
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+		const fixture = await createBridgeViewerViteProductFixture();
+		let server: BridgeViewerOwnedViteProductServer | null = null;
+		let proxy: BridgeStreamFaultProxy | null = null;
+		let browser: Browser | null = null;
+		let page: Page | null = null;
+		let retention: Awaited<ReturnType<typeof observeSelectedFileRetention>> | null = null;
+		let primaryError: unknown;
+		const metadataFrames = observeMetadataFrames();
+		try {
+			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+			proxy = await startBridgeStreamFaultProxy(server.origin, {
+				onMetadataFrame: metadataFrames.record,
+				semanticBatchFaults: true,
+			});
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+			const activePage = page;
+			const reviewContentRequests = observeReviewContentRequests(page);
+			await page.goto(bridgeViewerViteProductFileUrl(proxy.origin, fixture.oracle.largeFilePath), {
+				waitUntil: 'domcontentloaded',
+			});
+			await waitForSelectedFileReady({ oracle: fixture.oracle, page });
+			retention = await observeSelectedFileRetention(page, fixture.oracle.largeFilePath);
+			const establishedStreamCount = proxy.snapshot().metadataRequestCount;
+			expect(establishedStreamCount).toBe(1);
+			expect(proxy.snapshot().semanticKindsByResponse).toEqual([
+				expect.arrayContaining(['file.metadata']),
+			]);
 
-		const faultApplied = proxy.armSemanticBatchFault({
-			mode: 'drop',
-			subscriptionKind: 'file.metadata',
-		});
-		const updatedContent = await fixture.mutateLargeFile();
-		const applied = await faultApplied;
-		expect(applied).toMatchObject({
-			mode: 'drop',
-			subscriptionKind: 'file.metadata',
-		});
-		await waitForSelectedFileReady({
-			expected: {
-				lineCount: updatedContent.lineCount,
-				path: fixture.oracle.largeFilePath,
-				sha256: updatedContent.sha256,
-			},
-			oracle: fixture.oracle,
-			page,
-		});
-		expect(proxy.snapshot().metadataRequestCount).toBe(establishedStreamCount);
-		expect(await retention.stop()).toBeNull();
-		retention = null;
-		await proveAnnotationBatchRecovery({
-			kind: 'file.annotations',
-			metadataFrames,
-			page,
-			proxy,
-			selectedContentReady: async (): Promise<void> =>
-				await waitForSelectedFileReady({
-					expected: {
-						lineCount: updatedContent.lineCount,
-						path: fixture.oracle.largeFilePath,
-						sha256: updatedContent.sha256,
-					},
-					oracle: fixture.oracle,
-					page: activePage,
-				}),
-			surface: 'file',
-		});
-		await page
-			.getByTestId('bridge-viewer-mode-host-file')
-			.getByRole('button', { name: 'Review', exact: true })
-			.click();
-		const reviewFile = fixture.oracle.reviewFiles[0];
-		if (reviewFile === undefined) throw new Error('Fault recovery needs a changed Review file.');
-		const reviewShell = page.getByTestId('review-viewer-shell');
-		await reviewShell.waitFor({ state: 'attached' });
-		const installedItemCount = Number(
-			await reviewShell.getAttribute('data-review-metadata-item-count'),
-		);
-		const installedTreeRowCount = Number(
-			await reviewShell.getAttribute('data-review-metadata-tree-row-count'),
-		);
-		expect(
-			installedItemCount,
-			'The changed Review fixture must install item rows.',
-		).toBeGreaterThan(0);
-		expect(
-			installedTreeRowCount,
-			'The changed Review fixture must install tree rows.',
-		).toBeGreaterThan(0);
-		await selectReviewFile({ page, path: reviewFile.path });
-		await waitForSelectedReviewReady({ itemId: reviewFile.itemId, page });
-		const priorReviewRevision = Number(
-			await reviewShell.getAttribute('data-review-metadata-revision'),
-		);
-		expect(Number.isSafeInteger(priorReviewRevision)).toBe(true);
-		const reviewContentRequestCountBeforeMutation = reviewContentRequests.length;
-		const reorderApplied = proxy.armSemanticBatchFault({
-			mode: 'reorder',
-			subscriptionKind: 'review.metadata',
-		});
-		const changedReviewFile = await fixture.mutateReviewFile();
-		expect(changedReviewFile.path).toBe(reviewFile.path);
-		expect(await reorderApplied).toMatchObject({
-			mode: 'reorder',
-			subscriptionKind: 'review.metadata',
-		});
-		await waitForReviewRevisionAfter(page, priorReviewRevision);
-		const recoveredItemId = await waitForSelectedReviewItemAfterMutation({
-			expectedPath: changedReviewFile.path,
-			page,
-			previousItemId: reviewFile.itemId,
-		});
-		expect(recoveredItemId).not.toBe(reviewFile.itemId);
-		expect(
-			reviewContentRequests
-				.slice(reviewContentRequestCountBeforeMutation)
-				.some(
-					(request): boolean =>
-						request.itemId === recoveredItemId && request.responseStatus === 200,
-				),
-		).toBe(true);
-		const recoveredReviewRevision = Number(
-			await reviewShell.getAttribute('data-review-metadata-revision'),
-		);
-		expect(Number.isSafeInteger(recoveredReviewRevision)).toBe(true);
-		expect(recoveredReviewRevision).toBeGreaterThan(priorReviewRevision);
-		expect(proxy.snapshot().metadataRequestCount).toBe(establishedStreamCount);
-		await proveAnnotationBatchRecovery({
-			kind: 'review.annotations',
-			metadataFrames,
-			page,
-			proxy,
-			selectedContentReady: async (): Promise<void> =>
-				await waitForSelectedReviewReady({ itemId: recoveredItemId, page: activePage }),
-			surface: 'review',
-		});
-		const siblingReviewRevision = Number(
-			await reviewShell.getAttribute('data-review-metadata-revision'),
-		);
-		const siblingReviewMutation = await fixture.mutateReviewFile();
-		await waitForReviewRevisionAfter(page, siblingReviewRevision);
-		const siblingReviewItemId = await waitForSelectedReviewItemAfterMutation({
-			expectedPath: siblingReviewMutation.path,
-			page,
-			previousItemId: recoveredItemId,
-		});
-		expect(siblingReviewItemId).not.toBe(recoveredItemId);
-		expect(proxy.snapshot().metadataRequestCount).toBe(establishedStreamCount);
-		expect(proxy.snapshot().activeMetadataResponses).toBe(1);
-		expect(proxy.snapshot().lostViewAcknowledgements).toEqual([]);
-		await proveLostViewAcknowledgement({
-			metadataFrames,
-			page: activePage,
-			proxy,
-			mutateReviewFile: fixture.mutateReviewFile,
-			waitForUpdatedReview: async ({ path, priorRevision }): Promise<void> => {
-				await waitForReviewRevisionAfter(activePage, priorRevision);
-				await waitForSelectedReviewItemAfterMutation({
-					expectedPath: path,
-					page: activePage,
-					previousItemId: siblingReviewItemId,
-				});
-			},
-		});
-		expect(proxy.snapshot().semanticMetadataClosures).toEqual([]);
-	} catch (error: unknown) {
-		const snapshot = proxy?.snapshot();
-		primaryError = new Error(
-			`Semantic batch fault journey failed: proxy=${JSON.stringify(
-				snapshot === undefined
-					? null
-					: {
-							metadataRequestCount: snapshot.metadataRequestCount,
-							semanticFaultsApplied: snapshot.semanticFaultsApplied,
-							semanticKindsByResponse: snapshot.semanticKindsByResponse,
-							lostViewAcknowledgements: snapshot.lostViewAcknowledgements,
-							semanticMetadataClosures: snapshot.semanticMetadataClosures,
+			const faultApplied = proxy.armSemanticBatchFault({
+				mode: 'drop',
+				subscriptionKind: 'file.metadata',
+			});
+			const updatedContent = await fixture.mutateLargeFile();
+			const applied = await faultApplied;
+			expect(applied).toMatchObject({
+				mode: 'drop',
+				subscriptionKind: 'file.metadata',
+			});
+			await waitForSelectedFileReady({
+				expected: {
+					lineCount: updatedContent.lineCount,
+					path: fixture.oracle.largeFilePath,
+					sha256: updatedContent.sha256,
+				},
+				oracle: fixture.oracle,
+				page,
+			});
+			expect(proxy.snapshot().metadataRequestCount).toBe(establishedStreamCount);
+			expect(await retention.stop()).toBeNull();
+			retention = null;
+			await proveAnnotationBatchRecovery({
+				kind: 'file.annotations',
+				metadataFrames,
+				page,
+				proxy,
+				selectedContentReady: async (): Promise<void> =>
+					await waitForSelectedFileReady({
+						expected: {
+							lineCount: updatedContent.lineCount,
+							path: fixture.oracle.largeFilePath,
+							sha256: updatedContent.sha256,
 						},
-			)} backend=${server?.diagnostics() ?? 'not started'}`,
-			{ cause: error },
-		);
-	} finally {
-		await runAllOwnedCleanupOperations({
-			operations: [
-				{
-					name: 'last-good File retention',
-					run: async (): Promise<void> => {
-						if (retention !== null) expect(await retention.stop()).toBeNull();
-					},
+						oracle: fixture.oracle,
+						page: activePage,
+					}),
+				surface: 'file',
+			});
+			await page
+				.getByTestId('bridge-viewer-mode-host-file')
+				.getByRole('button', { name: 'Review', exact: true })
+				.click();
+			const reviewFile = fixture.oracle.reviewFiles[0];
+			if (reviewFile === undefined) throw new Error('Fault recovery needs a changed Review file.');
+			const reviewShell = page.getByTestId('review-viewer-shell');
+			await reviewShell.waitFor({ state: 'attached' });
+			const installedItemCount = Number(
+				await reviewShell.getAttribute('data-review-metadata-item-count'),
+			);
+			const installedTreeRowCount = Number(
+				await reviewShell.getAttribute('data-review-metadata-tree-row-count'),
+			);
+			expect(
+				installedItemCount,
+				'The changed Review fixture must install item rows.',
+			).toBeGreaterThan(0);
+			expect(
+				installedTreeRowCount,
+				'The changed Review fixture must install tree rows.',
+			).toBeGreaterThan(0);
+			await selectReviewFile({ page, path: reviewFile.path });
+			await waitForSelectedReviewReady({ itemId: reviewFile.itemId, page });
+			const priorReviewRevision = Number(
+				await reviewShell.getAttribute('data-review-metadata-revision'),
+			);
+			expect(Number.isSafeInteger(priorReviewRevision)).toBe(true);
+			const reviewContentRequestCountBeforeMutation = reviewContentRequests.length;
+			const reorderApplied = proxy.armSemanticBatchFault({
+				mode: 'reorder',
+				subscriptionKind: 'review.metadata',
+			});
+			const changedReviewFile = await fixture.mutateReviewFile();
+			expect(changedReviewFile.path).toBe(reviewFile.path);
+			expect(await reorderApplied).toMatchObject({
+				mode: 'reorder',
+				subscriptionKind: 'review.metadata',
+			});
+			await waitForReviewRevisionAfter(page, priorReviewRevision);
+			const recoveredItemId = await waitForSelectedReviewItemAfterMutation({
+				expectedPath: changedReviewFile.path,
+				page,
+				previousItemId: reviewFile.itemId,
+			});
+			expect(recoveredItemId).not.toBe(reviewFile.itemId);
+			expect(
+				reviewContentRequests
+					.slice(reviewContentRequestCountBeforeMutation)
+					.some(
+						(request): boolean =>
+							request.itemId === recoveredItemId && request.responseStatus === 200,
+					),
+			).toBe(true);
+			const recoveredReviewRevision = Number(
+				await reviewShell.getAttribute('data-review-metadata-revision'),
+			);
+			expect(Number.isSafeInteger(recoveredReviewRevision)).toBe(true);
+			expect(recoveredReviewRevision).toBeGreaterThan(priorReviewRevision);
+			expect(proxy.snapshot().metadataRequestCount).toBe(establishedStreamCount);
+			await proveAnnotationBatchRecovery({
+				kind: 'review.annotations',
+				metadataFrames,
+				page,
+				proxy,
+				selectedContentReady: async (): Promise<void> =>
+					await waitForSelectedReviewReady({ itemId: recoveredItemId, page: activePage }),
+				surface: 'review',
+			});
+			const siblingReviewRevision = Number(
+				await reviewShell.getAttribute('data-review-metadata-revision'),
+			);
+			const siblingReviewMutation = await fixture.mutateReviewFile();
+			await waitForReviewRevisionAfter(page, siblingReviewRevision);
+			const siblingReviewItemId = await waitForSelectedReviewItemAfterMutation({
+				expectedPath: siblingReviewMutation.path,
+				page,
+				previousItemId: recoveredItemId,
+			});
+			expect(siblingReviewItemId).not.toBe(recoveredItemId);
+			expect(proxy.snapshot().metadataRequestCount).toBe(establishedStreamCount);
+			expect(proxy.snapshot().activeMetadataResponses).toBe(1);
+			expect(proxy.snapshot().lostViewAcknowledgements).toEqual([]);
+			await proveLostViewAcknowledgement({
+				metadataFrames,
+				page: activePage,
+				proxy,
+				mutateReviewFile: fixture.mutateReviewFile,
+				waitForUpdatedReview: async ({ path, priorRevision }): Promise<void> => {
+					await waitForReviewRevisionAfter(activePage, priorRevision);
+					await waitForSelectedReviewItemAfterMutation({
+						expectedPath: path,
+						page: activePage,
+						previousItemId: siblingReviewItemId,
+					});
 				},
-				{ name: 'browser', run: async (): Promise<void> => await browser?.close() },
-				{ name: 'semantic fault proxy', run: async (): Promise<void> => await proxy?.stop() },
-				{
-					name: 'Vite and Swift',
-					run: async (): Promise<void> => {
-						if (server === null) return;
-						const cleanup = await server.stop();
-						expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
-						expect(cleanup.forcedTerminationRequired).toBe(false);
+			});
+			expect(proxy.snapshot().semanticMetadataClosures).toEqual([]);
+		} catch (error: unknown) {
+			const snapshot = proxy?.snapshot();
+			primaryError = new Error(
+				`Semantic batch fault journey failed: proxy=${JSON.stringify(
+					snapshot === undefined
+						? null
+						: {
+								metadataRequestCount: snapshot.metadataRequestCount,
+								semanticFaultsApplied: snapshot.semanticFaultsApplied,
+								semanticKindsByResponse: snapshot.semanticKindsByResponse,
+								lostViewAcknowledgements: snapshot.lostViewAcknowledgements,
+								semanticMetadataClosures: snapshot.semanticMetadataClosures,
+							},
+				)} backend=${server?.diagnostics() ?? 'not started'}`,
+				{ cause: error },
+			);
+		} finally {
+			await runAllOwnedCleanupOperations({
+				operations: [
+					{
+						name: 'last-good File retention',
+						run: async (): Promise<void> => {
+							if (retention !== null) expect(await retention.stop()).toBeNull();
+						},
 					},
-				},
-				{ name: 'fixture', run: fixture.dispose },
-			],
-			...(primaryError === undefined ? {} : { primaryError }),
-		});
-	}
+					{ name: 'browser', run: async (): Promise<void> => await browser?.close() },
+					{ name: 'semantic fault proxy', run: async (): Promise<void> => await proxy?.stop() },
+					{
+						name: 'Vite and Swift',
+						run: async (): Promise<void> => {
+							if (server === null) return;
+							const cleanup = await server.stop();
+							expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
+							expect(cleanup.forcedTerminationRequired).toBe(false);
+						},
+					},
+					{ name: 'fixture', run: fixture.dispose },
+				],
+				...(primaryError === undefined ? {} : { primaryError }),
+			});
+		}
+	});
 });
 
 async function proveAnnotationBatchRecovery(props: {

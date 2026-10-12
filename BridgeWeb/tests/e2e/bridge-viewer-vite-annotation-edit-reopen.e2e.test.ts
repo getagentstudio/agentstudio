@@ -15,108 +15,113 @@ import {
 } from './bridge-viewer-vite-product-fixture.ts';
 import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 import { bridgeViewerViteProductFileUrl } from './bridge-viewer-vite-product-url.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const journeyTimeoutMilliseconds = 120_000;
 
 test('keeps one File annotation stable through repeated edit, reply, resolve, and reopen', async (context) => {
-	const fixture = await createBridgeViewerViteProductFixture();
-	let browser: Browser | null = null;
-	let page: Page | null = null;
-	let server: BridgeViewerOwnedViteProductServer | null = null;
-	let phase = 'fixture-ready';
-	let commandObservation: AnnotationCommandObservation | null = null;
-	try {
-		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-		commandObservation = observeAnnotationCommandOutcomes(page, (): string => phase);
-
-		phase = 'file-ready';
-		await page.goto(bridgeViewerViteProductFileUrl(server.origin, fixture.oracle.largeFilePath), {
-			timeout: journeyTimeoutMilliseconds,
-			waitUntil: 'domcontentloaded',
-		});
-		await waitForSelectedFileReady({ oracle: fixture.oracle, page });
-		expect(fixture.oracle.largeFileLineCount).toBe(128);
-
-		phase = 'root-range-selected';
-		await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: 'file' });
-		const rootBody = 'Stable editable root annotation.';
-		const root = await createAndSaveMessage({
-			createKind: 'root.create',
-			finalBody: rootBody,
-			page,
-			textboxName: 'Write an annotation in Markdown',
-		});
-		const thread = page.locator(`[data-annotation-thread-id="${root.context.threadId}"]`);
-		await waitForCanonicalMessageBody({ body: rootBody, messageId: root.messageId, page });
-
-		phase = 'first-edit';
-		await editAndSaveMessage({
-			body: 'Stable editable root annotation, first revision.',
-			messageId: root.messageId,
-			page,
-		});
-
-		phase = 'second-edit';
-		const secondEditBody = 'Stable editable root annotation, second revision.';
-		await editAndSaveMessage({ body: secondEditBody, messageId: root.messageId, page });
-		expect(await page.getByText('edit_token_conflict', { exact: true }).count()).toBe(0);
-
-		phase = 'first-reply';
-		await createAndSaveReply({ body: 'Reply before resolution.', page, thread });
-
-		phase = 'resolve';
-		const resolved = waitForCommittedResolutionOutcome(page, 'resolved');
-		await thread.getByRole('button', { name: 'Resolve annotation thread', exact: true }).click();
-		await resolved;
-		await waitForThreadResolution(page, root.context.threadId, 'resolved');
-		expect(
-			await thread.getByRole('button', { name: 'Reply to annotation thread', exact: true }).count(),
-		).toBe(0);
-
-		phase = 'reopen';
-		const reopened = waitForCommittedResolutionOutcome(page, 'open');
-		await thread.getByRole('button', { name: 'Reopen annotation thread', exact: true }).click();
-		await reopened;
-		await waitForThreadResolution(page, root.context.threadId, 'open');
-		await thread
-			.getByRole('button', { name: 'Reply to annotation thread', exact: true })
-			.waitFor({ state: 'visible', timeout: journeyTimeoutMilliseconds });
-
-		phase = 'post-reopen-reply';
-		await createAndSaveReply({ body: 'Reply after canonical reopen.', page, thread });
-		await waitForCanonicalMessageBody({ body: secondEditBody, messageId: root.messageId, page });
-		expect(await page.getByText('edit_token_conflict', { exact: true }).count()).toBe(0);
-	} catch (error: unknown) {
-		await commandObservation?.drain();
-		const visibleAlerts =
-			page === null
-				? []
-				: await page
-						.locator('[role="alert"]')
-						.allTextContents()
-						.catch(() => []);
-		throw new Error(
-			`Annotation edit/reopen journey failed during ${phase}; commands=${JSON.stringify(commandObservation?.records ?? [])}; alerts=${JSON.stringify(visibleAlerts)}; server=${server?.diagnostics() ?? 'not-started'}.`,
-			{ cause: error },
-		);
-	} finally {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+		const fixture = await createBridgeViewerViteProductFixture();
+		let browser: Browser | null = null;
+		let page: Page | null = null;
+		let server: BridgeViewerOwnedViteProductServer | null = null;
+		let phase = 'fixture-ready';
+		let commandObservation: AnnotationCommandObservation | null = null;
 		try {
-			await page?.close();
-			await browser?.close();
+			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+			commandObservation = observeAnnotationCommandOutcomes(page, (): string => phase);
+
+			phase = 'file-ready';
+			await page.goto(bridgeViewerViteProductFileUrl(server.origin, fixture.oracle.largeFilePath), {
+				timeout: journeyTimeoutMilliseconds,
+				waitUntil: 'domcontentloaded',
+			});
+			await waitForSelectedFileReady({ oracle: fixture.oracle, page });
+			expect(fixture.oracle.largeFileLineCount).toBe(128);
+
+			phase = 'root-range-selected';
+			await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: 'file' });
+			const rootBody = 'Stable editable root annotation.';
+			const root = await createAndSaveMessage({
+				createKind: 'root.create',
+				finalBody: rootBody,
+				page,
+				textboxName: 'Write an annotation in Markdown',
+			});
+			const thread = page.locator(`[data-annotation-thread-id="${root.context.threadId}"]`);
+			await waitForCanonicalMessageBody({ body: rootBody, messageId: root.messageId, page });
+
+			phase = 'first-edit';
+			await editAndSaveMessage({
+				body: 'Stable editable root annotation, first revision.',
+				messageId: root.messageId,
+				page,
+			});
+
+			phase = 'second-edit';
+			const secondEditBody = 'Stable editable root annotation, second revision.';
+			await editAndSaveMessage({ body: secondEditBody, messageId: root.messageId, page });
+			expect(await page.getByText('edit_token_conflict', { exact: true }).count()).toBe(0);
+
+			phase = 'first-reply';
+			await createAndSaveReply({ body: 'Reply before resolution.', page, thread });
+
+			phase = 'resolve';
+			const resolved = waitForCommittedResolutionOutcome(page, 'resolved');
+			await thread.getByRole('button', { name: 'Resolve annotation thread', exact: true }).click();
+			await resolved;
+			await waitForThreadResolution(page, root.context.threadId, 'resolved');
+			expect(
+				await thread
+					.getByRole('button', { name: 'Reply to annotation thread', exact: true })
+					.count(),
+			).toBe(0);
+
+			phase = 'reopen';
+			const reopened = waitForCommittedResolutionOutcome(page, 'open');
+			await thread.getByRole('button', { name: 'Reopen annotation thread', exact: true }).click();
+			await reopened;
+			await waitForThreadResolution(page, root.context.threadId, 'open');
+			await thread
+				.getByRole('button', { name: 'Reply to annotation thread', exact: true })
+				.waitFor({ state: 'visible', timeout: journeyTimeoutMilliseconds });
+
+			phase = 'post-reopen-reply';
+			await createAndSaveReply({ body: 'Reply after canonical reopen.', page, thread });
+			await waitForCanonicalMessageBody({ body: secondEditBody, messageId: root.messageId, page });
+			expect(await page.getByText('edit_token_conflict', { exact: true }).count()).toBe(0);
+		} catch (error: unknown) {
+			await commandObservation?.drain();
+			const visibleAlerts =
+				page === null
+					? []
+					: await page
+							.locator('[role="alert"]')
+							.allTextContents()
+							.catch(() => []);
+			throw new Error(
+				`Annotation edit/reopen journey failed during ${phase}; commands=${JSON.stringify(commandObservation?.records ?? [])}; alerts=${JSON.stringify(visibleAlerts)}; server=${server?.diagnostics() ?? 'not-started'}.`,
+				{ cause: error },
+			);
 		} finally {
 			try {
-				if (server !== null) {
-					const cleanup = await server.stop();
-					expect(cleanup.forcedTerminationRequired).toBe(false);
-					expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
-				}
+				await page?.close();
+				await browser?.close();
 			} finally {
-				await fixture.dispose();
+				try {
+					if (server !== null) {
+						const cleanup = await server.stop();
+						expect(cleanup.forcedTerminationRequired).toBe(false);
+						expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
+					}
+				} finally {
+					await fixture.dispose();
+				}
 			}
 		}
-	}
+	});
 });
 
 interface AnnotationCommandObservation {

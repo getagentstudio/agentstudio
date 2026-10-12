@@ -23,6 +23,7 @@ import {
 } from './bridge-viewer-vite-product-fixture.ts';
 import { bridgeViewerViteProductReviewUrl } from './bridge-viewer-vite-product-url.ts';
 import { observeBrowserRuntimeDiagnostics } from './bridge-viewer-vite-review-comparison-observation.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 interface InteractionProfileSample {
 	readonly durationMilliseconds: number;
@@ -48,213 +49,219 @@ declare global {
 }
 
 test('profiles repeated mode switches, Open in Files, Markdown and Mermaid through the real backend', async (context) => {
-	// Arrange — a real disposable worktree, Swift backend and production worker/renderers.
-	const iterationCount = Number(process.env['BRIDGE_INTERACTION_PROFILE_ITERATIONS'] ?? '10');
-	if (!Number.isSafeInteger(iterationCount) || iterationCount < 1 || iterationCount > 100) {
-		throw new Error('Interaction profile iterations must be an integer from 1 to 100.');
-	}
-	const fixture = await createBridgeViewerViteProductFixture();
-	const markdownPath = '000-interaction-profile.md';
-	let browser: Browser | null = null;
-	let server: BridgeViewerOwnedViteProductServer | null = null;
-	let diagnostics: ReturnType<typeof observeBrowserRuntimeDiagnostics> | null = null;
-	let failureDiagnostics: Awaited<ReturnType<typeof observeInteractionProfileFailures>> | null =
-		null;
-	const samples: InteractionProfileSample[] = [];
-	let annotationMainProjection: unknown = null;
-	let annotationLifecycleTelemetry: unknown = null;
-	let profilePage: Page | null = null;
-	let completed = false;
-	let failure: string | null = null;
-	try {
-		await writeFile(
-			join(fixture.oracle.worktreeRoot, markdownPath),
-			[
-				'# Interaction profile document',
-				'',
-				'A real Markdown document fetched through the product content route.',
-				'',
-				'| Boundary | Owner |',
-				'| --- | --- |',
-				'| Metadata | Comm worker |',
-				'',
-				'```typescript',
-				'const currentDocument = "profile";',
-				'```',
-				'',
-				'```mermaid',
-				'flowchart LR',
-				'Backend --> Worker --> UI',
-				'```',
-				'',
-			].join('\n'),
-		);
-		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-		const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
-		profilePage = page;
-		const mainProjectionObservation = observeAnnotationMainProjection(page);
-		diagnostics = observeBrowserRuntimeDiagnostics(page);
-		failureDiagnostics = await observeInteractionProfileFailures(page);
-		const pageErrors: string[] = [];
-		page.on('pageerror', (error): void => {
-			pageErrors.push(error.message);
-		});
-		const reviewFile = fixture.oracle.reviewFiles[0];
-		if (reviewFile === undefined) throw new Error('Profile requires a real changed source file.');
-		await page.goto(bridgeViewerViteProductReviewUrl(server.origin, reviewFile.path), {
-			waitUntil: 'domcontentloaded',
-		});
-		await selectReviewFile({ page, path: reviewFile.path });
-		await waitForSelectedReviewReady({ page, itemId: reviewFile.itemId });
-		await mainProjectionObservation.install();
-		const fileHost = page.getByTestId('bridge-viewer-mode-host-file');
-		const reviewHost = page.getByTestId('bridge-viewer-mode-host-review');
-
-		// Act — each sample starts on the actual DOM click, not automation dispatch.
-		// oxlint-disable eslint/no-await-in-loop -- One page's samples must settle serially before the next action.
-		for (let iteration = 0; iteration < iterationCount; iteration += 1) {
-			samples.push(
-				await measureInteraction(
-					page,
-					{
-						kind: 'file',
-						name: 'review-open-in-files',
-						path: reviewFile.path,
-					},
-					async (): Promise<void> => {
-						await reviewHost
-							.getByRole('button', { name: `Open ${reviewFile.path} in Files`, exact: true })
-							.click();
-					},
-				),
-			);
-			samples.push(
-				await measureInteraction(
-					page,
-					{
-						kind: 'markdown',
-						name: iteration === 0 ? 'markdown-mermaid-first-open' : 'markdown-mermaid-revisit',
-						path: markdownPath,
-					},
-					async (): Promise<void> => {
-						await clickMountedFileTreePath({ fileHost, path: markdownPath });
-					},
-				),
-			);
-			samples.push(
-				await measureInteraction(
-					page,
-					{
-						kind: 'review',
-						name: 'file-to-review',
-						path: reviewFile.path,
-					},
-					async (): Promise<void> => {
-						await fileHost.getByTestId('bridge-viewer-context-review').click();
-					},
-				),
-			);
-			samples.push(
-				await measureInteraction(
-					page,
-					{
-						kind: 'file',
-						name: 'review-to-file',
-						path: '',
-					},
-					async (): Promise<void> => {
-						await reviewHost.getByTestId('bridge-viewer-context-file').click();
-					},
-				),
-			);
-			await fileHost.getByTestId('bridge-viewer-context-review').click();
-			await waitForSelectedReviewReady({ page, itemId: reviewFile.itemId });
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+		// Arrange — a real disposable worktree, Swift backend and production worker/renderers.
+		const iterationCount = Number(process.env['BRIDGE_INTERACTION_PROFILE_ITERATIONS'] ?? '10');
+		if (!Number.isSafeInteger(iterationCount) || iterationCount < 1 || iterationCount > 100) {
+			throw new Error('Interaction profile iterations must be an integer from 1 to 100.');
 		}
-
-		// oxlint-enable eslint/no-await-in-loop
-		// Assert — diagnostic timing samples are not a statistically accepted SLO cohort.
-		expect(samples).toHaveLength(iterationCount * 4);
-		expect(pageErrors).toEqual([]);
-		expect(samples.every((sample): boolean => Number.isFinite(sample.durationMilliseconds))).toBe(
-			true,
-		);
-		completed = true;
-	} catch (error: unknown) {
-		failure = String(error);
-		const pageState =
-			profilePage !== null && !profilePage.isClosed()
-				? await profilePage.evaluate((): unknown => {
-						const fileHost = document.querySelector<HTMLElement>(
-							'[data-testid="bridge-viewer-mode-host-file"]',
-						);
-						const reviewHost = document.querySelector<HTMLElement>(
-							'[data-testid="bridge-viewer-mode-host-review"]',
-						);
-						const fileCanvas = fileHost?.querySelector(
-							'[data-testid="bridge-file-viewer-code-canvas"]',
-						);
-						const markdown = fileHost?.querySelector('[data-testid="bridge-markdown-canvas"]');
-						const mermaid = markdown?.querySelector('[data-bridge-mermaid-state]');
-						return {
-							fileHostActive: fileHost?.getAttribute('data-bridge-viewer-mode-active') ?? null,
-							fileHostInert: fileHost?.inert ?? null,
-							fileOpenPath: fileCanvas?.getAttribute('data-worktree-open-file-path') ?? null,
-							fileOpenState: fileCanvas?.getAttribute('data-worktree-open-file-state') ?? null,
-							markdownSourcePath:
-								markdown?.getAttribute('data-bridge-markdown-source-path') ?? null,
-							markdownText: markdown?.textContent?.slice(0, 160) ?? null,
-							mermaidState: mermaid?.getAttribute('data-bridge-mermaid-state') ?? null,
-							reviewHostActive: reviewHost?.getAttribute('data-bridge-viewer-mode-active') ?? null,
-							url: location.href,
-						};
-					})
-				: { kind: 'page-unavailable' };
-		throw new Error(
-			`Interaction profile failed after ${samples.length} samples. Page: ${JSON.stringify(pageState)}. Browser: ${await diagnostics?.describe()}. Backend: ${server?.diagnostics() ?? 'not started'}`,
-			{ cause: error },
-		);
-	} finally {
+		const fixture = await createBridgeViewerViteProductFixture();
+		const markdownPath = '000-interaction-profile.md';
+		let browser: Browser | null = null;
+		let server: BridgeViewerOwnedViteProductServer | null = null;
+		let diagnostics: ReturnType<typeof observeBrowserRuntimeDiagnostics> | null = null;
+		let failureDiagnostics: Awaited<ReturnType<typeof observeInteractionProfileFailures>> | null =
+			null;
+		const samples: InteractionProfileSample[] = [];
+		let annotationMainProjection: unknown = null;
+		let annotationLifecycleTelemetry: unknown = null;
+		let profilePage: Page | null = null;
+		let completed = false;
+		let failure: string | null = null;
 		try {
-			if (profilePage !== null && !profilePage.isClosed()) {
-				annotationMainProjection = await readAnnotationMainProjectionObservation(profilePage);
-				annotationLifecycleTelemetry = await readAnnotationLifecycleDiagnostic(profilePage);
-			}
-			const reportDirectory = new URL('../../../tmp/bridge-interaction-profile/', import.meta.url);
-			const report = {
-				profileKind: 'diagnostic-click-to-ready-frame',
-				fixture: '16-changed-files-plus-markdown-mermaid',
-				acceptanceCohort: false,
-				iterationCount,
-				completed,
-				failure,
-				annotationMainProjection,
-				annotationLifecycleTelemetry,
-				failureDiagnostics: await failureDiagnostics?.read(),
-				sourceHead: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
-				dirtyTrackedPaths: execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' })
-					.trim()
-					.split('\n')
-					.filter(Boolean),
-				samples,
-			};
-			await mkdir(reportDirectory, { recursive: true });
 			await writeFile(
-				new URL(`${new Date().toISOString().replaceAll(':', '-')}.json`, reportDirectory),
-				`${JSON.stringify(report, null, 2)}\n`,
+				join(fixture.oracle.worktreeRoot, markdownPath),
+				[
+					'# Interaction profile document',
+					'',
+					'A real Markdown document fetched through the product content route.',
+					'',
+					'| Boundary | Owner |',
+					'| --- | --- |',
+					'| Metadata | Comm worker |',
+					'',
+					'```typescript',
+					'const currentDocument = "profile";',
+					'```',
+					'',
+					'```mermaid',
+					'flowchart LR',
+					'Backend --> Worker --> UI',
+					'```',
+					'',
+				].join('\n'),
+			);
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+			const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
+			profilePage = page;
+			const mainProjectionObservation = observeAnnotationMainProjection(page);
+			diagnostics = observeBrowserRuntimeDiagnostics(page);
+			failureDiagnostics = await observeInteractionProfileFailures(page);
+			const pageErrors: string[] = [];
+			page.on('pageerror', (error): void => {
+				pageErrors.push(error.message);
+			});
+			const reviewFile = fixture.oracle.reviewFiles[0];
+			if (reviewFile === undefined) throw new Error('Profile requires a real changed source file.');
+			await page.goto(bridgeViewerViteProductReviewUrl(server.origin, reviewFile.path), {
+				waitUntil: 'domcontentloaded',
+			});
+			await selectReviewFile({ page, path: reviewFile.path });
+			await waitForSelectedReviewReady({ page, itemId: reviewFile.itemId });
+			await mainProjectionObservation.install();
+			const fileHost = page.getByTestId('bridge-viewer-mode-host-file');
+			const reviewHost = page.getByTestId('bridge-viewer-mode-host-review');
+
+			// Act — each sample starts on the actual DOM click, not automation dispatch.
+			// oxlint-disable eslint/no-await-in-loop -- One page's samples must settle serially before the next action.
+			for (let iteration = 0; iteration < iterationCount; iteration += 1) {
+				samples.push(
+					await measureInteraction(
+						page,
+						{
+							kind: 'file',
+							name: 'review-open-in-files',
+							path: reviewFile.path,
+						},
+						async (): Promise<void> => {
+							await reviewHost
+								.getByRole('button', { name: `Open ${reviewFile.path} in Files`, exact: true })
+								.click();
+						},
+					),
+				);
+				samples.push(
+					await measureInteraction(
+						page,
+						{
+							kind: 'markdown',
+							name: iteration === 0 ? 'markdown-mermaid-first-open' : 'markdown-mermaid-revisit',
+							path: markdownPath,
+						},
+						async (): Promise<void> => {
+							await clickMountedFileTreePath({ fileHost, path: markdownPath });
+						},
+					),
+				);
+				samples.push(
+					await measureInteraction(
+						page,
+						{
+							kind: 'review',
+							name: 'file-to-review',
+							path: reviewFile.path,
+						},
+						async (): Promise<void> => {
+							await fileHost.getByTestId('bridge-viewer-context-review').click();
+						},
+					),
+				);
+				samples.push(
+					await measureInteraction(
+						page,
+						{
+							kind: 'file',
+							name: 'review-to-file',
+							path: '',
+						},
+						async (): Promise<void> => {
+							await reviewHost.getByTestId('bridge-viewer-context-file').click();
+						},
+					),
+				);
+				await fileHost.getByTestId('bridge-viewer-context-review').click();
+				await waitForSelectedReviewReady({ page, itemId: reviewFile.itemId });
+			}
+
+			// oxlint-enable eslint/no-await-in-loop
+			// Assert — diagnostic timing samples are not a statistically accepted SLO cohort.
+			expect(samples).toHaveLength(iterationCount * 4);
+			expect(pageErrors).toEqual([]);
+			expect(samples.every((sample): boolean => Number.isFinite(sample.durationMilliseconds))).toBe(
+				true,
+			);
+			completed = true;
+		} catch (error: unknown) {
+			failure = String(error);
+			const pageState =
+				profilePage !== null && !profilePage.isClosed()
+					? await profilePage.evaluate((): unknown => {
+							const fileHost = document.querySelector<HTMLElement>(
+								'[data-testid="bridge-viewer-mode-host-file"]',
+							);
+							const reviewHost = document.querySelector<HTMLElement>(
+								'[data-testid="bridge-viewer-mode-host-review"]',
+							);
+							const fileCanvas = fileHost?.querySelector(
+								'[data-testid="bridge-file-viewer-code-canvas"]',
+							);
+							const markdown = fileHost?.querySelector('[data-testid="bridge-markdown-canvas"]');
+							const mermaid = markdown?.querySelector('[data-bridge-mermaid-state]');
+							return {
+								fileHostActive: fileHost?.getAttribute('data-bridge-viewer-mode-active') ?? null,
+								fileHostInert: fileHost?.inert ?? null,
+								fileOpenPath: fileCanvas?.getAttribute('data-worktree-open-file-path') ?? null,
+								fileOpenState: fileCanvas?.getAttribute('data-worktree-open-file-state') ?? null,
+								markdownSourcePath:
+									markdown?.getAttribute('data-bridge-markdown-source-path') ?? null,
+								markdownText: markdown?.textContent?.slice(0, 160) ?? null,
+								mermaidState: mermaid?.getAttribute('data-bridge-mermaid-state') ?? null,
+								reviewHostActive:
+									reviewHost?.getAttribute('data-bridge-viewer-mode-active') ?? null,
+								url: location.href,
+							};
+						})
+					: { kind: 'page-unavailable' };
+			throw new Error(
+				`Interaction profile failed after ${samples.length} samples. Page: ${JSON.stringify(pageState)}. Browser: ${await diagnostics?.describe()}. Backend: ${server?.diagnostics() ?? 'not started'}`,
+				{ cause: error },
 			);
 		} finally {
 			try {
-				await browser?.close();
+				if (profilePage !== null && !profilePage.isClosed()) {
+					annotationMainProjection = await readAnnotationMainProjectionObservation(profilePage);
+					annotationLifecycleTelemetry = await readAnnotationLifecycleDiagnostic(profilePage);
+				}
+				const reportDirectory = new URL(
+					'../../../tmp/bridge-interaction-profile/',
+					import.meta.url,
+				);
+				const report = {
+					profileKind: 'diagnostic-click-to-ready-frame',
+					fixture: '16-changed-files-plus-markdown-mermaid',
+					acceptanceCohort: false,
+					iterationCount,
+					completed,
+					failure,
+					annotationMainProjection,
+					annotationLifecycleTelemetry,
+					failureDiagnostics: await failureDiagnostics?.read(),
+					sourceHead: execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim(),
+					dirtyTrackedPaths: execFileSync('git', ['diff', '--name-only'], { encoding: 'utf8' })
+						.trim()
+						.split('\n')
+						.filter(Boolean),
+					samples,
+				};
+				await mkdir(reportDirectory, { recursive: true });
+				await writeFile(
+					new URL(`${new Date().toISOString().replaceAll(':', '-')}.json`, reportDirectory),
+					`${JSON.stringify(report, null, 2)}\n`,
+				);
 			} finally {
 				try {
-					await server?.stop();
+					await browser?.close();
 				} finally {
-					await fixture.dispose();
+					try {
+						await server?.stop();
+					} finally {
+						await fixture.dispose();
+					}
 				}
 			}
 		}
-	}
+	});
 });
 
 async function clickMountedFileTreePath(props: {

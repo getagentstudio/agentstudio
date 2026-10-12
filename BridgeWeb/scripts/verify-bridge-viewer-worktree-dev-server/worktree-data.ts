@@ -39,12 +39,17 @@ const productFileSessionByDescriptor = new WeakMap<
 >();
 const liveProductFileSurfaces = new Set<WorktreeFileSurface>();
 
-export async function fetchWorktreeSurface(): Promise<WorktreeFileSurface> {
-	await closeAllWorktreeFileSurfaces();
-	const session = new BridgeVerifierProductFileSession({
+export function makeWorktreeProductDataClient(): BridgeVerifierProductFileSession {
+	return new BridgeVerifierProductFileSession({
 		baseUrl: new URL(worktreeDevServerUrl).origin,
 		scenarioName: scenarioNameFromDevServerUrl(worktreeDevServerUrl),
 	});
+}
+
+export async function fetchWorktreeSurface(
+	session: BridgeVerifierProductFileSession = makeWorktreeProductDataClient(),
+): Promise<WorktreeFileSurface> {
+	await closeAllWorktreeFileSurfaces();
 	const productSource = await session.open();
 	const pathCount = worktreeFileTreeRows(productSource.installations).length;
 	const surface: WorktreeFileSurface = {

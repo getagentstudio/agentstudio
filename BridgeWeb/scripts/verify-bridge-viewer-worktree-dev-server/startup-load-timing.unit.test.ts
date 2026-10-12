@@ -151,7 +151,7 @@ describe('Bridge Viewer startup load timing', () => {
 		expect(runnerSource).toContain('collectWorktreeStartupLoadTimingProof');
 		expect(runnerSource).toContain('collectReviewStartupLoadTimingProof');
 		expect(registeredVerifierSource.indexOf('if (startupOnlyMode)')).toBeLessThan(
-			registeredVerifierSource.indexOf('const vitePort = await reserveLoopbackPort();'),
+			registeredVerifierSource.indexOf('const viteServer = await launch.startViteChild('),
 		);
 	});
 
@@ -173,10 +173,10 @@ describe('Bridge Viewer startup load timing', () => {
 		// Assert
 		expect(fileLifecycle).toBeGreaterThanOrEqual(0);
 		expect(reviewLifecycle).toBeGreaterThan(fileLifecycle);
-		expect(registeredVerifierSource).toContain('agentstudio-bridge-vite-${props.surface}-');
-		expect(registeredVerifierSource).toContain("process.env['BRIDGE_WEB_VITE_CACHE_DIR']");
-		expect(registeredVerifierSource).toContain('await viteServer.close()');
-		expect(registeredVerifierSource).toContain('await rm(viteCacheDirectoryPath');
+		expect(registeredVerifierSource).toContain('const launch = await BridgeWebTestLaunch.start()');
+		expect(registeredVerifierSource).toContain('bridgeDevelopmentServerOrigin:');
+		expect(registeredVerifierSource).toContain('await launch.dispose()');
+		expect(registeredVerifierSource).toContain('viteServer.startProof.origin');
 	});
 
 	test('cold collectors make repeated warm samples unrepresentable', async () => {
@@ -196,10 +196,14 @@ describe('Bridge Viewer startup load timing', () => {
 		);
 
 		// Act / Assert
-		expect(registeredVerifierSource).toContain('reserveLoopbackPort');
-		expect(registeredVerifierSource).toContain('const vitePort = await');
-		expect(registeredVerifierSource).toContain('port: vitePort');
-		expect(registeredVerifierSource).not.toContain('port: 0');
+		const harnessSource = await readFile(
+			new URL('./product-only-real-router-regression.ts', import.meta.url),
+			'utf8',
+		);
+		expect(harnessSource).toContain('const port = await reserveLoopbackPort()');
+		expect(harnessSource).toContain("'127.0.0.1'");
+		expect(harnessSource).toContain("'--strictPort'");
+		expect(registeredVerifierSource).not.toContain('reserveLoopbackPort');
 	});
 
 	test('waits for owned backend health before loading the startup runner', async () => {
@@ -211,16 +215,11 @@ describe('Bridge Viewer startup load timing', () => {
 
 		// Act / Assert
 		expect(registeredVerifierSource).toMatch(
-			/await waitForBridgeProductBackendReady\([\s\S]*await viteServer\.ssrLoadModule/u,
+			/await waitForBridgeProductBackendReady\([\s\S]*await loadRunner/u,
 		);
 		expect(registeredVerifierSource).toContain('/__bridge-product/health');
-		expect(
-			registeredVerifierSource.indexOf('bridgeProductBackendStartupTimeoutMilliseconds'),
-		).toBeLessThan(
-			registeredVerifierSource.indexOf(
-				'if (completeJourneyMode || performanceOnlyMode || startupOnlyMode)',
-			),
-		);
+		expect(registeredVerifierSource).not.toContain('setTimeout');
+		expect(registeredVerifierSource).not.toContain('while (Date.now()');
 	});
 
 	test('uses the one prebuilt owned backend instead of asking Vite to build it again', async () => {
@@ -236,12 +235,12 @@ describe('Bridge Viewer startup load timing', () => {
 
 		// Act / Assert
 		expect(performanceVerifierStart).toBeGreaterThanOrEqual(0);
-		expect(performanceVerifierSource).toContain('startOwnedBridgeDevelopmentServer');
+		expect(performanceVerifierSource).toContain('BridgeWebTestLaunch.start');
 		expect(performanceVerifierSource).toContain("process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN']");
 		expect(performanceVerifierSource).toMatch(
-			/startOwnedBridgeDevelopmentServer[\s\S]*BRIDGE_WEB_DEV_BACKEND_ORIGIN[\s\S]*createViteServer/u,
+			/BridgeWebTestLaunch.start[\s\S]*BRIDGE_WEB_DEV_BACKEND_ORIGIN[\s\S]*launch.startVite/u,
 		);
-		expect(performanceVerifierSource).toContain('runAllOwnedCleanupOperations');
+		expect(performanceVerifierSource).toContain('await launch.dispose()');
 		expect(performanceVerifierSource).not.toContain('middlewareMode: true');
 	});
 });

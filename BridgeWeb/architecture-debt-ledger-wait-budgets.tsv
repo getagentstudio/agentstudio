@@ -21,8 +21,6 @@ no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-de
 no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/route-probes.ts	1
 no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts	5
 no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/scroll-performance.ts	1
-no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/startup-load-timing.ts	6
-no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/startup-route-timing.ts	2
 no-playwright-timeout-options	BridgeWeb/scripts/verify-bridge-viewer-worktree-dev-server/telemetry.ts	2
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-backpressure-journey.ts	10
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-edit-reopen.e2e.test.ts	8

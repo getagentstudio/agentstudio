@@ -6,8 +6,9 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { chromium } from 'playwright';
 
+import { currentBridgeWebLaunchScope } from '../dev-server/bridge-web-test-launch-scope.ts';
+import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import {
 	bridgeViewerProductOnlySelectors,
 	summarizeBridgeProductRequestBody,
@@ -120,18 +121,19 @@ export interface BridgeViewerFileProofTargets {
 }
 
 export async function runBridgeViewerProductOnlyJourney(props: {
+	readonly launch: BridgeWebTestLaunch;
 	readonly browser?: Browser;
 	readonly baseUrl: string;
 	readonly expectedReviewItemIds: readonly string[];
 	readonly fileProofTargets: BridgeViewerFileProofTargets;
 }): Promise<BridgeViewerProductOnlyJourneyProof> {
-	const browser = props.browser ?? (await chromium.launch({ channel: 'chrome', headless: true }));
-	if (props.browser === undefined) {
+	const browser =
+		props.browser ?? (await props.launch.launchBrowser({ channel: 'chrome', headless: true }));
+	if (props.browser === undefined)
 		browser.on('context', (context): void => {
 			context.setDefaultTimeout(0);
 			context.setDefaultNavigationTimeout(0);
 		});
-	}
 	const observedWorkers: MutableObservedWorker[] = [];
 	const observedWorkerClosePromises: Promise<void>[] = [];
 	let closedWorkerCount = 0;
@@ -144,6 +146,8 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 	});
 	let deadlineObserver: BridgeViewerRealRouterObserver | null = null;
 	const ownedJourneyDeadline = createOwnedProductJourneyDeadline({
+		signal: currentBridgeWebLaunchScope()?.signal ?? props.launch.signal,
+		observeWait: (promise, label) => props.launch.observeStep(label, promise).value(),
 		browser,
 		page,
 		onDeadline: (reason): void => deadlineObserver?.close(reason),

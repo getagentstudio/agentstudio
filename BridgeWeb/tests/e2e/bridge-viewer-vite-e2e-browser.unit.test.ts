@@ -2,6 +2,8 @@ import type { Browser } from 'playwright';
 import { chromium } from 'playwright';
 import { afterEach, expect, test, vi } from 'vitest';
 
+import { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
+import { handleLaunchPromise } from '../../scripts/dev-server/handled-launch-promise.ts';
 import {
 	closeBridgeViewerE2ETestBrowsers,
 	launchBridgeViewerE2EChromium,
@@ -11,19 +13,107 @@ afterEach((): void => {
 	vi.restoreAllMocks();
 });
 
-test('V1 resumed aborted A owns its browser while B is active', async (): Promise<void> => {
+test.each(['completed', 'failed'] as const)(
+	'finished hook joins replacement registrations and held C closure: %s',
+	async (disposition): Promise<void> => {
+		const owner = new AbortController();
+		const firstLaunch = createControlledPromise<Browser>();
+		const firstLaunchEntered = createControlledPromise<void>();
+		const lateCloseEntered = createControlledPromise<void>();
+		const lateCloseRelease = createControlledPromise<void>();
+		let secondAcquisition: Promise<Browser> | undefined;
+		let thirdAcquisition: Promise<Browser> | undefined;
+		const browserC = makeControlledBrowser(async (): Promise<void> => {
+			lateCloseEntered.resolve();
+			await lateCloseRelease.promise;
+			if (disposition === 'failed') throw new Error('C retirement failed');
+		});
+		const browserB = makeControlledBrowser(async (): Promise<void> => {
+			thirdAcquisition = launchBridgeViewerE2EChromium({ testSignal: owner.signal });
+			void handleLaunchPromise(thirdAcquisition, 'late C acquisition').settled;
+			if (disposition === 'failed') throw new Error('B retirement failed');
+		});
+		const browserA = makeControlledBrowser();
+		// Stand in only for browser acquisition, preserving the helper's signal registry,
+		// abort closure and physical retirement promises under test.
+		vi.spyOn(BridgeWebTestLaunch, 'startBrowser')
+			.mockImplementationOnce(async (): Promise<Browser> => {
+				firstLaunchEntered.resolve();
+				return await firstLaunch.promise;
+			})
+			.mockResolvedValueOnce(browserB.browser)
+			.mockResolvedValueOnce(browserC.browser);
+		const firstAcquisition = launchBridgeViewerE2EChromium({ testSignal: owner.signal });
+		const registerSuccessor = handleLaunchPromise(
+			firstAcquisition.then((): void => {
+				secondAcquisition = launchBridgeViewerE2EChromium({ testSignal: owner.signal });
+				void handleLaunchPromise(secondAcquisition, 'late B acquisition').settled;
+			}),
+			'register successor browser',
+		);
+		await firstLaunchEntered.promise;
+		owner.abort();
+		let finishReturned = false;
+		const finish = handleLaunchPromise(
+			closeBridgeViewerE2ETestBrowsers(owner.signal).finally((): void => {
+				finishReturned = true;
+			}),
+			'browser finished hook',
+		);
+		firstLaunch.resolve(browserA.browser);
+		try {
+			const firstFact = await Promise.race([
+				finish.settled.then((): string => 'finished'),
+				lateCloseEntered.promise.then((): string => 'C closure entered'),
+			]);
+			expect(firstFact).toBe('C closure entered');
+			expect(finishReturned).toBe(false);
+			lateCloseRelease.resolve();
+			const outcome = await finish.settled;
+			if (disposition === 'failed') {
+				if (outcome.kind !== 'failed' || !(outcome.error.cause instanceof AggregateError))
+					throw new Error('Missing browser retirement failures');
+				expect(outcome.error.cause.errors.map((error: Error): string => error.message)).toEqual([
+					'B retirement failed',
+					'C retirement failed',
+				]);
+			} else {
+				await finish.value();
+				expect(browserC.closed()).toBe(true);
+			}
+			expect(browserA.closed()).toBe(true);
+			expect(finishReturned).toBe(true);
+		} finally {
+			lateCloseRelease.resolve();
+			await finish.settled;
+			await registerSuccessor.settled;
+			if (secondAcquisition !== undefined)
+				await handleLaunchPromise(secondAcquisition, 'B proof cleanup').settled;
+			if (thirdAcquisition !== undefined)
+				await handleLaunchPromise(thirdAcquisition, 'C proof cleanup').settled;
+			await handleLaunchPromise(
+				closeBridgeViewerE2ETestBrowsers(owner.signal),
+				'remaining proof cleanup',
+			).settled;
+		}
+	},
+);
+
+test('V1 resumed aborted A cannot acquire a browser while B is active', async (): Promise<void> => {
 	const ownerA = new AbortController();
 	const ownerB = new AbortController();
 	const browserA = makeControlledBrowser();
 	const browserB = makeControlledBrowser();
-	vi.spyOn(chromium, 'launch')
+	const launchChromium = vi
+		.spyOn(chromium, 'launch')
 		.mockResolvedValueOnce(browserB.browser)
 		.mockResolvedValueOnce(browserA.browser);
 	ownerA.abort();
 	await launchBridgeViewerE2EChromium({ testSignal: ownerB.signal });
 	try {
-		await launchBridgeViewerE2EChromium({ testSignal: ownerA.signal });
-		expect(browserA.closed()).toBe(true);
+		await expect(launchBridgeViewerE2EChromium({ testSignal: ownerA.signal })).rejects.toThrow();
+		expect(launchChromium).toHaveBeenCalledTimes(1);
+		expect(browserA.closed()).toBe(false); // No A browser was acquired; B remains owned by B.
 		expect(browserB.closed()).toBe(false);
 		await closeBridgeViewerE2ETestBrowsers(ownerA.signal);
 		expect(browserB.closed()).toBe(false);
@@ -42,8 +132,18 @@ test('V2a finished cleanup joins a held launch and its held browser closure', as
 		closeEntered.resolve();
 		await heldClose.promise;
 	});
-	vi.spyOn(chromium, 'launch').mockReturnValue(heldLaunch.promise);
+	const launchChromium = vi.spyOn(chromium, 'launch').mockReturnValue(heldLaunch.promise);
+	const acquisitionStarted = createControlledPromise<void>();
+	launchChromium.mockImplementation(() => {
+		acquisitionStarted.resolve();
+		return heldLaunch.promise;
+	});
 	const acquisition = launchBridgeViewerE2EChromium({ testSignal: owner.signal });
+	const handledAcquisition = acquisition.then(
+		(): void => {},
+		(): void => {},
+	);
+	await acquisitionStarted.promise;
 	owner.abort();
 	let finishReturned = false;
 	const finish = closeBridgeViewerE2ETestBrowsers(owner.signal).then((): void => {
@@ -60,7 +160,7 @@ test('V2a finished cleanup joins a held launch and its held browser closure', as
 		expect(browser.closed()).toBe(false);
 	} finally {
 		heldClose.resolve();
-		await Promise.all([acquisition, finish]);
+		await Promise.all([handledAcquisition, finish]);
 	}
 	expect(browser.closed()).toBe(true);
 	expect(finishReturned).toBe(true);
@@ -77,6 +177,7 @@ function makeControlledBrowser(beforeClose: () => Promise<void> = async (): Prom
 			closed = true;
 		},
 		contexts: (): [] => [],
+		isConnected: (): boolean => !closed,
 		on: (): void => {},
 	} as unknown as Browser;
 	return { browser, closed: (): boolean => closed };

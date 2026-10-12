@@ -87,8 +87,8 @@ bounds or introduce hook polls to work around that gap.
 
 The E2E launcher's caller passes its own test signal across preparation awaits.
 The finished hook joins pending browser launches and browser closure. It does
-not join the resumed test body's backend/fixture cleanup; the authoritative
-test-launch harness (#536, G1) owns those fixture lifetimes and their retirement
-join. The 500 s E2E poll bound is configured, not capped to remaining test time:
+not own the raw test-body join. E2E bodies run through
+`runBridgeWebE2ETestBody`; the authoritative test-launch runner joins that body
+and checked backend/fixture retirement at `onTaskFinished`, before the next test. The 500 s E2E poll bound is configured, not capped to remaining test time:
 late polls or shorter per-test bounds can still end in an unnamed runner failure,
 as deferred to TQ78.

@@ -23,6 +23,7 @@ import {
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import { waitForSettledReviewComparison } from './bridge-viewer-vite-review-comparison-observation.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const proportionalRefreshTimeoutMilliseconds = 120_000;
 const retiredAndSuccessorAffectedFileIdentityCount = 2;
@@ -61,163 +62,169 @@ interface AppliedReviewPublicationWithDisplayed extends AppliedReviewPublication
 
 describe('Bridge Viewer proportional Review refresh E2E', () => {
 	test('keeps an unchanged selected item mounted without unrelated content opens after one changed worktree file', async (context) => {
-		const fixture = await createBridgeViewerViteProductFixture();
-		let server: Awaited<ReturnType<typeof startBridgeViewerOwnedViteProductServer>> | null = null;
-		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		let page: Page | null = null;
-		let appliedPublications: ReturnType<typeof observeAppliedReviewPublications> | null = null;
-		let primaryFailure: { readonly error: unknown } | null = null;
-		try {
-			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			const reviewContentRequests = observeReviewContentRequests(page);
-			appliedPublications = observeAppliedReviewPublications(page);
-			await page.goto(
-				bridgeViewerViteProductReviewUrl(
-					server.origin,
-					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-				),
-				{
-					timeout: proportionalRefreshTimeoutMilliseconds,
-					waitUntil: 'domcontentloaded',
-				},
-			);
-			const affectedFile = fixture.oracle.reviewFiles[0];
-			const unchangedFile = fixture.oracle.reviewFiles[1];
-			if (affectedFile === undefined || unchangedFile === undefined) {
-				throw new Error('Proportional Review refresh fixture requires two changed files.');
-			}
-			const initialComparison = await waitForSettledReviewComparison({
-				expectedTargetLabel: 'HEAD',
-				expectedTargetOID: fixture.oracle.baseRef,
-				page,
-				timeoutMilliseconds: proportionalRefreshTimeoutMilliseconds,
-			});
-			await selectReviewFile({ page, path: unchangedFile.path });
-			await waitForSelectedReviewReady({ itemId: unchangedFile.itemId, page });
-			const unchangedPaintedContainer = await waitForPaintedReviewItemContainer({
-				itemId: unchangedFile.itemId,
-				page,
-			});
-			const initialApplied = await appliedPublications.next();
-			expect(initialApplied.publicationId.length).toBeGreaterThan(0);
-			const contentRequestCountBeforeRefresh = reviewContentRequests.length;
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const fixture = await createBridgeViewerViteProductFixture();
+			let server: Awaited<ReturnType<typeof startBridgeViewerOwnedViteProductServer>> | null = null;
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			let page: Page | null = null;
+			let appliedPublications: ReturnType<typeof observeAppliedReviewPublications> | null = null;
+			let primaryFailure: { readonly error: unknown } | null = null;
+			try {
+				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				const reviewContentRequests = observeReviewContentRequests(page);
+				appliedPublications = observeAppliedReviewPublications(page);
+				await page.goto(
+					bridgeViewerViteProductReviewUrl(
+						server.origin,
+						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+					),
+					{
+						timeout: proportionalRefreshTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
+					},
+				);
+				const affectedFile = fixture.oracle.reviewFiles[0];
+				const unchangedFile = fixture.oracle.reviewFiles[1];
+				if (affectedFile === undefined || unchangedFile === undefined) {
+					throw new Error('Proportional Review refresh fixture requires two changed files.');
+				}
+				const initialComparison = await waitForSettledReviewComparison({
+					expectedTargetLabel: 'HEAD',
+					expectedTargetOID: fixture.oracle.baseRef,
+					page,
+					timeoutMilliseconds: proportionalRefreshTimeoutMilliseconds,
+				});
+				await selectReviewFile({ page, path: unchangedFile.path });
+				await waitForSelectedReviewReady({ itemId: unchangedFile.itemId, page });
+				const unchangedPaintedContainer = await waitForPaintedReviewItemContainer({
+					itemId: unchangedFile.itemId,
+					page,
+				});
+				const initialApplied = await appliedPublications.next();
+				expect(initialApplied.publicationId.length).toBeGreaterThan(0);
+				const contentRequestCountBeforeRefresh = reviewContentRequests.length;
 
-			const reviewMutation = await fixture.mutateReviewFile();
-			const refreshedApplied = await appliedPublications.nextAfter(initialComparison);
-			const refreshedIdentity = refreshedApplied.displayed;
-			await waitForSelectedReviewReady({ itemId: unchangedFile.itemId, page });
-			const unchangedContainerRetained = await reviewItemContainerMatchesHandle({
-				handle: unchangedPaintedContainer,
-				itemId: unchangedFile.itemId,
-				page,
-			});
-			const refreshContentRequests = reviewContentRequests.slice(contentRequestCountBeforeRefresh);
+				const reviewMutation = await fixture.mutateReviewFile();
+				const refreshedApplied = await appliedPublications.nextAfter(initialComparison);
+				const refreshedIdentity = refreshedApplied.displayed;
+				await waitForSelectedReviewReady({ itemId: unchangedFile.itemId, page });
+				const unchangedContainerRetained = await reviewItemContainerMatchesHandle({
+					handle: unchangedPaintedContainer,
+					itemId: unchangedFile.itemId,
+					page,
+				});
+				const refreshContentRequests = reviewContentRequests.slice(
+					contentRequestCountBeforeRefresh,
+				);
 
-			expect(reviewMutation.path).toBe(affectedFile.path);
-			expect(refreshedIdentity.packageId).toBe(initialComparison.packageId);
-			expect(refreshedIdentity.reviewGeneration).toBe(initialComparison.reviewGeneration);
-			expect(refreshedIdentity.revision).toBeGreaterThan(initialComparison.revision);
-			expect(unchangedContainerRetained).toBe(true);
-			expect(
-				refreshContentRequests.every(
-					(request): boolean =>
-						request.itemId !== null &&
-						request.itemId !== unchangedFile.itemId &&
-						request.responseStatus === 200,
-				),
-			).toBe(true);
-			expect(
-				refreshContentRequests.some((request): boolean => request.itemId === unchangedFile.itemId),
-			).toBe(false);
+				expect(reviewMutation.path).toBe(affectedFile.path);
+				expect(refreshedIdentity.packageId).toBe(initialComparison.packageId);
+				expect(refreshedIdentity.reviewGeneration).toBe(initialComparison.reviewGeneration);
+				expect(refreshedIdentity.revision).toBeGreaterThan(initialComparison.revision);
+				expect(unchangedContainerRetained).toBe(true);
+				expect(
+					refreshContentRequests.every(
+						(request): boolean =>
+							request.itemId !== null &&
+							request.itemId !== unchangedFile.itemId &&
+							request.responseStatus === 200,
+					),
+				).toBe(true);
+				expect(
+					refreshContentRequests.some(
+						(request): boolean => request.itemId === unchangedFile.itemId,
+					),
+				).toBe(false);
 
-			await selectReviewFile({ page, path: reviewMutation.path });
-			const selectedChangedPanel = page.locator(
-				`[data-testid="bridge-code-view-panel"][data-selected-display-path=${JSON.stringify(reviewMutation.path)}][data-selected-content-state="ready"]`,
-			);
-			await selectedChangedPanel.waitFor({ state: 'attached' });
-			const successorItemId = await selectedChangedPanel.getAttribute('data-selected-item-id');
-			expect(successorItemId).toMatch(/\S/u);
-			const changedBody = await readFile(join(fixture.oracle.worktreeRoot, reviewMutation.path));
-			const changedSha256 = createHash('sha256').update(changedBody).digest('hex');
-			const paintedChangedItem = await waitForPaintedReviewItemContainer({
-				itemId: successorItemId ?? '',
-				observedSha256: changedSha256,
-				page,
-			});
-			const renderPublicationId = await paintedChangedItem.evaluate(
-				(container): string | null =>
-					container?.getAttribute('data-bridge-painted-publication-id') ?? null,
-			);
-			expect(renderPublicationId).toMatch(/^publication-\S+$/u);
-			const settledChangedItem = page.locator(
-				`diffs-container[data-bridge-painted-publication-id="${renderPublicationId}"][data-bridge-render-disposition-settled-publication-id="${renderPublicationId}"]`,
-			);
-			await settledChangedItem.waitFor({ state: 'visible' });
-			expect(
-				await settledChangedItem.getAttribute('data-bridge-render-disposition-settled-outcome'),
-			).toBe('settled-ok');
-			const telemetryReports = await drainReviewRefreshTelemetry(page);
-			const telemetryLossSummary = requireTelemetryLossSummary(telemetryReports.drained);
-			const lossAttribution = requireReviewRefreshLossAttribution({
-				lossSummary: telemetryLossSummary,
-				snapshot: telemetryReports.snapshot,
-			});
-			const telemetryObservation = await readReviewRefreshCandidateReady(
-				new URL('/__bridge-dev-telemetry/status', page.url()).toString(),
-				{
+				await selectReviewFile({ page, path: reviewMutation.path });
+				const selectedChangedPanel = page.locator(
+					`[data-testid="bridge-code-view-panel"][data-selected-display-path=${JSON.stringify(reviewMutation.path)}][data-selected-content-state="ready"]`,
+				);
+				await selectedChangedPanel.waitFor({ state: 'attached' });
+				const successorItemId = await selectedChangedPanel.getAttribute('data-selected-item-id');
+				expect(successorItemId).toMatch(/\S/u);
+				const changedBody = await readFile(join(fixture.oracle.worktreeRoot, reviewMutation.path));
+				const changedSha256 = createHash('sha256').update(changedBody).digest('hex');
+				const paintedChangedItem = await waitForPaintedReviewItemContainer({
+					itemId: successorItemId ?? '',
+					observedSha256: changedSha256,
+					page,
+				});
+				const renderPublicationId = await paintedChangedItem.evaluate(
+					(container): string | null =>
+						container?.getAttribute('data-bridge-painted-publication-id') ?? null,
+				);
+				expect(renderPublicationId).toMatch(/^publication-\S+$/u);
+				const settledChangedItem = page.locator(
+					`diffs-container[data-bridge-painted-publication-id="${renderPublicationId}"][data-bridge-render-disposition-settled-publication-id="${renderPublicationId}"]`,
+				);
+				await settledChangedItem.waitFor({ state: 'visible' });
+				expect(
+					await settledChangedItem.getAttribute('data-bridge-render-disposition-settled-outcome'),
+				).toBe('settled-ok');
+				const telemetryReports = await drainReviewRefreshTelemetry(page);
+				const telemetryLossSummary = requireTelemetryLossSummary(telemetryReports.drained);
+				const lossAttribution = requireReviewRefreshLossAttribution({
+					lossSummary: telemetryLossSummary,
+					snapshot: telemetryReports.snapshot,
+				});
+				const telemetryObservation = await readReviewRefreshCandidateReady(
+					new URL('/__bridge-dev-telemetry/status', page.url()).toString(),
+					{
+						affectedStableFileCount: retiredAndSuccessorAffectedFileIdentityCount,
+						reviewGeneration: initialComparison.reviewGeneration,
+					},
+				);
+				if (telemetryObservation.candidateReady === null) {
+					throw new Error(
+						`Review refresh did not emit the exact proportional candidate after telemetry drain: ${JSON.stringify({ lossSummary: telemetryLossSummary, lossAttribution, retainedWorkerTaskCounts: telemetryObservation.retainedWorkerTaskCounts, candidates: telemetryObservation.candidates })}`,
+					);
+				}
+				const candidateReady = telemetryObservation.candidateReady;
+				if (telemetryLossSummary['requiredLossCount'] !== 0) {
+					throw new Error(
+						`Review refresh candidate was observed with required telemetry loss: ${JSON.stringify({ candidateReady, candidates: telemetryObservation.candidates, lossSummary: telemetryLossSummary, lossAttribution })}`,
+					);
+				}
+				expect(candidateReady).toEqual({
 					affectedStableFileCount: retiredAndSuccessorAffectedFileIdentityCount,
+					presentationClass: 'ordinary',
 					reviewGeneration: initialComparison.reviewGeneration,
-				},
-			);
-			if (telemetryObservation.candidateReady === null) {
-				throw new Error(
-					`Review refresh did not emit the exact proportional candidate after telemetry drain: ${JSON.stringify({ lossSummary: telemetryLossSummary, lossAttribution, retainedWorkerTaskCounts: telemetryObservation.retainedWorkerTaskCounts, candidates: telemetryObservation.candidates })}`,
-				);
+				});
+			} catch (error: unknown) {
+				primaryFailure = { error };
+			} finally {
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'proportional Review applied receipt observer',
+							run: async (): Promise<void> => appliedPublications?.dispose(),
+						},
+						{
+							name: 'proportional Review refresh page',
+							run: async (): Promise<void> => {
+								await page?.close();
+							},
+						},
+						{
+							name: 'proportional Review refresh browser',
+							run: async (): Promise<void> => {
+								await browser.close();
+							},
+						},
+						{
+							name: 'proportional Review refresh server',
+							run: async (): Promise<void> => {
+								await server?.stop();
+							},
+						},
+						{ name: 'proportional Review refresh fixture', run: fixture.dispose },
+					],
+					...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
+				});
 			}
-			const candidateReady = telemetryObservation.candidateReady;
-			if (telemetryLossSummary['requiredLossCount'] !== 0) {
-				throw new Error(
-					`Review refresh candidate was observed with required telemetry loss: ${JSON.stringify({ candidateReady, candidates: telemetryObservation.candidates, lossSummary: telemetryLossSummary, lossAttribution })}`,
-				);
-			}
-			expect(candidateReady).toEqual({
-				affectedStableFileCount: retiredAndSuccessorAffectedFileIdentityCount,
-				presentationClass: 'ordinary',
-				reviewGeneration: initialComparison.reviewGeneration,
-			});
-		} catch (error: unknown) {
-			primaryFailure = { error };
-		} finally {
-			await runAllOwnedCleanupOperations({
-				operations: [
-					{
-						name: 'proportional Review applied receipt observer',
-						run: async (): Promise<void> => appliedPublications?.dispose(),
-					},
-					{
-						name: 'proportional Review refresh page',
-						run: async (): Promise<void> => {
-							await page?.close();
-						},
-					},
-					{
-						name: 'proportional Review refresh browser',
-						run: async (): Promise<void> => {
-							await browser.close();
-						},
-					},
-					{
-						name: 'proportional Review refresh server',
-						run: async (): Promise<void> => {
-							await server?.stop();
-						},
-					},
-					{ name: 'proportional Review refresh fixture', run: fixture.dispose },
-				],
-				...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
-			});
-		}
+		});
 	});
 });
 

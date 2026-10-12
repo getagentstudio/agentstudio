@@ -49,8 +49,13 @@ enum AgentStudioBridgeDevelopmentServerMain {
                 let serviceGroup = ServiceGroup(
                     configuration: .init(
                         services: [
-                            application,
-                            BridgeDevelopmentServerRuntimeShutdownService(runtime: runtime),
+                            .init(service: application),
+                            .init(service: BridgeDevelopmentServerRuntimeShutdownService(runtime: runtime)),
+                            .init(
+                                service: BridgeDevelopmentServerInputLifetimeService(),
+                                successTerminationBehavior: .gracefullyShutdownGroup,
+                                failureTerminationBehavior: .gracefullyShutdownGroup
+                            ),
                         ],
                         gracefulShutdownSignals: [.sigterm, .sigint],
                         logger: application.logger
@@ -107,6 +112,27 @@ enum AgentStudioBridgeDevelopmentServerMain {
             }
         }
         return result
+    }
+}
+
+/// The parent's pipe is the development server's lifetime lease. EOF follows
+/// ServiceLifecycle's normal graceful shutdown path, including runtime drain.
+private struct BridgeDevelopmentServerInputLifetimeService: Service {
+    func run() async throws {
+        let input = FileHandle.standardInput
+        let (closed, continuation) = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingOldest(1))
+        input.readabilityHandler = { handle in
+            guard handle.availableData.isEmpty else { return }
+            handle.readabilityHandler = nil
+            continuation.finish()
+        }
+        defer { input.readabilityHandler = nil }
+        await withGracefulShutdownHandler {
+            var iterator = closed.makeAsyncIterator()
+            _ = await iterator.next()
+        } onGracefulShutdown: {
+            continuation.finish()
+        }
     }
 }
 

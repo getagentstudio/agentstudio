@@ -1,26 +1,25 @@
-import { execFile, spawn } from 'node:child_process';
+export { rejectOwnedViteStartupAfterCleanup } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts';
+export type {
+	BridgeViewerOwnedViteProcessExit,
+	BridgeViewerOwnedViteProcessControl,
+	BridgeViewerOwnedViteShutdownDependencies,
+} from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts';
+import { execFile } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { createServer as createHTTPServer } from 'node:http';
-import { createServer as createTCPServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { promisify } from 'node:util';
 
-import {
-	runAllOwnedCleanupOperations,
-	startOwnedBridgeDevelopmentServer,
-} from '../../scripts/dev-server/bridge-development-server-process.ts';
+import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { bridgeReviewItemIdOracle } from '../../scripts/verify-bridge-viewer-worktree-dev-server/bridge-review-item-id-oracle.ts';
 import type { BridgeViewerFileProofTargets } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-page.ts';
 
 const execFileAsync = promisify(execFile);
 const bridgeWebRootPath = new URL('../../', import.meta.url).pathname;
 const repoRootPath = new URL('../../..', import.meta.url).pathname;
-const viteCLIPath = join(bridgeWebRootPath, 'node_modules/vite/bin/vite.js');
-const serverStartupTimeoutMilliseconds = 30_000;
-const serverShutdownTimeoutMilliseconds = 10_000;
-const maximumServerLogTailCharacters = 8_192;
 const markdownProofPath = 'fixture-proof.md';
 const markdownProofRenderedText = 'BRIDGE_VITE_PRODUCT_MARKDOWN_PAINT_PROOF';
 const markdownProofContent = `# ${markdownProofRenderedText}\n`;
@@ -31,6 +30,7 @@ const codeProofContent = `public enum BridgeViteProductCodeProof {
 `;
 
 export interface BridgeViewerViteProductFixtureOracle {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly baseRef: string;
 	readonly changedPaths: readonly string[];
 	readonly comparisonTargetName: string;
@@ -75,6 +75,7 @@ export interface BridgeViewerViteProductReviewRoleOracle {
 }
 
 export interface BridgeViewerOwnedViteProductServer {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly backendPid: number;
 	readonly diagnostics: () => string;
 	readonly origin: string;
@@ -101,23 +102,6 @@ export interface BridgeViewerReviewWorktreeMutation {
 	readonly path: string;
 }
 
-export interface BridgeViewerOwnedViteProcessExit {
-	readonly code: number | null;
-	readonly signal: NodeJS.Signals | null;
-}
-
-export interface BridgeViewerOwnedViteProcessControl {
-	readonly pid?: number | undefined;
-	readonly kill: (signal: NodeJS.Signals) => boolean;
-}
-
-export interface BridgeViewerOwnedViteShutdownDependencies {
-	readonly processIsAlive: (pid: number) => boolean;
-	readonly waitForExitWithinDeadline: (
-		exitPromise: Promise<BridgeViewerOwnedViteProcessExit>,
-	) => Promise<BridgeViewerOwnedViteProcessExit | null>;
-}
-
 export async function createBridgeViewerViteProductFixture(
 	options: { readonly reviewChangedFileCount?: number } = {},
 ): Promise<{
@@ -131,6 +115,7 @@ export async function createBridgeViewerViteProductFixture(
 	readonly oracle: BridgeViewerViteProductProofFixtureOracle;
 }> {
 	const worktreeRoot = await mkdtemp(join(tmpdir(), 'bridge-viewer-vite-product-e2e-'));
+	let fixtureLaunch: BridgeWebTestLaunch | null = null;
 	let dataRootPath: string | null = null;
 	const comparisonTargetName = 'bridge-vite-comparison-target';
 	const paneId = randomUUID();
@@ -170,7 +155,10 @@ export async function createBridgeViewerViteProductFixture(
 			`tree-only/section-${String(Math.floor(fileIndex / 8) + 1).padStart(2, '0')}/entry-${String(fileIndex + 1).padStart(3, '0')}.txt`,
 	);
 	try {
-		dataRootPath = await mkdtemp(join(tmpdir(), 'bridge-viewer-vite-product-data-'));
+		fixtureLaunch = await BridgeWebTestLaunch.start({
+			dataRootPrefix: 'bridge-viewer-vite-product-data-',
+		});
+		dataRootPath = fixtureLaunch.dataRootPath;
 		await writeFixtureFiles({
 			fileTreeOnlyPaths,
 			largeFileContent,
@@ -333,6 +321,7 @@ export async function createBridgeViewerViteProductFixture(
 				}
 			},
 			dispose: async (): Promise<void> => {
+				await fixtureLaunch?.dispose();
 				await runAllOwnedCleanupOperations({
 					operations: [
 						{
@@ -344,9 +333,7 @@ export async function createBridgeViewerViteProductFixture(
 						{
 							name: 'Vite product fixture data root',
 							run: async (): Promise<void> => {
-								if (dataRootPath !== null) {
-									await rm(dataRootPath, { force: true, recursive: true });
-								}
+								await fixtureLaunch?.dispose();
 							},
 						},
 					],
@@ -391,6 +378,7 @@ export async function createBridgeViewerViteProductFixture(
 				baseRef,
 				changedPaths,
 				comparisonTargetName,
+				testLaunch: fixtureLaunch,
 				dataRootPath,
 				expectedReviewItemIds: reviewFiles.map(({ itemId }): string => itemId),
 				fileContent,
@@ -421,9 +409,7 @@ export async function createBridgeViewerViteProductFixture(
 				{
 					name: 'Vite product fixture data root',
 					run: async (): Promise<void> => {
-						if (dataRootPath !== null) {
-							await rm(dataRootPath, { force: true, recursive: true });
-						}
+						await fixtureLaunch?.dispose();
 					},
 				},
 			],
@@ -436,147 +422,55 @@ export async function createBridgeViewerViteProductFixture(
 export async function startBridgeViewerOwnedViteProductServer(
 	oracle: BridgeViewerViteProductFixtureOracle,
 ): Promise<BridgeViewerOwnedViteProductServer> {
-	const port = await reserveLoopbackPort();
-	const telemetryReceiver = await startBridgeViewerOwnedTelemetryReceiver();
-	const bridgeDevelopmentServer = await startOwnedBridgeDevelopmentServer({
-		dataRootPath: oracle.dataRootPath,
+	const launch = await oracle.testLaunch.startChild({
 		initialTarget: 'HEAD',
 		paneId: oracle.paneId,
 		repoRootPath,
 		worktreeRoot: oracle.worktreeRoot,
-	}).catch(async (error: unknown): Promise<never> => {
-		await runAllOwnedCleanupOperations({
-			operations: [{ name: 'telemetry receiver', run: telemetryReceiver.stop }],
-			primaryError: error,
-		});
-		throw error;
 	});
-	const child = spawn(
-		process.execPath,
-		[viteCLIPath, '--host', '127.0.0.1', '--port', String(port), '--strictPort'],
-		{
-			cwd: bridgeWebRootPath,
-			env: {
-				...process.env,
-				BRIDGE_WEB_DEV_BACKEND_ORIGIN: bridgeDevelopmentServer.origin,
+	try {
+		const telemetryReceiver = await startBridgeViewerOwnedTelemetryReceiver();
+		launch.ownFixture('telemetry receiver', telemetryReceiver.stop);
+		const vite = await launch.startViteChild({
+			bridgeWebRootPath,
+			environment: {
 				BRIDGE_WEB_DEV_TELEMETRY_OTLP_LOGS_URL: `${telemetryReceiver.origin}/v1/logs`,
 				BRIDGE_WEB_DEV_TELEMETRY_OTLP_METRICS_URL: `${telemetryReceiver.origin}/v1/metrics`,
-				BRIDGE_WEB_VITE_CACHE_DIR: join(oracle.dataRootPath, 'vite-cache'),
 			},
-			stdio: ['pipe', 'pipe', 'pipe'],
-		},
-	);
-	const exitPromise = new Promise<BridgeViewerOwnedViteProcessExit>((resolve): void => {
-		child.once('exit', (code, signal): void => resolve({ code, signal }));
-	});
-	let stdoutTail = '';
-	let stderrTail = '';
-	child.stdout.setEncoding('utf8');
-	child.stderr.setEncoding('utf8');
-	child.stdout.on('data', (chunk: string): void => {
-		stdoutTail = appendBoundedTail(stdoutTail, chunk);
-	});
-	child.stderr.on('data', (chunk: string): void => {
-		stderrTail = appendBoundedTail(stderrTail, chunk);
-	});
-	let readinessOutput: string;
-	try {
-		readinessOutput = await withBoundedTimeout(
-			new Promise<string>((resolve, reject): void => {
-				const inspectOutput = (): void => {
-					const output = stripANSI(`${stdoutTail}\n${stderrTail}`);
-					if (output.includes(`http://127.0.0.1:${port}/`)) resolve(output);
-				};
-				child.stdout.on('data', inspectOutput);
-				child.stderr.on('data', inspectOutput);
-				void exitPromise.then((exit): void => {
-					reject(
-						new Error(
-							`Owned Vite exited before readiness: ${JSON.stringify({ exit, stderrTail, stdoutTail })}`,
-						),
-					);
-				});
-			}),
-			serverStartupTimeoutMilliseconds,
-			'owned Vite readiness',
-		);
-	} catch (error: unknown) {
-		let startupError = error;
-		try {
-			await rejectOwnedViteStartupAfterCleanup({
-				child,
-				exitPromise,
-				startupError: error,
-			});
-		} catch (cleanupAwareStartupError: unknown) {
-			startupError = cleanupAwareStartupError;
-		}
-		await runAllOwnedCleanupOperations({
-			operations: [
-				{ name: 'telemetry receiver', run: telemetryReceiver.stop },
-				{
-					name: 'Swift development backend',
-					run: async (): Promise<void> => {
-						await bridgeDevelopmentServer.stop();
-					},
-				},
-			],
-			primaryError: startupError,
 		});
-		throw startupError;
+		return {
+			testLaunch: launch,
+			backendPid: launch.backend.pid,
+			diagnostics: (): string =>
+				JSON.stringify({
+					backendStderr: launch.backend.stderrTail(),
+					backendStdout: launch.backend.stdoutTail(),
+					viteStderr: vite.stderrTail(),
+					viteStdout: vite.stdoutTail(),
+				}),
+			origin: vite.startProof.origin,
+			pid: vite.startProof.pid,
+			version: vite.startProof.version,
+			stop: async (): Promise<BridgeViewerOwnedViteProductServerCleanup> => {
+				const result = await launch.dispose();
+				const cleanup = result.viteProcess;
+				if (cleanup === null) throw new Error('Owned Vite cleanup facts missing.');
+				return {
+					exitCode: cleanup.exitCode,
+					exitSignal: cleanup.exitSignal,
+					exitObserved: cleanup.exitCode !== null || cleanup.exitSignal !== null,
+					forcedTerminationRequired:
+						cleanup.forcedTerminationRequired ||
+						(result.backend?.forcedTerminationRequired ?? false),
+					ownedProcessAliveAfterStop:
+						cleanup.ownedProcessAliveAfterStop ||
+						(result.backend?.ownedProcessAliveAfterStop ?? false),
+				};
+			},
+		};
+	} catch (error: unknown) {
+		return await launch.disposeAfterFailure(error);
 	}
-	const origin = `http://127.0.0.1:${port}`;
-	let stopPromise: Promise<BridgeViewerOwnedViteProductServerCleanup> | null = null;
-	const stop = async (): Promise<BridgeViewerOwnedViteProductServerCleanup> => {
-		stopPromise ??= (async (): Promise<BridgeViewerOwnedViteProductServerCleanup> => {
-			const cleanupResults: {
-				backend: Awaited<ReturnType<typeof bridgeDevelopmentServer.stop>> | null;
-				vite: BridgeViewerOwnedViteProductServerCleanup | null;
-			} = { backend: null, vite: null };
-			await stopBridgeViewerOwnedViteProductProcesses([
-				{
-					name: 'Vite',
-					run: async (): Promise<void> => {
-						cleanupResults.vite = await stopOwnedViteServer({ child, exitPromise });
-					},
-				},
-				{
-					name: 'Swift development backend',
-					run: async (): Promise<void> => {
-						cleanupResults.backend = await bridgeDevelopmentServer.stop();
-					},
-				},
-				{ name: 'telemetry receiver', run: telemetryReceiver.stop },
-			]);
-			if (cleanupResults.vite === null || cleanupResults.backend === null) {
-				throw new Error('Owned Bridge product server cleanup did not return process facts.');
-			}
-			return {
-				...cleanupResults.vite,
-				forcedTerminationRequired:
-					cleanupResults.vite.forcedTerminationRequired ||
-					cleanupResults.backend.forcedTerminationRequired,
-				ownedProcessAliveAfterStop:
-					cleanupResults.vite.ownedProcessAliveAfterStop ||
-					cleanupResults.backend.ownedProcessAliveAfterStop,
-			};
-		})();
-		return await stopPromise;
-	};
-	return {
-		backendPid: bridgeDevelopmentServer.pid,
-		diagnostics: (): string =>
-			JSON.stringify({
-				backendStderr: bridgeDevelopmentServer.stderrTail(),
-				backendStdout: bridgeDevelopmentServer.stdoutTail(),
-				viteStderr: stderrTail,
-				viteStdout: stdoutTail,
-			}),
-		origin,
-		pid: child.pid ?? 0,
-		stop,
-		version: /VITE v(?<version>\d+\.\d+\.\d+)/u.exec(readinessOutput)?.groups?.['version'] ?? null,
-	};
 }
 
 /** No owned process may wait for another process's stop to finish before receiving stop. */
@@ -712,73 +606,6 @@ async function runFixtureGit(
 	return stdout;
 }
 
-async function stopOwnedViteServer(props: {
-	readonly child: BridgeViewerOwnedViteProcessControl;
-	readonly exitPromise: Promise<BridgeViewerOwnedViteProcessExit>;
-	readonly shutdownDependencies?: BridgeViewerOwnedViteShutdownDependencies;
-}): Promise<BridgeViewerOwnedViteProductServerCleanup> {
-	const shutdownDependencies = props.shutdownDependencies ?? defaultOwnedViteShutdownDependencies();
-	const pid = props.child.pid ?? null;
-	props.child.kill('SIGTERM');
-	let forcedTerminationRequired = false;
-	let exit = await shutdownDependencies.waitForExitWithinDeadline(props.exitPromise);
-	if (exit === null) {
-		forcedTerminationRequired = true;
-		props.child.kill('SIGKILL');
-		exit = await shutdownDependencies.waitForExitWithinDeadline(props.exitPromise);
-	}
-	return {
-		exitCode: exit?.code ?? null,
-		exitObserved: exit !== null,
-		exitSignal: exit?.signal ?? null,
-		forcedTerminationRequired,
-		ownedProcessAliveAfterStop: pid === null ? false : shutdownDependencies.processIsAlive(pid),
-	};
-}
-
-export async function rejectOwnedViteStartupAfterCleanup(props: {
-	readonly child: BridgeViewerOwnedViteProcessControl;
-	readonly exitPromise: Promise<BridgeViewerOwnedViteProcessExit>;
-	readonly shutdownDependencies?: BridgeViewerOwnedViteShutdownDependencies;
-	readonly startupError: unknown;
-}): Promise<never> {
-	const cleanup = await stopOwnedViteServer(props);
-	if (!cleanup.exitObserved || cleanup.ownedProcessAliveAfterStop) {
-		throw new AggregateError(
-			[props.startupError],
-			`OWNED_VITE_STARTUP_CLEANUP_FAILED:${JSON.stringify(cleanup)}`,
-		);
-	}
-	throw props.startupError;
-}
-
-function defaultOwnedViteShutdownDependencies(): BridgeViewerOwnedViteShutdownDependencies {
-	return {
-		processIsAlive,
-		waitForExitWithinDeadline: async (
-			exitPromise,
-		): Promise<BridgeViewerOwnedViteProcessExit | null> =>
-			await withBoundedTimeoutOrNull(exitPromise, serverShutdownTimeoutMilliseconds),
-	};
-}
-
-async function reserveLoopbackPort(): Promise<number> {
-	const server = createTCPServer();
-	await new Promise<void>((resolve, reject): void => {
-		server.once('error', reject);
-		server.listen(0, '127.0.0.1', (): void => resolve());
-	});
-	const address = server.address();
-	if (address === null || typeof address === 'string') {
-		server.close();
-		throw new Error('Failed to reserve a loopback Vite port.');
-	}
-	await new Promise<void>((resolve, reject): void => {
-		server.close((error): void => (error === undefined ? resolve() : reject(error)));
-	});
-	return address.port;
-}
-
 async function startBridgeViewerOwnedTelemetryReceiver(): Promise<{
 	readonly origin: string;
 	readonly stop: () => Promise<void>;
@@ -817,53 +644,4 @@ async function startBridgeViewerOwnedTelemetryReceiver(): Promise<{
 
 function sha256(value: string | Uint8Array): string {
 	return createHash('sha256').update(value).digest('hex');
-}
-
-function appendBoundedTail(current: string, next: string): string {
-	return `${current}${next}`.slice(-maximumServerLogTailCharacters);
-}
-
-function stripANSI(value: string): string {
-	return value.replace(new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'gu'), '');
-}
-
-function processIsAlive(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch (error: unknown) {
-		return !(
-			typeof error === 'object' &&
-			error !== null &&
-			'code' in error &&
-			error.code === 'ESRCH'
-		);
-	}
-}
-
-async function withBoundedTimeout<TValue>(
-	promise: Promise<TValue>,
-	timeoutMilliseconds: number,
-	label: string,
-): Promise<TValue> {
-	const result = await withBoundedTimeoutOrNull(promise, timeoutMilliseconds);
-	if (result === null) throw new Error(`Timed out waiting for ${label}.`);
-	return result;
-}
-
-async function withBoundedTimeoutOrNull<TValue>(
-	promise: Promise<TValue>,
-	timeoutMilliseconds: number,
-): Promise<TValue | null> {
-	let timeout: ReturnType<typeof setTimeout> | null = null;
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<null>((resolve): void => {
-				timeout = setTimeout((): void => resolve(null), timeoutMilliseconds);
-			}),
-		]);
-	} finally {
-		if (timeout !== null) clearTimeout(timeout);
-	}
 }

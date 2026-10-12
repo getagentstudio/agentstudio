@@ -41,6 +41,7 @@ import {
 	waitForSettledReviewComparison,
 	waitForSettledReviewComparisonWithDiagnostics,
 } from './bridge-viewer-vite-review-comparison-observation.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const productJourneyTimeoutMilliseconds = 120_000;
 
@@ -90,435 +91,447 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 	});
 
 	test('correlates the disposable live-worktree journey through the product provider, worker, Pierre, and painted DOM', async (context) => {
-		const oracle = requireFixtureOracle();
-		const server = requireOwnedServer();
-		expect(oracle.changedPaths).toHaveLength(16);
-		expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
-		expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const oracle = requireFixtureOracle();
+			const server = requireOwnedServer();
+			expect(oracle.changedPaths).toHaveLength(16);
+			expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
+			expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
 
-		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		const journeyObservations = await runBridgeViewerProductOnlyJourney({
-			browser,
-			baseUrl: server.origin,
-			expectedReviewItemIds: oracle.expectedReviewItemIds,
-			fileProofTargets: oracle.fileProofTargets,
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			const journeyObservations = await runBridgeViewerProductOnlyJourney({
+				launch: server.testLaunch,
+				browser,
+				baseUrl: server.origin,
+				expectedReviewItemIds: oracle.expectedReviewItemIds,
+				fileProofTargets: oracle.fileProofTargets,
+			});
+
+			expect(collectBridgeViewerProductOnlyContractViolations(journeyObservations)).toEqual([]);
+			assertJourneyFreshness({ journeyObservations, oracle, server });
 		});
-
-		expect(collectBridgeViewerProductOnlyContractViolations(journeyObservations)).toEqual([]);
-		assertJourneyFreshness({ journeyObservations, oracle, server });
 	});
 
 	test('observes Review base/head body truth, request leases, painted publication correlation, and directory disclosure interaction', async (context) => {
-		const oracle = requireFixtureOracle();
-		const server = requireOwnedServer();
-		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		let page: Page | null = null;
-		try {
-			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			const contentRequests = observeProductContentRequests(page);
-			await page.goto(
-				bridgeViewerViteProductReviewUrl(
-					server.origin,
-					requireBridgeViewerVitePrimaryReviewPath(oracle),
-				),
-				{
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const oracle = requireFixtureOracle();
+			const server = requireOwnedServer();
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			let page: Page | null = null;
+			try {
+				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				const contentRequests = observeProductContentRequests(page);
+				await page.goto(
+					bridgeViewerViteProductReviewUrl(
+						server.origin,
+						requireBridgeViewerVitePrimaryReviewPath(oracle),
+					),
+					{
+						timeout: productJourneyTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
+					},
+				);
+				await page.waitForSelector('[data-testid="review-viewer-shell"]', {
 					timeout: productJourneyTimeoutMilliseconds,
-					waitUntil: 'domcontentloaded',
-				},
-			);
-			await page.waitForSelector('[data-testid="review-viewer-shell"]', {
-				timeout: productJourneyTimeoutMilliseconds,
-			});
-			await collapseAndExpandReviewDirectory(page);
+				});
+				await collapseAndExpandReviewDirectory(page);
 
-			const reviewFiles = selectedReviewOracleFiles(oracle.reviewFiles);
-			const reviewTreeScrollTopByPath = await reviewTreeReachablePathScrollTopMap(page);
-			const paintedDescriptorIds = new Set<string>();
-			for (const reviewFile of reviewFiles) {
-				const scrollTopHint = reviewTreeScrollTopByPath.get(reviewFile.path);
-				if (scrollTopHint === undefined) {
-					throw new Error(`Review tree path is not reachable: ${reviewFile.path}`);
-				}
-				// oxlint-disable-next-line no-await-in-loop -- Each virtualized row must be revealed before its real click.
-				await revealReviewTreeFilePath({ page, path: reviewFile.path, scrollTopHint });
-				// oxlint-disable-next-line no-await-in-loop -- Visibility is the bounded event before the real click.
-				await waitForVisibleReviewTreeFilePath({ page, path: reviewFile.path });
-				// oxlint-disable-next-line no-await-in-loop -- Each selection must reach painted terminal state before the next real user interaction.
-				const selectionObservation = await selectReviewFileAndReadObservation({ page, reviewFile });
-				expectReviewBodyLinesPainted(selectionObservation.bodyText, reviewFile.base.body);
-				expectReviewBodyLinesPainted(selectionObservation.bodyText, reviewFile.head.body);
-				expect(selectionObservation.paintedCorrelations).toHaveLength(2);
-				for (const roleOracle of [reviewFile.base, reviewFile.head]) {
-					const correlation = selectionObservation.paintedCorrelations.find(
-						(candidate): boolean => candidate.role === roleOracle.role,
-					);
-					expect(correlation).toEqual(
-						expect.objectContaining({
-							disposition: 'painted',
-							itemId: reviewFile.itemId,
-							observedSha256: roleOracle.sha256,
-							pierreItemId: reviewFile.itemId,
-							position: 'whole',
-							publicationId: selectionObservation.paintedPublicationId,
-							role: roleOracle.role,
-							semanticItemId: reviewFile.itemId,
-							surface: 'review',
-						}),
-					);
-					expect(correlation?.sourceGeneration).toBeGreaterThan(0);
-					expect(correlation?.sourceIdentity).toMatch(/\S/u);
-					if (correlation !== undefined) paintedDescriptorIds.add(correlation.descriptorId);
-					const descriptorRequests = contentRequests.filter(
-						(candidate): boolean =>
-							candidate.descriptor['descriptorId'] === correlation?.descriptorId,
-					);
-					expect(descriptorRequests.length).toBeLessThanOrEqual(1);
-					const request = descriptorRequests.find(
-						(candidate): boolean => candidate.contentRequestId === correlation?.requestId,
-					);
-					if (correlation?.requestId === `resident-${correlation.descriptorId}`) {
-						expect(request).toBeUndefined();
-						continue;
+				const reviewFiles = selectedReviewOracleFiles(oracle.reviewFiles);
+				const reviewTreeScrollTopByPath = await reviewTreeReachablePathScrollTopMap(page);
+				const paintedDescriptorIds = new Set<string>();
+				for (const reviewFile of reviewFiles) {
+					const scrollTopHint = reviewTreeScrollTopByPath.get(reviewFile.path);
+					if (scrollTopHint === undefined) {
+						throw new Error(`Review tree path is not reachable: ${reviewFile.path}`);
 					}
-					expect(request).toEqual(
-						expect.objectContaining({
-							contentKind: 'review.content',
-							leaseId: expect.stringMatching(/\S/u),
-							responseStatus: 200,
-						}),
-					);
-					expect(request?.descriptor).toEqual(
-						expect.objectContaining({
-							contentKind: 'review.content',
-							itemId: reviewFile.itemId,
-							reviewGeneration: correlation?.sourceGeneration,
-							role: roleOracle.role,
-							sourceIdentity: correlation?.sourceIdentity,
-						}),
-					);
+					// oxlint-disable-next-line no-await-in-loop -- Each virtualized row must be revealed before its real click.
+					await revealReviewTreeFilePath({ page, path: reviewFile.path, scrollTopHint });
+					// oxlint-disable-next-line no-await-in-loop -- Visibility is the bounded event before the real click.
+					await waitForVisibleReviewTreeFilePath({ page, path: reviewFile.path });
+					// oxlint-disable-next-line no-await-in-loop -- Each selection must reach painted terminal state before the next real user interaction.
+					const selectionObservation = await selectReviewFileAndReadObservation({
+						page,
+						reviewFile,
+					});
+					expectReviewBodyLinesPainted(selectionObservation.bodyText, reviewFile.base.body);
+					expectReviewBodyLinesPainted(selectionObservation.bodyText, reviewFile.head.body);
+					expect(selectionObservation.paintedCorrelations).toHaveLength(2);
+					for (const roleOracle of [reviewFile.base, reviewFile.head]) {
+						const correlation = selectionObservation.paintedCorrelations.find(
+							(candidate): boolean => candidate.role === roleOracle.role,
+						);
+						expect(correlation).toEqual(
+							expect.objectContaining({
+								disposition: 'painted',
+								itemId: reviewFile.itemId,
+								observedSha256: roleOracle.sha256,
+								pierreItemId: reviewFile.itemId,
+								position: 'whole',
+								publicationId: selectionObservation.paintedPublicationId,
+								role: roleOracle.role,
+								semanticItemId: reviewFile.itemId,
+								surface: 'review',
+							}),
+						);
+						expect(correlation?.sourceGeneration).toBeGreaterThan(0);
+						expect(correlation?.sourceIdentity).toMatch(/\S/u);
+						if (correlation !== undefined) paintedDescriptorIds.add(correlation.descriptorId);
+						const descriptorRequests = contentRequests.filter(
+							(candidate): boolean =>
+								candidate.descriptor['descriptorId'] === correlation?.descriptorId,
+						);
+						expect(descriptorRequests.length).toBeLessThanOrEqual(1);
+						const request = descriptorRequests.find(
+							(candidate): boolean => candidate.contentRequestId === correlation?.requestId,
+						);
+						if (correlation?.requestId === `resident-${correlation.descriptorId}`) {
+							expect(request).toBeUndefined();
+							continue;
+						}
+						expect(request).toEqual(
+							expect.objectContaining({
+								contentKind: 'review.content',
+								leaseId: expect.stringMatching(/\S/u),
+								responseStatus: 200,
+							}),
+						);
+						expect(request?.descriptor).toEqual(
+							expect.objectContaining({
+								contentKind: 'review.content',
+								itemId: reviewFile.itemId,
+								reviewGeneration: correlation?.sourceGeneration,
+								role: roleOracle.role,
+								sourceIdentity: correlation?.sourceIdentity,
+							}),
+						);
+					}
 				}
+				expect(paintedDescriptorIds.size).toBe(reviewFiles.length * 2);
+			} finally {
+				await page?.close();
+				await browser.close();
 			}
-			expect(paintedDescriptorIds.size).toBe(reviewFiles.length * 2);
-		} finally {
-			await page?.close();
-			await browser.close();
-		}
+		});
 	});
 
 	test('paints complete final File bytes after deep scroll with descriptor, role, request, source, and disposition correlation', async (context) => {
-		const fixture = await createBridgeViewerViteProductFixture();
-		const oracle = fixture.oracle;
-		let browser: Browser | null = null;
-		let page: Page | null = null;
-		let server: BridgeViewerOwnedViteProductServer | null = null;
-		let primaryFailure: { readonly error: unknown } | null = null;
-		let expectedFileContent = oracle.fileContent;
-		let contentRequests: readonly ProductContentRequestObservation[] = [];
-		try {
-			server = await startBridgeViewerOwnedViteProductServer(oracle);
-			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			contentRequests = observeProductContentRequests(page);
-			const workerUrls: string[] = [];
-			page.on('worker', (worker): void => {
-				workerUrls.push(worker.url());
-			});
-			await page.goto(bridgeViewerViteProductFileUrl(server.origin, oracle.largeFilePath), {
-				timeout: productJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
-			await waitForSelectedFileReady({ oracle, page });
-			await clearFileSearchAndScrollTreeDeep({ oracle, page });
-			const contentScrollObservation = await scrollSelectedFileThroughMarkers({
-				content: oracle.fileContent,
-				page,
-			});
-			const deepScrollObservation = await readFileDeepScrollObservation({
-				oracle,
-				page,
-				workerUrls,
-			});
-
-			expect(deepScrollObservation.selectedPath).toBe(oracle.largeFilePath);
-			expect(deepScrollObservation.renderedPath).toBe(oracle.largeFilePath);
-			expect(deepScrollObservation.lineCount).toBe(oracle.largeFileLineCount);
-			expect(deepScrollObservation.scrollHeight).toBeGreaterThan(980);
-			expect(deepScrollObservation.scrollTop).toBeGreaterThan(0);
-			expect(deepScrollObservation.treeScrollTop).toBeGreaterThan(0);
-			expect(deepScrollObservation.deepTreePathPainted).toBe(true);
-			expect(contentScrollObservation).toEqual({
-				finalMarkerPainted: true,
-				firstMarkerPainted: true,
-				middleMarkerPainted: true,
-			});
-			expect(deepScrollObservation.finalMarkerPainted).toBe(true);
-			expect(
-				deepScrollObservation.workerUrls.some((url): boolean =>
-					url.includes('bridge-comm-worker-vite-entry'),
-				),
-			).toBe(true);
-			expect(deepScrollObservation.paintedCorrelations).toEqual([
-				expect.objectContaining({
-					descriptorId: expect.stringMatching(/^file-content-[0-9a-f]{32}$/u),
-					disposition: 'painted',
-					itemId: deepScrollObservation.renderedItemId,
-					observedSha256: oracle.largeFileSha256,
-					position: 'whole',
-					publicationId: expect.stringMatching(/\S/u),
-					requestId: expect.stringMatching(/\S/u),
-					role: 'file',
-					semanticItemId: deepScrollObservation.renderedItemId,
-					sourceGeneration: expect.any(Number),
-					sourceIdentity: expect.stringMatching(/\S/u),
-					surface: 'file',
-				}),
-			]);
-			expect(deepScrollObservation.paintedCorrelations[0]?.sourceGeneration).toBeGreaterThan(0);
-			const initialCorrelation = deepScrollObservation.paintedCorrelations[0];
-			const initialRequest = contentRequests.find(
-				(candidate): boolean => candidate.contentRequestId === initialCorrelation?.requestId,
-			);
-			expect(initialRequest).toEqual(
-				expect.objectContaining({
-					contentKind: 'file.content',
-					leaseId: expect.stringMatching(/\S/u),
-					responseStatus: 200,
-				}),
-			);
-			expect(initialRequest?.descriptor).toEqual(
-				expect.objectContaining({
-					declaredByteLength: oracle.fileContent.byteLength,
-					expectedSha256: oracle.fileContent.sha256,
-				}),
-			);
-
-			const mutatedContent = await fixture.mutateLargeFile();
-			expectedFileContent = mutatedContent;
-			await page.reload({
-				timeout: productJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
-			await waitForSelectedFileContentReady({ content: mutatedContent, oracle, page });
-			await scrollSelectedFileThroughMarkers({ content: mutatedContent, page });
-			const replacementObservation = await readFileDeepScrollObservation({
-				content: mutatedContent,
-				oracle,
-				page,
-				workerUrls,
-			});
-			expect(replacementObservation.paintedCorrelations).toEqual([
-				expect.objectContaining({
-					disposition: 'painted',
-					observedSha256: mutatedContent.sha256,
-					surface: 'file',
-				}),
-			]);
-			expect(replacementObservation.paintedCorrelations).not.toEqual(
-				expect.arrayContaining([
-					expect.objectContaining({ observedSha256: oracle.fileContent.sha256 }),
-				]),
-			);
-			const replacementRequest = contentRequests.find(
-				(candidate): boolean =>
-					candidate.contentRequestId === replacementObservation.paintedCorrelations[0]?.requestId,
-			);
-			expect(replacementRequest?.descriptor).toEqual(
-				expect.objectContaining({
-					declaredByteLength: mutatedContent.byteLength,
-					expectedSha256: mutatedContent.sha256,
-				}),
-			);
-			const initialRootRevisionToken = readFileDescriptorRootRevisionToken(
-				initialRequest?.descriptor,
-			);
-			expect(initialRootRevisionToken).toEqual(expect.stringMatching(/\S/u));
-			expect(readFileDescriptorRootRevisionToken(replacementRequest?.descriptor)).toBe(
-				initialRootRevisionToken,
-			);
-		} catch (error: unknown) {
-			primaryFailure = { error };
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const fixture = await createBridgeViewerViteProductFixture();
+			const oracle = fixture.oracle;
+			let browser: Browser | null = null;
+			let page: Page | null = null;
+			let server: BridgeViewerOwnedViteProductServer | null = null;
+			let primaryFailure: { readonly error: unknown } | null = null;
+			let expectedFileContent = oracle.fileContent;
+			let contentRequests: readonly ProductContentRequestObservation[] = [];
 			try {
-				const observed = await page?.evaluate((): Readonly<Record<string, string | null>> => {
-					const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
-					const painted = canvas?.querySelector(
-						'diffs-container[data-bridge-painted-source-correlations]',
-					);
-					return {
-						state: canvas?.getAttribute('data-worktree-open-file-state') ?? null,
-						selectedPath: canvas?.getAttribute('data-worktree-open-file-path') ?? null,
-						renderedPath: canvas?.getAttribute('data-worktree-rendered-file-path') ?? null,
-						lineCount: canvas?.getAttribute('data-worktree-rendered-line-count') ?? null,
-						paintedCorrelations:
-							painted?.getAttribute('data-bridge-painted-source-correlations') ?? null,
-					};
+				server = await startBridgeViewerOwnedViteProductServer(oracle);
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				contentRequests = observeProductContentRequests(page);
+				const workerUrls: string[] = [];
+				page.on('worker', (worker): void => {
+					workerUrls.push(worker.url());
 				});
-				console.error(
-					'[ci-lead-file-reload-diagnostic]',
-					JSON.stringify({
-						expected: {
-							lineCount: expectedFileContent.lineCount,
-							sha256: expectedFileContent.sha256,
-							path: oracle.largeFilePath,
-						},
-						observed,
-						requests: contentRequests.map(
-							(request): Readonly<Record<string, unknown>> => ({
-								kind: request.contentKind,
-								requestId: request.contentRequestId,
-								status: request.responseStatus,
-								byteLength: request.descriptor['declaredByteLength'],
-								sha256: request.descriptor['expectedSha256'],
-							}),
-						),
+				await page.goto(bridgeViewerViteProductFileUrl(server.origin, oracle.largeFilePath), {
+					timeout: productJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				});
+				await waitForSelectedFileReady({ oracle, page });
+				await clearFileSearchAndScrollTreeDeep({ oracle, page });
+				const contentScrollObservation = await scrollSelectedFileThroughMarkers({
+					content: oracle.fileContent,
+					page,
+				});
+				const deepScrollObservation = await readFileDeepScrollObservation({
+					oracle,
+					page,
+					workerUrls,
+				});
+
+				expect(deepScrollObservation.selectedPath).toBe(oracle.largeFilePath);
+				expect(deepScrollObservation.renderedPath).toBe(oracle.largeFilePath);
+				expect(deepScrollObservation.lineCount).toBe(oracle.largeFileLineCount);
+				expect(deepScrollObservation.scrollHeight).toBeGreaterThan(980);
+				expect(deepScrollObservation.scrollTop).toBeGreaterThan(0);
+				expect(deepScrollObservation.treeScrollTop).toBeGreaterThan(0);
+				expect(deepScrollObservation.deepTreePathPainted).toBe(true);
+				expect(contentScrollObservation).toEqual({
+					finalMarkerPainted: true,
+					firstMarkerPainted: true,
+					middleMarkerPainted: true,
+				});
+				expect(deepScrollObservation.finalMarkerPainted).toBe(true);
+				expect(
+					deepScrollObservation.workerUrls.some((url): boolean =>
+						url.includes('bridge-comm-worker-vite-entry'),
+					),
+				).toBe(true);
+				expect(deepScrollObservation.paintedCorrelations).toEqual([
+					expect.objectContaining({
+						descriptorId: expect.stringMatching(/^file-content-[0-9a-f]{32}$/u),
+						disposition: 'painted',
+						itemId: deepScrollObservation.renderedItemId,
+						observedSha256: oracle.largeFileSha256,
+						position: 'whole',
+						publicationId: expect.stringMatching(/\S/u),
+						requestId: expect.stringMatching(/\S/u),
+						role: 'file',
+						semanticItemId: deepScrollObservation.renderedItemId,
+						sourceGeneration: expect.any(Number),
+						sourceIdentity: expect.stringMatching(/\S/u),
+						surface: 'file',
+					}),
+				]);
+				expect(deepScrollObservation.paintedCorrelations[0]?.sourceGeneration).toBeGreaterThan(0);
+				const initialCorrelation = deepScrollObservation.paintedCorrelations[0];
+				const initialRequest = contentRequests.find(
+					(candidate): boolean => candidate.contentRequestId === initialCorrelation?.requestId,
+				);
+				expect(initialRequest).toEqual(
+					expect.objectContaining({
+						contentKind: 'file.content',
+						leaseId: expect.stringMatching(/\S/u),
+						responseStatus: 200,
 					}),
 				);
-			} catch (diagnosticError: unknown) {
-				console.error('[ci-lead-file-reload-diagnostic-unavailable]', diagnosticError);
+				expect(initialRequest?.descriptor).toEqual(
+					expect.objectContaining({
+						declaredByteLength: oracle.fileContent.byteLength,
+						expectedSha256: oracle.fileContent.sha256,
+					}),
+				);
+
+				const mutatedContent = await fixture.mutateLargeFile();
+				expectedFileContent = mutatedContent;
+				await page.reload({
+					timeout: productJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				});
+				await waitForSelectedFileContentReady({ content: mutatedContent, oracle, page });
+				await scrollSelectedFileThroughMarkers({ content: mutatedContent, page });
+				const replacementObservation = await readFileDeepScrollObservation({
+					content: mutatedContent,
+					oracle,
+					page,
+					workerUrls,
+				});
+				expect(replacementObservation.paintedCorrelations).toEqual([
+					expect.objectContaining({
+						disposition: 'painted',
+						observedSha256: mutatedContent.sha256,
+						surface: 'file',
+					}),
+				]);
+				expect(replacementObservation.paintedCorrelations).not.toEqual(
+					expect.arrayContaining([
+						expect.objectContaining({ observedSha256: oracle.fileContent.sha256 }),
+					]),
+				);
+				const replacementRequest = contentRequests.find(
+					(candidate): boolean =>
+						candidate.contentRequestId === replacementObservation.paintedCorrelations[0]?.requestId,
+				);
+				expect(replacementRequest?.descriptor).toEqual(
+					expect.objectContaining({
+						declaredByteLength: mutatedContent.byteLength,
+						expectedSha256: mutatedContent.sha256,
+					}),
+				);
+				const initialRootRevisionToken = readFileDescriptorRootRevisionToken(
+					initialRequest?.descriptor,
+				);
+				expect(initialRootRevisionToken).toEqual(expect.stringMatching(/\S/u));
+				expect(readFileDescriptorRootRevisionToken(replacementRequest?.descriptor)).toBe(
+					initialRootRevisionToken,
+				);
+			} catch (error: unknown) {
+				primaryFailure = { error };
+				try {
+					const observed = await page?.evaluate((): Readonly<Record<string, string | null>> => {
+						const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
+						const painted = canvas?.querySelector(
+							'diffs-container[data-bridge-painted-source-correlations]',
+						);
+						return {
+							state: canvas?.getAttribute('data-worktree-open-file-state') ?? null,
+							selectedPath: canvas?.getAttribute('data-worktree-open-file-path') ?? null,
+							renderedPath: canvas?.getAttribute('data-worktree-rendered-file-path') ?? null,
+							lineCount: canvas?.getAttribute('data-worktree-rendered-line-count') ?? null,
+							paintedCorrelations:
+								painted?.getAttribute('data-bridge-painted-source-correlations') ?? null,
+						};
+					});
+					console.error(
+						'[ci-lead-file-reload-diagnostic]',
+						JSON.stringify({
+							expected: {
+								lineCount: expectedFileContent.lineCount,
+								sha256: expectedFileContent.sha256,
+								path: oracle.largeFilePath,
+							},
+							observed,
+							requests: contentRequests.map(
+								(request): Readonly<Record<string, unknown>> => ({
+									kind: request.contentKind,
+									requestId: request.contentRequestId,
+									status: request.responseStatus,
+									byteLength: request.descriptor['declaredByteLength'],
+									sha256: request.descriptor['expectedSha256'],
+								}),
+							),
+						}),
+					);
+				} catch (diagnosticError: unknown) {
+					console.error('[ci-lead-file-reload-diagnostic-unavailable]', diagnosticError);
+				}
+			} finally {
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'browser',
+							run: async (): Promise<void> => {
+								await browser?.close();
+							},
+						},
+						{
+							name: 'Vite and Swift',
+							run: async (): Promise<void> => {
+								if (server === null) return;
+								const cleanup = await server.stop();
+								expect(cleanup.forcedTerminationRequired).toBe(false);
+								expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
+							},
+						},
+						{ name: 'fixture', run: fixture.dispose },
+					],
+					...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
+				});
 			}
-		} finally {
-			await runAllOwnedCleanupOperations({
-				operations: [
-					{
-						name: 'browser',
-						run: async (): Promise<void> => {
-							await browser?.close();
-						},
-					},
-					{
-						name: 'Vite and Swift',
-						run: async (): Promise<void> => {
-							if (server === null) return;
-							const cleanup = await server.stop();
-							expect(cleanup.forcedTerminationRequired).toBe(false);
-							expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
-						},
-					},
-					{ name: 'fixture', run: fixture.dispose },
-				],
-				...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
-			});
-		}
+		});
 	});
 
 	test('restores a UI-committed symbolic comparison across backend restart and resolves the moved Git target', async (context) => {
-		// Arrange
-		const fixture = await createBridgeViewerViteProductFixture();
-		let serverA: BridgeViewerOwnedViteProductServer | null = null;
-		let serverB: BridgeViewerOwnedViteProductServer | null = null;
-		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-		try {
-			serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			const pageA = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			const pageADiagnostics = observeBrowserRuntimeDiagnostics(pageA);
-			await pageA.goto(
-				bridgeViewerViteProductReviewUrl(
-					serverA.origin,
-					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-				),
-				{
-					timeout: productJourneyTimeoutMilliseconds,
-					waitUntil: 'domcontentloaded',
-				},
-			);
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			// Arrange
+			const fixture = await createBridgeViewerViteProductFixture();
+			let serverA: BridgeViewerOwnedViteProductServer | null = null;
+			let serverB: BridgeViewerOwnedViteProductServer | null = null;
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			try {
-				await pageA.waitForFunction(
-					(): boolean =>
-						document.querySelector('[data-testid="review-viewer-shell"]') !== null ||
-						(document.body.textContent ?? '').includes('Review metadata is unavailable'),
-					undefined,
+				serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+				const pageA = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				const pageADiagnostics = observeBrowserRuntimeDiagnostics(pageA);
+				await pageA.goto(
+					bridgeViewerViteProductReviewUrl(
+						serverA.origin,
+						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+					),
 					{
 						timeout: productJourneyTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
 					},
 				);
-				if ((await pageA.getByTestId('review-viewer-shell').count()) === 0) {
-					throw new Error('Review metadata entered the unavailable state.');
+				try {
+					await pageA.waitForFunction(
+						(): boolean =>
+							document.querySelector('[data-testid="review-viewer-shell"]') !== null ||
+							(document.body.textContent ?? '').includes('Review metadata is unavailable'),
+						undefined,
+						{
+							timeout: productJourneyTimeoutMilliseconds,
+						},
+					);
+					if ((await pageA.getByTestId('review-viewer-shell').count()) === 0) {
+						throw new Error('Review metadata entered the unavailable state.');
+					}
+				} catch (error: unknown) {
+					throw new Error(
+						`Review shell did not load: ${await pageADiagnostics.describe()} server=${serverA.diagnostics()}`,
+						{
+							cause: error,
+						},
+					);
 				}
-			} catch (error: unknown) {
-				throw new Error(
-					`Review shell did not load: ${await pageADiagnostics.describe()} server=${serverA.diagnostics()}`,
+				await waitForSettledReviewComparison({
+					expectedTargetLabel: 'HEAD',
+					expectedTargetOID: fixture.oracle.baseRef,
+					page: pageA,
+					timeoutMilliseconds: productJourneyTimeoutMilliseconds,
+				});
+
+				// Act: process A commits the symbolic target through the real Compare Worktree UI.
+				await pageA.getByTestId(`comparison-branch-${fixture.oracle.comparisonTargetName}`).click();
+				const processAObservation = await waitForSettledReviewComparison({
+					expectedTargetLabel: fixture.oracle.comparisonTargetName,
+					expectedTargetOID: fixture.oracle.baseRef,
+					page: pageA,
+					timeoutMilliseconds: productJourneyTimeoutMilliseconds,
+				});
+				await pageA.close();
+
+				const processABackendPid = serverA.backendPid;
+				const processACleanup = await serverA.stop();
+				serverA = null;
+				expect(processACleanup.forcedTerminationRequired).toBe(false);
+				expect(processACleanup.ownedProcessAliveAfterStop).toBe(false);
+
+				const movedTargetOID = await fixture.advanceComparisonTarget();
+				serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+				const pageB = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				const pageBDiagnostics = observeBrowserRuntimeDiagnostics(pageB);
+				await pageB.goto(
+					bridgeViewerViteProductReviewUrl(
+						serverB.origin,
+						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+					),
 					{
-						cause: error,
+						timeout: productJourneyTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
 					},
 				);
+				const processBObservation = await waitForSettledReviewComparisonWithDiagnostics({
+					diagnostics: pageBDiagnostics,
+					expectedTargetLabel: fixture.oracle.comparisonTargetName,
+					expectedTargetOID: movedTargetOID,
+					failureContext: (): string => `server=${serverB?.diagnostics() ?? '<stopped>'}`,
+					page: pageB,
+					timeoutMilliseconds: productJourneyTimeoutMilliseconds,
+				});
+				await pageB.close();
+
+				const processBBackendPid = serverB.backendPid;
+				const processBCleanup = await serverB.stop();
+				serverB = null;
+
+				// Assert
+				const restartReceipt = {
+					processA: { backendPid: processABackendPid, observation: processAObservation },
+					processB: { backendPid: processBBackendPid, observation: processBObservation },
+				};
+				expect(restartReceipt.processA.backendPid).toBeGreaterThan(0);
+				expect(restartReceipt.processB.backendPid).toBeGreaterThan(0);
+				expect(restartReceipt.processB.backendPid).not.toBe(restartReceipt.processA.backendPid);
+				expect(processBCleanup.forcedTerminationRequired).toBe(false);
+				expect(processBCleanup.ownedProcessAliveAfterStop).toBe(false);
+				expect(restartReceipt.processA.observation.targetOID).toBe(fixture.oracle.baseRef);
+				expect(restartReceipt.processB.observation.targetOID).toBe(movedTargetOID);
+				expect(restartReceipt.processB.observation.targetOID).not.toBe(
+					restartReceipt.processA.observation.targetOID,
+				);
+				expect(restartReceipt.processB.observation.symbolicTargetLabel).toBe(
+					restartReceipt.processA.observation.symbolicTargetLabel,
+				);
+				expect(restartReceipt.processB.observation.packageId).not.toBe(
+					restartReceipt.processA.observation.packageId,
+				);
+			} finally {
+				await browser.close();
+				if (serverA !== null) await serverA.stop();
+				if (serverB !== null) await serverB.stop();
+				await fixture.dispose();
 			}
-			await waitForSettledReviewComparison({
-				expectedTargetLabel: 'HEAD',
-				expectedTargetOID: fixture.oracle.baseRef,
-				page: pageA,
-				timeoutMilliseconds: productJourneyTimeoutMilliseconds,
-			});
-
-			// Act: process A commits the symbolic target through the real Compare Worktree UI.
-			await pageA.getByTestId(`comparison-branch-${fixture.oracle.comparisonTargetName}`).click();
-			const processAObservation = await waitForSettledReviewComparison({
-				expectedTargetLabel: fixture.oracle.comparisonTargetName,
-				expectedTargetOID: fixture.oracle.baseRef,
-				page: pageA,
-				timeoutMilliseconds: productJourneyTimeoutMilliseconds,
-			});
-			await pageA.close();
-
-			const processABackendPid = serverA.backendPid;
-			const processACleanup = await serverA.stop();
-			serverA = null;
-			expect(processACleanup.forcedTerminationRequired).toBe(false);
-			expect(processACleanup.ownedProcessAliveAfterStop).toBe(false);
-
-			const movedTargetOID = await fixture.advanceComparisonTarget();
-			serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			const pageB = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			const pageBDiagnostics = observeBrowserRuntimeDiagnostics(pageB);
-			await pageB.goto(
-				bridgeViewerViteProductReviewUrl(
-					serverB.origin,
-					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-				),
-				{
-					timeout: productJourneyTimeoutMilliseconds,
-					waitUntil: 'domcontentloaded',
-				},
-			);
-			const processBObservation = await waitForSettledReviewComparisonWithDiagnostics({
-				diagnostics: pageBDiagnostics,
-				expectedTargetLabel: fixture.oracle.comparisonTargetName,
-				expectedTargetOID: movedTargetOID,
-				failureContext: (): string => `server=${serverB?.diagnostics() ?? '<stopped>'}`,
-				page: pageB,
-				timeoutMilliseconds: productJourneyTimeoutMilliseconds,
-			});
-			await pageB.close();
-
-			const processBBackendPid = serverB.backendPid;
-			const processBCleanup = await serverB.stop();
-			serverB = null;
-
-			// Assert
-			const restartReceipt = {
-				processA: { backendPid: processABackendPid, observation: processAObservation },
-				processB: { backendPid: processBBackendPid, observation: processBObservation },
-			};
-			expect(restartReceipt.processA.backendPid).toBeGreaterThan(0);
-			expect(restartReceipt.processB.backendPid).toBeGreaterThan(0);
-			expect(restartReceipt.processB.backendPid).not.toBe(restartReceipt.processA.backendPid);
-			expect(processBCleanup.forcedTerminationRequired).toBe(false);
-			expect(processBCleanup.ownedProcessAliveAfterStop).toBe(false);
-			expect(restartReceipt.processA.observation.targetOID).toBe(fixture.oracle.baseRef);
-			expect(restartReceipt.processB.observation.targetOID).toBe(movedTargetOID);
-			expect(restartReceipt.processB.observation.targetOID).not.toBe(
-				restartReceipt.processA.observation.targetOID,
-			);
-			expect(restartReceipt.processB.observation.symbolicTargetLabel).toBe(
-				restartReceipt.processA.observation.symbolicTargetLabel,
-			);
-			expect(restartReceipt.processB.observation.packageId).not.toBe(
-				restartReceipt.processA.observation.packageId,
-			);
-		} finally {
-			await browser.close();
-			if (serverA !== null) await serverA.stop();
-			if (serverB !== null) await serverB.stop();
-			await fixture.dispose();
-		}
+		});
 	});
 });
 

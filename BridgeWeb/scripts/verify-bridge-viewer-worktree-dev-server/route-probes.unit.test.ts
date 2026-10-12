@@ -100,7 +100,10 @@ describe('Review route probe owner completion', () => {
 		const closePage = vi.fn(async (): Promise<void> => {
 			for (const [event, listener] of page.on.mock.calls) if (event === 'close') listener();
 		});
-		const deadline = createOwnedVerifierJourneyDeadline({ closePages: closePage });
+		const deadline = createOwnedVerifierJourneyDeadline({
+			closePages: closePage,
+			pendingSteps: (): readonly string[] => ['withheld Review route'],
+		});
 		const probe = await installReviewRouteProbe(page, { signal: deadline.signal });
 		const outcome = waitForReviewContentRouteHitAfterIndex({
 			beforeHitCount: 0,

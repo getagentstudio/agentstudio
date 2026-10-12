@@ -11,6 +11,7 @@ export default defineConfig({
 	test: {
 		environment: 'node',
 		fileParallelism: false,
+		runner: './tests/e2e/bridge-web-e2e-runner.ts',
 		include: [
 			'src/**/*.e2e.test.ts',
 			'src/**/*.e2e.test.tsx',

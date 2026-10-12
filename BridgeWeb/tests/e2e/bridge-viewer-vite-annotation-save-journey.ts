@@ -44,6 +44,7 @@ import {
 	readReviewRenderObservation,
 } from './bridge-viewer-vite-review-render-observation.ts';
 import { observeSelectedItemApplies } from './bridge-viewer-vite-selected-item-apply-observation.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const annotationProjectionResponseTimeoutMilliseconds = 30_000;
 export interface AnnotationSaveJourneyObservations {
@@ -89,34 +90,38 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 	test.for(['file', 'review'] as const)(
 		'keeps an exact committed annotation visible while the %s projection is gated',
 		async (surface, context) => {
-			const observations = await runAnnotationSaveJourney({
-				testSignal: context.signal,
-				oracle: props.oracle(),
-				server: props.server(),
-				surface,
-			});
+			return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+				const observations = await runAnnotationSaveJourney({
+					testSignal: context.signal,
+					oracle: props.oracle(),
+					server: props.server(),
+					surface,
+				});
 
-			expect(observations.gatedProjectionRequestCount).toBeGreaterThan(0);
-			expect(observations.savingControlCountAfterCommit).toBe(0);
-			expect(observations.committedBodyCountWhileProjectionGated).toBe(1);
-			expect(observations.correlatedLifecycleStageCount).toBe(
-				requiredAnnotationLifecycleStageCount,
-			);
-			expect(observations.projectedSavedMessageCount).toBe(1);
-			expect(observations.reloadedSavedMessageCount).toBe(1);
+				expect(observations.gatedProjectionRequestCount).toBeGreaterThan(0);
+				expect(observations.savingControlCountAfterCommit).toBe(0);
+				expect(observations.committedBodyCountWhileProjectionGated).toBe(1);
+				expect(observations.correlatedLifecycleStageCount).toBe(
+					requiredAnnotationLifecycleStageCount,
+				);
+				expect(observations.projectedSavedMessageCount).toBe(1);
+				expect(observations.reloadedSavedMessageCount).toBe(1);
+			});
 		},
 	);
 
 	test('restores a released Review root draft after a full document reload', async (context) => {
-		const observations = await runReleasedDraftReloadJourney({
-			testSignal: context.signal,
-			oracle: props.oracle(),
-			server: props.server(),
-		});
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const observations = await runReleasedDraftReloadJourney({
+				testSignal: context.signal,
+				oracle: props.oracle(),
+				server: props.server(),
+			});
 
-		expect(observations.reloadedCollapsedDraftCount).toBe(1);
-		expect(observations.reloadedDraftLabelCount).toBeGreaterThan(0);
-		expect(observations.removedDraftCount).toBe(0);
+			expect(observations.reloadedCollapsedDraftCount).toBe(1);
+			expect(observations.reloadedDraftLabelCount).toBeGreaterThan(0);
+			expect(observations.removedDraftCount).toBe(0);
+		});
 	});
 }
 

@@ -22,6 +22,9 @@ enum BridgeDevelopmentHTTPApplication {
         router.post("/__bridge-product/bootstrap") { request, _ -> Response in
             try await bootstrapResponse(request: request, host: host)
         }
+        router.post("/__bridge-product/release") { request, _ -> Response in
+            try await installationReleaseResponse(request: request, host: host)
+        }
         registerProductRoute(
             "/__bridge-product/command",
             destination: "agentstudio://rpc/command",
@@ -118,6 +121,36 @@ enum BridgeDevelopmentHTTPApplication {
             headers: [.contentType: "application/octet-stream"],
             body: .init(byteBuffer: ByteBuffer(bytes: delivery))
         )
+    }
+
+    private static func installationReleaseResponse(
+        request: Request,
+        host: BridgeDevelopmentProductHost
+    ) async throws -> Response {
+        guard request.headers[.contentType]?.lowercased() == "application/json" else {
+            throw HTTPError(.unsupportedMediaType)
+        }
+        guard let capabilityHeader = HTTPField.Name(BridgeProductWireContract.capabilityHeaderName),
+            let capability = request.headers[capabilityHeader]
+        else { throw HTTPError(.unauthorized) }
+        let body = try await request.body.collect(upTo: bootstrapBodyLimit)
+        let release: BridgeDevelopmentInstallationReleaseRequest
+        do {
+            release = try JSONDecoder().decode(
+                BridgeDevelopmentInstallationReleaseRequest.self,
+                from: Data(body.readableBytesView)
+            )
+        } catch { throw HTTPError(.badRequest) }
+        do {
+            try await host.releaseInstallation(release, presentedCapability: capability)
+        } catch BridgeDevelopmentInstallationReleaseError.unauthorized {
+            throw HTTPError(.forbidden)
+        } catch BridgeDevelopmentInstallationReleaseError.installationMismatch {
+            throw HTTPError(.conflict)
+        } catch BridgeDevelopmentInstallationReleaseError.releaseFailed {
+            throw HTTPError(.internalServerError)
+        }
+        return Response(status: .noContent)
     }
 }
 

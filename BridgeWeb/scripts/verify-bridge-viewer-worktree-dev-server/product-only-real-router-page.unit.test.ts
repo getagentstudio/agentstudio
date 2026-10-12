@@ -24,7 +24,9 @@ describe('BridgeViewerRealRouterObserver', () => {
 		vi.useFakeTimers();
 		const pageClose = vi.fn(async (): Promise<void> => {});
 		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadlineController = new AbortController();
 		const deadline = createOwnedProductJourneyDeadline({
+			signal: deadlineController.signal,
 			page: { close: pageClose },
 			browser: { close: browserClose },
 		});
@@ -37,7 +39,7 @@ describe('BridgeViewerRealRouterObserver', () => {
 			(error: unknown): string => String(error),
 		);
 		try {
-			await vi.advanceTimersByTimeAsync(120_000);
+			deadlineController.abort(new Error('inherited launch bound exceeded'));
 			expect(await joined).toContain('awaiting observed-worker-closure');
 			expect(browserClose).toHaveBeenCalledOnce();
 			expect(pageClose).toHaveBeenCalledOnce();
@@ -60,7 +62,9 @@ describe('BridgeViewerRealRouterObserver', () => {
 			);
 			const pageClose = vi.fn(async (): Promise<void> => {});
 			const browserClose = vi.fn(async (): Promise<void> => {});
+			const deadlineController = new AbortController();
 			const deadline = createOwnedProductJourneyDeadline({
+				signal: deadlineController.signal,
 				page: { close: pageClose },
 				browser: { close: browserClose },
 				onDeadline: (reason: Error): void => observer.close(reason),
@@ -91,8 +95,9 @@ describe('BridgeViewerRealRouterObserver', () => {
 				},
 			);
 			try {
-				await vi.advanceTimersByTimeAsync(120_000);
+				deadlineController.abort(new Error('inherited launch bound exceeded'));
 				await deadline.dispose();
+				await result;
 				expect(observedOutcome).toContain(waiterName);
 				expect(observedOutcome).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
 				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
@@ -132,7 +137,9 @@ describe('BridgeViewerRealRouterObserver', () => {
 		void wait.catch((): void => {});
 		const pageClose = vi.fn(async (): Promise<void> => {});
 		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadlineController = new AbortController();
 		const deadline = createOwnedProductJourneyDeadline({
+			signal: deadlineController.signal,
 			page: { close: pageClose },
 			browser: { close: browserClose },
 			onDeadline: (reason: Error): void => observer.close(reason),
@@ -143,7 +150,7 @@ describe('BridgeViewerRealRouterObserver', () => {
 			},
 		} as unknown as Page;
 		try {
-			await vi.advanceTimersByTimeAsync(120_000);
+			deadlineController.abort(new Error('inherited launch bound exceeded'));
 			await expect(wait).rejects.toThrow('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
 			const checkpoint = await captureBridgeViewerProductOnlyJourneyFailure({
 				browserDiagnostics: [],
@@ -535,13 +542,15 @@ describe('BridgeViewerRealRouterObserver', () => {
 		for (const reloadWait of reloadWaits) void reloadWait.catch((): void => {});
 		const pageClose = vi.fn(async (): Promise<void> => {});
 		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadlineController = new AbortController();
 		const deadline = createOwnedProductJourneyDeadline({
+			signal: deadlineController.signal,
 			page: { close: pageClose },
 			browser: { close: browserClose },
 			onDeadline: (reason: Error): void => observer.close(reason),
 		});
 		try {
-			await vi.advanceTimersByTimeAsync(120_000);
+			deadlineController.abort(new Error('inherited launch bound exceeded'));
 			await deadline.dispose();
 			expect(pageClose).toHaveBeenCalledOnce();
 			expect(pageClose).toHaveBeenCalledWith({

@@ -6,6 +6,7 @@ import { dirname, join } from 'node:path';
 import { promisify } from 'node:util';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import type { BridgeViewerViteProductFixtureOracle } from './bridge-viewer-vite-product-fixture.ts';
 
 const execFileAsync = promisify(execFile);
@@ -60,9 +61,13 @@ const fixtureMutationPaths: FixtureMutationPaths = {
 
 export async function createBridgeViewerGitStatusFixture(): Promise<BridgeViewerGitStatusFixture> {
 	const worktreeRoot = await mkdtemp(join(tmpdir(), 'bridge-viewer-git-status-e2e-'));
+	let testLaunch: BridgeWebTestLaunch | null = null;
 	let dataRootPath: string | null = null;
 	try {
-		dataRootPath = await mkdtemp(join(tmpdir(), 'bridge-viewer-git-status-data-'));
+		testLaunch = await BridgeWebTestLaunch.start({
+			dataRootPrefix: 'bridge-viewer-git-status-data-',
+		});
+		dataRootPath = testLaunch.dataRootPath;
 		await writeBaseFiles(worktreeRoot);
 		await runFixtureGit(worktreeRoot, ['init', '--initial-branch=main']);
 		await runFixtureGit(worktreeRoot, ['config', 'user.name', 'Bridge Git Status E2E']);
@@ -94,6 +99,7 @@ export async function createBridgeViewerGitStatusFixture(): Promise<BridgeViewer
 			addedSourcePath,
 			addedTestTreePaths: reviewTreePathsForFiles([addedTestPath]),
 			dispose: async (): Promise<void> => {
+				await testLaunch?.dispose();
 				await runAllOwnedCleanupOperations({
 					operations: [
 						{
@@ -105,9 +111,7 @@ export async function createBridgeViewerGitStatusFixture(): Promise<BridgeViewer
 						{
 							name: 'Git status fixture data root',
 							run: async (): Promise<void> => {
-								if (dataRootPath !== null) {
-									await rm(dataRootPath, { force: true, recursive: true });
-								}
+								await testLaunch?.dispose();
 							},
 						},
 					],
@@ -118,6 +122,7 @@ export async function createBridgeViewerGitStatusFixture(): Promise<BridgeViewer
 			expectedWithBinaryTreePaths: reviewTreePathsForFiles([...visibleChangedPaths, binaryPath]),
 			expectedWithLargeTreePaths: reviewTreePathsForFiles([...visibleChangedPaths, largePath]),
 			oracle: {
+				testLaunch,
 				baseRef,
 				changedPaths,
 				comparisonTargetName: 'main',
@@ -163,9 +168,7 @@ export async function createBridgeViewerGitStatusFixture(): Promise<BridgeViewer
 				{
 					name: 'Git status fixture data root',
 					run: async (): Promise<void> => {
-						if (dataRootPath !== null) {
-							await rm(dataRootPath, { force: true, recursive: true });
-						}
+						await testLaunch?.dispose();
 					},
 				},
 			],
