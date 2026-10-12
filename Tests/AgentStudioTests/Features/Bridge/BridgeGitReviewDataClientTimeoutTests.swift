@@ -324,7 +324,7 @@ private actor NonCooperativeDiffAgentStudioGitClient: AgentStudioGitLocalClient 
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
-    func exactLineCountDetail(for worktreePath: URL) async throws(GitDataPlaneError)
+    func exactLineCountDetail(for worktreePath: URL, excludeSubmodules _: Bool) async throws(GitDataPlaneError)
         -> GitStatusLineCountDetail
     {
         throw GitDataPlaneError.unsupported(message: "not used")

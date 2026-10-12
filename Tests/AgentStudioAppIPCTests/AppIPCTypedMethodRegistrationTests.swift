@@ -314,6 +314,59 @@ struct AppIPCTypedMethodRegistrationTests {
         }
     }
 
+    @Test(
+        "command target validation keeps the selected nil-handle gate narrow",
+        arguments: TypedTargetValidationBranch.allCases
+    )
+    func commandTargetValidationBranchMatrix(branch: TypedTargetValidationBranch) async throws {
+        let fixture = TypedRegistrationFixture()
+        let recorder = TypedRegistrationRecorder()
+        let registration = try makeRegistration(
+            recorder: recorder,
+            descriptor: try TypedRegistrationFixture.descriptor(
+                name: branch.methodName,
+                allowedTargetKinds: branch.descriptorTargetKinds
+            ),
+            resolveTarget: { parameters, _, _ in
+                await recorder.record(.resolveTarget)
+                return AppIPCTargetResolution(
+                    parameters: parameters,
+                    canonicalHandle: branch.canonicalHandle,
+                    target: branch.target,
+                    commandId: branch.commandId,
+                    commandAllowedTargetKinds: branch.commandAllowedTargetKinds
+                )
+            }
+        ).erase()
+
+        var observedError: AppIPCTypedMethodRegistrationError?
+        do {
+            _ = try await registration.invoke(
+                parameters: fixture.parameters(handle: "pane:1", correlationId: UUIDv7.generate()),
+                connectionContext: fixture.connectionContext,
+                targetResolutionTools: fixture.unusedTargetResolutionTools,
+                authorize: { _, _ in await recorder.record(.authorize) }
+            )
+        } catch let error as AppIPCTypedMethodRegistrationError {
+            observedError = error
+        }
+
+        if branch.reachesAuthorization {
+            #expect(observedError == nil)
+            let stages = await recorder.snapshot()
+            #expect(stages.count == 3)
+            #expect(stages[0] == .resolveTarget)
+            #expect(stages[1] == .authorize)
+            guard case .handler = stages[2] else {
+                Issue.record("Expected the typed handler after authorization")
+                return
+            }
+        } else {
+            #expect(observedError == .targetKindNotAllowed)
+            #expect(await recorder.snapshot() == [.resolveTarget])
+        }
+    }
+
     @Test("erased registration retains metadata from its generic descriptor")
     func erasedRegistrationRetainsGenericDescriptorMetadata() throws {
         let recorder = TypedRegistrationRecorder()
@@ -494,12 +547,13 @@ private struct TypedRegistrationFixture {
     }
 
     static func descriptor(
+        name: String = "fixture.typedMutation",
         allowedTargetKinds: Set<IPCHandleKind> = [.pane]
     ) throws
         -> IPCMethodDescriptor<TypedRegistrationParameters, TypedRegistrationResult>
     {
         try IPCMethodDescriptor(
-            name: "fixture.typedMutation",
+            name: name,
             description: "Exercise the typed request registration boundary.",
             examples: [],
             exposure: .allChannels,
@@ -550,6 +604,78 @@ private struct TypedRegistrationFixture {
             throw IPCHandleError.targetNotFound
         })
     }
+}
+
+enum TypedTargetValidationBranch: String, CaseIterable, CustomStringConvertible, Sendable {
+    case commandWithoutSelectedKinds
+    case commandWithNonEmptySelectedKinds
+    case commandWithEmptySelectedKinds
+    case nonCommandWithNilHandle
+    case commandWithNonNilHandleDescriptorGate
+    case commandWithNonNilHandleWithoutSelectedKinds
+
+    var description: String { rawValue }
+
+    var methodName: String {
+        switch self {
+        case .nonCommandWithNilHandle:
+            "fixture.typedMutation"
+        default:
+            AppIPCTypedMethodNames.commandExecute
+        }
+    }
+
+    var descriptorTargetKinds: Set<IPCHandleKind> {
+        switch self {
+        case .commandWithNonNilHandleDescriptorGate:
+            []
+        default:
+            [.pane]
+        }
+    }
+
+    var canonicalHandle: IPCHandle? {
+        switch self {
+        case .commandWithNonNilHandleDescriptorGate, .commandWithNonNilHandleWithoutSelectedKinds:
+            IPCHandle(kind: .pane, reference: .canonicalUUID(UUIDv7.generate()))
+        default:
+            nil
+        }
+    }
+
+    var target: IPCTargetScope {
+        switch self {
+        case .commandWithNonNilHandleDescriptorGate, .commandWithNonNilHandleWithoutSelectedKinds:
+            .pane(UUIDv7.generate().uuidString)
+        default:
+            .workspace(UUIDv7.generate())
+        }
+    }
+
+    var commandId: String? {
+        methodName == AppIPCTypedMethodNames.commandExecute ? AppIPCTypedMethodNames.commandExecute : nil
+    }
+
+    var commandAllowedTargetKinds: Set<IPCHandleKind>? {
+        switch self {
+        case .commandWithoutSelectedKinds, .commandWithNonNilHandleWithoutSelectedKinds:
+            nil
+        case .commandWithNonEmptySelectedKinds:
+            [.pane]
+        case .commandWithEmptySelectedKinds, .nonCommandWithNilHandle:
+            []
+        case .commandWithNonNilHandleDescriptorGate:
+            [.pane]
+        }
+    }
+
+    var reachesAuthorization: Bool {
+        self == .commandWithEmptySelectedKinds || self == .commandWithNonNilHandleWithoutSelectedKinds
+    }
+}
+
+private enum AppIPCTypedMethodNames {
+    static let commandExecute = "command.execute"
 }
 
 private struct TypedRegistrationParameters: Codable, Equatable, Sendable, IPCSchemaProviding {

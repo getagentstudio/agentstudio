@@ -265,8 +265,19 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 				},
 				productSessionRef: props.productSessionRef,
 			});
+			const pendingActivationCommands = new Map<
+				string,
+				Extract<BridgeWorkerMainToServerMessage, { readonly command: 'activeViewerModeUpdate' }>
+			>();
 			channel.port1.addEventListener('message', (event: MessageEvent<unknown>): void => {
 				const message = bridgeWorkerServerToMainWireMessageSchema.parse(event.data);
+				if (message.kind === 'health' && typeof message.requestId === 'string') {
+					const activation = pendingActivationCommands.get(message.requestId);
+					if (activation !== undefined) {
+						pendingActivationCommands.delete(message.requestId);
+						props.productSessionRef.current?.onActivationCommandSettled?.(activation, message);
+					}
+				}
 				if (message.kind === 'fileQueryOutcome') {
 					queryCompletion.observeOutcome(message);
 					return;
@@ -343,6 +354,10 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 			});
 			return {
 				dispatch: (message): void => {
+					if (message.command === 'activeViewerModeUpdate') {
+						pendingActivationCommands.set(message.requestId, message);
+						props.productSessionRef.current?.onActivationCommandPosted?.(message);
+					}
 					props.productSessionRef.current?.onWorkerCommand?.(message);
 					queryCompletion.observeCommand(message);
 					channel.port1.postMessage(message);
@@ -351,6 +366,7 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 					activeBridgeFileViewerBrowserWorkerMessageDrains.delete(workerMessageDrain);
 					activeBridgeFileViewerBrowserQueryCompletions.delete(queryCompletion);
 					queryCompletion.dispose();
+					pendingActivationCommands.clear();
 					const workerQueueJoin = workerMessageActQueue.then((): void => {});
 					pendingBridgeFileViewerBrowserWorkerQueueJoins.add(workerQueueJoin);
 					void workerQueueJoin.finally((): void => {

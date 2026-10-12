@@ -150,6 +150,8 @@ struct S5PaneCLIContext: Sendable {
 
     func runWithWallClock(_ arguments: [String], now: Date) async -> ClientCommandLineOutcome {
         let environment = callEnvironment(store: nil, useStore: true)
+        let driver = ControlledDeadlineDriver()
+        defer { driver.close() }
         return await valueFromDedicatedThread {
             let output = S5TextOutputCollector()
             let error = S5TextOutputCollector()
@@ -158,7 +160,7 @@ struct S5PaneCLIContext: Sendable {
                     arguments: arguments, environment: environment, executablePath: executableURL.path,
                     bundleExecutableURL: nil, standardInput: { Data() },
                     identifierGenerator: { UUIDv7.generate() }, standardOutputSink: { output.append($0) },
-                    standardErrorSink: { error.append($0) }, now: { now }))
+                    standardErrorSink: { error.append($0) }, now: { now }, deadlineTiming: driver.timing))
             return ClientCommandLineOutcome(
                 exitCode: code, standardOutput: output.joined(), standardError: error.joined())
         }
@@ -167,6 +169,8 @@ struct S5PaneCLIContext: Sendable {
     func runAnswersRecordingBookmarks() async -> (ClientCommandLineOutcome, [Result<Int64?, any Error>]) {
         let environment = callEnvironment(store: nil, useStore: true)
         let storeURL = storeURL
+        let driver = ControlledDeadlineDriver()
+        defer { driver.close() }
         return await valueFromDedicatedThread {
             let output = S5AnswerPrintObserver(storeURL: storeURL)
             let error = S5TextOutputCollector()
@@ -175,7 +179,7 @@ struct S5PaneCLIContext: Sendable {
                     arguments: ["answers"], environment: environment, executablePath: executableURL.path,
                     bundleExecutableURL: nil, standardInput: { Data() },
                     identifierGenerator: { UUIDv7.generate() }, standardOutputSink: { output.append($0) },
-                    standardErrorSink: { error.append($0) }))
+                    standardErrorSink: { error.append($0) }, deadlineTiming: driver.timing))
             return (
                 ClientCommandLineOutcome(
                     exitCode: code, standardOutput: output.text(), standardError: error.joined()),

@@ -475,58 +475,6 @@ struct BridgeReviewPublicationCoordinatorTests {
         )
     }
 
-    @Test("superseded publication cannot begin delayed delivery")
-    func supersededPublicationCannotBeginDelayedDelivery() async throws {
-        // Arrange
-        let productAdmission = try BridgeProductAdmissionTestContext.make()
-        let coordinator = BridgeReviewPublicationCoordinator()
-        let deliveryGate = BridgeReviewPublicationDeliveryGate()
-        let deliveryProbe = BridgeReviewPublicationDeliveryProbe()
-        let publicationB = try await makeReviewPreparedPublication(
-            suffix: "delivery-b",
-            reviewGeneration: 2
-        )
-        let publicationC = try await makeReviewPreparedPublication(
-            suffix: "delivery-c",
-            reviewGeneration: 3
-        )
-        let committedB = try commitObserved(
-            publicationB,
-            in: coordinator,
-            productAdmission: productAdmission.context
-        )
-        let delayedDelivery = Task { @MainActor in
-            await deliveryGate.waitUntilReleased()
-            guard
-                coordinator.isCurrentPublication(
-                    publicationId: committedB.publicationId,
-                    productAdmission: productAdmission.context
-                )
-            else {
-                return
-            }
-            await deliveryProbe.recordDelivery(publicationId: committedB.publicationId)
-        }
-        await deliveryGate.waitUntilSuspended()
-
-        // Act
-        let committedC = try commitObserved(
-            publicationC,
-            in: coordinator,
-            productAdmission: productAdmission.context
-        )
-        await deliveryGate.release()
-        await delayedDelivery.value
-
-        // Assert
-        #expect(await deliveryProbe.deliveredPublicationIds().isEmpty)
-        #expect(
-            coordinator.committedPublicationForReplay(
-                productAdmission: productAdmission.context
-            ) == committedC
-        )
-    }
-
     @Test("exact B application retires A while frozen A leases remain settleable")
     func bApplicationRetiresAWhileFrozenALeasesRemainSettleable() async throws {
         // Arrange
@@ -897,5 +845,65 @@ struct BridgeReviewPublicationCoordinatorTests {
         #expect(coordinator.settleContentLease(try #require(lateLeaseA)))
         #expect(!coordinator.settleContentLease(admittedLeaseA))
         #expect(coordinator.diagnosticSnapshot.retiring.isEmpty)
+    }
+}
+
+extension BridgeReviewPublicationCoordinatorTests {
+    @Test("superseded publication cannot begin delayed delivery")
+    func supersededPublicationCannotBeginDelayedDelivery() async throws {
+        // Arrange
+        let productAdmission = try BridgeProductAdmissionTestContext.make()
+        let coordinator = BridgeReviewPublicationCoordinator()
+        let deliveryGate = BridgeReviewPublicationDeliveryGate()
+        let deliveryProbe = BridgeReviewPublicationDeliveryProbe()
+        let publicationB = try await makeReviewPreparedPublication(
+            suffix: "delivery-b",
+            reviewGeneration: 2
+        )
+        let publicationC = try await makeReviewPreparedPublication(
+            suffix: "delivery-c",
+            reviewGeneration: 3
+        )
+        let committedB = try commitObserved(
+            publicationB,
+            in: coordinator,
+            productAdmission: productAdmission.context
+        )
+        let delayedDelivery = Task { @MainActor in
+            await deliveryGate.waitUntilReleased()
+            guard
+                coordinator.isCurrentPublication(
+                    publicationId: committedB.publicationId,
+                    productAdmission: productAdmission.context
+                )
+            else {
+                return
+            }
+            await deliveryProbe.recordDelivery(publicationId: committedB.publicationId)
+        }
+        await deliveryGate.waitUntilSuspended()
+        #expect(
+            coordinator.isCurrentPublication(
+                publicationId: committedB.publicationId,
+                productAdmission: productAdmission.context
+            )
+        )
+
+        // Act
+        let committedC = try commitObserved(
+            publicationC,
+            in: coordinator,
+            productAdmission: productAdmission.context
+        )
+        await deliveryGate.release()
+        await delayedDelivery.value
+
+        // Assert
+        #expect(await deliveryProbe.deliveredPublicationIds().isEmpty)
+        #expect(
+            coordinator.committedPublicationForReplay(
+                productAdmission: productAdmission.context
+            ) == committedC
+        )
     }
 }

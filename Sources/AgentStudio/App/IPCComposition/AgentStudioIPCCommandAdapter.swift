@@ -81,6 +81,7 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
                 correlationId: request.correlationId,
                 arguments: resolved.arguments
             ),
+            allowedTargetKinds: command.ipcSpec.allowedTargetKinds,
             canonicalHandle: resolved.handle,
             target: resolved.target,
             requiredScopes: [

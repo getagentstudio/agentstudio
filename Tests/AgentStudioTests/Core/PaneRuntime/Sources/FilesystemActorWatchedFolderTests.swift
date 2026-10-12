@@ -618,7 +618,7 @@ private actor ResultDrainTaskCompletionProbe {
     }
 }
 
-private actor ControlledActorWatchedFolderScanner {
+actor ControlledActorWatchedFolderScanner {
     struct Start: Sendable {
         let request: WatchedFolderScanRequest
         let scanRunGeneration: UInt64
@@ -691,11 +691,11 @@ private actor ControlledActorWatchedFolderScanner {
     }
 }
 
-private struct WatchedFolderActorFixture {
+struct WatchedFolderActorFixture {
     let scanner = ControlledActorWatchedFolderScanner()
     let submissionGate = WatchedFolderScanAcceptanceGate()
     let bus = EventBus<RuntimeEnvelope>()
-    let fseventClient = ControllableFSEventStreamClient()
+    let fseventClient: ControllableFSEventStreamClient
     let watchedFolder: URL
     let watchedPath: WatchedPath
     let watchedPaths: [WatchedPath]
@@ -708,7 +708,9 @@ private struct WatchedFolderActorFixture {
 
     init(
         watchedFolderCount: Int = 1,
-        recordsLogicalDebt: Bool = false
+        recordsLogicalDebt: Bool = false,
+        fseventClient: ControllableFSEventStreamClient = ControllableFSEventStreamClient(),
+        onCallbackSubmission: @escaping @Sendable (WatchedFolderScanRequest) -> Void = { _ in }
     ) async throws {
         precondition(watchedFolderCount > 0)
         let temporaryRoot = FileManager.default.temporaryDirectory
@@ -753,11 +755,16 @@ private struct WatchedFolderActorFixture {
                 await scanner.makeSession(request: request, scanRunGeneration: generation)
             }
         )
+        let gatedSubmission = self.submissionGate.port
+        let observedSubmission = WatchedFolderScanSubmissionPort { scheduler, request, intent in
+            if request.cause == .callback { onCallbackSubmission(request) }
+            return await gatedSubmission.submit(scheduler, request, intent)
+        }
         let actor = FilesystemActor(
             bus: bus,
             fseventStreamClient: fseventClient,
             watchedFolderScanScheduler: scheduler,
-            watchedFolderScanSubmission: self.submissionGate.port,
+            watchedFolderScanSubmission: observedSubmission,
             debounceWindow: .zero,
             maxFlushLatency: .zero,
             performanceTraceRecorder: performanceTraceRecorder
@@ -766,6 +773,7 @@ private struct WatchedFolderActorFixture {
         let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
 
         self.watchedFolder = watchedFolder
+        self.fseventClient = fseventClient
         self.watchedPath = watchedPath
         self.watchedPaths = watchedPaths
         self.scheduler = scheduler
@@ -858,6 +866,12 @@ private struct WatchedFolderActorFixture {
         eventCollectionTask.cancel()
         try? FileManager.default.removeItem(at: watchedFolder)
     }
+
+    func shutdown() async {
+        await actor.shutdown()
+        eventCollectionTask.cancel()
+        await eventCollectionTask.value
+    }
 }
 
 private actor RefreshCompletionProbe {
@@ -874,101 +888,6 @@ private struct ActorUnusedValidationClient: RepoDiscoveryReadClient {
     func validateDiscoveryCandidate(at candidateURL: URL) async -> GitRepositoryDiscoveryOutcome {
         .failure(.serviceFailed(detail: "unexpected actor test validation request"))
     }
-}
-
-private func cloneEntry(_ path: URL) -> RepoScanner.ResolvedGitEntry {
-    RepoScanner.ResolvedGitEntry(
-        path: path,
-        kind: .cloneRoot,
-        repositoryKey: path.standardizedFileURL.path
-    )
-}
-
-private func canonicalURL(_ path: URL) -> URL {
-    RepoScanner.canonicalURL(path)
-}
-
-private func linkedEntry(
-    _ path: URL,
-    parentClone: URL
-) -> RepoScanner.ResolvedGitEntry {
-    RepoScanner.ResolvedGitEntry(
-        path: path,
-        kind: .linkedWorktree(parentClonePath: parentClone),
-        repositoryKey: parentClone.standardizedFileURL.path
-    )
-}
-
-private func completeResult(entries: [RepoScanner.ResolvedGitEntry]) -> RepoScannerResult {
-    .completeAuthoritative(
-        CompleteRepoScan(
-            verifiedEntries: entries,
-            counts: scannerCounts(successCount: entries.count),
-            serviceMetrics: .zero
-        )
-    )
-}
-
-private func partialResult(entries: [RepoScanner.ResolvedGitEntry]) -> RepoScannerResult {
-    .partial(
-        PartialRepoScan(
-            verifiedEntries: entries,
-            failures: NonEmptyScanFailures(
-                first: .scannerServiceFailed(detail: "controlled partial result"),
-                remaining: []
-            ),
-            counts: scannerCounts(successCount: entries.count, failureCount: 1),
-            serviceMetrics: .zero
-        )
-    )
-}
-
-private func cancelledResult(entries: [RepoScanner.ResolvedGitEntry]) -> RepoScannerResult {
-    .cancelled(
-        CancelledRepoScan(
-            verifiedEntries: entries,
-            counts: scannerCounts(successCount: entries.count),
-            serviceMetrics: .zero
-        )
-    )
-}
-
-private func unavailableResult() -> RepoScannerResult {
-    .unavailable(
-        UnavailableRepoScan(
-            reason: .rootTraversalUnavailable(detail: "controlled unavailable result"),
-            counts: scannerCounts(),
-            serviceMetrics: .zero
-        )
-    )
-}
-
-private func failedResult() -> RepoScannerResult {
-    .failed(
-        FailedRepoScan(
-            reason: .scannerServiceFailed(detail: "controlled failed result"),
-            counts: scannerCounts(failureCount: 1),
-            serviceMetrics: .zero
-        )
-    )
-}
-
-private func scannerCounts(
-    successCount: Int = 0,
-    failureCount: Int = 0
-) -> RepoScannerEvidenceCounts {
-    RepoScannerEvidenceCounts(
-        directoryVisitCount: 0,
-        directoryTraversalFailureCount: 0,
-        entryMetadataFailureCount: 0,
-        gitCandidateCount: successCount,
-        validationSuccessCount: successCount,
-        validationAuthoritativeNegativeCount: 0,
-        validationTimeoutCount: 0,
-        validationCancellationCount: 0,
-        validationFailureCount: failureCount,
-        scannerServiceInvocationCount: 1
-    )
 }
 
 private func boundedYields() async {

@@ -42,6 +42,19 @@ export interface BridgeFileViewerBrowserTestProductSession {
 	) => void;
 	readonly onFileScopeChange?: (scope: BrowserFileViewScope) => void | Promise<void>;
 	readonly onWorkerCommand?: (message: BridgeWorkerMainToServerMessage) => void;
+	readonly onActivationCommandPosted?: (
+		command: Extract<
+			BridgeWorkerMainToServerMessage,
+			{ readonly command: 'activeViewerModeUpdate' }
+		>,
+	) => void;
+	readonly onActivationCommandSettled?: (
+		command: Extract<
+			BridgeWorkerMainToServerMessage,
+			{ readonly command: 'activeViewerModeUpdate' }
+		>,
+		reply: BridgeWorkerServerToMainMessage,
+	) => void;
 	readonly onWorkerMessagesPublisher?: (
 		publisher: (messages: readonly BridgeWorkerServerToMainMessage[]) => void,
 	) => void;

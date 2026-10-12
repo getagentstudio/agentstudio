@@ -41,6 +41,7 @@ run_architecture_lint() {
     --ledger Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv \
     --ledger Tools/AgentStudioArchitectureLint/adhoc-continuation-wait-ledger.tsv \
     --ledger Tools/AgentStudioArchitectureLint/process-singleton-ledger.tsv \
+    --ledger Tools/AgentStudioArchitectureLint/silent-return-test-ledger.tsv \
     "$@" 2>&1 || lint_status=$?
   report_stage_time "architecture-lint" "$stage_started_ms"
   if [[ $lint_status -eq 0 ]]; then

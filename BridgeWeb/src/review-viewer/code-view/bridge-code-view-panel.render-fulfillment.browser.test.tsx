@@ -1,11 +1,4 @@
-import {
-	CodeView,
-	parseDiffFromFile,
-	type CodeViewDiffItem,
-	type CodeViewItem,
-	type CodeViewOptions,
-	type PostRenderPhase,
-} from '@pierre/diffs';
+import { CodeView, type CodeViewItem, type CodeViewOptions } from '@pierre/diffs';
 import { act } from 'react';
 import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
@@ -13,52 +6,51 @@ import { render } from 'vitest-browser-react';
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../../app/bridge-app.css';
 import { prepareBridgeMainPierreItemForPresentation } from '../../core/comm-worker/bridge-main-pierre-item-adapter.js';
-import {
-	createBridgeMainRenderFulfillmentCoordinator,
-	type BridgeMainRenderPublicationItem,
-} from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
-import { bridgeWorkerTestReviewPublicationIdentity } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.test-support.js';
-import {
-	bridgeWorkerReviewPierreRenderJobEventSchema,
-	type BridgeWorkerReviewPierreRenderJobEvent,
-} from '../../core/comm-worker/bridge-worker-contracts.js';
-import { buildBridgeWorkerPierreRenderJob } from '../../core/comm-worker/bridge-worker-pierre-render-job.js';
+import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
 import type { BridgeWorkerRenderDispositionReceipt } from '../../core/comm-worker/bridge-worker-render-fulfillment.js';
-import { makeBridgeWorkerRenderReceiptIdentity } from '../../core/comm-worker/bridge-worker-render-fulfillment.test-support.js';
+import { BridgeProductTestFactRecorder } from '../../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
 import { makeBridgeReviewPackage } from '../../foundation/review-package/bridge-review-package-test-support.js';
 import type { BridgeReviewPackage } from '../../foundation/review-package/bridge-review-package.js';
 import { createWorktreeAnnotationBrowserProviderHarness } from '../../worktree-annotations/worktree-annotation-browser-test-support.js';
 import { buildBridgeReviewProjection } from '../navigation/review-projection.js';
 import { waitForBridgeViewerCodeHeaderCollapseButton } from '../test-support/bridge-viewer-browser-dom.js';
-import { bridgePierreOptionalHighlightLanguage } from '../workers/pierre/bridge-pierre-language-normalization.js';
 import { BridgeCodeViewPanel } from './bridge-code-view-panel.js';
 import {
 	assertBridgeCodeViewHeaderGeometry,
+	makeReviewPublication,
+	requireExactReviewPierreDiffItem,
+	requireCurrentReviewPierreDiffItem,
+	isExactReviewPierreDiffItem,
+	captureBridgeCodeViewPostRender,
+	cloneReviewPublicationForRetry,
+	dispositionKinds,
+	invokeCapturedPostRenderWithinAct,
+	requirePostRenderForItem,
+	assertReviewRenderedMembership,
+	waitForReviewAppliedReceipt,
+	type CapturedBridgeCodeViewPostRender,
 	createExactItemReceiptLog,
+	observeReviewHeaderMetadata,
 	paintedSourceCorrelations,
 	requireCurrentRenderedReviewRows,
 	requireMountedCodeView,
-	type ExactItemReceiptLog,
 } from './bridge-code-view-panel.render-fulfillment.browser.test-support.js';
 
-type ExactReviewPierreDiffItem = Extract<
-	BridgeMainRenderPublicationItem,
-	{ readonly type: 'diff' }
-> &
-	CodeViewDiffItem;
-
-interface CapturedBridgeCodeViewPostRender {
-	readonly contextItem: CodeViewItem;
-	readonly invoke: (props: {
-		readonly contextItem?: CodeViewItem;
-		readonly phase: PostRenderPhase;
-	}) => void;
-}
 interface PendingAnimationFrame {
 	readonly callback: FrameRequestCallback;
 	readonly frameHandle: number;
 }
 describe('BridgeCodeViewPanel render fulfillment', () => {
+	test('closes held exact-item Review receipts when their observation owner retires', async (): Promise<void> => {
+		const item = {};
+		const log = createExactItemReceiptLog<object, { readonly contextItem: object }>();
+		const outcome = log.waitForItem(item).then(
+			(): string => 'unexpected callback',
+			(error: unknown): string => String(error),
+		);
+		log.close(new Error('Exact Review post-render owner retired.'));
+		expect(await outcome).toContain('Exact Review post-render owner retired');
+	});
 	test('keeps Pierre-retained readable content when the same semantic item is selected without a keyed frontend copy', async () => {
 		const annotationHarness = createWorktreeAnnotationBrowserProviderHarness('review');
 		// Pierre retains a hydrated item after its controller-facing keyed copy disappears.
@@ -118,11 +110,7 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 		const rendered = await render(annotationHarness.wrap(<BridgeCodeViewPanel {...panelProps} />));
 
 		try {
-			await settleBridgeCodeViewState(
-				(): boolean =>
-					mountedCodeView.current?.getItem(publicationItem.id) === retainedReadableItem,
-				'Expected Pierre to retain the hydrated visible Review item before selection.',
-			);
+			expect(mountedCodeView.current?.getItem(publicationItem.id)).toBe(retainedReadableItem);
 
 			// Act: the same semantic item becomes selected after its keyed frontend copy was reset.
 			await act(async (): Promise<void> => {
@@ -136,12 +124,6 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 						/>,
 					),
 				);
-				await Promise.resolve();
-			});
-			await act(async (): Promise<void> => {
-				await new Promise<void>((resolve): void => {
-					requestAnimationFrame((): void => resolve());
-				});
 				await Promise.resolve();
 			});
 
@@ -187,21 +169,18 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			});
 
 			// Assert: readable residency is not preserved across a content-identity change.
-			await settleBridgeCodeViewState((): boolean => {
-				const currentItem = mountedCodeView.current?.getItem(publicationItem.id);
-				return (
-					currentItem !== undefined &&
-					isExactReviewPierreDiffItem(currentItem) &&
-					currentItem.bridgeMetadata.contentState === 'loading'
-				);
-			}, 'Expected changed Review content identity to replace retained residency with loading.');
+			const changedItem = requireCurrentReviewPierreDiffItem(
+				requireMountedCodeView(mountedCodeView.current),
+				publicationItem.id,
+			);
+			expect(changedItem.bridgeMetadata.contentState).toBe('loading');
 		} finally {
 			CodeView.prototype.setup = originalSetup;
 			renderFulfillmentCoordinator.dispose();
 		}
 	});
 
-	test('adapts Review items with main versions, preserves collapse, and reuses exact painted residency', async () => {
+	test('adapts Review items with main versions, preserves collapse, and reuses exact painted residency', async (context) => {
 		const annotationHarness = createWorktreeAnnotationBrowserProviderHarness('review');
 		// Hold Pierre's post-render callback while retaining a real CodeView and public readbacks.
 		const mountedCodeView: { current: CodeView | null } = { current: null };
@@ -210,6 +189,23 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			CapturedBridgeCodeViewPostRender
 		>();
 		const capturedPostRenders = capturedPostRenderLog.receipts;
+		const currentItemFacts = new BridgeProductTestFactRecorder<CodeViewItem>();
+		const dispositionFacts =
+			new BridgeProductTestFactRecorder<BridgeWorkerRenderDispositionReceipt>();
+		let observationIsOpen = true;
+		let lastWait = 'Review setup';
+		const closeObservations = (): void => {
+			observationIsOpen = false;
+			const error = new Error(`Review fulfillment ended while awaiting ${lastWait}.`);
+			capturedPostRenderLog.close(error);
+			currentItemFacts.close(error);
+			dispositionFacts.close(error);
+		};
+		context.signal.addEventListener('abort', closeObservations, { once: true });
+		context.onTestFinished((): void => {
+			if (context.signal.aborted || context.task.result?.state === 'fail')
+				console.info(`A12 failed/aborted at ${lastWait}.`);
+		});
 		// oxlint-disable-next-line unbound-method -- Browser witness restores the exact prototype method.
 		const originalSetup = CodeView.prototype.setup;
 		// oxlint-disable-next-line unbound-method -- Browser witness restores the exact prototype method.
@@ -246,11 +242,18 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 		};
 		CodeView.prototype.updateItem = function captureUpdatedItem(item: CodeViewItem): boolean {
 			pierreUpdatedItems.push(item);
-			return originalUpdateItem.call(this, item);
+			const result = originalUpdateItem.call(this, item);
+			const currentItem = this.getItem(item.id);
+			if (observationIsOpen && currentItem !== undefined) currentItemFacts.record(currentItem);
+			return result;
 		};
 		CodeView.prototype.setItems = function captureSetItems(items: readonly CodeViewItem[]): void {
 			pierreSetItemsCalls.push(items);
 			originalSetItems.call(this, items);
+			for (const item of items) {
+				const currentItem = this.getItem(item.id);
+				if (observationIsOpen && currentItem !== undefined) currentItemFacts.record(currentItem);
+			}
 		};
 
 		const dispositions: BridgeWorkerRenderDispositionReceipt[] = [];
@@ -276,6 +279,7 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			},
 			sendDisposition: (receipt): void => {
 				dispositions.push(receipt);
+				if (observationIsOpen) dispositionFacts.record(receipt);
 			},
 		});
 		const firstPublication = makeReviewPublication({
@@ -332,15 +336,16 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 		const rendered = await render(annotationHarness.wrap(<BridgeCodeViewPanel {...panelProps} />));
 
 		try {
-			await settleBridgeCodeViewState((): boolean => {
-				const currentItem = mountedCodeView.current?.getItem(firstPublicationItem.id);
-				return (
-					currentItem !== undefined &&
-					isExactReviewPierreDiffItem(currentItem) &&
-					currentItem !== firstPublicationItem &&
-					currentItem.bridgeMetadata.cacheKey === firstPublicationItem.bridgeMetadata.cacheKey
+			lastWait = `first current Review item ${firstPublicationItem.id}`;
+			await act(async (): Promise<void> => {
+				await currentItemFacts.waitFor(
+					(item): boolean =>
+						isExactReviewPierreDiffItem(item) &&
+						item.id === firstPublicationItem.id &&
+						item !== firstPublicationItem &&
+						item.bridgeMetadata.cacheKey === firstPublicationItem.bridgeMetadata.cacheKey,
 				);
-			}, 'Expected Pierre current item to become the first main-adapted Review object.');
+			});
 			const firstCodeView = requireMountedCodeView(mountedCodeView.current);
 			const firstFinalItem = requireCurrentReviewPierreDiffItem(
 				firstCodeView,
@@ -351,30 +356,13 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			expect(firstControllerSeedItem.version).toBe(1);
 			expect(firstFinalItem).not.toBe(firstPublicationItem);
 			expect.soft(firstFinalItem.version).toBe(1);
-			await settleBridgeCodeViewState(
-				(): boolean =>
-					firstCodeView
-						.getRenderedItems()
-						.some(
-							(renderedItem): boolean =>
-								renderedItem.id === firstFinalItem.id &&
-								renderedItem.item === firstFinalItem &&
-								renderedItem.element.isConnected,
-						),
-				'Expected Pierre rendered membership to carry the exact first final Review object.',
-			);
+			lastWait = `first exact Review postRender ${firstFinalItem.id}`;
 			await act(async (): Promise<void> => {
 				await capturedPostRenderLog.waitForItem(firstFinalItem);
 			});
-			await settleBridgeCodeViewState(
-				(): boolean =>
-					document.querySelector('[data-testid="bridge-code-view-header-metadata"]') !== null,
-				'Expected the Bridge descriptor header metadata to render.',
-			);
-			const metadata = document.querySelector('[data-testid="bridge-code-view-header-metadata"]');
-			if (!(metadata instanceof HTMLElement)) {
-				throw new Error('Expected mounted Bridge descriptor header metadata.');
-			}
+			assertReviewRenderedMembership(firstCodeView, firstFinalItem);
+			lastWait = 'Review header metadata DOM mount';
+			const metadata = await act(() => observeReviewHeaderMetadata(context.signal));
 			const metadataCounts = [...metadata.querySelectorAll(':scope > span')].filter(
 				(element): boolean => element.textContent === '-9' || element.textContent === '+17',
 			);
@@ -504,15 +492,16 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 				collapseButton.click();
 				await Promise.resolve();
 			});
-			await settleBridgeCodeViewState((): boolean => {
-				const currentItem = firstCodeView.getItem(firstFinalItem.id);
-				return (
-					currentItem !== undefined &&
-					isExactReviewPierreDiffItem(currentItem) &&
-					currentItem !== firstFinalItem &&
-					currentItem.collapsed === true
+			lastWait = `collapsed Review item ${firstFinalItem.id}`;
+			await act(async (): Promise<void> => {
+				await currentItemFacts.waitFor(
+					(item): boolean =>
+						isExactReviewPierreDiffItem(item) &&
+						item.id === firstFinalItem.id &&
+						item !== firstFinalItem &&
+						item.collapsed === true,
 				);
-			}, 'Expected the public Review collapse control to install one exact collapsed item.');
+			});
 			const collapsedItem = requireCurrentReviewPierreDiffItem(firstCodeView, firstFinalItem.id);
 			expect(collapsedItem.collapsed).toBe(true);
 			expect(collapsedItem.version).toBe((firstFinalItem.version ?? 0) + 1);
@@ -544,16 +533,17 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 				);
 				await Promise.resolve();
 			});
-			await settleBridgeCodeViewState((): boolean => {
-				const currentItem = firstCodeView.getItem(secondPublicationItem.id);
-				return (
-					currentItem !== undefined &&
-					isExactReviewPierreDiffItem(currentItem) &&
-					currentItem !== secondPublicationItem &&
-					currentItem.collapsed === true &&
-					currentItem.bridgeMetadata.cacheKey === secondPublicationItem.bridgeMetadata.cacheKey
+			lastWait = `second current Review item ${secondPublicationItem.id}`;
+			await act(async (): Promise<void> => {
+				await currentItemFacts.waitFor(
+					(item): boolean =>
+						isExactReviewPierreDiffItem(item) &&
+						item.id === secondPublicationItem.id &&
+						item !== secondPublicationItem &&
+						item.collapsed === true &&
+						item.bridgeMetadata.cacheKey === secondPublicationItem.bridgeMetadata.cacheKey,
 				);
-			}, 'Expected Pierre current item to become the collapse-preserving second final object.');
+			});
 			const secondFinalItem = requireCurrentReviewPierreDiffItem(
 				firstCodeView,
 				secondPublicationItem.id,
@@ -561,21 +551,11 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			expect(secondFinalItem).not.toBe(secondPublicationItem);
 			expect(secondFinalItem.collapsed).toBe(true);
 			expect(secondFinalItem.version).toBe((collapsedItem.version ?? 0) + 1);
-			await settleBridgeCodeViewState(
-				(): boolean =>
-					firstCodeView
-						.getRenderedItems()
-						.some(
-							(renderedItem): boolean =>
-								renderedItem.id === secondFinalItem.id &&
-								renderedItem.item === secondFinalItem &&
-								renderedItem.element.isConnected,
-						),
-				'Expected Pierre rendered membership to carry the exact second final Review object.',
-			);
+			lastWait = `second exact Review postRender ${secondFinalItem.id}`;
 			await act(async (): Promise<void> => {
 				await capturedPostRenderLog.waitForItem(secondFinalItem);
 			});
+			assertReviewRenderedMembership(firstCodeView, secondFinalItem);
 			const secondPostRender = requirePostRenderForItem(capturedPostRenders, secondFinalItem);
 			expect([
 				['queued', 'applied', 'painted', 'queued'],
@@ -585,10 +565,8 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			await invokeCapturedPostRenderWithinAct({ invocation: firstPostRender, phase: 'update' });
 			await invokeCapturedPostRenderWithinAct({ invocation: secondPostRender, phase: 'update' });
 			const secondAppliedKinds = ['queued', 'applied', 'painted', 'queued', 'applied'];
-			await settleBridgeCodeViewState(
-				(): boolean => dispositionKinds(dispositions).length === secondAppliedKinds.length,
-				'Expected the second exact Review attempt to reach applied.',
-			);
+			lastWait = 'second Review applied receipt';
+			await act(() => waitForReviewAppliedReceipt(dispositionFacts, secondPublication));
 			expect(dispositionKinds(dispositions)).toEqual(secondAppliedKinds);
 			expect(pendingAnimationFrames).toHaveLength(1);
 			const secondPendingPaintFrame = pendingAnimationFrames.shift();
@@ -623,10 +601,8 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 				);
 				await Promise.resolve();
 			});
-			await settleBridgeCodeViewState(
-				(): boolean => dispositionKinds(dispositions).at(-1) === 'applied',
-				'Expected equal-fingerprint Review retry to reconcile from connected painted residency.',
-			);
+			lastWait = 'equal-fingerprint Review retry applied receipt';
+			await act(() => waitForReviewAppliedReceipt(dispositionFacts, retryPublication));
 			expect(firstCodeView.getItem(secondFinalItem.id)).toBe(secondFinalItem);
 			expect(
 				firstCodeView
@@ -698,271 +674,9 @@ describe('BridgeCodeViewPanel render fulfillment', () => {
 			CodeView.prototype.setOptions = originalSetOptions;
 			CodeView.prototype.updateItem = originalUpdateItem;
 			CodeView.prototype.setItems = originalSetItems;
+			context.signal.removeEventListener('abort', closeObservations);
 			renderFulfillmentCoordinator.dispose();
+			closeObservations();
 		}
 	});
 });
-
-function makeReviewPublication(props: {
-	readonly contentRole?: 'base' | 'head';
-	readonly contentsMarker: string;
-	readonly publicationSequence: number;
-	readonly version: number;
-}): BridgeWorkerReviewPierreRenderJobEvent {
-	const itemId = 'item-source';
-	const baseCacheKey = `base-${props.contentsMarker}`;
-	const headCacheKey = `head-${props.contentsMarker}`;
-	const contentCacheKey = `${baseCacheKey}|${headCacheKey}`;
-	const contentRoles =
-		props.contentRole === undefined ? (['base', 'head'] as const) : [props.contentRole];
-	const baseSource = `\tlet primaryValue = "base-${props.contentsMarker}"\n\tlet secondaryValue = "base-secondary-${props.contentsMarker}"\n`;
-	const headSource = `\tlet primaryValue = "head-${props.contentsMarker}"\n\tlet secondaryValue = "head-secondary-${props.contentsMarker}"\n`;
-	const baseContents = props.contentRole === 'head' ? '' : baseSource;
-	const headContents = props.contentRole === 'base' ? '' : headSource;
-	const lineCount = contentRoles.length * 2;
-	const job = buildBridgeWorkerPierreRenderJob({
-		bridgeDemandRank: { lane: 'selected', priority: props.publicationSequence },
-		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
-		contentCacheKey,
-		contentHash: `sha256:${props.contentsMarker}`,
-		itemId,
-		language: 'swift',
-		payload: {
-			item: {
-				bridgeMetadata: {
-					cacheKey: contentCacheKey,
-					contentRoles,
-					contentState: 'hydrated',
-					displayPath: 'Sources/App/View.swift',
-					itemId,
-					lineCount,
-				},
-				fileDiff: parseDiffFromFile(
-					{
-						cacheKey: baseCacheKey,
-						contents: baseContents,
-						name: 'Sources/App/View.swift',
-					},
-					{
-						cacheKey: headCacheKey,
-						contents: headContents,
-						name: 'Sources/App/View.swift',
-					},
-				),
-				id: itemId,
-				type: 'diff',
-				version: props.version,
-			},
-			kind: 'codeViewDiffItem',
-		},
-		renderKind: 'reviewDiff',
-		sourceCorrelations: contentRoles.map((role) => ({
-			descriptorId: `descriptor-${props.contentsMarker}-${role}`,
-			itemId,
-			observedSha256: (role === 'base' ? 'b' : 'c').repeat(64),
-			position: 'whole',
-			requestId: `request-${props.contentsMarker}-${role}`,
-			role,
-			sourceGeneration: props.publicationSequence,
-			sourceIdentity: `source-${props.contentsMarker}-${role}`,
-		})),
-		window: { endLine: lineCount, startLine: 1, totalLineCount: lineCount },
-	});
-	return {
-		direction: 'serverWorkerToMain',
-		job,
-		kind: 'reviewPierreRenderJob',
-		reviewPublicationIdentity: bridgeWorkerTestReviewPublicationIdentity,
-		publicationSequence: props.publicationSequence,
-		renderReceiptIdentity: makeBridgeWorkerRenderReceiptIdentity({
-			itemId,
-			publicationSequence: props.publicationSequence,
-			surface: 'review',
-			workerDerivationEpoch: 1,
-		}),
-		surface: 'review',
-		transferDescriptors: [
-			{
-				byteLength: job.payloadByteLength,
-				fieldPath: ['job', 'payload'],
-				messageKind: 'reviewPierreRenderJob',
-				mode: 'clone',
-			},
-		],
-		wireVersion: 1,
-		workerDerivationEpoch: 1,
-	};
-}
-
-function cloneReviewPublicationForRetry(
-	publication: BridgeWorkerReviewPierreRenderJobEvent,
-): BridgeWorkerReviewPierreRenderJobEvent {
-	const publicationItem = requireExactReviewPierreDiffItem(publication.job.payload.item);
-	const clonedPublicationItem = {
-		...publicationItem,
-		bridgeMetadata: {
-			...publicationItem.bridgeMetadata,
-			contentRoles: [...publicationItem.bridgeMetadata.contentRoles],
-		},
-		fileDiff: { ...publicationItem.fileDiff },
-	};
-	return bridgeWorkerReviewPierreRenderJobEventSchema.parse({
-		...publication,
-		job: {
-			...publication.job,
-			payload: {
-				...publication.job.payload,
-				item: clonedPublicationItem,
-			},
-		},
-		renderReceiptIdentity: {
-			...publication.renderReceiptIdentity,
-			attemptId: 'attempt-review-equal-fingerprint-retry',
-		},
-	});
-}
-
-function dispositionKinds(
-	dispositions: readonly BridgeWorkerRenderDispositionReceipt[],
-): readonly BridgeWorkerRenderDispositionReceipt['disposition'][] {
-	return dispositions.map((receipt) => receipt.disposition);
-}
-
-async function invokeCapturedPostRenderWithinAct(props: {
-	readonly contextItem?: CodeViewItem;
-	readonly invocation: CapturedBridgeCodeViewPostRender;
-	readonly mutateRenderedContent?: () => void;
-	readonly phase: PostRenderPhase;
-}): Promise<void> {
-	await act(async (): Promise<void> => {
-		props.mutateRenderedContent?.();
-		props.invocation.invoke({
-			phase: props.phase,
-			...(props.contextItem === undefined ? {} : { contextItem: props.contextItem }),
-		});
-		await Promise.resolve();
-	});
-}
-
-function requirePostRenderForItem(
-	invocations: readonly CapturedBridgeCodeViewPostRender[],
-	item: CodeViewItem,
-): CapturedBridgeCodeViewPostRender {
-	const invocation = invocations.findLast((candidate): boolean => candidate.contextItem === item);
-	if (invocation === undefined) {
-		throw new Error(`Expected Pierre onPostRender callback for exact item ${item.id}.`);
-	}
-	return invocation;
-}
-
-function captureBridgeCodeViewPostRender(props: {
-	readonly callback: NonNullable<CodeViewOptions<undefined>['onPostRender']>;
-	readonly callbackArguments: readonly unknown[];
-	readonly log: ExactItemReceiptLog<CodeViewItem, CapturedBridgeCodeViewPostRender>;
-}): void {
-	const callbackArguments = requireBridgeCodeViewPostRenderArguments(props.callbackArguments);
-	const capturedContextItem = callbackArguments.context.item;
-	const capturedContext = { ...callbackArguments.context, item: capturedContextItem };
-	props.log.record({
-		contextItem: capturedContextItem,
-		invoke: (invokeProps): void => {
-			Reflect.apply(props.callback, undefined, [
-				callbackArguments.element,
-				callbackArguments.instance,
-				invokeProps.phase,
-				{
-					...capturedContext,
-					item: invokeProps.contextItem ?? capturedContextItem,
-				},
-			]);
-		},
-	});
-}
-
-function requireBridgeCodeViewPostRenderArguments(callbackArguments: readonly unknown[]): {
-	readonly context: Readonly<Record<string, unknown>> & { readonly item: CodeViewItem };
-	readonly element: HTMLElement;
-	readonly instance: unknown;
-} {
-	const [element, instance, phase, context] = callbackArguments;
-	if (
-		!(element instanceof HTMLElement) ||
-		!isPostRenderPhase(phase) ||
-		!isBridgeCodeViewPostRenderContext(context)
-	) {
-		throw new Error('Expected Pierre public onPostRender element, instance, phase, and context.');
-	}
-	return { context, element, instance };
-}
-
-function isBridgeCodeViewPostRenderContext(
-	value: unknown,
-): value is Readonly<Record<string, unknown>> & { readonly item: CodeViewItem } {
-	return isUnknownRecord(value) && isCodeViewItem(value['item']);
-}
-
-function isCodeViewItem(value: unknown): value is CodeViewItem {
-	return (
-		isUnknownRecord(value) &&
-		typeof value['id'] === 'string' &&
-		(value['type'] === 'diff' || value['type'] === 'file')
-	);
-}
-
-function isPostRenderPhase(value: unknown): value is PostRenderPhase {
-	return value === 'mount' || value === 'unmount' || value === 'update';
-}
-
-function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === 'object' && value !== null;
-}
-
-function requireExactReviewPierreDiffItem(
-	item: BridgeMainRenderPublicationItem,
-): ExactReviewPierreDiffItem {
-	if (!isExactReviewPierreDiffItem(item)) {
-		throw new Error('Expected exact Review worker publication to be a public Pierre diff item.');
-	}
-	return item;
-}
-
-function requireCurrentReviewPierreDiffItem(
-	codeView: CodeView,
-	itemId: string,
-): ExactReviewPierreDiffItem {
-	const item = codeView.getItem(itemId);
-	if (item === undefined || !isExactReviewPierreDiffItem(item)) {
-		throw new Error(`Expected current Review item ${itemId} to carry Bridge publication metadata.`);
-	}
-	return item;
-}
-
-function isExactReviewPierreDiffItem(
-	item: BridgeMainRenderPublicationItem | CodeViewItem,
-): item is ExactReviewPierreDiffItem {
-	if (item.type !== 'diff' || !('bridgeMetadata' in item)) return false;
-	const language = item.fileDiff.lang;
-	return language === undefined
-		? !Object.hasOwn(item.fileDiff, 'lang')
-		: bridgePierreOptionalHighlightLanguage(language) === language;
-}
-
-async function settleBridgeCodeViewState(
-	isSettled: () => boolean,
-	failureMessage: string,
-): Promise<void> {
-	for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
-		if (isSettled()) return;
-		// oxlint-disable-next-line no-await-in-loop -- Each iteration is a bounded observable render boundary.
-		await act(async (): Promise<void> => {
-			await new Promise<void>((resolve): void => {
-				setTimeout(resolve, 0);
-			});
-			await new Promise<void>((resolve): void => {
-				requestAnimationFrame((): void => resolve());
-			});
-			await Promise.resolve();
-		});
-	}
-	if (!isSettled()) throw new Error(failureMessage);
-}

@@ -75,7 +75,8 @@ describe('BridgeApp initial bootstrap failure recovery', () => {
 			});
 			expect(requests).toHaveLength(1);
 			expect(requests[0]?.reason).toBe('initial');
-			await actUpdate(ready.acknowledgeReady);
+			const readyRequestId = await actWait(ready.waitForReadyRequest);
+			ready.acknowledgeReady(readyRequestId);
 			const refuseLatestRequest = (): void => {
 				const request = requests.at(-1);
 				if (request === undefined) throw new Error('Expected current native bootstrap request.');

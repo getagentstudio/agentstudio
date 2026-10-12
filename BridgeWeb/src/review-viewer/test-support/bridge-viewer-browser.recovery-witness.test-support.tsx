@@ -10,6 +10,7 @@ import {
 import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
 import { createBridgeMainRenderSnapshotStore } from '../../core/comm-worker/bridge-main-render-snapshot-store.js';
 import type { BridgePaneSurfaceClient } from '../../core/comm-worker/bridge-pane-runtime.js';
+import { createBridgeProductDeferred } from '../../core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeProductNavigationCommand } from '../../core/comm-worker/bridge-product-session-contracts.js';
 import type {
 	BridgeWorkerReviewDisplayItem,
@@ -163,6 +164,7 @@ export async function renderBridgeReviewRecoveryWitness(
 	const lifecycleStore = createBridgeWorkerRpcLifecycleStore();
 	const sentCommands: BridgeWorkerRpcCommandInput[] = [];
 	const sentRequests: BridgeReviewRecoveryWitnessWorkerRequest[] = [];
+	const messageSubscriptionReady = createBridgeProductDeferred<void>();
 	const telemetrySamples: BridgeTelemetrySample[] = [];
 	const telemetryRecorder: BridgeTelemetryRecorder = {
 		flush: (): boolean => true,
@@ -257,6 +259,7 @@ export async function renderBridgeReviewRecoveryWitness(
 		},
 		subscribeMessages: (listener): (() => void) => {
 			messageListeners.add(listener);
+			messageSubscriptionReady.resolve();
 			reviewProjectionRouter.setListener(publishWorkerMessage);
 			return (): void => {
 				messageListeners.delete(listener);
@@ -286,6 +289,9 @@ export async function renderBridgeReviewRecoveryWitness(
 		</div>
 	);
 	const renderResult = await render(renderWitnessRoot(true));
+	await act(async (): Promise<void> => {
+		await messageSubscriptionReady.promise;
+	});
 	const requireMessageListener = (): ((message: BridgeWorkerServerToMainMessage) => void) => {
 		if (messageListeners.size === 0) {
 			throw new Error(
