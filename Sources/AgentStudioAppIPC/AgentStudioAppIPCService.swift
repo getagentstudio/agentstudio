@@ -161,6 +161,7 @@ public protocol AppIPCBridgePort: Sendable {
 
 package struct AppIPCPreparedCommand: Sendable {
     package let request: IPCCommandExecutionRequest
+    package let allowedTargetKinds: Set<IPCHandleKind>
     package let canonicalHandle: IPCHandle?
     package let target: IPCTargetScope
     package let requiredScopes: [IPCPermissionScope]
@@ -169,10 +170,12 @@ package struct AppIPCPreparedCommand: Sendable {
     package let agentArgumentRule: AppIPCAgentArgumentRule
 
     package init(
-        request: IPCCommandExecutionRequest, canonicalHandle: IPCHandle?, target: IPCTargetScope,
+        request: IPCCommandExecutionRequest, allowedTargetKinds: Set<IPCHandleKind>,
+        canonicalHandle: IPCHandle?, target: IPCTargetScope,
         requiredScopes: [IPCPermissionScope], resolvedPaneIds: [UUID], agentArgumentRule: AppIPCAgentArgumentRule
     ) {
         self.request = request
+        self.allowedTargetKinds = allowedTargetKinds
         self.canonicalHandle = canonicalHandle
         self.target = target
         self.requiredScopes = requiredScopes

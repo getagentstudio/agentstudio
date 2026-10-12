@@ -216,12 +216,9 @@ struct ZoomPresentationContainerTests {
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = harness.controller
-                AppCommandDispatcher.shared.appCommandRouter = nil
-            },
-            body: {
+        try await withCommandDispatcher(
+            harness.commandDispatcher,
+            body: { _ in
                 let hostingView = NSHostingView(
                     rootView: PaneSurfaceToolbarHost(
                         anchorPaneId: pane.id,
@@ -237,7 +234,7 @@ struct ZoomPresentationContainerTests {
                         paneInboxPresentation: nil,
                         workspaceWindowId: nil,
                         actionDispatcher: makeNoOpPaneActionDispatcher(),
-                        onPaneFocusTrigger: { _ in }
+                        commandDispatcher: harness.commandDispatcher, onPaneFocusTrigger: { _ in }
                     )
                     .frame(width: 640, height: 44)
                 )
@@ -433,6 +430,7 @@ extension ZoomPresentationContainerTests {
                 octiconLoader: makeTestOcticonLoader(),
                 editorChooser: makeTestAtomRegistry().editorChooser,
                 actionDispatcher: makeNoOpPaneActionDispatcher(),
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                 arrangementInlineRenameState: ArrangementInlineRenameState(),
                 onPaneFocusTrigger: { _ in },
                 viewRegistry: viewRegistry,
@@ -563,6 +561,7 @@ extension ZoomPresentationContainerTests {
                 appLifecycleStore: AppLifecycleAtom(),
                 closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
                 actionDispatcher: makeNoOpPaneActionDispatcher(),
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                 arrangementInlineRenameState: ArrangementInlineRenameState(),
                 onPaneFocusTrigger: { _ in },
                 onFocusPane: { _ in },
@@ -614,7 +613,7 @@ extension ZoomPresentationContainerTests {
                 editorChooser: makeTestAtomRegistry().editorChooser,
                 closeTransitionCoordinator: PaneCloseTransitionCoordinator(),
                 actionDispatcher: makeNoOpPaneActionDispatcher(),
-                onPaneFocusTrigger: { _ in },
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
                 onOpenPaneGitHub: { _ in },
                 paneInboxPresentation: paneInboxPresentation,
                 toolbarPresentation: toolbarPresentation

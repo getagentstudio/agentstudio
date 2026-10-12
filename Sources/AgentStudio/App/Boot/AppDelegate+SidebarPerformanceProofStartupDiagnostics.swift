@@ -205,6 +205,7 @@ import Observation
                 population: population,
                 window: window,
                 recorder: startupTraceRecorder,
+                commandDispatcher: self.commandDispatcherForBoot(),
                 performanceRecorder: performanceTraceRecorder,
                 settleRepositoryFactDemandAdmission: { [weak workspaceSurfaceCoordinator] in
                     await workspaceSurfaceCoordinator?
@@ -255,7 +256,7 @@ import Observation
                 return
             }
             mainWindowController.expandSidebar()
-            AppCommandDispatcher.shared.dispatch(.showReposSidebar)
+            self.commandDispatcherForBoot().dispatch(.showReposSidebar)
             startupTraceRecorder.recordAppStartup(
                 "app.startup_diagnostic_action.command_exercised",
                 phase: "startup_diagnostic_action",
@@ -537,7 +538,7 @@ import Observation
                     .gitLogicalDebtSnapshotForPerformanceProof(),
                 coldDebt.inactiveAutomaticDeadlineCount == 0,
                 coldDebt.inactiveAutomaticSourceStartCount == 0,
-                AppCommandDispatcher.shared.dispatch(
+                self.commandDispatcherForBoot().dispatch(
                     .updateRepositoryFacts,
                     target: repository.id,
                     targetType: .repo,

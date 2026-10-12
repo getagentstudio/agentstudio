@@ -44,7 +44,7 @@ extension WorkspaceSurfaceCoordinator {
                         target: target
                     )
                 },
-            pageCommandRunner: Self.runBridgePageCommand
+            pageCommandRunner: bridgePageCommandRunner
         )
         let view = BridgePaneMountView(paneId: pane.id, controller: controller)
         registerHostedView(mountedView: view, for: pane.id)
@@ -56,7 +56,11 @@ extension WorkspaceSurfaceCoordinator {
     }
 
     /// The page can name only the closed reload command; pane identity comes from its controller.
-    static func runBridgePageCommand(_ command: BridgePageCommand, paneId: UUID) {
-        AppCommandDispatcher.shared.dispatch(command.appCommand, target: paneId, targetType: .pane)
+    static func makeBridgePageCommandRunner(
+        dispatcher: any AppCommandDispatching
+    ) -> @MainActor @Sendable (BridgePageCommand, UUID) -> Void {
+        { command, paneId in
+            dispatcher.dispatch(command.appCommand, target: paneId, targetType: .pane)
+        }
     }
 }

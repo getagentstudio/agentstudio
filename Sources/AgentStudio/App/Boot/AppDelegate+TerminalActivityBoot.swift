@@ -14,18 +14,24 @@ extension AppDelegate {
         self.paneActivityClock = paneActivityClock
         workspaceSurfaceCoordinator?.paneActivityClock = paneActivityClock
         Task { await paneActivityClock.start() }
+        let surfaceManager = terminalLookupForBoot()
         terminalActivityRouter = TerminalActivityRouter(
             bus: bus,
             activityAtom: atomStore.terminalActivity,
+            callbackHandlingAccess: { @MainActor [weak self] in self?.callbackHandlingForBoot() },
             attendedPane: atomStore.core.attendedPane,
             traceRuntime: traceRuntime,
             startupTraceRecorder: startupTraceRecorder,
+            surfaceIDForPaneID: { [weak surfaceManager] in surfaceManager?.surfaceId(forPaneId: $0) },
             isPaneCurrentlyAttended: { [weak self] paneId in
                 self?.isPaneCurrentlyAttendedForTerminalActivity(paneId) ?? false
             },
             isPaneAgentClassified: { [weak self] paneId, paneKind in
                 if paneKind == .agent { return true }
                 return self?.store.paneAtom.pane(paneId)?.metadata.contentType == .agent
+            },
+            lastOutputLineReader: { [weak surfaceManager] surfaceID in
+                surfaceManager?.readViewportTrailingText(forSurfaceID: surfaceID) ?? .surfaceStale
             },
             recordSettledActivityStatus: { [weak self] paneId, lastOutputLine in
                 self?.atomStore.core.paneActivityStatus.recordSettledActivity(

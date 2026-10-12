@@ -15,9 +15,12 @@ struct TerminalRuntimeObservationRetentionTests {
         weak var weakRuntime: TerminalRuntime?
         autoreleasepool {
             var runtime: TerminalRuntime? = TerminalRuntime(
-                paneId: PaneId.generateUUIDv7(), metadata: PaneMetadata(title: "Retention"))
+                paneId: PaneId.generateUUIDv7(), metadata: PaneMetadata(title: "Retention"),
+                surfaceCommandDispatcher: TerminalFixtureSurfaceCommands()
+            )
             weakRuntime = runtime
             var mountView: TerminalPaneMountView? = TerminalPaneMountView(
+                surfaceOperations: makeTerminalFixtureMountOperations(),
                 restoredSurfaceId: UUIDv7.generate(), paneId: UUIDv7.generate(), title: "Retention")
             var surfaceView: Ghostty.SurfaceView? = Ghostty.SurfaceView(
                 managedSurfaceID: UUIDv7.generate(), appCommandDispatcher: NoOpDispatcher())
@@ -35,6 +38,9 @@ struct TerminalRuntimeObservationRetentionTests {
 
 @MainActor
 private final class NoOpDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

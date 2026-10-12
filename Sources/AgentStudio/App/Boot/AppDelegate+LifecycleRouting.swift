@@ -65,7 +65,9 @@ extension AppDelegate {
     }
 
     func wireLifecycleConsumers() {
-        Ghostty.bindApplicationLifecycleStore(appLifecycleStore)
+        if case .available(let engine) = engineAvailabilityForBoot() {
+            engine.bindApplicationLifecycleStore(appLifecycleStore)
+        }
     }
 
     func paneTabViewController() -> PaneTabViewController? {
@@ -88,11 +90,11 @@ extension AppDelegate {
     }
 
     @objc func showCommandBarRepos() {
-        AppCommandDispatcher.shared.dispatch(.showCommandBarRepos)
+        self.commandDispatcherForBoot().dispatch(.showCommandBarRepos)
     }
 
     func showRepoCommandBar() {
-        AppCommandDispatcher.shared.dispatch(.showCommandBarRepos)
+        self.commandDispatcherForBoot().dispatch(.showCommandBarRepos)
     }
 
     func refreshWorktrees() {

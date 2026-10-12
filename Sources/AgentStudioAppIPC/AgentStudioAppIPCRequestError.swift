@@ -32,7 +32,9 @@ package struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
     }
 
     static let unauthenticated = Self(code: -32_001, message: "unauthenticated")
-    static let unauthorized = Self(code: -32_002, message: "unauthorized")
+    static let unauthorized = Self(
+        code: -32_002, message: "unauthorized", data: .object(["reason": .string("unauthorized")])
+    )
     static let connectionBusy = Self(
         code: -32_005, message: "unavailable",
         data: .object(["reason": .string("connectionBusy")])

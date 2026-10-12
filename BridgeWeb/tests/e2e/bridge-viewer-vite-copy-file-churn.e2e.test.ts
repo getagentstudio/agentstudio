@@ -8,13 +8,14 @@ import {
 	type BridgeViewerOwnedViteProductServer,
 } from './bridge-viewer-vite-product-fixture.ts';
 
-test('copies a current saved File annotation while the next real file refresh is pending', async () => {
+test('copies a current saved File annotation while the next real file refresh is pending', async (context) => {
 	const fixture = await createBridgeViewerViteProductFixture();
 	let server: BridgeViewerOwnedViteProductServer | null = null;
 	let primaryFailure: unknown = null;
 	try {
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 		const observations = await runCopyFileChurnReproduction({
+			testSignal: context.signal,
 			oracle: fixture.oracle,
 			server,
 		});

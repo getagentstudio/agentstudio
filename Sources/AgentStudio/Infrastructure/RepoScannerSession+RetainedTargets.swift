@@ -1,6 +1,52 @@
 import Foundation
 
 extension RepoScannerTraversalSession {
+    struct RetainedTargetIndex: Sendable {
+        let retainedPathKeys: [String]
+        private let rootURL: URL
+        private let rootUsesPrivateSpelling: Bool
+        private let rootIsFilesystemRoot: Bool
+        private let cachedRootPathKey: String
+        private let pathKeyByEntryComponents: [ArraySlice<String>: String]
+
+        var rootPathKey: String {
+            rootUsesPrivateSpelling ? rootURL.standardizedFileURL.path : cachedRootPathKey
+        }
+
+        init(rootURL: URL, retainedCheckoutPaths: [URL]) {
+            self.rootURL = rootURL
+            rootUsesPrivateSpelling = rootURL.pathComponents.starts(with: ["/", "private"])
+            rootIsFilesystemRoot = rootURL.pathComponents == ["/"]
+            let standardizedRootURL = rootURL.standardizedFileURL
+            let rootComponents = standardizedRootURL.pathComponents
+            cachedRootPathKey = standardizedRootURL.path
+            retainedPathKeys = retainedCheckoutPaths.map { $0.standardizedFileURL.path }
+
+            var pathKeysByComponents: [ArraySlice<String>: String] = [:]
+            for retainedPathKey in retainedPathKeys {
+                let retainedComponents = URL(fileURLWithPath: retainedPathKey).pathComponents
+                guard retainedComponents.starts(with: rootComponents) else { continue }
+                let entryComponents = retainedComponents.dropFirst(rootComponents.count)
+                pathKeysByComponents[entryComponents] = retainedPathKey
+            }
+            pathKeyByEntryComponents = pathKeysByComponents
+        }
+
+        func pathKey(for entry: PendingEnumerationEntry) -> String? {
+            // Enumeration can use a physical root alias. Its level identifies
+            // the root-relative components without normalizing another URL.
+            let entryComponents = entry.url.pathComponents.suffix(entry.depth)
+            // Foundation shortens a leading /private only while the shortened
+            // path exists. Classify root plus entry spelling before cached lookup.
+            if rootUsesPrivateSpelling || (rootIsFilesystemRoot && entryComponents.first == "private") {
+                return entryComponents.reduce(rootURL) { partialPath, component in
+                    partialPath.appending(path: component)
+                }.standardizedFileURL.path
+            }
+            return pathKeyByEntryComponents[entryComponents]
+        }
+    }
+
     func removeRetainedTargetExaminedByTraversal(
         _ entry: PendingEnumerationEntry,
         isSymbolicLink: Bool,
@@ -8,20 +54,10 @@ extension RepoScannerTraversalSession {
     ) {
         guard entry.depth <= state.maxDepth,
             !isSymbolicLink,
-            !state.remainingRetainedPathKeys.isEmpty
+            !state.remainingRetainedPathKeys.isEmpty,
+            let retainedPathKey = retainedTargetIndex.pathKey(for: entry)
         else { return }
-        state.remainingRetainedPathKeys.remove(
-            retainedTargetKey(for: entry, rootURL: state.rootURL)
-        )
-    }
-
-    func retainedTargetKey(
-        for entry: PendingEnumerationEntry,
-        rootURL: URL
-    ) -> String {
-        entry.url.pathComponents.suffix(entry.depth).reduce(rootURL) { partialPath, component in
-            partialPath.appending(path: component)
-        }.standardizedFileURL.path
+        state.remainingRetainedPathKeys.remove(retainedPathKey)
     }
 
     func inspectNextRetainedTarget<ServiceClock: Clock<Duration>>(

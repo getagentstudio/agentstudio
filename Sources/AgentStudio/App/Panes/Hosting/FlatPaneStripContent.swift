@@ -37,6 +37,7 @@ struct FlatPaneStripContent: View {
     let collapsedPaneWidth: CGFloat
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let commandActionResolver: TargetedCommandControlActionResolver
+    let commandDispatcher: any AppCommandDispatching
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     let actionDispatcher: PaneActionDispatching
     let onPaneFocusTrigger: PaneFocusTriggerHandler
@@ -105,6 +106,7 @@ struct FlatPaneStripContent: View {
                             collapsedPaneWidth: collapsedPaneWidth,
                             arrangementInlineRenameState: arrangementInlineRenameState,
                             commandActionResolver: commandActionResolver,
+                            commandDispatcher: commandDispatcher,
                             closeTransitionCoordinator: closeTransitionCoordinator,
                             actionDispatcher: actionDispatcher,
                             onPaneFocusTrigger: onPaneFocusTrigger,
@@ -159,6 +161,7 @@ private struct PaneSegmentSlotView: View {
     let collapsedPaneWidth: CGFloat
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let commandActionResolver: TargetedCommandControlActionResolver
+    let commandDispatcher: any AppCommandDispatching
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     let actionDispatcher: PaneActionDispatching
     let onPaneFocusTrigger: PaneFocusTriggerHandler
@@ -210,6 +213,7 @@ private struct PaneSegmentSlotView: View {
                     editorChooser: editorChooser,
                     closeTransitionCoordinator: closeTransitionCoordinator,
                     actionDispatcher: actionDispatcher,
+                    commandDispatcher: commandDispatcher,
                     onPaneFocusTrigger: onPaneFocusTrigger,
                     onOpenPaneGitHub: onOpenPaneGitHub,
                     dropTargetCoordinateSpace: coordinateSpaceName,

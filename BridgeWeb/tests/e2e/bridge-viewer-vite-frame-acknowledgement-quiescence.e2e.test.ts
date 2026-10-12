@@ -131,10 +131,10 @@ async function issueHeldAcknowledgement(props: {
 	return request;
 }
 
-test('frame acknowledgement quiescence forgets a destroyed document’s acknowledgement', async (): Promise<void> => {
+test('frame acknowledgement quiescence forgets a destroyed document’s acknowledgement', async (context): Promise<void> => {
 	// Arrange: one held worker acknowledgement owed by the current document.
 	const origin = await startHeldAcknowledgementOrigin();
-	const browser: Browser = await launchBridgeViewerE2EChromium();
+	const browser: Browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 	try {
 		const page = await browser.newPage();
 		const observer = observeSubscriptionReceiptQuiescence(page);
@@ -154,10 +154,10 @@ test('frame acknowledgement quiescence forgets a destroyed document’s acknowle
 	}
 });
 
-test('frame acknowledgement quiescence still observes the document created by the reload', async (): Promise<void> => {
+test('frame acknowledgement quiescence still observes the document created by the reload', async (context): Promise<void> => {
 	// Arrange: an acknowledgement owed by the pre-reload document, then a fresh document.
 	const origin = await startHeldAcknowledgementOrigin();
-	const browser: Browser = await launchBridgeViewerE2EChromium();
+	const browser: Browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 	try {
 		const page = await browser.newPage();
 		const observer = observeSubscriptionReceiptQuiescence(page);

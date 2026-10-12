@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioTerminal
@@ -159,7 +160,7 @@ extension TerminalLocalActionAccumulatorTests {
 
     @Test("CWD publication admission retries failure and suppresses only committed equality")
     func cwdPublicationAdmissionRetriesFailureAndSuppressesCommittedEquality() {
-        let accumulator = TerminalLocalActionAccumulator { _, _ in }
+        let accumulator = TerminalLocalActionAccumulator { _, _, _ in }
         let surfaceID = UUIDv7.generate()
 
         #expect(accumulator.admitCWDPublication("/tmp/project", for: surfaceID) == .scheduled)
@@ -179,10 +180,8 @@ extension TerminalLocalActionDrainSchedulerTests {
         let executor = PublicationSchedulerExecutor()
         let clock = PublicationNanosecondClock(initialValue: 7)
         let publishedTitles = PublishedTitleRecorder()
-        let accumulatorReference = TerminalAccumulatorReference()
         let scheduler = TerminalLocalActionDrainScheduler(
-            drain: { surfaceID, lane in
-                let accumulator = accumulatorReference.accumulator!
+            drain: { surfaceID, lane, accumulator in
                 guard let batch = accumulator.beginDrain(for: surfaceID, lane: lane),
                     let projection = batch.titleMetadata
                 else { return }
@@ -203,7 +202,6 @@ extension TerminalLocalActionDrainSchedulerTests {
             cancelScheduledTitleDrain: scheduler.cancelTitle,
             nowNanoseconds: clock.now
         )
-        accumulatorReference.accumulator = accumulator
         let surfaceID = UUIDv7.generate()
 
         #expect(accumulator.offer(.titleChanged("A"), for: surfaceID) == .scheduled)
@@ -234,10 +232,6 @@ private actor PublishedTitleRecorder {
     }
 }
 
-private final class TerminalAccumulatorReference: @unchecked Sendable {
-    var accumulator: TerminalLocalActionAccumulator!
-}
-
 private final class PublicationNanosecondClock: @unchecked Sendable {
     private let lock = NSLock()
     private var value: UInt64
@@ -255,29 +249,36 @@ private final class PublicationNanosecondClock: @unchecked Sendable {
     }
 }
 
-private final class PublicationSchedulerExecutor: @unchecked Sendable {
-    private let lock = NSLock()
-    private var titleDeadlines: [DispatchWorkItem] = []
-    private var mainActorAdmissions: [TerminalMainActorDrainOperation] = []
+private final class PublicationSchedulerExecutor: Sendable {
+    private struct State: Sendable {
+        var titleDeadlines: [@Sendable () -> Void] = []
+        var mainActorAdmissions: [TerminalMainActorDrainOperation] = []
+    }
 
-    func recordTitleDeadline(_: UInt64, _ workItem: DispatchWorkItem) {
-        lock.withLock { titleDeadlines.append(workItem) }
+    private let state = Mutex(State())
+
+    func recordTitleDeadline(_: UInt64, _ operation: @escaping @Sendable () -> Void) {
+        state.withLock { $0.titleDeadlines.append(operation) }
     }
 
     func recordMainActorAdmission(_ operation: @escaping TerminalMainActorDrainOperation) {
-        lock.withLock { mainActorAdmissions.append(operation) }
+        state.withLock { $0.mainActorAdmissions.append(operation) }
     }
 
     func claimTitleDeadline() throws {
-        let workItem = try #require(
-            lock.withLock { titleDeadlines.isEmpty ? nil : titleDeadlines.removeFirst() }
+        let operation = try #require(
+            state.withLock { storage -> (@Sendable () -> Void)? in
+                storage.titleDeadlines.isEmpty ? nil : storage.titleDeadlines.removeFirst()
+            }
         )
-        workItem.perform()
+        operation()
     }
 
     func runMainActorAdmission() async throws {
         let operation = try #require(
-            lock.withLock { mainActorAdmissions.isEmpty ? nil : mainActorAdmissions.removeFirst() }
+            state.withLock { storage -> TerminalMainActorDrainOperation? in
+                storage.mainActorAdmissions.isEmpty ? nil : storage.mainActorAdmissions.removeFirst()
+            }
         )
         await operation()
     }
@@ -310,7 +311,7 @@ private final class PublicationDrainRequestRecorder: @unchecked Sendable {
 
     var requestCount: Int { lock.withLock { requests.count } }
 
-    func record(_: UUID, _ request: TerminalLocalDrainRequest) {
+    func record(_: UUID, _ request: TerminalLocalDrainRequest, _: TerminalLocalActionAccumulator) {
         lock.withLock { requests.append(request) }
     }
 }

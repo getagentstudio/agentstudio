@@ -17,7 +17,7 @@ import {
 import { bridgeViewerViteProductFileUrl } from './bridge-viewer-vite-product-url.ts';
 import { observeBrowserRuntimeDiagnostics } from './bridge-viewer-vite-review-comparison-observation.ts';
 
-test('activates Review after a File-only bootstrap and returns to the selected Markdown document', async (): Promise<void> => {
+test('activates Review after a File-only bootstrap and returns to the selected Markdown document', async (context): Promise<void> => {
 	// Arrange — one browser page, native pane, and disposable filesystem for this journey.
 	const fixture = await createBridgeViewerExplorationFixture();
 	let browser: Browser | null = null;
@@ -32,7 +32,7 @@ test('activates Review after a File-only bootstrap and returns to the selected M
 	let primaryFailure: { readonly error: unknown } | null = null;
 	try {
 		server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-		browser = await launchBridgeViewerE2EChromium();
+		browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		const page = await browser.newPage({ viewport: { width: 1728, height: 980 } });
 		diagnostics = observeBrowserRuntimeDiagnostics(page);
 		failures = await observeInteractionProfileFailures(page);

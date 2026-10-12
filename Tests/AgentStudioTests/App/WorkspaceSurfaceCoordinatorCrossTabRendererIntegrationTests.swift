@@ -184,7 +184,10 @@ private final class CrossTabRendererFixture {
             )
         }
         store.setActiveTab(sourceTab.id)
-        manager = SurfaceManager(maxCreationRetries: 0, healthCheckInterval: 3600, rendererStateDelivery: delivery)
+        manager = SurfaceManager(
+            appCommandDispatcher: AppTerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil }, maxCreationRetries: 0, healthCheckInterval: 3600,
+            rendererStateDelivery: delivery)
         let lifecycle = WindowLifecycleAtom()
         let windowID = UUIDv7.generate()
         lifecycle.recordWindowRegistered(windowID)
@@ -197,6 +200,8 @@ private final class CrossTabRendererFixture {
             viewRegistry: registry,
             runtime: SessionRuntime(store: store),
             surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: EventBus<RuntimeEnvelope>(),
             windowLifecycleStore: lifecycle,
@@ -220,7 +225,10 @@ private final class CrossTabRendererFixture {
         surfacesByPaneID[paneID] = managedSurface
         manager.attach(managedSurface.id, to: paneID)
         let host = PaneHostView(paneId: paneID)
-        host.mountContentView(TerminalPaneMountView(restoredSurfaceId: managedSurface.id, paneId: paneID))
+        host.mountContentView(
+            TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(), restoredSurfaceId: managedSurface.id,
+                paneId: paneID))
         registry.register(host, for: paneID)
     }
 
@@ -287,6 +295,9 @@ private final class CrossTabRendererDelivery: SurfaceRendererStateDelivery {
 
 @MainActor
 private final class CrossTabRendererCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

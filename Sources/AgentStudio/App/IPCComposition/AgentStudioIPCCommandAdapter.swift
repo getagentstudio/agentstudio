@@ -22,12 +22,16 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
     private let targetResolver: AgentStudioIPCCommandTargetResolver
     private weak var shellCommandHandler: (any ShellCommandHandling)?
 
+    private let commandDispatcher: AppCommandDispatcher
+
     init(
         workspaceId: UUID,
         channel: AgentStudioIPCChannel,
         targetAuthorizer: any WorkspaceDurableTargetAuthorizing,
-        shellCommandHandler: any ShellCommandHandling
+        shellCommandHandler: any ShellCommandHandling,
+        commandDispatcher: AppCommandDispatcher
     ) {
+        self.commandDispatcher = commandDispatcher
         self.channel = channel
         self.shellCommandHandler = shellCommandHandler
         targetResolver = AgentStudioIPCCommandTargetResolver(
@@ -81,6 +85,7 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
                 correlationId: request.correlationId,
                 arguments: resolved.arguments
             ),
+            allowedTargetKinds: command.ipcSpec.allowedTargetKinds,
             canonicalHandle: resolved.handle,
             target: resolved.target,
             requiredScopes: [
@@ -117,7 +122,7 @@ struct AgentStudioIPCCommandAdapter: AppIPCCommandPort, @unchecked Sendable {
         guard shellCommandHandler != nil else { throw AppIPCCommandError(reason: .stateUnavailable) }
         try targetResolver.validateForExecution(request.arguments)
 
-        let outcome = await AppCommandDispatcher.shared.dispatchHeadlessIPC(
+        let outcome = await commandDispatcher.dispatchHeadlessIPC(
             AppCommandExecutionRequest(
                 command: command,
                 arguments: .typedIPC(request.arguments),
