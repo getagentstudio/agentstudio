@@ -41,7 +41,9 @@ interface ClickAdmissionHarnessProps {
 	readonly isInitialReadinessReleased?: () => boolean;
 	readonly recordInitialReadinessObserver?: (observer: MutationObserver) => void;
 	readonly afterSetupBeforeHover?: ((codeView: CodeView) => void) | undefined;
-	readonly afterHoverBeforeUtility?: ((codeView: CodeView, pointerId: number) => void) | undefined;
+	readonly afterHoverBeforeUtility?:
+		| ((codeView: CodeView, pointerId: number, row: HTMLElement) => void)
+		| undefined;
 	readonly beforeRender?: (() => void) | undefined;
 	readonly metadataPublicationOwner: { publish: ((callback: () => void) => void) | undefined };
 	readonly registerCleanup: (dispose: () => Promise<void>) => () => void;
@@ -285,7 +287,7 @@ export async function createClickAdmissionReviewHarness(
 					onHoverDispatched: (dispatchedRow): void => {
 						lastRow = dispatchedRow;
 						interactionSetup.recordCompletedHover(dispatchedRow);
-						props.afterHoverBeforeUtility?.(codeView, pointerId);
+						props.afterHoverBeforeUtility?.(codeView, pointerId, dispatchedRow);
 					},
 					signal: outcomeController.signal,
 					observeRetirement: (currentRow) =>
