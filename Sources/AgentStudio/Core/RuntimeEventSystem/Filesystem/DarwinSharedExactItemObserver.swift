@@ -42,6 +42,8 @@ package enum DarwinFSEventPathClassifier {
     ) -> DarwinFSEventClassification {
         var normalizedPathByRawPath: [String: String] = [:]
         normalizedPathByRawPath.reserveCapacity(rawEvents.count)
+        var privateStagingDecisionByNormalizedPath: [String: Bool] = [:]
+        privateStagingDecisionByNormalizedPath.reserveCapacity(rawEvents.count)
 
         func normalizedPath(for rawPath: String) -> String {
             if let existing = normalizedPathByRawPath[rawPath] {
@@ -50,6 +52,15 @@ package enum DarwinFSEventPathClassifier {
             let normalizedPath = normalize(rawPath)
             normalizedPathByRawPath[rawPath] = normalizedPath
             return normalizedPath
+        }
+
+        func isPrivateStagingRefPath(_ normalizedPath: String) -> Bool {
+            if let existing = privateStagingDecisionByNormalizedPath[normalizedPath] {
+                return existing
+            }
+            let isPrivateStagingRef = FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(normalizedPath)
+            privateStagingDecisionByNormalizedPath[normalizedPath] = isPrivateStagingRef
+            return isPrivateStagingRef
         }
 
         let canonicalScopes = observationScopes.map { scope in
@@ -64,7 +75,7 @@ package enum DarwinFSEventPathClassifier {
         let classifiedRawEvents = rawEvents.map { event in
             let candidate = normalizedPath(for: event.path)
             let hasRelevantMutation =
-                !FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(candidate)
+                !isPrivateStagingRefPath(candidate)
                 && canonicalScopes.contains { scope in
                     switch scope.kind {
                     case .item:
@@ -83,7 +94,7 @@ package enum DarwinFSEventPathClassifier {
         }
         let ordinaryWorktreePaths = ordinaryPaths.filter { path in
             let candidate = normalizedPath(for: path)
-            return !FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(candidate)
+            return !isPrivateStagingRefPath(candidate)
                 && (candidate == rootPath || candidate.hasPrefix(rootPrefix))
         }
         return DarwinFSEventClassification(

@@ -624,13 +624,15 @@ struct SwiftLaneRunnerReportTests {
 
         // The probe uses Swift Testing-shaped IDs from the real targets and Bash
         // ERE matching, the same regex dialect the lane filters are consumed as.
-        guard output.contains("LANE_FILTER_BEHAVIOR_OK generators=9") else { return }
+        try #require(
+            output.contains("LANE_FILTER_BEHAVIOR_OK generators=9"),
+            Comment(rawValue: output)
+        )
         #expect(output.contains("MATCH_OK fast-skip"))
         #expect(output.contains("MATCH_OK fast-concurrent-filter"))
         #expect(output.contains("MATCH_OK large-process-global"))
         #expect(output.contains("MATCH_OK aggregate-serial"))
         #expect(output.contains("MATCH_OK webkit-list"))
-        #expect(output.contains("LANE_FILTER_BEHAVIOR_OK generators=9"))
     }
 
     @Test("a clean lane reports zero failed isolated suites")

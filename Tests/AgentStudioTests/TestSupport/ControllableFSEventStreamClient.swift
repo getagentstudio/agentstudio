@@ -15,8 +15,10 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     private var acknowledgedActivityProcessingFenceIds: [FSEventActivityProcessingFenceID] = []
     private var nextRegistrationOutcome: FSEventStreamRegistrationOutcome = .observing
     private var activityBarrier: FSEventActivityBarrier?
+    private let ingressBuffer: DarwinFSEventIngressBuffer?
 
-    package init() {
+    package init(ingressBuffer: DarwinFSEventIngressBuffer? = nil) {
+        self.ingressBuffer = ingressBuffer
         let (stream, continuation) = AsyncStream<FSEventIngressItem>.makeStream(
             bufferingPolicy: .bufferingNewest(64)
         )
@@ -39,11 +41,13 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     }
 
     package func events() -> AsyncStream<FSEventIngressItem> {
-        lock.withLock { stream! }
+        if let ingressBuffer { return ingressBuffer.events() }
+        return lock.withLock { stream! }
     }
 
     package func consumeOverflowRecoveries() -> [FSEventOverflowRecovery] {
-        lock.withLock {
+        if let ingressBuffer { return ingressBuffer.consumeOverflowRecoveries() }
+        return lock.withLock {
             defer { overflowRecoveryByWorktreeId.removeAll(keepingCapacity: true) }
             return overflowRecoveryByWorktreeId.values.sorted {
                 $0.worktreeId.uuidString < $1.worktreeId.uuidString
@@ -132,6 +136,7 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     }
 
     package func shutdown() {
+        ingressBuffer?.finish()
         continuation?.finish()
     }
 
@@ -150,7 +155,11 @@ package final class ControllableFSEventStreamClient: FSEventStreamClient, @unche
     }
 
     package func send(_ batch: FSEventBatch) {
-        continuation?.yield(.batch(batch))
+        if let ingressBuffer {
+            ingressBuffer.yield(batch)
+        } else {
+            continuation?.yield(.batch(batch))
+        }
     }
 
     package func sendActivityProcessingFence(_ fenceID: FSEventActivityProcessingFenceID) {

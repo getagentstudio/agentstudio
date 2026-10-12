@@ -244,9 +244,35 @@ package final class DarwinFSEventIngressBuffer: @unchecked Sendable {
             }
             retainedPaths.insert(path)
         }
+        var retainedObservationsByPath: [String: FSEventObservation] = [:]
+        for observation in existing?.observations ?? [] {
+            retainedObservationsByPath[observation.path] = observation
+        }
+        for observation in batch.observations {
+            // A source loss sentinel can be excluded from ordinary paths; its coverage fact must survive.
+            guard retainedPaths.contains(observation.path) || observation.hasCoverageLoss else { continue }
+            let previous = retainedObservationsByPath[observation.path]
+            if previous == nil,
+                retainedObservationsByPath.count >= maximumRetainedOverflowPathsPerRegistration
+            {
+                overflowRecoveryByWorktreeId[batch.worktreeId] = FSEventOverflowRecovery(
+                    worktreeId: batch.worktreeId,
+                    paths: nil,
+                    requiresWatchedFolderScan: requiresWatchedFolderScan,
+                    requiresFullGitRefresh: requiresFullGitRefresh
+                )
+                return
+            }
+            retainedObservationsByPath[observation.path] = FSEventObservation(
+                path: observation.path,
+                eventID: max(previous?.eventID ?? 0, observation.eventID),
+                flags: (previous?.flags ?? 0) | observation.flags
+            )
+        }
         overflowRecoveryByWorktreeId[batch.worktreeId] = FSEventOverflowRecovery(
             worktreeId: batch.worktreeId,
             paths: retainedPaths,
+            observations: retainedObservationsByPath.values.sorted { $0.path < $1.path },
             requiresWatchedFolderScan: requiresWatchedFolderScan,
             requiresFullGitRefresh: requiresFullGitRefresh
         )
