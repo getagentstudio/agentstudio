@@ -35,8 +35,6 @@ actor FilesystemHeldScanProvider {
             consumeValidationCompletion: { _ in .rejected(.sessionFinished) })
     }
 
-    func startedSessionCount() -> Int { sessionCount }
-
     func makeScheduler() throws -> WatchedFolderScanScheduler {
         try WatchedFolderScanScheduler(
             maximumConcurrentScans: 1, now: { .zero },
@@ -50,5 +48,3 @@ struct FilesystemUnusedValidationClient: RepoDiscoveryReadClient {
         .failure(.serviceFailed(detail: "unexpected held filesystem scan validation"))
     }
 }
-
-enum FilesystemHeldScanFailure: Error { case unavailable }

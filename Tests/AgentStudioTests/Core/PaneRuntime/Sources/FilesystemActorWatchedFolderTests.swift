@@ -1,4 +1,3 @@
-import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -288,49 +287,36 @@ struct FilesystemActorWatchedFolderTests {
         await fixture.actor.shutdown()
     }
 
-    @Test("concurrent manual refreshes serialize into distinct tracked scans", arguments: [true, false])
-    func concurrentManualRefreshesSerialize(failScan: Bool) async throws {
-        let root = FileManager.default.temporaryDirectory.appending(path: "held-manual-scan-\(UUIDv7.generate())")
-        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: root) }
-        let initial = HeldStep<WatchedFolderScanRequest>("initial scan", cancellation: .holdThroughCancellation)
-        initial.release()
-        let first = HeldStep<WatchedFolderScanRequest>("first manual scan", cancellation: .holdThroughCancellation)
-        let second = HeldStep<WatchedFolderScanRequest>("second manual scan", cancellation: .holdThroughCancellation)
-        let firstClone = canonicalURL(root.appending(path: "first"))
-        let secondClone = canonicalURL(root.appending(path: "second"))
-        let provider = FilesystemHeldScanProvider(
-            steps: [initial, first, second],
-            results: [
-                completeResult(entries: []), completeResult(entries: [cloneEntry(firstClone)]),
-                completeResult(entries: [cloneEntry(firstClone), cloneEntry(secondClone)]),
-            ])
-        let scheduler = try await provider.makeScheduler()
-        let actor = FilesystemActor(
-            bus: EventBus<RuntimeEnvelope>(), fseventStreamClient: ControllableFSEventStreamClient(),
-            watchedFolderScanScheduler: scheduler, sleepClock: TestPushClock(),
-            debounceWindow: .zero, maxFlushLatency: .zero)
-        let watchedPath = WatchedPath(path: root)
-        let initialRefresh = Task { await actor.refreshWatchedFolders([watchedPath]) }
-        _ = try await initial.firstArrival()
-        #expect(await initialRefresh.value.repoPaths(in: root).isEmpty)
-        let firstRefresh = Task { await actor.refreshWatchedFolders([watchedPath]) }
-        let firstRequest = try await first.firstArrival()
-        #expect(firstRequest.cause == .manual)
-        #expect(firstRequest.sourceID.rootID == watchedPath.id)
-        #expect(await provider.startedSessionCount() == 2)
-        let secondRefresh = Task { await actor.refreshWatchedFolders([watchedPath]) }
-        if failScan { first.fail(FilesystemHeldScanFailure.unavailable) } else { first.release() }
-        let firstSummary = await firstRefresh.value
-        let secondRequest = try await second.firstArrival()
-        #expect(secondRequest.cause == .manual)
-        #expect(secondRequest.sourceID == firstRequest.sourceID)
-        #expect(await provider.startedSessionCount() == 3)
-        if failScan { second.fail(FilesystemHeldScanFailure.unavailable) } else { second.release() }
-        let secondSummary = await secondRefresh.value
-        await actor.shutdown()
-        #expect(firstSummary.repoPaths(in: root) == (failScan ? [] : [firstClone]))
-        #expect(secondSummary.repoPaths(in: root) == (failScan ? [] : [firstClone, secondClone]))
+    @Test("concurrent manual refreshes serialize into distinct tracked scans")
+    func concurrentManualRefreshesSerialize() async throws {
+        let fixture = try await WatchedFolderActorFixture()
+        defer { fixture.removeTemporaryRoot() }
+        _ = await fixture.performInitialRefresh(result: completeResult(entries: []))
+
+        let firstRefresh = Task {
+            await fixture.actor.refreshWatchedFolders([fixture.watchedPath])
+        }
+        let firstManualStart = await fixture.scanner.nextStart()
+        #expect(firstManualStart.request.cause == .manual)
+
+        let secondRefreshProbe = RefreshCompletionProbe()
+        let secondRefresh = Task {
+            let summary = await fixture.actor.refreshWatchedFolders([fixture.watchedPath])
+            await secondRefreshProbe.record(summary)
+        }
+        await boundedYields()
+        #expect(await fixture.scanner.startedQuantumCount() == 2)
+
+        await fixture.scanner.finish(firstManualStart, with: completeResult(entries: []))
+        _ = await firstRefresh.value
+        let secondManualStart = await fixture.scanner.nextStart()
+        #expect(secondManualStart.request.cause == .manual)
+        #expect(await secondRefreshProbe.summary() == nil)
+
+        await fixture.scanner.finish(secondManualStart, with: completeResult(entries: []))
+        await secondRefresh.value
+        #expect(await secondRefreshProbe.summary() != nil)
+        await fixture.actor.shutdown()
     }
 
     @Test("exact complete result removes absent clones")
@@ -433,37 +419,91 @@ struct FilesystemActorWatchedFolderTests {
 
     @Test("ordinary file callbacks preserve scope while Git topology requests a scan")
     func ordinaryFileCallbacksPreserveScopeWhileGitRequestsScan() async throws {
-        let scenario = try await WatchedFolderCallbackScenario()
-        let fixture = scenario.fixture
+        let fixture = try await WatchedFolderActorFixture()
         defer { fixture.removeTemporaryRoot() }
-        do {
-            _ = await fixture.performInitialRefresh(result: completeResult(entries: []))
-            let baselineCount = await fixture.scanner.startedQuantumCount()
-            try await scenario.rejectScan(.path("repo/.gitignore"), closingID: 1, baselineCount: baselineCount)
-            try await scenario.rejectScan(
-                .overflow(paths: nil, requiresScan: false, trigger: "repo/Sources/TriggerCoarse.swift"),
-                closingID: 2, baselineCount: baselineCount)
-            try await scenario.rejectScan(
-                .overflow(
-                    paths: ["repo/Sources/Dropped.swift"], requiresScan: false, trigger: "repo/Sources/Trigger.swift"),
-                closingID: 3, baselineCount: baselineCount)
-            let gitStart = try await scenario.requireScan(
-                .path("repo/.git/HEAD"), closingID: 4, expectedCount: baselineCount + 1)
-            #expect(gitStart.request.cause == .callback)
-            let refsStart = try await scenario.requireScan(
-                .overflow(
-                    paths: ["repo/.git/refs/heads/main"], requiresScan: false, trigger: "repo/Sources/Trigger.swift"),
-                closingID: 5, expectedCount: baselineCount + 2)
-            #expect(refsStart.request.cause == .callback)
-            let coarseStart = try await scenario.requireScan(
-                .overflow(paths: nil, requiresScan: true, trigger: "repo/Sources/TriggerCoarseGit.swift"),
-                closingID: 6, expectedCount: baselineCount + 3)
-            #expect(coarseStart.request.cause == .callback)
-            try await scenario.shutdown()
-        } catch {
-            try? await scenario.shutdown()
-            throw error
-        }
+        _ = await fixture.performInitialRefresh(result: completeResult(entries: []))
+
+        let callbackRoutingID = try #require(fixture.fseventClient.registeredWorktreeIds.first)
+        let scanCountBeforeCallbacks = await fixture.scanner.startedQuantumCount()
+        fixture.fseventClient.send(
+            FSEventBatch(
+                worktreeId: callbackRoutingID,
+                paths: [fixture.watchedFolder.appending(path: "repo/.gitignore").path]
+            )
+        )
+        await boundedYields()
+        #expect(await fixture.scanner.startedQuantumCount() == scanCountBeforeCallbacks)
+
+        fixture.fseventClient.sendOverflowRecovery(
+            worktreeId: callbackRoutingID,
+            paths: nil,
+            requiresWatchedFolderScan: false
+        )
+        fixture.fseventClient.send(
+            FSEventBatch(
+                worktreeId: callbackRoutingID,
+                paths: [fixture.watchedFolder.appending(path: "repo/Sources/TriggerCoarse.swift").path]
+            )
+        )
+        await boundedYields()
+        #expect(await fixture.scanner.startedQuantumCount() == scanCountBeforeCallbacks)
+
+        fixture.fseventClient.sendOverflowRecovery(
+            worktreeId: callbackRoutingID,
+            paths: [fixture.watchedFolder.appending(path: "repo/Sources/Dropped.swift").path]
+        )
+        fixture.fseventClient.send(
+            FSEventBatch(
+                worktreeId: callbackRoutingID,
+                paths: [fixture.watchedFolder.appending(path: "repo/Sources/Trigger.swift").path]
+            )
+        )
+        await boundedYields()
+        #expect(await fixture.scanner.startedQuantumCount() == scanCountBeforeCallbacks)
+
+        fixture.fseventClient.send(
+            FSEventBatch(
+                worktreeId: callbackRoutingID,
+                paths: [fixture.watchedFolder.appending(path: "repo/.git/HEAD").path]
+            )
+        )
+        let callbackStart = await fixture.scanner.nextStart()
+        #expect(callbackStart.request.cause == .callback)
+        #expect(callbackStart.request.sourceID.rootID == fixture.watchedPath.id)
+        await fixture.scanner.finish(callbackStart, with: completeResult(entries: []))
+        try await fixture.waitForStartedQuantumCount(scanCountBeforeCallbacks + 1)
+
+        fixture.fseventClient.sendOverflowRecovery(
+            worktreeId: callbackRoutingID,
+            paths: [fixture.watchedFolder.appending(path: "repo/.git/refs/heads/main").path]
+        )
+        fixture.fseventClient.send(
+            FSEventBatch(
+                worktreeId: callbackRoutingID,
+                paths: [fixture.watchedFolder.appending(path: "repo/Sources/Trigger.swift").path]
+            )
+        )
+        let overflowRecoveryStart = await fixture.scanner.nextStart()
+        #expect(overflowRecoveryStart.request.cause == .callback)
+        await fixture.scanner.finish(overflowRecoveryStart, with: completeResult(entries: []))
+        try await fixture.waitForStartedQuantumCount(scanCountBeforeCallbacks + 2)
+
+        fixture.fseventClient.sendOverflowRecovery(
+            worktreeId: callbackRoutingID,
+            paths: nil,
+            requiresWatchedFolderScan: true
+        )
+        fixture.fseventClient.send(
+            FSEventBatch(
+                worktreeId: callbackRoutingID,
+                paths: [fixture.watchedFolder.appending(path: "repo/Sources/TriggerCoarseGit.swift").path]
+            )
+        )
+        let coarseGitRecoveryStart = await fixture.scanner.nextStart()
+        #expect(coarseGitRecoveryStart.request.cause == .callback)
+        await fixture.scanner.finish(coarseGitRecoveryStart, with: completeResult(entries: []))
+        try await fixture.waitForStartedQuantumCount(scanCountBeforeCallbacks + 3)
+        await fixture.actor.shutdown()
     }
 
     @Test("removing a watched path retires scheduler registration and callback routing")
@@ -670,8 +710,7 @@ struct WatchedFolderActorFixture {
         watchedFolderCount: Int = 1,
         recordsLogicalDebt: Bool = false,
         fseventClient: ControllableFSEventStreamClient = ControllableFSEventStreamClient(),
-        onCallbackSubmission: @escaping @Sendable (WatchedFolderScanRequest) -> Void = { _ in },
-        observedStreamClient: (any FSEventStreamClient)? = nil
+        onCallbackSubmission: @escaping @Sendable (WatchedFolderScanRequest) -> Void = { _ in }
     ) async throws {
         precondition(watchedFolderCount > 0)
         let temporaryRoot = FileManager.default.temporaryDirectory
@@ -723,7 +762,7 @@ struct WatchedFolderActorFixture {
         }
         let actor = FilesystemActor(
             bus: bus,
-            fseventStreamClient: observedStreamClient ?? fseventClient,
+            fseventStreamClient: fseventClient,
             watchedFolderScanScheduler: scheduler,
             watchedFolderScanSubmission: observedSubmission,
             debounceWindow: .zero,

@@ -168,9 +168,17 @@ extension FilesystemActorTests {
         #expect(streamClient.registeredWorktreeIds == [worktreeID])
         scan.release()
         await shutdown.value
+        let revisionAfterShutdown = await actor.logicalDebtSnapshotPublicationRevision
+        await actor.register(
+            worktreeId: postShutdownWorktreeID, repoId: postShutdownWorktreeID,
+            rootPath: URL(fileURLWithPath: "/tmp/post-shutdown-registration"))
+        await actor.enqueueRawPaths(worktreeId: worktreeID, paths: ["Sources/PostShutdown.swift"])
         clock.advance(by: .seconds(1))
+        #expect(await actor.logicalDebtSnapshotPublicationRevision == revisionAfterShutdown)
+        #expect(await actor.pendingWorktreeLogicalDebtCount == 0)
         #expect(await actor.logicalDebtSnapshot().logicalDebtCount == 0)
         #expect(streamClient.registeredWorktreeIds == [worktreeID])
+        await actor.shutdown()
     }
 
     @Test("unregister during debounce window prevents stale filesChanged emission")
