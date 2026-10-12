@@ -98,8 +98,9 @@ struct PaneSurfaceToolbarHost: View {
     let workspaceWindowId: UUID?
     let owningPaneSize: CGSize?
     let actionDispatcher: PaneActionDispatching
+    let commandDispatcher: any AppCommandDispatching
     let onPaneFocusTrigger: PaneFocusTriggerHandler
-    let targetedCommandActionResolver: TargetedCommandControlActionResolver
+    private let targetedCommandActionResolver: TargetedCommandControlActionResolver?
 
     @State private var paneInboxPopoverOpen = false
     @State private var paneNotePopoverOpen = false
@@ -110,15 +111,30 @@ struct PaneSurfaceToolbarHost: View {
         command: AppCommand,
         surface: AppCommandSurface,
         target: UUID,
-        targetType: SearchItemType
+        targetType: SearchItemType,
+        dispatcher: any AppCommandDispatching
     ) -> TargetedCommandControlAction? {
         TargetedCommandControlAction.resolve(
             command: command,
             surface: surface,
             target: target,
             targetType: targetType,
-            dispatcher: AppCommandDispatcher.shared
+            dispatcher: dispatcher
         )
+    }
+
+    private var commandActionResolver: TargetedCommandControlActionResolver {
+        if let targetedCommandActionResolver { return targetedCommandActionResolver }
+        let dispatcher = commandDispatcher
+        return { command, surface, target, targetType in
+            Self.resolveTargetedCommandAction(
+                command: command,
+                surface: surface,
+                target: target,
+                targetType: targetType,
+                dispatcher: dispatcher
+            )
+        }
     }
 
     init(
@@ -137,9 +153,9 @@ struct PaneSurfaceToolbarHost: View {
         workspaceWindowId: UUID?,
         owningPaneSize: CGSize? = nil,
         actionDispatcher: PaneActionDispatching,
+        commandDispatcher: any AppCommandDispatching,
         onPaneFocusTrigger: @escaping PaneFocusTriggerHandler,
-        targetedCommandActionResolver: @escaping TargetedCommandControlActionResolver =
-            Self.resolveTargetedCommandAction
+        targetedCommandActionResolver: TargetedCommandControlActionResolver? = nil
     ) {
         self.anchorPaneId = anchorPaneId
         self.locationTargetPaneId = locationTargetPaneId
@@ -156,6 +172,7 @@ struct PaneSurfaceToolbarHost: View {
         self.workspaceWindowId = workspaceWindowId
         self.owningPaneSize = owningPaneSize
         self.actionDispatcher = actionDispatcher
+        self.commandDispatcher = commandDispatcher
         self.onPaneFocusTrigger = onPaneFocusTrigger
         self.targetedCommandActionResolver = targetedCommandActionResolver
     }
@@ -165,7 +182,7 @@ struct PaneSurfaceToolbarHost: View {
             anchorPaneId: anchorPaneId,
             locationTargetPaneId: locationTargetPaneId,
             toolbarSurface: toolbarSurface,
-            actionResolver: targetedCommandActionResolver,
+            actionResolver: commandActionResolver,
             isOwnerPinned: store.paneAtom.pane(anchorPaneId)?.metadata.isPinned ?? false
         )
         let locationTargetPath = store.paneAtom.graphAtom.paneStructuralFacts(locationTargetPaneId)?.cwd
@@ -272,10 +289,13 @@ struct PaneSurfaceToolbarHost: View {
 
     private var paneContextContent: AnyView? {
         guard let paneContextReaders else { return nil }
+        let commandDispatcher = self.commandDispatcher
         return AnyView(
             PaneContextToolbarControls(
                 paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader,
-                onGoToPane: { AppCommandDispatcher.shared.dispatch(.focusPane, target: $0, targetType: .pane) }))
+                onGoToPane: { [commandDispatcher] paneId in
+                    commandDispatcher.dispatch(.focusPane, target: paneId, targetType: .pane)
+                }))
     }
 
     private func consumePendingPaneInboxRequest(in scope: PaneInboxScope) {

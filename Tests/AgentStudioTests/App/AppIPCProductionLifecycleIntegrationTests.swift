@@ -33,6 +33,8 @@ struct AppIPCProductionLifecycleIntegrationTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: lifecycle,
@@ -204,11 +206,12 @@ struct ServerCapableAppIPCTestHarness {
 
 @MainActor
 func makeServerCapableAppIPCTestHarness(
-    windowLifecycleStore: WindowLifecycleAtom = WindowLifecycleAtom()
+    windowLifecycleStore: WindowLifecycleAtom = WindowLifecycleAtom(),
+    appDelegate suppliedDelegate: AppDelegate? = nil
 ) async throws -> ServerCapableAppIPCTestHarness {
     let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
     let workspaceID = core.workspaceIdentity.workspaceId
-    let appDelegate = AppDelegate()
+    let appDelegate = suppliedDelegate ?? AppDelegate()
     appDelegate.store = store
     appDelegate.workspaceSQLiteDatastore = datastore
     appDelegate.windowLifecycleStore = windowLifecycleStore
@@ -244,6 +247,8 @@ func makeServerCapableAppIPCTestHarness(
         viewRegistry: appDelegate.viewRegistry,
         runtime: SessionRuntime(store: store),
         surfaceManager: HarnessSurfaceManager(),
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
         runtimeRegistry: RuntimeRegistry(),
         windowLifecycleStore: windowLifecycleStore,
         ipcLifecycle: appDelegate.appIPCWorkspaceSurfaceLifecycle(),
@@ -251,7 +256,8 @@ func makeServerCapableAppIPCTestHarness(
     )
     appDelegate.workspaceSurfaceCoordinator = coordinator
     appDelegate.executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
-    appDelegate.mainWindowController = ServerCapableIPCMainWindowController(window: nil)
+    appDelegate.mainWindowController = ServerCapableIPCMainWindowController(
+        window: nil, commandDispatcher: appDelegate.commandDispatcherForBoot())
     return ServerCapableAppIPCTestHarness(
         appDelegate: appDelegate,
         store: store,

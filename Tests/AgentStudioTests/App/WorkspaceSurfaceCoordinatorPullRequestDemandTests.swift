@@ -62,21 +62,11 @@ struct WorkspaceSurfaceCoordinatorPullRequestDemandTests {
             let source = PullRequestDemandRecordingFilesystemSource()
             let windowLifecycle = WindowLifecycleAtom()
             let gitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate()
-            let coordinator = WorkspaceSurfaceCoordinator(
+            let coordinator = makePullRequestDemandCoordinator(
                 store: store,
-                viewRegistry: ViewRegistry(),
-                runtime: SessionRuntime(store: store),
-                surfaceManager: PullRequestDemandSurfaceManager(),
-                runtimeRegistry: RuntimeRegistry(),
-                paneEventBus: EventBus<RuntimeEnvelope>(),
-                gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider(
-                    physicalGate: gitStatusPhysicalGate
-                ),
-                gitStatusPhysicalGate: gitStatusPhysicalGate,
-                filesystemSource: source,
+                source: source,
                 windowLifecycleStore: windowLifecycle,
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
+                gitStatusPhysicalGate: gitStatusPhysicalGate
             )
 
             let cwdObservation = observeRepositoryFactDemand(coordinator)
@@ -165,6 +155,8 @@ struct WorkspaceSurfaceCoordinatorPullRequestDemandTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: PullRequestDemandSurfaceManager(),
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider(
@@ -268,21 +260,11 @@ struct WorkspaceSurfaceCoordinatorPullRequestDemandTests {
             let source = PullRequestDemandRecordingFilesystemSource()
             let windowLifecycle = WindowLifecycleAtom()
             let gitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate()
-            let coordinator = WorkspaceSurfaceCoordinator(
+            let coordinator = makePullRequestDemandCoordinator(
                 store: store,
-                viewRegistry: ViewRegistry(),
-                runtime: SessionRuntime(store: store),
-                surfaceManager: PullRequestDemandSurfaceManager(),
-                runtimeRegistry: RuntimeRegistry(),
-                paneEventBus: EventBus<RuntimeEnvelope>(),
-                gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider(
-                    physicalGate: gitStatusPhysicalGate
-                ),
-                gitStatusPhysicalGate: gitStatusPhysicalGate,
-                filesystemSource: source,
+                source: source,
                 windowLifecycleStore: windowLifecycle,
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
+                gitStatusPhysicalGate: gitStatusPhysicalGate
             )
             let owningWindowId = UUIDv7.generate()
             windowLifecycle.recordWindowRegistered(owningWindowId)
@@ -379,6 +361,8 @@ struct WorkspaceSurfaceCoordinatorPullRequestDemandTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: PullRequestDemandSurfaceManager(),
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider(
@@ -461,6 +445,8 @@ struct WorkspaceSurfaceCoordinatorPullRequestDemandTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: PullRequestDemandSurfaceManager(),
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider(
@@ -511,6 +497,32 @@ struct WorkspaceSurfaceCoordinatorPullRequestDemandTests {
 
             await coordinator.shutdown()
         }
+    }
+
+    private func makePullRequestDemandCoordinator(
+        store: WorkspaceStore,
+        source: PullRequestDemandRecordingFilesystemSource,
+        windowLifecycleStore: WindowLifecycleAtom,
+        gitStatusPhysicalGate: AgentStudioGitStatusPhysicalGate
+    ) -> WorkspaceSurfaceCoordinator {
+        WorkspaceSurfaceCoordinator(
+            store: store,
+            viewRegistry: ViewRegistry(),
+            runtime: SessionRuntime(store: store),
+            surfaceManager: PullRequestDemandSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
+            runtimeRegistry: RuntimeRegistry(),
+            paneEventBus: EventBus<RuntimeEnvelope>(),
+            gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider(
+                physicalGate: gitStatusPhysicalGate
+            ),
+            gitStatusPhysicalGate: gitStatusPhysicalGate,
+            filesystemSource: source,
+            windowLifecycleStore: windowLifecycleStore,
+            ipcLifecycle: .testUnavailable,
+            bridgePaneAttendance: BridgePaneAttendanceAtom()
+        )
     }
 
 }

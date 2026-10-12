@@ -147,11 +147,14 @@ struct WorkspaceCacheCoordinatorDiscoveryEffectsTests {
         let store = WorkspaceStore()
         let filesystemSource = OrderedRecordingFilesystemSource()
         let gitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate()
+        let surfaceManager = MockFilesystemCoordinatorSurfaceManager()
         let surfaceCoordinator = WorkspaceSurfaceCoordinator(
             store: store,
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
-            surfaceManager: MockFilesystemCoordinatorSurfaceManager(),
+            surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: EventBus<RuntimeEnvelope>(),
             gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },

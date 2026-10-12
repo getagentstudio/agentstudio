@@ -53,7 +53,9 @@ extension TerminalActivityRouterTests {
         )
         let traceRuntime = traceFixture.runtime
         let router = TerminalActivityRouter(
-            bus: bus, activityAtom: atom, traceRuntime: traceRuntime, factSink: factSource.sink)
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
         let correlationId = UUID()
 
@@ -110,7 +112,9 @@ extension TerminalActivityRouterTests {
         )
         let traceRuntime = traceFixture.runtime
         let router = TerminalActivityRouter(
-            bus: bus, activityAtom: atom, traceRuntime: traceRuntime, factSink: factSource.sink)
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
         do {
@@ -172,7 +176,9 @@ extension TerminalActivityRouterTests {
         )
         let traceRuntime = traceFixture.runtime
         let router = TerminalActivityRouter(
-            bus: bus, activityAtom: atom, traceRuntime: traceRuntime, factSink: factSource.sink)
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
         do {
@@ -224,7 +230,9 @@ extension TerminalActivityRouterTests {
         )
         let traceRuntime = traceFixture.runtime
         let router = TerminalActivityRouter(
-            bus: bus, activityAtom: atom, traceRuntime: traceRuntime, factSink: factSource.sink)
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil }, traceRuntime: traceRuntime,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
         do {

@@ -75,6 +75,8 @@ struct WorkspaceSurfaceArrangementSwitchHostTests {
             viewRegistry: viewRegistry,
             runtime: SessionRuntime(store: store),
             surfaceManager: ArrangementSwitchSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,

@@ -92,6 +92,7 @@ struct TerminalPaneMountViewExitBehaviorTests {
             appLifecycleStore: appLifecycleStore,
             executor: executor,
             runtimeCommandDispatcher: coordinator,
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(), synchronizeRuntimeFocus: { _ in },
             tabBarAdapter: TabBarAdapter(
                 store: store,
                 repoCache: RepoCacheAtom(),
@@ -160,9 +161,11 @@ struct TerminalPaneMountViewExitBehaviorTests {
         surfaceId: UUID = UUIDv7.generate(),
         showsRestorePresentationDuringStartup: Bool = false,
         appEventBus: EventBus<AppEvent> = EventBus<AppEvent>(),
-        terminationAcknowledgementClock: TestPushClock? = nil
+        terminationAcknowledgementClock: TestPushClock? = nil,
+        surfaceManager: SurfaceManager? = nil
     ) -> TerminalPaneMountView {
         TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             restoredSurfaceId: surfaceId,
             paneId: paneId,
             title: "Terminal",
@@ -172,17 +175,18 @@ struct TerminalPaneMountViewExitBehaviorTests {
         )
     }
 
-    private func registerBareSurface(for pane: Pane, zmxSessionID: ZmxSessionID) throws -> UUID {
+    private func registerBareSurface(for pane: Pane, zmxSessionID: ZmxSessionID, manager: SurfaceManager) throws -> UUID
+    {
         let surfaceId = UUIDv7.generate()
         let bareSurface = Ghostty.SurfaceView(
             managedSurfaceID: surfaceId,
-            appCommandDispatcher: AppCommandDispatcher.shared
+            appCommandDispatcher: AppTerminalFixtureCommandDispatcher()
         )
-        _ = try SurfaceManager.shared.acceptCreatedSurface(
+        _ = try manager.acceptCreatedSurface(
             bareSurface,
             metadata: SurfaceMetadata(paneId: pane.id, zmxSessionID: zmxSessionID)
         ).get()
-        _ = SurfaceManager.shared.attach(surfaceId, to: pane.id)
+        _ = manager.attach(surfaceId, to: pane.id)
         return surfaceId
     }
 
@@ -293,7 +297,8 @@ struct TerminalPaneMountViewExitBehaviorTests {
         showsRestorePresentationDuringStartup: Bool
     ) async throws {
         let controllerEventBus = EventBus<AppEvent>()
-        let surfaceManager = MockTerminalExitSurfaceManager(delegatingTo: SurfaceManager.shared)
+        let manager = makeAppTerminalFixtureSurfaceManager()
+        let surfaceManager = MockTerminalExitSurfaceManager(delegatingTo: manager)
         let harness = makePaneTabControllerHarness(
             appEventBus: controllerEventBus,
             surfaceManager: surfaceManager
@@ -309,10 +314,10 @@ struct TerminalPaneMountViewExitBehaviorTests {
         let tab = Tab(paneId: pane.id)
         harness.store.appendTab(tab)
         let zmxSessionID = try #require(pane.terminalState?.zmxSessionID)
-        let surfaceId = try registerBareSurface(for: pane, zmxSessionID: zmxSessionID)
+        let surfaceId = try registerBareSurface(for: pane, zmxSessionID: zmxSessionID, manager: manager)
         defer {
-            if SurfaceManager.shared.hasNativeAttachments(for: zmxSessionID) {
-                SurfaceManager.shared.destroy(surfaceId)
+            if manager.hasNativeAttachments(for: zmxSessionID) {
+                manager.destroy(surfaceId)
             }
         }
 
@@ -334,7 +339,7 @@ struct TerminalPaneMountViewExitBehaviorTests {
             paneId: pane.id,
             surfaceId: surfaceId,
             showsRestorePresentationDuringStartup: showsRestorePresentationDuringStartup,
-            appEventBus: appEventBus
+            appEventBus: appEventBus, surfaceManager: manager
         )
         if showsRestorePresentationDuringStartup {
             mountView.beginRestorePresentationForTesting()
@@ -364,7 +369,7 @@ struct TerminalPaneMountViewExitBehaviorTests {
         #expect(harness.store.tabLayoutAtom.tab(tab.id) == nil)
         #expect(harness.store.paneAtom.pane(pane.id) == nil)
         #expect(harness.executor.undoStack.count == 1)
-        #expect(SurfaceManager.shared.hasNativeAttachments(for: zmxSessionID))
+        #expect(manager.hasNativeAttachments(for: zmxSessionID))
         #expect(!mountView.isProcessRunning)
         #expect(mountView.isProcessExitedOverlaySuppressedAfterTerminationForTesting)
         #expect(!mountView.isShowingErrorOverlayForTesting)
@@ -385,7 +390,7 @@ struct TerminalPaneMountViewExitBehaviorTests {
         #expect(restoredPane?.terminalState?.zmxSessionID == zmxSessionID)
         #expect(harness.viewRegistry.terminalView(for: pane.id) != nil)
         #expect(harness.viewRegistry.terminalStatusPlaceholderView(for: pane.id) != nil)
-        #expect(!SurfaceManager.shared.hasNativeAttachments(for: zmxSessionID))
+        #expect(!manager.hasNativeAttachments(for: zmxSessionID))
         let surfaceCreation = try #require(harness.surfaceManager.surfaceCreationRequests.last)
         #expect(surfaceCreation.metadata.zmxSessionID == zmxSessionID)
         #expect(
@@ -422,6 +427,7 @@ struct TerminalPaneMountViewExitBehaviorTests {
         }
 
         let mountView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(),
             paneId: paneId,
             title: "Terminal",
             appEventBus: EventBus<AppEvent>()

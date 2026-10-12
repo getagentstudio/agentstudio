@@ -112,7 +112,10 @@ struct TerminalActivityRouterTests {
         let facts = try factSource.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom(outputBurstThreshold: 30)
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil },
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
         do {
@@ -156,8 +159,10 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -223,6 +228,7 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
             lastOutputLineReader: { _ in .value("seam-live-proof") },
@@ -290,6 +296,7 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: { _ in true },
             lastOutputLineReader: { _ in .value("echo-command-output") },
@@ -362,8 +369,10 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -414,8 +423,10 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -465,8 +476,10 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: TerminalActivityAtom(outputBurstThreshold: 30),
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -525,8 +538,10 @@ struct TerminalActivityRouterTests {
         let router = TerminalActivityRouter(
             bus: bus,
             activityAtom: atom,
+            callbackHandlingAccess: { nil },
             projector: projector,
             surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: .milliseconds(750),
             unseenActivityClock: clock,
             factSink: factSource.sink
@@ -568,7 +583,10 @@ struct TerminalActivityRouterTests {
         let facts = try factSource.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let atom = TerminalActivityAtom()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil },
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
         do {
@@ -604,7 +622,10 @@ struct TerminalActivityRouterTests {
         let atom = TerminalActivityAtom()
         let factSource = TerminalActivityRouterFactSource()
         let facts = try factSource.attach()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil },
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
 
         do {
@@ -637,7 +658,10 @@ struct TerminalActivityRouterTests {
         let atom = TerminalActivityAtom()
         let factSource = TerminalActivityRouterFactSource()
         let facts = try factSource.attach()
-        let router = TerminalActivityRouter(bus: bus, activityAtom: atom, factSink: factSource.sink)
+        let router = TerminalActivityRouter(
+            bus: bus, activityAtom: atom, callbackHandlingAccess: { nil },
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale },
+            factSink: factSource.sink)
         let paneId = PaneId.generateUUIDv7()
         let sentinelPaneId = PaneId.generateUUIDv7()
         let sentinelEventID = UUIDv7.generate()
@@ -707,28 +731,6 @@ struct TerminalActivityRouterTests {
                 )
             )
         )
-    }
-
-    private func makeAttendedPaneDerived(activePaneId: UUID) -> AttendedPaneDerived {
-        let atoms = makeInstalledTestCoreAtoms()
-        let arrangement = PaneArrangement(
-            name: "Default",
-            isDefault: true,
-            layout: Layout(paneId: activePaneId),
-            activePaneId: activePaneId
-        )
-        let tab = Tab(
-            name: "Tab",
-            allPaneIds: [activePaneId],
-            arrangements: [arrangement],
-            activeArrangementId: arrangement.id
-        )
-        let windowId = UUID()
-        atoms.windowLifecycle.recordWindowRegistered(windowId)
-        atoms.windowLifecycle.recordWindowBecameKey(windowId)
-        atoms.workspaceTabLayout.appendTab(tab)
-        atoms.workspaceTabLayout.setActiveTab(tab.id)
-        return atoms.attendedPane
     }
 
 }

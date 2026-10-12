@@ -302,6 +302,9 @@ struct WorktreeBranchListingOpeningIntegrationTests {
 
 @MainActor
 private final class WorktreeBranchListingAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { true }
 
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}

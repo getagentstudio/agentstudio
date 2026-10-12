@@ -164,11 +164,14 @@ struct MainSplitViewControllerCompositeCommandTests {
     @Test("accepted R and P commands rebuild the sidebar then restore the exact terminal origin")
     func sidebarScreenCommandsRestoreTerminalOriginAfterSurfaceChange() async throws {
         let interactionProbe = MainSplitSidebarCommandInteractionProbe()
+        let shellOwner = MainSplitSidebarShellCommandOwner()
+        let dispatcher = CommandDispatcherFixtureConfiguration(shellOwner: shellOwner).makeDispatcher()
         var previewEligibilityLoss: (@MainActor () -> Void)?
 
         try await withMainSplitViewControllerHarness(
             withRepos: true,
             paneTabRegistersAsCommandHandler: true,
+            commandDispatcher: dispatcher,
             configureUIState: { $0.setSidebarSurface(.repos) },
             configureSidebarDependencies: { dependencies in
                 previewEligibilityLoss = dependencies.onPreviewEligibilityLoss
@@ -179,7 +182,8 @@ struct MainSplitViewControllerCompositeCommandTests {
                         uiState: uiState,
                         interactionProbe: interactionProbe,
                         onReturn: onReturn,
-                        onPreviewEligibilityLoss: { previewEligibilityLoss?() }
+                        onPreviewEligibilityLoss: { previewEligibilityLoss?() },
+                        onCommandRequest: { dispatcher.dispatch($0) }
                     )
                 )
             },
@@ -199,20 +203,16 @@ struct MainSplitViewControllerCompositeCommandTests {
                     sourcePaneId: pane.id,
                     viewerPresentation: .unavailable
                 )
-                let terminalResponder = TerminalPaneMountView(paneId: pane.id, title: "Terminal")
+                let terminalResponder = TerminalPaneMountView(
+                    surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: pane.id, title: "Terminal")
                 terminalResponder.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
                 let paneView = try #require(harness.controller.splitViewItems.last?.viewController.view)
                 paneView.addSubview(terminalResponder)
-                let shellOwner = MainSplitSidebarShellCommandOwner(
-                    controller: harness.controller,
-                    sidebarState: harness.atoms.core.workspaceSidebarState
-                )
+                shellOwner.controller = harness.controller
 
-                try await withIsolatedCommandDispatcher(
-                    configure: {
-                        AppCommandDispatcher.shared.appCommandRouter = shellOwner
-                    },
-                    body: {
+                try await withCommandDispatcher(
+                    dispatcher,
+                    body: { _ in
                         for (key, keyCode, destination) in [
                             ("p", UInt16(35), SidebarSurface.panes),
                             ("r", UInt16(15), SidebarSurface.repos),
@@ -339,7 +339,8 @@ private func installMainSplitTerminalResponder(
     let tab = Tab(paneId: pane.id)
     harness.store.appendTab(tab)
     harness.store.setActiveTab(tab.id)
-    let terminalResponder = TerminalPaneMountView(paneId: pane.id, title: "Terminal")
+    let terminalResponder = TerminalPaneMountView(
+        surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: pane.id, title: "Terminal")
     terminalResponder.frame = NSRect(x: 0, y: 0, width: 400, height: 300)
     let paneView = try #require(
         harness.controller.splitViewItems.last?.viewController.view
@@ -372,6 +373,7 @@ private struct MainSplitSidebarCommandTestView: NSViewRepresentable {
     let interactionProbe: MainSplitSidebarCommandInteractionProbe
     let onReturn: () -> Void
     let onPreviewEligibilityLoss: () -> Void
+    let onCommandRequest: @MainActor (AppCommand) -> Bool
 
     func makeCoordinator() -> RepoExplorerKeyboardInteraction {
         let interaction = RepoExplorerKeyboardInteraction()
@@ -411,7 +413,7 @@ private struct MainSplitSidebarCommandTestView: NSViewRepresentable {
                 onPreviewEligibilityLoss: onPreviewEligibilityLoss,
                 onReturnFocusRequest: onReturn,
                 onSidebarFocusChange: { uiState.setSidebarHasFocus($0) },
-                onCommandRequest: { AppCommandDispatcher.shared.dispatch($0) }
+                onCommandRequest: onCommandRequest
             )
         )
     }
@@ -419,13 +421,8 @@ private struct MainSplitSidebarCommandTestView: NSViewRepresentable {
 
 @MainActor
 private final class MainSplitSidebarShellCommandOwner: ShellCommandHandling {
-    private weak var controller: MainSplitViewController?
-    private let sidebarState: WorkspaceSidebarState
-
-    init(controller: MainSplitViewController, sidebarState: WorkspaceSidebarState) {
-        self.controller = controller
-        self.sidebarState = sidebarState
-    }
+    weak var controller: MainSplitViewController?
+    private var sidebarState: WorkspaceSidebarState { atom(\.workspaceSidebarState) }
 
     func canExecute(_ command: AppCommand) -> Bool {
         command == .showReposSidebar || command == .showPanesSidebar

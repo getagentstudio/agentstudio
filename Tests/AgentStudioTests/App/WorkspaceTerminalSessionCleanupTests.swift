@@ -226,7 +226,9 @@ struct WorkspaceTerminalSessionCleanupTests {
         try #require(await store.flushAsync() == .persisted)
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: HarnessSurfaceManager(), runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(), runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         let backend = CleanupRecordingBackend()
@@ -270,7 +272,10 @@ struct WorkspaceTerminalSessionCleanupTests {
             utc: Date(timeIntervalSince1970: 100), bootID: "cleanup-test", uptimeNanoseconds: 100_000_000_000)
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom(),
             undoClock: { time })
@@ -365,7 +370,9 @@ private struct SessionCleanupFixture {
         try #require(await store.flushAsync() == .persisted)
         coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: HarnessSurfaceManager(), runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(), runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
     }

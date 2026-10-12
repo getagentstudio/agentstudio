@@ -76,6 +76,7 @@ struct ZoomPresentationContainerExitTests {
                 octiconLoader: makeTestOcticonLoader(),
                 editorChooser: makeTestAtomRegistry().editorChooser,
                 actionDispatcher: makeNoOpPaneActionDispatcher(),
+                commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                 arrangementInlineRenameState: ArrangementInlineRenameState(),
                 onPaneFocusTrigger: { _ in },
                 viewRegistry: viewRegistry,

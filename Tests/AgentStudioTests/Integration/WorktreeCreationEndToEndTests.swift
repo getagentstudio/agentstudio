@@ -170,9 +170,9 @@ private func createThroughDispatcher(
         branchName: try WorktreeBranchName.validated(branch).get()
     )
 
-    let accepted = try await withIsolatedCommandDispatcher(
-        configure: { AppCommandDispatcher.shared.appCommandRouter = delegate },
-        body: { AppCommandDispatcher.shared.dispatchWorktreeCreation(request) }
+    let accepted = try await withCommandDispatcherFixture(
+        configure: { configuration in configuration.shellOwner = delegate },
+        body: { dispatcher in dispatcher.dispatchWorktreeCreation(request) }
     )
     await delegate.worktreeCreationCoordinator?.waitUntilIdle()
     // A creation the coordinator refused would otherwise leave the topology wait below

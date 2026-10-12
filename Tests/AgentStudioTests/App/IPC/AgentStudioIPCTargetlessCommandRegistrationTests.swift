@@ -17,12 +17,14 @@ struct AgentStudioIPCTargetlessCommandRegistrationTests {
     @Test("showInboxNotifications reaches the real shell owner through command.execute")
     func inboxCommandReachesRealShellOwnerThroughRegistration() async throws {
         let shellOwner = AppDelegate()
+        shellOwner.markShellRuntimeOwnersInstalled()
         let workspaceStore = WorkspaceStore()
         let adapter = AgentStudioIPCCommandAdapter(
             workspaceId: workspaceStore.identityAtom.workspaceId,
             channel: .debug,
             targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: workspaceStore),
-            shellCommandHandler: shellOwner
+            shellCommandHandler: shellOwner,
+            commandDispatcher: shellOwner.commandDispatcherForBoot()
         )
         let composition = try await makeIPCCommandCompositionOffMain(from: adapter, channel: .debug)
         let registration = try executeRegistration(composition: composition, adapter: adapter)
@@ -32,15 +34,7 @@ struct AgentStudioIPCTargetlessCommandRegistrationTests {
             arguments: .noArguments
         )
 
-        let result = try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = nil
-                AppCommandDispatcher.shared.appCommandRouter = shellOwner
-            },
-            body: {
-                try await invoke(registration, request: request)
-            }
-        )
+        let result = try await invoke(registration, request: request)
 
         #expect(
             result

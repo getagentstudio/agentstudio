@@ -103,6 +103,7 @@ struct DrawerPanel: View {
     let editorChooser: EditorChooserState
     let viewRegistry: ViewRegistry
     let action: (WorkspaceActionCommand) -> Void
+    let commandDispatcher: any AppCommandDispatching
     let arrangementInlineRenameState: ArrangementInlineRenameState
     /// Normal-mode resize input. `nil` in Pane Zoom, which has no resize target.
     let resizeInteraction: DrawerResizeInteraction?
@@ -125,13 +126,14 @@ struct DrawerPanel: View {
     }
 
     private var commandActionResolver: TargetedCommandControlActionResolver {
-        { command, surface, target, targetType in
+        let commandDispatcher = self.commandDispatcher
+        return { command, surface, target, targetType in
             TargetedCommandControlAction.resolve(
                 command: command,
                 surface: surface,
                 target: target,
                 targetType: targetType,
-                dispatcher: AppCommandDispatcher.shared
+                dispatcher: commandDispatcher
             )
         }
     }
@@ -162,6 +164,7 @@ struct DrawerPanel: View {
         editorChooser: EditorChooserState,
         viewRegistry: ViewRegistry,
         action: @escaping (WorkspaceActionCommand) -> Void,
+        commandDispatcher: any AppCommandDispatching,
         arrangementInlineRenameState: ArrangementInlineRenameState,
         resizeInteraction: DrawerResizeInteraction?,
         onDismiss: @escaping () -> Void,
@@ -187,6 +190,7 @@ struct DrawerPanel: View {
         self.editorChooser = editorChooser
         self.viewRegistry = viewRegistry
         self.action = action
+        self.commandDispatcher = commandDispatcher
         self.arrangementInlineRenameState = arrangementInlineRenameState
         self.resizeInteraction = resizeInteraction
         self.onDismiss = onDismiss
@@ -264,6 +268,7 @@ struct DrawerPanel: View {
             collapsedPaneWidth: managementLayer.isActive ? CollapsedPaneBar.barWidth : 0,
             arrangementInlineRenameState: arrangementInlineRenameState,
             commandActionResolver: commandActionResolver,
+            commandDispatcher: commandDispatcher,
             closeTransitionCoordinator: closeTransitionCoordinator,
             actionDispatcher: drawerActionDispatcher,
             onPaneFocusTrigger: onPaneFocusTrigger,
@@ -444,9 +449,39 @@ private struct DrawerSurfaceRegistrationModifier: ViewModifier {
 // MARK: - Preview
 
 #if DEBUG
+    /// Fail-closed command route used only by SwiftUI previews.
+    @MainActor
+    final class PreviewAppCommandDispatcher: AppCommandDispatching {
+        func dispatch(_ command: AppCommand) -> Bool { false }
+
+        func dispatch(_ command: AppCommand, target: UUID, targetType: SearchItemType) {}
+
+        func dispatchKeyboardShortcut(_ shortcut: AppShortcut) {}
+
+        func dispatchExtractPaneToTab(
+            tabId: UUID,
+            paneId: UUID,
+            targetTabInsertionIndex: Int?
+        ) {}
+
+        func canDispatch(_ command: AppCommand) -> Bool { false }
+
+        func canDispatch(
+            _ command: AppCommand,
+            target: UUID,
+            targetType: SearchItemType
+        ) -> Bool { false }
+
+        func bridgePaneCommandTarget(worktreeId: UUID) -> BridgePaneCommandTarget? { nil }
+
+        func dispatchMovePaneToTab(sourcePaneId: UUID, sourceTabId: UUID?, targetTabId: UUID) {}
+    }
+
+    @MainActor
     struct DrawerPanel_Previews: PreviewProvider {
         static var previews: some View {
             let atomRegistry = AtomRegistry()
+            let commandDispatcher = PreviewAppCommandDispatcher()
             let store = WorkspaceStore(
                 identityAtom: atomRegistry.core.workspaceIdentity,
                 windowMemoryAtom: atomRegistry.core.workspaceWindowMemory,
@@ -471,6 +506,7 @@ private struct DrawerSurfaceRegistrationModifier: ViewModifier {
                     editorChooser: atomRegistry.editorChooser,
                     viewRegistry: ViewRegistry(),
                     action: { _ in },
+                    commandDispatcher: commandDispatcher,
                     arrangementInlineRenameState: ArrangementInlineRenameState(),
                     resizeInteraction: nil,
                     onDismiss: {},

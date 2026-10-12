@@ -15,10 +15,15 @@ struct WorkspaceProjectedDividerResizeIntegrationTests {
         let store = WorkspaceStore()
         let viewRegistry = ViewRegistry()
         let runtime = SessionRuntime(store: store)
+        let surfaceManager = makeAppTerminalFixtureSurfaceManager()
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store,
             viewRegistry: viewRegistry,
             runtime: runtime,
+            surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()

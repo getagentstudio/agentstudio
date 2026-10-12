@@ -40,28 +40,27 @@ struct GhosttyEventRoutingCoverageTests {
     }
 
     @Test("upstream window resize is consumed without forwarding host geometry")
-    func upstreamWindowResizeIsIntercepted() throws {
+    func upstreamWindowResizeIsIntercepted() async throws {
         let rawTag = UInt32(GHOSTTY_ACTION_RESIZE_WINDOW.rawValue)
         let tag = try #require(GhosttyActionTag(rawValue: rawTag))
         #expect(Ghostty.ActionRouter.interceptedTags.contains(tag))
         #expect(!Ghostty.ActionRouter.unsupportedTags.contains(tag))
         #expect(Ghostty.ActionRouter.signalClass(for: tag) == .deferred)
-        #expect(GhosttyAdapter.shared.translate(actionTag: rawTag) == .unhandled(tag: rawTag))
-        let appHandle = try #require(UnsafeMutableRawPointer(bitPattern: 1))
-        let handled = Ghostty.ActionRouter.handleAction(
-            appHandle,
-            target: ghostty_target_s(tag: GHOSTTY_TARGET_APP, target: ghostty_target_u(surface: nil)),
-            action: ghostty_action_s(tag: GHOSTTY_ACTION_RESIZE_WINDOW, action: ghostty_action_u()),
-            routingLookupProvider: {
-                Issue.record("Window resize must not resolve terminal geometry")
-                return SurfaceManager.shared
-            },
-            metadataActionRouter: { _, _, _, _ in
-                Issue.record("Window resize must not publish metadata")
-                return true
-            }
-        )
-        #expect(handled)
+        #expect(GhosttyActionTranslation.translate(actionTag: rawTag) == .unhandled(tag: rawTag))
+        try await withGhosttyActionRouterTestFixture(
+            configuration: .init(
+                activityContextRead: { _ in Issue.record("Window resize must not resolve terminal geometry") },
+                activityInputObserved: { _ in Issue.record("Window resize must not publish metadata") }
+            )
+        ) { fixture in
+            let handled = fixture.handler.handleAction(
+                target: ghostty_target_s(tag: GHOSTTY_TARGET_APP, target: ghostty_target_u(surface: nil)),
+                action: ghostty_action_s(tag: GHOSTTY_ACTION_RESIZE_WINDOW, action: ghostty_action_u())
+            )
+            #expect(handled)
+            #expect(fixture.nativeView.nativeUpdates.isEmpty)
+            #expect((await fixture.runtime.eventsSince(seq: 0)).events.isEmpty)
+        }
     }
 
     @Test("header resolution accepts a universal macOS library")
@@ -160,8 +159,8 @@ struct GhosttyEventRoutingCoverageTests {
         ])
     func unsupportedUpstreamActionsTranslateSafely(tag: GhosttyActionTag) {
         #expect(Ghostty.ActionRouter.unsupportedTags.contains(tag))
-        #expect(GhosttyAdapter.shared.translate(actionTag: tag) == .unhandled(tag: tag.rawValue))
-        #expect(GhosttyAdapter.shared.translate(actionTag: tag.rawValue) == .unhandled(tag: tag.rawValue))
+        #expect(GhosttyActionTranslation.translate(actionTag: tag) == .unhandled(tag: tag.rawValue))
+        #expect(GhosttyActionTranslation.translate(actionTag: tag.rawValue) == .unhandled(tag: tag.rawValue))
     }
 
     @Test("every known Ghostty action tag has one explicit routing decision")
