@@ -181,8 +181,13 @@ export async function runBridgeTransitionFramesInAct<TResult>(
 	};
 	const patchedCancel: CancelFrameAPI = (frameId): void => {
 		const frame = pendingFrames.get(frameId);
+		if (frame === undefined) {
+			// An ancestor may own this frame's terminal disposition and join.
+			previousCancel.call(window, frameId);
+			return;
+		}
 		nativeCancel.call(window, frameId);
-		if (frame !== undefined) settleFrame(frame, 'cancelled');
+		settleFrame(frame, 'cancelled');
 	};
 	requestFramePatches.set(patchedRequest, {
 		previous: previousRequest,

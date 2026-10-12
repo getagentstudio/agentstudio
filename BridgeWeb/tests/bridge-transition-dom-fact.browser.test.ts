@@ -283,6 +283,73 @@ describe('Bridge transition frame ownership and retirement', () => {
 		}
 	});
 
+	test('cancels an older queued frame through the newer installed API and closes both owners', async (context) => {
+		const driver = new HeldNativeFrameDriver();
+		context.onTestFinished((): void => driver.restore());
+		const olderOwner = new AbortController();
+		const newerOwner = new AbortController();
+		const olderPhases = phaseRecorder();
+		const newerPhases = phaseRecorder();
+		const olderWriter = vi.fn();
+		const newerWriter = vi.fn();
+		const older = recordAdapterOutcome(
+			runBridgeTransitionFramesInAct(
+				async (): Promise<void> => {
+					window.requestAnimationFrame(olderWriter);
+				},
+				{ ownerAbortSignal: olderOwner.signal, onPhase: olderPhases.publish },
+			),
+		);
+		let newer: Promise<AdapterOutcome<void>> | undefined;
+		try {
+			const olderBarrier = await driver.nextFrameAfter(0);
+			olderBarrier.run();
+			const olderQueued = await driver.nextFrameAfter(olderBarrier.nativeId);
+			await olderPhases.facts.waitFor((phase) => phase === 'final frame join');
+			newer = recordAdapterOutcome(
+				runBridgeTransitionFramesInAct(
+					async (): Promise<void> => {
+						window.requestAnimationFrame(newerWriter);
+					},
+					{ ownerAbortSignal: newerOwner.signal, onPhase: newerPhases.publish },
+				),
+			);
+			const newerBarrier = await driver.nextFrameAfter(olderQueued.nativeId);
+			const installedRequest = window.requestAnimationFrame;
+			const installedCancel = window.cancelAnimationFrame;
+
+			window.cancelAnimationFrame(olderQueued.nativeId);
+			expect(olderQueued.disposition).toBe('cancelled');
+			// A cancelled native callback can arrive stale. Test this before awaiting
+			// the join so the old defect fails directly rather than at a hang bound.
+			olderQueued.replayCancelledCallback();
+			expect(olderWriter).not.toHaveBeenCalled();
+			expect((await older).kind).toBe('completed');
+			expect(window.requestAnimationFrame).toBe(installedRequest);
+			expect(window.cancelAnimationFrame).toBe(installedCancel);
+			expect(newerBarrier.disposition).toBe('held');
+
+			newerBarrier.run();
+			const newerQueued = await driver.nextFrameAfter(newerBarrier.nativeId);
+			await newerPhases.facts.waitFor((phase) => phase === 'final frame join');
+			olderOwner.abort();
+			expect(newerQueued.disposition).toBe('held');
+			window.cancelAnimationFrame(newerQueued.nativeId);
+			expect(newerQueued.disposition).toBe('cancelled');
+			newerQueued.replayCancelledCallback();
+			expect(newerWriter).not.toHaveBeenCalled();
+			expect((await newer).kind).toBe('completed');
+			driver.expectRestoredAPIs();
+		} finally {
+			olderOwner.abort();
+			newerOwner.abort();
+			await Promise.all([older, newer]);
+			driver.restore();
+			olderPhases.facts.close(new Error('Older cancellation phase observation closed.'));
+			newerPhases.facts.close(new Error('Newer cancellation phase observation closed.'));
+		}
+	});
+
 	test('owner abort retires a held successor after the helper has restored the APIs', async (context) => {
 		const driver = new HeldNativeFrameDriver();
 		context.onTestFinished((): void => driver.restore());
