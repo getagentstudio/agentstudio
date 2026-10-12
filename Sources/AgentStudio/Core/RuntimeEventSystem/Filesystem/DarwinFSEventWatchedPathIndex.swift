@@ -1,6 +1,5 @@
-/// Immutable component index over already-normalized FSEvents watched paths.
-/// Descendant sets are prepared once; a lookup visits only the event's components
-/// and the matching paths, rather than scanning every watched root.
+/// Immutable component and lexical-prefix indexes over normalized FSEvents paths.
+/// Matching sets are prepared once rather than scanning every watched path per event.
 struct DarwinFSEventWatchedPathIndex: Sendable {
     private struct PathNode: Sendable {
         var children: [String: Int] = [:]
@@ -9,10 +8,15 @@ struct DarwinFSEventWatchedPathIndex: Sendable {
     }
 
     private let pathNodes: [PathNode]
+    private let strictDescendantPathsByAncestor: [String: Set<String>]
 
     init(normalizedPaths: [String]) {
         var nodes = [PathNode()]
+        var strictPathsByAncestor: [String: Set<String>] = [:]
         for path in normalizedPaths {
+            for ancestorPath in Self.lexicalAncestorPaths(of: path) {
+                strictPathsByAncestor[ancestorPath, default: []].insert(path)
+            }
             var nodeIndex = 0
             nodes[nodeIndex].descendantPaths.insert(path)
             for component in Self.components(of: path) {
@@ -30,6 +34,7 @@ struct DarwinFSEventWatchedPathIndex: Sendable {
             nodes[nodeIndex].exactPaths.insert(path)
         }
         pathNodes = nodes
+        strictDescendantPathsByAncestor = strictPathsByAncestor
     }
 
     func ancestors(of normalizedPath: String) -> Set<String> {
@@ -54,14 +59,7 @@ struct DarwinFSEventWatchedPathIndex: Sendable {
 
     /// Matches the exact-item observer's literal `path + "/"` prefix rule.
     func strictDescendants(of normalizedPath: String) -> Set<String> {
-        if normalizedPath == "/" {
-            // Unlike component containment, the literal root prefix is '//'.
-            guard let absoluteNodeIndex = pathNodes[0].children[""],
-                let doubleSeparatorNodeIndex = pathNodes[absoluteNodeIndex].children[""]
-            else { return [] }
-            return pathNodes[doubleSeparatorNodeIndex].descendantPaths
-        }
-        return descendants(of: normalizedPath).subtracting([normalizedPath])
+        strictDescendantPathsByAncestor[normalizedPath] ?? []
     }
 
     func containsAncestor(of normalizedPath: String) -> Bool {
@@ -89,6 +87,18 @@ struct DarwinFSEventWatchedPathIndex: Sendable {
         if normalizedPath.isEmpty { matchingPaths.remove("/") }
         if includingDescendants { matchingPaths.formUnion(pathNodes[nodeIndex].descendantPaths) }
         return matchingPaths
+    }
+
+    private static func lexicalAncestorPaths(of normalizedPath: String) -> [String] {
+        let pathScalars = normalizedPath.unicodeScalars
+        return pathScalars.indices.compactMap { scalarIndex in
+            guard pathScalars[scalarIndex] == "/" else { return nil }
+            // A Prepend scalar can join '/', so Character splitting misses it.
+            // Extend/ZWJ after '/' can prevent the original prefix from matching.
+            let prefix = String(pathScalars[...scalarIndex])
+            guard normalizedPath.hasPrefix(prefix) else { return nil }
+            return String(pathScalars[..<scalarIndex])
+        }
     }
 
     private static func components(of normalizedPath: String) -> [String] {

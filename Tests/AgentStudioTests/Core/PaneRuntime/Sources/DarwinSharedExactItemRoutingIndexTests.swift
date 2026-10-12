@@ -10,12 +10,22 @@ extension DarwinSharedExactItemObserverTests {
     @Test("exact-item index agrees with the lexical ancestor rule")
     func exactItemIndexAgreesWithLexicalAncestorOracle() {
         // Arrange: bindings are already canonical; retain unusual lexical inputs too.
-        let exactPaths = [
+        let literalExactPaths = [
             "", "/", "/a", "/a/b", "/a/b/", "/a/b/nested", "/a/bc", "/a/sibling",
             "//", "//child", "/a/b//child", "/private/tmp/item", "/tmp/item",
             "/a/Case", "/a/case", "relative", "relative/", "relative/child",
+            "/private/tmp/meta\u{0600}", "/private/tmp/meta\u{0600}/HEAD",
+            "/private/tmp/meta/\u{0301}HEAD", "/private/tmp/meta\u{0600}/\u{0301}HEAD",
         ]
-        let eventPaths = exactPaths + ["/missing", "/a/CASE", "/a/bother", "relative/missing"]
+        // Prepend joins a following slash; Extend/ZWJ can join the slash to an item.
+        // Include canonical-equivalent spellings and relative/double-separator paths.
+        let componentRows = ["meta", "meta\u{0600}", "meta\u{06DD}", "meta\u{110BD}", "caf\u{00E9}", "cafe\u{0301}"]
+        let itemRows = ["HEAD", "\u{0301}HEAD", "\u{FE0F}HEAD", "\u{200D}HEAD"]
+        let generatedParents = ["", "/", "//"].flatMap { root in componentRows.map { root + $0 } }
+        let exactPaths =
+            literalExactPaths + generatedParents
+            + generatedParents.flatMap { parent in itemRows.map { parent + "/" + $0 } }
+        let eventPaths = exactPaths + ["/missing", "/a/CASE", "/a/bother", "relative/missing", "/private/tmp/meta"]
         let index = DarwinFSEventWatchedPathIndex(normalizedPaths: exactPaths)
 
         for eventPath in eventPaths {
@@ -42,6 +52,9 @@ extension DarwinSharedExactItemObserverTests {
             ("/private/tmp/item", "/private/tmp/item", false), ("/tmp/item", "/tmp/item", false),
             ("/a/Case", "/a/Case", false), ("/a/CASE", "/a/CASE", false),
             ("/obsolete", "/obsolete", false), ("/obsolete/item", "/obsolete/item", false),
+            ("/private/tmp/meta\u{0600}", "/private/tmp/meta\u{0600}", false),
+            ("/private/tmp/meta\u{0600}/HEAD", "/private/tmp/meta\u{0600}/HEAD", false),
+            ("/private/tmp/meta", "/private/tmp/meta", false),
         ]
         let flagRows: [UInt32] = [
             0, UInt32(kFSEventStreamEventFlagOwnEvent), UInt32(kFSEventStreamEventFlagMustScanSubDirs),
@@ -71,6 +84,81 @@ extension DarwinSharedExactItemObserverTests {
         try await proveExactItemReceive(
             [.init(path: "/a/b", eventId: 101, flags: 0), .init(path: "/a", eventId: 102, flags: 0)],
             normalizedPaths: ["/a/b", "/a"], activityPaths: [])
+    }
+
+    @Test("Prepend-ending shared parent starts and completes the ancestor recheck")
+    func exactItemPrependParentCompletesAncestorRecheck() async throws {
+        // Arrange: a real parent binding without an authority baseline must
+        // complete the production recheck via the existing uncertainty fallback.
+        let parent = DarwinSharedExactItemParentKey(parentPath: "/private/tmp/meta\u{0600}", volumeSystemNumber: 1)
+        let exactPath = "/private/tmp/meta\u{0600}/HEAD"
+        let worktreeID = UUIDv7.generate()
+        let operationID = UUIDv7.generate()
+        let source = LocalFactSource<UUID, ExactItemRoutingFact>(
+            vocabulary: FactVocabulary(
+                describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
+                isClosing: { _, fact in fact == .completed }))
+        let facts = try source.attach()
+        let streamFactory = RecordingSharedExactItemStreamFactory()
+        let registry = DarwinSharedExactItemObserverRegistry(
+            streamFactory: streamFactory.makeStream,
+            recordRawEvents: { source.sink(operationID, .mutation($0, $1.map(\.eventId))) },
+            recordAncestorAmbiguity: {
+                source.sink(operationID, .ancestor($0))
+                return 1
+            },
+            markUncertain: { source.sink(operationID, .uncertain($0)) },
+            yieldFullGitRefresh: {
+                source.sink(operationID, .refresh($0, $1 == .sharedUncertainty))
+                source.sink(operationID, .completed)
+            },
+            yieldActivityObservations: {
+                source.sink(
+                    operationID,
+                    .activity(
+                        $0.participantWorktreeIds, $0.qualifyingWorktreeIds, $0.coverageLostWorktreeIds,
+                        $0.processedThroughEventID))
+            },
+            performanceAccumulator: DarwinFSEventIngressPerformanceAccumulator())
+        defer {
+            registry.shutdown()
+            source.end()
+        }
+        let bound = registry.bind(
+            worktreeId: worktreeID, bindingGeneration: 1, exactItemsByParent: [parent: [exactPath]],
+            bindingIsCurrent: { true })
+        try #require(bound)
+        let generation = try #require(registry.snapshot().generationByParent[parent])
+        let opening = await facts.mark(operationID)
+
+        // Act
+        registry.receive(
+            parentKey: parent, streamGeneration: generation,
+            rawEvents: [
+                .init(path: parent.parentPath, eventId: 101, flags: UInt32(kFSEventStreamEventFlagMustScanSubDirs))
+            ])
+
+        // Assert: admission is synchronous; the second activity fact and refresh
+        // follow the actual asynchronous ancestor-recheck completion.
+        try await facts.expectNext(in: operationID, .ancestor(worktreeID))
+        try await facts.expectNext(in: operationID, .activity([worktreeID], [], [], 101))
+        try await facts.expectNext(in: operationID, .activity([worktreeID], [], [worktreeID], 101))
+        try await facts.expectNext(in: operationID, .uncertain(worktreeID))
+        try await facts.expectNext(in: operationID, .refresh(worktreeID, true))
+        try await facts.expectNext(in: operationID, .completed)
+        try await facts.expectNone(
+            of: {
+                if case .mutation = $0 { return true }
+                return false
+            },
+            "exact delivery from parent callback",
+            from: opening,
+            closedBy: { $0 == .completed })
+        #expect(registry.snapshot().unresolvedRegistrationCount == 0)
+        #expect(registry.snapshot().activeRecheckCount == 0)
+        registry.shutdown()
+        source.end()
+        try await facts.finish()
     }
 }
 
@@ -121,6 +209,8 @@ private func proveExactItemReceive(
         ["/a/b/"], ["/a/HEAD"], ["/a/HEAD.lock"], ["/a/refs/heads/main"],
         ["/a/refs/agentstudio/staged/attempt/main"], ["/private/tmp/item"], ["/tmp/item"],
         ["/a/Case"], ["/a/b", "/a/b/nested"],
+        ["/private/tmp/meta\u{0600}/HEAD"], ["/private/tmp/meta/\u{0301}HEAD"],
+        ["/private/tmp/meta\u{0600}/\u{0301}HEAD"],
     ]
     let worktreeIDs = registrationPaths.map { _ in UUIDv7.generate() }
     let originallyBound = registry.bind(
