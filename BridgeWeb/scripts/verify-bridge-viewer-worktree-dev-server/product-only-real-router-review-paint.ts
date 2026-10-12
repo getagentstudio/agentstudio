@@ -1,9 +1,10 @@
 import type { Page } from 'playwright';
 
-import type {
-	BridgeViewerReviewPaintElementSnapshot,
-	BridgeViewerReviewPaintFailureSnapshot,
-	BridgeViewerReviewPaintLedgerEntry,
+import {
+	bridgeViewerProductOnlySelectors,
+	type BridgeViewerReviewPaintElementSnapshot,
+	type BridgeViewerReviewPaintFailureSnapshot,
+	type BridgeViewerReviewPaintLedgerEntry,
 } from './product-only-real-router-contract.ts';
 
 interface ReviewPaintViewportState {
@@ -126,6 +127,30 @@ export interface BridgeViewerReviewPaintFailureEvidence {
 	readonly snapshot: BridgeViewerReviewPaintFailureSnapshot;
 }
 
+export type BridgeViewerReviewPaintViewportRelation =
+	| 'in-view'
+	| 'partly-in-view'
+	| 'out-of-view'
+	| 'missing';
+
+export function bridgeViewerReviewPaintViewportRelation(props: {
+	readonly clientHeight?: number;
+	readonly itemRect: { readonly bottom: number; readonly top: number } | null;
+	readonly scrollHeight?: number;
+	readonly viewportRect: { readonly bottom: number; readonly top: number } | null;
+}): BridgeViewerReviewPaintViewportRelation {
+	if (props.itemRect === null || props.viewportRect === null) return 'missing';
+	if (
+		props.itemRect.bottom <= props.viewportRect.top ||
+		props.itemRect.top >= props.viewportRect.bottom
+	)
+		return 'out-of-view';
+	return props.itemRect.top >= props.viewportRect.top &&
+		props.itemRect.bottom <= props.viewportRect.bottom
+		? 'in-view'
+		: 'partly-in-view';
+}
+
 export class BridgeViewerReviewPaintWaitFailure extends Error {
 	readonly evidence: BridgeViewerReviewPaintFailureEvidence;
 	readonly snapshot: BridgeViewerReviewPaintFailureSnapshot;
@@ -157,10 +182,13 @@ async function captureReviewPaintFailureSnapshot(props: {
 }): Promise<BridgeViewerReviewPaintFailureSnapshot> {
 	try {
 		return await props.page.evaluate(
-			({ actualScrollTop, itemId, requestedScrollTop }): BridgeViewerReviewPaintFailureSnapshot => {
-				const codeScrollOwner = document.querySelector(
-					'[data-testid="bridge-review-code-view-scroll-owner"]',
-				);
+			({
+				actualScrollTop,
+				itemId,
+				requestedScrollTop,
+				scrollSelector,
+			}): BridgeViewerReviewPaintFailureSnapshot => {
+				const codeScrollOwner = document.querySelector(scrollSelector);
 				const codeScroll =
 					codeScrollOwner instanceof HTMLElement
 						? {
@@ -186,14 +214,12 @@ async function captureReviewPaintFailureSnapshot(props: {
 				const headerRendered =
 					header !== null && headerRect !== null && headerRect.width > 0 && headerRect.height > 0;
 				const itemInDom = itemHost !== undefined;
-				const viewportRelation =
-					!itemInDom || itemRect === null || codeScrollRect === null
-						? 'missing'
-						: itemRect.bottom <= codeScrollRect.top || itemRect.top >= codeScrollRect.bottom
-							? 'out-of-view'
-							: itemRect.top >= codeScrollRect.top && itemRect.bottom <= codeScrollRect.bottom
-								? 'in-view'
-								: 'partly-in-view';
+				const viewportRelation = !itemInDom
+					? 'missing'
+					: bridgeViewerReviewPaintViewportRelation({
+							itemRect,
+							viewportRect: codeScrollRect,
+						});
 				return {
 					actualScrollTop,
 					captureError: null,
@@ -234,6 +260,22 @@ async function captureReviewPaintFailureSnapshot(props: {
 					};
 				}
 
+				function bridgeViewerReviewPaintViewportRelation(props: {
+					itemRect: { bottom: number; top: number } | null;
+					viewportRect: { bottom: number; top: number } | null;
+				}): BridgeViewerReviewPaintViewportRelation {
+					if (props.itemRect === null || props.viewportRect === null) return 'missing';
+					if (
+						props.itemRect.bottom <= props.viewportRect.top ||
+						props.itemRect.top >= props.viewportRect.bottom
+					)
+						return 'out-of-view';
+					return props.itemRect.top >= props.viewportRect.top &&
+						props.itemRect.bottom <= props.viewportRect.bottom
+						? 'in-view'
+						: 'partly-in-view';
+				}
+
 				function bridgeReviewHostElement(host: Element, selector: string): Element | null {
 					return host.querySelector(selector) ?? host.shadowRoot?.querySelector(selector) ?? null;
 				}
@@ -254,6 +296,7 @@ async function captureReviewPaintFailureSnapshot(props: {
 				actualScrollTop: props.actualScrollTop,
 				itemId: props.itemId,
 				requestedScrollTop: props.requestedScrollTop,
+				scrollSelector: bridgeViewerProductOnlySelectors.reviewCodeScrollOwner,
 			},
 		);
 	} catch {

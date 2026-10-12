@@ -9,6 +9,7 @@ import { reviewFailureSnapshotFromPaintFailureEvidence } from './product-only-re
 import {
 	BridgeViewerReviewPaintWaitFailure,
 	bridgeViewerReviewPaintFailureEvidenceFromError,
+	bridgeViewerReviewPaintViewportRelation,
 } from './product-only-real-router-review-paint.ts';
 
 describe('Bridge Viewer Review paint diagnostics', () => {
@@ -78,5 +79,16 @@ describe('Bridge Viewer Review paint diagnostics', () => {
 		expect(record.paintLedger).toEqual([paintedEntry, pendingEntry]);
 		expect(record.pendingPaintItemId).toBe(pendingEntry.itemId);
 		expect(record.paintLedger[1]?.targetSnapshot.viewportRelation).toBe('partly-in-view');
+	});
+
+	test('uses the real container rectangle when scroll metrics are zero', () => {
+		expect(
+			bridgeViewerReviewPaintViewportRelation({
+				clientHeight: 0,
+				itemRect: { bottom: 688, top: 440 },
+				scrollHeight: 0,
+				viewportRect: { bottom: 980, top: 0 },
+			}),
+		).toBe('in-view');
 	});
 });
