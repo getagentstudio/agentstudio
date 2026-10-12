@@ -21,9 +21,11 @@ struct DerivedTerminalActivityNotificationRegressionTests {
         let terminalActivity: TerminalActivityAtom
         let inboxRouter: InboxNotificationRouter
         let terminalRouter: TerminalActivityRouter
+        let callbackFixture: TerminalActivityCallbackTestFixture
 
         @MainActor
         func shutdown() async {
+            await callbackFixture.closeAndJoin()
             await terminalRouter.stop()
             await inboxRouter.stop()
             await tracker.stop()
@@ -138,9 +140,11 @@ struct DerivedTerminalActivityNotificationRegressionTests {
                 terminalRouterBox.router?.markUnseenActivityObserved(paneId: paneId)
             }
         )
+        let callbackFixture = TerminalActivityCallbackTestFixture()
         let terminalRouter = TerminalActivityRouter(
             bus: bus,
             activityAtom: terminalActivity,
+            callbackHandlingAccess: { callbackFixture.handler },
             attendedPane: attendedPane,
             surfaceIDForPaneID: { $0 },
             isPaneCurrentlyAttended: {
@@ -151,9 +155,11 @@ struct DerivedTerminalActivityNotificationRegressionTests {
                     drawerView: drawerView
                 )
             },
+            lastOutputLineReader: { _ in .surfaceStale },
             unseenActivityDebounceDuration: AppPolicies.InboxNotification.terminalActivityQuietDebounceDuration,
             unseenActivityClock: clock
         )
+        callbackFixture.router = terminalRouter
         terminalRouterBox.router = terminalRouter
         await inboxRouter.start()
         await terminalRouter.start()
@@ -166,7 +172,8 @@ struct DerivedTerminalActivityNotificationRegressionTests {
             tracker: tracker,
             terminalActivity: terminalActivity,
             inboxRouter: inboxRouter,
-            terminalRouter: terminalRouter
+            terminalRouter: terminalRouter,
+            callbackFixture: callbackFixture
         )
     }
 

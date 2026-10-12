@@ -26,6 +26,8 @@ struct SurfaceRendererVisibilityIntegrationTests {
 
     private func makeManager(delivery: RecordingSurfaceRendererStateDelivery) -> SurfaceManager {
         SurfaceManager(
+            appCommandDispatcher: AppTerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil },
             maxCreationRetries: 0,
             healthCheckInterval: 3600,
             rendererStateDelivery: delivery
@@ -123,7 +125,9 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 surfaceManager.attach(managedSurface.id, to: paneID)
                 let paneHost = PaneHostView(paneId: paneID)
                 paneHost.mountContentView(
-                    TerminalPaneMountView(restoredSurfaceId: managedSurface.id, paneId: paneID)
+                    TerminalPaneMountView(
+                        surfaceOperations: makeAppTerminalFixtureMountOperations(),
+                        restoredSurfaceId: managedSurface.id, paneId: paneID)
                 )
                 viewRegistry.register(paneHost, for: paneID)
             }
@@ -146,6 +150,8 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 viewRegistry: viewRegistry,
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 windowLifecycleStore: windowLifecycleStore,
@@ -249,6 +255,8 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 windowLifecycleStore: windowLifecycleStore,
@@ -329,6 +337,8 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 windowLifecycleStore: windowLifecycleStore,
@@ -426,6 +436,8 @@ struct SurfaceRendererVisibilityIntegrationTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: EventBus<RuntimeEnvelope>(),
                 windowLifecycleStore: windowLifecycleStore,
@@ -528,6 +540,9 @@ private actor RendererVisibilityIntegrationRecordingTraceSink: AgentStudioTraceS
 
 @MainActor
 private final class NoOpAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

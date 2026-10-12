@@ -200,7 +200,7 @@ struct MainWindowControllerInboxToolbarButtonTests {
     func topChromeSidebarButtonsUseCommandSpecsAndDispatchThroughSharedCommands() throws {
         let source = try sourceFile("Sources/AgentStudio/App/Panes/TabBar/ShellTabBarControls.swift")
 
-        #expect(source.contains("AppCommandDispatcher.shared.definition(for: command)"))
+        #expect(source.contains("command.definition"))
         #expect(source.contains("presentation.perform()"))
         #expect(source.contains(".disabled(!presentation.isEnabled)"))
         #expect(source.contains(".help(presentation.controlToolTip)"))
@@ -265,12 +265,13 @@ struct MainWindowControllerInboxToolbarButtonTests {
     }
 
     private func expectAppToolbarPresentationFiltering(for command: AppCommand) {
+        let dispatcher = RecordingAppToolbarCommandDispatcher()
         let definition = command.definition
         let emptyContext = CommandContext.empty
         let appToolbarPresentation = ShellTabBarCommandPresentation(
             definition: definition,
             surface: .toolbar(.app),
-            commandContext: emptyContext
+            commandContext: emptyContext, dispatcher: dispatcher
         )
 
         #expect(appToolbarPresentation?.command == command)
@@ -288,7 +289,7 @@ struct MainWindowControllerInboxToolbarButtonTests {
             ShellTabBarCommandPresentation(
                 definition: commandBarOnlyDefinition,
                 surface: .toolbar(.app),
-                commandContext: emptyContext
+                commandContext: emptyContext, dispatcher: dispatcher
             ) == nil
         )
 
@@ -305,14 +306,14 @@ struct MainWindowControllerInboxToolbarButtonTests {
             ShellTabBarCommandPresentation(
                 definition: activeTabDefinition,
                 surface: .toolbar(.app),
-                commandContext: emptyContext
+                commandContext: emptyContext, dispatcher: dispatcher
             ) == nil
         )
         #expect(
             ShellTabBarCommandPresentation(
                 definition: activeTabDefinition,
                 surface: .toolbar(.app),
-                commandContext: CommandContext(satisfiedRequirements: [.hasActiveTab])
+                commandContext: CommandContext(satisfiedRequirements: [.hasActiveTab]), dispatcher: dispatcher
             )?.command == command
         )
     }
@@ -359,6 +360,9 @@ private struct MainWindowControllerHarness {
 
 @MainActor
 private final class RecordingAppToolbarCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     var enabledCommands: Set<AppCommand> = []
     private(set) var capabilityQueries: [AppCommand] = []
     private(set) var dispatchedCommands: [AppCommand] = []
@@ -411,6 +415,8 @@ private func withMainWindowControllerHarness<T>(
         viewRegistry: viewRegistry,
         runtime: runtime,
         surfaceManager: InboxToolbarTestSurfaceManager(),
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
         runtimeRegistry: RuntimeRegistry(),
         windowLifecycleStore: atoms.core.windowLifecycle,
         ipcLifecycle: .testUnavailable,
@@ -429,11 +435,18 @@ private func withMainWindowControllerHarness<T>(
 
     var controller: MainWindowController?
     let result = try await withAsyncTestCoreAtoms(using: atoms.core) { _ in
+        let commandDispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         let windowController = MainWindowController(
             store: store,
             octiconLoader: makeTestOcticonLoader(),
             workspaceActionExecutor: workspaceActionExecutor,
             runtimeCommandDispatcher: coordinator,
+            commandDispatcher: commandDispatcher,
+            resolveCommandCapabilities: {
+                commandDispatcher.repoExplorerCommandPresentationSnapshot(
+                    requests: $0, generation: $1)
+            },
+            executionOwnerIdentities: commandDispatcher.executionOwnerIdentities, synchronizeRuntimeFocus: { _ in },
             applicationLifecycleMonitor: applicationLifecycleMonitor,
             appLifecycleStore: appLifecycleStore,
             tabBarAdapter: tabBarAdapter,

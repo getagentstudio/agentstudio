@@ -8,16 +8,16 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-@Suite("App command dispatcher worktree creation", .serialized)
+@Suite("App command dispatcher worktree creation")
 struct AppCommandDispatcherWorktreeCreationTests {
     @Test("creation request reaches the shell owner after the targeted preflight for its command")
     func creationRequestRoutesToShellOwner() async throws {
         let shellOwner = RecordingWorktreeCreationShellOwner(outcome: .accepted(operationId: nil))
         let request = try Self.makeRequest(kind: .fromDefault)
 
-        let accepted = try await withIsolatedCommandDispatcher(
-            configure: { AppCommandDispatcher.shared.appCommandRouter = shellOwner },
-            body: { AppCommandDispatcher.shared.dispatchWorktreeCreation(request) }
+        let accepted = try await withCommandDispatcherFixture(
+            configure: { configuration in configuration.shellOwner = shellOwner },
+            body: { dispatcher in dispatcher.dispatchWorktreeCreation(request) }
         )
 
         #expect(accepted)
@@ -33,9 +33,9 @@ struct AppCommandDispatcherWorktreeCreationTests {
         let shellOwner = RecordingWorktreeCreationShellOwner(outcome: .accepted(operationId: nil))
         let request = try Self.makeRequest(kind: .fromBranch(referenceName: "refs/heads/source"))
 
-        let accepted = try await withIsolatedCommandDispatcher(
-            configure: { AppCommandDispatcher.shared.appCommandRouter = shellOwner },
-            body: { AppCommandDispatcher.shared.dispatchWorktreeCreation(request) }
+        let accepted = try await withCommandDispatcherFixture(
+            configure: { configuration in configuration.shellOwner = shellOwner },
+            body: { dispatcher in dispatcher.dispatchWorktreeCreation(request) }
         )
 
         #expect(accepted)
@@ -54,9 +54,9 @@ struct AppCommandDispatcherWorktreeCreationTests {
         )
         let request = try Self.makeRequest(kind: .fork)
 
-        let accepted = try await withIsolatedCommandDispatcher(
-            configure: { AppCommandDispatcher.shared.appCommandRouter = shellOwner },
-            body: { AppCommandDispatcher.shared.dispatchWorktreeCreation(request) }
+        let accepted = try await withCommandDispatcherFixture(
+            configure: { configuration in configuration.shellOwner = shellOwner },
+            body: { dispatcher in dispatcher.dispatchWorktreeCreation(request) }
         )
 
         #expect(!accepted)
@@ -71,9 +71,9 @@ struct AppCommandDispatcherWorktreeCreationTests {
         let shellOwner = RecordingWorktreeCreationShellOwner(outcome: .unavailable(.featureUnavailable))
         let request = try Self.makeRequest(kind: .fork)
 
-        let accepted = try await withIsolatedCommandDispatcher(
-            configure: { AppCommandDispatcher.shared.appCommandRouter = shellOwner },
-            body: { AppCommandDispatcher.shared.dispatchWorktreeCreation(request) }
+        let accepted = try await withCommandDispatcherFixture(
+            configure: { configuration in configuration.shellOwner = shellOwner },
+            body: { dispatcher in dispatcher.dispatchWorktreeCreation(request) }
         )
 
         #expect(!accepted)

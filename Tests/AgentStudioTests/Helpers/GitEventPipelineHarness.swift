@@ -276,6 +276,8 @@ struct GitTopologyPipelineHarness {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: workspaceStore),
             surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: bus,
             gitWorkingTreeStatusProvider: StubGitWorkingTreeStatusProvider { _ in nil },

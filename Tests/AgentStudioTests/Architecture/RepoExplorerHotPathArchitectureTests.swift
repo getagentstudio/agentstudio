@@ -725,7 +725,7 @@ struct RepoExplorerHotPathArchitectureTests {
         #expect(featureSource.contains("presentation.command(command)?.isEnabled == true"))
         #expect(featureSource.contains("commandDispatcher.dispatch(command)"))
         #expect(!featureSource.contains("AppCommandDispatcher.shared"))
-        #expect(appCompositionSource.contains("commandDispatcher: AppCommandDispatcher.shared"))
+        #expect(appCompositionSource.contains("commandDispatcher: commandDispatcher"))
         #expect(!featureSource.contains("repoExplorerPrefs.setSortDirection"))
         #expect(!featureSource.contains("repoExplorerPrefs.setShowsPinned"))
         #expect(!appCompositionSource.contains("setRepoSidebarVisibilityMode"))

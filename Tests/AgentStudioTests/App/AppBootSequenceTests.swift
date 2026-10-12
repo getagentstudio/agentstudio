@@ -264,6 +264,8 @@ struct AppBootSequenceTests {
             viewRegistry: viewRegistry,
             runtime: SessionRuntime(atom: atoms.core.sessionRuntime, store: store),
             surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: atoms.core.windowLifecycle,
             appLifecycleStore: appLifecycleStore,
@@ -285,10 +287,15 @@ struct AppBootSequenceTests {
         let delegate = AppDelegate()
 
         await withAsyncTestCoreAtoms(using: atoms.core) { _ in
+            let commandDispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
             let dependencies = AppDelegateMainWindowCreationDependencies(
                 store: store,
                 repoCache: atoms.core.repoCache,
                 octiconLoader: makeTestOcticonLoader(),
+                commandDispatcher: commandDispatcher,
+                resolveCommandCapabilities: commandDispatcher.repoExplorerCommandPresentationSnapshot,
+                executionOwnerIdentities: commandDispatcher.executionOwnerIdentities,
+                synchronizeRuntimeFocus: { _ in },
                 executor: WorkspaceActionExecutor(coordinator: coordinator, store: store),
                 workspaceSurfaceCoordinator: coordinator,
                 applicationLifecycleMonitor: applicationLifecycleMonitor,
