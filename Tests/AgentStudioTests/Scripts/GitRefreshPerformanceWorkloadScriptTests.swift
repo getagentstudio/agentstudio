@@ -332,7 +332,7 @@ struct GitRefreshPerformanceWorkloadScriptTests {
         #expect(source.contains("workload_fingerprint()"))
         #expect(source.contains("source_digest()"))
         #expect(source.contains("capture_authenticated_final_state_oracle()"))
-        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1"))
+        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH"))
         #expect(source.contains("performance.tabbar.terminal"))
         #expect(source.contains("performance.tabbar.capture"))
         #expect(source.contains("performance.tabbar.current"))
