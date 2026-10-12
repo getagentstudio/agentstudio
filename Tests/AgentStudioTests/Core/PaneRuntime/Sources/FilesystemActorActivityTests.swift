@@ -185,6 +185,7 @@ struct FilesystemActorActivityTests {
 
     @Test("shutdown completes after start with no registered filesystem roots")
     func shutdownCompletesAfterStartWithNoRegisteredFilesystemRoots() async {
+        // Arrange
         let activityProjector = RepositoryLocalActivityProjector { _ in }
         let actor = FilesystemActor(
             bus: EventBus<RuntimeEnvelope>(),
@@ -192,9 +193,11 @@ struct FilesystemActorActivityTests {
             repositoryLocalActivityProjector: activityProjector
         )
 
+        // Act
         await actor.start()
         await actor.shutdown()
 
+        // Assert
         #expect(await actor.hasBegunShutdown)
     }
 
