@@ -10,6 +10,7 @@ import type { BridgeWorkerMainToServerMessage } from '../core/comm-worker/bridge
 import {
 	settleFileViewerMenuTransition,
 	waitForFileViewerMenuOptionContaining,
+	actInteractAndSettleFileViewerCheckedMenuOption,
 } from './bridge-file-viewer-app-startup.browser.test-support.js';
 import { BridgeFileViewerBrowserHarnessApp } from './bridge-file-viewer-browser-test-app.js';
 import {
@@ -493,10 +494,12 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 		const focusedFixtureOption = highlightedFileViewerMenuOption();
 		expect(focusedFixtureOption.textContent).toContain('Test data');
 		expect(document.activeElement).toBe(focusedFixtureOption);
-		await interactAndWaitForBridgeFileViewerQueryCompletion((): void => {
-			dispatchFileViewerMenuEnter();
+		await actInteractAndSettleFileViewerCheckedMenuOption({
+			option: focusedFixtureOption,
+			interaction: async (): Promise<void> => {
+				await interactAndWaitForBridgeFileViewerQueryCompletion(dispatchFileViewerMenuEnter);
+			},
 		});
-		await actFrame();
 		await expect.poll(() => focusedFixtureOption.getAttribute('aria-checked')).toBe('true');
 
 		// Assert: the matching file and only its required ancestor remain.
@@ -672,6 +675,18 @@ async function dispatchFileViewerSearchEscape(
 }
 
 async function clickFileViewerMenuOptionAndWaitForQuery(element: HTMLElement): Promise<void> {
+	if (element.getAttribute('data-testid') === 'worktree-file-filter-menu-option') {
+		await actInteractAndSettleFileViewerCheckedMenuOption({
+			option: element,
+			interaction: async (): Promise<void> => {
+				await interactAndWaitForBridgeFileViewerQueryCompletion((): void => {
+					element.click();
+				});
+			},
+		});
+		return;
+	}
+	// Clear closes the root: keep its existing capture and close-completion join.
 	await interactAndWaitForBridgeFileViewerQueryCompletion((): void => {
 		element.click();
 	});

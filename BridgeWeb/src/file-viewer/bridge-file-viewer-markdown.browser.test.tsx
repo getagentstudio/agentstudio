@@ -219,19 +219,44 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		});
 		if (markdownWorkerClient === null) throw new Error('expected markdown worker client');
 
+		const readiness = createHeldFileMarkdownReadiness({
+			workerClient: markdownWorkerClient,
+			mermaidRenderer: createBridgeMermaidRenderer(),
+		});
 		try {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
-					markdownWorkerClient={markdownWorkerClient}
-					mermaidRenderer={createBridgeMermaidRenderer()}
+					markdownWorkerClient={readiness.workerClient}
+					mermaidRenderer={readiness.mermaidRenderer}
 					navigationCommand={fileNavigationCommandForPath('docs/stable.md')}
-					fileProductSession={{ readContent: async (): Promise<string> => markdownContent }}
+					fileProductSession={{
+						readContent: async (): Promise<string> => markdownContent,
+						onWorkerCommand: readiness.observeCommand,
+					}}
 				/>,
 			);
-			await waitForMarkdownOpenFileState('ready');
-			await waitForMarkdownSelector('[data-bridge-mermaid-state="ready"] svg');
+			const task = await readiness.workerStarted;
+			const completion = await readiness.workerCompleted;
+			if (completion.status !== 'success')
+				throw new Error('Expected real stable Markdown completion.');
+			await actUpdate(async (): Promise<void> => {
+				readiness.releaseWorker();
+				await task.completed;
+			});
+			const article = await observeFileMarkdownArticle(task);
+			const diagramId = completion.response.mermaidDiagrams[0]?.id;
+			if (diagramId === undefined) throw new Error('Expected the stable Markdown diagram.');
+			await actUpdate(async (): Promise<void> => {
+				await readiness.waitForPainted(task, article);
+				await observeFileMermaidReady({
+					article,
+					task,
+					diagramId,
+					release: readiness.releaseMermaid,
+				});
+			});
 			const originalCanvas = requireHTMLElement(
 				document.querySelector('[data-testid="bridge-markdown-canvas"]'),
 			);
@@ -258,6 +283,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 				),
 			).toBeNull();
 		} finally {
+			readiness.close();
 			markdownWorkerClient.dispose();
 		}
 	});

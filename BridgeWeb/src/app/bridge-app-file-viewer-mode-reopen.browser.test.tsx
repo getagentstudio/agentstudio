@@ -2,6 +2,11 @@ import { createElement, type ComponentProps, type ReactElement } from 'react';
 import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 
+import {
+	observeBridgeTransitionDOMFact,
+	runBridgeTransitionFramesInAct,
+} from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode renders need app CSS.
 import './bridge-app.css';
 import { createBridgePaneRuntime } from '../core/comm-worker/bridge-pane-runtime.js';
@@ -35,6 +40,7 @@ import { createFileShellResource } from './bridge-app-file-shell-resource.browse
 import { BridgeAppProtocolRouter } from './bridge-app-protocol-router.js';
 import {
 	awaitViewSettingsClose,
+	awaitViewSettingsOpen,
 	hasPendingViewSettingsClose,
 	joinViewSettingsCloseWithinAct,
 	markViewSettingsOpening,
@@ -469,33 +475,28 @@ async function clickContext(context: 'file' | 'review', waitForFocus = false): P
 async function openViewSettings(surface: 'file' | 'review'): Promise<void> {
 	markReopenPhase(`${surface} view settings: open`);
 	markViewSettingsOpening(surface);
-	const trigger = activeViewSettingsTrigger(surface);
-	await actClick(trigger);
-	expect(
-		await observeBridgeAppDomUntilEqual(
-			() =>
-				document.querySelector(`[data-testid="bridge-${surface}-view-settings-content"]`) !== null,
-			true,
-		),
-	).toBe(true);
-	await actWait(async (): Promise<void> => {
-		const content = document.querySelector<HTMLElement>(
-			`[data-testid="bridge-${surface}-view-settings-content"]`,
-		);
-		if (content === null) return;
-		await Promise.all(
-			content.getAnimations().map(async (animation): Promise<void> => {
-				markReopenPhase(`${surface} view settings: native animations`);
-				const finished = animation.finished;
-				animation.finish();
-				try {
-					await finished;
-				} catch {
-					// A surface switch can cancel the menu transition it supersedes.
-				}
-			}),
-		);
+	const transitionCommitted = observeBridgeTransitionDOMFact({
+		label: `${surface} view settings opening transition committed`,
+		isCommitted: (): boolean => {
+			const content = document.querySelector(
+				`[data-testid="bridge-${surface}-view-settings-content"]`,
+			);
+			return (
+				content?.hasAttribute('data-open') === true && !content.hasAttribute('data-starting-style')
+			);
+		},
 	});
+	try {
+		await runBridgeTransitionFramesInAct(async (): Promise<void> => {
+			await actClick(activeViewSettingsTrigger(surface));
+			await transitionCommitted.promise;
+			await actWait(async (): Promise<void> => {
+				await awaitViewSettingsOpen(surface);
+			});
+		});
+	} finally {
+		transitionCommitted.close();
+	}
 }
 
 async function closeViewSettings(surface: 'file' | 'review'): Promise<void> {
