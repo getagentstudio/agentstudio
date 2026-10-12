@@ -80,8 +80,8 @@ struct SwiftLanePhaseContinuationTests {
                     ? ["native", "aggregate", "fast-process"] : ["parallel", "serial", "large-process"]))
     }
 
-    @Test("isolated timeout stays terminal through the dispatcher")
-    func isolatedTimeoutStaysTerminalThroughDispatcher() async throws {
+    @Test("an isolated child timeout or signal is recorded and later suites run", arguments: [124, 143])
+    func isolatedChildFailureDoesNotStopDispatcher(status: Int) async throws {
         let evidenceDirectory = NSTemporaryDirectory() + "tq99-isolated-\(UUIDv7.generate().uuidString)"
         defer { try? FileManager.default.removeItem(atPath: evidenceDirectory) }
         let result = try await runPhaseBash(
@@ -90,13 +90,24 @@ struct SwiftLanePhaseContinuationTests {
             source scripts/swift-test-helpers.sh
             LOG_PREFIX=tq99
             LANE_EVENT_STREAM_DIR='\(evidenceDirectory)'
+            export SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE='\(evidenceDirectory)/failures'
             swift_test_isolated_process_concurrency() { echo 1; }
-            run_selected_isolated_suite() { echo "PHASE:$2"; return 124; }
-            dispatch_isolated_suites fast TimedOutSuite MustNotStartSuite
+            run_selected_isolated_suite() {
+              echo "PHASE:$2"
+              if [ "$2" = FailingSuite ]; then return \(status); fi
+              return 0
+            }
+            phase_status=0
+            dispatch_isolated_suites fast FailingSuite HealthySuite || phase_status=$?
+            echo "COUNT=$(swift_test_failed_isolated_suite_count)"
+            cat "$SWIFT_TEST_FAILED_ISOLATED_SUITES_FILE"
+            exit "$phase_status"
             """
         )
-        #expect(result.exitCode == 124, Comment(rawValue: result.output))
-        #expect(phaseLines(result.output) == ["TimedOutSuite"])
+        #expect(result.exitCode == 1, Comment(rawValue: result.output))
+        #expect(phaseLines(result.output) == ["FailingSuite", "HealthySuite"])
+        #expect(result.output.contains("COUNT=1"))
+        #expect(result.output.contains("FailingSuite\t\(status)\t"))
     }
 
     @Test("the lane signal trap exits before later phases")
@@ -138,7 +149,7 @@ struct SwiftLanePhaseContinuationTests {
         #expect(phaseLines(result.output) == ["native", "aggregate", "fast-process"])
     }
 
-    @Test("fast process-global phase retains earlier failures", arguments: [1, 7, 124])
+    @Test("fast process-global phase retains earlier failures", arguments: [1, 7, 124, 143])
     func fastProcessGlobalPhaseRetainsEarlierFailures(status: Int) async throws {
         let result = try await runPhaseBash(
             """
@@ -163,8 +174,8 @@ struct SwiftLanePhaseContinuationTests {
             exit "$phase_status"
             """
         )
-        #expect(result.exitCode == Int32(status), Comment(rawValue: result.output))
-        #expect(phaseLines(result.output) == (status == 124 ? ["FailingSuite"] : ["FailingSuite", "HealthySuite"]))
+        #expect(result.exitCode == Int32([124, 143].contains(status) ? 1 : status), Comment(rawValue: result.output))
+        #expect(phaseLines(result.output) == ["FailingSuite", "HealthySuite"])
     }
 
     private func runPhaseBash(_ command: String) async throws -> LaneScriptBashResult {
