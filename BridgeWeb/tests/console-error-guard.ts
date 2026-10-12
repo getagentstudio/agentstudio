@@ -42,7 +42,10 @@ function installConsoleErrorGuard(): void {
 	console.error = (...args: readonly unknown[]): void => {
 		const message = formatConsoleArguments(args);
 		if (isGuardedConsoleError(message)) {
-			guardedConsoleErrorMessages.push(`console.error: ${message}`);
+			const writerStack = isReactActWarning(message) ? captureReactActWriterStack() : undefined;
+			guardedConsoleErrorMessages.push(
+				`console.error: ${message}${writerStack === undefined ? '' : `\n${writerStack}`}`,
+			);
 		}
 		consoleErrorBeforeGuard(...args);
 	};
@@ -107,5 +110,15 @@ function stringifyGuardValue(value: unknown): string {
 	} catch {
 		// Circular or otherwise unserializable values still need a readable failure.
 		return String(value);
+	}
+}
+
+function captureReactActWriterStack(): string | undefined {
+	const previousLimit = Error.stackTraceLimit;
+	try {
+		Error.stackTraceLimit = Math.max(previousLimit ?? 10, 50);
+		return new Error('React act warning writer stack').stack;
+	} finally {
+		Error.stackTraceLimit = previousLimit;
 	}
 }
