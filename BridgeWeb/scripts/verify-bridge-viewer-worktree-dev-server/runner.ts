@@ -548,9 +548,14 @@ export async function verifyWorktreeDevServer(): Promise<WorktreeDevServerVerifi
 		const performanceSurface = await fetchWorktreeSurface();
 		const performanceDescriptors =
 			await fetchPerformanceWorktreeFileDescriptors(performanceSurface);
+		const resetFilterOption = bridgeViewerFileCategoryOptions.find(
+			(option) => option.value === 'all',
+		);
+		if (resetFilterOption === undefined)
+			throw new Error('Product File category reset option is missing.');
 		await resetWorktreeFileTreeForPerformanceSamples({
 			page,
-			resetFilterLabel: 'All files',
+			resetFilterLabel: resetFilterOption.label,
 			totalMetadataTreeRowCount: worktreeFileTreeRows(performanceSurface.frames).length,
 		});
 		const interactionPerformanceProof = await collectWorktreeInteractionPerformanceProof({
