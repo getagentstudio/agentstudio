@@ -45,11 +45,32 @@ const bridgeCompleteJourneyTelemetryEvidenceSchema = bridgeDevTelemetryStatusSch
 	})
 	.loose();
 
-export async function collectBridgeDevelopmentCompleteJourneyLaunch(props: {
-	readonly attemptCount: number;
-	readonly launchId: string;
-	readonly sourceHead: string;
-}): Promise<BridgeDevelopmentCompleteJourneyLaunch> {
+type CompleteJourneyAttemptRunner = (props: {
+	readonly journey: BridgeCompleteJourney;
+	readonly markCompletedPhases: (phases: BridgeCompleteJourneyPhaseCompletions) => void;
+	readonly markFailureReason: (reason: string) => void;
+	readonly markTimingStarted: (startedAt: number) => void;
+	readonly page: Page;
+}) => Promise<BridgeCompleteJourneyPhaseCompletions>;
+
+export interface BridgeCompleteJourneyCollectorDependencies {
+	readonly collectJourney?: CompleteJourneyAttemptRunner;
+	readonly makePage?: (signal: AbortSignal) => Promise<Page>;
+	readonly onAttemptStarted?: (attemptId: string) => void;
+	readonly ownerSignal?: AbortSignal;
+	readonly observeStep?: <TValue>(name: string, promise: Promise<TValue>) => Promise<TValue>;
+	readonly pendingSteps?: Set<string>;
+	readonly renewLaunchHangBound?: () => void;
+}
+
+export async function collectBridgeDevelopmentCompleteJourneyLaunch(
+	props: {
+		readonly attemptCount: number;
+		readonly launchId: string;
+		readonly sourceHead: string;
+	},
+	dependencies: BridgeCompleteJourneyCollectorDependencies = {},
+): Promise<BridgeDevelopmentCompleteJourneyLaunch> {
 	const attemptsByJourney = {
 		fileToReview: [] as BridgeCompleteJourneyAttempt[],
 		firstFile: [] as BridgeCompleteJourneyAttempt[],
@@ -62,6 +83,7 @@ export async function collectBridgeDevelopmentCompleteJourneyLaunch(props: {
 				// oxlint-disable-next-line no-await-in-loop -- Each measured page lifecycle is intentionally independent and serial.
 				await collectBridgeDevelopmentCompleteJourneyAttempt({
 					attemptId: `${props.launchId}-${journey}-${attemptIndex}`,
+					dependencies,
 					journey,
 				}),
 			);
@@ -105,26 +127,47 @@ export function bridgeCompleteJourneyLaunchForJourney(
 
 async function collectBridgeDevelopmentCompleteJourneyAttempt(props: {
 	readonly attemptId: string;
+	readonly dependencies: BridgeCompleteJourneyCollectorDependencies;
 	readonly journey: BridgeCompleteJourney;
 }): Promise<BridgeCompleteJourneyAttempt> {
 	let attemptStartedAt = performance.now();
 	let failureReason = 'journey_failed';
 	let completedPhases: BridgeCompleteJourneyPhaseCompletions = {};
 	let page: Page | null = null;
+	const ownerSignal = props.dependencies.ownerSignal ?? new AbortController().signal;
+	const pendingSteps = props.dependencies.pendingSteps ?? new Set<string>();
+	props.dependencies.renewLaunchHangBound?.();
+	props.dependencies.onAttemptStarted?.(props.attemptId);
 	try {
-		page = await makeVerificationPage();
-		const phaseCompletionElapsedMilliseconds = await collectSuccessfulJourney({
-			journey: props.journey,
-			markCompletedPhases: (phases): void => {
-				completedPhases = { ...completedPhases, ...phases };
-			},
-			markFailureReason: (reason): void => {
-				failureReason = reason;
-			},
-			markTimingStarted: (startedAt): void => {
-				attemptStartedAt = startedAt;
-			},
-			page,
+		page = await awaitCompleteJourneyStep({
+			label: 'verifier page acquisition',
+			operation: (
+				props.dependencies.makePage ?? ((signal): Promise<Page> => makeVerificationPage({ signal }))
+			)(ownerSignal),
+			ownerSignal,
+			observeStep: props.dependencies.observeStep,
+			pendingSteps,
+			signal: ownerSignal,
+		});
+		const phaseCompletionElapsedMilliseconds = await awaitCompleteJourneyStep({
+			label: `${props.journey} journey`,
+			operation: (props.dependencies.collectJourney ?? collectSuccessfulJourney)({
+				journey: props.journey,
+				markCompletedPhases: (phases): void => {
+					completedPhases = { ...completedPhases, ...phases };
+				},
+				markFailureReason: (reason): void => {
+					failureReason = reason;
+				},
+				markTimingStarted: (startedAt): void => {
+					attemptStartedAt = startedAt;
+				},
+				page,
+			}),
+			ownerSignal,
+			observeStep: props.dependencies.observeStep,
+			pendingSteps,
+			signal: ownerSignal,
 		});
 		return {
 			attemptId: props.attemptId,
@@ -133,6 +176,7 @@ async function collectBridgeDevelopmentCompleteJourneyAttempt(props: {
 			phaseCompletionElapsedMilliseconds,
 		};
 	} catch (error: unknown) {
+		if (ownerSignal.aborted) throw error;
 		return bridgeCompleteJourneyFailedAttempt({
 			attemptId: props.attemptId,
 			durationMilliseconds: Math.min(
@@ -144,6 +188,45 @@ async function collectBridgeDevelopmentCompleteJourneyAttempt(props: {
 		});
 	} finally {
 		await page?.close().catch((): void => undefined);
+	}
+}
+
+async function awaitCompleteJourneyStep<TValue>(props: {
+	readonly label: string;
+	readonly operation: Promise<TValue>;
+	readonly ownerSignal: AbortSignal | undefined;
+	readonly observeStep:
+		| (<TResult>(name: string, promise: Promise<TResult>) => Promise<TResult>)
+		| undefined;
+	readonly pendingSteps: Set<string>;
+	readonly signal: AbortSignal;
+}): Promise<TValue> {
+	props.pendingSteps.add(props.label);
+	const observedOperation = props.observeStep?.(props.label, props.operation) ?? props.operation;
+	const abortSignals = [props.signal, props.ownerSignal].filter(
+		(signal): signal is AbortSignal => signal !== undefined,
+	);
+	const abortOperations = abortSignals.map((signal) => {
+		let removeAbortListener = (): void => {};
+		const promise = new Promise<never>((_resolve, reject): void => {
+			const rejectOnAbort = (): void =>
+				reject(signal.reason ?? new Error(`Complete journey step aborted: ${props.label}`));
+			if (signal.aborted) rejectOnAbort();
+			else {
+				signal.addEventListener('abort', rejectOnAbort, { once: true });
+				removeAbortListener = (): void => signal.removeEventListener('abort', rejectOnAbort);
+			}
+		});
+		return { promise, removeAbortListener };
+	});
+	try {
+		return await Promise.race([
+			observedOperation,
+			...abortOperations.map(({ promise }) => promise),
+		]);
+	} finally {
+		for (const { removeAbortListener } of abortOperations) removeAbortListener();
+		props.pendingSteps.delete(props.label);
 	}
 }
 

@@ -163,17 +163,17 @@ describe('Bridge Viewer startup load timing', () => {
 		);
 
 		// Act
-		const fileLifecycle = registeredVerifierSource.indexOf(
-			"runColdStartupSurfaceLifecycle({ surface: 'file'",
+		const fileLifecycle = registeredVerifierSource.search(
+			/runColdStartupSurfaceLifecycle\(\s*\{ surface: 'file' \}/u,
 		);
-		const reviewLifecycle = registeredVerifierSource.indexOf(
-			"runColdStartupSurfaceLifecycle({ surface: 'review'",
+		const reviewLifecycle = registeredVerifierSource.search(
+			/runColdStartupSurfaceLifecycle\(\s*\{ surface: 'review' \}/u,
 		);
 
 		// Assert
 		expect(fileLifecycle).toBeGreaterThanOrEqual(0);
 		expect(reviewLifecycle).toBeGreaterThan(fileLifecycle);
-		expect(registeredVerifierSource).toContain('const launch = await BridgeWebTestLaunch.start()');
+		expect(registeredVerifierSource).toContain('await parentLaunch.startChildWithoutBackend()');
 		expect(registeredVerifierSource).toContain('bridgeDevelopmentServerOrigin:');
 		expect(registeredVerifierSource).toContain('await launch.dispose()');
 		expect(registeredVerifierSource).toContain('viteServer.startProof.origin');
