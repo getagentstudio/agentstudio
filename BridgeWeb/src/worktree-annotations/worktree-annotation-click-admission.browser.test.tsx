@@ -75,11 +75,13 @@ async function renderReviewHarness(
 	holdInteractionSetup = false,
 	beforeRender?: () => void,
 	afterSetupBeforeHover?: (codeView: CodeView) => void,
+	afterHoverBeforeUtility?: (codeView: CodeView, pointerId: number, row: HTMLElement) => void,
 ): Promise<ClickAdmissionReviewHarness> {
 	return await createClickAdmissionReviewHarness({
 		holdInteractionSetup,
 		beforeRender,
 		afterSetupBeforeHover,
+		afterHoverBeforeUtility,
 		metadataPublicationOwner,
 		registerFailureDiagnostic: (readSnapshot): void => {
 			onTestFailed((context): void => {
@@ -335,7 +337,21 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('keeps repeated same-range and later new-range plus clicks admissible', async () => {
-		const harness = await renderReviewHarness();
+		let recycledLaterContextRow = false;
+		const harness = await renderReviewHarness(
+			false,
+			undefined,
+			undefined,
+			(_codeView, pointerId, row): void => {
+				if (pointerId !== 403 || recycledLaterContextRow) return;
+				recycledLaterContextRow = true;
+				const parent = row.parentElement;
+				if (parent === null) throw new Error('Expected the hovered Pierre row parent.');
+				// Pierre can recycle a row while its interaction pre remains mounted.
+				row.remove();
+				parent.append(row.cloneNode(true));
+			},
+		);
 		await runWithOwnedCleanup(async (): Promise<void> => {
 			const additionRow = requirePierreElement(
 				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',
