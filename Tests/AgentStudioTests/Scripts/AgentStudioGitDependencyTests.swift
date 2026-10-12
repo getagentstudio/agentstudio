@@ -5,7 +5,7 @@ import Testing
 struct AgentStudioGitDependencyTests {
     @Test("AgentStudioGit resolves through remote SwiftPM package and hosted libgit2 artifact")
     func agentStudioGitUsesRemotePackageAndHostedArtifact() throws {
-        let expectedAgentStudioGitRevision = "eace2b52835bded3763d12f59e58dc0e5e236d07"
+        let expectedAgentStudioGitRevision = "4cca397dfc869857064da4e9ec8289ea46adc479"
         let packageManifest = try String(contentsOfFile: "Package.swift", encoding: .utf8)
         let packageResolved = try String(contentsOfFile: "Package.resolved", encoding: .utf8)
         let miseConfig = try String(contentsOfFile: ".mise.toml", encoding: .utf8)

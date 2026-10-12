@@ -126,9 +126,9 @@ package actor GitWorkingDirectoryProjector {
     /// (see `GitWorkingDirectoryProjector+PathQuarantine`).
     var quarantinedWorktreeIds: Set<UUID> = []
     var quarantineFactEpisodeByWorktreeId: [UUID: UInt64] = [:]
-    /// Exact root paths already validated for work currently crossing physical
-    /// provider admission. Capacity-only rejection retains the validation for its
-    /// retry; every other completion or lifecycle replacement clears it.
+    /// Exact roots validated at admission. Successful status acceptance retains
+    /// validation for ordinary re-enqueue; capacity-only rejection retains it for
+    /// retry. Other drain exits and lifecycle replacement invalidate it.
     var validatedRootPathByWorktreeId: [UUID: URL] = [:]
     var unchangedStatusResultCountByWorktreeId: [UUID: Int] = [:]
     var nextEnvelopeSequence: UInt64 = 0
@@ -727,6 +727,7 @@ package actor GitWorkingDirectoryProjector {
     private func drainWorktree(
         worktreeId: UUID, taskGeneration: UInt64, refreshFactScope: GitProjectorScope?
     ) async {
+        var acceptedRootPath: URL?
         defer {
             if !capacityRetryWorktreeIds.contains(worktreeId) {
                 let outcome: GitProjectorRefreshOutcome =
@@ -738,7 +739,9 @@ package actor GitWorkingDirectoryProjector {
                 worktreeTaskGenerationByWorktreeId.removeValue(forKey: worktreeId)
                 if !capacityRetryWorktreeIds.contains(worktreeId) {
                     admittedDemandTierByWorktreeId.removeValue(forKey: worktreeId)
-                    clearValidatedRootPath(worktreeId: worktreeId)
+                    if validatedRootPathByWorktreeId[worktreeId] != acceptedRootPath {
+                        clearValidatedRootPath(worktreeId: worktreeId)
+                    }
                 }
                 admitPendingWorktrees()
                 recordLogicalDebtSnapshotIfChanged()
@@ -809,7 +812,19 @@ package actor GitWorkingDirectoryProjector {
             }
         }
 
+        let hadUnsettledAdmission = admissionStartedAtByWorktreeId[worktreeId] != nil
         await computeAndEmit(changeset: nextChangeset, refreshFactScope: refreshFactScope)
+        // Acceptance consumes this attempt's start entry; unavailable completion
+        // also consumes it, but leaves a failure count. Old accepted timestamps
+        // cannot distinguish attempts at the same controlled-clock instant.
+        if hadUnsettledAdmission,
+            admissionStartedAtByWorktreeId[worktreeId] == nil,
+            consecutiveStatusFailureCountByWorktreeId[worktreeId] == nil,
+            lastAcceptedStatusFactsByWorktreeId[worktreeId] != nil,
+            isCurrent(nextChangeset)
+        {
+            acceptedRootPath = nextChangeset.rootPath
+        }
     }
 
     func isCurrent(_ changeset: FileChangeset) -> Bool {

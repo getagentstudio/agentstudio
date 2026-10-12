@@ -15,7 +15,6 @@ struct BridgeProductPackagedShareJourneyProof: Sendable {
     let exportedJSON: Data
     let fileHistoryCount: Int
     let fileUnavailableCommentsExcluded: Bool
-    let hostWidth: Double
     let reviewHistoryCount: Int
     let reviewPendingCount: Int
 }
@@ -23,7 +22,8 @@ struct BridgeProductPackagedShareJourneyProof: Sendable {
 extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
     @Test("packaged File and Review Share performs exact App effects and durable unhandle")
     func packagedFileAndReviewSharePerformsExactEffectsAndUnhandle() async throws {
-        let proof = try await BridgeProductPackagedShareJourneyTestSupport.run(self)
+        let run = try await BridgeProductPackagedShareJourneyTestSupport.run(self)
+        let proof = run.value
 
         #expect(proof.reviewPendingCount == 1)
         #expect(proof.reviewHistoryCount == 1)
@@ -31,7 +31,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         #expect(proof.fileHistoryCount == 2)
         #expect(proof.clipboardBytes.contains(Data("Packaged Share comment".utf8)))
         #expect(proof.exportedJSON.contains(Data("Packaged Share comment".utf8)))
-        #expect(proof.hostWidth == 640)
+        #expect(run.hostSnapshot.hostingViewWidth == 640)
     }
 }
 
@@ -69,7 +69,7 @@ enum BridgeProductPackagedShareJourneyTestSupport {
 
     static func run(
         _ testOwner: WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests
-    ) async throws -> BridgeProductPackagedShareJourneyProof {
+    ) async throws -> BridgeProductWebKitCarrierRunResult<BridgeProductPackagedShareJourneyProof> {
         let harness = try await makeJourneyHarness(testOwner)
         defer { harness.destroy() }
 
@@ -137,11 +137,10 @@ enum BridgeProductPackagedShareJourneyTestSupport {
                 exportedJSON: fileProof.exportedJSON,
                 fileHistoryCount: fileProof.history.historyCount,
                 fileUnavailableCommentsExcluded: !fileProof.beforeExport.otherSavedCommentsVisible,
-                hostWidth: 640,
                 reviewHistoryCount: reviewAfterUnhandle.historyCount,
                 reviewPendingCount: reviewAfterUnhandle.pendingCount
             )
-        }.value
+        }
     }
 
     private static func disableAnimationsForHiddenPackagedCarrier(_ page: WebPage) async throws {

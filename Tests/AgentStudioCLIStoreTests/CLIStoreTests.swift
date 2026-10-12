@@ -202,7 +202,10 @@ struct CLIStoreTests {
         }
         #expect(observed.batch.entries == [observed.inserted])
         #expect(observed.batch.lastReadID == observed.inserted.id)
-        guard case .notice(let notice) = observed.inserted else { return }
+        guard case .notice(let notice) = observed.inserted else {
+            Issue.record("The inserted outbox entry was not a notice")
+            return
+        }
         #expect(notice.paneID == observed.paneID)
         #expect(notice.messageID == observed.messageID)
         #expect(notice.createdAt == observed.createdAt)

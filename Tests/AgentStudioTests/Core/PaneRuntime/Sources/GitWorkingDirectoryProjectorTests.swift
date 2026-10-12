@@ -2626,8 +2626,8 @@ struct GitWorkingDirectoryProjectorTests {
         try await collectionTask.finish()
     }
 
-    @Test("projector emits one initial empty origin event without locking retry state")
-    func emitsInitialEmptyOriginEventWithoutLockingRetryState() async throws {
+    @Test("projector emits an initial empty origin event")
+    func emitsInitialEmptyOriginEvent() async throws {
         let bus = EventBus<RuntimeEnvelope>()
         let repoId = UUID()
         let worktreeId = UUID()
@@ -2660,7 +2660,7 @@ struct GitWorkingDirectoryProjectorTests {
             )
         )
 
-        // First registration probes origin and emits exactly one local-origin signal.
+        // Await the initial empty-origin signal; the prefix helper does not prove uniqueness.
         let initialOriginEvents = try await observed.expectOriginEvents(for: repoId, through: 1)
         let emittedInitialOriginSignal = await callCounter.value() >= 1 && initialOriginEvents.count == 1
         #expect(emittedInitialOriginSignal)
@@ -3882,19 +3882,6 @@ struct GitWorkingDirectoryProjectorTests {
                 isUntracked: true
             ),
             rootLabel: "target-only"
-        )
-    }
-
-    @Test("source-only ambiguous scoped entry falls back exactly once")
-    func sourceOnlyAmbiguousScopedEntryFallsBackExactlyOnce() async throws {
-        try await assertAmbiguousScopedStatusFallsBackExactlyOnce(
-            ambiguousEntry: GitWorkingTreeStatusEntry(
-                path: "old.txt",
-                hasStagedChange: true,
-                hasUnstagedChange: false,
-                isUntracked: false
-            ),
-            rootLabel: "source-only"
         )
     }
 

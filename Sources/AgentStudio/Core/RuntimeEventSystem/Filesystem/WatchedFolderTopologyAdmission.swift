@@ -4,34 +4,86 @@ import Foundation
 
 /// Interprets source facts without I/O; ordinary work inside a known checkout cannot change scan membership.
 enum WatchedFolderTopologyAdmission {
+    private static let routineGitFiles: Set<String> = [
+        "index", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
+        "REVERT_HEAD", "REBASE_HEAD", "AUTO_MERGE", "BISECT_LOG", "COMMIT_EDITMSG", "packed-refs",
+    ]
+    private static let foldedRoutineGitFiles = Set(routineGitFiles.map { $0.lowercased() })
+    private static let routineGitDirectories = [
+        "objects", "refs", "logs", "modules", "rebase-merge", "rebase-apply", "sequencer",
+    ]
     /// `heldCheckoutPaths` are destinations a creation owner is still materializing; their
     /// directory churn is ordinary work inside a checkout, not a membership change.
     static func shouldScan(
         _ batch: FSEventBatch, root: RegisteredRootDescriptor, knownGroups: [RepoScanner.RepoScanGroup],
         heldCheckoutPaths: [String] = []
     ) -> Bool {
-        if batch.paths.contains(where: isGitTopologyPath) || batch.requiresFullGitRefresh
-            || batch.observations.contains(where: \.hasCoverageLoss)
-        {
+        if batch.requiresFullGitRefresh || batch.observations.contains(where: \.hasCoverageLoss) {
             return true
         }
-        guard batch.observations.contains(where: isDirectoryStructureChange) else { return false }
         let canonicalRoot = comparisonPath(
             root.aliases.onceResolvedCanonical.path, policy: root.volumeSemantics.casePolicy)
         let lexicalRoot = comparisonPath(root.aliases.standardizedLexical.path, policy: root.volumeSemantics.casePolicy)
+        func canonicalComparisonPath(_ rawPath: String) -> String {
+            let path = comparisonPath(rawPath, policy: root.volumeSemantics.casePolicy)
+            return contains(path, within: lexicalRoot)
+                ? canonicalRoot + path.dropFirst(lexicalRoot.count) : path
+        }
         let knownPaths =
             (knownGroups.flatMap { [$0.clonePath] + $0.linkedWorktreePaths }.map(\.path)
             + heldCheckoutPaths)
-            .map { comparisonPath($0, policy: root.volumeSemantics.casePolicy) }
+            .map(canonicalComparisonPath)
+        let knownPathSet = Set(knownPaths)
+        var observationFlagsByPath: [String: UInt32] = [:]
+        for observation in batch.observations {
+            observationFlagsByPath[canonicalComparisonPath(observation.path), default: 0] |= observation.flags
+        }
+        if batch.paths.contains(where: { rawPath in
+            let path = canonicalComparisonPath(rawPath)
+            guard isGitTopologyPath(path) else { return false }
+            guard let checkout = knownCheckout(containing: path, knownPaths: knownPathSet) else { return true }
+            return admitsGitPath(
+                String(path.dropFirst(checkout == "/" ? 1 : checkout.count + 1)),
+                observationFlags: observationFlagsByPath[path], casePolicy: root.volumeSemantics.casePolicy)
+        }) {
+            return true
+        }
+        guard batch.observations.contains(where: isDirectoryStructureChange) else { return false }
         return batch.observations.contains { observation in
             guard isDirectoryStructureChange(observation) else { return false }
-            var path = comparisonPath(observation.path, policy: root.volumeSemantics.casePolicy)
-            if contains(path, within: lexicalRoot) {
-                path = canonicalRoot + path.dropFirst(lexicalRoot.count)
-            }
+            let path = canonicalComparisonPath(observation.path)
             guard contains(path, within: canonicalRoot) else { return false }
             return !knownPaths.contains { path != $0 && contains(path, within: $0) }
         }
+    }
+
+    private static func knownCheckout(containing path: String, knownPaths: Set<String>) -> String? {
+        var candidate = path
+        while true {
+            if knownPaths.contains(candidate) { return candidate }
+            guard candidate != "/", let separator = candidate.lastIndex(of: "/") else { return nil }
+            candidate = separator == candidate.startIndex ? "/" : String(candidate[..<separator])
+        }
+    }
+
+    private static func admitsGitPath(
+        _ relativePath: String, observationFlags: UInt32?, casePolicy: FilesystemVolumeCasePolicy
+    ) -> Bool {
+        let components = relativePath.split(separator: "/")
+        guard components.first == ".git", !components.dropFirst().contains(".git") else { return false }
+        var gitComponents = components.dropFirst()
+        if gitComponents.first == "worktrees", gitComponents.count >= 3 {
+            gitComponents = gitComponents.dropFirst(2)
+        }
+        let gitPath = gitComponents.joined(separator: "/")
+        if gitPath == "objects" || gitPath == "refs" {
+            // A rename can remove a required entry without carrying a removal flag.
+            let invalidatingFlags = UInt32(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed)
+            return observationFlags.map { $0 & invalidatingFlags != 0 } ?? true
+        }
+        let fileNames = casePolicy == .caseInsensitive ? foldedRoutineGitFiles : routineGitFiles
+        if fileNames.contains(gitPath) || gitPath.hasSuffix(".lock") { return false }
+        return !routineGitDirectories.contains { gitPath.hasPrefix($0 + "/") }
     }
 
     /// Overflow can lose precise observations, so retain whether the lost batch could require membership recovery.

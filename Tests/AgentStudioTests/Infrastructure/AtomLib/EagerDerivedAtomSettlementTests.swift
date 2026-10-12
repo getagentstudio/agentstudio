@@ -200,7 +200,10 @@ struct EagerDerivedAtomSettlementTests {
         )
 
         atom.admit(SettlementTestIntent(identity: 1, accumulatedValue: 1, projectionGate: firstGate))
-        guard await firstGate.waitUntilStarted() else { return }
+        guard await firstGate.waitUntilStarted() else {
+            Issue.record("Initial projection did not start")
+            return
+        }
 
         atom.admit(SettlementTestIntent(identity: 2, accumulatedValue: 10, projectionGate: latestGate))
         atom.admit(SettlementTestIntent(identity: 3, accumulatedValue: 100, projectionGate: latestGate))
@@ -211,8 +214,14 @@ struct EagerDerivedAtomSettlementTests {
             ]
         )
         firstGate.release()
-        guard await owner.waitForCompletion(.superseded(1)) else { return }
-        guard await latestGate.waitUntilStarted() else { return }
+        guard await owner.waitForCompletion(.superseded(1)) else {
+            Issue.record("Initial projection did not settle as superseded")
+            return
+        }
+        guard await latestGate.waitUntilStarted() else {
+            Issue.record("Latest projection did not start")
+            return
+        }
 
         #expect(
             owner.preparedIntents == [
@@ -221,7 +230,10 @@ struct EagerDerivedAtomSettlementTests {
             ]
         )
         latestGate.release()
-        guard await owner.waitForCompletion(.published(3)) else { return }
+        guard await owner.waitForCompletion(.published(3)) else {
+            Issue.record("Latest projection did not publish")
+            return
+        }
         #expect(atom.value == 111)
     }
 
@@ -231,7 +243,10 @@ struct EagerDerivedAtomSettlementTests {
         let atom = makeSettlementTestAtom(owner: owner)
 
         atom.admit(SettlementTestIntent(identity: 1, accumulatedValue: 10, projectionGate: nil))
-        guard await owner.waitForAwaitingCount(1) else { return }
+        guard await owner.waitForAwaitingCount(1) else {
+            Issue.record("First awaiting-owner candidate did not arrive")
+            return
+        }
 
         let awaiting = owner.awaitingCandidates[0]
         #expect(atom.value == nil)
@@ -252,12 +267,18 @@ struct EagerDerivedAtomSettlementTests {
         let atom = makeSettlementTestAtom(owner: owner)
 
         atom.admit(SettlementTestIntent(identity: 1, accumulatedValue: 10, projectionGate: nil))
-        guard await owner.waitForAwaitingCount(1) else { return }
+        guard await owner.waitForAwaitingCount(1) else {
+            Issue.record("First awaiting-owner candidate did not arrive")
+            return
+        }
         let first = owner.awaitingCandidates[0]
         #expect(atom.settle(first.token, .accepted(first.proposedValue)))
 
         atom.admit(SettlementTestIntent(identity: 2, accumulatedValue: 20, projectionGate: nil))
-        guard await owner.waitForAwaitingCount(2) else { return }
+        guard await owner.waitForAwaitingCount(2) else {
+            Issue.record("Successor awaiting-owner candidate did not arrive")
+            return
+        }
         let second = owner.awaitingCandidates[1]
 
         #expect(!atom.settle(first.token, .accepted(999)))
@@ -276,12 +297,18 @@ struct EagerDerivedAtomSettlementTests {
         let atom = makeSettlementTestAtom(owner: owner)
 
         atom.admit(SettlementTestIntent(identity: 1, accumulatedValue: 10, projectionGate: nil))
-        guard await owner.waitForAwaitingCount(1) else { return }
+        guard await owner.waitForAwaitingCount(1) else {
+            Issue.record("First awaiting-owner candidate did not arrive")
+            return
+        }
         let first = owner.awaitingCandidates[0]
         #expect(atom.settle(first.token, .accepted(first.proposedValue)))
 
         atom.admit(SettlementTestIntent(identity: 2, accumulatedValue: 20, projectionGate: nil))
-        guard await owner.waitForAwaitingCount(2) else { return }
+        guard await owner.waitForAwaitingCount(2) else {
+            Issue.record("Successor awaiting-owner candidate did not arrive")
+            return
+        }
         let second = owner.awaitingCandidates[1]
         #expect(atom.settle(second.token, .rejected))
 
@@ -326,12 +353,18 @@ struct EagerDerivedAtomSettlementTests {
         let atom = makeSettlementTestAtom(owner: owner)
 
         atom.admit(SettlementTestIntent(identity: 1, accumulatedValue: 10, projectionGate: nil))
-        guard await owner.waitForAwaitingCount(1) else { return }
+        guard await owner.waitForAwaitingCount(1) else {
+            Issue.record("Awaiting-owner candidate did not arrive")
+            return
+        }
         let awaiting = owner.awaitingCandidates[0]
 
         atom.sourceDidInvalidate()
         #expect(!atom.settle(awaiting.token, .accepted(awaiting.proposedValue)))
-        guard await owner.waitForCompletion(.superseded(1)) else { return }
+        guard await owner.waitForCompletion(.superseded(1)) else {
+            Issue.record("Invalidated candidate did not settle as superseded")
+            return
+        }
 
         #expect(atom.freshness == .invalidated(1))
         #expect(atom.value == nil)
@@ -366,7 +399,10 @@ struct EagerDerivedAtomSettlementTests {
             SettlementTestIntent(identity: 1, accumulatedValue: 10, projectionGate: nil),
             for: 41
         )
-        guard await owner.waitForAwaitingCount(1) else { return }
+        guard await owner.waitForAwaitingCount(1) else {
+            Issue.record("Awaiting-owner candidate did not arrive")
+            return
+        }
         let awaiting = owner.awaitingCandidates[0]
 
         if shouldStopFamily {
@@ -374,7 +410,10 @@ struct EagerDerivedAtomSettlementTests {
         } else {
             family.remove(for: 41)
         }
-        guard await owner.waitForCompletion(.cancelled(1)) else { return }
+        guard await owner.waitForCompletion(.cancelled(1)) else {
+            Issue.record("Terminated family candidate did not settle as cancelled")
+            return
+        }
 
         #expect(atom?.freshness == .stopped)
         #expect(family.currentValue(for: 41) == nil)
