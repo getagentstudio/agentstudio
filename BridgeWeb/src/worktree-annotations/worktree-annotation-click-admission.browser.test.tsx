@@ -337,25 +337,14 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('keeps repeated same-range and later new-range plus clicks admissible', async () => {
+		let scrolledLaterContextRow = false;
 		const harness = await renderReviewHarness(
 			false,
 			undefined,
 			undefined,
-			(_codeView, pointerId, row): void => {
-				if (pointerId !== 403) return;
-				const parent = row.parentElement;
-				if (parent === null) throw new Error('Expected the hovered Pierre row parent.');
-				const retirementCleanup = { unregister: undefined as (() => void) | undefined };
-				const rowRetirement = new MutationObserver((): void => {
-					if (row.isConnected) return;
-					rowRetirement.disconnect();
-					retirementCleanup.unregister?.();
-					_codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
-				});
-				retirementCleanup.unregister = registerHarnessCleanup(
-					async (): Promise<void> => rowRetirement.disconnect(),
-				);
-				rowRetirement.observe(parent, { childList: true, subtree: true });
+			(_codeView, pointerId): void => {
+				if (pointerId !== 403 || scrolledLaterContextRow) return;
+				scrolledLaterContextRow = true;
 				_codeView.scrollTo({ type: 'position', position: 100_000, behavior: 'instant' });
 			},
 		);

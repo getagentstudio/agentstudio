@@ -295,10 +295,13 @@ export async function createClickAdmissionReviewHarness(
 					waitForCurrentSetup: (currentRow) =>
 						interactionSetup.waitForSetup(currentRow, outcomeController.signal),
 					waitForReplacementRow: (): Promise<void> =>
-						waitForPierreCondition(
-							(): boolean => queryPierreElements(selector).length === 1,
-							outcomeController.signal,
-						),
+						(async (): Promise<void> => {
+							codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
+							await waitForPierreCondition(
+								(): boolean => queryPierreElements(selector).length === 1,
+								outcomeController.signal,
+							);
+						})(),
 					reportWait: (kind): void => {
 						pendingWait = kind;
 						props.recordWaitForProof?.(kind);
