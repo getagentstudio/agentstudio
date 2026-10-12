@@ -41,7 +41,7 @@ Other changes:
 - **Verifier scripts:**
   - `verify-debug-observability.sh`, `verify-beta-observability.sh` and `verify-bridge-observability.sh` drop their ID and path absence checks and keep their secret-value checks;
   - `verify-sidebar-performance-workload.sh` reads the process-level queue gauge instead of the copy on `runtime_delivery.snapshot`.
-- **Docs:** the observability doc's "OTLP Projection" section and the CLAUDE.md "OTLP output is source-scrubbed" sentence are updated (R8).
+- **Docs:** the observability doc's "OTLP Projection" section and the CLAUDE.md "OTLP output is source-scrubbed" sentence are updated (R8). The new CLAUDE.md sentence keeps the rule that agent message text is never recorded in telemetry (R10).
 
 ## Request path, before and after
 
@@ -96,5 +96,6 @@ The list contains the measurement names the evidence census classified as real d
 | U2, U4 | R5: hand-picked labels; Panes and activity admitted | E3 | metric taxonomy | dimension selection (existing) | `SidebarMetricSurface` + group-mode values (modified) | stateless | — | V3 |
 | U3 | R6: queue statistics process-level only | E5, E3 | `AgentStudioOTLPPerformanceMetrics` | queue-key branch (new) | three gauges with resource labels only | latest value per process | — | V3; V4 (no `trace_queue` series with `event` label) |
 | U2 | R7: fewer series, counts reported | E3 | `AgentStudioOTLPPerformanceMetrics` | — | — | — | — | V4 before/after census on the same workload |
-| U3 | R8: docs and CLAUDE.md updated | none: documentation | docs owner | — | the two passages | — | — | V6 |
+| U3, U5 | R8: docs and CLAUDE.md updated; message-text rule kept | none: documentation | docs owner | — | the two passages | — | — | V6 |
+| U5 | R10: message text never recorded, so never exported | E1, E2 | the event recorders (unchanged: none records message text today) | — | — | — | a future recorder adding message text breaks V7 | V7 marker-scoped launch before/after |
 | U3 | R9: verifiers pass; secret checks kept | E2, E3 | verifier scripts | their queries | the scripts named above | — | — | V5 real-launch verifier runs |

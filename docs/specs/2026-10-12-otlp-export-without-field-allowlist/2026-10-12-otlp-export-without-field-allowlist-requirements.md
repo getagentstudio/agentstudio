@@ -24,6 +24,7 @@ The filter protects nothing that matters here. Export is loopback-only, enforced
 | U2 | "check the cardinality of metrics make sure they are not slop" | authorized: owner, 2026-10-11 | required (owner) |
 | U3 | The agreed shape, as one draft PR with a hard cutover. **Logs** keep every field. **Metrics** come only from an explicit list of real measurements (durations and real counts), with hand-picked labels. **Trace-queue statistics** are reported once per process, not copied onto every event series. The **observability doc and the CLAUDE.md sentence** that describe the old scrubbing are updated in the same PR. The **loopback-only export guard** and the **atoms tag opt-in** stay. | authorized: owner, 2026-10-11, recorded in the IPC lane handoff | required (owner) |
 | U4 | The losses above: Panes surface, sort order, real durations, and noisy metric series | observational | — |
+| U5 | Agent message text is never exported to OTLP or JSONL telemetry. This is agent IPC v2 requirement U9, which cites the CLAUDE.md scrub sentence this change rewrites. | authorized: owner, agent IPC v2 decision D4 ([user requirements](../2026-09-12-agent-ipc-v2/user-requirements.md) U9) | required (owner) |
 
 ## Boundary
 
@@ -43,6 +44,7 @@ The filter protects nothing that matters here. Export is loopback-only, enforced
   - loopback-only export;
   - atoms staying opt-in;
   - JSONL content;
+  - agent message text staying out of every telemetry record (U5), and that rule staying written in CLAUDE.md;
   - which events are recorded and when;
   - collector configuration, which is owned by the shared host and not changed here.
 - **Not in this change:**
@@ -57,3 +59,4 @@ The filter protects nothing that matters here. Export is loopback-only, enforced
   - a real debug launch exporting to the local stack;
   - a before/after series count from the local VictoriaMetrics;
   - the updated verifiers passing.
+  - a marker-scoped run showing message text absent from JSONL and the log store, before and after.
