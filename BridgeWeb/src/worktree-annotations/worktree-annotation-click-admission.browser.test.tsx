@@ -75,11 +75,13 @@ async function renderReviewHarness(
 	holdInteractionSetup = false,
 	beforeRender?: () => void,
 	afterSetupBeforeHover?: (codeView: CodeView) => void,
+	afterHoverBeforeUtility?: (codeView: CodeView, pointerId: number, row: HTMLElement) => void,
 ): Promise<ClickAdmissionReviewHarness> {
 	return await createClickAdmissionReviewHarness({
 		holdInteractionSetup,
 		beforeRender,
 		afterSetupBeforeHover,
+		afterHoverBeforeUtility,
 		metadataPublicationOwner,
 		registerFailureDiagnostic: (readSnapshot): void => {
 			onTestFailed((context): void => {
@@ -335,7 +337,18 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('keeps repeated same-range and later new-range plus clicks admissible', async () => {
-		const harness = await renderReviewHarness();
+		let scrolledLaterContextRow = false;
+		const harness = await renderReviewHarness(
+			false,
+			undefined,
+			undefined,
+			(_codeView, pointerId): void => {
+				if (pointerId !== 403 || scrolledLaterContextRow) return;
+				scrolledLaterContextRow = true;
+				_codeView.scrollTo({ type: 'position', position: 100_000, behavior: 'instant' });
+				_codeView.render(true);
+			},
+		);
 		await runWithOwnedCleanup(async (): Promise<void> => {
 			const additionRow = requirePierreElement(
 				'[data-additions] [data-column-number="2"][data-line-type="change-addition"]',

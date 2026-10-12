@@ -41,7 +41,9 @@ interface ClickAdmissionHarnessProps {
 	readonly isInitialReadinessReleased?: () => boolean;
 	readonly recordInitialReadinessObserver?: (observer: MutationObserver) => void;
 	readonly afterSetupBeforeHover?: ((codeView: CodeView) => void) | undefined;
-	readonly afterHoverBeforeUtility?: ((codeView: CodeView, pointerId: number) => void) | undefined;
+	readonly afterHoverBeforeUtility?:
+		| ((codeView: CodeView, pointerId: number, row: HTMLElement) => void)
+		| undefined;
 	readonly beforeRender?: (() => void) | undefined;
 	readonly metadataPublicationOwner: { publish: ((callback: () => void) => void) | undefined };
 	readonly registerCleanup: (dispose: () => Promise<void>) => () => void;
@@ -285,7 +287,7 @@ export async function createClickAdmissionReviewHarness(
 					onHoverDispatched: (dispatchedRow): void => {
 						lastRow = dispatchedRow;
 						interactionSetup.recordCompletedHover(dispatchedRow);
-						props.afterHoverBeforeUtility?.(codeView, pointerId);
+						props.afterHoverBeforeUtility?.(codeView, pointerId, dispatchedRow);
 					},
 					signal: outcomeController.signal,
 					observeRetirement: (currentRow) =>
@@ -293,10 +295,13 @@ export async function createClickAdmissionReviewHarness(
 					waitForCurrentSetup: (currentRow) =>
 						interactionSetup.waitForSetup(currentRow, outcomeController.signal),
 					waitForReplacementRow: (): Promise<void> =>
-						waitForPierreCondition(
-							(): boolean => queryPierreElements(selector).length === 1,
-							outcomeController.signal,
-						),
+						(async (): Promise<void> => {
+							codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
+							await waitForPierreCondition(
+								(): boolean => queryPierreElements(selector).length === 1,
+								outcomeController.signal,
+							);
+						})(),
 					reportWait: (kind): void => {
 						pendingWait = kind;
 						props.recordWaitForProof?.(kind);
@@ -312,8 +317,18 @@ export async function createClickAdmissionReviewHarness(
 }
 
 function makeReviewItem(): BridgeMainCodeViewItem {
-	const baseContents = ['let stable = 1', 'let reviewed = "before"', 'let tail = 3'].join('\n');
-	const headContents = ['let stable = 1', 'let reviewed = "after"', 'let tail = 3'].join('\n');
+	const baseContents = [
+		'let stable = 1',
+		'let reviewed = "before"',
+		'let tail = 3',
+		...Array.from({ length: 250 }, (_, index) => `let extra = ${index}`),
+	].join('\n');
+	const headContents = [
+		'let stable = 1',
+		'let reviewed = "after"',
+		'let tail = 3',
+		...Array.from({ length: 250 }, (_, index) => `let extra = ${index}`),
+	].join('\n');
 	return {
 		bridgeMetadata: {
 			cacheKey: 'review-base|review-head',
@@ -321,7 +336,7 @@ function makeReviewItem(): BridgeMainCodeViewItem {
 			contentState: 'hydrated',
 			displayPath: 'Sources/App/View.swift',
 			itemId: 'item-source',
-			lineCount: 3,
+			lineCount: 253,
 			sourceDescriptorIdsByRole: {
 				base: 'handle-item-source-base',
 				diff: null,
