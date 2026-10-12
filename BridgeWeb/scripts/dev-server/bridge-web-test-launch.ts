@@ -192,6 +192,12 @@ export class BridgeWebTestLaunch {
 		return this.#signal;
 	}
 
+	renewJourneyHangBound(): void {
+		this.#requireOpen();
+		this.#deadline?.renew();
+		this.#parent?.renewJourneyHangBound();
+	}
+
 	async run<TValue>(operation: () => Promise<TValue>): Promise<TValue> {
 		return await runWithBridgeWebLaunchScope(
 			{
@@ -274,19 +280,28 @@ export class BridgeWebTestLaunch {
 		backend: NonNullable<BridgeWebTestLaunchSpec['backend']>,
 	): Promise<BridgeWebTestLaunch> {
 		this.#requireOpen();
-		const child = await BridgeWebTestLaunch.start({ signal: this.#signal }, this.#dependencies);
-		child.#parent = this;
-		child.#attachScope();
+		const child = await this.startChildWithoutBackend();
 		try {
-			this.ownFixture('child stack', async (): Promise<void> => {
-				await child.dispose();
-			});
 			await child.#startBackend(backend, this.dataRootPath);
 			child.#requireOpen();
 			return child;
 		} catch (error: unknown) {
 			return await child.disposeAfterFailure(error);
 		}
+	}
+
+	async startChildWithoutBackend(
+		spec: Pick<BridgeWebTestLaunchSpec, 'dataRootPrefix'> = {},
+	): Promise<BridgeWebTestLaunch> {
+		this.#requireOpen();
+		const child = await BridgeWebTestLaunch.start(
+			{ ...spec, signal: this.#signal },
+			this.#dependencies,
+		);
+		child.#parent = this;
+		this.#children.add(child);
+		child.#attachScope();
+		return child;
 	}
 
 	// Own clients before open() suspends; normal completion acknowledges release,

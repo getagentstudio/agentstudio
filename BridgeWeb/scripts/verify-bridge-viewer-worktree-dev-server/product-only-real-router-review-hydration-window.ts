@@ -1,10 +1,12 @@
 import { errors, type Page } from 'playwright';
 import { z } from 'zod';
 
+import { isReadableBridgeCodeViewContentState } from '../../src/review-viewer/code-view/bridge-code-view-readable-loading-preservation.ts';
 import { bridgeViewerProductOnlySelectors } from './product-only-real-router-contract.ts';
 
 export interface FreshReviewHydrationWindowSnapshot {
 	readonly hydratedNonSelectedItemIds: readonly string[];
+	readonly readableNonSelectedItemIds: readonly string[];
 	readonly scrollTop: number;
 	readonly visibleContentStates: readonly {
 		readonly contentState: string | null;
@@ -43,10 +45,17 @@ export function classifyFreshReviewHydrationWindow(props: {
 	);
 	return {
 		hydratedNonSelectedItemIds: candidates.filter(isPaintedReviewItem).map((item) => item.itemId),
+		readableNonSelectedItemIds: candidates
+			.filter((item) => isReadableBridgeCodeContentState(item.contentState))
+			.map((item) => item.itemId),
 		scrollTop: props.scrollTop,
 		visibleContentStates: candidates.map(({ contentState, itemId }) => ({ contentState, itemId })),
 		visibleNonSelectedItemIds: candidates.map((item) => item.itemId),
 	};
+}
+
+function isReadableBridgeCodeContentState(contentState: string | null): boolean {
+	return isReadableBridgeCodeViewContentState(contentState);
 }
 
 function isPaintedReviewItem(item: VisibleReviewItem): boolean {
