@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Darwin
 import Foundation
 import os
@@ -21,6 +22,13 @@ package struct FilesystemPathFilter: Sendable {
     package static let empty = Self(ignoredRules: [])
 
     private let ignoredRules: [GitIgnoreRule]
+    private let generationID = UUIDv7.generate()
+
+    /// Caller-owned scratch state for one ingress batch, never shared by filter values.
+    struct DirectoryIgnoreCache: Sendable {
+        fileprivate var filterGenerationID: UUID?
+        fileprivate var ignoredByDirectoryPrefix: [[UInt8]: Bool] = [:]
+    }
 
     package var estimatedRetainedByteCount: Int {
         ignoredRules.reduce(32) { partialResult, rule in
@@ -59,6 +67,14 @@ package struct FilesystemPathFilter: Sendable {
     }
 
     package func classify(relativePath: String) -> FilesystemPathDisposition {
+        var ancestorCache = DirectoryIgnoreCache()
+        return classify(relativePath: relativePath, ancestorCache: &ancestorCache)
+    }
+
+    func classify(
+        relativePath: String,
+        ancestorCache: inout DirectoryIgnoreCache
+    ) -> FilesystemPathDisposition {
         if Self.isAgentStudioPrivateStagingRefPath(relativePath) {
             return .ignoredByPolicy
         }
@@ -71,7 +87,7 @@ package struct FilesystemPathFilter: Sendable {
         let isOwnGitPath = Self.normalized(relativePath: relativePath).split(separator: "/").first == ".git"
         // The owning repository's Git directory stays observable even under broad
         // ignore rules. Nested repositories inherit their owning root's ignore policy.
-        if !isOwnGitPath, isIgnored(relativePath: relativePath) {
+        if !isOwnGitPath, isIgnored(relativePath: relativePath, ancestorCache: &ancestorCache) {
             return .ignoredByPolicy
         }
         if Self.isGitObjectDatabase(relativePath: relativePath) {
@@ -84,13 +100,39 @@ package struct FilesystemPathFilter: Sendable {
     }
 
     package func isIgnored(relativePath: String) -> Bool {
+        var ancestorCache = DirectoryIgnoreCache()
+        return isIgnored(relativePath: relativePath, ancestorCache: &ancestorCache)
+    }
+
+    func isIgnored(relativePath: String, ancestorCache: inout DirectoryIgnoreCache) -> Bool {
+        // A reload or root replacement can occur while ingress suspends. Decisions
+        // from another immutable filter generation must not survive that boundary.
+        if ancestorCache.filterGenerationID != generationID {
+            ancestorCache = DirectoryIgnoreCache(filterGenerationID: generationID)
+        }
         let normalizedPath = Self.normalized(relativePath: relativePath)
-        guard !normalizedPath.isEmpty, normalizedPath != "." else { return false }
+        guard !ignoredRules.isEmpty, !normalizedPath.isEmpty, normalizedPath != "." else { return false }
 
         let pathComponents = normalizedPath.split(separator: "/")
         for componentCount in 1...pathComponents.count {
             let candidatePath = pathComponents.prefix(componentCount).joined(separator: "/")
-            if rulesIgnoreExactPath(candidatePath) {
+            let isIgnored: Bool
+            if componentCount < pathComponents.count {
+                // Only proper ancestors are known to be directories. The leaf
+                // keeps the existing path-only rule evaluation on every call.
+                // String equality merges Unicode spellings that the regex matcher
+                // distinguishes, so memo identity must preserve the input bytes.
+                let prefixBytes = Array(candidatePath.utf8)
+                if let cachedDecision = ancestorCache.ignoredByDirectoryPrefix[prefixBytes] {
+                    isIgnored = cachedDecision
+                } else {
+                    isIgnored = rulesIgnoreExactPath(candidatePath)
+                    ancestorCache.ignoredByDirectoryPrefix[prefixBytes] = isIgnored
+                }
+            } else {
+                isIgnored = rulesIgnoreExactPath(candidatePath)
+            }
+            if isIgnored {
                 // Git cannot re-include a descendant while an ancestor directory
                 // remains excluded, so an ignored prefix is terminal for this path.
                 return true
