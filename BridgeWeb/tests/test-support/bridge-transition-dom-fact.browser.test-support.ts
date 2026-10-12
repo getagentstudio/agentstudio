@@ -5,11 +5,13 @@ import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-p
 
 let ownerSignal: AbortSignal | undefined;
 const activeObservations = new Set<() => void>();
+const activeFrameAdapters = new Set<() => void>();
 
 beforeEach((context): void => {
 	ownerSignal = context.signal;
 });
 afterEach((): void => {
+	for (const retire of activeFrameAdapters) retire();
 	for (const close of activeObservations) close();
 	activeObservations.clear();
 	ownerSignal = undefined;
@@ -47,62 +49,184 @@ export function observeBridgeTransitionDOMFact(props: {
 	return { promise: completed.promise, close };
 }
 
+type RequestFrameAPI = typeof window.requestAnimationFrame;
+type CancelFrameAPI = typeof window.cancelAnimationFrame;
+interface RequestFramePatch {
+	readonly previous: RequestFrameAPI;
+	readonly isRestored: () => boolean;
+}
+interface CancelFramePatch {
+	readonly previous: CancelFrameAPI;
+	readonly isRestored: () => boolean;
+}
+const requestFramePatches = new WeakMap<RequestFrameAPI, RequestFramePatch>();
+const cancelFramePatches = new WeakMap<CancelFrameAPI, CancelFramePatch>();
+
+export type BridgeTransitionFramePhase = 'registration barrier' | 'operation' | 'final frame join';
+interface BridgeTransitionFrameOptions {
+	readonly ownerAbortSignal?: AbortSignal;
+	readonly onPhase?: (phase: BridgeTransitionFramePhase) => void;
+}
+interface OwnedTransitionFrame {
+	nativeId: number;
+	disposition: 'queued' | 'ran' | 'cancelled' | 'retired';
+	readonly promise: Promise<void>;
+	readonly resolve: () => void;
+	readonly reject: (error: unknown) => void;
+}
+
+function resolveRequestFrameAncestor(api: RequestFrameAPI, skipActive: boolean): RequestFrameAPI {
+	const patch = requestFramePatches.get(api);
+	return patch !== undefined && (skipActive || patch.isRestored())
+		? resolveRequestFrameAncestor(patch.previous, skipActive)
+		: api;
+}
+function resolveCancelFrameAncestor(api: CancelFrameAPI, skipActive: boolean): CancelFrameAPI {
+	const patch = cancelFramePatches.get(api);
+	return patch !== undefined && (skipActive || patch.isRestored())
+		? resolveCancelFrameAncestor(patch.previous, skipActive)
+		: api;
+}
+
 /**
- * Native transition RAF writers commit in discrete act turns while an operation
- * awaits its DOM fact. An outer async act waiting for that same React commit
- * would deadlock it. This adapter has no frame count or idle criterion, and is
- * restored when the operation closes; animation Promise writers are joined
- * separately inside act by the caller.
+ * The owner's closing fact cuts off the finite final join. A successor captured
+ * during that join retains its own act wrapper after API restoration; it runs
+ * under the same test owner or is retired on abort/cleanup. No idle wait.
  */
 export async function runBridgeTransitionFramesInAct<TResult>(
 	operation: () => Promise<TResult>,
+	options: BridgeTransitionFrameOptions = {},
 ): Promise<TResult> {
-	const requestFrame = window.requestAnimationFrame;
-	const cancelFrame = window.cancelAnimationFrame;
-	const acceptedFrames = new Map<
-		number,
-		{ readonly promise: Promise<void>; readonly resolve: () => void }
-	>();
-	let isActive = true;
-	window.requestAnimationFrame = (callback: FrameRequestCallback): number => {
+	const testOwner = ownerSignal;
+	if (testOwner === undefined)
+		throw new Error('Bridge transition frame adapter has no test owner.');
+	const previousRequest = window.requestAnimationFrame;
+	const previousCancel = window.cancelAnimationFrame;
+	// A nested adapter owns its own frames, without enrolling them in an older
+	// adapter that may be retired independently.
+	const nativeRequest = resolveRequestFrameAncestor(previousRequest, true);
+	const nativeCancel = resolveCancelFrameAncestor(previousCancel, true);
+	const pendingFrames = new Map<number, OwnedTransitionFrame>();
+	const retired = createBridgeProductDeferred<never>();
+	void retired.promise.catch((): void => {});
+	const signals = new Set([
+		testOwner,
+		...(options.ownerAbortSignal === undefined ? [] : [options.ownerAbortSignal]),
+	]);
+	let phase: BridgeTransitionFramePhase = 'registration barrier';
+	let isRetired = false;
+	let areAPIsRestored = false;
+	const detachOwnerWhenFinished = (): void => {
+		if (!areAPIsRestored || pendingFrames.size !== 0) return;
+		activeFrameAdapters.delete(cleanup);
+		for (const signal of signals) signal.removeEventListener('abort', abortOwner);
+	};
+	const settleFrame = (
+		frame: OwnedTransitionFrame,
+		disposition: OwnedTransitionFrame['disposition'],
+	): void => {
+		frame.disposition = disposition;
+		pendingFrames.delete(frame.nativeId);
+		frame.resolve();
+		detachOwnerWhenFinished();
+	};
+	const restoreAPIs = (): void => {
+		areAPIsRestored = true;
+		if (window.requestAnimationFrame === patchedRequest)
+			window.requestAnimationFrame = resolveRequestFrameAncestor(previousRequest, false);
+		if (window.cancelAnimationFrame === patchedCancel)
+			window.cancelAnimationFrame = resolveCancelFrameAncestor(previousCancel, false);
+		detachOwnerWhenFinished();
+	};
+	const retire = (error: Error): void => {
+		if (isRetired) return;
+		isRetired = true;
+		retired.reject(error);
+		for (const frame of pendingFrames.values()) {
+			nativeCancel.call(window, frame.nativeId);
+			settleFrame(frame, 'retired');
+		}
+		restoreAPIs();
+	};
+	const abortOwner = (): void =>
+		retire(new Error(`Bridge transition frame owner aborted during ${phase}.`));
+	const cleanup = (): void =>
+		retire(new Error(`Bridge transition frame owner cleanup during ${phase}.`));
+	const scheduleOwnedFrame = (callback: FrameRequestCallback): OwnedTransitionFrame => {
 		const completed = createBridgeProductDeferred<void>();
-		const frameId = requestFrame.call(window, (timestamp): void => {
-			if (!isActive) {
-				callback(timestamp);
-				completed.resolve();
-				return;
-			}
+		const frame: OwnedTransitionFrame = { nativeId: 0, disposition: 'queued', ...completed };
+		frame.nativeId = nativeRequest.call(window, (timestamp): void => {
+			if (frame.disposition !== 'queued') return;
 			try {
 				act((): void => {
 					callback(timestamp);
 				});
-			} finally {
-				completed.resolve();
+				settleFrame(frame, 'ran');
+			} catch (error: unknown) {
+				frame.disposition = 'ran';
+				pendingFrames.delete(frame.nativeId);
+				frame.reject(error);
+				detachOwnerWhenFinished();
+				throw error;
 			}
 		});
-		acceptedFrames.set(frameId, completed);
-		return frameId;
+		pendingFrames.set(frame.nativeId, frame);
+		void frame.promise.catch((): void => {});
+		return frame;
 	};
-	window.cancelAnimationFrame = (frameId: number): void => {
-		cancelFrame.call(window, frameId);
-		acceptedFrames.get(frameId)?.resolve();
+	const patchedRequest: RequestFrameAPI = (callback): number => {
+		if (areAPIsRestored)
+			return resolveRequestFrameAncestor(previousRequest, false).call(window, callback);
+		return scheduleOwnedFrame(callback).nativeId;
+	};
+	const patchedCancel: CancelFrameAPI = (frameId): void => {
+		const frame = pendingFrames.get(frameId);
+		nativeCancel.call(window, frameId);
+		if (frame !== undefined) settleFrame(frame, 'cancelled');
+	};
+	requestFramePatches.set(patchedRequest, {
+		previous: previousRequest,
+		isRestored: (): boolean => areAPIsRestored,
+	});
+	cancelFramePatches.set(patchedCancel, {
+		previous: previousCancel,
+		isRestored: (): boolean => areAPIsRestored,
+	});
+	window.requestAnimationFrame = patchedRequest;
+	window.cancelAnimationFrame = patchedCancel;
+	activeFrameAdapters.add(cleanup);
+	for (const signal of signals) signal.addEventListener('abort', abortOwner, { once: true });
+	const publishPhase = (nextPhase: BridgeTransitionFramePhase): void => {
+		phase = nextPhase;
+		options.onPhase?.(phase);
 	};
 	try {
-		// Base UI has a shared scheduler tick registered before this operation. Join
-		// that actual native frame in act before registering the operation's writers;
-		// this is a registration barrier, never the operation's completion predicate.
+		if ([...signals].some((signal) => signal.aborted)) abortOwner();
+		if (isRetired) return await retired.promise;
+		publishPhase('registration barrier');
+		if (isRetired) return await retired.promise;
+		// Preserve the accepted ordering fence for Base UI's already registered tick.
 		await act(async (): Promise<void> => {
-			await new Promise<void>((resolve) => requestFrame.call(window, (): void => resolve()));
+			await Promise.race([scheduleOwnedFrame((): void => {}).promise, retired.promise]);
 		});
-		const result = await operation();
-		// The owner's closing fact defines the cutoff. Join precisely the callbacks
-		// accepted before it, including cancelled callbacks, rather than await idle.
-		await Promise.all([...acceptedFrames.values()].map((frame) => frame.promise));
+		if (isRetired) return await retired.promise;
+		publishPhase('operation');
+		if (isRetired) return await retired.promise;
+		const result = await Promise.race([operation(), retired.promise]);
+		if (isRetired) return await retired.promise;
+		const closingFrames = [...pendingFrames.values()];
+		publishPhase('final frame join');
+		if (isRetired) return await retired.promise;
+		await Promise.race([Promise.all(closingFrames.map((frame) => frame.promise)), retired.promise]);
+		if (isRetired) return await retired.promise;
 		return result;
+	} catch (error: unknown) {
+		retire(
+			new Error(`Bridge transition frame operation retired during ${phase}.`, { cause: error }),
+		);
+		throw error;
 	} finally {
-		isActive = false;
-		window.requestAnimationFrame = requestFrame;
-		window.cancelAnimationFrame = cancelFrame;
+		restoreAPIs();
 	}
 }
 
