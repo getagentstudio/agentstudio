@@ -87,6 +87,10 @@ struct BridgePackagedCompleteJourneyScriptTests {
         )
         #expect(verifier.contains("AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_IDENTITY"))
         #expect(verifier.contains("pinned-real-worktree"))
+        #expect(verifier.contains(#"review_handle = review_open.get("handle")"#))
+        #expect(verifier.contains(#"review_pane_id = review_open.get("paneId")"#))
+        #expect(verifier.contains("review_handle != review_pane_id"))
+        #expect(verifier.contains("Review pane identity mismatch"))
     }
 
     @Test("whole-fixture digest preserves pinned Git submodule entries")

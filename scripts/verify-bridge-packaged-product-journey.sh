@@ -1020,10 +1020,19 @@ try:
 
     # ipc-catalog-15211f2b3.json: bridge.diff.load requires a correlation UUID.
     review_open = session.request("bridge.diff.load", {"worktreeId": worktree_id, "correlationId": str(uuid.uuid4())})
-    # AgentStudioIPCBridgeAdapter.swift:37/48 emits a stale handle; IPCTargetSelector.swift:19-21 accepts paneId.
-    review_handle = review_open.get("paneId")
-    if not isinstance(review_handle, str) or review_handle == file_handle:
-        fail("Bridge packaged journey did not create two independent panes")
+    # AgentStudioIPCBridgeAdapter.swift:37/48 returns a canonical handle and paneId; verify their identity.
+    review_handle = review_open.get("handle")
+    review_pane_id = review_open.get("paneId")
+    if (
+        not isinstance(review_handle, str)
+        or not isinstance(review_pane_id, str)
+        or review_handle != review_pane_id
+        or review_handle == file_handle
+    ):
+        fail(
+            "Bridge packaged journey Review pane identity mismatch: "
+            f"handle={review_handle!r} paneId={review_pane_id!r} fileHandle={file_handle!r}"
+        )
     focus_foreground_pane(review_handle, "Review pane foreground")
 
     source_hash_by_path = {}
@@ -1133,7 +1142,6 @@ try:
         ),
         attempts=1800,
     )
-    review_pane_id = review_open["paneId"]
     wait_for(
         "persisted symbolic comparison target selected through the UI",
         lambda: persisted_comparison_target(review_pane_id),
