@@ -12,6 +12,7 @@ struct ReconnectSubscriptionContext {
     let refreshWorkAdmission: BridgePaneRefreshWorkAdmission
     let harness: BridgeProductSessionLifecycleHarness
     let initialBatch: BridgeProductBatchCompleteFrame
+    let initialBootstrapClose: BridgeProductMetadataLifecycleTraceEvent?
     let provider: BridgePaneProductSchemeProvider
     let retainedSubscription: BridgeProductSubscriptionSnapshot
 }
@@ -220,7 +221,12 @@ actor ReconnectFileMetadataSource: BridgePaneProductFileMetadataProducing {
 }
 
 func makeReconnectSubscriptionContext(
-    emissionWaitObserver: BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil
+    emissionWaitObserver: BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil,
+    lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
+    initialBootstrapRecorder: FactRecorder<Int, BridgeProductMetadataLifecycleTraceEvent>? = nil,
+    initialFileOutcomeRecorder: FactRecorder<Int, BridgeFileSurfaceOutcomeApplication>? = nil,
+    recordCurrentFileRefreshFailure:
+        @escaping @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void = { _ in }
 ) async throws -> ReconnectSubscriptionContext {
     let harness = try await BridgeProductSessionLifecycleHarness.opened(
         viewEmissionWaiterRegistrationObserver: emissionWaitObserver)
@@ -231,7 +237,9 @@ func makeReconnectSubscriptionContext(
         reviewMetadataSource: BridgeUnavailablePaneProductReviewMetadataSource(),
         reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
         markReviewItemViewed: { _, _ in },
-        refreshWorkAdmissionSource: refreshWorkAdmission.source
+        recordCurrentFileRefreshFailure: recordCurrentFileRefreshFailure,
+        refreshWorkAdmissionSource: refreshWorkAdmission.source,
+        lifecycleTraceRecorder: lifecycleTraceRecorder
     )
     let dispatcher = makeBridgeProductSchemeControlDispatcher(
         session: harness.session,
@@ -250,8 +258,13 @@ func makeReconnectSubscriptionContext(
         dispatcher: dispatcher,
         fileSource: fileSource,
         harness: harness,
-        stream: firstStream
+        stream: firstStream,
+        initialBootstrapRecorder: initialBootstrapRecorder,
+        initialFileOutcomeRecorder: initialFileOutcomeRecorder
     )
+    if initialFileOutcomeRecorder != nil {
+        #expect(await provider.metadataCoordinator.deferredOpenSubscriptionIds.isEmpty)
+    }
     return ReconnectSubscriptionContext(
         dispatcher: dispatcher,
         fileSource: fileSource,
@@ -259,6 +272,7 @@ func makeReconnectSubscriptionContext(
         refreshWorkAdmission: refreshWorkAdmission.admission,
         harness: harness,
         initialBatch: established.initialBatch,
+        initialBootstrapClose: established.initialBootstrapClose,
         provider: provider,
         retainedSubscription: established.retainedSubscription
     )
@@ -268,10 +282,13 @@ func establishReconnectFileSubscription(
     dispatcher: BridgeProductSchemeControlDispatcher,
     fileSource: ReconnectFileMetadataSource,
     harness: BridgeProductSessionLifecycleHarness,
-    stream: ReconnectMetadataStream
+    stream: ReconnectMetadataStream,
+    initialBootstrapRecorder: FactRecorder<Int, BridgeProductMetadataLifecycleTraceEvent>? = nil,
+    initialFileOutcomeRecorder: FactRecorder<Int, BridgeFileSurfaceOutcomeApplication>? = nil
 ) async throws -> (
     initialBatch: BridgeProductBatchCompleteFrame,
-    retainedSubscription: BridgeProductSubscriptionSnapshot
+    retainedSubscription: BridgeProductSubscriptionSnapshot,
+    initialBootstrapClose: BridgeProductMetadataLifecycleTraceEvent?
 ) {
     let openRequest = try bridgeProductLifecycleControlRequest(
         bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
@@ -285,6 +302,18 @@ func establishReconnectFileSubscription(
         throw ReconnectSubscriptionTestError.expectedSubscriptionAcceptance
     }
     await fileSource.waitForActiveSubscription()
+    var initialBootstrapClose: BridgeProductMetadataLifecycleTraceEvent?
+    if let initialBootstrapRecorder {
+        // Retained-demand bootstrap must finish without a scope. The first
+        // demand and sealed batch must then come from accepting the scope itself.
+        let receivedInitialBootstrapClose = try await initialBootstrapRecorder.expectNext(
+            in: 1, where: { $0.stage == .bootstrapFinished }, "initial File bootstrap before scope acceptance"
+        )
+        #expect(receivedInitialBootstrapClose.subscriptionKind == .fileMetadata)
+        #expect(receivedInitialBootstrapClose.result == .success)
+        #expect(await fileSource.diagnostics.updateCallCount == 0)
+        initialBootstrapClose = receivedInitialBootstrapClose
+    }
     let scopeRequest = try reconnectFileScopeRequest()
     let scopeResponse = try await dispatchReconnectControl(
         scopeRequest,
@@ -300,10 +329,20 @@ func establishReconnectFileSubscription(
         case .batch(.complete(let initialBatch)) = try await pullMetadataFrame(from: stream.pump)
     else { throw ReconnectSubscriptionTestError.expectedBatch }
     try await acknowledgeReconnectPart(initialPart, harness: harness)
+    if let initialFileOutcomeRecorder {
+        let bootstrapOutcome = try await initialFileOutcomeRecorder.expectNext(
+            in: 1, where: { $0.failure == nil }, "initial File bootstrap outcome"
+        )
+        let scopeOutcome = try await initialFileOutcomeRecorder.expectNext(
+            in: 2, where: { $0.failure == nil }, "initial File scope reconciler outcome after capture"
+        )
+        #expect(scopeOutcome.attempt.inputGeneration == bootstrapOutcome.attempt.inputGeneration)
+        #expect(scopeOutcome.attempt.nonce != bootstrapOutcome.attempt.nonce)
+    }
     let retainedSubscription = try #require(
         await harness.session.subscriptionSnapshot(subscriptionId: "file-subscription-1")
     )
-    return (initialBatch, retainedSubscription)
+    return (initialBatch, retainedSubscription, initialBootstrapClose)
 }
 
 func acknowledgeReconnectPart(
