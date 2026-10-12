@@ -9,6 +9,8 @@ import {
 	type BridgeViewerReviewMountedHeaderOrderViolation,
 	type BridgeViewerReviewFailureDemandSnapshot,
 	type BridgeViewerReviewFailureSnapshot,
+	type BridgeViewerReviewPaintLedgerEntry,
+	type BridgeViewerReviewPaintFailureSnapshot,
 	type BridgeViewerReviewTreeSelectionProof,
 } from './product-only-real-router-contract.ts';
 import {
@@ -16,6 +18,7 @@ import {
 	previousFreshReviewTraversalScrollTop,
 	waitForFreshReviewHydrationWindowSnapshot,
 } from './product-only-real-router-review-hydration-window.ts';
+import { collectReviewPaintLedger } from './product-only-real-router-review-paint.ts';
 import { waitForProductBrowserFrameSettlement } from './product-only-real-router-settlement.ts';
 
 const productJourneyTimeoutMilliseconds = 120_000;
@@ -35,6 +38,7 @@ interface FreshReviewViewportState {
 	readonly selectedItemId: string | null;
 	readonly visibleItems: readonly {
 		readonly contentState: string | null;
+		readonly displayPath?: string | null;
 		readonly hostBottomOffset: number;
 		readonly hostTopOffset: number;
 		readonly itemId: string;
@@ -52,6 +56,9 @@ interface FreshReviewHydrationCoverageAccumulator {
 
 export async function proveFreshReviewRoute(props: {
 	readonly expectedItemIds: readonly string[];
+	readonly observeWait:
+		| (<TValue>(promise: Promise<TValue>, label: string) => Promise<TValue>)
+		| undefined;
 	readonly page: Page;
 }): Promise<BridgeViewerReviewFreshRouteProof> {
 	await props.page.waitForSelector(bridgeViewerProductOnlySelectors.reviewShell, {
@@ -123,6 +130,7 @@ export async function proveFreshReviewRoute(props: {
 	hydrationMilestones.push({
 		hydratedNonSelectedItemIds: initialHydrationWindow.hydratedNonSelectedItemIds,
 		label: 'initial',
+		readableNonSelectedItemIds: initialHydrationWindow.readableNonSelectedItemIds,
 		visibleNonSelectedItemIds: initialHydrationWindow.visibleNonSelectedItemIds,
 	});
 
@@ -173,6 +181,7 @@ export async function proveFreshReviewRoute(props: {
 			hydrationMilestones.push({
 				hydratedNonSelectedItemIds: settledHydrationWindow.hydratedNonSelectedItemIds,
 				label: milestone.label,
+				readableNonSelectedItemIds: settledHydrationWindow.readableNonSelectedItemIds,
 				visibleNonSelectedItemIds: settledHydrationWindow.visibleNonSelectedItemIds,
 			});
 		}
@@ -215,6 +224,21 @@ export async function proveFreshReviewRoute(props: {
 		observedItemIdSet: observedHeaderItemIdSet,
 	});
 	const forwardCompletedScroll = viewportState.codeScroll;
+	const paintLedger = await collectReviewPaintLedger({
+		expectedItemIds: props.expectedItemIds,
+		observeWait: props.observeWait,
+		page: props.page,
+		readViewportState: () => readFreshReviewViewportState(props.page),
+		scroll: (direction, state) =>
+			(async (): Promise<{ readonly requestedScrollTop: number }> => ({
+				requestedScrollTop: await scrollFreshReviewCodeView({
+					direction,
+					page: props.page,
+					state: state as FreshReviewViewportState,
+				}),
+			}))(),
+		selectedItemId: selectedItemIdAtStart,
+	});
 	const backwardHydrationCoverageAccumulator = createFreshReviewHydrationCoverageAccumulator();
 	const backwardMountedHeaderOrderViolations: BridgeViewerReviewMountedHeaderOrderViolation[] = [];
 	const backwardMountedHeaderOrderViolationSignatures = new Set<string>();
@@ -270,6 +294,7 @@ export async function proveFreshReviewRoute(props: {
 		metadataItemCount: viewportState.metadataItemCount,
 		mountedHeaderOrderViolations,
 		observedHeaderItemIds,
+		paintLedger,
 		selectedItemIdAtCompletion: viewportState.selectedItemId,
 		selectedItemIdAtStart,
 	};
@@ -439,6 +464,11 @@ export async function waitForFreshReviewManifestState(props: {
 
 export async function readFreshReviewFailureSnapshot(
 	page: Page,
+	props: {
+		readonly paintFailure?: BridgeViewerReviewPaintFailureSnapshot;
+		readonly paintLedger?: readonly BridgeViewerReviewPaintLedgerEntry[];
+		readonly pendingPaintItemId?: string;
+	} = {},
 ): Promise<BridgeViewerReviewFailureSnapshot> {
 	const state = await readFreshReviewViewportState(page);
 	const demand = await page.evaluate((selectors) => {
@@ -529,6 +559,9 @@ export async function readFreshReviewFailureSnapshot(
 		),
 		visibleContentStateCounts,
 		visibleDemand: demand.visible satisfies BridgeViewerReviewFailureDemandSnapshot,
+		paintLedger: props.paintLedger ?? [],
+		paintFailure: props.paintFailure ?? null,
+		pendingPaintItemId: props.pendingPaintItemId ?? null,
 		visibleItemCount: state.visibleItems.length,
 	};
 }
@@ -547,6 +580,7 @@ async function readFreshReviewViewportState(page: Page): Promise<FreshReviewView
 		const mountedItemIds: string[] = [];
 		const visibleItems: Array<{
 			readonly contentState: string | null;
+			readonly displayPath?: string | null;
 			readonly hostBottomOffset: number;
 			readonly hostTopOffset: number;
 			readonly itemId: string;
@@ -567,6 +601,11 @@ async function readFreshReviewViewportState(page: Page): Promise<FreshReviewView
 						reviewItemHost,
 						'[data-bridge-code-view-content-state]',
 					)?.getAttribute('data-bridge-code-view-content-state') ?? null,
+				displayPath:
+					bridgeReviewHostElement(
+						reviewItemHost,
+						'[data-bridge-code-view-file-path]',
+					)?.getAttribute('data-bridge-code-view-file-path') ?? null,
 				hostBottomOffset: hostRect.bottom - codeScrollRect.top,
 				hostTopOffset: hostRect.top - codeScrollRect.top,
 				itemId,
@@ -635,6 +674,7 @@ async function captureFreshReviewHydrationMilestone(props: {
 	const window = await captureFreshReviewHydrationWindow(props);
 	return {
 		hydratedNonSelectedItemIds: window.hydratedNonSelectedItemIds,
+		readableNonSelectedItemIds: window.readableNonSelectedItemIds,
 		label: props.label,
 		visibleNonSelectedItemIds: window.visibleNonSelectedItemIds,
 	};
@@ -692,14 +732,14 @@ function recordFreshReviewHydrationCoverageWindow(props: {
 	for (const itemId of props.window.hydratedNonSelectedItemIds) {
 		props.accumulator.observedHydratedNonSelectedItemIdSet.add(itemId);
 	}
-	const hydrationMatchesVisibility =
-		props.window.hydratedNonSelectedItemIds.length ===
+	const readableMatchesVisibility =
+		props.window.readableNonSelectedItemIds.length ===
 			props.window.visibleNonSelectedItemIds.length &&
 		props.window.visibleNonSelectedItemIds.every((itemId): boolean =>
-			props.window.hydratedNonSelectedItemIds.includes(itemId),
+			props.window.readableNonSelectedItemIds.includes(itemId),
 		);
 	if (
-		hydrationMatchesVisibility ||
+		readableMatchesVisibility ||
 		props.accumulator.missingHydratedVisibleWindows.length >=
 			maximumFreshReviewHydrationWindowFailures
 	) {
@@ -707,6 +747,7 @@ function recordFreshReviewHydrationCoverageWindow(props: {
 	}
 	props.accumulator.missingHydratedVisibleWindows.push({
 		hydratedNonSelectedItemIds: props.window.hydratedNonSelectedItemIds,
+		readableNonSelectedItemIds: props.window.readableNonSelectedItemIds,
 		scrollTop: props.window.scrollTop,
 		visibleContentStates: props.window.visibleContentStates,
 		visibleNonSelectedItemIds: props.window.visibleNonSelectedItemIds,
@@ -783,7 +824,7 @@ async function scrollFreshReviewCodeView(props: {
 	readonly direction: 'backward' | 'forward';
 	readonly page: Page;
 	readonly state: FreshReviewViewportState;
-}): Promise<void> {
+}): Promise<number> {
 	const nextScrollTop =
 		props.direction === 'forward'
 			? nextFreshReviewTraversalScrollTop({
@@ -832,6 +873,7 @@ async function scrollFreshReviewCodeView(props: {
 		page: props.page,
 		stage: `${props.direction}-scroll:${nextScrollTop}`,
 	});
+	return nextScrollTop;
 }
 
 async function waitForFreshReviewFrameSettlement(props: {

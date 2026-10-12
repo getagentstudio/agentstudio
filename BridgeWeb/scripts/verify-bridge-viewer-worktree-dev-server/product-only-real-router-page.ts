@@ -58,6 +58,8 @@ import {
 	stringValue,
 	unknownRecord,
 } from './product-only-real-router-response-parsing.ts';
+import { reviewFailureSnapshotFromPaintFailureEvidence } from './product-only-real-router-review-failure.ts';
+import { bridgeViewerReviewPaintFailureEvidenceFromError } from './product-only-real-router-review-paint.ts';
 import {
 	proveFreshReviewRoute,
 	proveReviewTreeSelection,
@@ -217,6 +219,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		});
 		const reviewFreshRoute = await proveFreshReviewRoute({
 			expectedItemIds: props.expectedReviewItemIds,
+			observeWait: (promise, label) => ownedJourneyDeadline.waitFor(promise, label),
 			page,
 		});
 		const reviewTreeSelection = await proveReviewTreeSelection({
@@ -407,12 +410,26 @@ export async function captureBridgeViewerProductOnlyJourneyFailure(props: {
 		await props.routeObserver.flushResponseParsers();
 	} catch {}
 	let review: BridgeViewerProductOnlyJourneyFailureCheckpoint['review'] = null;
-	let captureStatus: BridgeViewerProductOnlyJourneyFailureCheckpoint['captureStatus'] =
-		'unavailable';
+	let captureStatus: 'captured' | 'unavailable' = 'unavailable';
+	const paintFailure = bridgeViewerReviewPaintFailureEvidenceFromError(props.error);
 	try {
-		review = await readFreshReviewFailureSnapshot(props.page);
+		review = await readFreshReviewFailureSnapshot(
+			props.page,
+			paintFailure === null
+				? {}
+				: {
+						paintFailure: paintFailure.snapshot,
+						paintLedger: paintFailure.paintLedger,
+						pendingPaintItemId: paintFailure.pendingPaintItemId,
+					},
+		);
 		captureStatus = 'captured';
-	} catch {}
+	} catch {
+		if (paintFailure !== null) {
+			review = reviewFailureSnapshotFromPaintFailureEvidence(paintFailure);
+			captureStatus = 'captured';
+		}
+	}
 	return {
 		browserDiagnostics: props.browserDiagnostics,
 		captureStatus,

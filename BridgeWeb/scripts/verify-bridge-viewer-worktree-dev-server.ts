@@ -44,9 +44,10 @@ interface ColdStartupSurfaceResult {
 type LoadVerifierRunner = (launch: BridgeWebTestLaunch) => Promise<unknown>;
 export async function runBridgeViewerWorktreeVerifier(
 	loadRunner: LoadVerifierRunner,
+	ownerLaunch?: BridgeWebTestLaunch,
 ): Promise<void> {
 	if (completeJourneyMode || performanceOnlyMode || startupOnlyMode) {
-		await runSelfHostedBridgeViewerPerformanceVerifier(loadRunner);
+		await runSelfHostedBridgeViewerPerformanceVerifier(loadRunner, ownerLaunch);
 	} else {
 		await runSelfHostedBridgeViewerProductOnlyRegression();
 	}
@@ -60,27 +61,40 @@ async function runSelfHostedBridgeViewerProductOnlyRegression(): Promise<void> {
 
 async function runSelfHostedBridgeViewerPerformanceVerifier(
 	loadRunner: LoadVerifierRunner,
+	ownerLaunch?: BridgeWebTestLaunch,
 ): Promise<void> {
 	const previousBackendOrigin = process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'];
 	const previousWorktreeDevServerUrl = process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'];
-	const launch = await BridgeWebTestLaunch.start({
-		backend: {
-			initialTarget: 'HEAD',
-			paneId: bridgePerformanceVerifierPaneId,
-			repoRootPath,
-			worktreeRoot: repoRootPath,
-		},
-		dataRootPrefix: 'agentstudio-bridge-performance-',
-	});
+	const launch =
+		ownerLaunch === undefined
+			? await BridgeWebTestLaunch.start({
+					backend: {
+						initialTarget: 'HEAD',
+						paneId: bridgePerformanceVerifierPaneId,
+						repoRootPath,
+						worktreeRoot: repoRootPath,
+					},
+					dataRootPrefix: 'agentstudio-bridge-performance-',
+				})
+			: await ownerLaunch.startChild({
+					initialTarget: 'HEAD',
+					paneId: bridgePerformanceVerifierPaneId,
+					repoRootPath,
+					worktreeRoot: repoRootPath,
+				});
 	try {
 		process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] = launch.backend.origin;
 		if (completeJourneyMode) {
-			await runCompleteJourneyDevelopmentCohort(loadRunner);
+			await runCompleteJourneyDevelopmentCohort(loadRunner, launch);
 			return;
 		}
 		if (startupOnlyMode) {
-			const file = await runColdStartupSurfaceLifecycle({ surface: 'file' }, loadRunner);
-			const review = await runColdStartupSurfaceLifecycle({ surface: 'review' }, loadRunner);
+			const file = await runColdStartupSurfaceLifecycle({ surface: 'file' }, loadRunner, launch);
+			const review = await runColdStartupSurfaceLifecycle(
+				{ surface: 'review' },
+				loadRunner,
+				launch,
+			);
 			console.log(
 				JSON.stringify(
 					{
@@ -130,7 +144,10 @@ async function runSelfHostedBridgeViewerPerformanceVerifier(
 	}
 }
 
-async function runCompleteJourneyDevelopmentCohort(loadRunner: LoadVerifierRunner): Promise<void> {
+async function runCompleteJourneyDevelopmentCohort(
+	loadRunner: LoadVerifierRunner,
+	parentLaunch: BridgeWebTestLaunch,
+): Promise<void> {
 	const sourceHeadResult = await execFileAsync('/usr/bin/git', ['rev-parse', 'HEAD'], {
 		cwd: repoRootPath,
 		encoding: 'utf8',
@@ -147,6 +164,7 @@ async function runCompleteJourneyDevelopmentCohort(loadRunner: LoadVerifierRunne
 					sourceHead,
 				},
 				loadRunner,
+				parentLaunch,
 			),
 		);
 	}
@@ -207,9 +225,10 @@ async function runCompleteJourneyLaunchLifecycle(
 		readonly sourceHead: string;
 	},
 	loadRunner: LoadVerifierRunner,
+	parentLaunch: BridgeWebTestLaunch,
 ): Promise<BridgeDevelopmentCompleteJourneyLaunch> {
 	const previousWorktreeDevServerUrl = process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'];
-	const launch = await BridgeWebTestLaunch.start();
+	const launch = await parentLaunch.startChildWithoutBackend();
 	try {
 		const viteServer = await launch.startViteChild({
 			bridgeWebRootPath: fileURLToPath(new URL('../', import.meta.url)),
@@ -281,9 +300,13 @@ async function runColdStartupSurfaceLifecycle(
 		readonly surface: StartupSurface;
 	},
 	loadRunner: LoadVerifierRunner,
+	parentLaunch?: BridgeWebTestLaunch,
 ): Promise<ColdStartupSurfaceResult> {
 	const previousWorktreeDevServerUrl = process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'];
-	const launch = await BridgeWebTestLaunch.start();
+	const launch =
+		parentLaunch === undefined
+			? await BridgeWebTestLaunch.start()
+			: await parentLaunch.startChildWithoutBackend();
 	try {
 		const viteServer = await launch.startViteChild({
 			bridgeWebRootPath: fileURLToPath(new URL('../', import.meta.url)),

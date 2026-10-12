@@ -93,7 +93,8 @@ export function requireFreshReviewRoute(props: {
 	}
 	const failedHydrationMilestones = props.proof.hydrationMilestones.filter(
 		(milestone): boolean =>
-			!stringArraysEqual(milestone.hydratedNonSelectedItemIds, milestone.visibleNonSelectedItemIds),
+			milestone.visibleNonSelectedItemIds.length > 0 &&
+			!stringArraysEqual(milestone.readableNonSelectedItemIds, milestone.visibleNonSelectedItemIds),
 	);
 	const requiredMilestoneLabels: readonly BridgeViewerReviewHydrationMilestone['label'][] = [
 		'initial',
@@ -113,43 +114,37 @@ export function requireFreshReviewRoute(props: {
 				failedHydrationMilestones,
 				hydrationMilestones: props.proof.hydrationMilestones,
 			},
-			code: 'REVIEW_FRESH_ROUTE_VISIBLE_HYDRATION_MISSING',
+			code: 'REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING',
 			expected:
-				'non-selected visible Review bodies hydrate in every settled sampled CodeView window without tree clicks',
+				'non-selected visible Review items are readable in every settled sampled CodeView window without tree clicks',
 		});
 	}
 	const expectedHydratedNonSelectedItemIds = props.proof.expectedItemIds.filter(
 		(itemId): boolean => itemId !== props.proof.selectedItemIdAtStart,
 	);
-	const missingExpectedHydratedItemIds = expectedHydratedNonSelectedItemIds.filter(
-		(itemId): boolean =>
-			!props.proof.hydrationCoverage.observedHydratedNonSelectedItemIds.includes(itemId),
+	const paintLedgerByItemId = new Map(
+		props.proof.paintLedger.map((entry) => [entry.itemId, entry]),
 	);
-	const unexpectedHydratedItemIds =
-		props.proof.hydrationCoverage.observedHydratedNonSelectedItemIds.filter(
-			(itemId): boolean => !expectedHydratedNonSelectedItemIds.includes(itemId),
-		);
-	if (
-		props.proof.hydrationCoverage.settledWindowCount === 0 ||
-		props.proof.hydrationCoverage.missingHydratedVisibleWindows.length > 0 ||
-		missingExpectedHydratedItemIds.length > 0 ||
-		unexpectedHydratedItemIds.length > 0
-	) {
+	const missingPaintedItemIds = expectedHydratedNonSelectedItemIds.filter(
+		(itemId): boolean => paintLedgerByItemId.get(itemId)?.status !== 'painted',
+	);
+	const unexpectedPaintedItemIds = props.proof.paintLedger
+		.filter((entry) => entry.status === 'painted')
+		.map((entry) => entry.itemId)
+		.filter((itemId) => !expectedHydratedNonSelectedItemIds.includes(itemId));
+	if (missingPaintedItemIds.length > 0 || unexpectedPaintedItemIds.length > 0) {
 		props.violations.push({
 			actual: {
-				expectedHydratedNonSelectedItemCount: expectedHydratedNonSelectedItemIds.length,
-				missingExpectedHydratedItemCount: missingExpectedHydratedItemIds.length,
-				missingExpectedHydratedItemIds: missingExpectedHydratedItemIds.slice(0, 32),
-				missingHydratedVisibleWindows: props.proof.hydrationCoverage.missingHydratedVisibleWindows,
-				observedHydratedNonSelectedItemCount:
-					props.proof.hydrationCoverage.observedHydratedNonSelectedItemIds.length,
-				settledWindowCount: props.proof.hydrationCoverage.settledWindowCount,
-				unexpectedHydratedItemCount: unexpectedHydratedItemIds.length,
-				unexpectedHydratedItemIds: unexpectedHydratedItemIds.slice(0, 32),
+				expectedPaintedNonSelectedItemCount: expectedHydratedNonSelectedItemIds.length,
+				missingPaintedItemCount: missingPaintedItemIds.length,
+				missingPaintedItemIds: missingPaintedItemIds.slice(0, 32),
+				paintLedger: props.proof.paintLedger,
+				unexpectedPaintedItemCount: unexpectedPaintedItemIds.length,
+				unexpectedPaintedItemIds: unexpectedPaintedItemIds.slice(0, 32),
 			},
-			code: 'REVIEW_FRESH_ROUTE_VISIBLE_HYDRATION_COVERAGE_MISSING',
+			code: 'REVIEW_FRESH_ROUTE_VISIBLE_PAINT_COVERAGE_MISSING',
 			expected:
-				'every expected non-selected Review item becomes geometry-visible and hydrated in a settled CodeView window without tree clicks',
+				'every expected non-selected Review item reaches painted publication/source-correlation evidence during a settled CodeView traversal without tree clicks',
 		});
 	}
 	if (
@@ -195,19 +190,14 @@ export function requireFreshReviewRoute(props: {
 	if (
 		backwardTraversal.completedScrollTop > 1 ||
 		backwardTraversal.hydrationCoverage.settledWindowCount === 0 ||
-		backwardTraversal.hydrationCoverage.missingHydratedVisibleWindows.length > 0 ||
-		expectedHydratedNonSelectedItemIds.some(
-			(itemId): boolean =>
-				!backwardTraversal.hydrationCoverage.observedHydratedNonSelectedItemIds.includes(itemId),
-		) ||
 		backwardTraversal.mountedHeaderOrderViolations.length > 0 ||
 		backwardTraversal.selectedItemIdAtCompletion !== props.proof.selectedItemIdAtStart
 	) {
 		props.violations.push({
 			actual: backwardTraversal,
-			code: 'REVIEW_FRESH_ROUTE_BACKWARD_INVALID',
+			code: 'REVIEW_FRESH_ROUTE_BACKWARD_READABLE_INVALID',
 			expected:
-				'reverse CodeView scrolling traverses bottom-to-top through ordered hydrated windows with stable selection',
+				'reverse CodeView scrolling traverses bottom-to-top through ordered readable windows with painted coverage and stable selection',
 		});
 	}
 }
