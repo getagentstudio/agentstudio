@@ -1,10 +1,8 @@
-import { randomUUID } from 'node:crypto';
-import { access, mkdtemp, rename, rm } from 'node:fs/promises';
+import { access, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { chromium, type Browser, type LaunchOptions } from 'playwright';
-import { createServer, type InlineConfig, type ViteDevServer } from 'vite';
 
 import { BridgeViewerOwnedViteServer } from '../verify-bridge-viewer-worktree-dev-server/product-only-real-router-regression.ts';
 import { createOwnedVerifierJourneyDeadline } from '../verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
@@ -27,7 +25,7 @@ import {
 	currentBridgeWebLaunchScope,
 	runWithBridgeWebLaunchScope,
 } from './bridge-web-test-launch-scope.ts';
-import { BridgeWebOwnedViteLifetime } from './bridge-web-test-launch-vite-lifetime.ts';
+import type { BridgeWebViteResponseSubscription } from './bridge-web-vite-response-facts.ts';
 import {
 	handleLaunchPromise,
 	type HandledLaunchPromise,
@@ -39,7 +37,6 @@ export type {
 	BridgeWebTestLaunchSpec,
 	BridgeWebTestLaunchDependencies,
 } from './bridge-web-test-launch-contracts.ts';
-import { reserveLoopbackPort } from './reserve-loopback-port.ts';
 
 interface LaunchCleanupOperation {
 	readonly name: string;
@@ -52,7 +49,6 @@ export class BridgeWebTestLaunch {
 	readonly #acquisitions = new Set<Promise<LaunchPromiseOutcome<unknown>>>();
 	#backend: OwnedBridgeDevelopmentServer | null = null;
 	#browser: Browser | null = null;
-	readonly #viteLifetime = new BridgeWebOwnedViteLifetime();
 	#viteProcess: BridgeViewerOwnedViteServer | null = null;
 	#closeBrowser: Browser['close'] | null = null;
 	#browserCloseOptions: Parameters<Browser['close']>[0];
@@ -75,8 +71,6 @@ export class BridgeWebTestLaunch {
 		browserDisconnected: true,
 		dataRootRemoved: false,
 		failures: [],
-		viteClosed: true,
-		lateViteListenerRetirement: { kind: 'not-required' },
 		viteProcess: null,
 	};
 
@@ -152,10 +146,23 @@ export class BridgeWebTestLaunch {
 	}
 
 	get cleanup(): BridgeWebTestLaunchCleanup {
+		return { ...this.#cleanup };
+	}
+
+	observeViteMetadataResponses(name: string): BridgeWebViteResponseSubscription {
+		this.#requireOpen();
+		if (this.#viteProcess === null) throw new Error('Test launch has no Vite child.');
+		const subscription = this.#viteProcess.responseFacts.subscribe(name);
+		this.ownFixture(
+			`Vite response subscriber ${name}`,
+			async (): Promise<void> => subscription.close(),
+		);
 		return {
-			...this.#cleanup,
-			viteClosed: this.#viteLifetime.listenerClosed,
-			lateViteListenerRetirement: this.#viteLifetime.lateListenerRetirement,
+			next: async () => await this.observeStep(name, subscription.next()).value(),
+			close: subscription.close,
+			get receivedCount(): number {
+				return subscription.receivedCount;
+			},
 		};
 	}
 
@@ -230,49 +237,6 @@ export class BridgeWebTestLaunch {
 			},
 			'Swift readiness',
 		);
-	}
-
-	async startVite(configuration: InlineConfig): Promise<ViteDevServer> {
-		this.#requireOpen();
-		if (this.#viteLifetime.owned || this.#viteProcess !== null)
-			throw new Error('Test launch already owns Vite.');
-		try {
-			const optimizeDeps = configuration.optimizeDeps;
-			const existingOptimizerPlugins = optimizeDeps?.rolldownOptions?.plugins;
-			const optimizerPlugins =
-				existingOptimizerPlugins === undefined
-					? []
-					: Array.isArray(existingOptimizerPlugins)
-						? existingOptimizerPlugins
-						: [existingOptimizerPlugins];
-			const vite = await this.#acquire(
-				(async (): Promise<ViteDevServer> =>
-					await createServer({
-						...configuration,
-						optimizeDeps: Object.assign({}, optimizeDeps, {
-							rolldownOptions: Object.assign({}, optimizeDeps?.rolldownOptions, {
-								plugins: [this.#viteLifetime.optimizerPlugin, ...optimizerPlugins],
-							}),
-						}),
-						plugins: [this.#viteLifetime.plugin, ...(configuration.plugins ?? [])],
-						cacheDir: join(this.dataRootPath, 'vite-cache'),
-						server: {
-							...configuration.server,
-							host: '127.0.0.1',
-							port: await reserveLoopbackPort(),
-							strictPort: true,
-						},
-					}))(),
-				(): void => {},
-				'Vite acquisition',
-			);
-			this.#requireOpen();
-			if (configuration.server?.middlewareMode !== true)
-				await this.#acquire(vite.listen(), (): void => {}, 'Vite listener readiness');
-			return vite;
-		} catch (error: unknown) {
-			return await this.disposeAfterFailure(error);
-		}
 	}
 
 	async launchBrowser(options: LaunchOptions = { headless: true }): Promise<Browser> {
@@ -355,11 +319,12 @@ export class BridgeWebTestLaunch {
 
 	async startViteChild(props: {
 		readonly bridgeWebRootPath: string;
+		readonly bridgeDevelopmentServerOrigin?: string;
+		readonly observeMetadataResponses?: boolean;
 		readonly environment?: Readonly<Record<string, string>>;
 	}): Promise<BridgeViewerOwnedViteServer> {
 		this.#requireOpen();
-		if (this.#viteLifetime.owned || this.#viteProcess !== null)
-			throw new Error('Test launch already owns Vite.');
+		if (this.#viteProcess !== null) throw new Error('Test launch already owns Vite.');
 		try {
 			return await this.#acquire(
 				(
@@ -368,7 +333,7 @@ export class BridgeWebTestLaunch {
 						BridgeViewerOwnedViteServer.start(props))
 				)({
 					...props,
-					bridgeDevelopmentServerOrigin: this.backend.origin,
+					bridgeDevelopmentServerOrigin: props.bridgeDevelopmentServerOrigin ?? this.backend.origin,
 					environment: {
 						...props.environment,
 						BRIDGE_WEB_VITE_CACHE_DIR: join(this.dataRootPath, 'vite-cache'),
@@ -454,7 +419,6 @@ export class BridgeWebTestLaunch {
 			this.#backend === null
 				? null
 				: handleLaunchPromise(this.#backend.stop(), 'stop starting backend');
-		const earlyViteClose = handleLaunchPromise(this.#viteLifetime.close(), 'close starting Vite');
 		await Promise.all(this.#acquisitions);
 		const childOutcomes = await Promise.all(childStops.map((stopping) => stopping.settled));
 		const rootOutcome = await this.#root.settled;
@@ -464,22 +428,6 @@ export class BridgeWebTestLaunch {
 				name: 'browser',
 				run: async (): Promise<void> => {
 					await this.#disposeBrowser();
-				},
-			},
-			{
-				name: 'Vite',
-				run: async (): Promise<void> => {
-					await earlyViteClose.value();
-					await this.#viteLifetime.waitForOptimizerOutputs();
-					// A capture can arrive during acquisition after early close found no server.
-					await this.#viteLifetime.close();
-					await this.observeStep(
-						'retire late Vite listener',
-						this.#viteLifetime.retireLateListener(),
-					).value();
-					const viteClosed = this.#viteLifetime.listenerClosed;
-					this.#cleanup = { ...this.#cleanup, viteClosed };
-					if (!viteClosed) throw new Error('Owned Vite listener survived close.');
 				},
 			},
 			{
@@ -532,13 +480,16 @@ export class BridgeWebTestLaunch {
 			failureNames.push('data root creation');
 		} else
 			try {
-				// Vite may have started an unjoined, path-addressed removal of
-				// vite-cache/deps_temp_* during optimizer commit. Move the complete
-				// root out of that pathname before recursive removal so that work can
-				// finish against the old name without touching this deletion.
-				const retirementRootPath = `${this.dataRootPath}.retiring-${randomUUID()}`;
-				await rename(this.dataRootPath, retirementRootPath);
-				await rm(retirementRootPath, { force: true, recursive: true });
+				if (
+					this.#viteProcess !== null &&
+					(this.#cleanup.viteProcess === null ||
+						this.#cleanup.viteProcess.ownedProcessAliveAfterStop)
+				) {
+					throw new Error('Refusing data root removal before checked Vite child exit.');
+				}
+				// Every product writer is in the joined Vite child; no pathname
+				// isolation or library-specific output join remains necessary.
+				await rm(this.dataRootPath, { force: true, recursive: true });
 				try {
 					await access(this.dataRootPath);
 					throw new Error('Owned data root survived teardown.');

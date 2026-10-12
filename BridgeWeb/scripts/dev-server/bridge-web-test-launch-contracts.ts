@@ -12,18 +12,11 @@ export interface BridgeWebOwnedProductDataClient {
 	readonly abort: (reason: unknown) => Promise<void>;
 }
 
-export type BridgeWebViteLateListenerRetirement =
-	| { readonly kind: 'not-required' }
-	| { readonly kind: 'closed'; readonly closeEventObserved: true }
-	| { readonly kind: 'failed'; readonly closeEventObserved: boolean };
-
 export interface BridgeWebTestLaunchCleanup {
 	readonly backend: OwnedBridgeDevelopmentServerCleanup | null;
 	readonly browserDisconnected: boolean;
 	readonly dataRootRemoved: boolean;
 	readonly failures: readonly string[];
-	readonly viteClosed: boolean;
-	readonly lateViteListenerRetirement: BridgeWebViteLateListenerRetirement;
 	readonly viteProcess: BridgeViewerViteServerCleanupProof | null;
 }
 

@@ -41,10 +41,15 @@ interface ColdStartupSurfaceResult {
 	readonly surface: StartupSurface;
 }
 
-if (completeJourneyMode || performanceOnlyMode || startupOnlyMode) {
-	await runSelfHostedBridgeViewerPerformanceVerifier();
-} else {
-	await runSelfHostedBridgeViewerProductOnlyRegression();
+type LoadVerifierRunner = (launch: BridgeWebTestLaunch) => Promise<unknown>;
+export async function runBridgeViewerWorktreeVerifier(
+	loadRunner: LoadVerifierRunner,
+): Promise<void> {
+	if (completeJourneyMode || performanceOnlyMode || startupOnlyMode) {
+		await runSelfHostedBridgeViewerPerformanceVerifier(loadRunner);
+	} else {
+		await runSelfHostedBridgeViewerProductOnlyRegression();
+	}
 }
 
 async function runSelfHostedBridgeViewerProductOnlyRegression(): Promise<void> {
@@ -53,7 +58,9 @@ async function runSelfHostedBridgeViewerProductOnlyRegression(): Promise<void> {
 	await regression.runSelfHostedBridgeViewerProductOnlyRegression();
 }
 
-async function runSelfHostedBridgeViewerPerformanceVerifier(): Promise<void> {
+async function runSelfHostedBridgeViewerPerformanceVerifier(
+	loadRunner: LoadVerifierRunner,
+): Promise<void> {
 	const previousBackendOrigin = process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'];
 	const previousWorktreeDevServerUrl = process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'];
 	const launch = await BridgeWebTestLaunch.start({
@@ -68,12 +75,12 @@ async function runSelfHostedBridgeViewerPerformanceVerifier(): Promise<void> {
 	try {
 		process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] = launch.backend.origin;
 		if (completeJourneyMode) {
-			await runCompleteJourneyDevelopmentCohort();
+			await runCompleteJourneyDevelopmentCohort(loadRunner);
 			return;
 		}
 		if (startupOnlyMode) {
-			const file = await runColdStartupSurfaceLifecycle({ surface: 'file' });
-			const review = await runColdStartupSurfaceLifecycle({ surface: 'review' });
+			const file = await runColdStartupSurfaceLifecycle({ surface: 'file' }, loadRunner);
+			const review = await runColdStartupSurfaceLifecycle({ surface: 'review' }, loadRunner);
 			console.log(
 				JSON.stringify(
 					{
@@ -90,24 +97,16 @@ async function runSelfHostedBridgeViewerPerformanceVerifier(): Promise<void> {
 			if (!file.satisfied || !review.satisfied) process.exitCode = 1;
 			return;
 		}
-		const viteServer = await launch.startVite({
-			configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
+		const viteServer = await launch.startViteChild({
+			bridgeWebRootPath: fileURLToPath(new URL('../', import.meta.url)),
+			bridgeDevelopmentServerOrigin:
+				process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] ?? launch.backend.origin,
 		});
-		const serverAddress = viteServer.httpServer?.address();
-		if (
-			serverAddress === null ||
-			serverAddress === undefined ||
-			typeof serverAddress === 'string'
-		) {
-			throw new Error('Expected the owned performance Vite server to expose a loopback port.');
-		}
 		process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'] =
-			`http://127.0.0.1:${serverAddress.port}/?fixture=worktree&viewer=file&workers=on&scenario=current-worktree`;
-		await waitForBridgeProductBackendReady(`http://127.0.0.1:${serverAddress.port}`, launch);
+			`${viteServer.startProof.origin}/?fixture=worktree&viewer=file&workers=on&scenario=current-worktree`;
+		await waitForBridgeProductBackendReady(viteServer.startProof.origin, launch);
 
-		const loadedRunner: unknown = await viteServer.ssrLoadModule(
-			'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
-		);
+		const loadedRunner: unknown = await loadRunner(launch);
 		if (typeof loadedRunner !== 'object' || loadedRunner === null) {
 			throw new Error('Expected the owned performance verifier runner module.');
 		}
@@ -131,7 +130,7 @@ async function runSelfHostedBridgeViewerPerformanceVerifier(): Promise<void> {
 	}
 }
 
-async function runCompleteJourneyDevelopmentCohort(): Promise<void> {
+async function runCompleteJourneyDevelopmentCohort(loadRunner: LoadVerifierRunner): Promise<void> {
 	const sourceHeadResult = await execFileAsync('/usr/bin/git', ['rev-parse', 'HEAD'], {
 		cwd: repoRootPath,
 		encoding: 'utf8',
@@ -141,11 +140,14 @@ async function runCompleteJourneyDevelopmentCohort(): Promise<void> {
 	for (let launchIndex = 0; launchIndex < 3; launchIndex += 1) {
 		// oxlint-disable-next-line no-await-in-loop -- Acceptance requires three independent Vite/browser launches.
 		launches.push(
-			await runCompleteJourneyLaunchLifecycle({
-				attemptCount: completeJourneyAttemptCount,
-				launchIndex,
-				sourceHead,
-			}),
+			await runCompleteJourneyLaunchLifecycle(
+				{
+					attemptCount: completeJourneyAttemptCount,
+					launchIndex,
+					sourceHead,
+				},
+				loadRunner,
+			),
 		);
 	}
 	const diagnosticOnly =
@@ -198,34 +200,27 @@ async function runCompleteJourneyDevelopmentCohort(): Promise<void> {
 	}
 }
 
-async function runCompleteJourneyLaunchLifecycle(props: {
-	readonly attemptCount: number;
-	readonly launchIndex: number;
-	readonly sourceHead: string;
-}): Promise<BridgeDevelopmentCompleteJourneyLaunch> {
-	const previousViteCacheDirectory = process.env['BRIDGE_WEB_VITE_CACHE_DIR'];
+async function runCompleteJourneyLaunchLifecycle(
+	props: {
+		readonly attemptCount: number;
+		readonly launchIndex: number;
+		readonly sourceHead: string;
+	},
+	loadRunner: LoadVerifierRunner,
+): Promise<BridgeDevelopmentCompleteJourneyLaunch> {
 	const previousWorktreeDevServerUrl = process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'];
 	const launch = await BridgeWebTestLaunch.start();
 	try {
-		process.env['BRIDGE_WEB_VITE_CACHE_DIR'] = launch.dataRootPath;
-		const viteServer = await launch.startVite({
-			configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
+		const viteServer = await launch.startViteChild({
+			bridgeWebRootPath: fileURLToPath(new URL('../', import.meta.url)),
+			bridgeDevelopmentServerOrigin:
+				process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] ?? launch.backend.origin,
 		});
-		const serverAddress = viteServer.httpServer?.address();
-		if (
-			serverAddress === null ||
-			serverAddress === undefined ||
-			typeof serverAddress === 'string'
-		) {
-			throw new Error('Expected complete-journey Vite to expose a loopback port.');
-		}
-		const viteOrigin = `http://127.0.0.1:${serverAddress.port}`;
+		const viteOrigin = viteServer.startProof.origin;
 		process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'] =
 			`${viteOrigin}/?fixture=worktree&viewer=file&workers=on&scenario=current-worktree`;
 		await waitForBridgeProductBackendReady(viteOrigin, launch);
-		const loadedRunner: unknown = await viteServer.ssrLoadModule(
-			'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
-		);
+		const loadedRunner: unknown = await loadRunner(launch);
 		if (typeof loadedRunner !== 'object' || loadedRunner === null) {
 			throw new Error('Expected the complete-journey verifier runner module.');
 		}
@@ -247,7 +242,6 @@ async function runCompleteJourneyLaunchLifecycle(props: {
 		try {
 			await launch.dispose();
 		} finally {
-			restoreEnvironmentValue('BRIDGE_WEB_VITE_CACHE_DIR', previousViteCacheDirectory);
 			restoreEnvironmentValue(
 				'BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL',
 				previousWorktreeDevServerUrl,
@@ -282,32 +276,25 @@ function restoreEnvironmentValue(name: string, previousValue: string | undefined
 	}
 }
 
-async function runColdStartupSurfaceLifecycle(props: {
-	readonly surface: StartupSurface;
-}): Promise<ColdStartupSurfaceResult> {
-	const previousViteCacheDirectory = process.env['BRIDGE_WEB_VITE_CACHE_DIR'];
+async function runColdStartupSurfaceLifecycle(
+	props: {
+		readonly surface: StartupSurface;
+	},
+	loadRunner: LoadVerifierRunner,
+): Promise<ColdStartupSurfaceResult> {
 	const previousWorktreeDevServerUrl = process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'];
 	const launch = await BridgeWebTestLaunch.start();
 	try {
-		process.env['BRIDGE_WEB_VITE_CACHE_DIR'] = launch.dataRootPath;
-		const viteServer = await launch.startVite({
-			configFile: fileURLToPath(new URL('../vite.config.ts', import.meta.url)),
+		const viteServer = await launch.startViteChild({
+			bridgeWebRootPath: fileURLToPath(new URL('../', import.meta.url)),
+			bridgeDevelopmentServerOrigin:
+				process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] ?? launch.backend.origin,
 		});
-		const serverAddress = viteServer.httpServer?.address();
-		if (
-			serverAddress === null ||
-			serverAddress === undefined ||
-			typeof serverAddress === 'string'
-		) {
-			throw new Error('Expected the cold-start Vite server to expose a loopback port.');
-		}
-		const viteOrigin = `http://127.0.0.1:${serverAddress.port}`;
+		const viteOrigin = viteServer.startProof.origin;
 		process.env['BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL'] =
 			`${viteOrigin}/?fixture=worktree&viewer=${props.surface}&workers=on&scenario=current-worktree`;
 		await waitForBridgeProductBackendReady(viteOrigin, launch);
-		const loadedRunner: unknown = await viteServer.ssrLoadModule(
-			'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
-		);
+		const loadedRunner: unknown = await loadRunner(launch);
 		if (typeof loadedRunner !== 'object' || loadedRunner === null) {
 			throw new Error('Expected the cold-start verifier runner module.');
 		}
@@ -325,7 +312,6 @@ async function runColdStartupSurfaceLifecycle(props: {
 		try {
 			await launch.dispose();
 		} finally {
-			restoreEnvironmentValue('BRIDGE_WEB_VITE_CACHE_DIR', previousViteCacheDirectory);
 			restoreEnvironmentValue(
 				'BRIDGE_VIEWER_WORKTREE_DEV_SERVER_URL',
 				previousWorktreeDevServerUrl,

@@ -10,166 +10,12 @@ import { promisify } from 'node:util';
 import { expect, test } from 'vitest';
 
 import { BridgeVerifierProductFileSession } from '../verify-bridge-viewer-worktree-dev-server/product-file-session.ts';
-import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
-import type { BridgeWebTestLaunchCleanup } from './bridge-web-test-launch-contracts.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise, type HandledLaunchPromise } from './handled-launch-promise.ts';
 
-const viteCacheRetirementDriver = String.raw`
-import { createServer } from 'vite';
-import { mkdtemp, mkdir, readdir, rename, rm } from 'node:fs/promises';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
-
-const mode = process.env.BRIDGE_G4_CACHE_RETIREMENT_MODE;
-const root = await mkdtemp(join(tmpdir(), 'bridge-g4-vite-cache-'));
-const cacheDir = join(root, 'vite-cache');
-await mkdir(cacheDir);
-let unhandledReason = null;
-let cleanupFailure = null;
-let pendingTempObserved = false;
-process.on('unhandledRejection', (reason) => { unhandledReason = String(reason); });
-process.on('beforeExit', () => {
-  if (mode === 'legacy' && pendingTempObserved) {
-    process.stdout.write(JSON.stringify({ cleanupFailure, pendingTempObserved, unhandledReason }) + '\n');
-    process.exitCode = 0;
-  } else if (mode === 'isolated' && unhandledReason === null && cleanupFailure === null) {
-    process.stdout.write(JSON.stringify({ cleanupFailure: null, unhandledReason: null }) + '\n');
-    process.exitCode = 0;
-  } else {
-    process.stderr.write(JSON.stringify({ cleanupFailure, unhandledReason }) + '\n');
-    process.exitCode = 1;
-  }
-});
-const create = () => createServer({
-  configFile: false,
-  root: process.cwd(),
-  cacheDir,
-  optimizeDeps: { force: true, include: ['react'] },
-  server: { host: '127.0.0.1', hmr: false, port: 0, strictPort: false },
-});
-const first = await create();
-await first.listen();
-await first.close();
-const second = await create();
-await second.listen();
-await second.transformRequest('/src/main.tsx').catch(() => {});
-const cacheEntries = await readdir(cacheDir);
-pendingTempObserved = cacheEntries.some((entry) => entry.startsWith('deps_temp_'));
-if (!pendingTempObserved) throw new Error('Vite optimizer did not expose deps_temp_* before retirement');
-await second.close();
-try {
-  if (mode === 'isolated') {
-    const retirementRoot = root + '.retiring';
-    await rename(root, retirementRoot);
-    await rm(retirementRoot, { force: true, recursive: true });
-  } else {
-    await rm(root, { force: true, recursive: true });
-  }
-} catch (error) {
-  cleanupFailure = String(error);
-}
-`;
-
-test('Vite optimizer output is joined before launch-root retirement', async () => {
-	const outputEntered = makeDeferred<void>();
-	const outputRelease = makeDeferred<void>();
-	const outputFinished = makeDeferred<void>();
-	let wroteOutput = false;
-	const launch = await BridgeWebTestLaunch.start();
-	const vite = await launch.startVite({
-		configFile: false,
-		logLevel: 'silent',
-		optimizeDeps: {
-			entries: ['src/main.tsx'],
-			force: true,
-			include: ['react'],
-			rolldownOptions: {
-				plugins: [
-					{
-						name: 'held-review-optimizer-output',
-						async generateBundle(): Promise<void> {
-							outputEntered.resolve();
-							await outputRelease.promise;
-						},
-						writeBundle(): void {
-							wroteOutput = true;
-						},
-						closeBundle(): void {
-							outputFinished.resolve();
-						},
-					},
-				],
-			},
-		},
-		server: { hmr: false, preTransformRequests: false, watch: null },
-	});
-	await vite.transformRequest('/src/main.tsx').catch(() => {});
-	const serverClosed = makeDeferred<void>();
-	vite.httpServer?.once('close', (): void => serverClosed.resolve());
-	let disposing: HandledLaunchPromise<BridgeWebTestLaunchCleanup> | null = null;
-	let disposalReturned = false;
-	try {
-		await outputEntered.promise;
-		disposing = handleLaunchPromise(launch.dispose(), 'held optimizer output teardown');
-		void disposing.settled.then((): void => {
-			disposalReturned = true;
-		});
-		await serverClosed.promise;
-		expect(disposalReturned).toBe(false);
-		expect(launch.cleanup.dataRootRemoved).toBe(false);
-		outputRelease.resolve();
-		await outputFinished.promise;
-		await disposing.value();
-		expect(wroteOutput).toBe(true);
-		expect(launch.cleanup.dataRootRemoved).toBe(true);
-	} finally {
-		outputRelease.resolve();
-		await disposing?.settled;
-	}
-});
-
-// Diagnostic only: this direct Vite driver observes the detached temp-directory
-// effect and compares pathname isolation. The production disposal barrier is
-// proved by the held-output test below, not by this standalone root removal.
-test.each(['legacy', 'isolated'] as const)(
-	'Vite optimizer detached-temp observation: %s',
-	async (mode) => {
-		const child = spawn(
-			process.execPath,
-			['--input-type=module', '--eval', viteCacheRetirementDriver],
-			{
-				cwd: bridgeWebRootPath,
-				env: { ...process.env, BRIDGE_G4_CACHE_RETIREMENT_MODE: mode },
-				stdio: ['ignore', 'pipe', 'pipe'],
-			},
-		);
-		const exit = handleLaunchPromise(once(child, 'close'), `Vite cache retirement ${mode}`);
-		const stdout: string[] = [];
-		const stderr: string[] = [];
-		child.stdout?.setEncoding('utf8').on('data', (chunk: string): void => {
-			stdout.push(chunk);
-		});
-		child.stderr?.setEncoding('utf8').on('data', (chunk: string): void => {
-			stderr.push(chunk);
-		});
-		const [code] = await exit.value();
-		if (mode === 'legacy') {
-			expect({ code, stdout: stdout.join(''), stderr: stderr.join('') }).toMatchObject({
-				code: 0,
-				stdout: expect.stringContaining('"pendingTempObserved":true'),
-			});
-		} else {
-			expect(code).toBe(0);
-			expect(stdout.join('')).toContain('"unhandledReason":null');
-			expect(stdout.join('')).toContain('"cleanupFailure":null');
-		}
-	},
-);
-
 const bridgeWebRootPath = fileURLToPath(new URL('../../', import.meta.url));
 const driver = `import { createServer } from 'vite';
-const loader = await createServer({ configFile: false, optimizeDeps: { noDiscovery: true }, server: { hmr: false, middlewareMode: true } });
+const loader = await createServer({ configFile: false, cacheDir: process.cwd() + '/node_modules/.vite-verifier-module-loader', optimizeDeps: { noDiscovery: true, include: [] }, server: { hmr: false, ws: false, middlewareMode: true, watch: null } });
 try { const fixture = await loader.ssrLoadModule('/scripts/dev-server/bridge-web-test-launch-process.test-support.ts'); await fixture.runLaunchProcessFixture(); }
 catch (error) { process.stderr.write(String(error) + '\\n'); process.exitCode = 1; }
 finally { await loader.close(); }`;
@@ -356,14 +202,8 @@ test('a harness data read releases its client before the real page bootstraps', 
 			},
 		});
 		process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] = launch.backend.origin;
-		const vite = await launch.startVite({
-			configFile: join(bridgeWebRootPath, 'vite.config.ts'),
-			logLevel: 'silent',
-		});
-		const address = vite.httpServer?.address();
-		if (address === undefined || address === null || typeof address === 'string')
-			throw new Error('Vite address missing.');
-		const origin = `http://127.0.0.1:${address.port}`;
+		const vite = await launch.startViteChild({ bridgeWebRootPath });
+		const origin = vite.startProof.origin;
 		const browser = await launch.launchBrowser({ channel: 'chrome', headless: true });
 		const page = await browser.newPage();
 		page.setDefaultTimeout(0);

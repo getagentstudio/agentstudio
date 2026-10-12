@@ -151,7 +151,7 @@ describe('Bridge Viewer startup load timing', () => {
 		expect(runnerSource).toContain('collectWorktreeStartupLoadTimingProof');
 		expect(runnerSource).toContain('collectReviewStartupLoadTimingProof');
 		expect(registeredVerifierSource.indexOf('if (startupOnlyMode)')).toBeLessThan(
-			registeredVerifierSource.indexOf('const viteServer = await launch.startVite('),
+			registeredVerifierSource.indexOf('const viteServer = await launch.startViteChild('),
 		);
 	});
 
@@ -174,9 +174,9 @@ describe('Bridge Viewer startup load timing', () => {
 		expect(fileLifecycle).toBeGreaterThanOrEqual(0);
 		expect(reviewLifecycle).toBeGreaterThan(fileLifecycle);
 		expect(registeredVerifierSource).toContain('const launch = await BridgeWebTestLaunch.start()');
-		expect(registeredVerifierSource).toContain("process.env['BRIDGE_WEB_VITE_CACHE_DIR']");
+		expect(registeredVerifierSource).toContain('bridgeDevelopmentServerOrigin:');
 		expect(registeredVerifierSource).toContain('await launch.dispose()');
-		expect(registeredVerifierSource).toContain('launch.dataRootPath');
+		expect(registeredVerifierSource).toContain('viteServer.startProof.origin');
 	});
 
 	test('cold collectors make repeated warm samples unrepresentable', async () => {
@@ -197,12 +197,12 @@ describe('Bridge Viewer startup load timing', () => {
 
 		// Act / Assert
 		const harnessSource = await readFile(
-			new URL('../dev-server/bridge-web-test-launch.ts', import.meta.url),
+			new URL('./product-only-real-router-regression.ts', import.meta.url),
 			'utf8',
 		);
-		expect(harnessSource).toContain('port: await reserveLoopbackPort()');
-		expect(harnessSource).toContain("host: '127.0.0.1'");
-		expect(harnessSource).toContain('strictPort: true');
+		expect(harnessSource).toContain('const port = await reserveLoopbackPort()');
+		expect(harnessSource).toContain("'127.0.0.1'");
+		expect(harnessSource).toContain("'--strictPort'");
 		expect(registeredVerifierSource).not.toContain('reserveLoopbackPort');
 	});
 
@@ -215,7 +215,7 @@ describe('Bridge Viewer startup load timing', () => {
 
 		// Act / Assert
 		expect(registeredVerifierSource).toMatch(
-			/await waitForBridgeProductBackendReady\([\s\S]*await viteServer\.ssrLoadModule/u,
+			/await waitForBridgeProductBackendReady\([\s\S]*await loadRunner/u,
 		);
 		expect(registeredVerifierSource).toContain('/__bridge-product/health');
 		expect(registeredVerifierSource).not.toContain('setTimeout');

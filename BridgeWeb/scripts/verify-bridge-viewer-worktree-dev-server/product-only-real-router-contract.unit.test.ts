@@ -771,7 +771,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(registeredVerifierSource).toContain('runBridgeViewerWorktreeDevServerVerifier');
 		expect(registeredVerifierSource).toContain('runSelfHostedBridgeViewerProductOnlyRegression');
 		expect(registeredVerifierSource).toMatch(
-			/performanceOnlyMode[\s\S]*runSelfHostedBridgeViewerPerformanceVerifier\(\)[\s\S]*runSelfHostedBridgeViewerProductOnlyRegression\(\)/u,
+			/performanceOnlyMode[\s\S]*runSelfHostedBridgeViewerPerformanceVerifier\(loadRunner\)[\s\S]*runSelfHostedBridgeViewerProductOnlyRegression\(\)/u,
 		);
 	});
 
