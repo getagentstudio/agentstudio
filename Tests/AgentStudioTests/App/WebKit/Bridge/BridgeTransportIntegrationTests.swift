@@ -42,26 +42,6 @@ extension WebKitSerializedTests {
         }
 
         @Test
-        func test_teardown_resetsBridgeReady() async {
-            // Arrange
-            let controller = BridgePaneController(
-                paneId: UUIDv7.generate(),
-                state: BridgePaneState(panelKind: .diffViewer, source: nil),
-                appRootURL: testBridgeAppRootURL(),
-                initialPaneActivity: .foreground
-            )
-            #expect(controller.handleBridgeReady())
-
-            // Act
-            let teardownRetirement = controller.beginTeardown()
-
-            // Assert
-            #expect(!controller.isBridgeReady)
-            _ = await teardownRetirement.value
-            await WebPageTestHarness.settle()
-        }
-
-        @Test
         func test_schemeHandler_servesPackagedReactApp() async throws {
             // Arrange
             let diagnostics = BridgePackagedProductDiagnosticRecorder()

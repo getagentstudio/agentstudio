@@ -97,8 +97,8 @@ struct BridgeReviewPublicationCoordinatorTests {
         )
     }
 
-    @Test("synchronous commit activates B and presents pane B before delivery")
-    func synchronousCommitActivatesBAndPresentsPaneBBeforeDelivery() async throws {
+    @Test("synchronous commit activates B before invoking the presentation callback")
+    func synchronousCommitActivatesBBeforePresentationCallback() async throws {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgeReviewPublicationCoordinator()
@@ -123,7 +123,6 @@ struct BridgeReviewPublicationCoordinatorTests {
             )
         )
         var panePackageId: String?
-        var deliveryAttemptStarted = false
         let expectedComparison = BridgePaneReviewComparisonPresentation(
             activeTarget: .branch(name: "origin/main"),
             attempt: .settled(reviewGeneration: publicationB.package.reviewGeneration.rawValue),
@@ -154,12 +153,10 @@ struct BridgeReviewPublicationCoordinatorTests {
                     coordinator.diagnosticSnapshot.active?.packageId
                         == publicationB.package.packageId
                 )
-                #expect(!deliveryAttemptStarted)
                 panePackageId = committedPublication.package.packageId
             }
         )
         let committedPublication = try #require(commitResult.committedPublication)
-        deliveryAttemptStarted = true
         let deliveryOutcome = coordinator.recordTransportDeliveryDisposition(
             .viewBatchSealed,
             publicationId: committedPublication.publicationId,

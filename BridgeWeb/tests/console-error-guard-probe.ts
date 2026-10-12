@@ -1,10 +1,10 @@
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, type TestContext } from 'vitest';
 
 export const actWarningProbeComponentName = 'ActWarningProbe';
 
 interface DefineConsoleErrorGuardProbeProps {
 	readonly suiteName: string;
-	readonly emitActWarning: () => Promise<void>;
+	readonly emitActWarning: (context: TestContext) => Promise<void>;
 	// The warning text the guard failure must carry; defaults to the update form,
 	// which names the component.
 	readonly expectedWarningText?: string;
@@ -18,13 +18,13 @@ export function defineConsoleErrorGuardProbe(props: DefineConsoleErrorGuardProbe
 	describe(`console error guard in the ${props.suiteName} suite`, () => {
 		let recordedGuardFailure = '';
 
-		test.fails('fails a test that emits a React act() warning', async ({ onTestFailed }) => {
-			onTestFailed(({ task }): void => {
+		test.fails('fails a test that emits a React act() warning', async (context) => {
+			context.onTestFailed(({ task }): void => {
 				recordedGuardFailure = (task.result?.errors ?? [])
 					.map((error: { readonly message: string }): string => error.message)
 					.join('\n');
 			});
-			await props.emitActWarning();
+			await props.emitActWarning(context);
 		});
 
 		test('reports the act() warning text', () => {

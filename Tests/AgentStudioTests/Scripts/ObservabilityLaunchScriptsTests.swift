@@ -112,7 +112,6 @@ struct ObservabilityLaunchScriptsTests {
         #expect(!testHelperScript.contains("echo \"$output\" | grep -Eq \"unexpected signal code [0-9]+\""))
         for liveBridgeTransportTest in [
             "test_bridgeReady_gatesAndIsIdempotent",
-            "test_teardown_resetsBridgeReady",
             "test_schemeHandler_servesPackagedReactApp",
             "test_handleDiffCommandWithSmokeProvider_rendersReviewViewerShell",
             "test_sourceBackedInitialReviewLoad_rendersReviewViewerShell",
@@ -123,6 +122,7 @@ struct ObservabilityLaunchScriptsTests {
                 ))
         }
         for staleWebKitFilter in [
+            "BridgeTransportIntegrationTests/test_teardown_resetsBridgeReady",
             "test_pushJSON_transportFailure_setsConnectionHealthError",
             "test_requestWithId_emitsBridgeResponseEvent",
             "test_schemeHandler_servesAppHtml",

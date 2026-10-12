@@ -76,3 +76,19 @@ completion or handle its cancellation; never await it unbounded or uncaught.
 E2E journeys keep dependency-optimizer cold start outside their measured steps,
 and each live Vite server owns its cache directory. Standard:
 [Testing Architecture — BridgeWeb](../docs/architecture/testing/testing_architecture.md#bridgeweb).
+
+The declared 50 s browser `expect.poll` bound reports its named condition only
+for polls started within the first 10 s of a 60 s browser test. A later poll
+can reach the unchanged test hang bound with an unnamed runner failure. No
+current browser hooks poll; a poll in a hook is out of contract because the
+unchanged hook bound is 30 s. TQ78 (authoritative test-launch harness) owns
+remaining-test-time capping and pending-wait diagnostics; do not raise these
+bounds or introduce hook polls to work around that gap.
+
+The E2E launcher's caller passes its own test signal across preparation awaits.
+The finished hook joins pending browser launches and browser closure. It does
+not join the resumed test body's backend/fixture cleanup; the authoritative
+test-launch harness (#536, G1) owns those fixture lifetimes and their retirement
+join. The 500 s E2E poll bound is configured, not capped to remaining test time:
+late polls or shorter per-test bounds can still end in an unnamed runner failure,
+as deferred to TQ78.

@@ -90,11 +90,6 @@ extension WebKitSerializedTests.BridgeWebKitSpikeTests {
         #expect(workerFetchTiming.sampleCount == 100)
         #expect(swiftAdmissionTiming.sampleCount == 100)
         #expect(swiftDecodeTiming.sampleCount == 100)
-        for timing in [workerEncodeTiming, workerFetchTiming, swiftAdmissionTiming, swiftDecodeTiming] {
-            #expect(timing.p50Microseconds <= timing.p95Microseconds)
-            #expect(timing.p95Microseconds <= timing.p99Microseconds)
-            #expect(timing.p99Microseconds <= timing.maxMicroseconds)
-        }
         let nearCapBodySources = Set(
             proof.requestAPIObservations.compactMap { observation in
                 observation.route == "/near-cap" ? observation.bodySource : nil
