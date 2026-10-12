@@ -74,7 +74,8 @@ func loadSwiftLaneRunnerReportingSource() throws -> String {
 /// The child is awaited off the cooperative pool: on a 3-core CI runner a
 /// blocking wait here would starve every other suite's tasks.
 func runLaneScriptBash(
-    _ command: String, environment: [String: String]? = nil, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+    _ command: String, environment: [String: String]? = nil, innerWatchdog: LaneFixtureInnerWatchdog = .unarmed,
+    inheritedEnvironment: [String: String]? = nil
 ) async throws -> LaneScriptBashResult {
     try await withoutBlockingCooperativePool {
         let fixtureDirectory = FileManager.default.temporaryDirectory
@@ -91,13 +92,14 @@ func runLaneScriptBash(
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         let privatePaths = """
-            BUILD_PATH='\(fixtureDirectory.appending(path: "build").path)'
-            LANE_EVENT_STREAM_DIR='\(fixtureDirectory.appending(path: "events").path)'
+            BUILD_PATH=${BUILD_PATH-'\(fixtureDirectory.appending(path: "build").path)'}
+            LANE_EVENT_STREAM_DIR=${LANE_EVENT_STREAM_DIR-'\(fixtureDirectory.appending(path: "events").path)'}
 
             """
         process.arguments = ["-c", privatePaths + innerWatchdog.shellPreamble + command]
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-        process.environment = testProcessEnvironmentWithoutLaneState(environment ?? swiftTaskFixtureEnvironment())
+        process.environment = testProcessEnvironmentWithoutLaneState(
+            inheritedEnvironment ?? swiftTaskFixtureEnvironment(), overrides: environment ?? [:])
         process.environment?["TMPDIR"] = fixtureDirectory.path + "/"
         process.standardInput = FileHandle.nullDevice
         process.standardOutput = outputHandle

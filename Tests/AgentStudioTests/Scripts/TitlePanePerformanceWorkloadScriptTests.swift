@@ -308,7 +308,7 @@ struct TitlePanePerformanceWorkloadScriptTests {
 
         let fixtureURL = fixtureDirectory.appending(path: "proof.json")
         try JSONEncoder().encode(fixture).write(to: fixtureURL)
-        var environment = ProcessInfo.processInfo.environment
+        var environment: [String: String] = [:]
         environment["AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES"] = "1"
         environment["AGENTSTUDIO_TERMINAL_TITLE_CADENCE_PROOF_ROOT"] = fixtureDirectory.path
         environment["AGENTSTUDIO_TRACE_NAME"] = "terminal-title-cadence-fixture"

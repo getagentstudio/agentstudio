@@ -10,11 +10,14 @@ package struct ExitedProcessOutput: Sendable {
 }
 
 /// A fixture owns runner state. Parent registries, PIDs, receipts, relays and
-/// build-slot claims must not cross this subprocess boundary, including when a
-/// caller supplies an environment copied from its parent. Other caller values
-/// remain intact; fixture-owned runner state is configured inside its script.
-package func testProcessEnvironmentWithoutLaneState(_ environment: [String: String]? = nil) -> [String: String] {
-    var isolatedEnvironment = environment ?? ProcessInfo.processInfo.environment
+/// build-slot claims must not cross this subprocess boundary through inheritance.
+/// Filter inherited parent state first, then retain explicit caller-owned values.
+/// Callers must filter a parent map before adding their fixture inputs.
+/// An injected parent snapshot lets tests exercise inheritance without global mutation.
+package func testProcessEnvironmentWithoutLaneState(
+    _ inheritedEnvironment: [String: String]? = nil, overrides: [String: String] = [:]
+) -> [String: String] {
+    var isolatedEnvironment = inheritedEnvironment ?? ProcessInfo.processInfo.environment
     for name in Array(isolatedEnvironment.keys) {
         if name.hasPrefix("LANE_") || name.hasPrefix("SWIFT_TEST_")
             || name.hasPrefix("SWIFT_BUILD_") || name == "AGENTSTUDIO_HELD_STEP_LOG"
@@ -23,7 +26,7 @@ package func testProcessEnvironmentWithoutLaneState(_ environment: [String: Stri
             isolatedEnvironment.removeValue(forKey: name)
         }
     }
-    return isolatedEnvironment
+    return isolatedEnvironment.merging(overrides) { _, callerValue in callerValue }
 }
 
 /// Runs a subprocess to exit with no per-test elapsed-time budget.
@@ -50,12 +53,16 @@ package func testProcessEnvironmentWithoutLaneState(_ environment: [String: Stri
 ///
 /// Cancelling the awaiting task terminates the child, so a product owner that
 /// cancels its own work still ends the process it started.
+/// A supplied `environment` remains a complete replacement, so intentionally
+/// omitted authority cannot return from the ambient environment. To exercise a
+/// parent plus fixture overrides, supply `inheritedEnvironment` explicitly.
 package func runProcessToExit(
     executableURL: URL,
     arguments: [String],
     currentDirectoryURL: URL? = nil,
     environment: [String: String]? = nil,
-    standardInput: FileHandle? = nil
+    standardInput: FileHandle? = nil,
+    inheritedEnvironment: [String: String]? = nil
 ) async throws -> ExitedProcessOutput {
     let captureDirectory = try FileManager.default.url(
         for: .itemReplacementDirectory,
@@ -82,7 +89,8 @@ package func runProcessToExit(
     if let currentDirectoryURL {
         process.currentDirectoryURL = currentDirectoryURL
     }
-    process.environment = testProcessEnvironmentWithoutLaneState(environment)
+    let parentEnvironment = inheritedEnvironment ?? (environment == nil ? ProcessInfo.processInfo.environment : [:])
+    process.environment = testProcessEnvironmentWithoutLaneState(parentEnvironment, overrides: environment ?? [:])
     process.standardOutput = standardOutputHandle
     process.standardError = standardErrorHandle
     if let standardInput { process.standardInput = standardInput }
@@ -120,17 +128,16 @@ package func runCommandToExit(
     command: String,
     arguments: [String],
     currentDirectoryURL: URL? = nil,
-    environment: [String: String]? = nil
+    environment: [String: String]? = nil,
+    inheritedEnvironment: [String: String]? = nil
 ) async throws -> CommandRunResult {
-    var mergedEnvironment = ProcessInfo.processInfo.environment
-    if let environment {
-        mergedEnvironment.merge(environment) { _, callerValue in callerValue }
-    }
+    let mergedEnvironment = testProcessEnvironmentWithoutLaneState(inheritedEnvironment, overrides: environment ?? [:])
     let output = try await runProcessToExit(
         executableURL: URL(fileURLWithPath: "/usr/bin/env"),
         arguments: [try await TestToolResolver.resolveCommand(command)] + arguments,
         currentDirectoryURL: currentDirectoryURL,
-        environment: CommandEnvironment.normalized(mergedEnvironment)
+        environment: CommandEnvironment.normalized(mergedEnvironment),
+        inheritedEnvironment: [:]
     )
     return CommandRunResult(
         exitCode: Int(output.terminationStatus),

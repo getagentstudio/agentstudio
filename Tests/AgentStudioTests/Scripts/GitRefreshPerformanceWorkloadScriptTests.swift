@@ -707,7 +707,7 @@ struct GitRefreshPerformanceWorkloadScriptTests {
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = arguments
             process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, newValue in newValue }
+            process.environment = testProcessEnvironmentWithoutLaneState(overrides: environment)
             process.standardOutput = stdoutHandle
             process.standardError = stderrHandle
 

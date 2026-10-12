@@ -4,26 +4,37 @@ import Darwin
 import Foundation
 import Testing
 
-private enum OuterStateFixtureLauncher: String, CaseIterable, Sendable {
+enum OuterStateFixtureLauncher: String, CaseIterable, Sendable {
     case laneScript
     case subprocess
     case command
+    case buildSlot
 
-    func run(_ command: String, environment: [String: String]) async throws -> LaneScriptBashResult {
+    func run(
+        _ command: String, environment: [String: String] = [:], inheritedEnvironment: [String: String]? = nil
+    ) async throws -> LaneScriptBashResult {
         switch self {
         case .laneScript:
-            return try await runLaneScriptBash(command, environment: environment)
+            return try await runLaneScriptBash(
+                command, environment: environment, inheritedEnvironment: inheritedEnvironment)
         case .subprocess:
             let result = try await runProcessToExit(
-                executableURL: URL(fileURLWithPath: "/bin/bash"), arguments: ["-c", command], environment: environment)
+                executableURL: URL(fileURLWithPath: "/bin/bash"), arguments: ["-c", command], environment: environment,
+                inheritedEnvironment: inheritedEnvironment)
             guard let output = String(bytes: result.standardOutput + result.standardError, encoding: .utf8) else {
                 throw OuterStateFixtureLaunchError.invalidOutputEncoding
             }
             return LaneScriptBashResult(exitCode: result.terminationStatus, output: output)
         case .command:
             let result = try await runCommandToExit(
-                command: "/bin/bash", arguments: ["-c", command], environment: environment)
+                command: "/bin/bash", arguments: ["-c", command], environment: environment,
+                inheritedEnvironment: inheritedEnvironment)
             return LaneScriptBashResult(exitCode: Int32(result.exitCode), output: result.stdout + result.stderr)
+        case .buildSlot:
+            let fixture = try SwiftBuildSlotFixture(inheritedEnvironment: inheritedEnvironment)
+            defer { try? FileManager.default.removeItem(at: fixture.rootURL) }
+            let result = try await fixture.run(command, environment: environment)
+            return LaneScriptBashResult(exitCode: result.exitCode, output: result.output)
         }
     }
 }
@@ -92,19 +103,20 @@ extension SwiftLaneRunnerReportTests {
         environment["CI"] = "true"
         environment["GITHUB_ACTIONS"] = "true"
         environment["SWIFT_BUILD_DIR"] = ".build-ci"
-        environment["FIXTURE_CALLER_VALUE"] = "kept"
+        let helperPath = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appending(path: "scripts/swift-test-helpers.sh").path
         let fixture = try await launcher.run(
             #"""
             set -euo pipefail
             set +m
-            source scripts/swift-test-helpers.sh
+            source '\#(helperPath)'
             LOG_PREFIX=outer-state-probe
             swift_test_signal_active_command_groups USR1
             swift_test_terminate_active_isolated_suites
             swift_test_cleanup_active_command_groups_directory
             [ "$FIXTURE_CALLER_VALUE" = kept ]
             printf 'FIXTURE_CLOSED\n'
-            """#, environment: environment)
+            """#, environment: ["FIXTURE_CALLER_VALUE": "kept"], inheritedEnvironment: environment)
         // O_RDWR prevents opening the writer from blocking if the bad fixture
         // already killed the reader. Awaiting sentinel supplies its closing fact.
         let closing = try await runCommandToExit(
