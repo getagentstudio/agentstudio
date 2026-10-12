@@ -60,10 +60,10 @@ interface AppliedReviewPublicationWithDisplayed extends AppliedReviewPublication
 }
 
 describe('Bridge Viewer proportional Review refresh E2E', () => {
-	test('keeps an unchanged selected item mounted without unrelated content opens after one changed worktree file', async () => {
+	test('keeps an unchanged selected item mounted without unrelated content opens after one changed worktree file', async (context) => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let server: Awaited<ReturnType<typeof startBridgeViewerOwnedViteProductServer>> | null = null;
-		const browser = await launchBridgeViewerE2EChromium();
+		const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 		let page: Page | null = null;
 		let appliedPublications: ReturnType<typeof observeAppliedReviewPublications> | null = null;
 		let primaryFailure: { readonly error: unknown } | null = null;

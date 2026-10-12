@@ -50,6 +50,7 @@ struct ArchitectureSwiftLintRulesTests {
         #expect(ratchetScript.contains("\"Tools/AgentStudioArchitectureLint/process-singleton-ledger.tsv\""))
         #expect(ratchetScript.contains("\"Tools/AgentStudioArchitectureLint/silent-return-test-ledger.tsv\""))
         #expect(ratchetScript.contains("\"BridgeWeb/architecture-debt-ledger.tsv\""))
+        #expect(ratchetScript.contains("\"BridgeWeb/architecture-debt-ledger-wait-budgets.tsv\""))
         #expect(ciWorkflow.contains("fetch-depth: 0"))
         #expect(!ciWorkflow.contains(legacyBuildToolName))
         #expect(!ciWorkflow.contains("ripgrep"))
