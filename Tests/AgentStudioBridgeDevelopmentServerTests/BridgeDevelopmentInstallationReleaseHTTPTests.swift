@@ -9,9 +9,9 @@ import Testing
 @testable import AgentStudioBridgeDevelopmentServer
 @testable import AgentStudioCore
 
-@MainActor
-@Suite("Bridge development acknowledged installation release", .serialized)
+@Suite("Bridge development acknowledged installation release")
 struct BridgeDevelopmentInstallationReleaseHTTPTests {
+    @MainActor
     @Test("acknowledged release admits a different tab and stale release cannot retire its successor")
     func acknowledgedReleaseAdmitsDifferentTab() async throws {
         // Arrange: real development host, router and a live metadata stream.

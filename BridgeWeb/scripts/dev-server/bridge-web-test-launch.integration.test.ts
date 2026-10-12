@@ -129,8 +129,11 @@ test('Vite optimizer output is joined before launch-root retirement', async () =
 	}
 });
 
+// Diagnostic only: this direct Vite driver observes the detached temp-directory
+// effect and compares pathname isolation. The production disposal barrier is
+// proved by the held-output test below, not by this standalone root removal.
 test.each(['legacy', 'isolated'] as const)(
-	'Vite optimizer cache retirement is path-isolated: %s',
+	'Vite optimizer detached-temp observation: %s',
 	async (mode) => {
 		const child = spawn(
 			process.execPath,
