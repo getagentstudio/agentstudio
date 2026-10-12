@@ -6,79 +6,30 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
-import { createServer as createViteServer, type ViteDevServer } from 'vite';
 import { afterEach, describe, expect, test } from 'vitest';
 
 import { installBridgeProductFileBatch } from '../../src/core/comm-worker/bridge-product-file-batch-installer.js';
-import {
-	runAllOwnedCleanupOperations,
-	startOwnedBridgeDevelopmentServer,
-	type OwnedBridgeDevelopmentServer,
-} from '../dev-server/bridge-development-server-process.js';
+import { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import { BridgeVerifierProductFileSession } from './product-file-session.js';
 
-const viteConfigFile = fileURLToPath(new URL('../../vite.config.ts', import.meta.url));
 const repoRootPath = fileURLToPath(new URL('../../..', import.meta.url));
 const execFileAsync = promisify(execFile);
 
 describe('Bridge verifier product File session', () => {
-	let bridgeDevelopmentServer: OwnedBridgeDevelopmentServer | null = null;
-	let bridgeDevelopmentServerDataRootPath: string | null = null;
+	let launch: BridgeWebTestLaunch | null = null;
 	let bridgeDevelopmentServerWorktreeRootPath: string | null = null;
-	let viteServer: ViteDevServer | null = null;
 	let currentPhase = 'notStarted';
 	const initialBackendOrigin = process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'];
 
 	afterEach(async (): Promise<void> => {
 		process.stderr.write(`[product-file-session] cleanup after phase=${currentPhase}\n`);
-		const ownedViteServer = viteServer;
-		const ownedBridgeDevelopmentServer = bridgeDevelopmentServer;
-		const ownedBridgeDevelopmentServerDataRootPath = bridgeDevelopmentServerDataRootPath;
-		const ownedBridgeDevelopmentServerWorktreeRootPath = bridgeDevelopmentServerWorktreeRootPath;
-		viteServer = null;
-		bridgeDevelopmentServer = null;
-		bridgeDevelopmentServerDataRootPath = null;
-		bridgeDevelopmentServerWorktreeRootPath = null;
 		try {
-			await runAllOwnedCleanupOperations({
-				operations: [
-					{
-						name: 'integration Vite server',
-						run: async (): Promise<void> => {
-							await ownedViteServer?.close();
-						},
-					},
-					{
-						name: 'integration Swift development backend',
-						run: async (): Promise<void> => {
-							await ownedBridgeDevelopmentServer?.stop();
-						},
-					},
-					{
-						name: 'integration Swift development backend worktree fixture',
-						run: async (): Promise<void> => {
-							if (ownedBridgeDevelopmentServerWorktreeRootPath !== null) {
-								await rm(ownedBridgeDevelopmentServerWorktreeRootPath, {
-									force: true,
-									recursive: true,
-								});
-							}
-						},
-					},
-					{
-						name: 'integration Swift development backend data root',
-						run: async (): Promise<void> => {
-							if (ownedBridgeDevelopmentServerDataRootPath !== null) {
-								await rm(ownedBridgeDevelopmentServerDataRootPath, {
-									force: true,
-									recursive: true,
-								});
-							}
-						},
-					},
-				],
-			});
+			await launch?.dispose();
 		} finally {
+			launch = null;
+			if (bridgeDevelopmentServerWorktreeRootPath !== null)
+				await rm(bridgeDevelopmentServerWorktreeRootPath, { force: true, recursive: true });
+			bridgeDevelopmentServerWorktreeRootPath = null;
 			if (initialBackendOrigin === undefined) {
 				delete process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'];
 			} else {
@@ -90,9 +41,6 @@ describe('Bridge verifier product File session', () => {
 	test('proves source, tree, descriptor, content, cancellation, and stream closure through the typed carrier', async () => {
 		// Arrange
 		currentPhase = 'fixture.creating';
-		bridgeDevelopmentServerDataRootPath = await mkdtemp(
-			join(tmpdir(), 'bridge-product-file-development-server-'),
-		);
 		bridgeDevelopmentServerWorktreeRootPath = await mkdtemp(
 			join(tmpdir(), 'bridge-product-file-worktree-'),
 		);
@@ -125,46 +73,25 @@ describe('Bridge verifier product File session', () => {
 			'fixture base',
 		]);
 		currentPhase = 'backend.starting';
-		bridgeDevelopmentServer = await startOwnedBridgeDevelopmentServer({
-			dataRootPath: bridgeDevelopmentServerDataRootPath,
-			initialTarget: 'HEAD',
-			paneId: randomUUID(),
-			repoRootPath,
-			worktreeRoot: bridgeDevelopmentServerWorktreeRootPath,
+		launch = await BridgeWebTestLaunch.start({
+			backend: {
+				initialTarget: 'HEAD',
+				paneId: randomUUID(),
+				repoRootPath,
+				worktreeRoot: bridgeDevelopmentServerWorktreeRootPath,
+			},
 		});
-		process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] = bridgeDevelopmentServer.origin;
-		let resolveMetadataStreamClosed: (() => void) | null = null;
-		const metadataStreamClosed = new Promise<void>((resolve): void => {
-			resolveMetadataStreamClosed = resolve;
+		process.env['BRIDGE_WEB_DEV_BACKEND_ORIGIN'] = launch.backend.origin;
+		currentPhase = 'vite.starting';
+		const viteServer = await launch.startViteChild({
+			bridgeWebRootPath: fileURLToPath(new URL('../../', import.meta.url)),
+			observeMetadataResponses: true,
 		});
-		currentPhase = 'vite.creating';
-		viteServer = await createViteServer({
-			configFile: viteConfigFile,
-			logLevel: 'silent',
-			plugins: [
-				{
-					configureServer(server): void {
-						server.middlewares.use((request, response, next): void => {
-							if (request.url?.startsWith('/__bridge-product/stream') === true) {
-								response.once('close', (): void => resolveMetadataStreamClosed?.());
-							}
-							next();
-						});
-					},
-					enforce: 'pre',
-					name: 'bridge-verifier-product-file-session-close-observer',
-				},
-			],
-			server: { host: '127.0.0.1', port: 0, strictPort: false },
-		});
-		currentPhase = 'vite.listening';
-		await viteServer.listen();
-		const address = viteServer.httpServer?.address();
-		if (address === undefined || address === null || typeof address === 'string') {
-			throw new Error('Expected a live Vite TCP address.');
-		}
+		const metadataResponses = launch.observeViteMetadataResponses(
+			'verifier-owned metadata response close',
+		);
 		const session = new BridgeVerifierProductFileSession({
-			baseUrl: `http://127.0.0.1:${address.port}`,
+			baseUrl: viteServer.startProof.origin,
 			scenarioName: 'current-worktree',
 		});
 
@@ -213,7 +140,9 @@ describe('Bridge verifier product File session', () => {
 		currentPhase = 'session.closing';
 		await session.close();
 		currentPhase = 'metadataStream.waitingClosed';
-		await metadataStreamClosed;
+		const closedResponse = await metadataResponses.next();
+		expect(closedResponse).toMatchObject({ kind: 'metadata-response-closed', requestSequence: 1 });
+		metadataResponses.close();
 
 		// Assert
 		currentPhase = 'assertions';

@@ -1,13 +1,13 @@
 import type { Browser, Page } from 'playwright';
 
-const productJourneyOwnedDeadlineMilliseconds = 120_000;
-
 export interface OwnedProductJourneyDeadline {
 	readonly dispose: () => Promise<void>;
 	readonly waitFor: <TValue>(promise: Promise<TValue>, label: string) => Promise<TValue>;
 }
 
 export function createOwnedProductJourneyDeadline(props: {
+	readonly signal: AbortSignal;
+	readonly observeWait?: <TValue>(promise: Promise<TValue>, label: string) => Promise<TValue>;
 	readonly browser: Pick<Browser, 'close'>;
 	readonly page: Pick<Page, 'close'>;
 	readonly onDeadline?: (reason: Error) => void;
@@ -16,7 +16,7 @@ export function createOwnedProductJourneyDeadline(props: {
 	const deadlineReason = 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED';
 	let expired = false;
 	const waiters = new Map<(error: Error) => void, string>();
-	const timeout = setTimeout((): void => {
+	const abort = (): void => {
 		expired = true;
 		props.onDeadline?.(new Error(deadlineReason));
 		for (const [reject, label] of waiters)
@@ -27,9 +27,12 @@ export function createOwnedProductJourneyDeadline(props: {
 			page: props.page,
 			reason: deadlineReason,
 		});
-	}, productJourneyOwnedDeadlineMilliseconds);
+	};
+	props.signal.addEventListener('abort', abort, { once: true });
+	if (props.signal.aborted) abort();
 	return {
-		waitFor: <TValue>(promise: Promise<TValue>, label: string): Promise<TValue> => {
+		waitFor: <TValue>(input: Promise<TValue>, label: string): Promise<TValue> => {
+			const promise = props.observeWait?.(input, label) ?? input;
 			if (expired) {
 				void promise.catch((): void => {});
 				return Promise.reject(new Error(`${deadlineReason}: awaiting ${label}`));
@@ -42,7 +45,7 @@ export function createOwnedProductJourneyDeadline(props: {
 			});
 		},
 		dispose: async (): Promise<void> => {
-			clearTimeout(timeout);
+			props.signal.removeEventListener('abort', abort);
 			await deadlineCleanup;
 		},
 	};

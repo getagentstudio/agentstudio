@@ -62,8 +62,8 @@ struct BridgePaneProductFileSharedConstructionTests {
         await assertBridgeConstructionCoordinatorDrained(coordinator)
     }
 
-    @Test("preparation accounting includes retained ignore and status payloads")
-    func preparationAccountingIsNonzeroAndDeterministic() {
+    @Test("preparation accounting is larger than one path and deterministic")
+    func preparationAccountingExceedsOnePathAndIsDeterministic() {
         // Arrange
         let ignorePolicy = BridgeWorktreeFileIgnorePolicy(
             filesystemPathFilter: .empty,

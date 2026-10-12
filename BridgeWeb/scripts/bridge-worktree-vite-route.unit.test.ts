@@ -15,15 +15,17 @@ import {
 	resolveBridgeProductDevBackendOrigin,
 	resolveBridgeWebViteCacheDirectory,
 } from '../vite.config.js';
+import { bridgeDevelopmentInstallationReleaseRoute } from './dev-server/bridge-development-installation-release.ts';
 
 describe('BridgeWeb Vite product proxy', () => {
-	test('proxies exactly the five development product routes to one Swift backend origin', () => {
+	test('proxies the product routes and acknowledged development release to one Swift backend origin', () => {
 		const backendOrigin = 'http://127.0.0.1:43871';
 		const proxy = bridgeProductDevProxyConfiguration(backendOrigin);
 
 		expect(Object.keys(proxy)).toEqual([
 			BRIDGE_PRODUCT_DEV_HEALTH_ROUTE,
 			BRIDGE_PRODUCT_DEV_BOOTSTRAP_ROUTE,
+			bridgeDevelopmentInstallationReleaseRoute,
 			BRIDGE_PRODUCT_HTTP_COMMAND_ENDPOINT,
 			BRIDGE_PRODUCT_HTTP_STREAM_ENDPOINT,
 			BRIDGE_PRODUCT_HTTP_CONTENT_ENDPOINT,

@@ -4,8 +4,10 @@ import AgentStudioRepoExplorer
 import Foundation
 import Observation
 
-/// Temporary App composition snapshot for Repo Explorer command presentation.
-/// It is advisory only; command execution always re-enters `AppCommandDispatcher`.
+typealias RepoExplorerCommandCapabilityResolver =
+    @MainActor (Set<RepoExplorerCommandPresentationRequest>, UInt64) -> RepoExplorerCommandPresentationSnapshot
+
+/// Advisory App composition snapshot; execution re-enters the selected dispatcher.
 @MainActor
 @Observable
 final class RepoExplorerCommandPresentationBatch {
@@ -26,6 +28,7 @@ final class RepoExplorerCommandPresentationBatch {
         let isManagementLayerActive: Bool
         let sidebarSurface: SidebarSurface
         let paneGroupingMode: RepoExplorerGroupingMode
+        let executionOwners: CommandExecutionOwnerIdentities
 
         func globalCapabilitiesMatch(_ previous: Self) -> Bool {
             activeTabID == previous.activeTabID
@@ -34,6 +37,7 @@ final class RepoExplorerCommandPresentationBatch {
                 && isManagementLayerActive == previous.isManagementLayerActive
                 && sidebarSurface == previous.sidebarSurface
                 && paneGroupingMode == previous.paneGroupingMode
+                && executionOwners == previous.executionOwners
         }
     }
 
@@ -79,7 +83,8 @@ final class RepoExplorerCommandPresentationBatch {
 
     private let store: WorkspaceStore
     private let repoExplorerPrefs: RepoExplorerSidebarPrefsAtom
-    private let dispatcher: AppCommandDispatcher
+    private let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    private let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     /// The onChange coalescing window, isolated behind a seam so tests can hold it open
     /// deterministically instead of racing `Task.yield()` scheduling.
@@ -101,13 +106,15 @@ final class RepoExplorerCommandPresentationBatch {
     init(
         store: WorkspaceStore,
         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom,
-        dispatcher: AppCommandDispatcher,
+        resolveCommandCapabilities: @escaping RepoExplorerCommandCapabilityResolver,
+        executionOwnerIdentities: @escaping @MainActor () -> CommandExecutionOwnerIdentities,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         coalescingYield: @escaping @MainActor @Sendable () async -> Void = { await Task.yield() }
     ) {
         self.store = store
         self.repoExplorerPrefs = repoExplorerPrefs
-        self.dispatcher = dispatcher
+        self.resolveCommandCapabilities = resolveCommandCapabilities
+        self.executionOwnerIdentities = executionOwnerIdentities
         self.performanceTraceRecorder = performanceTraceRecorder
         self.coalescingYield = coalescingYield
     }
@@ -233,10 +240,7 @@ final class RepoExplorerCommandPresentationBatch {
         let resolvedResults =
             requestsToResolve.isEmpty
             ? [:]
-            : dispatcher.repoExplorerCommandPresentationSnapshot(
-                requests: requestsToResolve,
-                generation: nextGeneration
-            ).results
+            : resolveCommandCapabilities(requestsToResolve, nextGeneration).results
         let nextSnapshot = RepoExplorerCommandPresentationSnapshot(
             generation: nextGeneration,
             results: retainedResults.merging(resolvedResults) { _, resolved in resolved },
@@ -429,7 +433,8 @@ final class RepoExplorerCommandPresentationBatch {
             activeTabZoom: activeTabZoom,
             isManagementLayerActive: isManagementLayerActive,
             sidebarSurface: sidebarSurface,
-            paneGroupingMode: paneGroupingMode
+            paneGroupingMode: paneGroupingMode,
+            executionOwners: executionOwnerIdentities()
         )
     }
 

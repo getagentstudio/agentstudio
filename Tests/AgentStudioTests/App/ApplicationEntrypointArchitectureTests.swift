@@ -151,8 +151,9 @@ struct ApplicationEntrypointArchitectureTests {
         #expect(startupDiagnosticsSource.contains("AgentStudioStartupDiagnosticAction.fromEnvironment()"))
         #expect(startupDiagnosticsSource.contains("\"agentstudio.performance.sidebar.surface\": .string(\"repo\")"))
         #expect(startupDiagnosticsSource.contains(".string(projectionTrigger.rawValue)"))
-        #expect(startupDiagnosticsSource.contains("AppCommandDispatcher.shared.dispatch(.newTab)"))
-        #expect(startupDiagnosticsSource.contains("AppCommandDispatcher.shared.dispatch(.showCommandBarEverything)"))
+        #expect(startupDiagnosticsSource.contains("self.commandDispatcherForBoot().dispatch(.newTab)"))
+        #expect(
+            startupDiagnosticsSource.contains("self.commandDispatcherForBoot().dispatch(.showCommandBarEverything)"))
         #expect(startupDiagnosticsSource.contains("commandBarController.setQueryText(\"# repo\")"))
         try assertCommandBarRepoFilterEmitsTerminalCompletion(startupDiagnosticsSource)
         #expect(startupDiagnosticsSource.contains("handleWatchFolderRequested(startingAt: folderURL)"))
@@ -223,7 +224,7 @@ struct ApplicationEntrypointArchitectureTests {
             diagnosticSource.contains(
                 "atomStore.core.workspaceSidebarState.setSidebarSurface(.repos)"))
         #expect(diagnosticSource.contains("mainWindowController?.expandSidebar()"))
-        #expect(!diagnosticSource.contains("AppCommandDispatcher.shared.dispatch(.showWorktreeSidebar)"))
+        #expect(!diagnosticSource.contains("self.commandDispatcherForBoot().dispatch(.showWorktreeSidebar)"))
         #expect(
             diagnosticSource.contains(
                 "await waitForRepoExplorerProjectionReadiness(fixture: fixture)"))

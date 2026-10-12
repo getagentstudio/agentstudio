@@ -22,7 +22,9 @@ struct TerminalFindGeometryIsolationTests {
         leftPaneHost.mountContentView(GeometryTestMountedContentView())
 
         let terminalPaneHost = PaneHostView(paneId: UUIDv7.generate())
-        let terminalMountView = TerminalPaneMountView(paneId: terminalPaneHost.paneId, title: "Terminal")
+        let terminalMountView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: terminalPaneHost.paneId,
+            title: "Terminal")
         terminalPaneHost.mountContentView(terminalMountView)
         let ghosttyMountView = try #require(
             terminalMountView.subviews.compactMap { $0 as? GhosttyMountView }.first

@@ -46,6 +46,9 @@ struct InboxSidebarToolbarPresentationTests {
 
 @MainActor
 private final class InboxSidebarCommandDispatcherProbe: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     private let deniedCommands: Set<AppCommand>
 
     init(deniedCommands: Set<AppCommand>) {

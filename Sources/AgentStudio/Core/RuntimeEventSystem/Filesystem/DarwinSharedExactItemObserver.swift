@@ -42,6 +42,8 @@ package enum DarwinFSEventPathClassifier {
     ) -> DarwinFSEventClassification {
         var normalizedPathByRawPath: [String: String] = [:]
         normalizedPathByRawPath.reserveCapacity(rawEvents.count)
+        var privateStagingDecisionByNormalizedPath: [String: Bool] = [:]
+        privateStagingDecisionByNormalizedPath.reserveCapacity(rawEvents.count)
 
         func normalizedPath(for rawPath: String) -> String {
             if let existing = normalizedPathByRawPath[rawPath] {
@@ -50,6 +52,15 @@ package enum DarwinFSEventPathClassifier {
             let normalizedPath = normalize(rawPath)
             normalizedPathByRawPath[rawPath] = normalizedPath
             return normalizedPath
+        }
+
+        func isPrivateStagingRefPath(_ normalizedPath: String) -> Bool {
+            if let existing = privateStagingDecisionByNormalizedPath[normalizedPath] {
+                return existing
+            }
+            let isPrivateStagingRef = FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(normalizedPath)
+            privateStagingDecisionByNormalizedPath[normalizedPath] = isPrivateStagingRef
+            return isPrivateStagingRef
         }
 
         let canonicalScopes = observationScopes.map { scope in
@@ -64,7 +75,7 @@ package enum DarwinFSEventPathClassifier {
         let classifiedRawEvents = rawEvents.map { event in
             let candidate = normalizedPath(for: event.path)
             let hasRelevantMutation =
-                !FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(candidate)
+                !isPrivateStagingRefPath(candidate)
                 && canonicalScopes.contains { scope in
                     switch scope.kind {
                     case .item:
@@ -83,7 +94,7 @@ package enum DarwinFSEventPathClassifier {
         }
         let ordinaryWorktreePaths = ordinaryPaths.filter { path in
             let candidate = normalizedPath(for: path)
-            return !FilesystemPathFilter.isAgentStudioPrivateStagingRefPath(candidate)
+            return !isPrivateStagingRefPath(candidate)
                 && (candidate == rootPath || candidate.hasPrefix(rootPrefix))
         }
         return DarwinFSEventClassification(
@@ -169,6 +180,7 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
         let streamLifetime: any DarwinSharedExactItemStreamLifetime
         var exactPathsByWorktreeId: [UUID: Set<String>]
         var worktreeIdsByExactPath: [String: Set<UUID>]
+        var exactPathIndex = DarwinFSEventWatchedPathIndex(normalizedPaths: [])
         var latestEventId: FSEventStreamEventId?
         var latestActivitySettledEventId: FSEventStreamEventId?
         var pendingActivityDeliveryCount: Int
@@ -693,8 +705,8 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
             if rawEvent.flags & Self.uncertaintyFlags != 0 || cursorRegressed {
                 result.uncertainWorktreeIds.formUnion(dependentWorktreeIds)
             } else {
-                for (exactPath, worktreeIds) in observer.worktreeIdsByExactPath
-                where exactPath.hasPrefix(normalizedPath + "/") {
+                for exactPath in observer.exactPathIndex.strictDescendants(of: normalizedPath) {
+                    let worktreeIds = observer.worktreeIdsByExactPath[exactPath] ?? []
                     for worktreeId in worktreeIds where bindingValidationByWorktreeId[worktreeId]?.isCurrent() == true {
                         ancestorItemsByWorktreeId[worktreeId, default: []].insert(exactPath)
                         ancestorEventIdByWorktreeId[worktreeId] = max(
@@ -773,6 +785,7 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
 
         for parentKey in allParentKeys {
             guard var observer = observerByParent[parentKey] else { continue }
+            let previousExactPathKeys = Set(observer.worktreeIdsByExactPath.keys)
             observer.unresolvedAncestorEntriesByWorktreeId.removeValue(forKey: worktreeId)
             let previousExactPaths = previousExactItemsByParent[parentKey] ?? []
             let desiredExactPaths = desiredExactItemsByParent[parentKey] ?? []
@@ -796,6 +809,11 @@ package final class DarwinSharedExactItemObserverRegistry: @unchecked Sendable {
                 observerByParent.removeValue(forKey: parentKey)
                 retiredStreamLifetimes.append(observer.streamLifetime)
             } else {
+                let exactPathKeys = Set(observer.worktreeIdsByExactPath.keys)
+                if exactPathKeys != previousExactPathKeys {
+                    // Bindings can change paths without replacing the parent stream.
+                    observer.exactPathIndex = DarwinFSEventWatchedPathIndex(normalizedPaths: Array(exactPathKeys))
+                }
                 observerByParent[parentKey] = observer
             }
         }

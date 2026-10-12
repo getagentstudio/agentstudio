@@ -613,12 +613,9 @@ struct PaneTabViewControllerTargetedPaneCommandTests {
         harness.store.appendTab(destinationTab)
         harness.store.setActiveTab(sourceTab.id)
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = harness.controller
-                AppCommandDispatcher.shared.appCommandRouter = nil
-            },
-            body: {
+        try await withCommandDispatcher(
+            harness.commandDispatcher,
+            body: { dispatcher in
                 atom(\.managementLayer).activate()
                 defer { atom(\.managementLayer).deactivate() }
                 let presentation = try #require(
@@ -626,7 +623,7 @@ struct PaneTabViewControllerTargetedPaneCommandTests {
                         command: .movePaneToTab,
                         surface: .inlineControl,
                         targetPaneId: sourcePane.id,
-                        dispatcher: AppCommandDispatcher.shared
+                        dispatcher: dispatcher
                     )
                 )
                 #expect(presentation.isEnabled)

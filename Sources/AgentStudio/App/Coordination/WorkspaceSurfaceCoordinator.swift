@@ -74,6 +74,9 @@ final class WorkspaceSurfaceCoordinator {
     let viewRegistry: ViewRegistry
     let runtime: SessionRuntime
     let surfaceManager: WorkspaceSurfaceManaging
+    let terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching
+    let terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations
+    let bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)?
     let startupTraceRecorder: AgentStudioStartupTraceRecorder?
     let runtimeRegistry: RuntimeRegistry
     let visibilityTierResolver: StoreVisibilityTierResolver
@@ -185,39 +188,14 @@ final class WorkspaceSurfaceCoordinator {
         undoCloses.map { $0.snapshot.restoreEntry }
     }
 
-    convenience init(
-        store: WorkspaceStore,
-        viewRegistry: ViewRegistry,
-        runtime: SessionRuntime,
-        windowLifecycleStore: WindowLifecycleAtom,
-        appLifecycleStore: AppLifecycleAtom = AppLifecycleAtom(),
-        ipcLifecycle: WorkspaceSurfaceIPCLifecycle,
-        bridgePaneAttendance: BridgePaneAttendanceAtom,
-        worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
-        worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil
-    ) {
-        self.init(
-            store: store,
-            viewRegistry: viewRegistry,
-            runtime: runtime,
-            surfaceManager: SurfaceManager.shared,
-            runtimeRegistry: .shared,
-            paneEventBus: PaneRuntimeEventBus.shared,
-            runtimeCommandClock: ContinuousClock(),
-            windowLifecycleStore: windowLifecycleStore,
-            appLifecycleStore: appLifecycleStore,
-            ipcLifecycle: ipcLifecycle,
-            bridgePaneAttendance: bridgePaneAttendance,
-            worktreeAnnotationStore: worktreeAnnotationStore,
-            worktreeAnnotationOutputCoordinator: worktreeAnnotationOutputCoordinator
-        )
-    }
-
     init(
         store: WorkspaceStore,
         viewRegistry: ViewRegistry,
         runtime: SessionRuntime,
         surfaceManager: WorkspaceSurfaceManaging,
+        terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching,
+        terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations,
+        bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
         runtimeRegistry: RuntimeRegistry,
         paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
@@ -281,6 +259,9 @@ final class WorkspaceSurfaceCoordinator {
         self.runtime = runtime
         self.ipcLifecycle = ipcLifecycle
         self.surfaceManager = surfaceManager
+        self.terminalSurfaceCommandDispatcher = terminalSurfaceCommandDispatcher
+        self.terminalSurfaceOperations = terminalSurfaceOperations
+        self.bridgePageCommandRunner = bridgePageCommandRunner
         self.startupTraceRecorder = startupTraceRecorder
         self.runtimeRegistry = runtimeRegistry
         self.visibilityTierResolver = visibilityTierResolver
@@ -306,7 +287,6 @@ final class WorkspaceSurfaceCoordinator {
         store.paneAtom.setAssociationOutcomeRecorder { [weak performanceTraceRecorder] outcome in
             performanceTraceRecorder?.recordPaneAssociationOutcome(outcome)
         }
-        Ghostty.App.setRuntimeRegistry(runtimeRegistry)
         setupPrePersistHook()
         setupFilesystemSourceSync()
         startPaneEventIngress()

@@ -6,6 +6,7 @@ import { expect, test } from 'vitest';
 
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import { observeSubscriptionReceiptQuiescence } from './bridge-viewer-vite-frame-acknowledgement-quiescence.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const acknowledgementCommandPath = '/__bridge-product/command';
 
@@ -131,54 +132,58 @@ async function issueHeldAcknowledgement(props: {
 	return request;
 }
 
-test('frame acknowledgement quiescence forgets a destroyed document’s acknowledgement', async (): Promise<void> => {
-	// Arrange: one held worker acknowledgement owed by the current document.
-	const origin = await startHeldAcknowledgementOrigin();
-	const browser: Browser = await launchBridgeViewerE2EChromium();
-	try {
-		const page = await browser.newPage();
-		const observer = observeSubscriptionReceiptQuiescence(page);
-		await page.goto(`${origin.origin}/`, { waitUntil: 'load' });
-		await issueHeldAcknowledgement({ origin, page });
-		expect(observer.pendingAcknowledgementCount()).toBe(1);
+test('frame acknowledgement quiescence forgets a destroyed document’s acknowledgement', async (context): Promise<void> => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+		// Arrange: one held worker acknowledgement owed by the current document.
+		const origin = await startHeldAcknowledgementOrigin();
+		const browser: Browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+		try {
+			const page = await browser.newPage();
+			const observer = observeSubscriptionReceiptQuiescence(page);
+			await page.goto(`${origin.origin}/`, { waitUntil: 'load' });
+			await issueHeldAcknowledgement({ origin, page });
+			expect(observer.pendingAcknowledgementCount()).toBe(1);
 
-		// Act: destroy the document that owes the acknowledgement.
-		await page.reload({ waitUntil: 'load' });
+			// Act: destroy the document that owes the acknowledgement.
+			await page.reload({ waitUntil: 'load' });
 
-		// Assert: a destroyed document owes nothing, so the observer is quiescent.
-		expect(observer.pendingAcknowledgementCount()).toBe(0);
-		await observer.wait();
-	} finally {
-		await browser.close();
-		await origin.close();
-	}
+			// Assert: a destroyed document owes nothing, so the observer is quiescent.
+			expect(observer.pendingAcknowledgementCount()).toBe(0);
+			await observer.wait();
+		} finally {
+			await browser.close();
+			await origin.close();
+		}
+	});
 });
 
-test('frame acknowledgement quiescence still observes the document created by the reload', async (): Promise<void> => {
-	// Arrange: an acknowledgement owed by the pre-reload document, then a fresh document.
-	const origin = await startHeldAcknowledgementOrigin();
-	const browser: Browser = await launchBridgeViewerE2EChromium();
-	try {
-		const page = await browser.newPage();
-		const observer = observeSubscriptionReceiptQuiescence(page);
-		await page.goto(`${origin.origin}/`, { waitUntil: 'load' });
-		await issueHeldAcknowledgement({ origin, page });
-		await page.reload({ waitUntil: 'load' });
+test('frame acknowledgement quiescence still observes the document created by the reload', async (context): Promise<void> => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+		// Arrange: an acknowledgement owed by the pre-reload document, then a fresh document.
+		const origin = await startHeldAcknowledgementOrigin();
+		const browser: Browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+		try {
+			const page = await browser.newPage();
+			const observer = observeSubscriptionReceiptQuiescence(page);
+			await page.goto(`${origin.origin}/`, { waitUntil: 'load' });
+			await issueHeldAcknowledgement({ origin, page });
+			await page.reload({ waitUntil: 'load' });
 
-		// Act: the new document's worker owes an acknowledgement of its own.
-		const reloadedAcknowledgement = await issueHeldAcknowledgement({ origin, page });
+			// Act: the new document's worker owes an acknowledgement of its own.
+			const reloadedAcknowledgement = await issueHeldAcknowledgement({ origin, page });
 
-		// Assert: the navigation did not blind the observer, and settling the live request drains it.
-		expect(observer.pendingAcknowledgementCount()).toBe(1);
-		const acknowledgementFinished = page.waitForEvent(
-			'requestfinished',
-			(request: Request): boolean => request === reloadedAcknowledgement,
-		);
-		origin.releaseHeldAcknowledgements();
-		await acknowledgementFinished;
-		expect(observer.pendingAcknowledgementCount()).toBe(0);
-	} finally {
-		await browser.close();
-		await origin.close();
-	}
+			// Assert: the navigation did not blind the observer, and settling the live request drains it.
+			expect(observer.pendingAcknowledgementCount()).toBe(1);
+			const acknowledgementFinished = page.waitForEvent(
+				'requestfinished',
+				(request: Request): boolean => request === reloadedAcknowledgement,
+			);
+			origin.releaseHeldAcknowledgements();
+			await acknowledgementFinished;
+			expect(observer.pendingAcknowledgementCount()).toBe(0);
+		} finally {
+			await browser.close();
+			await origin.close();
+		}
+	});
 });

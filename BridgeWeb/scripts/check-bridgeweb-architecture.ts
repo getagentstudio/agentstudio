@@ -5,8 +5,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import ts from 'typescript';
 
-import { loadDebtLedger, reconcileDebtLedger } from './check-bridgeweb-architecture-debt-ledger.ts';
-import { findTimedWaitsInTestImportClosure } from './check-bridgeweb-architecture-timed-waits.ts';
+import { reconcileArchitectureLedgers } from './check-bridgeweb-architecture-ledgers.ts';
+import * as timedWaits from './check-bridgeweb-architecture-timed-waits.ts';
 
 type RuleId =
 	| 'max-file-lines'
@@ -24,7 +24,7 @@ type RuleId =
 	| 'no-typescript-live-product-authority'
 	| 'core-imports-app-protocol'
 	| 'product-endpoint-boundary'
-	| 'no-timed-wait-in-tests';
+	| timedWaits.TimedWaitRuleId;
 
 export interface ArchitectureViolation {
 	readonly ruleId: RuleId;
@@ -72,8 +72,12 @@ interface AddViolationProps {
 
 const defaultPackageRootPath = fileURLToPath(new URL('../', import.meta.url));
 const checkedExtensions = new Set(['.ts', '.tsx']);
-const debtLedgerRelativePath = 'architecture-debt-ledger.tsv';
-const debtLedgerRuleIds: ReadonlySet<string> = new Set<RuleId>(['no-timed-wait-in-tests']);
+const debtLedgerRuleIds: ReadonlySet<string> = new Set<RuleId>([
+	'no-timed-wait-in-tests',
+	'no-vitest-wait-options',
+	'no-vitest-wait-calls',
+	'no-playwright-timeout-options',
+]);
 const ignoredDirectoryNames = new Set(['node_modules', 'dist', 'coverage', '.vite']);
 const maxSourceFileLineCount = 1000;
 const bridgeProductEndpointAdapterPaths = new Set([
@@ -123,34 +127,27 @@ export async function checkBridgeWebArchitecture(
 		),
 	);
 	const repositoryPathPrefix = props.repositoryPathPrefix ?? 'BridgeWeb/';
-	const ledger = await loadDebtLedger({
-		filePath: join(packageRootPath, debtLedgerRelativePath),
-		isLedgerRuleId,
-		sourcePath: `${repositoryPathPrefix}${debtLedgerRelativePath}`,
+	// One import-closure analysis covers all wait rules; product deadlines stay excluded.
+	const timedWaitSites = timedWaits.findAllTimedWaitsInTestImportClosure({
+		packageRootPath,
+		sourceFiles: parsedSourceFiles,
 	});
-	const violations = reconcileDebtLedger(
-		{
-			ledger,
-			lintedPaths: new Set(parsedSourceFiles.map((parsed): string => parsed.relativePath)),
+	const standardSites = [
+		...parsedSourceFiles.flatMap(checkSourceFile),
+		...timedWaitSites.filter((site): boolean => site.ruleId === 'no-timed-wait-in-tests'),
+	];
+	const waitBudgetSites = timedWaitSites.filter(
+		(site): boolean => site.ruleId !== 'no-timed-wait-in-tests',
+	);
+	const violations = (
+		await reconcileArchitectureLedgers({
+			packageRootPath,
+			parsedSourceFiles,
 			repositoryPathPrefix,
-			sites: [
-				...parsedSourceFiles.flatMap(checkSourceFile),
-				// Judged across files: a test answers for the harness modules it imports.
-				...findTimedWaitsInTestImportClosure({
-					packageRootPath,
-					sourceFiles: parsedSourceFiles,
-				}).map(
-					(finding): ArchitectureViolation => ({ ...finding, ruleId: 'no-timed-wait-in-tests' }),
-				),
-			],
-		},
-		(entry, message): ArchitectureViolation => ({
-			column: 1,
-			line: entry.line,
-			message,
-			relativePath: debtLedgerRelativePath,
-			ruleId: entry.ruleId,
-		}),
+			standardSites,
+			waitBudgetSites,
+			isLedgerRuleId,
+		})
 	).toSorted(compareViolations);
 
 	return {

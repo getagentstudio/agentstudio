@@ -7,23 +7,50 @@ import Foundation
 import Observation
 import os
 
+/// A comparison key for selected command owners; it cannot resolve or retain an owner.
+struct CommandExecutionOwnerIdentities: Equatable, Sendable {
+    let shellOwnerID: ObjectIdentifier?
+    let workspaceOwnerID: ObjectIdentifier?
+}
+
 /// App-owned execution point for keyboard, menu, command-bar, and management commands.
 @Observable
 @MainActor
 final class AppCommandDispatcher: AppCommandDispatching {
-    static let shared = AppCommandDispatcher()
     private static let logger = Logger(subsystem: "com.agentstudio", category: "AppCommandDispatcher")
 
     private(set) var definitions: [AppCommand: AppCommandSpec] = [:]
-    weak var handler: WorkspaceCommandHandling?
-    weak var appCommandRouter: ShellCommandHandling?
-    var interactionProbe: AgentStudioInteractionPerformanceProbe?
-    var onCommandRefreshAccepted: (@MainActor (UUID) -> Void)?
+    struct Dependencies {
+        let shellOwnerAccess: @MainActor () -> (any ShellCommandHandling)?
+        let workspaceOwnerAccess: @MainActor () -> (any WorkspaceCommandHandling)?
+        let interactionProbeAccess: @MainActor () -> AgentStudioInteractionPerformanceProbe?
+        let commandRefreshAccepted: @MainActor (UUID) -> Void
+    }
 
-    private init() {
+    private let shellOwnerAccess: @MainActor () -> (any ShellCommandHandling)?
+    private let workspaceOwnerAccess: @MainActor () -> (any WorkspaceCommandHandling)?
+    private let interactionProbeAccess: @MainActor () -> AgentStudioInteractionPerformanceProbe?
+    private let commandRefreshAccepted: @MainActor (UUID) -> Void
+
+    private var handler: (any WorkspaceCommandHandling)? { workspaceOwnerAccess() }
+    private var appCommandRouter: (any ShellCommandHandling)? { shellOwnerAccess() }
+    private var interactionProbe: AgentStudioInteractionPerformanceProbe? { interactionProbeAccess() }
+
+    init(dependencies: Dependencies) {
+        shellOwnerAccess = dependencies.shellOwnerAccess
+        workspaceOwnerAccess = dependencies.workspaceOwnerAccess
+        interactionProbeAccess = dependencies.interactionProbeAccess
+        commandRefreshAccepted = dependencies.commandRefreshAccepted
         for definition in AppCommand.allCases.map(\.definition) {
             definitions[definition.command] = definition
         }
+    }
+
+    func executionOwnerIdentities() -> CommandExecutionOwnerIdentities {
+        CommandExecutionOwnerIdentities(
+            shellOwnerID: appCommandRouter.map { ObjectIdentifier($0) },
+            workspaceOwnerID: handler.map { ObjectIdentifier($0) }
+        )
     }
 
     @discardableResult
@@ -52,7 +79,7 @@ final class AppCommandDispatcher: AppCommandDispatching {
 
         let correlationId = UUIDv7.generate()
         interactionProbe?.beginInteraction(.commandRefresh, correlationId: correlationId)
-        onCommandRefreshAccepted?(correlationId)
+        commandRefreshAccepted(correlationId)
         dispatch(shortcut.command)
     }
 

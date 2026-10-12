@@ -191,7 +191,7 @@ struct PaneSurfaceToolbarHostPullRequestTests {
                         shouldAcceptDrop: { _, _, _, _ in false },
                         handleDrop: { _, _, _, _ in }
                     ),
-                    onPaneFocusTrigger: { _ in },
+                    commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
                     targetedCommandActionResolver: { command, surface, target, targetType in
                         TargetedCommandControlAction.resolve(
                             command: command,
@@ -278,6 +278,9 @@ private struct PullRequestDispatchedCommand: Equatable {
 
 @MainActor
 private final class PullRequestCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     let enabledPaneIds: Set<UUID>
     private(set) var dispatchedCommands: [PullRequestDispatchedCommand] = []
 

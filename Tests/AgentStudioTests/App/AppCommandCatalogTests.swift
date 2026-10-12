@@ -18,7 +18,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_filterSidebar_registered() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .filterSidebar)
+        let def = AppCommand.filterSidebar.definition
 
         // Assert
         #expect(def.label == "Filter Sidebar")
@@ -30,7 +30,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_filterSidebar_hasCorrectKeyBinding() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .filterSidebar)
+        let def = AppCommand.filterSidebar.definition
 
         // Assert
         #expect(def.globalKeyBinding?.key == "f")
@@ -43,7 +43,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_openNewTerminalInTab_registered() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .openNewTerminalInTab)
+        let def = AppCommand.openNewTerminalInTab.definition
 
         // Assert
         #expect(def.label == "Open Terminal in New Tab")
@@ -56,7 +56,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_openNewTerminalInTab_targetsWorktrees() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .openNewTerminalInTab)
+        let def = AppCommand.openNewTerminalInTab.definition
 
         // Assert
         #expect(def.targeting == .targeted([.worktree, .pane]))
@@ -67,7 +67,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_openNewTerminalInTab_isExposedInCommandBarAndContextMenus() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .openNewTerminalInTab)
+        let def = AppCommand.openNewTerminalInTab.definition
 
         // Assert
         #expect(def.surfacePolicy == .exposed([.commandBar, .contextMenu]))
@@ -78,7 +78,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_filterSidebar_doesNotRequireManagementLayer() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .filterSidebar)
+        let def = AppCommand.filterSidebar.definition
 
         // Assert
         #expect(!def.requiresManagementLayer)
@@ -89,7 +89,7 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_filterSidebar_isContextual() {
         // Act
-        let def = AppCommandDispatcher.shared.definition(for: .filterSidebar)
+        let def = AppCommand.filterSidebar.definition
 
         // Assert
         #expect(def.targeting == .contextual)
@@ -102,7 +102,7 @@ final class AppCommandCatalogTests {
 
     @Test
     func test_dispatcher_openWebview_registered() {
-        let def = AppCommandDispatcher.shared.definition(for: .openWebview)
+        let def = AppCommand.openWebview.definition
         #expect(def.label == "Open New Webview Tab")
         #expect(def.icon == .system(.globe))
     }
@@ -111,7 +111,7 @@ final class AppCommandCatalogTests {
 
     @Test
     func test_dispatcher_openWebview_noKeyBinding() {
-        let def = AppCommandDispatcher.shared.definition(for: .openWebview)
+        let def = AppCommand.openWebview.definition
         #expect(def.globalKeyBinding == nil)
     }
 
@@ -119,7 +119,7 @@ final class AppCommandCatalogTests {
 
     @Test
     func test_dispatcher_showViewer_registered() {
-        let def = AppCommandDispatcher.shared.definition(for: .showViewer)
+        let def = AppCommand.showViewer.definition
         let canonicalViewerSymbol = SystemSymbol(
             rawValue: "text.page.badge.magnifyingglass"
         )
@@ -133,7 +133,7 @@ final class AppCommandCatalogTests {
 
     @Test
     func test_dispatcher_zoomPane_registered() {
-        let def = AppCommandDispatcher.shared.definition(for: .zoomPane)
+        let def = AppCommand.zoomPane.definition
         let canonicalZoomSymbol = SystemSymbol(
             rawValue: "square.arrowtriangle.4.outward"
         )
@@ -250,7 +250,7 @@ final class AppCommandCatalogTests {
 
     @Test
     func test_dispatcher_signInGitHub_registered() {
-        let def = AppCommandDispatcher.shared.definition(for: .signInGitHub)
+        let def = AppCommand.signInGitHub.definition
         #expect(def.label == "Sign in to GitHub")
         #expect(def.icon == .system(.personBadgeKey))
     }
@@ -259,7 +259,7 @@ final class AppCommandCatalogTests {
 
     @Test
     func test_dispatcher_signInGoogle_registered() {
-        let def = AppCommandDispatcher.shared.definition(for: .signInGoogle)
+        let def = AppCommand.signInGoogle.definition
         #expect(def.label == "Sign in to Google")
         #expect(def.icon == .system(.personBadgeKey))
     }
@@ -269,8 +269,8 @@ final class AppCommandCatalogTests {
     @Test
     func test_dispatcher_signIn_noKeyBindings() {
         // Sign-in commands are internal dispatch identities with no global shortcuts.
-        #expect(AppCommandDispatcher.shared.definition(for: .signInGitHub).globalKeyBinding == nil)
-        #expect(AppCommandDispatcher.shared.definition(for: .signInGoogle).globalKeyBinding == nil)
+        #expect(AppCommand.signInGitHub.definition.globalKeyBinding == nil)
+        #expect(AppCommand.signInGoogle.definition.globalKeyBinding == nil)
         #expect(AppCommand.signInGitHub.definition.surfacePolicy == .notPresented)
         #expect(AppCommand.signInGoogle.definition.surfacePolicy == .notPresented)
     }

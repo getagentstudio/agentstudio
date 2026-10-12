@@ -15,12 +15,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func paneWriteOutsideActiveSelectionProducesNoObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -31,7 +31,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder
                     )
                     batch.start()
@@ -66,12 +69,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func activePaneChangeInActiveTabProducesOneObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -82,7 +85,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder
                     )
                     batch.start()
@@ -115,12 +121,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func visibleSnapshotRefreshDuringCoalescingYieldSupersedesPendingObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -134,7 +140,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder,
                         coalescingYield: {
                             await yieldGate.wait()
@@ -186,12 +195,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func trackedWriteAfterVisibleSnapshotRefreshDuringYieldStillProducesOneObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -204,7 +213,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder,
                         coalescingYield: { await yieldGate.wait() }
                     )
@@ -255,12 +267,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func burstOfTrackedWritesInOneTurnProducesOneRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { coreAtoms in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -271,7 +283,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder
                     )
                     batch.start()
@@ -313,12 +328,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func eachGlobalCapabilityFactTriggersFullReresolution() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { coreAtoms in
                     coreAtoms.managementLayer.deactivate()
                     defer { coreAtoms.managementLayer.deactivate() }
@@ -327,7 +342,9 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }

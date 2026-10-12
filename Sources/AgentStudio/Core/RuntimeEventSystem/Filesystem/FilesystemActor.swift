@@ -470,15 +470,16 @@ extension FilesystemActor {
                 ]
             )
             if isWatchedFolderRecovery {
-                let retainedBatch = FSEventBatch(
-                    worktreeId: recovery.worktreeId, paths: recovery.paths?.sorted() ?? [],
-                    requiresFullGitRefresh: recovery.requiresFullGitRefresh)
-                guard
-                    recovery.requiresWatchedFolderScan
-                        || WatchedFolderTopologyAdmission.mayAffectTopology(retainedBatch)
-                else { continue }
-                await handleCoarseWatchedFolderFSEvent(
-                    worktreeId: recovery.worktreeId, shouldRecordLogicalDebt: false)
+                if let paths = recovery.paths {
+                    let retainedBatch = FSEventBatch(
+                        worktreeId: recovery.worktreeId, paths: paths.sorted(),
+                        observations: recovery.observations,
+                        requiresFullGitRefresh: recovery.requiresFullGitRefresh)
+                    await handleWatchedFolderFSEvent(retainedBatch, shouldRecordLogicalDebt: false)
+                } else if recovery.requiresWatchedFolderScan || recovery.requiresFullGitRefresh {
+                    await handleCoarseWatchedFolderFSEvent(
+                        worktreeId: recovery.worktreeId, shouldRecordLogicalDebt: false)
+                }
                 continue
             }
             if let paths = recovery.paths {

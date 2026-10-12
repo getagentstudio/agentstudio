@@ -24,12 +24,18 @@ final class WorkspaceActionExecutorTests {
         store = try makeWorkspaceJournalTestStore()
         viewRegistry = ViewRegistry()
         runtime = SessionRuntime(store: store)
-        coordinator = WorkspaceSurfaceCoordinator(
-            store: store, viewRegistry: viewRegistry, runtime: runtime,
-            windowLifecycleStore: WindowLifecycleAtom(),
-            ipcLifecycle: .testUnavailable,
-            bridgePaneAttendance: BridgePaneAttendanceAtom()
-        )
+        coordinator = {
+            let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+            return WorkspaceSurfaceCoordinator(
+                store: store, viewRegistry: viewRegistry, runtime: runtime,
+                surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                runtimeRegistry: RuntimeRegistry(),
+                windowLifecycleStore: WindowLifecycleAtom(),
+                ipcLifecycle: .testUnavailable,
+                bridgePaneAttendance: BridgePaneAttendanceAtom()
+            )
+        }()
         executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
     }
 

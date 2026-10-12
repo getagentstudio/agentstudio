@@ -216,9 +216,7 @@ extension Ghostty.SurfaceView {
 
             let sourcePaneId =
                 terminalRuntime?.paneId.uuid
-                ?? SurfaceManager.shared
-                .surfaceId(forView: self)
-                .flatMap { SurfaceManager.shared.paneId(for: $0) }
+                ?? paneIDForViewObjectID(ObjectIdentifier(self))
 
             switch Self.handleTerminalAppOwnedShortcut(
                 trigger: trigger,

@@ -35,6 +35,8 @@ struct WorkspaceSurfaceCoordinatorSlotLifecycleTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: SlotLifecycleSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,

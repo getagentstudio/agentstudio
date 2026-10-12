@@ -37,13 +37,50 @@ final class PaneTabViewControllerCommandLaunchRecorder {
 }
 
 @MainActor
-struct PaneTabViewControllerCommandHarness {
+enum CommandHarnessWorkspaceOwner {
+    case controller
+    case external(any WorkspaceCommandHandling)
+    case unavailable
+}
+
+@MainActor
+final class PaneTabViewControllerCommandHarness {
     let atomRegistry: AtomRegistry
     let store: WorkspaceStore
     let repoCache: RepoCacheAtom
     let coordinator: WorkspaceSurfaceCoordinator
     let executor: WorkspaceActionExecutor
-    let controller: PaneTabViewController
+    private let buildController: @MainActor (AppCommandDispatcher) -> PaneTabViewController
+    private let suppliedCommandDispatcher: AppCommandDispatcher?
+    private let shellCommandOwner: (any ShellCommandHandling)?
+    private let workspaceCommandOwner: CommandHarnessWorkspaceOwner
+    private let commandInteractionProbe: AgentStudioInteractionPerformanceProbe?
+    private let commandRefreshAccepted: @MainActor (UUID) -> Void
+    private var controllerWasConstructed = false
+    private lazy var ownedCommandDispatcher: AppCommandDispatcher = {
+        if let suppliedCommandDispatcher { return suppliedCommandDispatcher }
+        return AppCommandDispatcher(
+            dependencies: .init(
+                shellOwnerAccess: { [weak self] in self?.shellCommandOwner },
+                workspaceOwnerAccess: { [weak self] in self?.selectedWorkspaceCommandOwner() },
+                interactionProbeAccess: { [weak self] in self?.commandInteractionProbe },
+                commandRefreshAccepted: { [weak self] in self?.commandRefreshAccepted($0) }
+            ))
+    }()
+    var commandDispatcher: AppCommandDispatcher { ownedCommandDispatcher }
+    private(set) lazy var controller: PaneTabViewController = {
+        let controller = buildController(ownedCommandDispatcher)
+        controllerWasConstructed = true
+        return controller
+    }()
+
+    private func selectedWorkspaceCommandOwner() -> (any WorkspaceCommandHandling)? {
+        switch workspaceCommandOwner {
+        case .controller: controllerWasConstructed ? controller : nil
+        case .external(let owner): owner
+        case .unavailable: nil
+        }
+    }
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
     let viewRegistry: ViewRegistry
     let runtimeRegistry: RuntimeRegistry
@@ -56,6 +93,56 @@ struct PaneTabViewControllerCommandHarness {
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let arrangementPanelPresentation: ArrangementPanelPresentationAtom
     let launchRecorder: PaneTabViewControllerCommandLaunchRecorder
+
+    init(
+        atomRegistry: AtomRegistry,
+        store: WorkspaceStore,
+        repoCache: RepoCacheAtom,
+        coordinator: WorkspaceSurfaceCoordinator,
+        executor: WorkspaceActionExecutor,
+        closeTransitionCoordinator: PaneCloseTransitionCoordinator,
+        viewRegistry: ViewRegistry,
+        runtimeRegistry: RuntimeRegistry,
+        surfaceManager: MockPaneTabCommandSurfaceManager,
+        bridgeGitReadScheduler: BridgeGitReadScheduler,
+        appLifecycleStore: AppLifecycleAtom,
+        windowLifecycleStore: WindowLifecycleAtom,
+        tempDir: URL,
+        tabRenamePopoverState: TabRenamePopoverState,
+        arrangementInlineRenameState: ArrangementInlineRenameState,
+        arrangementPanelPresentation: ArrangementPanelPresentationAtom,
+        launchRecorder: PaneTabViewControllerCommandLaunchRecorder,
+        buildController: @escaping @MainActor (AppCommandDispatcher) -> PaneTabViewController,
+        commandDispatcher: AppCommandDispatcher?,
+        shellCommandOwner: (any ShellCommandHandling)?,
+        workspaceCommandOwner: CommandHarnessWorkspaceOwner,
+        commandInteractionProbe: AgentStudioInteractionPerformanceProbe?,
+        commandRefreshAccepted: @escaping @MainActor (UUID) -> Void
+    ) {
+        self.atomRegistry = atomRegistry
+        self.store = store
+        self.repoCache = repoCache
+        self.coordinator = coordinator
+        self.executor = executor
+        self.closeTransitionCoordinator = closeTransitionCoordinator
+        self.viewRegistry = viewRegistry
+        self.runtimeRegistry = runtimeRegistry
+        self.surfaceManager = surfaceManager
+        self.bridgeGitReadScheduler = bridgeGitReadScheduler
+        self.appLifecycleStore = appLifecycleStore
+        self.windowLifecycleStore = windowLifecycleStore
+        self.tempDir = tempDir
+        self.tabRenamePopoverState = tabRenamePopoverState
+        self.arrangementInlineRenameState = arrangementInlineRenameState
+        self.arrangementPanelPresentation = arrangementPanelPresentation
+        self.launchRecorder = launchRecorder
+        self.buildController = buildController
+        self.suppliedCommandDispatcher = commandDispatcher
+        self.shellCommandOwner = shellCommandOwner
+        self.workspaceCommandOwner = workspaceCommandOwner
+        self.commandInteractionProbe = commandInteractionProbe
+        self.commandRefreshAccepted = commandRefreshAccepted
+    }
 
     /// Await submitted work before observing UI state; this is not a command success result.
     func executeCommand(_ command: AppCommand) async {
@@ -92,6 +179,10 @@ struct PaneTabViewControllerCommandHarness {
 
 @MainActor
 func makeHarness(
+    commandDispatcher: AppCommandDispatcher? = nil,
+    shellCommandOwner: (any ShellCommandHandling)? = nil,
+    workspaceCommandOwner: CommandHarnessWorkspaceOwner = .controller,
+    commandRefreshAccepted: @escaping @MainActor (UUID) -> Void = { _ in },
     store injectedStore: WorkspaceStore? = nil,
     createSurfaceResult: Result<ManagedSurface, SurfaceError> = .failure(.ghosttyNotInitialized),
     closeTransitionCoordinator: PaneCloseTransitionCoordinator = PaneCloseTransitionCoordinator(),
@@ -109,6 +200,10 @@ func makeHarness(
     sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil
 ) -> Harness {
     makePaneTabViewControllerCommandHarness(
+        commandDispatcher: commandDispatcher,
+        shellCommandOwner: shellCommandOwner,
+        workspaceCommandOwner: workspaceCommandOwner,
+        commandRefreshAccepted: commandRefreshAccepted,
         store: injectedStore,
         createSurfaceResult: createSurfaceResult,
         closeTransitionCoordinator: closeTransitionCoordinator,
@@ -127,6 +222,10 @@ func makeHarness(
 
 @MainActor
 func makePaneTabViewControllerCommandHarness(
+    commandDispatcher: AppCommandDispatcher? = nil,
+    shellCommandOwner: (any ShellCommandHandling)? = nil,
+    workspaceCommandOwner: CommandHarnessWorkspaceOwner = .controller,
+    commandRefreshAccepted: @escaping @MainActor (UUID) -> Void = { _ in },
     store injectedStore: WorkspaceStore? = nil,
     createSurfaceResult: Result<ManagedSurface, SurfaceError> = .failure(.ghosttyNotInitialized),
     closeTransitionCoordinator: PaneCloseTransitionCoordinator = PaneCloseTransitionCoordinator(),
@@ -166,6 +265,8 @@ func makePaneTabViewControllerCommandHarness(
         viewRegistry: viewRegistry,
         runtime: runtime,
         surfaceManager: surfaceManager,
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
         runtimeRegistry: runtimeRegistry,
         paneEventBus: paneEventBus,
         closeTransitionCoordinator: closeTransitionCoordinator,
@@ -177,58 +278,34 @@ func makePaneTabViewControllerCommandHarness(
         traceRuntime: traceRuntime
     )
     let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
-    let controller = PaneTabViewController(
-        store: store,
-        octiconLoader: makeTestOcticonLoader(),
-        repoCache: repoCache,
-        applicationLifecycleMonitor: ApplicationLifecycleMonitor(
-            appLifecycleStore: appLifecycleStore,
-            windowLifecycleStore: windowLifecycleStore
-        ),
-        appLifecycleStore: appLifecycleStore,
-        windowLifecycleStore: windowLifecycleStore,
-        workspaceWindowId: workspaceWindowId,
-        executor: executor,
-        runtimeCommandDispatcher: coordinator,
-        tabBarAdapter: makeCommandHarnessTabBarAdapter(
+    let buildController = makePaneTabCommandControllerBuilder(
+        composition: .init(
             store: store,
-        ),
-        viewRegistry: viewRegistry,
-        bridgePaneAttendance: atomRegistry.bridgePaneAttendance,
-        editorChooser: atomRegistry.editorChooser,
-        sessionsPaneViewedMailbox: sessionsPaneViewedMailbox,
-        paneInboxPresentation: nil,
-        pinnedPanePreferences: RepoExplorerSidebarPrefsAtom(sidebarState: CoreAtomScope.store.workspaceSidebarState),
-        installedEditorTargetsProvider: { [.cursor, .vscode] },
-        openEditorHandler: { editorId, path, _ in
-            launchRecorder.openedEditors.append((id: editorId, path: path))
-            return true
-        },
-        openFinderHandler: launchRecorder.openFinder,
-        openExternalURLHandler: launchRecorder.openExternalURL,
-        copyPathHandler: { path in
-            launchRecorder.copiedPaths.append(path)
-        },
-        paneNotePresentation: makeCommandHarnessPaneNotePresentation(
-            launchRecorder: launchRecorder
-        ),
-        closeTransitionCoordinator: closeTransitionCoordinator,
-        heldPanePreviewState: HeldPanePreviewState(),
-        tabRenamePopoverState: tabRenamePopoverState,
-        arrangementInlineRenameState: arrangementInlineRenameState,
-        arrangementPanelPresentation: arrangementPanelPresentation,
-        bridgeViewerSurfaceRequestHandler: bridgeViewerSurfaceRequestHandler,
-        bridgeViewerOpenTelemetryAnchorFactory: bridgeViewerOpenTelemetryAnchorFactory,
-        interactionProbe: interactionProbe,
-        registersAsCommandHandler: false
-    )
-    return PaneTabViewControllerCommandHarness(
+            repoCache: repoCache,
+            appLifecycleStore: appLifecycleStore,
+            windowLifecycleStore: windowLifecycleStore,
+            workspaceWindowId: workspaceWindowId,
+            executor: executor,
+            coordinator: coordinator,
+            surfaceManager: surfaceManager,
+            viewRegistry: viewRegistry,
+            atomRegistry: atomRegistry,
+            sessionsPaneViewedMailbox: sessionsPaneViewedMailbox,
+            launchRecorder: launchRecorder,
+            closeTransitionCoordinator: closeTransitionCoordinator,
+            tabRenamePopoverState: tabRenamePopoverState,
+            arrangementInlineRenameState: arrangementInlineRenameState,
+            arrangementPanelPresentation: arrangementPanelPresentation,
+            bridgeViewerSurfaceRequestHandler: bridgeViewerSurfaceRequestHandler,
+            bridgeViewerOpenTelemetryAnchorFactory: bridgeViewerOpenTelemetryAnchorFactory,
+            interactionProbe: interactionProbe
+        ))
+    let harness = PaneTabViewControllerCommandHarness(
         atomRegistry: atomRegistry,
         store: store,
         repoCache: repoCache,
         coordinator: coordinator,
         executor: executor,
-        controller: controller,
         closeTransitionCoordinator: closeTransitionCoordinator,
         viewRegistry: viewRegistry,
         runtimeRegistry: runtimeRegistry,
@@ -240,12 +317,20 @@ func makePaneTabViewControllerCommandHarness(
         tabRenamePopoverState: tabRenamePopoverState,
         arrangementInlineRenameState: arrangementInlineRenameState,
         arrangementPanelPresentation: arrangementPanelPresentation,
-        launchRecorder: launchRecorder
+        launchRecorder: launchRecorder,
+        buildController: buildController,
+        commandDispatcher: commandDispatcher,
+        shellCommandOwner: shellCommandOwner,
+        workspaceCommandOwner: workspaceCommandOwner,
+        commandInteractionProbe: interactionProbe,
+        commandRefreshAccepted: commandRefreshAccepted
     )
+    _ = harness.controller
+    return harness
 }
 
 @MainActor
-private func makeCommandHarnessPaneNotePresentation(
+func makeCommandHarnessPaneNotePresentation(
     launchRecorder: PaneTabViewControllerCommandLaunchRecorder
 ) -> PaneNotePresentation {
     PaneNotePresentation(
@@ -264,7 +349,7 @@ private func makeRequiredCommandHarnessStore() -> WorkspaceStore {
 }
 
 @MainActor
-private func makeCommandHarnessTabBarAdapter(
+func makeCommandHarnessTabBarAdapter(
     store: WorkspaceStore
 ) -> TabBarAdapter {
     TabBarAdapter(

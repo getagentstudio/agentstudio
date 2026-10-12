@@ -8,9 +8,39 @@ import Testing
 @MainActor
 @Suite("Surface manager native retirement", .serialized)
 struct SurfaceManagerNativeRetirementTests {
+    @Test("close seals callback state after removing lookup membership")
+    func closeSealsCallbackStateAfterRemovingMembership() async throws {
+        try await withGhosttyActionRouterTestFixture { fixture in
+            let manager = SurfaceManager(
+                appCommandDispatcher: TerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+                callbackHandlingAccess: { fixture.handler }, maxCreationRetries: 0, healthCheckInterval: 3600)
+            let surface = Ghostty.SurfaceView(
+                managedSurfaceID: fixture.surfaceID,
+                appCommandDispatcher: RetirementNoOpAppCommandDispatcher(),
+                callbackHandling: fixture.handler
+            )
+            let managed = try manager.acceptCreatedSurface(
+                surface, metadata: SurfaceMetadata(paneId: fixture.paneUUID)
+            ).get()
+            manager.attach(managed.id, to: fixture.paneUUID)
+            let accumulator = fixture.handler.localActionAccumulator
+            #expect(accumulator.offer(.titleChanged("unpublished close title"), for: managed.id) == .scheduled)
+            #expect(accumulator.hasPendingActions(for: managed.id))
+
+            manager.detach(managed.id, reason: .close)
+
+            #expect(manager.paneId(for: managed.id) == nil)
+            #expect(!accumulator.hasPendingActions(for: managed.id))
+            #expect(fixture.handler.localActionDrainScheduler.pendingDrainClaimCount == 0)
+            manager.destroy(managed.id)
+        }
+    }
+
     @Test("every active hidden and undo attachment protects its zmx session")
     func allNativeOwnersProtectTheSession() throws {
-        let manager = SurfaceManager(maxCreationRetries: 0, healthCheckInterval: 3600)
+        let manager = SurfaceManager(
+            appCommandDispatcher: TerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil }, maxCreationRetries: 0, healthCheckInterval: 3600)
         let sessionID = ZmxSessionID.generateUUIDv7()
         let firstPaneID = UUIDv7.generate()
         let secondPaneID = UUIDv7.generate()
@@ -40,6 +70,8 @@ struct SurfaceManagerNativeRetirementTests {
     func retainedViewDoesNotDelayNativeRetirement() throws {
         var retiredSurfaceIDs: [UUID] = []
         let manager = SurfaceManager(
+            appCommandDispatcher: TerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil },
             maxCreationRetries: 0,
             healthCheckInterval: 3600,
             nativeSurfaceRetirement: { retiredSurfaceIDs.append($0.managedSurfaceID) })
@@ -73,6 +105,8 @@ struct SurfaceManagerNativeRetirementTests {
             appCommandDispatcher: RetirementNoOpAppCommandDispatcher()
         )
         let manager = SurfaceManager(
+            appCommandDispatcher: TerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil },
             maxCreationRetries: 0,
             healthCheckInterval: 3600,
             nativeSurfaceRetirement: { retiredSurfaceIDs.append($0.managedSurfaceID) },
@@ -103,6 +137,8 @@ struct SurfaceManagerNativeRetirementTests {
             appCommandDispatcher: RetirementNoOpAppCommandDispatcher()
         )
         let manager = SurfaceManager(
+            appCommandDispatcher: TerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil },
             maxCreationRetries: 0,
             healthCheckInterval: 3600,
             nativeSurfaceRetirement: { retiredSurfaceIDs.append($0.managedSurfaceID) },
@@ -125,6 +161,9 @@ struct SurfaceManagerNativeRetirementTests {
 
 @MainActor
 private final class RetirementNoOpAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

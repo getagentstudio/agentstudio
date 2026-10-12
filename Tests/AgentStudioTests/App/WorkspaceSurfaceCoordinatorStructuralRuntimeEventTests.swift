@@ -18,7 +18,6 @@ struct GhosttyStructureRuntimeEventTests {
     @Test("structural events always drop while terminal facts from panes in no tab remain filtered")
     func structuralRuntimeEventsDoNotMutateWorkspace() async throws {
         var submittedWorkspaceActions: [WorkspaceActionCommand] = []
-        let commandHandler = StructuralRuntimeCommandHandler()
         let context = try makeStructuralRuntimeContext()
         defer { try? FileManager.default.removeItem(at: context.tempDir) }
         await prepareHiddenRuntimeSources(context)
@@ -33,62 +32,48 @@ struct GhosttyStructureRuntimeEventTests {
         let events = structuralEvents()
         let unattachedPaneId = UUIDv7.generate()
 
-        do {
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = commandHandler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    for (index, event) in events.enumerated() {
-                        _ = await emit(
-                            event,
-                            index: index,
-                            through: context.runtime,
-                            sourcePaneId: context.sourcePaneId
-                        )
-                    }
-                    let outsideLayoutEvents = await emit(
-                        .bellRang,
-                        index: events.count,
-                        through: context.runtime,
-                        sourcePaneId: context.sourcePaneId,
-                        eventSourcePaneId: unattachedPaneId,
-                        eventSequence: 1,
-                        barrierSequence: UInt64(events.count * 2 + 1)
-                    )
-                    #expect(
-                        !outsideLayoutEvents.contains { event in
-                            if case .worktreeBellRang(let paneId) = event {
-                                return paneId == unattachedPaneId
-                            }
-                            return false
-                        })
-                    _ = await emit(
-                        .newSplit(direction: .left),
-                        index: events.count + 1,
-                        through: context.runtime,
-                        sourcePaneId: context.sourcePaneId,
-                        eventSourcePaneId: context.drawerChildId,
-                        eventSequence: 2,
-                        barrierSequence: UInt64(events.count * 2 + 2)
-                    )
-
-                    #expect(submittedWorkspaceActions.isEmpty)
-                    #expect(commandHandler.targetedCommands.isEmpty)
-                    #expect(context.store.tabs == initialTabs)
-                    #expect(Set(context.store.paneAtom.paneSnapshot().keys) == initialPaneIds)
-                    #expect(context.store.activeTabId == initialActiveTabId)
-                    #expect(
-                        context.store.panePresentationAtom.zoomPresentation(forTab: context.sourceTabId)
-                            == initialZoomPresentation
-                    )
-                }
+        for (index, event) in events.enumerated() {
+            _ = await emit(
+                event,
+                index: index,
+                through: context.runtime,
+                sourcePaneId: context.sourcePaneId
             )
-        } catch {
-            await context.coordinator.shutdown()
-            throw error
         }
+        let outsideLayoutEvents = await emit(
+            .bellRang,
+            index: events.count,
+            through: context.runtime,
+            sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: unattachedPaneId,
+            eventSequence: 1,
+            barrierSequence: UInt64(events.count * 2 + 1)
+        )
+        #expect(
+            !outsideLayoutEvents.contains { event in
+                if case .worktreeBellRang(let paneId) = event {
+                    return paneId == unattachedPaneId
+                }
+                return false
+            })
+        _ = await emit(
+            .newSplit(direction: .left),
+            index: events.count + 1,
+            through: context.runtime,
+            sourcePaneId: context.sourcePaneId,
+            eventSourcePaneId: context.drawerChildId,
+            eventSequence: 2,
+            barrierSequence: UInt64(events.count * 2 + 2)
+        )
+
+        #expect(submittedWorkspaceActions.isEmpty)
+        #expect(context.store.tabs == initialTabs)
+        #expect(Set(context.store.paneAtom.paneSnapshot().keys) == initialPaneIds)
+        #expect(context.store.activeTabId == initialActiveTabId)
+        #expect(
+            context.store.panePresentationAtom.zoomPresentation(forTab: context.sourceTabId)
+                == initialZoomPresentation
+        )
 
         await context.coordinator.shutdown()
     }
@@ -354,39 +339,6 @@ private struct GhosttyStructureRuntimeContext {
     let sourcePaneId: UUID
     let sourceTabId: UUID
     let drawerChildId: UUID
-}
-
-@MainActor
-private final class StructuralRuntimeCommandHandler: WorkspaceCommandHandling {
-    private(set) var commands: [AppCommand] = []
-    private(set) var targetedCommands: [AppCommand] = []
-
-    func execute(_ command: AppCommand) {
-        commands.append(command)
-    }
-
-    func execute(_ command: AppCommand, target: UUID, targetType: SearchItemType) {
-        _ = target
-        _ = targetType
-        targetedCommands.append(command)
-    }
-
-    func canExecute(_ command: AppCommand) -> Bool {
-        _ = command
-        return true
-    }
-
-    func executeExtractPaneToTab(tabId: UUID, paneId: UUID, targetTabInsertionIndex: Int?) {
-        _ = tabId
-        _ = paneId
-        _ = targetTabInsertionIndex
-    }
-
-    func executeMovePaneToTab(sourcePaneId: UUID, sourceTabId: UUID?, targetTabId: UUID) {
-        _ = sourcePaneId
-        _ = sourceTabId
-        _ = targetTabId
-    }
 }
 
 @MainActor

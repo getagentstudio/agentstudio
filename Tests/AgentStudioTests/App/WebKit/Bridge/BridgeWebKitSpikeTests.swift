@@ -69,9 +69,8 @@ extension WebKitSerializedTests {
 
         /// Verify `WKContentWorld.world(name:)` returns a non-nil world,
         /// and calling it twice with the same name returns the same instance.
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_contentWorld_sameNameReturnsSameWorld() async {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange
             let worldA = WKContentWorld.world(name: "agentStudioBridge")
             let worldB = WKContentWorld.world(name: "agentStudioBridge")
@@ -84,9 +83,8 @@ extension WebKitSerializedTests {
         }
 
         /// Verify different names produce different worlds.
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_contentWorld_differentNamesProduceDifferentWorlds() async {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange
             let worldA = WKContentWorld.world(name: "agentStudioBridge")
             let worldC = WKContentWorld.world(name: "differentWorld")
@@ -102,9 +100,8 @@ extension WebKitSerializedTests {
         ///
         /// Strategy: Set a global in bridge world, then try to read it from page world
         /// via postMessage. If isolation works, page world won't see the variable.
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_callJavaScript_contentWorldIsolation_globalsDoNotLeak() async throws {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange -- handlers in both worlds
             let bridgeWorld = WKContentWorld.world(name: "testBridgeIsolation")
             let bridgeHandler = WebKitScriptMessageRecorder()
@@ -172,9 +169,8 @@ extension WebKitSerializedTests {
         ///
         /// Design doc section 11.2: WKUserScript takes content world in its initializer
         /// via the `in:` parameter label.
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_userScript_contentWorldInjection_isolatedFromPageWorld() async throws {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange
             let world = WKContentWorld.world(name: "testBridgeUserScript")
             let bridgeHandler = WebKitScriptMessageRecorder()
@@ -242,9 +238,8 @@ extension WebKitSerializedTests {
         ///
         /// Design doc section 11.1 layer 2: "Only bridge-world scripts can post
         /// to the rpc handler."
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_messageHandler_bridgeWorldCanPost() async throws {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange
             let world = WKContentWorld.world(name: "testBridgeMsgHandler")
             let handler = WebKitScriptMessageRecorder()
@@ -281,9 +276,8 @@ extension WebKitSerializedTests {
         ///
         /// The handler `rpc` is only registered in the bridge world. Page world
         /// should not be able to access `window.webkit.messageHandlers.rpc`.
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_messageHandler_pageWorldCannotAccessBridgeHandler() async throws {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange
             let world = WKContentWorld.world(name: "testBridgeMsgHandlerIsolation")
             let handler = WebKitScriptMessageRecorder()
@@ -348,9 +342,6 @@ extension WebKitSerializedTests {
             await WebPageEventWaits.waitForNavigationToFinish(page)
         }
 
-        private func isWebKitSpikeModeEnabled() -> Bool {
-            ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"
-        }
     }
 
 }
