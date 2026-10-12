@@ -145,7 +145,12 @@ export async function runCopyFileChurnReproduction(props: {
 								props.retireEditedBeforeFileRefresh === true
 									? retirement?.waitForHeldProjection
 									: undefined,
-							afterCommittedSave: retirement?.releaseProjection,
+							// This causal case keeps the old transfer held until real cancellation;
+							// the ordinary edited case releases both holds at the Save receipt.
+							afterCommittedSave:
+								props.retireEditedBeforeFileRefresh === true
+									? undefined
+									: retirement?.releaseProjection,
 							afterSave: (): void => releaseEditWrites.resolve(),
 						}).finally((): void => releaseEditWrites.resolve()),
 						editBurst.settled,
