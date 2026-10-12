@@ -116,8 +116,8 @@ package actor BridgeDevelopmentProductHost {
         // observer to pin the window this host's bootstrap gate now handles.
         schemeTaskCensus: BridgeProductSchemeTaskCensus = BridgeProductSchemeTaskCensus(),
         // Internal observation keeps lifecycle and committed-publication types at
-        // their existing module visibility. Package construction supplies nil.
-        didCommitReviewPublication: (@MainActor @Sendable () -> Void)? = nil,
+        // their existing module visibility. Package construction keeps the recorder nil.
+        didCommitReviewPublication: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)? = nil,
         lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     ) async throws {
         let source = try Self.validatedFilesystemSource(source)
@@ -135,16 +135,9 @@ package actor BridgeDevelopmentProductHost {
             provider: reviewProvider
         )
 
-        // Adapts the payload-free `package` signal to the coordinator-level hook, which
-        // carries the committed publication for callers that can see that internal type.
-        var reviewCommitObservation: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
-        if let observeCommit = didCommitReviewPublication {
-            reviewCommitObservation = { _ in observeCommit() }
-        }
-
         let productPreparation = try await Self.makeProductProviderPreparation(
             .init(
-                didCommitReviewPublication: reviewCommitObservation,
+                didCommitReviewPublication: didCommitReviewPublication,
                 lifecycleTraceRecorder: lifecycleTraceRecorder,
                 gitReadContext: gitReadContext,
                 operationDeadlineClock: operationDeadlineClock,

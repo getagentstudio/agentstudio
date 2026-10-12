@@ -84,15 +84,14 @@ extension BridgeDevelopmentProductHost {
         // Production passes nothing. A test supplies a census with a termination
         // observer to pin the window this host's bootstrap gate now handles.
         schemeTaskCensus: BridgeProductSchemeTaskCensus = BridgeProductSchemeTaskCensus(),
-        // Production passes nothing. A test supplies an observer of the Review commit,
-        // which is the only moment the publication's existence is published rather than
-        // merely readable, so the test can await it instead of sampling. It carries no
-        // payload because this initializer is `package` while
-        // `BridgeReviewCommittedPublication` is internal, and widening that type's
-        // visibility is not worth a signal that only says "a commit happened"; a caller
-        // that needs the publication reads it back from the host.
+        // Keep the package observer payload-free without widening the publication type.
+        // Tests receive the exact payload through the internal recorder-aware constructor.
         didCommitReviewPublication: (@MainActor @Sendable () -> Void)? = nil
     ) async throws {
+        var commitObservation: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
+        if let observeCommit = didCommitReviewPublication {
+            commitObservation = { _ in observeCommit() }
+        }
         try await self.init(
             source: source,
             worktreeAnnotationStore: worktreeAnnotationStore,
@@ -104,7 +103,7 @@ extension BridgeDevelopmentProductHost {
             statusPhysicalGate: statusPhysicalGate,
             makeReviewProvider: makeReviewProvider,
             schemeTaskCensus: schemeTaskCensus,
-            didCommitReviewPublication: didCommitReviewPublication,
+            didCommitReviewPublication: commitObservation,
             lifecycleTraceRecorder: nil
         )
     }

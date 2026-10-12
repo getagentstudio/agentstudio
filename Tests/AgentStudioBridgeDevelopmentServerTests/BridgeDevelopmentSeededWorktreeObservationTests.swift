@@ -254,11 +254,14 @@ struct BridgeDevelopmentSeededWorktreeObservationTests {
                 }
             )
 
+            let deletionOpening = lifecycle.openDeletionObservation()
+
             // Act deletion as the only post-start filesystem mutation.
             try FileManager.default.removeItem(at: trackedFile)
             let deletionChangeset = try await probe.nextFiles(paths: ["tracked.txt"])
             #expect(deletionChangeset.paths == ["tracked.txt"])
-            let deletedPublication = try await lifecycle.requireCommittedDeletion(path: "tracked.txt", host: host)
+            let deletedPublication = try await lifecycle.requireCommittedDeletion(
+                path: "tracked.txt", after: deletionOpening)
 
             // Assert deletion.
             #expect(deletedPublication.package.reviewGeneration == baselinePublication.package.reviewGeneration)
