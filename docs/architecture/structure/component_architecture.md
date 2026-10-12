@@ -390,14 +390,14 @@ Core/RuntimeEventSystem/ (shared pane-runtime domain):
 ├── PaneRuntimeEvent         ← typed event vocabulary (GhosttyEvent, BrowserEvent, etc.)
 └── PaneRuntimeCommand           ← typed command vocabulary (TerminalCommand, BrowserCommand, etc.)
 
-Singletons:
-├── SurfaceManager.shared    ← Ghostty surface lifecycle
-├── GhosttyAdapter.shared    ← C FFI boundary, routes to per-pane TerminalRuntime
-├── AppCommandDispatcher.shared ← command definitions + dispatch
-└── Ghostty.shared           ← Ghostty C API wrapper
+Startup-owned dependencies (AppDelegate):
+├── SurfaceManager             ← selected terminal lookup and surface lifecycle
+├── Ghostty.ActionRouter       ← instance callback handling and owned work
+├── AppCommandDispatcher       ← immutable command-owner access and dispatch
+└── Ghostty.App                ← selected native engine and callback context
 ```
 
-> **Testability note on singletons:** These `static let shared` singletons are `@MainActor` (inferred or explicit). Under Swift 6.2, `static var` on `@MainActor` types is also MainActor-isolated (enforced since Swift 5.10). This is fine for production — they don't cross actor boundaries. However, `static let` cannot be swapped for testing. When a boundary actor needs a service, inject it through the constructor rather than reaching through `.shared`. The EventBus design already follows this pattern: `private let bus: EventBus<RuntimeEnvelope>` is constructor-injected.
+> **Testability:** Startup passes the selected dependencies or narrow operations into consumers. Tests construct local dispatchers, registries and callback handling with fake engine-facing boundaries, then await owned callback/runtime completion. The pure `GhosttyActionTranslation` maps copied payloads without an instance. Other shared state, AppKit effects and observer teardown still determine suite isolation.
 
 ### 3.2 WorkspaceStore
 

@@ -263,7 +263,7 @@ The embedded terminal host keeps one subsystem entry seam:
 callers
   │
   ▼
-Ghostty.shared
+injected engine availability / terminal lookup
   │
   ▼
 thin Ghostty.App
@@ -273,7 +273,7 @@ thin Ghostty.App
   └── Ghostty.AppFocusSynchronizer
 ```
 
-- `Ghostty.shared` is the only host entrypoint other app code should use.
+- AppDelegate retains the startup-selected `Ghostty.App`, callback handling and terminal lookup. Consumers receive that lookup or a typed engine-availability operation through their constructors.
 - `Ghostty.App` is composition-only. It does not own callback logic, the action switch, or lifecycle observation directly.
 - `Ghostty.CallbackRouter` stays at the C boundary and captures stable identity before any async hop.
 - `Ghostty.ActionRouter` is the only place Ghostty action routing should expand in future terminal work.

@@ -38,7 +38,10 @@ struct WorkspaceSurfaceCoordinatorDurableUndoTests {
         )
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: ipcLifecycle,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
 
@@ -78,7 +81,10 @@ struct WorkspaceSurfaceCoordinatorDurableUndoTests {
         )
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: ipcLifecycle,
             bridgePaneAttendance: BridgePaneAttendanceAtom())
         let (activityClock, activityAtom) = await makeActivityClock()
@@ -194,7 +200,10 @@ struct WorkspaceSurfaceCoordinatorDurableUndoTests {
         )
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: ipcLifecycle,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
@@ -248,7 +257,10 @@ struct WorkspaceSurfaceCoordinatorDurableUndoTests {
         let manager = HarnessSurfaceManager()
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )
@@ -300,7 +312,10 @@ struct WorkspaceSurfaceCoordinatorDurableUndoTests {
         )
         let coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: manager, runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: manager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: manager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(), ipcLifecycle: ipcLifecycle,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
         )

@@ -65,8 +65,7 @@ struct AppIPCStartOutcomeTraceTests {
     @Test("cancellation during initialization is classified and recorded")
     func cancelledInitializationIsRecorded() async throws {
         let trace = StartupTraceCapture()
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         let windowLifecycleStore = WindowLifecycleAtom()
         windowLifecycleStore.recordFirstInteractiveFramePublished(source: .presented)
         let suspension = InitializationSuspension()
@@ -91,8 +90,7 @@ struct AppIPCStartOutcomeTraceTests {
     @Test("scheduled initialization records a first-frame timeout as app.ipc.start unavailable")
     func scheduledTimeoutIsRecorded() async throws {
         let trace = StartupTraceCapture()
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         appDelegate.windowLifecycleStore = WindowLifecycleAtom(deferralDelay: AsyncDelay { _ in })
 
         appDelegate.scheduleAppIPCInitialization()
@@ -108,8 +106,7 @@ struct AppIPCStartOutcomeTraceTests {
     @Test("starting without local SQLite records local_store_unavailable")
     func missingLocalStoreIsRecorded() async throws {
         let trace = StartupTraceCapture()
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
 
         await appDelegate.startAppIPCServer()
 
@@ -119,8 +116,7 @@ struct AppIPCStartOutcomeTraceTests {
     @Test("app IPC startup trace keeps its first outcome")
     func appIPCStartOutcomeKeepsFirstRecord() async throws {
         let trace = StartupTraceCapture()
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
 
         appDelegate.recordAppIPCStart()
         appDelegate.recordAppIPCStart(unavailable: .restoreBoundsUnavailable)
@@ -131,8 +127,7 @@ struct AppIPCStartOutcomeTraceTests {
     @Test("termination ingress stop records unavailable while launch restore is incomplete")
     func terminationIngressStopRecordsRestoreBoundsUnavailable() async throws {
         let trace = StartupTraceCapture()
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         appDelegate.launchRestoreObservationState.prepareForObservation()
 
         await appDelegate.stopAcceptingAppIPCConnections()
@@ -146,8 +141,7 @@ struct AppIPCStartOutcomeTraceTests {
     @Test("cancelling an incomplete restore observation does not record terminal unavailability")
     func cancelledIncompleteRestoreObservationDoesNotRecordTerminalUnavailability() async throws {
         let trace = StartupTraceCapture()
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         appDelegate.windowLifecycleStore = WindowLifecycleAtom()
 
         appDelegate.observeLaunchRestoreReadiness()
@@ -163,8 +157,7 @@ struct AppIPCStartOutcomeTraceTests {
         let trace = StartupTraceCapture()
         let coreQueue = try SQLiteDatabaseFactory.makeInMemoryQueue(label: "AgentStudio.sqlite.ipc-start-outcome")
         try WorkspaceCoreMigrations.migrate(coreQueue)
-        let appDelegate = AppDelegate()
-        appDelegate.startupTraceRecorder = trace.recorder
+        let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         appDelegate.workspaceSQLiteDatastore = WorkspaceSQLiteDatastoreActor(
             preparedCoreRepository: WorkspaceCoreRepository(databaseWriter: coreQueue),
             preparationReceipt: .init(
@@ -203,9 +196,11 @@ struct AppIPCStartOutcomeTraceTests {
         let trace = StartupTraceCapture()
         let windowLifecycleStore = WindowLifecycleAtom()
         windowLifecycleStore.recordFirstInteractiveFramePublished(source: .presented)
-        let harness = try await makeServerCapableAppIPCTestHarness(windowLifecycleStore: windowLifecycleStore)
+        let harness = try await makeServerCapableAppIPCTestHarness(
+            windowLifecycleStore: windowLifecycleStore,
+            appDelegate: AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
+        )
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: harness.rootDirectory.path)
-        harness.appDelegate.startupTraceRecorder = trace.recorder
         do {
             harness.appDelegate.scheduleAppIPCInitialization()
             let initializationTask = try #require(harness.appDelegate.appIPCInitializationTask)
@@ -233,7 +228,7 @@ private final class StartupTraceCapture {
     }
 
     let recorder: AgentStudioStartupTraceRecorder
-    private let runtime: AgentStudioTraceRuntime
+    let runtime: AgentStudioTraceRuntime
     private let directory: URL
 
     init() {

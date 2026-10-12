@@ -27,10 +27,6 @@ struct RepositoryBootBaselineTests {
                 traceRuntime: traceRuntime,
                 startupTraceRecorder: AgentStudioStartupTraceRecorder(traceRuntime: traceRuntime)
             )
-            defer {
-                Ghostty.ActionRouter.bindTraceRuntime(nil)
-                Ghostty.ActionRouter.bindStartupTraceRecorder(nil)
-            }
 
             let coreAtoms = atomRegistry.core
             let workspaceStore = WorkspaceStore(

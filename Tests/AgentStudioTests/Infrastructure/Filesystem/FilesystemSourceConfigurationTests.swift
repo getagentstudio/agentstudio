@@ -44,9 +44,10 @@ struct FilesystemSourceConfigurationTests {
                 )
             )
         )
-        guard baselineDescriptor.volumeSemantics.casePolicy == .caseInsensitive else {
-            return
-        }
+        try #require(
+            baselineDescriptor.volumeSemantics.casePolicy == .caseInsensitive,
+            "The macOS test volume must report case-insensitive semantics"
+        )
         let caseVariedRoot = fixture.fixtureRoot
             .appending(path: "AUTHORIZED")
             .appending(path: "CANONICAL")

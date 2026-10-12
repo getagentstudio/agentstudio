@@ -388,7 +388,10 @@ struct RepoExplorerMaterializationHostWindowTests {
             presentation: presentation,
             nativeUpdatePlan: plan
         )
-        guard case .accepted = host.apply(candidate) else { return }
+        guard case .accepted = host.apply(candidate) else {
+            Issue.record("The rowless presentation update must be accepted")
+            return
+        }
 
         #expect(window.firstResponder === focusView)
         #expect(host.presentedChildView?.accessibilityLabel() == "No tabs")

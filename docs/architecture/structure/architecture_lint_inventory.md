@@ -37,9 +37,10 @@ threshold, and never change the exit code.
 
 ## Debt Ledger
 
-[`Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv)
-holds the only debt: one row per rule and repository-relative path with the
-number of violation sites that file may still hold. It is tab-separated with a
+The general and specialized ledgers under
+[`Tools/AgentStudioArchitectureLint`](../../../Tools/AgentStudioArchitectureLint)
+hold lint debt: one row per rule and repository-relative path with the number
+of violation sites that file may still hold. They are tab-separated with a
 header and sorted by rule, then path; a malformed or unsorted ledger fails the
 run closed.
 
@@ -96,6 +97,7 @@ fails on an owner whose file does not exist.
 | Tests avoid direct wall-clock `Task.sleep(...)` calls and wait for events, state, or injected fake clocks. | `agentstudio_no_task_sleep_in_tests` | error | `AGENTS.md#no-wall-clock-tests` |
 | Tests contain no polling wait: a loop around a scheduler yield, a sleep, or a clock deadline. Existing sites are counted in the debt ledger. | `agentstudio_no_polling_wait_in_tests` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#how-a-test-may-wait) |
 | Tests park a thread in a socket read, semaphore wait or process wait only off the cooperative pool. The named owners in `ArchitectureAllowlists.blockingTestWaitOwners` (each with an owner and reason) own their blocking waits; a full run fails when an owner's file is gone or no longer blocks at all. Existing sites elsewhere are counted in the debt ledger. | `agentstudio_test_blocking_wait_off_cooperative_pool` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#how-a-test-may-wait) |
+| Test-body guards report setup failure before returning; an exact immediately preceding `#expect(E)` / `guard E else { return }` pair is exempt while the expressions match. Nested helper functions and closures are outside the test-body verdict. | `agentstudio_no_silent_test_return` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#how-a-test-may-wait) |
 | Tests carry no per-test elapsed-time budget: no `DefaultProcessExecutor` construction, no `wait(timeout:)` or `wait(wallTimeout:)` on a `DispatchSemaphore` or `DispatchGroup` binding, no `asyncAfter`, and no timed `waitForFile`. The named owners in `ArchitectureAllowlists.elapsedTimeBudgetOwners` (each with an owner and reason) keep theirs; a full run fails when an owner's file is gone or no longer carries a budget. Existing sites elsewhere are counted in the debt ledger. | `agentstudio_no_test_elapsed_time_budget` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#how-a-test-may-wait) |
 | Tests install the shared Core atom fallback only through [`TestAtomRegistry.swift`](../../../Tests/AgentStudioTests/TestSupport/TestAtomRegistry.swift). | `agentstudio_test_core_atom_fallback_ownership` | error | [`docs/architecture/testing/testing_architecture.md`](../testing/testing_architecture.md#test-target-ownership) |
 | A completion handle (`Task`) is never discardable: no `@discardableResult` on a declaration returning `Task<…>`/`Task<…>?`; an explicit `_ =` or `_ = await` discard of a call to a task-returning function carries `// fire-and-forget: <reason>` on its line or the line directly above; and no task-returning name is also declared with a non-task result. | `agentstudio_completion_handle_not_discardable` | error | `docs/specs/2026-09-23-ci-guardrails/2026-09-23-ci-guardrails-program-design.md#completion-handles-s3` |

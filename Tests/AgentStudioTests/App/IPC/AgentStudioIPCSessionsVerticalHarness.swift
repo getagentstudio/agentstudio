@@ -48,8 +48,10 @@ struct SessionsVerticalHarness {
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
         activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in }
     ) async throws -> Self {
-        let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness()
-        let appDelegate = AppDelegate()
+        let workspaceWindowId = UUIDv7.generate()
+        let appDelegate = makeSessionFixtureAppDelegate()
+        let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness(
+            workspaceWindowId: workspaceWindowId, commandDispatcher: appDelegate.commandDispatcherForBoot())
         var createdRootDirectory: URL?
         do {
             let boundPane = commandHarness.store.createPane(title: "Bound pane")
@@ -58,7 +60,6 @@ struct SessionsVerticalHarness {
             commandHarness.store.appendTab(Tab(paneId: sparePane.id))
             // Pane handle canonicalization reads the current window before it
             // resolves a pane, so the harness registers exactly one.
-            let workspaceWindowId = UUIDv7.generate()
             commandHarness.windowLifecycleStore.recordWindowRegistered(workspaceWindowId)
 
             guard case .ready = await datastore.prepareOptionalApplicationLocalSchema() else {
@@ -74,7 +75,8 @@ struct SessionsVerticalHarness {
             appDelegate.viewRegistry = commandHarness.viewRegistry
             appDelegate.workspaceSurfaceCoordinator = commandHarness.coordinator
             appDelegate.executor = commandHarness.executor
-            let mainWindowController = SessionsVerticalMainWindowController(window: nil)
+            let mainWindowController = SessionsVerticalMainWindowController(
+                window: nil, commandDispatcher: commandHarness.commandDispatcher)
             mainWindowController.registeredWorkspaceWindowId = workspaceWindowId
             appDelegate.mainWindowController = mainWindowController
             appDelegate.installAppIPCIdentityAuthority(datastore: datastore)
@@ -484,4 +486,13 @@ struct SessionsVerticalFrameReader {
             }
         }
     }
+}
+
+@MainActor
+private func makeSessionFixtureAppDelegate() -> AppDelegate {
+    let traceRuntime = AgentStudioTraceRuntime.fromEnvironment()
+    return AppDelegate(
+        traceRuntime: traceRuntime,
+        startupTraceRecorder: AgentStudioStartupTraceRecorder(traceRuntime: traceRuntime)
+    )
 }

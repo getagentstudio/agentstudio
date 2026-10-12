@@ -50,6 +50,8 @@ struct WorkspaceSurfaceCoordinatorCWDIdentityTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: CWDIdentitySurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             paneEventBus: bus,
             windowLifecycleStore: WindowLifecycleAtom(),

@@ -63,7 +63,8 @@ extension WorkspaceSurfaceCoordinatorHardeningTests {
             harness.store.appendTab(tab)
 
             let paneHost = PaneHostView(paneId: pane.id)
-            let terminalMount = TerminalPaneMountView(paneId: pane.id, title: "Restored Terminal")
+            let terminalMount = TerminalPaneMountView(
+                surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: pane.id, title: "Restored Terminal")
             let placeholder = terminalMount.showPlaceholder(mode: .preparing)
             paneHost.mountContentView(terminalMount)
             harness.viewRegistry.register(paneHost, for: pane.id)

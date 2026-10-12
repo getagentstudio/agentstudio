@@ -176,7 +176,7 @@ actor AgentStudioGitLocalClientFake: AgentStudioGitLocalClient {
         return GitStatusFactsRead(facts: statusSnapshot, exactCleanBaseline: nil)
     }
 
-    func exactLineCountDetail(for worktreePath: URL) async throws(GitDataPlaneError)
+    func exactLineCountDetail(for worktreePath: URL, excludeSubmodules _: Bool) async throws(GitDataPlaneError)
         -> GitStatusLineCountDetail
     {
         GitStatusLineCountDetail(
@@ -193,7 +193,7 @@ actor AgentStudioGitLocalClientFake: AgentStudioGitLocalClient {
     {
         GitCompleteStatusSnapshot(
             facts: try await statusFacts(for: worktreePath, options: options).facts,
-            lineCountDetail: try await exactLineCountDetail(for: worktreePath)
+            lineCountDetail: try await exactLineCountDetail(for: worktreePath, excludeSubmodules: false)
         )
     }
 

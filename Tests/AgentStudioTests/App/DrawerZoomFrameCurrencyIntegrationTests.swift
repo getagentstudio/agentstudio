@@ -50,7 +50,9 @@ struct DrawerZoomFrameCurrencyIntegrationTests {
             viewRegistry: viewRegistry,
             runtime: SessionRuntime(store: store),
             surfaceManager: GeometryReevaluationCapturingSurfaceManager(),
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()

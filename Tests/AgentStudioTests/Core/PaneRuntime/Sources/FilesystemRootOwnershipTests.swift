@@ -6,6 +6,27 @@ import Testing
 
 @Suite("FilesystemRootOwnership")
 struct FilesystemRootOwnershipTests {
+    @Test("own and linked-worktree Git metadata routes relative to the main root's .git")
+    func gitMetadataRoutesWithGitAsFirstComponent() {
+        // Arrange
+        let mainWorktreeId = UUIDv7.generate()
+        let linkedWorktreeId = UUIDv7.generate()
+        let ownership = FilesystemRootOwnership(
+            canonicalRootsByWorktree: [mainWorktreeId: "/tmp/repo", linkedWorktreeId: "/tmp/repo.feature"])
+
+        // Act
+        let mainGitPath = ownership.route(sourceWorktreeId: mainWorktreeId, rawPath: "/tmp/repo/.git/index")
+        let linkedGitPath = ownership.route(
+            sourceWorktreeId: linkedWorktreeId, rawPath: "/tmp/repo/.git/worktrees/repo.feature/index")
+
+        // Assert
+        #expect(mainGitPath == FilesystemOwnedPath(worktreeId: mainWorktreeId, relativePath: ".git/index"))
+        #expect(
+            linkedGitPath
+                == FilesystemOwnedPath(
+                    worktreeId: mainWorktreeId, relativePath: ".git/worktrees/repo.feature/index"))
+    }
+
     @Test("routes to deepest matching root across nested ownership")
     func routesToDeepestMatchingRoot() {
         let parentWorktreeId = UUID()

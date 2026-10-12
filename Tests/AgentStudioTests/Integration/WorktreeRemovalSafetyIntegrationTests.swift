@@ -1,11 +1,52 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
 
 @Suite("Worktree removal safety with real Git")
 struct WorktreeRemovalSafetyIntegrationTests {
+    @Test("a dirty submodule alone refuses removal and preserves its working changes")
+    func refusesDirtySubmoduleWithoutMutation() async throws {
+        // Arrange: the linked worktree has no ordinary edits, only a dirty submodule.
+        var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-dirty-submodule")
+        defer { fixture.destroy() }
+        let sourcePath = try await FilesystemTestGitRepo.create(named: "worktree-remove-submodule-source")
+        defer { FilesystemTestGitRepo.destroy(sourcePath) }
+        try "initial\n".write(to: sourcePath.appending(path: "child.txt"), atomically: true, encoding: .utf8)
+        try await removalGit(sourcePath, "add", "child.txt")
+        try await removalGit(sourcePath, "commit", "-m", "Seed submodule")
+        try await removalGit(
+            fixture.path, "-c", "protocol.file.allow=always", "submodule", "add", sourcePath.path, "modules/child"
+        )
+        try await removalGit(fixture.path, "add", ".gitmodules", "modules/child")
+        try await removalGit(fixture.path, "commit", "-m", "Add submodule")
+        let worktreePath = try await fixture.addWorktree(branch: "feature/dirty-submodule")
+        try await removalGit(worktreePath, "-c", "protocol.file.allow=always", "submodule", "update", "--init")
+        let dirtyFile = worktreePath.appending(path: "modules/child/child.txt")
+        try "initial\ndirty\n".write(to: dirtyFile, atomically: true, encoding: .utf8)
+        let statusBefore = try await removalGit(worktreePath, "status", "--porcelain")
+        #expect(statusBefore == "M modules/child")
+        let before = try await removalRepositorySnapshot(fixture.path)
+
+        // Act: the real removal preflight retains the SDK's default submodule policy.
+        let report = await WorktreeRemovalRunner(client: fixture.client).run(
+            worktreeRemovalRequest(
+                repository: fixture.path, targets: [worktreePath.path], callerDirectory: fixture.path)
+        )
+
+        // Assert: the refusal settles before any worktree, branch or file mutation.
+        guard case .refused(let entry)? = report.entries.first else {
+            Issue.record("expected dirty submodule refusal, got \(report)")
+            return
+        }
+        #expect(entry.refusal.reason == .dirty)
+        #expect(try await removalRepositorySnapshot(fixture.path) == before)
+        #expect(try await removalGit(worktreePath, "status", "--porcelain") == statusBefore)
+        #expect(try String(contentsOf: dirtyFile, encoding: .utf8) == "initial\ndirty\n")
+    }
+
     @Test("main, current, dirty, evidence, and locked stops preserve repository state")
     func refusesEveryPreflightStopWithoutMutation() async throws {
         var fixture = try await WorktreeRemovalRepository.create(named: "worktree-remove-preflight")

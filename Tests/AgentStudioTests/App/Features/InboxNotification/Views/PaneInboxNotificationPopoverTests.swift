@@ -131,6 +131,9 @@ private struct PaneInboxCommandQuery: Equatable {
 
 @MainActor
 private final class PaneInboxCommandDispatcherProbe: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     private let targetedCapability: Bool
     private(set) var capabilityQueries: [PaneInboxCommandQuery] = []
     private(set) var dispatchedTargets: [PaneInboxCommandQuery] = []

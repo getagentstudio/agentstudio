@@ -33,13 +33,13 @@ struct AppDelegateRepositoryFactUpdateTests {
             ]
         )
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = nil
-                AppCommandDispatcher.shared.appCommandRouter = fixture.delegate
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = nil
+                configuration.shellOwner = fixture.delegate
             },
-            body: {
-                let dispatcher = AppCommandDispatcher.shared
+            body: { dispatcher in
+                let dispatcher = dispatcher
                 #expect(
                     dispatcher.canDispatch(
                         .updateRepositoryFacts,

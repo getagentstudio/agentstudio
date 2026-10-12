@@ -29,14 +29,20 @@ struct WorkspaceSurfaceCoordinatorEntityRecencyTests {
             )
             let repo = store.addRepo(at: URL(fileURLWithPath: "/tmp/entity-recency-repo"))
             let worktree = try #require(store.repo(repo.id)?.worktrees.first)
-            let coordinator = WorkspaceSurfaceCoordinator(
-                store: store,
-                viewRegistry: ViewRegistry(),
-                runtime: SessionRuntime(store: store),
-                windowLifecycleStore: coreAtoms.windowLifecycle,
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
-            )
+            let coordinator = {
+                let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+                return WorkspaceSurfaceCoordinator(
+                    store: store,
+                    viewRegistry: ViewRegistry(),
+                    runtime: SessionRuntime(store: store),
+                    surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                    terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                    runtimeRegistry: RuntimeRegistry(),
+                    windowLifecycleStore: coreAtoms.windowLifecycle,
+                    ipcLifecycle: .testUnavailable,
+                    bridgePaneAttendance: BridgePaneAttendanceAtom()
+                )
+            }()
 
             let openedPane = try await coordinator.openTerminal(for: worktree, in: repo)
 
@@ -62,14 +68,20 @@ struct WorkspaceSurfaceCoordinatorEntityRecencyTests {
     func rejectedUnknownWorktreeAction_recordsNothing() async throws {
         await withAsyncTestCoreAtoms { coreAtoms in
             let store = makeStore(coreAtoms: coreAtoms)
-            let coordinator = WorkspaceSurfaceCoordinator(
-                store: store,
-                viewRegistry: ViewRegistry(),
-                runtime: SessionRuntime(store: store),
-                windowLifecycleStore: coreAtoms.windowLifecycle,
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
-            )
+            let coordinator = {
+                let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+                return WorkspaceSurfaceCoordinator(
+                    store: store,
+                    viewRegistry: ViewRegistry(),
+                    runtime: SessionRuntime(store: store),
+                    surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                    terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                    runtimeRegistry: RuntimeRegistry(),
+                    windowLifecycleStore: coreAtoms.windowLifecycle,
+                    ipcLifecycle: .testUnavailable,
+                    bridgePaneAttendance: BridgePaneAttendanceAtom()
+                )
+            }()
             let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
 
             let accepted = await executor.execute(.openWorktree(worktreeId: UUID()))
@@ -97,14 +109,20 @@ struct WorkspaceSurfaceCoordinatorEntityRecencyTests {
                 ],
                 drawerCursorsByKey: [:]
             )
-            let coordinator = WorkspaceSurfaceCoordinator(
-                store: store,
-                viewRegistry: ViewRegistry(),
-                runtime: SessionRuntime(store: store),
-                windowLifecycleStore: coreAtoms.windowLifecycle,
-                ipcLifecycle: .testUnavailable,
-                bridgePaneAttendance: BridgePaneAttendanceAtom()
-            )
+            let coordinator = {
+                let fixtureSurfaceManager = makeAppTerminalFixtureSurfaceManager()
+                return WorkspaceSurfaceCoordinator(
+                    store: store,
+                    viewRegistry: ViewRegistry(),
+                    runtime: SessionRuntime(store: store),
+                    surfaceManager: fixtureSurfaceManager, terminalSurfaceCommandDispatcher: fixtureSurfaceManager,
+                    terminalSurfaceOperations: fixtureSurfaceManager.makeTerminalPaneSurfaceOperations(),
+                    runtimeRegistry: RuntimeRegistry(),
+                    windowLifecycleStore: coreAtoms.windowLifecycle,
+                    ipcLifecycle: .testUnavailable,
+                    bridgePaneAttendance: BridgePaneAttendanceAtom()
+                )
+            }()
             let executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)
 
             let accepted = await executor.execute(.openWorktreeInPane(worktreeId: worktree.id))

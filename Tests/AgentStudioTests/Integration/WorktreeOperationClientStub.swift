@@ -197,7 +197,9 @@ struct WorktreeOperationClientStub: AgentStudioGitLocalClient {
         throw .unsupported(message: "unexpected status facts")
     }
 
-    func exactLineCountDetail(for _: URL) async throws(GitDataPlaneError) -> GitStatusLineCountDetail {
+    func exactLineCountDetail(for _: URL, excludeSubmodules _: Bool) async throws(GitDataPlaneError)
+        -> GitStatusLineCountDetail
+    {
         throw .unsupported(message: "unexpected status line count")
     }
 

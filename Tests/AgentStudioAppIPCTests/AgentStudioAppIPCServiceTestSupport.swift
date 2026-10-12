@@ -610,6 +610,7 @@ final class FakeCommandPort: AppIPCCommandPort, @unchecked Sendable {
         }
         return AppIPCPreparedCommand(
             request: preparedRequest,
+            allowedTargetKinds: Set(command.allowedTargetKinds),
             canonicalHandle: canonicalHandle,
             target: requiredScopes.first?.target ?? .app,
             requiredScopes: requiredScopes,
