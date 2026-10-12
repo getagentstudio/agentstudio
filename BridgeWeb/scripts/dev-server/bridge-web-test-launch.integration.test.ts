@@ -10,6 +10,8 @@ import { promisify } from 'node:util';
 import { expect, test } from 'vitest';
 
 import { BridgeVerifierProductFileSession } from '../verify-bridge-viewer-worktree-dev-server/product-file-session.ts';
+import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
+import type { BridgeWebTestLaunchCleanup } from './bridge-web-test-launch-contracts.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise, type HandledLaunchPromise } from './handled-launch-promise.ts';
 
@@ -68,6 +70,64 @@ try {
   cleanupFailure = String(error);
 }
 `;
+
+test('Vite optimizer output is joined before launch-root retirement', async () => {
+	const outputEntered = makeDeferred<void>();
+	const outputRelease = makeDeferred<void>();
+	const outputFinished = makeDeferred<void>();
+	let wroteOutput = false;
+	const launch = await BridgeWebTestLaunch.start();
+	const vite = await launch.startVite({
+		configFile: false,
+		logLevel: 'silent',
+		optimizeDeps: {
+			entries: ['src/main.tsx'],
+			force: true,
+			include: ['react'],
+			rolldownOptions: {
+				plugins: [
+					{
+						name: 'held-review-optimizer-output',
+						async generateBundle(): Promise<void> {
+							outputEntered.resolve();
+							await outputRelease.promise;
+						},
+						writeBundle(): void {
+							wroteOutput = true;
+						},
+						closeBundle(): void {
+							outputFinished.resolve();
+						},
+					},
+				],
+			},
+		},
+		server: { hmr: false, preTransformRequests: false, watch: null },
+	});
+	await vite.transformRequest('/src/main.tsx').catch(() => {});
+	const serverClosed = makeDeferred<void>();
+	vite.httpServer?.once('close', (): void => serverClosed.resolve());
+	let disposing: HandledLaunchPromise<BridgeWebTestLaunchCleanup> | null = null;
+	let disposalReturned = false;
+	try {
+		await outputEntered.promise;
+		disposing = handleLaunchPromise(launch.dispose(), 'held optimizer output teardown');
+		void disposing.settled.then((): void => {
+			disposalReturned = true;
+		});
+		await serverClosed.promise;
+		expect(disposalReturned).toBe(false);
+		expect(launch.cleanup.dataRootRemoved).toBe(false);
+		outputRelease.resolve();
+		await outputFinished.promise;
+		await disposing.value();
+		expect(wroteOutput).toBe(true);
+		expect(launch.cleanup.dataRootRemoved).toBe(true);
+	} finally {
+		outputRelease.resolve();
+		await disposing?.settled;
+	}
+});
 
 test.each(['legacy', 'isolated'] as const)(
 	'Vite optimizer cache retirement is path-isolated: %s',

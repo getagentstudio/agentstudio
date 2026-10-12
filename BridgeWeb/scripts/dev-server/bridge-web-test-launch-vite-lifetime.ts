@@ -3,6 +3,11 @@ import type { Plugin, ViteDevServer } from 'vite';
 import type { BridgeWebViteLateListenerRetirement } from './bridge-web-test-launch-contracts.ts';
 import { handleLaunchPromise, type HandledLaunchPromise } from './handled-launch-promise.ts';
 
+interface PendingOptimizerOutput {
+	readonly completion: Promise<void>;
+	readonly resolve: () => void;
+}
+
 // Capture Vite before user configuration hooks suspend. Closing this resource
 // precedes joining acquisition, so a close-aware hook can retire its work.
 export class BridgeWebOwnedViteLifetime {
@@ -11,6 +16,28 @@ export class BridgeWebOwnedViteLifetime {
 	#disposal: HandledLaunchPromise<void> | null = null;
 	#listenerClosed = true;
 	#lateListenerRetirement: BridgeWebViteLateListenerRetirement = { kind: 'not-required' };
+	readonly #optimizerOutputs = new Set<PendingOptimizerOutput>();
+	readonly #optimizerOutputQueue: PendingOptimizerOutput[] = [];
+	readonly optimizerPlugin = {
+		name: 'bridge-web-test-launch-optimizer-owner',
+		generateBundle: (): void => {
+			if (this.#retirementRequested)
+				throw new Error('Vite optimizer output started after launch retirement');
+			let resolveCompletion!: () => void;
+			const completion = new Promise<void>((resolve): void => {
+				resolveCompletion = resolve;
+			});
+			const output = { completion, resolve: resolveCompletion };
+			this.#optimizerOutputs.add(output);
+			this.#optimizerOutputQueue.push(output);
+		},
+		writeBundle: (): void => {
+			this.#completeOptimizerOutput();
+		},
+		closeBundle: (): void => {
+			while (this.#optimizerOutputQueue.length > 0) this.#completeOptimizerOutput();
+		},
+	};
 
 	readonly plugin: Plugin = {
 		name: 'bridge-web-test-launch-vite-owner',
@@ -52,6 +79,19 @@ export class BridgeWebOwnedViteLifetime {
 		);
 		await this.#disposal.value();
 		this.#listenerClosed = !(server.httpServer?.listening ?? false);
+	}
+
+	async waitForOptimizerOutputs(): Promise<void> {
+		while (this.#optimizerOutputs.size > 0) {
+			await Promise.all([...this.#optimizerOutputs].map((output) => output.completion));
+		}
+	}
+
+	#completeOptimizerOutput(): void {
+		const output = this.#optimizerOutputQueue.shift();
+		if (output === undefined) return;
+		this.#optimizerOutputs.delete(output);
+		output.resolve();
 	}
 
 	// Vite memoizes close(). A suspended listen can reopen HTTP after that close;

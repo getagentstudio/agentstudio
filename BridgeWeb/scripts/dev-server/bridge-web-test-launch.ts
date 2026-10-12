@@ -237,10 +237,23 @@ export class BridgeWebTestLaunch {
 		if (this.#viteLifetime.owned || this.#viteProcess !== null)
 			throw new Error('Test launch already owns Vite.');
 		try {
+			const optimizeDeps = configuration.optimizeDeps;
+			const existingOptimizerPlugins = optimizeDeps?.rolldownOptions?.plugins;
+			const optimizerPlugins =
+				existingOptimizerPlugins === undefined
+					? []
+					: Array.isArray(existingOptimizerPlugins)
+						? existingOptimizerPlugins
+						: [existingOptimizerPlugins];
 			const vite = await this.#acquire(
 				(async (): Promise<ViteDevServer> =>
 					await createServer({
 						...configuration,
+						optimizeDeps: Object.assign({}, optimizeDeps, {
+							rolldownOptions: Object.assign({}, optimizeDeps?.rolldownOptions, {
+								plugins: [this.#viteLifetime.optimizerPlugin, ...optimizerPlugins],
+							}),
+						}),
 						plugins: [this.#viteLifetime.plugin, ...(configuration.plugins ?? [])],
 						cacheDir: join(this.dataRootPath, 'vite-cache'),
 						server: {
@@ -457,6 +470,7 @@ export class BridgeWebTestLaunch {
 				name: 'Vite',
 				run: async (): Promise<void> => {
 					await earlyViteClose.value();
+					await this.#viteLifetime.waitForOptimizerOutputs();
 					// A capture can arrive during acquisition after early close found no server.
 					await this.#viteLifetime.close();
 					await this.observeStep(
