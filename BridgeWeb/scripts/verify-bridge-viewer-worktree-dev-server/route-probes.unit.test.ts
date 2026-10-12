@@ -1,12 +1,16 @@
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, expectTypeOf, test, vi } from 'vitest';
+import type { z } from 'zod';
 
 import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeTelemetrySample } from '../../src/foundation/telemetry/bridge-telemetry-event.js';
 import { endToEndTestTimeoutMilliseconds } from '../../tests/vitest-hang-bounds.ts';
-import { createBridgeDevTelemetrySink } from '../dev-server/bridge-dev-telemetry.js';
+import {
+	createBridgeDevTelemetrySink,
+	type BridgeDevTelemetrySnapshot,
+} from '../dev-server/bridge-dev-telemetry.js';
 import { worktreeDevServerOrigin } from './config.js';
 import { assertSelectedContentRouteProof } from './content-state.js';
 import {
@@ -24,6 +28,18 @@ import { createOwnedVerifierJourneyDeadline } from './verifier-journey-deadline.
 const routeProbesSourcePath = fileURLToPath(new URL('./route-probes.ts', import.meta.url));
 
 describe('Bridge dev telemetry status contract', () => {
+	test('verifier status schema and the product snapshot type admit each other', () => {
+		// Arrange
+		type VerifierTelemetryStatus = z.infer<typeof bridgeDevTelemetryStatusSchema>;
+
+		// Act / Assert: a snapshot field, lifecycle field or malformed kind added on either side fails typecheck.
+		expectTypeOf<keyof VerifierTelemetryStatus>().toEqualTypeOf<keyof BridgeDevTelemetrySnapshot>();
+		expectTypeOf<BridgeDevTelemetrySnapshot>().toExtend<VerifierTelemetryStatus>();
+		expectTypeOf<VerifierTelemetryStatus['operationLifecycle']>().toExtend<
+			BridgeDevTelemetrySnapshot['operationLifecycle']
+		>();
+	});
+
 	test('verifier schema accepts the product telemetry snapshot lifecycle contract', async () => {
 		// Arrange
 		const operationCorrelationId = 'a'.repeat(64);
