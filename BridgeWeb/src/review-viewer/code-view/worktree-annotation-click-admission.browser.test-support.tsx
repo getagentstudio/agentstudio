@@ -314,8 +314,18 @@ export async function createClickAdmissionReviewHarness(
 }
 
 function makeReviewItem(): BridgeMainCodeViewItem {
-	const baseContents = ['let stable = 1', 'let reviewed = "before"', 'let tail = 3'].join('\n');
-	const headContents = ['let stable = 1', 'let reviewed = "after"', 'let tail = 3'].join('\n');
+	const baseContents = [
+		'let stable = 1',
+		'let reviewed = "before"',
+		'let tail = 3',
+		...Array.from({ length: 250 }, (_, index) => `let extra = ${index}`),
+	].join('\n');
+	const headContents = [
+		'let stable = 1',
+		'let reviewed = "after"',
+		'let tail = 3',
+		...Array.from({ length: 250 }, (_, index) => `let extra = ${index}`),
+	].join('\n');
 	return {
 		bridgeMetadata: {
 			cacheKey: 'review-base|review-head',

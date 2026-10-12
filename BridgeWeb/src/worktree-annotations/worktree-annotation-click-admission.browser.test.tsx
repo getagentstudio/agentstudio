@@ -337,19 +337,26 @@ describe('worktree annotation click admission through Pierre pointers', () => {
 	});
 
 	test('keeps repeated same-range and later new-range plus clicks admissible', async () => {
-		let recycledLaterContextRow = false;
 		const harness = await renderReviewHarness(
 			false,
 			undefined,
 			undefined,
 			(_codeView, pointerId, row): void => {
-				if (pointerId !== 403 || recycledLaterContextRow) return;
-				recycledLaterContextRow = true;
+				if (pointerId !== 403) return;
 				const parent = row.parentElement;
 				if (parent === null) throw new Error('Expected the hovered Pierre row parent.');
-				// Pierre can recycle a row while its interaction pre remains mounted.
-				row.remove();
-				parent.append(row.cloneNode(true));
+				const retirementCleanup = { unregister: undefined as (() => void) | undefined };
+				const rowRetirement = new MutationObserver((): void => {
+					if (row.isConnected) return;
+					rowRetirement.disconnect();
+					retirementCleanup.unregister?.();
+					_codeView.scrollTo({ type: 'position', position: 0, behavior: 'instant' });
+				});
+				retirementCleanup.unregister = registerHarnessCleanup(
+					async (): Promise<void> => rowRetirement.disconnect(),
+				);
+				rowRetirement.observe(parent, { childList: true, subtree: true });
+				_codeView.scrollTo({ type: 'position', position: 100_000, behavior: 'instant' });
 			},
 		);
 		await runWithOwnedCleanup(async (): Promise<void> => {
