@@ -105,9 +105,9 @@ struct BridgePaneProductFileDescriptorRenewalTests {
         )
     }
 
-    @Test("a superseded refresh admission cannot publish over newer descriptor authority")
+    @Test("superseded refresh admission rejects its late result while the newer descriptor remains readable")
     @MainActor
-    func supersededRefreshAdmissionCannotPublishOverNewerDescriptor() async throws {
+    func supersededRefreshAdmissionRejectsLateResultWhileNewerDescriptorRemainsReadable() async throws {
         // Arrange
         let fixture = try ProductFileSourceFixture(fileCount: 1)
         defer { fixture.remove() }

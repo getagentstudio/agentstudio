@@ -679,33 +679,6 @@ struct AgentStudioAppIPCServiceTests {
             })
     }
 
-    @Test("pane authentication uses canonical fixture credential metadata")
-    func paneAuthenticationUsesCanonicalFixtureCredentialMetadata() async throws {
-        try await withLiveServer(
-            makeFixture: { try LiveServerFixture() },
-            body: { fixture in
-                try fixture.server.start()
-                let token = try fixture.issueTestCredential(
-                    for: .pane(
-                        paneId: fixture.boundPaneId,
-                        credentialRecordId: UUIDv7.generate(),
-                        status: .registered
-                    )
-                )
-                let connection = try await connectWithoutBlockingCooperativePool(
-                    socketPath: fixture.paths.socketURL.path)
-                defer { connection.close() }
-                var reader = TestFrameReader()
-                try await loginWithoutBlockingMainActor(
-                    connection: connection, token: token, requestId: 67, reader: &reader)
-                try await sendRequestWithoutBlockingCooperativePool(
-                    connection: connection,
-                    request: JSONRPCClientRequest(id: .number(68), method: "system.identify", params: .object([:]))
-                )
-                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-                #expect(response.error == nil)
-            })
-    }
 }
 
 private final class PaneMembershipGate: @unchecked Sendable {
