@@ -145,6 +145,9 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         #expect(try await facts.expectHandledEnvelope(seq: 1) == .routed)
         #expect(await actor.rootPathByWorktreeId[worktreeId] != nil)
         #expect(await calls.value == 0)
+        #expect(await actor.refreshAttribution.requestSequenceByWorktreeId[worktreeId] == nil)
+        #expect(await actor.worktreeTasks[worktreeId] == nil)
+        #expect(await actor.automaticRefreshDeadlineByWorktreeId[worktreeId] != nil)
 
         await setPromotedAttention(actor: actor, worktreeId: worktreeId)
         try await facts.expectRefreshStarted(worktreeId: worktreeId, requestSequence: 1)
@@ -247,14 +250,16 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
 
         #expect(try await facts.expectHandledEnvelope(seq: 4) == .routed)
         #expect(await gate.count == 2)
-        let nextAutomaticStartAt = await actor.nextAutomaticStartAt
-        let deadlineClockNow = await actor.deadlineClock.now
-        clock.advance(by: max(.zero, nextAutomaticStartAt - deadlineClockNow))
+        let thirdStartRegistration = await observeGitProjectorPacingDeadline(actor, clock: clock)
+        clock.advance(to: thirdStartRegistration.registeredSleep)
         let thirdStartLabels = try await gate.waitForArrival(3)
         #expect(thirdStartLabels.count == 3)
         #expect(await gate.activeCallCount == 1)
         let thirdStartedIndex = try #require(rootPaths.firstIndex { $0.lastPathComponent == thirdStartLabels[2] })
         _ = try await facts.expectNextRefreshStarted(worktreeId: worktreeIds[thirdStartedIndex])
+        let pacingObservation = await observeGitProjectorPacingDeadline(actor, clock: clock)
+        #expect(pacingObservation.scheduledStart == (await actor.deadlineClock.now) + .milliseconds(10))
+        #expect(pacingObservation.registeredSleep == clock.now.advanced(by: .milliseconds(10)))
         clock.advance(by: policy.minimumAutomaticStartInterval - .milliseconds(1))
         #expect(await gate.count == 3)
         clock.advance(by: .milliseconds(1))
