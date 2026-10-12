@@ -12,7 +12,7 @@ import Testing
 
 @Suite("GitWorkingDirectoryProjector")
 struct GitWorkingDirectoryProjectorTests {
-    @Test("disabled performance recorder suppresses logical debt traces")
+    @Test("disabled recorder exposes no recorded logical debt trace attributes")
     func disabledTraceRecorderProducesNoTraceFacts() async {
         let recorder = GitProjectorTraceRecorderSpy(isEnabled: false)
         let actor = GitWorkingDirectoryProjector(
@@ -2110,6 +2110,7 @@ struct GitWorkingDirectoryProjectorTests {
             bus: bus,
             gitWorkingTreeProvider: provider,
             coalescingWindow: .zero,
+            sleepClock: TestPushClock(),
             factSink: { scope, fact in
                 if fact == .refreshAdmitted { admittedRequestCount.withLock { $0 += 1 } }
                 source.sink(scope, fact)
@@ -2782,9 +2783,10 @@ struct GitWorkingDirectoryProjectorTests {
     @Test("projector emits an initial empty origin event")
     func emitsInitialEmptyOriginEvent() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let repoId = UUID()
-        let worktreeId = UUID()
-        let rootPath = URL(fileURLWithPath: "/tmp/origin-none-\(UUID().uuidString)")
+        let publicationProbe = try GitProjectorPublicationProbe(bus: bus)
+        let repoId = UUIDv7.generate()
+        let worktreeId = UUIDv7.generate()
+        let rootPath = URL(fileURLWithPath: "/tmp/origin-none-\(UUIDv7.generate().uuidString)")
         let callCounter = CallCounter()
         let provider = StubGitWorkingTreeStatusProvider { _ in
             _ = await callCounter.increment()
@@ -2797,13 +2799,17 @@ struct GitWorkingDirectoryProjectorTests {
         let actor = GitWorkingDirectoryProjector(
             bus: bus,
             gitWorkingTreeProvider: provider,
-            coalescingWindow: .zero
+            coalescingWindow: .zero,
+            sleepClock: TestPushClock(),
+            factSink: publicationProbe.factSink,
+            runtimeEnvelopePoster: publicationProbe
         )
 
         let observed = GitProjectorOutputFactRecorder()
         let collectionTask = await startCollection(on: bus, observed: observed)
         await actor.start()
 
+        let opening = await publicationProbe.beginObservation()
         await actor.setActivity(worktreeId: worktreeId, isActiveInApp: true)
         await bus.post(
             makeEnvelope(
@@ -2821,8 +2827,32 @@ struct GitWorkingDirectoryProjectorTests {
         #expect(initialEvent?.0.isEmpty == true)
         #expect(initialEvent?.1.isEmpty == true)
 
+        let acceptedDrains = await actor.outstandingDrainTasks.values.map { $0 }
+        for acceptedDrain in acceptedDrains { await acceptedDrain.value }
         await actor.shutdown()
         try await collectionTask.finish()
+        let originPublicationCount = Mutex(0)
+        try await publicationProbe.facts.expectNone(
+            of: { fact in
+                guard case .output(let event) = fact else { return false }
+                switch event {
+                case .originChanged(let eventRepoId, _, _), .originUnavailable(let eventRepoId):
+                    guard eventRepoId == repoId else { return false }
+                    return originPublicationCount.withLock { count in
+                        count += 1
+                        return count > 1
+                    }
+                default: return false
+                }
+            },
+            "second initial empty origin publication through joined projector shutdown",
+            from: opening,
+            closedBy: {
+                if case .shutdownCompleted = $0 { return true }
+                return false
+            })
+        #expect(originPublicationCount.withLock { $0 } == 1)
+        try await publicationProbe.facts.finish()
     }
 
     @Test("projector retries origin discovery after initial empty result")
