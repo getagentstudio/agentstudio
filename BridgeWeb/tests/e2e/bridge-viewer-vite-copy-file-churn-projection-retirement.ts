@@ -189,7 +189,10 @@ export async function holdAnnotationProjectionAcrossFileRefresh(props: {
 			successorDescriptorIds: [...successorDescriptorIds],
 			atRetirement,
 		}),
-		releaseProjection: (): void => releaseOldProjection.resolve(),
+		releaseProjection: (): void => {
+			releaseOldProjection.resolve();
+			releaseFileContent.resolve();
+		},
 		waitForHeldProjection: async (): Promise<void> => {
 			await heldProjectionArrival.promise;
 		},
