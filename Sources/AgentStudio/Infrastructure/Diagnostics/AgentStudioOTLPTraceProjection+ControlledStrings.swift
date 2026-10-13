@@ -31,6 +31,8 @@ extension AgentStudioOTLPTraceProjection {
             return ["empty", "non_empty"].contains(value)
         case "agentstudio.performance.sidebar.group_mode":
             return ["repo", "pane", "tab", "none", "not_applicable"].contains(value)
+        case "agentstudio.performance.sidebar.sort_order":
+            return ["ascending", "descending"].contains(value)
         case "agentstudio.performance.sidebar.trigger":
             return [
                 "grouping_switch", "surface_switch", "search", "sort_order", "collapse_toggle",
