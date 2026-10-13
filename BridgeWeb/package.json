@@ -48,7 +48,7 @@
 		"@vitejs/plugin-react": "^6.0.4",
 		"class-variance-authority": "^0.7.1",
 		"clsx": "2.1.1",
-		"dompurify": "^3.4.13",
+		"dompurify": "^3.4.16",
 		"lucide-react": "^1.21.0",
 		"markdown-exit": "1.1.0-beta.2",
 		"mermaid": "11.16.1",
