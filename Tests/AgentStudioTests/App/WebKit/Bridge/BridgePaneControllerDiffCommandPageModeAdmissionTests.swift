@@ -312,7 +312,9 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
     private func assertResumedExplicitCommandRetiresWhileCaptureIsHeld(
         _ retirement: ResumedExplicitCommandRetirement
     ) async throws {
-        let fixture = try await makeDiffCommandPageModeFixture()
+        let fixture = try await makeDiffCommandPageModeFixture(
+            reviewConstructionProgress: .init(clock: TestPushClock())
+        )
         let captureGate = BridgeContributionCaptureGate()
         await fixture.provider.setContributionCaptureGate(captureGate)
         let target = WorkspaceReviewContributionTarget.branch(name: "target-retired-in-capture")
@@ -347,6 +349,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             #expect(fixture.controller.reviewConstructionProgress.activeWaitCount() == 1)
             #expect(await fixture.provider.recordedContributionRequests().count == 1)
 
+            let resumedTask = try #require(fixture.controller.resumingExplicitReviewCommandTasksById[commandId])
+            #expect(!resumedTask.isCancelled)
             switch retirement {
             case .closeInstallation:
                 let installation = try #require(
@@ -360,6 +364,9 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 #expect(fixture.controller.resumingExplicitReviewCommandTasksById[commandId] != nil)
             }
 
+            if case .reloadPage = retirement {
+                try #require(resumedTask.isCancelled, "Page reload must cancel the held resumed command directly")
+            }
             #expect(
                 await commandTask.value
                     == .failure(.invalidPayload(description: "Bridge pane is closed"))
@@ -392,6 +399,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 await task.value
             }
             _ = await fixture.controller.beginTeardown().value
+            _ = await commandTask.value
             throw error
         }
     }
