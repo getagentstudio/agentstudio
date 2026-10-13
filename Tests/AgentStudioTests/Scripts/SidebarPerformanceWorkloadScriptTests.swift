@@ -970,7 +970,7 @@ func runSidebarScript(
     arguments: [String],
     environment: [String: String] = [:]
 ) async throws -> ProcessResult {
-    var mergedEnvironment = ProcessInfo.processInfo.environment
+    var mergedEnvironment: [String: String] = [:]
     let implicitProofRoot: URL?
     if environment["AGENTSTUDIO_SIDEBAR_PROOF_ROOT"] == nil {
         implicitProofRoot = FileManager.default.temporaryDirectory.appending(
