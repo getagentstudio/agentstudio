@@ -119,7 +119,7 @@ export function observeBrowserRuntimeDiagnostics(page: Page): BrowserRuntimeDiag
 				}),
 			);
 			const bodyTextRead = await readBrowserDiagnosticWithinDeadline(
-				page.locator('body').textContent({ timeout: 2_000 }),
+				page.evaluate((): string | null => document.body?.textContent ?? null),
 			);
 			return JSON.stringify({
 				bodyText:
