@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <filter id="sb" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="6" stdDeviation="10" flood-color="#000000" flood-opacity="0.35"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#ef9f76" flood-opacity="0.2"/>
+    </filter>
+    <filter id="sm" x="-30%" y="-30%" width="160%" height="170%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000000" flood-opacity="0.30"/>
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="#ef9f76" flood-opacity="0.2"/>
+    </filter>
+    <filter id="sf" x="-25%" y="-20%" width="150%" height="160%">
+      <feDropShadow dx="0" dy="14" stdDeviation="20" flood-color="#000000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+  <g transform="translate(570, 522) scale(1.2) translate(-512, -512)">
+    <g transform="translate(425, 500) rotate(-12)" opacity="0.9">
+      <rect x="-280" y="-185" width="560" height="370" rx="48"
+            fill="#11111b" stroke="#ef9f76" stroke-width="6" filter="url(#sb)"/>
+    </g>
+    <g transform="translate(468, 496) rotate(7)" opacity="0.9">
+      <rect x="-290" y="-188" width="580" height="376" rx="50"
+            fill="#151520" stroke="#ef9f76" stroke-width="7" filter="url(#sm)"/>
+    </g>
+    <g transform="translate(512, 512) rotate(0)">
+      <rect x="-305" y="-195" width="610" height="390" rx="52"
+            fill="#1e1e2e" stroke="#89b4fa" stroke-width="11" filter="url(#sf)"/>
+      <path d="M-100 -60 L-30 -8 L-100 44"
+            fill="none" stroke="#74c7ec" stroke-width="28"
+            stroke-linecap="round" stroke-linejoin="round"/>
+      <path d="M20 46 L120 46"
+            fill="none" stroke="#74c7ec" stroke-width="24"
+            stroke-linecap="round"/>
+    </g>
+  </g>
+</svg>

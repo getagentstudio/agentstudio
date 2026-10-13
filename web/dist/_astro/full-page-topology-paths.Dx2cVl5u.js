@@ -1,0 +1,1 @@
+function e(e,t,n,r){return[`M ${e} ${n}`,`C ${e+(t-e)*.9} ${n+(r-n)*.08} ${t} ${n+(r-n)*.1} ${t} ${r}`]}function t(e,t,n,r){return[`M ${e} ${n}`,`C ${e} ${n+(r-n)*.9} ${e+(t-e)*.1} ${r} ${t} ${r}`]}function n(e,t,n,r){return[`L ${t} ${n}`,`C ${t} ${n+(r-n)*.9} ${t+(e-t)*.1} ${n+(r-n)*.92} ${e} ${r}`]}export{e as n,n as r,t};
