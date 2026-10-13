@@ -1,6 +1,7 @@
 import type { Page, Request, Response } from 'playwright';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import { waitForReviewOwnerOutcome } from './bridge-viewer-vite-review-owner-wait.ts';
 
 interface TabOwnershipCleanupProps {
 	readonly registerOnFinished: (cleanup: () => Promise<void>) => void;
@@ -217,4 +218,19 @@ export function observeTabOwnershipBootstrap<
 		);
 		props.signal.addEventListener('abort', onAbort, { once: true });
 	});
+}
+
+export async function waitForTabOwnershipReviewReady(props: {
+	readonly page: Page;
+	readonly itemId: string;
+}): Promise<void> {
+	const outcome = await waitForReviewOwnerOutcome({
+		page: props.page,
+		goal: 'selected-painted',
+		itemId: props.itemId,
+	});
+	if (outcome.kind === 'terminal')
+		throw new Error(
+			`Tab ownership Review readiness ended: ${outcome.owner}; ${JSON.stringify(outcome)}`,
+		);
 }
