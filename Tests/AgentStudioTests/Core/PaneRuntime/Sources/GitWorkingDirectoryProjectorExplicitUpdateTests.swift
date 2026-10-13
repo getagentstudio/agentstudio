@@ -116,6 +116,7 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
                 }
             },
             coalescingWindow: .zero,
+            performanceTraceRecorder: cancellationProbe,
             factSink: cancellationProbe.recordProjectorFact,
             pathExistenceProbe: { _ in true }
         )
@@ -130,20 +131,16 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
         try await facts.expectNext(in: cancellationProbe.refreshWindow, .projector(.refreshAdmitted))
         try await facts.expectNext(in: cancellationProbe.refreshWindow, .projector(.refreshStarted))
         #expect(try await providerStep.firstArrival() == rootPath)
-        let settlementContinuation = try #require(
-            await actor.explicitRepositoryUpdateAttemptsById[lease.attemptId]?.settlement.continuation
-        )
-        // Observe the owner's actual finish synchronously, without a task that
-        // may record lease delivery only after the provider has been released.
-        #expect(settlementContinuation.onTermination == nil)
-        settlementContinuation.onTermination = cancellationProbe.recordSettlementTermination
+        #expect(lease.attemptId == attemptID)
+        #expect(lease.source == .localGit)
+        #expect(cancellationProbe.recordedAdmissionCount == 1)
         let cancellationOpening = await facts.mark(cancellationProbe.cancellationWindow)
         let refreshOpening = await facts.mark(cancellationProbe.refreshWindow)
         let shutdownTask = Task { await actor.shutdown() }
 
         await #expect(throws: Never.self) {
             try await facts.expectNone(
-                of: { $0 == .settlementStreamTerminated }, "settlement before held provider cancellation",
+                of: { $0 == .ownerSettlementRecorded }, "settlement before held provider cancellation",
                 from: cancellationOpening, closedBy: { $0 == .providerCancellationRequested }
             )
         }
@@ -153,12 +150,13 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
 
         await #expect(throws: Never.self) {
             try await facts.expectNone(
-                of: { $0 == .settlementStreamTerminated }, "settlement before provider drain closed",
+                of: { $0 == .ownerSettlementRecorded }, "settlement before provider drain closed",
                 from: refreshOpening, closedBy: { $0 == .projector(.refreshClosed(.shutdown)) }
             )
         }
         #expect(await lease.settlement() == .cancelled)
-        #expect(cancellationProbe.finishedSettlementCount == 1)
+        #expect(cancellationProbe.recordedSettlementCount == 1)
+        #expect(cancellationProbe.recordedCancelledSettlementCount == 1)
         #expect(providerStep.recordedArrivals == [rootPath])
         try await facts.finish()
     }
@@ -348,12 +346,12 @@ private enum ExplicitUpdateCancellationScope: Hashable, Sendable {
 private enum ExplicitUpdateCancellationFact: Equatable, Sendable {
     case projector(GitProjectorFact)
     case providerCancellationRequested
-    case settlementStreamTerminated
+    case ownerSettlementRecorded
 }
 
-/// Adapts synchronous owner callbacks into correlated negative windows. Normal
-/// settlement follows the refresh close, so it is recorded only in open windows.
-private final class ExplicitUpdateCancellationProbe: Sendable {
+/// Adapts synchronous owner callbacks into correlated negative windows.
+/// Cancellation settlement follows the refresh close in this sole-attempt fixture.
+private final class ExplicitUpdateCancellationProbe: GitProjectorPerformanceRecording {
     let cancellationWindow: ExplicitUpdateCancellationScope
     let refreshWindow: ExplicitUpdateCancellationScope
     let source = LocalFactSource(
@@ -377,7 +375,21 @@ private final class ExplicitUpdateCancellationProbe: Sendable {
         refreshWindow = .refresh(attemptID: attemptID, scope: refreshScope)
     }
 
-    var finishedSettlementCount: Int { state.withLock { $0.finishedSettlementCount } }
+    var isEnabled: Bool { true }
+    var recordedAdmissionCount: UInt64 { state.withLock { $0.recordedAdmissionCount } }
+    var recordedSettlementCount: UInt64 { state.withLock { $0.recordedSettlementCount } }
+    var recordedCancelledSettlementCount: UInt64 { state.withLock { $0.recordedCancelledSettlementCount } }
+
+    func record(
+        _: AgentStudioPerformanceTraceRecorder.Event,
+        attributes _: @autoclosure () -> [String: AgentStudioTraceValue]
+    ) {}
+
+    func recordDuration(
+        _: AgentStudioPerformanceTraceRecorder.Event,
+        duration _: Duration,
+        attributes _: @autoclosure () -> [String: AgentStudioTraceValue]
+    ) {}
 
     func recordProjectorFact(scope: GitProjectorScope, fact: GitProjectorFact) {
         guard scope == refreshScope else { return }
@@ -394,20 +406,30 @@ private final class ExplicitUpdateCancellationProbe: Sendable {
         }
     }
 
-    func recordSettlementTermination(
-        _ termination: AsyncStream<RepositoryFactSourceUpdateOutcome>.Continuation.Termination
+    func recordGitWorkingDirectoryPerformanceSnapshot(
+        _ snapshot: GitWorkingDirectoryPerformanceSnapshot
     ) {
+        // Both explicit settlement paths synchronously flush these counters
+        // before resolve() yields. The lease reader cannot own this callback.
+        let settlementCount =
+            snapshot.explicitSettledCompleted + snapshot.explicitSettledFailed
+            + snapshot.explicitSettledObsolete + snapshot.explicitSettledCancelled
         state.withLock { state in
-            if case .finished = termination { state.finishedSettlementCount += 1 }
-            if !state.cancellationObserved { source.sink(cancellationWindow, .settlementStreamTerminated) }
-            if !state.refreshClosed { source.sink(refreshWindow, .settlementStreamTerminated) }
+            state.recordedAdmissionCount += snapshot.explicitAdmitted
+            state.recordedSettlementCount += settlementCount
+            state.recordedCancelledSettlementCount += snapshot.explicitSettledCancelled
+            guard settlementCount > 0 else { return }
+            if !state.cancellationObserved { source.sink(cancellationWindow, .ownerSettlementRecorded) }
+            if !state.refreshClosed { source.sink(refreshWindow, .ownerSettlementRecorded) }
         }
     }
 
     private struct ObservationState {
         var cancellationObserved = false
         var refreshClosed = false
-        var finishedSettlementCount = 0
+        var recordedAdmissionCount: UInt64 = 0
+        var recordedSettlementCount: UInt64 = 0
+        var recordedCancelledSettlementCount: UInt64 = 0
     }
 }
 
