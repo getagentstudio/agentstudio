@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import CoreServices
 import Foundation
@@ -132,12 +133,14 @@ struct FilesystemActorActivityTests {
         )
         try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let retirementProbe = FilesystemActivityRetirementProbe()
         let streamClient = DarwinFSEventStreamClient(
-            localStreamFactory: { _ in ActivityTestLocalFSEventStreamLifetime() }
+            localStreamFactory: { _ in ActivityRetirementObservedLifetime(probe: retirementProbe) }
         )
         let activityCommitRecorder = FilesystemActivityCommitRecorder()
         let activityProjector = RepositoryLocalActivityProjector { commit in
             await activityCommitRecorder.record(commit)
+            retirementProbe.commitReturned()
         }
         let clock = TestPushClock()
         let actor = FilesystemActor(
@@ -178,6 +181,7 @@ struct FilesystemActorActivityTests {
 
         let commits = await activityCommitRecorder.commits
         #expect(commits.count == 1)
+        #expect(retirementProbe.facts == [.commitReturned, .streamRetired])
         #expect(commits.first?.repositoryUpdates.first?.repositoryStableKey == repositoryStableKey)
         #expect(commits.first?.repositoryUpdates.first?.qualifyingActivityAt != nil)
         #expect(commits.first?.cursorWatermarks.first?.lastEventID == 77)
@@ -492,8 +496,8 @@ struct FilesystemActorActivityTests {
         await actor.shutdown()
     }
 
-    @Test("activity barrier waits for FilesystemActor ingress acknowledgement")
-    func activityBarrierWaitsForFilesystemActorIngressAcknowledgement() async throws {
+    @Test("activity barrier waits for FilesystemActor ingress acknowledgement", arguments: [true, false])
+    func activityBarrierWaitsForFilesystemActorIngressAcknowledgement(failFence: Bool) async throws {
         let fixtureRoot = FileManager.default.temporaryDirectory.appending(
             path: "filesystem-activity-fence-\(UUIDv7.generate().uuidString)",
             directoryHint: .isDirectory
@@ -503,13 +507,16 @@ struct FilesystemActorActivityTests {
         let streamClient = DarwinFSEventStreamClient(
             localStreamFactory: { _ in ActivityTestLocalFSEventStreamLifetime() }
         )
+        let fence = HeldStep<FSEventActivityProcessingFenceID>(
+            "activity processing fence delivery", cancellation: .holdThroughCancellation)
+        let observedClient = FilesystemFencedStreamClient(base: streamClient, fence: fence)
         let activityCommitRecorder = FilesystemActivityCommitRecorder()
         let activityProjector = RepositoryLocalActivityProjector { commit in
             await activityCommitRecorder.record(commit)
         }
         let actor = FilesystemActor(
             bus: EventBus<RuntimeEnvelope>(),
-            fseventStreamClient: streamClient,
+            fseventStreamClient: observedClient,
             repositoryLocalActivityProjector: activityProjector,
             sleepClock: TestPushClock(),
             debounceWindow: .seconds(60),
@@ -540,7 +547,18 @@ struct FilesystemActorActivityTests {
             ]
         )
 
-        let barrier = try #require(await streamClient.captureActivityBarrier())
+        let capture = Task { await observedClient.captureActivityBarrier() }
+        let identifier = try await fence.firstArrival()
+        #expect(identifier.rawValue > 0)
+        if failFence { fence.fail(FilesystemFenceDeliveryFailure.unavailable) } else { fence.release() }
+        let capturedBarrier = await capture.value
+        if failFence {
+            await actor.shutdown()
+            await observedClient.join()
+            #expect(capturedBarrier == nil)
+            return
+        }
+        let barrier = try #require(capturedBarrier)
 
         let participant = try #require(
             barrier.bindings.first(where: { $0.worktreeId == worktreeId })?.participant
@@ -573,6 +591,7 @@ struct FilesystemActorActivityTests {
         #expect(commit.repositoryUpdates.first?.qualifyingActivityAt != nil)
         #expect(commit.repositoryUpdates.first?.repositoryStableKey == repositoryStableKey)
         await actor.shutdown()
+        await observedClient.join()
     }
 
     @Test("unmapped watched-folder participants do not block repository activity commits")
