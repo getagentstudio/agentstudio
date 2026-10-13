@@ -3,9 +3,12 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
+import { runBridgeTransitionFramesInAct } from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode mounts the production File shell.
 import '../app/bridge-app.css';
 import { bridgeAppControlProbeSchema } from '../app/bridge-app-control.js';
+import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeWorkerMainToServerMessage } from '../core/comm-worker/bridge-worker-contracts.js';
 import {
 	settleFileViewerMenuTransition,
@@ -440,6 +443,48 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 			.toBe(renderResult.getByTestId('worktree-file-search-toggle').element());
 	});
 
+	test('owns the File menu opening tick held beyond the capture-frame join', async () => {
+		await render(
+			<BridgeFileViewerBrowserHarnessApp initialFileBatch={makeMixedFileClassBatch()} />,
+		);
+		await waitForMetadataTreeRowCount(19);
+		const arrived = createBridgeProductDeferred<void>();
+		const originalRequest = window.requestAnimationFrame;
+		let heldTick: (() => void) | undefined;
+		let released = false;
+		const frameSpy = vi
+			.spyOn(window, 'requestAnimationFrame')
+			.mockImplementation((callback): number => {
+				const isOpeningTick = new Error().stack?.includes('useTransitionStatus') === true;
+				if (!isOpeningTick || heldTick !== undefined || released)
+					return originalRequest.call(window, callback);
+				return originalRequest.call(window, (timestamp): void => {
+					heldTick = (): void => callback(timestamp);
+					arrived.resolve();
+				});
+			});
+		try {
+			await dispatchFileViewerShortcut({ altKey: true }, document, async (): Promise<void> => {
+				await arrived.promise;
+				expect(heldTick).toBeDefined();
+				// The real callback outlives the previous helper's actFrame join.
+				// Deliver it without an act scope supplied by this challenge.
+				released = true;
+				heldTick?.();
+			});
+			expect(released).toBe(true);
+			expect(
+				document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
+			).not.toBeNull();
+			await dispatchFileViewerShortcut({ altKey: true });
+		} finally {
+			frameSpy.mockRestore();
+			await act(async (): Promise<void> => {
+				if (!released) heldTick?.();
+			});
+		}
+	});
+
 	test('File category filters use real native classes, preserve ancestors, and Clear restores the tree', async () => {
 		// Arrange
 		const renderResult = await render(
@@ -620,21 +665,32 @@ function requireHTMLElement(element: Element | null): HTMLElement {
 async function dispatchFileViewerShortcut(
 	modifiers: Readonly<{ altKey?: boolean; shiftKey?: boolean }>,
 	target: EventTarget = document,
+	afterCaptureFrame?: () => Promise<void>,
 ): Promise<void> {
-	await act(async (): Promise<void> => {
-		target.dispatchEvent(
-			new KeyboardEvent('keydown', {
-				altKey: modifiers.altKey ?? false,
-				bubbles: true,
-				cancelable: true,
-				key: 'f',
-				metaKey: true,
-				shiftKey: modifiers.shiftKey ?? false,
-			}),
-		);
-	});
-	await actFrame();
-	if (modifiers.altKey) await settleFileViewerMenuTransition();
+	const interaction = async (): Promise<void> => {
+		await act(async (): Promise<void> => {
+			target.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					altKey: modifiers.altKey ?? false,
+					bubbles: true,
+					cancelable: true,
+					key: 'f',
+					metaKey: true,
+					shiftKey: modifiers.shiftKey ?? false,
+				}),
+			);
+		});
+		await actFrame();
+		await afterCaptureFrame?.();
+		if (modifiers.altKey) await settleFileViewerMenuTransition();
+	};
+	if (modifiers.altKey) {
+		// Base UI's opening tick may outlive the interaction/capture act turns.
+		// Own its native frame delivery through the exact menu completion/DOM fact.
+		await runBridgeTransitionFramesInAct(interaction);
+	} else {
+		await interaction();
+	}
 }
 
 async function dispatchFileViewerSearchCommand(props: {
