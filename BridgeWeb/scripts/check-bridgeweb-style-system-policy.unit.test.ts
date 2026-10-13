@@ -132,7 +132,7 @@ async function checkFixture(files: Readonly<Record<string, string>>): Promise<St
 	onTestFinished(async (): Promise<void> => {
 		await rm(packageRootPath, { recursive: true, force: true });
 	});
-	await Promise.all(
+	await joinFixtureOperations(
 		Object.entries({
 			'src/app/bridge-app.css': canonicalCss,
 			'src/design-tokens/bridge-design-palette.ts': canonicalMirror,
@@ -153,4 +153,18 @@ function rulePaths(
 	return report.findings
 		.filter((finding) => finding.ruleId === ruleId)
 		.map(({ relativePath }) => relativePath);
+}
+
+// Test-finish cleanup must not race any allocation, write, or assertion already started.
+async function joinFixtureOperations(operations: readonly Promise<unknown>[]): Promise<void> {
+	let firstFailure: { readonly reason: unknown } | undefined;
+	await Promise.allSettled(
+		operations.map((operation) =>
+			operation.catch((reason: unknown): never => {
+				firstFailure ??= { reason };
+				throw reason;
+			}),
+		),
+	);
+	if (firstFailure !== undefined) throw firstFailure.reason;
 }

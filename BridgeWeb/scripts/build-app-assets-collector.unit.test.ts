@@ -50,7 +50,7 @@ describe('BridgeWeb app asset collector', () => {
 	});
 
 	test('rejects any unresolved bare module import in packaged app chunks', async () => {
-		await Promise.all(
+		await joinFixtureOperations(
 			[
 				'import "@shikijs/core";\n',
 				'import DOMPurify from "dompurify";\n',
@@ -172,4 +172,18 @@ async function createAssetFixtureDirectory(): Promise<string> {
 		await rm(tempDirectory, { recursive: true, force: true });
 	});
 	return tempDirectory;
+}
+
+// Test-finish cleanup must not race any allocation, write, or assertion already started.
+async function joinFixtureOperations(operations: readonly Promise<unknown>[]): Promise<void> {
+	let firstFailure: { readonly reason: unknown } | undefined;
+	await Promise.allSettled(
+		operations.map((operation) =>
+			operation.catch((reason: unknown): never => {
+				firstFailure ??= { reason };
+				throw reason;
+			}),
+		),
+	);
+	if (firstFailure !== undefined) throw firstFailure.reason;
 }

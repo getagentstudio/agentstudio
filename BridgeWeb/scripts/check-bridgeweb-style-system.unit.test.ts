@@ -854,7 +854,7 @@ async function writeFixtureTree(files: Readonly<Record<string, string>>): Promis
 	onTestFinished(async (): Promise<void> => {
 		await rm(packageRootPath, { recursive: true, force: true });
 	});
-	await Promise.all(
+	await joinFixtureOperations(
 		Object.entries(files).map(async ([relativePath, sourceText]) => {
 			await writeFileAt(packageRootPath, relativePath, sourceText);
 		}),
@@ -888,4 +888,18 @@ async function readFixtureFile(filePath: string): Promise<string> {
 		throw new Error('synthetic read failure');
 	}
 	return (await import('node:fs/promises')).readFile(filePath, 'utf8');
+}
+
+// Test-finish cleanup must not race any allocation, write, or assertion already started.
+async function joinFixtureOperations(operations: readonly Promise<unknown>[]): Promise<void> {
+	let firstFailure: { readonly reason: unknown } | undefined;
+	await Promise.allSettled(
+		operations.map((operation) =>
+			operation.catch((reason: unknown): never => {
+				firstFailure ??= { reason };
+				throw reason;
+			}),
+		),
+	);
+	if (firstFailure !== undefined) throw firstFailure.reason;
 }
