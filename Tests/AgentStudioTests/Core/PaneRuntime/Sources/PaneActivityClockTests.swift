@@ -21,16 +21,33 @@ struct PaneActivityClockTests {
     func firstAndOlderOccurrence() async throws {
         let base = ContinuousClock.now
         let recorder = PaneActivityBatchRecorder()
-        let clock = PaneActivityClock { batch in
-            await recorder.apply(batch)
-        }
+        let firstBoundary = HeldStep<PaneActivityPublicationBoundary>("first activity publication or deadline")
+        let testClock = PaneActivityPublicationClock(firstBoundary: firstBoundary)
+        let clock = PaneActivityClock(
+            clock: testClock,
+            monotonicNow: { base },
+            sink: { batch in
+                try? await firstBoundary.arrive(.publication)
+                await recorder.apply(batch)
+            }
+        )
         let paneId = UUIDv7.generate()
 
         clock.submit(occurrence(paneId: paneId, instant: base.advanced(by: .seconds(2))))
+        await clock.start()
+        let boundary = try await firstBoundary.firstArrival()
+        #expect(boundary == .publication)
+        if boundary != .publication {
+            firstBoundary.retire()
+            await clock.shutdown()
+            return
+        }
+        firstBoundary.release()
         #expect(try await clock.settled() == .quiescent)
         clock.submit(occurrence(paneId: paneId, instant: base))
         #expect(try await clock.settled() == .quiescent)
 
+        await clock.shutdown()
         let batches = await recorder.batches
         #expect(batches.count == 1)
         #expect(batches[0].count == 1)
@@ -40,7 +57,6 @@ struct PaneActivityClockTests {
         } else {
             Issue.record("first occurrence did not publish a time")
         }
-        await clock.shutdown()
     }
 
     @Test("a newer occurrence is deferred to the injected deadline and settled waits for its apply")
@@ -217,5 +233,28 @@ struct PaneActivityClockTests {
             orderingInstant: instant,
             wallTime: Date(timeIntervalSince1970: 1000)
         )
+    }
+}
+
+// Observes the existing clock/sink boundary without advancing time. The first
+// occurrence must reach publication, never a timer, before it can settle.
+private enum PaneActivityPublicationBoundary: Sendable {
+    case publication
+    case deadline
+}
+
+private struct PaneActivityPublicationClock: Clock {
+    typealias Instant = TestPushClock.Instant
+    typealias Duration = Swift.Duration
+
+    let firstBoundary: HeldStep<PaneActivityPublicationBoundary>
+    private let baseClock = TestPushClock()
+
+    var now: Instant { baseClock.now }
+    var minimumResolution: Duration { baseClock.minimumResolution }
+
+    func sleep(until deadline: Instant, tolerance: Duration?) async throws {
+        try await firstBoundary.arrive(.deadline)
+        try await baseClock.sleep(until: deadline, tolerance: tolerance)
     }
 }
