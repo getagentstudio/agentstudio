@@ -1,4 +1,4 @@
-import type { Page, Request, Response, Route } from 'playwright';
+import type { Page, Request, Response } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { selectReviewTreeFilePath } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
@@ -49,11 +49,9 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 const annotationProjectionResponseTimeoutMilliseconds = 30_000;
 export interface AnnotationSaveJourneyObservations {
 	readonly correlatedLifecycleStageCount: number;
-	readonly gatedProjectionRequestCount: number;
 	readonly projectedSavedMessageCount: number;
 	readonly reloadedSavedMessageCount: number;
 	readonly savingControlCountAfterCommit: number;
-	readonly committedBodyCountWhileProjectionGated: number;
 	readonly outputIdentity: AnnotationOutputIdentityCapture;
 }
 
@@ -88,7 +86,7 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 	readonly server: () => BridgeViewerOwnedViteProductServer;
 }): void {
 	test.for(['file', 'review'] as const)(
-		'keeps an exact committed annotation visible while the %s projection is gated',
+		'persists an exact committed %s annotation through projection and reload',
 		async (surface, context) => {
 			return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 				const observations = await runAnnotationSaveJourney({
@@ -98,9 +96,7 @@ export function registerBridgeViewerViteAnnotationSaveJourneyTests(props: {
 					surface,
 				});
 
-				expect(observations.gatedProjectionRequestCount).toBeGreaterThan(0);
 				expect(observations.savingControlCountAfterCommit).toBe(0);
-				expect(observations.committedBodyCountWhileProjectionGated).toBe(1);
 				expect(observations.correlatedLifecycleStageCount).toBe(
 					requiredAnnotationLifecycleStageCount,
 				);
@@ -267,10 +263,6 @@ export async function runAnnotationSaveJourney(props: {
 		});
 
 		await props.afterInitialDraftProjection?.();
-		const projectionGate = createDeferred<void>();
-		let gatedProjectionRequestCount = 0;
-		let savingControlCountAfterCommit = 0;
-		let committedBodyCountWhileProjectionGated = 0;
 		let projectionOperationCorrelationId: string | null = null;
 		const projectionOperationCorrelationIds: string[] = [];
 		const observeProjectionRequest = (request: Request): void => {
@@ -286,64 +278,35 @@ export async function runAnnotationSaveJourney(props: {
 			}
 		};
 		page.on('request', observeProjectionRequest);
-		const projectionRoutePattern = '**/__bridge-product/content**';
-		const projectionRouteHandler = async (route: Route): Promise<void> => {
-			const body: unknown = route.request().postDataJSON();
-			if (isUnknownRecord(body) && body['contentKind'] === 'annotation.projection') {
-				gatedProjectionRequestCount += 1;
-				await projectionGate.promise;
-			}
-			await route.continue();
-		};
-		await page.route(projectionRoutePattern, projectionRouteHandler);
-		try {
-			const gatedProjectionRequest = page.waitForRequest((request): boolean => {
-				if (
-					request.method() !== 'POST' ||
-					new URL(request.url()).pathname !== '/__bridge-product/content'
-				) {
-					return false;
-				}
-				const body: unknown = request.postDataJSON();
-				return isUnknownRecord(body) && body['contentKind'] === 'annotation.projection';
-			});
-			const draftSaveCommitted = waitForCommittedAnnotationCommand(
-				page,
-				'draft.save',
-				props.surface,
+		// Pending-projection overlay behavior is owned by the browser tests. This
+		// journey leaves the live finite-progress response free to reach its owner.
+		const savedProjectionRequest = page.waitForRequest((request): boolean => {
+			if (
+				request.method() !== 'POST' ||
+				new URL(request.url()).pathname !== '/__bridge-product/content'
+			)
+				return false;
+			const body: unknown = request.postDataJSON();
+			return isUnknownRecord(body) && body['contentKind'] === 'annotation.projection';
+		});
+		const draftSaveCommitted = waitForCommittedAnnotationCommand(page, 'draft.save', props.surface);
+		await page.getByRole('button', { name: 'Save annotation' }).click();
+		await draftSaveCommitted;
+		const projectionRequestBody: unknown = (await savedProjectionRequest).postDataJSON();
+		projectionOperationCorrelationId =
+			isUnknownRecord(projectionRequestBody) &&
+			typeof projectionRequestBody['operationCorrelationId'] === 'string'
+				? projectionRequestBody['operationCorrelationId']
+				: null;
+		if (projectionOperationCorrelationId === null) {
+			throw new Error(
+				`Saved annotation projection request did not carry lifecycle correlation: ${JSON.stringify(annotationProjectionContentRequestDiagnostic(projectionRequestBody))}.`,
 			);
-			await page.getByRole('button', { name: 'Save annotation' }).click();
-			await draftSaveCommitted;
-			const projectionRequest = await gatedProjectionRequest;
-			const projectionRequestBody: unknown = projectionRequest.postDataJSON();
-			projectionOperationCorrelationId =
-				isUnknownRecord(projectionRequestBody) &&
-				typeof projectionRequestBody['operationCorrelationId'] === 'string'
-					? projectionRequestBody['operationCorrelationId']
-					: null;
-			if (projectionOperationCorrelationId === null) {
-				throw new Error(
-					`Saved annotation projection request did not carry lifecycle correlation: ${JSON.stringify(
-						annotationProjectionContentRequestDiagnostic(projectionRequestBody),
-					)}.`,
-				);
-			}
-			// The projection is still gated here, so the committed overlay and the cleared Saving control
-			// ARE the claim. Wait for those two owner-published states instead of guessing two frames;
-			// the counts below then assert the part a barrier cannot give us — that there is exactly one
-			// committed body and no second Saving control.
-			await page.getByText(savedBody, { exact: true }).first().waitFor({ state: 'visible' });
-			await page.getByRole('button', { name: 'Saving annotation' }).waitFor({ state: 'detached' });
-			savingControlCountAfterCommit = await page
-				.getByRole('button', { name: 'Saving annotation' })
-				.count();
-			committedBodyCountWhileProjectionGated = await page
-				.getByText(savedBody, { exact: true })
-				.count();
-		} finally {
-			projectionGate.resolve();
-			await page.unrouteAll({ behavior: 'wait' });
 		}
+		await page.getByRole('button', { name: 'Saving annotation' }).waitFor({ state: 'detached' });
+		const savingControlCountAfterCommit = await page
+			.getByRole('button', { name: 'Saving annotation' })
+			.count();
 		const savedThreadBody = page
 			.getByTestId('worktree-annotation-thread')
 			.getByText(savedBody, { exact: true });
@@ -422,9 +385,7 @@ export async function runAnnotationSaveJourney(props: {
 					});
 
 		return {
-			committedBodyCountWhileProjectionGated,
 			correlatedLifecycleStageCount,
-			gatedProjectionRequestCount,
 			outputIdentity,
 			projectedSavedMessageCount,
 			reloadedSavedMessageCount,
@@ -614,23 +575,6 @@ function recordAnnotationDiagnostic(diagnostics: string[], value: string): void 
 	const maximumDiagnosticCount = 128;
 	if (diagnostics.length >= maximumDiagnosticCount) diagnostics.shift();
 	diagnostics.push(value);
-}
-
-function createDeferred<TValue>(): {
-	readonly promise: Promise<TValue>;
-	readonly resolve: (value: TValue) => void;
-} {
-	let resolvePromise: ((value: TValue) => void) | null = null;
-	const promise = new Promise<TValue>((resolve): void => {
-		resolvePromise = resolve;
-	});
-	return {
-		promise,
-		resolve: (value): void => {
-			if (resolvePromise === null) throw new Error('Deferred resolver is unavailable.');
-			resolvePromise(value);
-		},
-	};
 }
 
 function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {

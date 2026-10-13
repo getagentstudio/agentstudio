@@ -46,7 +46,7 @@ struct GitRefreshPerformanceWorkloadSettlementScriptTests {
     private let scriptPath = "scripts/verify-git-refresh-performance-workload.sh"
 
     private func runCommonDebtSnapshot(metricsResponse: String) async throws -> ProcessResult {
-        var environment = ProcessInfo.processInfo.environment
+        var environment: [String: String] = [:]
         environment["AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES"] = "1"
         environment["AGENTSTUDIO_PERF_ALLOW_TEST_RESPONSES"] = "1"
         environment["AGENTSTUDIO_PERF_TEST_COMMON_DEBT_SNAPSHOT"] = "1"

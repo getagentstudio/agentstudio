@@ -34,8 +34,8 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
         await actor.shutdown()
     }
 
-    @Test("explicit repository update joins sufficient active local work without a follower")
-    func explicitRepositoryUpdateJoinsSufficientActiveWork() async throws {
+    @Test("explicit repository update joins sufficient active local work without a follower", arguments: [true, false])
+    func explicitRepositoryUpdateJoinsSufficientActiveWork(failStatus: Bool) async throws {
         let source = LocalFactSource(vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
         let facts = try source.attach()
         let statusGate = ExplicitUpdateStatusGate()
@@ -63,11 +63,12 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
             await actor.startExplicitRepositoryUpdate(repoId: repositoryID, attemptId: UUIDv7.generate())
                 .acceptedLease
         )
-        await statusGate.releaseFirst()
+        if failStatus { await statusGate.failFirst() } else { await statusGate.releaseFirst() }
 
-        #expect(await lease.settlement() == .completed)
+        #expect(await lease.settlement() == (failStatus ? .failed : .completed))
         #expect(await statusGate.callCount == 1)
         await actor.shutdown()
+        try await facts.finish()
     }
 
     @Test("explicit repository update reports a genuine local status failure")
@@ -214,11 +215,14 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
         await actor.shutdown()
     }
 
-    @Test("explicit repository update retains one full follower behind insufficient active local work")
-    func explicitRepositoryUpdateFollowsInsufficientActiveWork() async throws {
+    @Test(
+        "explicit repository update retains one full follower behind insufficient active local work",
+        arguments: [true, false])
+    func explicitRepositoryUpdateFollowsInsufficientActiveWork(failStatus: Bool) async throws {
         let source = LocalFactSource(vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
         let facts = try source.attach()
-        let statusGate = ExplicitUpdateStatusGate()
+        let followerStep = HeldStep<Int>("explicit full follower provider")
+        let statusGate = ExplicitUpdateStatusGate(secondCallArrival: followerStep)
         let repositoryID = UUIDv7.generate()
         let worktreeID = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/explicit-local-follower-\(worktreeID)")
@@ -244,9 +248,12 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
         await statusGate.releaseFirst()
 
         try await facts.expectRefreshStarted(worktreeId: worktreeID, requestSequence: 2)
-        #expect(await lease.settlement() == .completed)
+        #expect(try await followerStep.firstArrival() == 2)
+        if failStatus { followerStep.fail(ExplicitUpdateStatusFailure.unavailable) } else { followerStep.release() }
+        #expect(await lease.settlement() == (failStatus ? .failed : .completed))
         #expect(await statusGate.callCount == 2)
         await actor.shutdown()
+        try await facts.finish()
     }
 
     @Test("cold explicit repository update admits before local physical settlement")
@@ -287,10 +294,11 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
         GitWorkingDirectoryProjector(
             bus: EventBus<RuntimeEnvelope>(),
             gitWorkingTreeProvider: StubGitWorkingTreeStatusProvider { rootPath in
-                await statusGate.recordAndWaitIfFirst(rootPath)
-                return returnsStatus ? Self.cleanStatus : nil
+                let succeeded = await statusGate.recordAndWaitIfFirst(rootPath)
+                return returnsStatus && succeeded ? Self.cleanStatus : nil
             },
             coalescingWindow: .zero,
+            sleepClock: TestPushClock(),
             factSink: factSink,
             pathExistenceProbe: { _ in true }
         )
@@ -439,17 +447,28 @@ private actor ExplicitUpdateStatusGate {
 
     var callCount: Int { rootPaths.count }
 
-    func recordAndWaitIfFirst(_ rootPath: URL) async {
+    private let secondCallArrival: HeldStep<Int>?
+
+    init(secondCallArrival: HeldStep<Int>? = nil) { self.secondCallArrival = secondCallArrival }
+
+    func recordAndWaitIfFirst(_ rootPath: URL) async -> Bool {
         rootPaths.append(rootPath)
         let callNumber = rootPaths.count
-        if callNumber == 1 {
-            try? await firstCallArrival.arrive(callNumber)
-        }
+        do {
+            if callNumber == 1 {
+                try await firstCallArrival.arrive(callNumber)
+            } else if callNumber == 2, let secondCallArrival {
+                try await secondCallArrival.arrive(callNumber)
+            }
+            return true
+        } catch { return false }
     }
 
     func waitForFirstArrival() async throws -> Int {
         try await firstCallArrival.firstArrival()
     }
+
+    func failFirst() { firstCallArrival.fail(ExplicitUpdateStatusFailure.unavailable) }
 
     func releaseFirst() {
         firstCallArrival.release()
@@ -477,3 +496,5 @@ private struct ExplicitUpdateCapacityProvider: GitWorkingTreeStatusProvider {
         .unavailable(GitWorkingTreeStatusUnavailable(reason: .readCapacityExceeded))
     }
 }
+
+private enum ExplicitUpdateStatusFailure: Error { case unavailable }

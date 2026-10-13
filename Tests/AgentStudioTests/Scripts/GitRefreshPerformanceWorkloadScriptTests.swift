@@ -332,7 +332,7 @@ struct GitRefreshPerformanceWorkloadScriptTests {
         #expect(source.contains("workload_fingerprint()"))
         #expect(source.contains("source_digest()"))
         #expect(source.contains("capture_authenticated_final_state_oracle()"))
-        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1"))
+        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH"))
         #expect(source.contains("performance.tabbar.terminal"))
         #expect(source.contains("performance.tabbar.capture"))
         #expect(source.contains("performance.tabbar.current"))
@@ -707,7 +707,7 @@ struct GitRefreshPerformanceWorkloadScriptTests {
             process.executableURL = URL(fileURLWithPath: "/bin/bash")
             process.arguments = arguments
             process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
-            process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, newValue in newValue }
+            process.environment = testProcessEnvironmentWithoutLaneState(overrides: environment)
             process.standardOutput = stdoutHandle
             process.standardError = stderrHandle
 

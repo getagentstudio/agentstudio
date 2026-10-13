@@ -187,6 +187,24 @@ struct FilesystemActorActivityTests {
         #expect(commits.first?.cursorWatermarks.first?.lastEventID == 77)
     }
 
+    @Test("shutdown completes after start with no registered filesystem roots")
+    func shutdownCompletesAfterStartWithNoRegisteredFilesystemRoots() async {
+        // Arrange
+        let activityProjector = RepositoryLocalActivityProjector { _ in }
+        let actor = FilesystemActor(
+            bus: EventBus<RuntimeEnvelope>(),
+            fseventStreamClient: DarwinFSEventStreamClient(),
+            repositoryLocalActivityProjector: activityProjector
+        )
+
+        // Act
+        await actor.start()
+        await actor.shutdown()
+
+        // Assert
+        #expect(await actor.hasBegunShutdown)
+    }
+
     @Test("owned remote-ref updates preserve Git correctness without minting local activity")
     func ownedRemoteRefUpdatesDoNotMintLocalActivity() async throws {
         let fixtureRoot = FileManager.default.temporaryDirectory.appending(
