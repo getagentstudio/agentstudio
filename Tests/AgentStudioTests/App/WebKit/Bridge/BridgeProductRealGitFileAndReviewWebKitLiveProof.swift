@@ -1,4 +1,5 @@
 import Foundation
+import WebKit
 
 @testable import AgentStudio
 @testable import AgentStudioBridge
@@ -31,7 +32,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         return
             try await BridgeProductWebKitCarrierTestSupport
             .withHostedController(controller) { hostedController in
-                hostedController.loadApp()
+                _ = try await loadLiveAppThroughNavigationFinish(hostedController)
                 guard try await waitForLiveShell(hostedController) else {
                     throw LiveProofError.appDidNotMount
                 }
@@ -72,7 +73,18 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             }
     }
 
-    private func waitForLiveShell(
+    func loadLiveAppThroughNavigationFinish(
+        _ controller: BridgePaneController
+    ) async throws -> WebPage.NavigationEvent {
+        try await awaitBridgeWebKitMilestone("File and Review native navigation finished") {
+            for try await event in controller.loadApp() {
+                if event == .finished { return event }
+            }
+            throw WebPageDocumentWaitProtocolFailure(detail: "navigation ended without a finished event")
+        }
+    }
+
+    func waitForLiveShell(
         _ controller: BridgePaneController
     ) async throws -> Bool {
         let navigationReady: @MainActor () -> Bool? = {
@@ -153,31 +165,11 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         guard let reviewTrace = try await waitForLiveReviewTrace(traceRecorder),
             reviewTrace.hasReviewMetadataPublication
         else { throw LiveProofError.successorReviewPublicationMissing }
-        let displayedPath = try await WebPageEventWaits.waitForDocumentValue(
+        let displayedPath = try await BridgeProductWebKitSelectedReviewContentWait.wait(
             controller.page,
-            reader: """
-                const shell = document.querySelector('[data-testid="review-viewer-shell"]');
-                const panel = document.querySelector('[data-testid="bridge-code-view-panel"]');
-                const hashes = (panel?.getAttribute('data-selected-content-cache-keys') ?? '')
-                  .split(',').filter(Boolean)
-                  .map(entry => `${entry.split(':')[0] ?? ''}:${entry.split(':').pop() ?? ''}`)
-                  .join(',');
-                const path = shell?.getAttribute('data-selected-display-path');
-                return shell?.getAttribute('data-selected-content-state') === 'ready'
-                  && Number(panel?.getAttribute('data-selected-content-line-count') ?? '0') > 0
-                  && Boolean(panel?.getAttribute('data-review-rendered-item-id') ?? panel?.getAttribute('data-selected-item-id'))
-                  && path === expectedPath && hashes === expectedHashes ? path : null;
-                """,
-            arguments: [
-                "expectedPath": sourceOracle.path,
-                "expectedHashes": expectedSelectedContentHashes,
-            ],
-            milestone: "Review selected content rendered",
-            lastObservation: """
-                const shell = document.querySelector('[data-testid="review-viewer-shell"]');
-                const panel = document.querySelector('[data-testid="bridge-code-view-panel"]');
-                return `state=${shell?.getAttribute('data-selected-content-state') ?? 'missing'},path=${shell?.getAttribute('data-selected-display-path') ?? 'missing'},lines=${panel?.getAttribute('data-selected-content-line-count') ?? 'missing'}`;
-                """
+            expectedPath: sourceOracle.path,
+            expectedHashes: expectedSelectedContentHashes,
+            expectedGeneration: successorGeneration
         )
         guard displayedPath as? String == sourceOracle.path else {
             throw LiveProofError.successorReviewPublicationMissing
