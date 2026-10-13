@@ -9,6 +9,7 @@ interface DefineConsoleErrorGuardProbeProps {
 	// The warning text the guard failure must carry; defaults to the update form,
 	// which names the component.
 	readonly expectedWarningText?: string;
+	readonly expectedWriterFrame?: string;
 }
 
 // Proves the suite's configuration loads ./console-error-guard.ts by letting the
@@ -40,6 +41,10 @@ export function defineConsoleErrorGuardProbe(props: DefineConsoleErrorGuardProbe
 				props.expectedWarningText ??
 					`An update to ${actWarningProbeComponentName} inside a test was not wrapped in act(...)`,
 			);
+			if (props.expectedWriterFrame !== undefined) {
+				expect(recordedGuardFailure).toContain('React act warning writer stack');
+				expect(recordedGuardFailure).toContain(props.expectedWriterFrame);
+			}
 		});
 	});
 }

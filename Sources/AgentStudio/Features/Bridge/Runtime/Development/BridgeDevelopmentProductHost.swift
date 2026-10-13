@@ -100,7 +100,7 @@ package actor BridgeDevelopmentProductHost {
         )
     }
 
-    package init(
+    init(
         source: BridgeDevelopmentProductSource,
         worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
         worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
@@ -115,14 +115,10 @@ package actor BridgeDevelopmentProductHost {
         // Production passes nothing. A test supplies a census with a termination
         // observer to pin the window this host's bootstrap gate now handles.
         schemeTaskCensus: BridgeProductSchemeTaskCensus = BridgeProductSchemeTaskCensus(),
-        // Production passes nothing. A test supplies an observer of the Review commit,
-        // which is the only moment the publication's existence is published rather than
-        // merely readable, so the test can await it instead of sampling. It carries no
-        // payload because this initializer is `package` while
-        // `BridgeReviewCommittedPublication` is internal, and widening that type's
-        // visibility is not worth a signal that only says "a commit happened"; a caller
-        // that needs the publication reads it back from the host.
-        didCommitReviewPublication: (@MainActor @Sendable () -> Void)? = nil
+        // Internal observation keeps lifecycle and committed-publication types at
+        // their existing module visibility. Package construction keeps the recorder nil.
+        didCommitReviewPublication: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)? = nil,
+        lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     ) async throws {
         let source = try Self.validatedFilesystemSource(source)
         let paneId = source.paneID
@@ -139,16 +135,10 @@ package actor BridgeDevelopmentProductHost {
             provider: reviewProvider
         )
 
-        // Adapts the payload-free `package` signal to the coordinator-level hook, which
-        // carries the committed publication for callers that can see that internal type.
-        var reviewCommitObservation: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
-        if let observeCommit = didCommitReviewPublication {
-            reviewCommitObservation = { _ in observeCommit() }
-        }
-
         let productPreparation = try await Self.makeProductProviderPreparation(
             .init(
-                didCommitReviewPublication: reviewCommitObservation,
+                didCommitReviewPublication: didCommitReviewPublication,
+                lifecycleTraceRecorder: lifecycleTraceRecorder,
                 gitReadContext: gitReadContext,
                 operationDeadlineClock: operationDeadlineClock,
                 reviewInitialization: reviewInitialization,

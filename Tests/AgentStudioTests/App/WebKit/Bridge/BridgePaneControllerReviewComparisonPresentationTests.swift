@@ -362,7 +362,8 @@ extension WebKitSerializedTests {
             let controller = makeController(
                 target: target,
                 comparison: comparison,
-                provider: provider
+                provider: provider,
+                reviewConstructionProgress: .init(clock: TestPushClock())
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             let productAdmission = try #require(controller.productAdmissionGate.acquire())
@@ -377,6 +378,10 @@ extension WebKitSerializedTests {
                 sequence: 1
             )
             await contributionCaptureGate.waitForStart()
+            let admittedPresentation = controller.refreshAdmissionCoordinator.productPresentationSnapshot
+            #expect(admittedPresentation.reviewComparison?.activeTarget == target)
+            #expect(admittedPresentation.reviewComparison?.attempt == .pending(reviewGeneration: 1))
+            #expect(admittedPresentation.reviewComparison?.displayedSnapshot == .absent)
             await contributionCaptureGate.releaseAll()
             await waitForActiveReviewRefreshTaskToFinish(controller)
             let settledPresentation = controller.refreshAdmissionCoordinator.productPresentationSnapshot
@@ -704,6 +709,7 @@ extension WebKitSerializedTests {
             target: WorkspaceReviewContributionTarget,
             comparison: BridgeEndpointComparison,
             provider: BridgeReviewSourceProviderFake,
+            reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
             contributionTargetCommit:
                 (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
         ) -> BridgePaneController {
@@ -724,6 +730,7 @@ extension WebKitSerializedTests {
                 ),
                 reviewSourceProvider: provider,
                 initialPaneActivity: .foreground,
+                reviewConstructionProgress: reviewConstructionProgress,
                 contributionTargetCommit: contributionTargetCommit
             )
         }

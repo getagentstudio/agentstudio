@@ -30,10 +30,7 @@ import {
 	type BridgeViewerDocumentGenerations,
 	installBridgeViewerDocumentGenerations,
 } from './product-only-real-router-document-generations.ts';
-import {
-	bridgeViewerJourneyFailureCode,
-	BridgeViewerProductOnlyJourneyFailure,
-} from './product-only-real-router-failure.ts';
+import { BridgeViewerProductOnlyJourneyFailure } from './product-only-real-router-failure.ts';
 import {
 	readPaintedFileMarkdown,
 	selectFileProofPath,
@@ -58,10 +55,10 @@ import {
 	stringValue,
 	unknownRecord,
 } from './product-only-real-router-response-parsing.ts';
+import { captureBridgeViewerProductOnlyJourneyFailure } from './product-only-real-router-review-failure.ts';
 import {
 	proveFreshReviewRoute,
 	proveReviewTreeSelection,
-	readFreshReviewFailureSnapshot,
 	waitForReviewProductTerminalState,
 } from './product-only-real-router-review-proof.ts';
 import { waitForProductBrowserFrameSettlement } from './product-only-real-router-settlement.ts';
@@ -217,6 +214,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		});
 		const reviewFreshRoute = await proveFreshReviewRoute({
 			expectedItemIds: props.expectedReviewItemIds,
+			observeWait: (promise, label) => ownedJourneyDeadline.waitFor(promise, label),
 			page,
 		});
 		const reviewTreeSelection = await proveReviewTreeSelection({
@@ -392,35 +390,6 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		browserCleanup,
 		legacyRouteTranscript: routeObserver.legacyRouteTranscript(),
 		productRouteTranscript: routeObserver.productRouteTranscript(),
-	};
-}
-
-export async function captureBridgeViewerProductOnlyJourneyFailure(props: {
-	readonly browserDiagnostics: readonly BridgeViewerConsoleDiagnostic[];
-	readonly documentGeneration: number;
-	readonly error: unknown;
-	readonly failedResponses: readonly BridgeViewerFailedResponse[];
-	readonly page: Page;
-	readonly routeObserver: BridgeViewerRealRouterObserver;
-}): Promise<Omit<BridgeViewerProductOnlyJourneyFailureCheckpoint, 'browserCleanup' | 'workers'>> {
-	try {
-		await props.routeObserver.flushResponseParsers();
-	} catch {}
-	let review: BridgeViewerProductOnlyJourneyFailureCheckpoint['review'] = null;
-	let captureStatus: BridgeViewerProductOnlyJourneyFailureCheckpoint['captureStatus'] =
-		'unavailable';
-	try {
-		review = await readFreshReviewFailureSnapshot(props.page);
-		captureStatus = 'captured';
-	} catch {}
-	return {
-		browserDiagnostics: props.browserDiagnostics,
-		captureStatus,
-		documentGeneration: props.documentGeneration,
-		failureCode: bridgeViewerJourneyFailureCode(props.error),
-		failedResponses: props.failedResponses,
-		review,
-		transport: props.routeObserver.failureTransportSnapshot(),
 	};
 }
 

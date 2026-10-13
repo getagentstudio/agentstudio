@@ -5,6 +5,7 @@ import { expect, test, vi } from 'vitest';
 import { endToEndTestTimeoutMilliseconds } from '../../tests/vitest-hang-bounds.ts';
 import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
 import type { OwnedBridgeDevelopmentServerCleanup } from './bridge-development-server-process.ts';
+import type { BridgeWebTestLaunchDependencies } from './bridge-web-test-launch-contracts.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise } from './handled-launch-promise.ts';
 
@@ -20,6 +21,23 @@ const stoppedBackend: OwnedBridgeDevelopmentServerCleanup = {
 	forcedTerminationRequired: false,
 	ownedProcessAliveAfterStop: false,
 };
+
+function fakeBackendDependencies(): BridgeWebTestLaunchDependencies {
+	return {
+		startBackend: async (props: Parameters<BridgeWebTestLaunchDependencies['startBackend']>[0]) => {
+			const backend = {
+				origin: 'http://127.0.0.1:1',
+				pid: 123,
+				stderrTail: (): string => '',
+				stdoutTail: (): string => '',
+				whenExited: Promise.resolve(),
+				stop: async (): Promise<OwnedBridgeDevelopmentServerCleanup> => stoppedBackend,
+			};
+			props.onSpawn?.(backend);
+			return backend;
+		},
+	};
+}
 
 test('a rejected startup step stops the registered child and removes its data root', async () => {
 	let dataRootPath = '';
@@ -151,6 +169,92 @@ test('one journey hang bound names pending owner facts and clears on disposal', 
 		vi.useRealTimers();
 		stderr.mockRestore();
 		await launch.dispose();
+	}
+});
+
+test('renewing the journey hang bound starts a fresh unit without raising its duration', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const launch = await BridgeWebTestLaunch.start();
+	try {
+		const signal = launch.startJourneyHangBound();
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds - 1);
+		launch.renewJourneyHangBound();
+		await vi.advanceTimersByTimeAsync(1);
+		expect(signal.aborted).toBe(false);
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		expect(signal.aborted).toBe(true);
+	} finally {
+		await launch.dispose();
+		stderr.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+test('renewing a child journey renews its parent bound without raising the duration', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const parent = await BridgeWebTestLaunch.start({}, fakeBackendDependencies());
+	const child = await parent.startChild(backendSpec);
+	try {
+		const signal = parent.startJourneyHangBound();
+		expect(vi.getTimerCount()).toBe(1);
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds - 1);
+		child.renewJourneyHangBound();
+		expect(vi.getTimerCount()).toBe(1);
+		await vi.advanceTimersByTimeAsync(1);
+		expect(signal.aborted).toBe(false);
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds - 2);
+		expect(signal.aborted).toBe(false);
+	} finally {
+		await parent.dispose();
+		await child.dispose();
+		stderr.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+test('a stalled child expires through the parent and names the child pending step', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const parent = await BridgeWebTestLaunch.start({}, fakeBackendDependencies());
+	const child = await parent.startChild(backendSpec);
+	const pending = makeDeferred<void>();
+	const observation = child.observeStep('child pending step', pending.promise);
+	try {
+		const signal = parent.startJourneyHangBound();
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		expect(signal.aborted).toBe(true);
+		expect(String(signal.reason)).toContain('waiting=child pending step');
+	} finally {
+		pending.resolve();
+		await observation.value();
+		await parent.dispose();
+		await child.dispose();
+		stderr.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+test('without child activity the parent still expires on its own pending step', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const parent = await BridgeWebTestLaunch.start({}, fakeBackendDependencies());
+	const child = await parent.startChild(backendSpec);
+	const pending = makeDeferred<void>();
+	const observation = parent.observeStep('parent pending step', pending.promise);
+	try {
+		const signal = parent.startJourneyHangBound();
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		expect(signal.aborted).toBe(true);
+		expect(String(signal.reason)).toContain('waiting=parent pending step');
+	} finally {
+		pending.resolve();
+		await observation.value();
+		await parent.dispose();
+		await child.dispose();
+		stderr.mockRestore();
+		vi.useRealTimers();
 	}
 });
 
