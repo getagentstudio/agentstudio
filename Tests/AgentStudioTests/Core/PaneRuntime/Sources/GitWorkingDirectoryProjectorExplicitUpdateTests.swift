@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioCore
@@ -94,43 +95,71 @@ struct GitWorkingDirectoryProjectorExplicitUpdateTests {
 
     @Test("explicit repository update cancellation settles after local provider return")
     func explicitRepositoryUpdateCancellationWaitsForProviderReturn() async throws {
-        let source = LocalFactSource(vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
-        let facts = try source.attach()
-        let statusGate = ExplicitUpdateStatusGate()
-        let eventRecorder = ExplicitUpdateSettlementEventRecorder()
         let repositoryID = UUIDv7.generate()
         let worktreeID = UUIDv7.generate()
+        let attemptID = UUIDv7.generate()
         let rootPath = URL(fileURLWithPath: "/tmp/explicit-local-cancellation-\(worktreeID)")
+        let refreshScope = GitProjectorScope.refresh(worktreeId: worktreeID, requestSequence: 1)
+        let cancellationProbe = ExplicitUpdateCancellationProbe(attemptID: attemptID, refreshScope: refreshScope)
+        let facts = try cancellationProbe.source.attach()
+        let providerStep = HeldStep<URL>(
+            "explicit update local provider return", cancellation: .holdThroughCancellation
+        )
+        defer { providerStep.release() }
         let actor = GitWorkingDirectoryProjector(
             bus: EventBus<RuntimeEnvelope>(),
             gitWorkingTreeProvider: StubGitWorkingTreeStatusProvider { rootPath in
-                _ = await statusGate.recordAndWaitIfFirst(rootPath)
-                await eventRecorder.record(.providerReturned)
-                return Self.cleanStatus
+                await withTaskCancellationHandler {
+                    try? await providerStep.arrive(rootPath)
+                    return Self.cleanStatus
+                } onCancel: {
+                    cancellationProbe.recordProviderCancellation()
+                }
             },
             coalescingWindow: .zero,
-            factSink: source.sink,
+            performanceTraceRecorder: cancellationProbe,
+            factSink: cancellationProbe.recordProjectorFact,
             pathExistenceProbe: { _ in true }
         )
+        // This attempt owns one provider call; registration's automatic refresh
+        // must not race its admission or contribute unrelated provider events.
+        await actor.setAutomaticEligibleWorktrees([])
         await register(actor: actor, repositoryID: repositoryID, worktreeID: worktreeID, rootPath: rootPath)
 
         let lease = try #require(
-            await actor.startExplicitRepositoryUpdate(repoId: repositoryID, attemptId: UUIDv7.generate())
-                .acceptedLease
+            await actor.startExplicitRepositoryUpdate(repoId: repositoryID, attemptId: attemptID).acceptedLease
         )
-        try await facts.expectRefreshStarted(worktreeId: worktreeID, requestSequence: 1)
-        #expect(try await statusGate.waitForFirstArrival() == 1)
-        let settlementTask = Task {
-            let outcome = await lease.settlement()
-            await eventRecorder.record(.settled(outcome))
-        }
+        try await facts.expectNext(in: cancellationProbe.refreshWindow, .projector(.refreshAdmitted))
+        try await facts.expectNext(in: cancellationProbe.refreshWindow, .projector(.refreshStarted))
+        #expect(try await providerStep.firstArrival() == rootPath)
+        #expect(lease.attemptId == attemptID)
+        #expect(lease.source == .localGit)
+        #expect(cancellationProbe.recordedAdmissionCount == 1)
+        let cancellationOpening = await facts.mark(cancellationProbe.cancellationWindow)
+        let refreshOpening = await facts.mark(cancellationProbe.refreshWindow)
         let shutdownTask = Task { await actor.shutdown() }
 
-        await statusGate.releaseFirst()
+        await #expect(throws: Never.self) {
+            try await facts.expectNone(
+                of: { $0 == .ownerSettlementRecorded }, "settlement before held provider cancellation",
+                from: cancellationOpening, closedBy: { $0 == .providerCancellationRequested }
+            )
+        }
+        try await providerStep.cancellationObserved()
+        providerStep.release()
         await shutdownTask.value
-        await settlementTask.value
 
-        #expect(await eventRecorder.events == [.providerReturned, .settled(.cancelled)])
+        await #expect(throws: Never.self) {
+            try await facts.expectNone(
+                of: { $0 == .ownerSettlementRecorded }, "settlement before provider drain closed",
+                from: refreshOpening, closedBy: { $0 == .projector(.refreshClosed(.shutdown)) }
+            )
+        }
+        #expect(await lease.settlement() == .cancelled)
+        #expect(cancellationProbe.recordedSettlementCount == 1)
+        #expect(cancellationProbe.recordedCancelledSettlementCount == 1)
+        #expect(providerStep.recordedArrivals == [rootPath])
+        try await facts.finish()
     }
 
     @Test("explicit repository update remains unsettled across local capacity retry")
@@ -314,6 +343,101 @@ private final class ExplicitUpdateGitPerformanceRecorder: GitProjectorPerformanc
         _ snapshot: GitWorkingDirectoryPerformanceSnapshot
     ) {
         lock.withLock { recordedSnapshots.append(snapshot) }
+    }
+}
+
+private enum ExplicitUpdateCancellationScope: Hashable, Sendable {
+    case cancellation(attemptID: UUID)
+    case refresh(attemptID: UUID, scope: GitProjectorScope)
+}
+
+private enum ExplicitUpdateCancellationFact: Equatable, Sendable {
+    case projector(GitProjectorFact)
+    case providerCancellationRequested
+    case ownerSettlementRecorded
+}
+
+/// Adapts synchronous owner callbacks into correlated negative windows.
+/// Cancellation settlement follows the refresh close in this sole-attempt fixture.
+private final class ExplicitUpdateCancellationProbe: GitProjectorPerformanceRecording {
+    let cancellationWindow: ExplicitUpdateCancellationScope
+    let refreshWindow: ExplicitUpdateCancellationScope
+    let source = LocalFactSource(
+        vocabulary: FactVocabulary<ExplicitUpdateCancellationScope, ExplicitUpdateCancellationFact>(
+            describeScope: { String(describing: $0) },
+            describeFact: { String(describing: $0) },
+            isClosing: { _, fact in
+                switch fact {
+                case .providerCancellationRequested, .projector(.refreshClosed): true
+                default: false
+                }
+            }
+        )
+    )
+    private let refreshScope: GitProjectorScope
+    private let state = Mutex(ObservationState())
+
+    init(attemptID: UUID, refreshScope: GitProjectorScope) {
+        self.refreshScope = refreshScope
+        cancellationWindow = .cancellation(attemptID: attemptID)
+        refreshWindow = .refresh(attemptID: attemptID, scope: refreshScope)
+    }
+
+    var isEnabled: Bool { true }
+    var recordedAdmissionCount: UInt64 { state.withLock { $0.recordedAdmissionCount } }
+    var recordedSettlementCount: UInt64 { state.withLock { $0.recordedSettlementCount } }
+    var recordedCancelledSettlementCount: UInt64 { state.withLock { $0.recordedCancelledSettlementCount } }
+
+    func record(
+        _: AgentStudioPerformanceTraceRecorder.Event,
+        attributes _: @autoclosure () -> [String: AgentStudioTraceValue]
+    ) {}
+
+    func recordDuration(
+        _: AgentStudioPerformanceTraceRecorder.Event,
+        duration _: Duration,
+        attributes _: @autoclosure () -> [String: AgentStudioTraceValue]
+    ) {}
+
+    func recordProjectorFact(scope: GitProjectorScope, fact: GitProjectorFact) {
+        guard scope == refreshScope else { return }
+        state.withLock { state in
+            source.sink(refreshWindow, .projector(fact))
+            if case .refreshClosed = fact { state.refreshClosed = true }
+        }
+    }
+
+    func recordProviderCancellation() {
+        state.withLock { state in
+            source.sink(cancellationWindow, .providerCancellationRequested)
+            state.cancellationObserved = true
+        }
+    }
+
+    func recordGitWorkingDirectoryPerformanceSnapshot(
+        _ snapshot: GitWorkingDirectoryPerformanceSnapshot
+    ) {
+        // Both explicit settlement paths synchronously flush these counters
+        // before resolve() yields. The lease reader cannot own this callback.
+        let settlementCount =
+            snapshot.explicitSettledCompleted + snapshot.explicitSettledFailed
+            + snapshot.explicitSettledObsolete + snapshot.explicitSettledCancelled
+        state.withLock { state in
+            state.recordedAdmissionCount += snapshot.explicitAdmitted
+            state.recordedSettlementCount += settlementCount
+            state.recordedCancelledSettlementCount += snapshot.explicitSettledCancelled
+            guard settlementCount > 0 else { return }
+            if !state.cancellationObserved { source.sink(cancellationWindow, .ownerSettlementRecorded) }
+            if !state.refreshClosed { source.sink(refreshWindow, .ownerSettlementRecorded) }
+        }
+    }
+
+    private struct ObservationState {
+        var cancellationObserved = false
+        var refreshClosed = false
+        var recordedAdmissionCount: UInt64 = 0
+        var recordedSettlementCount: UInt64 = 0
+        var recordedCancelledSettlementCount: UInt64 = 0
     }
 }
 
