@@ -47,10 +47,12 @@ func waitForHTTPFileSourceIdentity(
     }
 }
 
-private struct HTTPFileBatchSnapshot {
+struct HTTPFileBatchSnapshot {
     let source: BridgeProductFileSourceIdentity
     let descriptorByPath: [String: BridgeProductFileContentDescriptor]
     let certificatePartCount: Int?
+    let targetRevision: Int
+    let memberStatus: BridgeProductFileMemberStatusRecord
 }
 
 private func nextHTTPFileBatchSnapshot(
@@ -95,13 +97,14 @@ private func nextHTTPFileBatchSnapshot(
 }
 
 /// File inventory certification and later descriptor changes share one keyed installation.
-private struct HTTPFileBatchRetainedState {
+struct HTTPFileBatchRetainedState {
     private var identity: BridgeProductBatchFrameIdentity?
     private var rowsByKey: [String: BridgeProductFileBatchRow] = [:]
     private var revisionByKey: [String: Int] = [:]
     private var memberStatus: BridgeProductFileMemberStatusRecord?
     private var cursor = 0
     private var certificatePartCount: Int?
+    private var shouldApplyCurrentBatch = true
 
     mutating func beginApplying(_ begin: BridgeProductBatchBeginFrame) throws {
         if let identity,
@@ -113,7 +116,11 @@ private struct HTTPFileBatchRetainedState {
             self = Self()
         }
         identity = begin.identity
-        guard begin.targetRevision >= cursor else { throw HTTPAnnotationIntegrationError.invalidFileBatchRecord }
+        // A capture can finish sealing after a newer capture has installed.
+        // Match the product receiver's stale-target disposition; do not roll
+        // back its cursor, status, descriptors, or inventory certificate.
+        shouldApplyCurrentBatch = begin.targetRevision >= cursor
+        guard shouldApplyCurrentBatch else { return }
         switch begin.mode {
         case .snapshot:
             rowsByKey.removeAll(keepingCapacity: true)
@@ -132,6 +139,7 @@ private struct HTTPFileBatchRetainedState {
     }
 
     mutating func apply(_ part: BridgeProductBatchPart, begin: BridgeProductBatchBeginFrame) throws {
+        guard shouldApplyCurrentBatch else { return }
         switch part {
         case .put(let key, let revision, let value):
             try validateRevision(revision, begin: begin)
@@ -142,40 +150,56 @@ private struct HTTPFileBatchRetainedState {
             } else {
                 let row = try BridgeProductStrictJSON.decode(BridgeProductFileBatchRow.self, from: data)
                 guard key.hasPrefix("/"), row.displayKey == "." || key.hasSuffix("/\(row.displayKey)") else {
-                    throw HTTPAnnotationIntegrationError.invalidFileBatchRecord
+                    throw invalidHTTPFileBatchRecord(
+                        begin: begin, reason: "row key=\(key) displayKey=\(row.displayKey)")
                 }
                 if revision >= (revisionByKey[key] ?? 0) { rowsByKey[key] = row }
             }
             revisionByKey[key] = max(revision, revisionByKey[key] ?? 0)
         case .delete(let key, let revision):
             try validateRevision(revision, begin: begin)
-            guard key.hasPrefix("/") else { throw HTTPAnnotationIntegrationError.invalidFileBatchRecord }
+            guard key.hasPrefix("/") else {
+                throw invalidHTTPFileBatchRecord(begin: begin, reason: "delete key=\(key)")
+            }
             if revision >= (revisionByKey[key] ?? 0) { rowsByKey.removeValue(forKey: key) }
             revisionByKey[key] = max(revision, revisionByKey[key] ?? 0)
         case .evict(let key):
-            guard key.hasPrefix("/") else { throw HTTPAnnotationIntegrationError.invalidFileBatchRecord }
+            guard key.hasPrefix("/") else {
+                throw invalidHTTPFileBatchRecord(begin: begin, reason: "evict key=\(key)")
+            }
             rowsByKey.removeValue(forKey: key)
         }
     }
 
     mutating func finishApplying(_ begin: BridgeProductBatchBeginFrame) throws -> HTTPFileBatchSnapshot {
         guard let memberStatus else { throw HTTPAnnotationIntegrationError.incompleteFileBatch }
-        cursor = begin.targetRevision
-        if begin.mode == .snapshot { certificatePartCount = begin.partCount }
+        if shouldApplyCurrentBatch {
+            cursor = begin.targetRevision
+            if begin.mode == .snapshot { certificatePartCount = begin.partCount }
+        }
         return .init(
             source: memberStatus.source,
             descriptorByPath: Dictionary(
                 uniqueKeysWithValues: rowsByKey.values.compactMap { row in
                     row.readDescriptor.map { (row.displayKey, $0) }
                 }),
-            certificatePartCount: certificatePartCount)
+            certificatePartCount: certificatePartCount, targetRevision: cursor, memberStatus: memberStatus)
     }
 
     private func validateRevision(_ revision: Int, begin: BridgeProductBatchBeginFrame) throws {
         guard revision <= begin.targetRevision,
             begin.mode != .change || revision > begin.baseRevision
-        else { throw HTTPAnnotationIntegrationError.invalidFileBatchRecord }
+        else { throw invalidHTTPFileBatchRecord(begin: begin, reason: "part revision=\(revision)") }
     }
+}
+
+private func invalidHTTPFileBatchRecord(
+    begin: BridgeProductBatchBeginFrame, reason: String
+) -> HTTPAnnotationIntegrationError {
+    let diagnostic =
+        "TQ53 invalidFileBatchRecord: \(reason) mode=\(begin.mode) base=\(begin.baseRevision) target=\(begin.targetRevision) batch=\(begin.identity.batchId) scopeRevision=\(begin.identity.scopeRevision)\n"
+    FileHandle.standardOutput.write(Data(diagnostic.utf8))
+    return .invalidFileBatchRecord
 }
 
 struct HTTPAnnotationBatchObservation: Sendable {
