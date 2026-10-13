@@ -5,7 +5,7 @@ import fileCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridg
 import reviewCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-batch-record-corpus.json' with { type: 'json' };
 import sessionCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import { encodeBridgeWorkerSelectCommand } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import {
 	activateBridgeCommWorkerFileViewerMode,
 	createRecordingBridgeCommWorkerPort,

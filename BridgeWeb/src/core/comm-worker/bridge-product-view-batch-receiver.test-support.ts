@@ -129,12 +129,26 @@ export function complete(props: {
 }
 
 export class ControlledBatchDeadlineClock implements BridgeProductDeadlineClock {
-	readonly deadlines: Array<{ active: boolean; fire: () => void }> = [];
+	readonly deadlines: Array<{
+		active: boolean;
+		readonly atMilliseconds: number;
+		readonly delayMilliseconds: number;
+		readonly fire: () => void;
+	}> = [];
 	peakActiveDeadlineCount = 0;
+	#retired = false;
+	readonly #now: () => number;
 
-	schedule(_delayMilliseconds: number, onDeadline: () => void): () => void {
+	constructor(now: () => number = (): number => 0) {
+		this.#now = now;
+	}
+
+	schedule(delayMilliseconds: number, onDeadline: () => void): () => void {
+		if (this.#retired) throw new Error('Cannot schedule on a retired controlled deadline clock.');
 		const deadline = {
 			active: true,
+			atMilliseconds: this.#now() + delayMilliseconds,
+			delayMilliseconds,
 			fire: (): void => {
 				if (!deadline.active) throw new Error('Expected an armed batch deadline.');
 				deadline.active = false;
@@ -155,5 +169,10 @@ export class ControlledBatchDeadlineClock implements BridgeProductDeadlineClock 
 		const deadline = this.deadlines.find((entry) => entry.active);
 		if (deadline === undefined) throw new Error('Expected an armed batch deadline.');
 		return deadline;
+	}
+
+	retire(): void {
+		this.#retired = true;
+		for (const deadline of this.deadlines) deadline.active = false;
 	}
 }

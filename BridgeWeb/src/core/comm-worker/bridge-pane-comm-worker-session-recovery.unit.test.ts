@@ -1,10 +1,11 @@
-import { describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 import pageConfigurationFixture from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
 import {
 	registerBridgeCommWorkerEntry,
 	type BridgeCommWorkerGlobalScope,
 } from './bridge-comm-worker-entry.js';
+import { installTestBridgeCommWorkerEntryRenderWakes } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import { BridgePaneCommWorkerSession } from './bridge-pane-comm-worker-session.js';
 import {
 	RecordingPaneCommWorker,
@@ -24,6 +25,8 @@ import {
 	bridgePaneCommWorkerInstallSchema,
 	bridgeProductControlRequestSchema,
 } from './bridge-product-session-contracts.js';
+
+beforeEach(installTestBridgeCommWorkerEntryRenderWakes);
 
 describe('Bridge pane comm worker lost-admission recovery', () => {
 	test('a suspect worker is replaced and the next session opens successfully', async () => {

@@ -1,5 +1,5 @@
 // oxlint-disable unicorn/require-post-message-target-origin -- MessagePort postMessage does not accept a target origin.
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest';
 
 import { bridgeTelemetryWorkerProducerMessageSchema } from '../telemetry-worker/bridge-telemetry-worker-contracts.js';
 import {
@@ -23,6 +23,7 @@ import {
 	encodeBridgeWorkerMarkFileViewedCommand,
 	encodeBridgeWorkerSelectCommand,
 } from './bridge-comm-worker-protocol.js';
+import { installTestBridgeCommWorkerEntryRenderWakes } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import {
 	createIdleWorktreeAnnotationSubscription,
 	createBridgeCommWorkerReviewProductTestSource,
@@ -64,6 +65,8 @@ interface InstalledBridgeCommWorkerEntryHarness {
 }
 
 const activeInstalledEntryHarnesses = new Set<InstalledBridgeCommWorkerEntryHarness>();
+
+beforeEach(installTestBridgeCommWorkerEntryRenderWakes);
 
 describe('Bridge comm worker entry', () => {
 	afterEach(() => {

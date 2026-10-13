@@ -2,10 +2,8 @@ import { act, useState, type ReactElement } from 'react';
 import { describe, expect, test } from 'vitest';
 import { render } from 'vitest-browser-react';
 
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from '../core/comm-worker/bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerFileViewerModeAndFlush,
 	createRecordingBridgeCommWorkerPort,
