@@ -8,7 +8,6 @@ import { runBridgeTransitionFramesInAct } from '../../tests/test-support/bridge-
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode mounts the production File shell.
 import '../app/bridge-app.css';
 import { bridgeAppControlProbeSchema } from '../app/bridge-app-control.js';
-import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeWorkerMainToServerMessage } from '../core/comm-worker/bridge-worker-contracts.js';
 import {
 	settleFileViewerMenuTransition,
@@ -41,6 +40,11 @@ import {
 	waitForSelectedDisplayPath,
 	waitForBridgeFileViewerWorkerMessageDrain,
 } from './bridge-file-viewer-browser-test-harness.js';
+import {
+	createHeldFileMenuOpeningChallenge,
+	missingFileMenuOpeningCapture,
+	retiredFileMenuOpeningCapture,
+} from './bridge-file-viewer-held-menu-opening.browser.test-support.js';
 
 describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 	beforeEach((): void => {
@@ -443,46 +447,70 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 			.toBe(renderResult.getByTestId('worktree-file-search-toggle').element());
 	});
 
-	test('owns the File menu opening tick held beyond the capture-frame join', async () => {
+	test.for([
+		{ mode: 'matched', name: 'owns the File menu opening tick held beyond the capture-frame join' },
+		{
+			mode: 'missing',
+			name: 'names missing opening capture when the real File menu finishes opening',
+		},
+		{
+			mode: 'failure',
+			name: 'joins and retires a held File opening after challenge failure before release',
+		},
+		{
+			mode: 'retirement',
+			name: 'joins and retires a held File opening after owner retirement before release',
+		},
+	] as const)('$name', async ({ mode }, context) => {
 		await render(
 			<BridgeFileViewerBrowserHarnessApp initialFileBatch={makeMixedFileClassBatch()} />,
 		);
 		await waitForMetadataTreeRowCount(19);
-		const arrived = createBridgeProductDeferred<void>();
-		const originalRequest = window.requestAnimationFrame;
-		let heldTick: (() => void) | undefined;
-		let released = false;
-		const frameSpy = vi
-			.spyOn(window, 'requestAnimationFrame')
-			.mockImplementation((callback): number => {
-				const isOpeningTick = new Error().stack?.includes('useTransitionStatus') === true;
-				if (!isOpeningTick || heldTick !== undefined || released)
-					return originalRequest.call(window, callback);
-				return originalRequest.call(window, (timestamp): void => {
-					heldTick = (): void => callback(timestamp);
-					arrived.resolve();
-				});
+		const owner = new AbortController();
+		const challenge = createHeldFileMenuOpeningChallenge({
+			ownerSignals: [context.signal, owner.signal],
+			...(mode === 'missing' ? { matchesRegistration: (): boolean => false } : {}),
+			beforeRelease: (): void => {
+				if (mode === 'failure')
+					throw new Error('Injected File opening challenge failure before release');
+				if (mode === 'retirement') owner.abort();
+			},
+		});
+		const operation = challenge.run(
+			(afterCapture): Promise<void> =>
+				dispatchFileViewerShortcut({ altKey: true }, document, afterCapture),
+		);
+		if (mode === 'matched') {
+			await operation;
+			expect(challenge.snapshot().captureDisposition).toBe('released');
+		} else {
+			const expectedError =
+				mode === 'missing'
+					? missingFileMenuOpeningCapture
+					: mode === 'retirement'
+						? retiredFileMenuOpeningCapture
+						: 'Injected File opening challenge failure before release';
+			await expect(operation).rejects.toThrow(expectedError);
+			expect(challenge.snapshot().captureDisposition).toBe('retired');
+		}
+		expect(challenge.snapshot()).toMatchObject({
+			operationSettled: true,
+			observationsDisposed: true,
+			spiesRestored: true,
+			hasHeldDelivery: false,
+		});
+		if (mode === 'failure' || mode === 'retirement') {
+			expect(challenge.snapshot()).toMatchObject({
+				heldFrameCancelled: true,
+				staleDeliveryIgnored: true,
 			});
-		try {
-			await dispatchFileViewerShortcut({ altKey: true }, document, async (): Promise<void> => {
-				await arrived.promise;
-				expect(heldTick).toBeDefined();
-				// The real callback outlives the previous helper's actFrame join.
-				// Deliver it without an act scope supplied by this challenge.
-				released = true;
-				heldTick?.();
-			});
-			expect(released).toBe(true);
+		} else {
+			if (mode === 'missing') expect(challenge.snapshot().openingCompleted).toBe(true);
 			expect(
 				document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
 			).not.toBeNull();
-			await dispatchFileViewerShortcut({ altKey: true });
-		} finally {
-			frameSpy.mockRestore();
-			await act(async (): Promise<void> => {
-				if (!released) heldTick?.();
-			});
 		}
+		await dispatchFileViewerShortcut({ altKey: true });
 	});
 
 	test('File category filters use real native classes, preserve ancestors, and Clear restores the tree', async () => {
