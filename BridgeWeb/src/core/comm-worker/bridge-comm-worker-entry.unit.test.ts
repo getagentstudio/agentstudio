@@ -66,7 +66,10 @@ interface InstalledBridgeCommWorkerEntryHarness {
 
 const activeInstalledEntryHarnesses = new Set<InstalledBridgeCommWorkerEntryHarness>();
 
-beforeEach(installTestBridgeCommWorkerEntryRenderWakes);
+let entryRenderWakes: ReturnType<typeof installTestBridgeCommWorkerEntryRenderWakes>;
+beforeEach((): void => {
+	entryRenderWakes = installTestBridgeCommWorkerEntryRenderWakes();
+});
 
 describe('Bridge comm worker entry', () => {
 	afterEach(() => {
@@ -461,6 +464,11 @@ describe('Bridge comm worker entry', () => {
 
 			// Assert
 			expect(openedContentKinds).toEqual(['review.content', 'review.content']);
+			entryRenderWakes.latestRuntime().expectRetainedWakes({
+				count: 1,
+				reason:
+					'The entry content-open case leaves its Review publication without a renderer receipt.',
+			});
 		} finally {
 			reviewProductSource.close();
 			harness.close();

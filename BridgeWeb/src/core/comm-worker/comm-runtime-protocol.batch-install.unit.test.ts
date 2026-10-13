@@ -30,6 +30,11 @@ describe('live worker typed batch sink', () => {
 		};
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			productTransport: makeFileProductTestTransport({

@@ -104,20 +104,28 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 		if (firstRenderPublication?.kind !== 'reviewPierreRenderJob') {
 			throw new Error('Expected the first Review render publication.');
 		}
-		dispatch.message(
-			encodeBridgeWorkerRenderDispositionCommand({
-				epoch: 5,
-				receipts: [
-					bridgeWorkerRenderDispositionReceiptSchema.parse({
-						...firstRenderPublication.renderReceiptIdentity,
-						disposition: 'painted',
-						kind: 'render.disposition',
-						receivedAtMilliseconds: 0,
-					}),
-				],
-				requestId: 'request-acknowledge-resident-body-render',
-			}),
-		);
+		for (const disposition of ['queued', 'applied', 'painted'] as const) {
+			const requestId = `request-acknowledge-resident-body-render-${disposition}`;
+			dispatch.message(
+				encodeBridgeWorkerRenderDispositionCommand({
+					epoch: 5,
+					receipts: [
+						bridgeWorkerRenderDispositionReceiptSchema.parse({
+							...firstRenderPublication.renderReceiptIdentity,
+							disposition,
+							kind: 'render.disposition',
+							receivedAtMilliseconds: 0,
+						}),
+					],
+					requestId,
+				}),
+			);
+			// oxlint-disable-next-line no-await-in-loop -- Each receipt phase requires the previous phase's correlated acceptance.
+			const reply = await waitForMessage(
+				(message) => message.kind === 'health' && message.requestId === requestId,
+			);
+			expect(reply).toMatchObject({ status: 'ready' });
+		}
 		await flushBridgeWorkerRuntimeContinuations();
 
 		const reissuedCandidateReady = waitForMessage(
@@ -133,6 +141,15 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 			5,
 		);
 		await reissuedCandidateReady;
+		const revalidationWorkIds = pump.getPendingWorkIds();
+		expect(revalidationWorkIds).toHaveLength(1);
+		expect(revalidationWorkIds[0]).toMatch(/^review-content-ready:item-1:review-ledger:item-1:/);
+		const revalidationDrain = await preparationDrainQueue.takeNext();
+		const revalidationStarted = revalidationDrain();
+		const revalidationContinuation = await preparationDrainQueue.takeNext();
+		const revalidationResult = await revalidationContinuation();
+		await revalidationStarted;
+		expect(revalidationResult.completedIds).toEqual(revalidationWorkIds);
 
 		expect(trackedContentOpen.openedDescriptorIds).toEqual([originalDescriptor.descriptorId]);
 		expect(
@@ -164,6 +181,11 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 		});
 
 		const { initialDrains } = await registerBridgeRuntimeWithDeferredInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -391,6 +413,11 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 
 		const { reviewProductSource, initialDrains } =
 			await registerBridgeRuntimeWithDeferredInitialReviewSource(dispatch, {
+				expectedRetainedRenderWakes: {
+					count: 1,
+					reason:
+						'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+				},
 				bridgeDemandRank: { lane: 'selected', priority: 0 },
 				budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 				contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],

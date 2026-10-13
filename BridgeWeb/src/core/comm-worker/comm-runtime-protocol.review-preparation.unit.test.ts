@@ -87,6 +87,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 		let openCount = 0;
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			openReviewContent: (descriptor, abortSignal) => {
@@ -179,6 +184,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -270,6 +280,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -381,6 +396,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -476,6 +496,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -610,6 +635,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -725,6 +755,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',

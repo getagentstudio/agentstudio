@@ -252,6 +252,11 @@ describe('Bridge comm worker runtime render fulfillment', () => {
 		const itemIds = Array.from({ length: 13 }, (_, index) => `review-held-${index + 1}`);
 		const source = makeReviewRuntimeSourceForItems(itemIds);
 		const reviewProductSource = await registerRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			...source,
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },

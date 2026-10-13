@@ -33,7 +33,13 @@ import {
 
 describe('Bridge File selected-read supersession', () => {
 	test('prepares identical complete content at the successor worker epoch after a source rebind', async (): Promise<void> => {
-		const scenario = await createSelectedReadScenario();
+		const scenario = await createSelectedReadScenario({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'The source-rebind case ends after the successor File publication without a renderer receipt.',
+			},
+		});
 		try {
 			scenario.select();
 			const firstOpen = await scenario.firstOpen.promise;
@@ -184,24 +190,29 @@ describe('Bridge File selected-read supersession', () => {
 						),
 				);
 				expect(ready.kind).toBe('fileRenderPatch');
-				// Close the actual render publication through its exact paint receipt.
-				scenario.dispatch.message(
-					encodeBridgeWorkerRenderDispositionCommand({
-						epoch: 1,
-						requestId: 'supersession-painted',
-						receipts: [
-							{
-								...renderJob.renderReceiptIdentity,
-								disposition: 'painted',
-								kind: 'render.disposition',
-								receivedAtMilliseconds: 0,
-							},
-						],
-					}),
-				);
-				await scenario.waitForMessage(
-					(message) => message.kind === 'health' && message.requestId === 'supersession-painted',
-				);
+				// Close the publication through the protocol's queued, applied, painted chain.
+				for (const disposition of ['queued', 'applied', 'painted'] as const) {
+					const requestId = `supersession-${disposition}`;
+					scenario.dispatch.message(
+						encodeBridgeWorkerRenderDispositionCommand({
+							epoch: 1,
+							requestId,
+							receipts: [
+								{
+									...renderJob.renderReceiptIdentity,
+									disposition,
+									kind: 'render.disposition',
+									receivedAtMilliseconds: 0,
+								},
+							],
+						}),
+					);
+					// oxlint-disable-next-line no-await-in-loop -- Each receipt phase requires the previous phase's correlated acceptance.
+					const reply = await scenario.waitForMessage(
+						(message) => message.kind === 'health' && message.requestId === requestId,
+					);
+					expect(reply).toMatchObject({ status: 'ready' });
+				}
 			} finally {
 				await scenario.close();
 			}
@@ -209,7 +220,12 @@ describe('Bridge File selected-read supersession', () => {
 	);
 
 	test('an identical selected-demand wake retains its active read', async () => {
-		const scenario = await createSelectedReadScenario();
+		const scenario = await createSelectedReadScenario({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The read-retention case ends at File publication without a renderer receipt.',
+			},
+		});
 		try {
 			scenario.select();
 			const firstOpen = await scenario.firstOpen.promise;
@@ -279,6 +295,9 @@ type SelectedReadScenario = ReturnType<typeof createRecordingBridgeCommWorkerPor
 
 async function createSelectedReadScenario(
 	props: {
+		readonly expectedRetainedRenderWakes?: Parameters<
+			typeof registerBridgeCommWorkerRuntimePortProtocol
+		>[1]['expectedRetainedRenderWakes'];
 		readonly failSubsequentReads?: boolean;
 		readonly initialUnknownLineCount?: boolean;
 	} = {},
@@ -320,6 +339,9 @@ async function createSelectedReadScenario(
 		},
 	});
 	registerBridgeCommWorkerRuntimePortProtocol(port.dispatch.port, {
+		...(props.expectedRetainedRenderWakes === undefined
+			? {}
+			: { expectedRetainedRenderWakes: props.expectedRetainedRenderWakes }),
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: fileViewProductTestBudget,
 		fileViewBudget: fileViewProductTestBudget,

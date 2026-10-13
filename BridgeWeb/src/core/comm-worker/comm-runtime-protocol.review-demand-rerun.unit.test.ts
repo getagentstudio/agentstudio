@@ -29,6 +29,11 @@ describe('Bridge comm worker runtime Review demand rerun', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',

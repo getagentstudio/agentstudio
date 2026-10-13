@@ -42,7 +42,12 @@ import {
 describe('Bridge File viewer code selection retirement', () => {
 	test('publishes code B while code A still has an outstanding render receipt', async () => {
 		// Arrange
-		const harness = await createFileCodeSelectionHarness();
+		const harness = await createFileCodeSelectionHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'Final code B publication is retained without a painted receipt.',
+			},
+		});
 		try {
 			await act(async (): Promise<void> => {
 				harness.selectCodeFile('file-1');
@@ -75,7 +80,13 @@ describe('Bridge File viewer code selection retirement', () => {
 
 	test('rejects a withheld code A publication after selecting B, then publishes B', async () => {
 		// Arrange
-		const harness = await createFileCodeSelectionHarness({ holdFirstFilePublication: true });
+		const harness = await createFileCodeSelectionHarness({
+			holdFirstFilePublication: true,
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'Final code B publication is retained after rejection of withheld A.',
+			},
+		});
 		try {
 			await act(async (): Promise<void> => {
 				harness.selectCodeFile('file-1');
@@ -165,7 +176,12 @@ interface FileCodeSelectionHarness {
 }
 
 async function createFileCodeSelectionHarness(
-	options: { readonly holdFirstFilePublication?: boolean } = {},
+	options: {
+		readonly holdFirstFilePublication?: boolean;
+		readonly expectedRetainedRenderWakes?: Parameters<
+			typeof registerBridgeCommWorkerRuntimePortProtocol
+		>[1]['expectedRetainedRenderWakes'];
+	} = {},
 ): Promise<FileCodeSelectionHarness> {
 	const metadataEvents = new BridgeProductBoundedAsyncQueue<never>(1);
 	const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
@@ -197,6 +213,9 @@ async function createFileCodeSelectionHarness(
 		},
 	});
 	registerBridgeCommWorkerRuntimePortProtocol(workerPort.dispatch.port, {
+		...(options.expectedRetainedRenderWakes === undefined
+			? {}
+			: { expectedRetainedRenderWakes: options.expectedRetainedRenderWakes }),
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 		fileViewBudget: fileViewProductTestBudget,
