@@ -420,6 +420,7 @@ let package = Package(
         .testTarget(
             name: "AgentStudioBridgeDevelopmentServerTests",
             dependencies: [
+                "AgentStudioTestHarness",
                 "AgentStudioBridgeDevelopmentServer",
                 "AgentStudioCore",
                 "AgentStudioTestSupport",
