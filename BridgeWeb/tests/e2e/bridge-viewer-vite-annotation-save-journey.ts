@@ -1,6 +1,7 @@
 import type { Page, Request, Response, Route } from 'playwright';
 import { expect, test } from 'vitest';
 
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { selectReviewTreeFilePath } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
 import { createProjectedAnnotationDraft } from './bridge-viewer-vite-annotation-initial-draft.ts';
 import {
@@ -666,8 +667,48 @@ function cssAttributeValue(value: string): string {
 export async function selectReviewFile(props: {
 	readonly page: Page;
 	readonly path: string;
+	readonly testLaunch?: BridgeWebTestLaunch;
 }): Promise<void> {
-	await props.page.locator('[data-testid="review-viewer-shell"]').waitFor({ state: 'attached' });
+	const waitForShell = async (): Promise<void> => {
+		const outcome = await props.page.evaluate(
+			(): Promise<{ readonly kind: 'ready' | 'failed'; readonly owner: string }> => {
+				return new Promise((resolve): void => {
+					const inspect = (): void => {
+						let result: { readonly kind: 'ready' | 'failed'; readonly owner: string } | null = null;
+						if (document.querySelector('[data-testid="review-viewer-shell"]') !== null)
+							result = { kind: 'ready', owner: 'Review metadata and presentation projection' };
+						for (const owner of [
+							'bridge-dev-session-inactive',
+							'bridge-review-metadata-failed-shell',
+						]) {
+							if (document.querySelector(`[data-testid="${owner}"]`) !== null)
+								result = { kind: 'failed', owner };
+						}
+						if (
+							document.querySelector(
+								'[data-bridge-region="pane-failure"][data-presentation-state="failed"]',
+							) !== null
+						)
+							result = { kind: 'failed', owner: 'pane startup' };
+						if (result !== null) {
+							observer.disconnect();
+							resolve(result);
+						}
+					};
+					const observer = new MutationObserver(inspect);
+					observer.observe(document, { attributes: true, childList: true, subtree: true });
+					inspect();
+				});
+			},
+		);
+		if (outcome.kind === 'failed')
+			throw new Error(
+				`Review shell mount refused by ${outcome.owner} before selecting ${props.path}`,
+			);
+	};
+	const name = `Review shell mount: metadata and presentation projection before selecting ${props.path}`;
+	if (props.testLaunch === undefined) await waitForShell();
+	else await props.testLaunch.observeStep(name, waitForShell()).value();
 	await selectReviewTreeFilePath({ page: props.page, path: props.path });
 }
 
