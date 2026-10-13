@@ -19,7 +19,8 @@ export function createHeldFileMenuOpeningChallenge(props: {
 	readonly run: (openMenu: (afterCapture: () => Promise<void>) => Promise<void>) => Promise<void>;
 	readonly snapshot: () => {
 		readonly captureDisposition: 'awaiting' | 'captured' | 'released' | 'retired';
-		readonly operationSettled: boolean;
+		readonly captureContinuationJoined: boolean;
+		readonly interactionJoined: boolean;
 		readonly observationsDisposed: boolean;
 		readonly spiesRestored: boolean;
 		readonly openingCompleted: boolean;
@@ -49,7 +50,8 @@ export function createHeldFileMenuOpeningChallenge(props: {
 	let captureDisposition: 'awaiting' | 'captured' | 'released' | 'retired' = 'awaiting';
 	let heldDelivery: (() => void) | undefined;
 	let heldNativeId: number | undefined;
-	let operationSettled = false;
+	let captureContinuationJoined = false;
+	let interactionJoined = false;
 	let captureOperation: Promise<void> | undefined;
 	let observationsDisposed = false;
 	let spiesRestored = false;
@@ -98,7 +100,8 @@ export function createHeldFileMenuOpeningChallenge(props: {
 	return {
 		snapshot: () => ({
 			captureDisposition,
-			operationSettled,
+			captureContinuationJoined,
+			interactionJoined,
 			observationsDisposed,
 			spiesRestored,
 			openingCompleted,
@@ -124,17 +127,18 @@ export function createHeldFileMenuOpeningChallenge(props: {
 					captureOperation = captureAndRelease();
 					return captureOperation;
 				});
+				interactionJoined = true;
 			} catch (error: unknown) {
 				if (props.ownerSignals.some((signal) => signal.aborted))
 					throw new Error(retiredFileMenuOpeningCapture, { cause: error });
 				throw error;
 			} finally {
-				// openMenu has settled, including the adapter's failure retirement, before cleanup.
-				operationSettled = true;
 				retire();
-				// The adapter can return on owner abort before its operation continuation.
-				// Settle the named capture and explicitly join that continuation as well.
-				await captureOperation?.catch((): void => {});
+				if (captureOperation !== undefined) {
+					await captureOperation.catch((): void => {});
+					captureContinuationJoined = true;
+				}
+				// Pre-capture retirement leaves actFrame's shared waitForBridgeViewerAnimationFrame unjoined (TQ118).
 				completion.dispose();
 				settledDOM.close();
 				disposed.resolve();
@@ -147,7 +151,7 @@ export function createHeldFileMenuOpeningChallenge(props: {
 							'[data-testid="worktree-file-filter-menu-popover"]',
 						);
 						const before = popup?.outerHTML;
-						// Challenge the cancelled wrapper with stale delivery after the operation joins.
+						// Challenge the cancelled wrapper with stale delivery after adapter retirement.
 						act(heldDelivery);
 						staleDeliveryIgnored = popup?.outerHTML === before;
 						heldDelivery = undefined;

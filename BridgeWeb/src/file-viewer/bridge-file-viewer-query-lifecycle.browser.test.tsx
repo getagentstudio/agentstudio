@@ -455,11 +455,11 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 		},
 		{
 			mode: 'failure',
-			name: 'joins and retires a held File opening after challenge failure before release',
+			name: 'joins capture and retires a held File opening after challenge failure before release',
 		},
 		{
 			mode: 'retirement',
-			name: 'joins and retires a held File opening after owner retirement before release',
+			name: 'joins capture and retires a held File opening after owner retirement before release',
 		},
 	] as const)('$name', async ({ mode }, context) => {
 		await render(
@@ -494,7 +494,8 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 			expect(challenge.snapshot().captureDisposition).toBe('retired');
 		}
 		expect(challenge.snapshot()).toMatchObject({
-			operationSettled: true,
+			captureContinuationJoined: true,
+			interactionJoined: mode === 'matched',
 			observationsDisposed: true,
 			spiesRestored: true,
 			hasHeldDelivery: false,
