@@ -1,14 +1,14 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, onTestFinished, test } from 'vitest';
 
 import { collectBuiltBundleAssets } from './build-app-assets-collector.ts';
 
 describe('BridgeWeb app asset collector', () => {
 	test('selects the app entrypoint while preserving auxiliary Shiki chunks', async () => {
-		const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+		const tempDirectory = await createAssetFixtureDirectory();
 		const assetsDirectoryPath = join(tempDirectory, 'assets');
 		await mkdir(assetsDirectoryPath, { recursive: true });
 		await writeFile(join(assetsDirectoryPath, 'bridge-app.js'), 'import "./swift-abc.js";\n');
@@ -31,7 +31,7 @@ describe('BridgeWeb app asset collector', () => {
 	});
 
 	test('rejects chunks that still import runtime packages by name', async () => {
-		const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+		const tempDirectory = await createAssetFixtureDirectory();
 		const assetsDirectoryPath = join(tempDirectory, 'assets');
 		await mkdir(assetsDirectoryPath, { recursive: true });
 		await writeFile(join(assetsDirectoryPath, 'bridge-app.js'), 'import "./bad-chunk.js";\n');
@@ -57,7 +57,7 @@ describe('BridgeWeb app asset collector', () => {
 				'export { Button } from "@base-ui/react/button";\n',
 				'void import("lucide-react");\n',
 			].map(async (badImportSource): Promise<void> => {
-				const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+				const tempDirectory = await createAssetFixtureDirectory();
 				const assetsDirectoryPath = join(tempDirectory, 'assets');
 				await mkdir(assetsDirectoryPath, { recursive: true });
 				await writeFile(join(assetsDirectoryPath, 'bridge-app.js'), 'import "./bad-chunk.js";\n');
@@ -75,7 +75,7 @@ describe('BridgeWeb app asset collector', () => {
 	});
 
 	test('rejects chunks with external dynamic imports or worker URLs', async () => {
-		const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+		const tempDirectory = await createAssetFixtureDirectory();
 		const assetsDirectoryPath = join(tempDirectory, 'assets');
 		await mkdir(assetsDirectoryPath, { recursive: true });
 		await writeFile(join(assetsDirectoryPath, 'bridge-app.js'), 'import "./bad-chunk.js";\n');
@@ -120,7 +120,7 @@ describe('BridgeWeb app asset collector', () => {
 	});
 
 	test('allows blob-backed worker variables created inside packaged app chunks', async () => {
-		const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+		const tempDirectory = await createAssetFixtureDirectory();
 		const assetsDirectoryPath = join(tempDirectory, 'assets');
 		await mkdir(assetsDirectoryPath, { recursive: true });
 		await writeFile(join(assetsDirectoryPath, 'bridge-app.js'), 'import "./worker-chunk.js";\n');
@@ -143,7 +143,7 @@ describe('BridgeWeb app asset collector', () => {
 	});
 
 	test('allows intentional Catppuccin Mocha theme metadata in packaged app chunks', async () => {
-		const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+		const tempDirectory = await createAssetFixtureDirectory();
 		const assetsDirectoryPath = join(tempDirectory, 'assets');
 		await mkdir(assetsDirectoryPath, { recursive: true });
 		await writeFile(join(assetsDirectoryPath, 'bridge-app.js'), 'import "./theme.js";\n');
@@ -165,3 +165,11 @@ describe('BridgeWeb app asset collector', () => {
 		});
 	});
 });
+
+async function createAssetFixtureDirectory(): Promise<string> {
+	const tempDirectory = await mkdtemp(join(tmpdir(), 'bridge-built-assets-'));
+	onTestFinished(async (): Promise<void> => {
+		await rm(tempDirectory, { recursive: true, force: true });
+	});
+	return tempDirectory;
+}
