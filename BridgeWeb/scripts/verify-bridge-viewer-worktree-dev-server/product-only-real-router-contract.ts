@@ -2,6 +2,10 @@ import {
 	requireFreshReviewRoute,
 	requireReviewTreeSelection,
 } from './product-only-real-router-review-contract.ts';
+import type {
+	BridgeViewerReviewPaintFailureSnapshot,
+	BridgeViewerReviewPaintLedgerEntry,
+} from './product-only-real-router-review-paint.ts';
 
 export const bridgeProductStartupFixtureIdentities = {
 	invalid: 'e51803d06d8dafd56d6c694569ed238bb3dd8bddadfec6d26b2834b5d5892a68',
@@ -127,6 +131,9 @@ export interface BridgeViewerReviewFailureSnapshot {
 	readonly selectedItemVisible: boolean;
 	readonly visibleContentStateCounts: Readonly<Record<string, number>>;
 	readonly visibleDemand: BridgeViewerReviewFailureDemandSnapshot;
+	readonly paintLedger: readonly BridgeViewerReviewPaintLedgerEntry[];
+	readonly paintFailure: BridgeViewerReviewPaintFailureSnapshot | null;
+	readonly pendingPaintItemId: string | null;
 	readonly visibleItemCount: number;
 }
 
@@ -206,11 +213,13 @@ export interface BridgeViewerReviewDirectoryDisclosure {
 export interface BridgeViewerReviewHydrationMilestone {
 	readonly hydratedNonSelectedItemIds: readonly string[];
 	readonly label: 'final' | 'initial' | 'middle' | 'quarter' | 'threeQuarter';
+	readonly readableNonSelectedItemIds: readonly string[];
 	readonly visibleNonSelectedItemIds: readonly string[];
 }
 
 export interface BridgeViewerReviewHydrationWindowFailure {
 	readonly hydratedNonSelectedItemIds: readonly string[];
+	readonly readableNonSelectedItemIds: readonly string[];
 	readonly scrollTop: number;
 	readonly visibleContentStates: readonly {
 		readonly contentState: string | null;
@@ -254,6 +263,7 @@ export interface BridgeViewerReviewFreshRouteProof {
 	readonly metadataItemCount: number;
 	readonly mountedHeaderOrderViolations: readonly BridgeViewerReviewMountedHeaderOrderViolation[];
 	readonly observedHeaderItemIds: readonly string[];
+	readonly paintLedger: readonly BridgeViewerReviewPaintLedgerEntry[];
 	readonly selectedItemIdAtCompletion: string | null;
 	readonly selectedItemIdAtStart: string | null;
 	readonly treeHostIdentityStable: boolean;

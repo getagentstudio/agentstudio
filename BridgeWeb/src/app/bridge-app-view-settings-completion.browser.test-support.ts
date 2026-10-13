@@ -19,6 +19,13 @@ interface SettingsCloseFact {
 	readonly count: number;
 }
 
+interface SettingsOpenFact {
+	readonly surface: SettingsSurface;
+	readonly instance: object;
+	readonly count: number;
+}
+let openFacts = new BridgeProductTestFactRecorder<SettingsOpenFact>();
+const expectedOpenBySurface = new Map<SettingsSurface, number>();
 let closeFacts = new BridgeProductTestFactRecorder<SettingsCloseFact>();
 let ownerSignal: AbortSignal | undefined;
 const closeCountBySurface = new Map<SettingsSurface, number>();
@@ -32,6 +39,8 @@ beforeEach((context): void => {
 	restoreAnimations = null;
 	ownerSignal = context.signal;
 	closeFacts = new BridgeProductTestFactRecorder<SettingsCloseFact>();
+	openFacts = new BridgeProductTestFactRecorder<SettingsOpenFact>();
+	expectedOpenBySurface.clear();
 	closeCountBySurface.clear();
 	expectedCloseBySurface.clear();
 	activeRootBySurface.clear();
@@ -47,8 +56,8 @@ beforeEach((context): void => {
 		const surface = surfaceForSettingsTestId(this.getAttribute('data-testid'));
 		if (
 			surface !== null &&
-			this.hasAttribute('data-closed') &&
-			expectedCloseBySurface.has(surface)
+			((this.hasAttribute('data-closed') && expectedCloseBySurface.has(surface)) ||
+				(this.hasAttribute('data-open') && expectedOpenBySurface.has(surface)))
 		) {
 			for (const animation of animations) animation.finish();
 		}
@@ -63,6 +72,8 @@ afterEach((): void => {
 	restoreAnimations = null;
 	ownerSignal = undefined;
 	closeFacts.close(new Error('View Settings completion observation closed.'));
+	openFacts.close(new Error('View Settings opening observation closed.'));
+	expectedOpenBySurface.clear();
 	closeCountBySurface.clear();
 	expectedCloseBySurface.clear();
 	activeRootBySurface.clear();
@@ -101,6 +112,11 @@ export function withViewSettingsPopoverLifecycle(
 				onOpenChangeComplete: (open: boolean): void => {
 					props.onOpenChangeComplete?.(open);
 					if (!open) publishSettingsEnd(surface, instance, 'completed');
+					else {
+						const count = expectedOpenBySurface.get(surface);
+						if (count !== undefined && expectedRootBySurface.get(surface) === instance)
+							openFacts.record({ surface, instance, count });
+					}
 				},
 			});
 		},
@@ -111,7 +127,9 @@ export function markViewSettingsOpening(surface: SettingsSurface): void {
 	const instance = activeRootBySurface.get(surface);
 	if (instance === undefined) throw new Error(`View Settings ${surface} Root was not installed.`);
 	expectedRootBySurface.set(surface, instance);
-	expectedCloseBySurface.set(surface, (closeCountBySurface.get(surface) ?? 0) + 1);
+	const count = (closeCountBySurface.get(surface) ?? 0) + 1;
+	expectedCloseBySurface.set(surface, count);
+	expectedOpenBySurface.set(surface, count);
 }
 
 export function hasPendingViewSettingsClose(surface: SettingsSurface): boolean {
@@ -167,4 +185,24 @@ function surfaceForSettingsTestId(testId: string | null | undefined): SettingsSu
 	if (testId === 'bridge-file-view-settings-content') return 'file';
 	if (testId === 'bridge-review-view-settings-content') return 'review';
 	return null;
+}
+
+export async function awaitViewSettingsOpen(surface: SettingsSurface): Promise<void> {
+	const count = expectedOpenBySurface.get(surface);
+	const instance = expectedRootBySurface.get(surface);
+	if (count === undefined || instance === undefined)
+		throw new Error(`View Settings ${surface} opening was not armed.`);
+	const signal = ownerSignal;
+	if (signal === undefined) throw new Error('View Settings open observation has no test owner.');
+	const cancel = (): void => openFacts.close(new Error(`View Settings ${surface} open aborted.`));
+	signal.addEventListener('abort', cancel, { once: true });
+	try {
+		if (signal.aborted) cancel();
+		await openFacts.waitFor(
+			(fact) => fact.surface === surface && fact.instance === instance && fact.count === count,
+		);
+		expectedOpenBySurface.delete(surface);
+	} finally {
+		signal.removeEventListener('abort', cancel);
+	}
 }

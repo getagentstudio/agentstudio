@@ -57,6 +57,7 @@ struct ForgeActorDemandScopeAdmissionTests {
             ]
         )
         #expect(await target.fixture.provider.waitForCallCount(3))
+        let blockingTasks = await Array(target.fixture.actor.providerTasksByRequestId.values)
 
         await target.fixture.actor.setDemand(
             worktreeIds: [
@@ -66,6 +67,15 @@ struct ForgeActorDemandScopeAdmissionTests {
                 secondBlockingWorktreeId,
             ]
         )
+        // setDemand has returned; both existing provider requests are still held and
+        // both scheduling clocks are frozen. Admission itself is observable here,
+        // even when the new provider task has not entered its call counter yet.
+        #expect(await !target.fixture.actor.providerRepoIdByRequestId.values.contains(target.repoId))
+        #expect(await target.fixture.actor.refreshStateByRepoId[target.repoId]?.activeRequestId == nil)
+        #expect(await target.fixture.actor.refreshStateByRepoId[target.repoId]?.pendingFollowUp == true)
+        #expect(
+            await target.fixture.actor.refreshStateByRepoId[target.repoId]?.pendingFollowUpHasUnconfirmedScopeChange
+                == true)
         #expect(await target.fixture.provider.callCount == 3)
         await target.fixture.provider.resolve(callAt: 1, with: .complete([]))
 
@@ -74,8 +84,10 @@ struct ForgeActorDemandScopeAdmissionTests {
             await target.fixture.provider.demandedBranchSets[3]
                 == ["feature/confirmed", "feature/unconfirmed"]
         )
+        let remainingTasks = await Array(target.fixture.actor.providerTasksByRequestId.values)
         await target.fixture.provider.resolve(callAt: 2, with: .complete([]))
         await target.fixture.provider.resolve(callAt: 3, with: .complete([]))
+        for task in blockingTasks + remainingTasks { await task.value }
         await target.fixture.actor.shutdown()
         await target.fixture.stopObserving()
     }
@@ -161,6 +173,7 @@ struct ForgeActorDemandScopeAdmissionTests {
         )
         await fixture.actor.setDemand(worktreeIds: [confirmedWorktreeId])
         #expect(await fixture.provider.waitForCallCount(1))
+        let confirmationTasks = await Array(fixture.actor.providerTasksByRequestId.values)
         await fixture.provider.resolve(callAt: 0, with: .complete([]))
         #expect(
             await fixture.events.waitForFacts(
@@ -168,6 +181,7 @@ struct ForgeActorDemandScopeAdmissionTests {
                 branch: "feature/confirmed",
                 expected: PullRequestFacts(openCount: 0, exactOpenURL: nil)
             ))
+        for task in confirmationTasks { await task.value }
         return ConfirmedAndUnconfirmedBranchFixture(
             fixture: fixture,
             repoId: repoId,

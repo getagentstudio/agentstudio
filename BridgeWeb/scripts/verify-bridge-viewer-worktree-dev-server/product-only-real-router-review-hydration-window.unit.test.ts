@@ -19,8 +19,28 @@ test('an intersecting unpainted item remains visible and fails hydrated coverage
 	});
 
 	expect(snapshot.visibleNonSelectedItemIds).toEqual(['visible-unpainted']);
+	expect(snapshot.readableNonSelectedItemIds).toEqual(['visible-unpainted']);
 	expect(snapshot.hydratedNonSelectedItemIds).toEqual([]);
 	expect(snapshot.visibleContentStates).toEqual([
 		{ contentState: 'windowed', itemId: 'visible-unpainted' },
 	]);
+});
+
+test('a visible item outside the readable policy is not classified as readable', () => {
+	const snapshot = classifyFreshReviewHydrationWindow({
+		excludedItemIds: [],
+		selectedItemId: null,
+		scrollTop: 7580,
+		visibleItems: [
+			{
+				contentState: 'placeholder',
+				itemId: 'visible-placeholder',
+				publicationId: null,
+				renderedLineCount: 0,
+				sourceCorrelations: null,
+			},
+		],
+	});
+
+	expect(snapshot.readableNonSelectedItemIds).toEqual([]);
 });

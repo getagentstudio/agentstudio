@@ -1,3 +1,4 @@
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -7,18 +8,25 @@ import Testing
 @Suite(.serialized)
 struct NotificationReducerTests {
     @Test("critical events are emitted immediately")
-    func criticalImmediate() async {
-        let reducer = NotificationReducer()
-        var iterator = reducer.criticalEvents.makeAsyncIterator()
+    func criticalImmediate() async throws {
+        var reducer: NotificationReducer? = NotificationReducer(clock: TestPushClock())
+        weak let reducerLifetime = reducer
+        var iterator = try #require(reducer).criticalEvents.makeAsyncIterator()
 
         let envelope = makePaneEnvelope(
             seq: 1,
             event: .terminal(.bellRang)
         )
-        reducer.submit(envelope)
+        reducer?.submit(envelope)
+        // Close the synchronous submit window before yielding MainActor. Deinit
+        // finishes the stream, so a delayed frame cannot satisfy this observation.
+        reducer = nil
+        #expect(reducerLifetime == nil)
 
         let received = await iterator.next()
         #expect(received?.seq == envelope.seq)
+        #expect(received?.source == envelope.source)
+        #expect(await iterator.next() == nil)
     }
 
     @Test("lossy events coalesce by key and latest wins")
