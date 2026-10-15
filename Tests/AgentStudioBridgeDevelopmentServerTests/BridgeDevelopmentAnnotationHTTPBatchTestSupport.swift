@@ -61,6 +61,7 @@ func nextHTTPFileBatchSnapshot(
     connection: HTTPProductConnection,
     recorder: HTTPMetadataFrameRecorder,
     retainedState: inout HTTPFileBatchRetainedState,
+    replacementWaitLog: ExpectationLog = .environment,
     beforeResnapshot: @Sendable (BridgeProductBatchBeginFrame, Int?) async throws -> Void = { _, _ in }
 ) async throws -> HTTPFileBatchSnapshot {
     var activeBegin: BridgeProductBatchBeginFrame?
@@ -84,14 +85,15 @@ func nextHTTPFileBatchSnapshot(
                     sameHTTPFileView(begin.identity, requestedRecovery.identity),
                     begin.scope == requestedRecovery.scope
                 else { continue }
-                recoveryWait?.receivedBegin()
             }
             activeBegin = nil
             parts.removeAll(keepingCapacity: true)
             if retainedState.isStale(begin) {
                 staleBegin = begin
+                recoveryWait?.rejectedBegin()
             } else {
                 activeBegin = begin
+                recoveryWait?.receivedBegin()
             }
         case .part(let part):
             if let staleBegin, part.identity.batchId == staleBegin.identity.batchId,
@@ -102,7 +104,7 @@ func nextHTTPFileBatchSnapshot(
                     staleBegin: staleBegin, requestedRecovery: &requestedRecovery,
                     client: client, connection: connection)
                 if recoveryWait == nil, let requestedRecovery {
-                    recoveryWait = HTTPFileReplacementWait(staleBegin: requestedRecovery)
+                    recoveryWait = HTTPFileReplacementWait(staleBegin: requestedRecovery, log: replacementWaitLog)
                 }
                 continue
             }
@@ -125,7 +127,7 @@ func nextHTTPFileBatchSnapshot(
                     staleBegin: staleBegin, requestedRecovery: &requestedRecovery,
                     client: client, connection: connection)
                 if recoveryWait == nil, let requestedRecovery {
-                    recoveryWait = HTTPFileReplacementWait(staleBegin: requestedRecovery)
+                    recoveryWait = HTTPFileReplacementWait(staleBegin: requestedRecovery, log: replacementWaitLog)
                 }
                 continue
             }

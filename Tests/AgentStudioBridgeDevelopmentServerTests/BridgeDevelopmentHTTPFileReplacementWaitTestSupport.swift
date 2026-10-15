@@ -10,18 +10,26 @@ struct HTTPFileReplacementWait {
     }
 
     private let staleBegin: BridgeProductBatchBeginFrame
-    private let log = ExpectationLog.environment
+    private let log: ExpectationLog
     private var expectedSide = ExpectedSide.begin
     private var pendingIdentifier: String?
 
-    init(staleBegin: BridgeProductBatchBeginFrame) {
+    init(staleBegin: BridgeProductBatchBeginFrame, log: ExpectationLog = .environment) {
         self.staleBegin = staleBegin
+        self.log = log
         register()
     }
 
     mutating func receivedBegin() {
         settle(expectedSide == .begin ? .matched : .ended)
         expectedSide = .complete
+        register()
+    }
+
+    mutating func rejectedBegin() {
+        guard expectedSide == .complete else { return }
+        settle(.ended)
+        expectedSide = .begin
         register()
     }
 
