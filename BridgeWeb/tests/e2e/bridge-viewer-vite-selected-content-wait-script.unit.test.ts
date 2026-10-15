@@ -2,6 +2,8 @@ import { runInNewContext } from 'node:vm';
 
 import { expect, test } from 'vitest';
 
+import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import type { BridgePaneCommWorkerSessionDiagnosticState } from '../../src/foundation/diagnostics/bridge-review-selection-diagnostic.js';
 import type { SelectedContentOwnerSnapshot } from './bridge-viewer-vite-selected-content-owner.ts';
 import {
 	selectedContentOwnerWaitScript,
@@ -15,16 +17,31 @@ function runWaitScript(props: {
 	readonly paintedSha?: string;
 	readonly renderedItemId?: string;
 	readonly ownerFailure?: string;
-	readonly sessionState?: string;
+	readonly sessionState?: BridgePaneCommWorkerSessionDiagnosticState;
+	readonly withDiagnosticLifecycle?: boolean;
 	readonly displayedPublication?: string;
 }): {
 	readonly outcome: Promise<unknown>;
 	readonly retire: () => void;
 	readonly publishFailureAfterCanvasRemoval: () => void;
 	readonly disconnected: () => boolean;
+	readonly diagnosticSubscription: Promise<void>;
+	readonly publishWorkerSessionState: (state: BridgePaneCommWorkerSessionDiagnosticState) => void;
+	readonly publishSuccessor: (state: {
+		readonly contentState: string;
+		readonly paintedSha: string;
+		readonly renderedItemId: string;
+	}) => void;
 } {
 	let canvasPresent = props.hasCanvas ?? true;
 	let disconnected = false;
+	let contentState = props.contentState ?? 'loading';
+	let paintedSha = props.paintedSha ?? 'old-sha';
+	let renderedItemId = props.renderedItemId ?? 'selected-file';
+	const diagnosticSubscription = createBridgeProductDeferred<void>();
+	const diagnosticObservers = new Set<
+		(snapshot: { readonly state: BridgePaneCommWorkerSessionDiagnosticState }) => void
+	>();
 	let observation: SelectedContentOwnerSnapshot = {
 		selectedItemId: 'selected-file',
 		selectionRequestId: 'selection-request',
@@ -46,14 +63,13 @@ function runWaitScript(props: {
 	const canvas = {
 		getAttribute: (name: string): string | null => {
 			if (name === 'data-worktree-rendered-item-id' || name === 'data-selected-item-id')
-				return props.renderedItemId ?? 'selected-file';
+				return renderedItemId;
 			if (name === 'data-worktree-open-file-state' || name === 'data-selected-content-state')
-				return props.contentState ?? 'loading';
+				return contentState;
 			return null;
 		},
 		querySelector: (): { readonly getAttribute: () => string } => ({
-			getAttribute: (): string =>
-				JSON.stringify([{ observedSha256: props.paintedSha ?? 'old-sha' }]),
+			getAttribute: (): string => JSON.stringify([{ observedSha256: paintedSha }]),
 		}),
 	};
 	const documentTarget = Object.assign(new EventTarget(), {
@@ -72,22 +88,67 @@ function runWaitScript(props: {
 			},
 		},
 	});
-	const result: unknown = runInNewContext(
-		selectedContentOwnerWaitScript({ label: 'selected-content-proof', target: props.target }),
-		{
-			document: documentTarget,
-			window: windowTarget,
-			location: { protocol: 'about:' },
-			MutationObserver: class {
-				observe(): void {}
-				disconnect(): void {
-					disconnected = true;
-				}
-			},
+	const workerDiagnostic = {
+		readBridgeReviewSelectionDiagnostic: (): { readonly sessionState: string } =>
+			windowTarget['__bridgeReviewSelectionDiagnostic'],
+		observeBridgePaneCommWorkerSessionDiagnosticSnapshots: (
+			observer: (snapshot: { readonly state: BridgePaneCommWorkerSessionDiagnosticState }) => void,
+		): (() => void) => {
+			diagnosticObservers.add(observer);
+			diagnosticSubscription.resolve();
+			return (): void => {
+				diagnosticObservers.delete(observer);
+			};
 		},
-	);
+	};
+	let script = selectedContentOwnerWaitScript({
+		label: 'selected-content-proof',
+		target: props.target,
+	});
+	if (props.withDiagnosticLifecycle === true) {
+		// Only Vite's external module loader is a stand-in. The generated subscription,
+		// diagnostic callback, currentness predicate and cleanup run unchanged.
+		const loader =
+			"await import(new URL('/src/foundation/diagnostics/bridge-review-selection-diagnostic.ts', location.href).href)";
+		expect(script.split(loader)).toHaveLength(2);
+		script = script.replace(loader, 'await workerDiagnostic');
+	}
+	const result: unknown = runInNewContext(script, {
+		document: documentTarget,
+		window: windowTarget,
+		location: { protocol: props.withDiagnosticLifecycle === true ? 'http:' : 'about:' },
+		workerDiagnostic,
+		MutationObserver: class {
+			observe(): void {}
+			disconnect(): void {
+				disconnected = true;
+			}
+		},
+	});
+	const publishWorkerSessionState = (state: BridgePaneCommWorkerSessionDiagnosticState): void => {
+		windowTarget['__bridgeReviewSelectionDiagnostic'].sessionState = state;
+		for (const observer of diagnosticObservers) observer({ state });
+	};
 	return {
 		outcome: Promise.resolve(result),
+		diagnosticSubscription: diagnosticSubscription.promise,
+		publishWorkerSessionState,
+		publishSuccessor: (state): void => {
+			contentState = state.contentState;
+			paintedSha = state.paintedSha;
+			renderedItemId = state.renderedItemId;
+			observation = {
+				...observation,
+				failure: null,
+				workerDerivationEpoch: 8,
+				selectionRequestId: 'successor-selection-request',
+				publicationId: 'successor-publication',
+			};
+			windowTarget[
+				'__bridgeReviewSelectionDiagnostic'
+			].reviewInstallationGate.activeIdentity.publicationId = 'successor-publication';
+			publishWorkerSessionState('ready');
+		},
 		retire: (): void => {
 			windowTarget.dispatchEvent(new Event('pagehide'));
 		},
@@ -191,3 +252,82 @@ test('matching File bytes on another rendered item cannot satisfy the requested 
 	await assertion;
 	expect(wait.disconnected()).toBe(true);
 });
+
+test('cached File predecessor failure stays pending while replacement bootstrap is held', async () => {
+	const wait = runWaitScript({
+		target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+		sessionState: 'replacement_requested',
+		ownerFailure: 'file-refresh:producerRejected',
+	});
+	const assertion = expect(wait.outcome).rejects.toThrow('document-retired');
+	// The predecessor still exists in observation; only the owning session has retired it.
+	// pagehide closes the negative interval without releasing the successor bootstrap.
+	wait.retire();
+	await assertion;
+	expect(wait.disconnected()).toBe(true);
+});
+
+test('the diagnostic replacement callback excludes a late predecessor failure before successor bootstrap', async () => {
+	const wait = runWaitScript({
+		target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+		withDiagnosticLifecycle: true,
+	});
+	const assertion = expect(wait.outcome).rejects.toThrow('document-retired');
+	await wait.diagnosticSubscription;
+	wait.publishWorkerSessionState('replacement_requested');
+	wait.publishFailureAfterCanvasRemoval();
+	wait.retire();
+	await assertion;
+	expect(wait.disconnected()).toBe(true);
+});
+
+test('successor ready settles held replacement only with the requested item and exact SHA', async () => {
+	const wait = runWaitScript({
+		target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+		sessionState: 'replacement_requested',
+		ownerFailure: 'file-refresh:producerRejected',
+		withDiagnosticLifecycle: true,
+	});
+	await wait.diagnosticSubscription;
+	wait.publishSuccessor({
+		contentState: 'ready',
+		paintedSha: 'new-sha',
+		renderedItemId: 'selected-file',
+	});
+	await wait.outcome;
+	expect(wait.disconnected()).toBe(true);
+});
+
+test.each([
+	{ contentState: 'ready', paintedSha: 'old-sha', renderedItemId: 'selected-file' },
+	{ contentState: 'loading', paintedSha: 'new-sha', renderedItemId: 'selected-file' },
+	{ contentState: 'ready', paintedSha: 'new-sha', renderedItemId: 'another-file' },
+])('an incomplete successor cannot settle held replacement: %j', async (state) => {
+	const wait = runWaitScript({
+		target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+		sessionState: 'replacement_requested',
+		ownerFailure: 'file-refresh:producerRejected',
+		withDiagnosticLifecycle: true,
+	});
+	const assertion = expect(wait.outcome).rejects.toThrow('document-retired');
+	await wait.diagnosticSubscription;
+	wait.publishSuccessor(state);
+	wait.retire();
+	await assertion;
+	expect(wait.disconnected()).toBe(true);
+});
+
+test.each(['awaiting_bootstrap', 'bootstrapping', 'disposed'] as const)(
+	'cached predecessor failures cannot end a wait while the owner is %s',
+	async (sessionState) => {
+		const wait = runWaitScript({
+			target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+			sessionState,
+			ownerFailure: 'file-refresh:producerRejected',
+		});
+		const assertion = expect(wait.outcome).rejects.toThrow('document-retired');
+		wait.retire();
+		await assertion;
+		expect(wait.disconnected()).toBe(true);
+	},
+);

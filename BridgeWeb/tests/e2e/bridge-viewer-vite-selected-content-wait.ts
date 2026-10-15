@@ -47,7 +47,9 @@ export function selectedContentOwnerWaitScript(props: {
 							const itemId = input.itemId ?? observation?.selectedItemId ?? panel?.getAttribute('data-worktree-rendered-item-id');
 							const activePublicationId = window.__bridgeReviewSelectionDiagnostic?.reviewInstallationGate?.activeIdentity?.publicationId ?? null;
 							const matchesDisplayedPublication = input.surface !== 'review' || activePublicationId === null || observation?.publicationId === activePublicationId;
-							const failure = observation != null && observation.selectedItemId === itemId && matchesDisplayedPublication ? observation.failure : null;
+							// Replacement retires the predecessor before a successor channel can reset its cached facts.
+							// Only the ready worker may close its current selected operation; owner terminals stay separate.
+							const failure = workerSessionState === 'ready' && observation != null && observation.selectedItemId === itemId && matchesDisplayedPublication ? observation.failure : null;
 							if (owner !== null || failure != null) {
 								finish(new Error(input.label + ' ended: ' + (owner ?? failure.reason) + '; ' + JSON.stringify(observation ?? null)));
 								return;
