@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 
 import type { Browser, Page, Request } from 'playwright';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { collectBridgeViewerProductOnlyContractViolations } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-contract.ts';
@@ -25,7 +25,6 @@ import {
 	createBridgeViewerViteProductFixture,
 	startBridgeViewerOwnedViteProductServer,
 	type BridgeViewerOwnedViteProductServer,
-	type BridgeViewerOwnedViteProductServerCleanup,
 	type BridgeViewerViteProductContentOracle,
 	type BridgeViewerViteProductFixtureOracle,
 	type BridgeViewerViteProductProofFixtureOracle,
@@ -65,60 +64,58 @@ interface ReviewSelectionBrowserSnapshot {
 	readonly paintedPublicationId: string | null;
 }
 
-let disposeFixture: (() => Promise<void>) | null = null;
-let fixtureOracle: BridgeViewerViteProductProofFixtureOracle | null = null;
-let ownedServer: BridgeViewerOwnedViteProductServer | null = null;
-let ownedServerCleanup: BridgeViewerOwnedViteProductServerCleanup | null = null;
-
 describe('Bridge Viewer dedicated Vite product E2E', () => {
-	beforeAll(async (): Promise<void> => {
-		const fixture = await createBridgeViewerViteProductFixture();
-		disposeFixture = fixture.dispose;
-		fixtureOracle = fixture.oracle;
-		ownedServer = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-	});
-
-	afterAll(async (): Promise<void> => {
-		try {
-			if (ownedServer !== null) ownedServerCleanup = await ownedServer.stop();
-		} finally {
-			await disposeFixture?.();
-		}
-		if (ownedServerCleanup !== null) {
-			expect(ownedServerCleanup.forcedTerminationRequired).toBe(false);
-			expect(ownedServerCleanup.ownedProcessAliveAfterStop).toBe(false);
-		}
-	});
-
 	test('correlates the disposable live-worktree journey through the product provider, worker, Pierre, and painted DOM', async (context) => {
 		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
-			const oracle = requireFixtureOracle();
-			const server = requireOwnedServer();
-			expect(oracle.changedPaths).toHaveLength(16);
-			expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
-			expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
+			const fixture = await createBridgeViewerViteProductFixture();
+			const oracle = fixture.oracle;
+			let server: BridgeViewerOwnedViteProductServer | null = null;
+			try {
+				server = await startBridgeViewerOwnedViteProductServer(oracle);
+				expect(oracle.changedPaths).toHaveLength(16);
+				expect(oracle.reviewFiles).toHaveLength(oracle.changedPaths.length);
+				expect(oracle.fileProofCodeContent.length).toBeLessThanOrEqual(160);
 
-			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
-			const journeyObservations = await runBridgeViewerProductOnlyJourney({
-				launch: server.testLaunch,
-				browser,
-				baseUrl: server.origin,
-				expectedReviewItemIds: oracle.expectedReviewItemIds,
-				fileProofTargets: oracle.fileProofTargets,
-			});
+				const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+				const journeyObservations = await runBridgeViewerProductOnlyJourney({
+					launch: server.testLaunch,
+					browser,
+					baseUrl: server.origin,
+					expectedReviewItemIds: oracle.expectedReviewItemIds,
+					fileProofTargets: oracle.fileProofTargets,
+				});
 
-			expect(collectBridgeViewerProductOnlyContractViolations(journeyObservations)).toEqual([]);
-			assertJourneyFreshness({ journeyObservations, oracle, server });
+				expect(collectBridgeViewerProductOnlyContractViolations(journeyObservations)).toEqual([]);
+				assertJourneyFreshness({ journeyObservations, oracle, server });
+			} finally {
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'Vite and Swift',
+							run: async (): Promise<void> => {
+								if (server === null) return;
+								const cleanup = await server.stop();
+								expect(cleanup.forcedTerminationRequired).toBe(false);
+								expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
+							},
+						},
+						{ name: 'fixture', run: fixture.dispose },
+					],
+				});
+			}
 		});
 	});
 
 	test('observes Review base/head body truth, request leases, painted publication correlation, and directory disclosure interaction', async (context) => {
 		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
-			const oracle = requireFixtureOracle();
-			const server = requireOwnedServer();
-			const browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+			const fixture = await createBridgeViewerViteProductFixture();
+			const oracle = fixture.oracle;
+			let server: BridgeViewerOwnedViteProductServer | null = null;
+			let browser: Browser | null = null;
 			let page: Page | null = null;
 			try {
+				server = await startBridgeViewerOwnedViteProductServer(oracle);
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 				const contentRequests = observeProductContentRequests(page);
 				await page.goto(
@@ -208,8 +205,32 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 				}
 				expect(paintedDescriptorIds.size).toBe(reviewFiles.length * 2);
 			} finally {
-				await page?.close();
-				await browser.close();
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'page',
+							run: async (): Promise<void> => {
+								await page?.close();
+							},
+						},
+						{
+							name: 'browser',
+							run: async (): Promise<void> => {
+								await browser?.close();
+							},
+						},
+						{
+							name: 'Vite and Swift',
+							run: async (): Promise<void> => {
+								if (server === null) return;
+								const cleanup = await server.stop();
+								expect(cleanup.forcedTerminationRequired).toBe(false);
+								expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
+							},
+						},
+						{ name: 'fixture', run: fixture.dispose },
+					],
+				});
 			}
 		});
 	});
@@ -857,14 +878,4 @@ function expectReviewBodyLinesPainted(paintedText: string, expectedBody: string)
 
 function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function requireFixtureOracle(): BridgeViewerViteProductProofFixtureOracle {
-	if (fixtureOracle === null) throw new Error('Vite product fixture was not initialized.');
-	return fixtureOracle;
-}
-
-function requireOwnedServer(): BridgeViewerOwnedViteProductServer {
-	if (ownedServer === null) throw new Error('Owned Vite product server was not initialized.');
-	return ownedServer;
 }

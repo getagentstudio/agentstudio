@@ -116,7 +116,6 @@ export async function createBridgeViewerViteProductFixture(
 }> {
 	const worktreeRoot = await mkdtemp(join(tmpdir(), 'bridge-viewer-vite-product-e2e-'));
 	let fixtureLaunch: BridgeWebTestLaunch | null = null;
-	let dataRootPath: string | null = null;
 	const comparisonTargetName = 'bridge-vite-comparison-target';
 	const paneId = randomUUID();
 	let reviewedHeadAdvanceSequence = 0;
@@ -158,245 +157,278 @@ export async function createBridgeViewerViteProductFixture(
 		fixtureLaunch = await BridgeWebTestLaunch.start({
 			dataRootPrefix: 'bridge-viewer-vite-product-data-',
 		});
-		dataRootPath = fixtureLaunch.dataRootPath;
-		await writeFixtureFiles({
-			fileTreeOnlyPaths,
-			largeFileContent,
-			largeFilePath,
-			nestedPaths,
-			phase: 'base',
-			worktreeRoot,
-		});
-		await runFixtureGit(worktreeRoot, ['init', '--initial-branch=main']);
-		await runFixtureGit(worktreeRoot, ['config', 'user.name', 'Bridge Vite Product E2E']);
-		await runFixtureGit(worktreeRoot, ['config', 'user.email', 'bridge-vite-e2e@example.invalid']);
-		await runFixtureGit(worktreeRoot, ['add', '--all']);
-		await runFixtureGit(worktreeRoot, [
-			'-c',
-			'commit.gpgsign=false',
-			'commit',
-			'-m',
-			'fixture base',
-		]);
-		await writeFixtureFiles({
-			fileTreeOnlyPaths,
-			largeFileContent,
-			largeFilePath,
-			nestedPaths,
-			phase: 'head',
-			worktreeRoot,
-		});
-		const baseRef = (await runFixtureGit(worktreeRoot, ['rev-parse', 'HEAD'])).trim();
-		await runFixtureGit(worktreeRoot, [
-			'update-ref',
-			`refs/heads/${comparisonTargetName}`,
-			baseRef,
-		]);
-		const changedPaths = (
-			await runFixtureGit(worktreeRoot, ['diff', '--name-only', '--no-renames', baseRef, '--'])
-		)
-			.split('\n')
-			.filter((path): boolean => path.length > 0)
-			.toSorted((left, right): number => left.localeCompare(right));
-		if (changedPaths.length !== nestedPaths.length) {
-			throw new Error(`Disposable live-worktree oracle expected ${nestedPaths.length} changes.`);
-		}
-		const observedLargeFileContent = await readFile(join(worktreeRoot, largeFilePath), 'utf8');
-		if (observedLargeFileContent !== largeFileContent) {
-			throw new Error('Disposable live-worktree oracle did not preserve the complete large file.');
-		}
-		const fixtureFileIndexByPath = new Map(
-			nestedPaths.map((path, fileIndex): readonly [string, number] => [path, fileIndex]),
-		);
-		const reviewFiles = await Promise.all(
-			changedPaths.map(async (path): Promise<BridgeViewerViteProductReviewFileOracle> => {
-				const fileIndex = fixtureFileIndexByPath.get(path);
-				if (fileIndex === undefined) {
-					throw new Error(`Disposable live-worktree oracle has no source index for ${path}.`);
-				}
-				const baseBody = reviewFixtureBody({ fileIndex, phase: 'base' });
-				const headBody = await readFile(join(worktreeRoot, path), 'utf8');
-				return {
-					base: reviewRoleOracle('base', baseBody),
-					head: reviewRoleOracle('head', headBody),
-					itemId: bridgeReviewItemIdOracle({
-						newContentHash: gitBlobHash(headBody),
-						oldContentHash: gitBlobHash(baseBody),
-						path,
-						previousPath: null,
-					}),
-					path,
-				};
-			}),
-		);
-		const fileContent = fileContentOracle({
-			content: largeFileContent,
-			firstMarker,
-			finalMarker,
-			middleMarker,
-		});
-		return {
-			advanceComparisonTarget: async (): Promise<string> => {
-				const targetCommitOID = (
-					await runFixtureGit(worktreeRoot, [
-						'commit-tree',
-						`${baseRef}^{tree}`,
-						'-p',
-						baseRef,
-						'-m',
-						'advance comparison target',
-					])
-				).trim();
-				await runFixtureGit(worktreeRoot, [
-					'update-ref',
-					`refs/heads/${comparisonTargetName}`,
-					targetCommitOID,
-					baseRef,
-				]);
-				return targetCommitOID;
-			},
-			advanceReviewedHeadByCommitCount: async (
-				commitCount,
-			): Promise<BridgeViewerReviewedHeadAdvance> => {
-				if (!Number.isSafeInteger(commitCount) || commitCount <= 0) {
-					throw new Error('Reviewed-head commit count must be a positive safe integer.');
-				}
-				const changedPath = nestedPaths[0];
-				if (changedPath === undefined) throw new Error('Promoted refresh fixture path is missing.');
-				const previousHeadOID = (await runFixtureGit(worktreeRoot, ['rev-parse', 'HEAD'])).trim();
-				const currentBody = await readFile(join(worktreeRoot, changedPath), 'utf8');
-				reviewedHeadAdvanceSequence += 1;
-				const privateChainRef = `refs/bridge-viewer-fixture/private-reviewed-head/${randomUUID()}`;
-				try {
-					const committedBody = `${currentBody}export const promotedHeadChain${reviewedHeadAdvanceSequence} = ${reviewedHeadAdvanceSequence};\n`;
-					const committedBodyBlobOID = (
-						await runFixtureGit(worktreeRoot, ['hash-object', '-w', '--stdin'], {
-							input: committedBody,
-						})
-					).trim();
-					const commitCommands: string[] = ['feature done'];
-					for (let commitIndex = 0; commitIndex < commitCount; commitIndex += 1) {
-						const commitMark = commitIndex + 1;
-						const message = `promoted refresh chain ${reviewedHeadAdvanceSequence} commit ${commitMark}`;
-						commitCommands.push(
-							`commit ${privateChainRef}`,
-							`mark :${commitMark}`,
-							'committer Bridge Vite Product E2E <bridge-vite-e2e@example.invalid> 0 +0000',
-							`data ${Buffer.byteLength(message)}`,
-							message,
-							`from ${commitIndex === 0 ? previousHeadOID : `:${commitIndex}`}`,
-						);
-						if (commitIndex === 0) {
-							commitCommands.push(`M 100644 ${committedBodyBlobOID} ${changedPath}`);
-						}
-						commitCommands.push('');
-					}
-					commitCommands.push('done', '');
-					await runFixtureGit(worktreeRoot, ['fast-import', '--quiet'], {
-						input: commitCommands.join('\n'),
+		const fixtureOwner = fixtureLaunch;
+		const dataRootPath = fixtureOwner.dataRootPath;
+		return await fixtureLaunch
+			.observeStep(
+				'prepare disposable live-worktree product fixture',
+				(async (): Promise<Awaited<ReturnType<typeof createBridgeViewerViteProductFixture>>> => {
+					await writeFixtureFiles({
+						fileTreeOnlyPaths,
+						largeFileContent,
+						largeFilePath,
+						nestedPaths,
+						phase: 'base',
+						worktreeRoot,
 					});
-					const finalHeadOID = (
-						await runFixtureGit(worktreeRoot, ['rev-parse', privateChainRef])
-					).trim();
-					const importedCommitCount = Number(
-						(
-							await runFixtureGit(worktreeRoot, [
-								'rev-list',
-								'--count',
-								`${previousHeadOID}..${finalHeadOID}`,
-							])
-						).trim(),
-					);
-					if (importedCommitCount !== commitCount) {
+					await runFixtureGit(worktreeRoot, ['init', '--initial-branch=main']);
+					await runFixtureGit(worktreeRoot, ['config', 'user.name', 'Bridge Vite Product E2E']);
+					await runFixtureGit(worktreeRoot, [
+						'config',
+						'user.email',
+						'bridge-vite-e2e@example.invalid',
+					]);
+					await runFixtureGit(worktreeRoot, ['add', '--all']);
+					await runFixtureGit(worktreeRoot, [
+						'-c',
+						'commit.gpgsign=false',
+						'commit',
+						'-m',
+						'fixture base',
+					]);
+					await writeFixtureFiles({
+						fileTreeOnlyPaths,
+						largeFileContent,
+						largeFilePath,
+						nestedPaths,
+						phase: 'head',
+						worktreeRoot,
+					});
+					const baseRef = (await runFixtureGit(worktreeRoot, ['rev-parse', 'HEAD'])).trim();
+					await runFixtureGit(worktreeRoot, [
+						'update-ref',
+						`refs/heads/${comparisonTargetName}`,
+						baseRef,
+					]);
+					const changedPaths = (
+						await runFixtureGit(worktreeRoot, [
+							'diff',
+							'--name-only',
+							'--no-renames',
+							baseRef,
+							'--',
+						])
+					)
+						.split('\n')
+						.filter((path): boolean => path.length > 0)
+						.toSorted((left, right): number => left.localeCompare(right));
+					if (changedPaths.length !== nestedPaths.length) {
 						throw new Error(
-							`Reviewed-head chain expected ${commitCount} commits, received ${importedCommitCount}.`,
+							`Disposable live-worktree oracle expected ${nestedPaths.length} changes.`,
 						);
 					}
-					// This is the only observed reviewed-head transition. Private object construction above
-					// never moves the checked-out ref or exposes an intermediate reviewed head.
-					await runFixtureGit(worktreeRoot, ['update-ref', 'HEAD', finalHeadOID, previousHeadOID]);
-					return { finalHeadOID, importedCommitCount, previousHeadOID };
-				} finally {
-					await runFixtureGit(worktreeRoot, ['update-ref', '-d', privateChainRef]);
-				}
-			},
-			dispose: async (): Promise<void> => {
-				await fixtureLaunch?.dispose();
-				await runAllOwnedCleanupOperations({
-					operations: [
-						{
-							name: 'Vite product fixture worktree',
-							run: async (): Promise<void> => {
-								await rm(worktreeRoot, { force: true, recursive: true });
-							},
+					const observedLargeFileContent = await readFile(
+						join(worktreeRoot, largeFilePath),
+						'utf8',
+					);
+					if (observedLargeFileContent !== largeFileContent) {
+						throw new Error(
+							'Disposable live-worktree oracle did not preserve the complete large file.',
+						);
+					}
+					const fixtureFileIndexByPath = new Map(
+						nestedPaths.map((path, fileIndex): readonly [string, number] => [path, fileIndex]),
+					);
+					const reviewFiles = await Promise.all(
+						changedPaths.map(async (path): Promise<BridgeViewerViteProductReviewFileOracle> => {
+							const fileIndex = fixtureFileIndexByPath.get(path);
+							if (fileIndex === undefined) {
+								throw new Error(`Disposable live-worktree oracle has no source index for ${path}.`);
+							}
+							const baseBody = reviewFixtureBody({ fileIndex, phase: 'base' });
+							const headBody = await readFile(join(worktreeRoot, path), 'utf8');
+							return {
+								base: reviewRoleOracle('base', baseBody),
+								head: reviewRoleOracle('head', headBody),
+								itemId: bridgeReviewItemIdOracle({
+									newContentHash: gitBlobHash(headBody),
+									oldContentHash: gitBlobHash(baseBody),
+									path,
+									previousPath: null,
+								}),
+								path,
+							};
+						}),
+					);
+					const fileContent = fileContentOracle({
+						content: largeFileContent,
+						firstMarker,
+						finalMarker,
+						middleMarker,
+					});
+					return {
+						advanceComparisonTarget: async (): Promise<string> => {
+							const targetCommitOID = (
+								await runFixtureGit(worktreeRoot, [
+									'commit-tree',
+									`${baseRef}^{tree}`,
+									'-p',
+									baseRef,
+									'-m',
+									'advance comparison target',
+								])
+							).trim();
+							await runFixtureGit(worktreeRoot, [
+								'update-ref',
+								`refs/heads/${comparisonTargetName}`,
+								targetCommitOID,
+								baseRef,
+							]);
+							return targetCommitOID;
 						},
-						{
-							name: 'Vite product fixture data root',
-							run: async (): Promise<void> => {
-								await fixtureLaunch?.dispose();
-							},
+						advanceReviewedHeadByCommitCount: async (
+							commitCount,
+						): Promise<BridgeViewerReviewedHeadAdvance> => {
+							if (!Number.isSafeInteger(commitCount) || commitCount <= 0) {
+								throw new Error('Reviewed-head commit count must be a positive safe integer.');
+							}
+							const changedPath = nestedPaths[0];
+							if (changedPath === undefined)
+								throw new Error('Promoted refresh fixture path is missing.');
+							const previousHeadOID = (
+								await runFixtureGit(worktreeRoot, ['rev-parse', 'HEAD'])
+							).trim();
+							const currentBody = await readFile(join(worktreeRoot, changedPath), 'utf8');
+							reviewedHeadAdvanceSequence += 1;
+							const privateChainRef = `refs/bridge-viewer-fixture/private-reviewed-head/${randomUUID()}`;
+							try {
+								const committedBody = `${currentBody}export const promotedHeadChain${reviewedHeadAdvanceSequence} = ${reviewedHeadAdvanceSequence};\n`;
+								const committedBodyBlobOID = (
+									await runFixtureGit(worktreeRoot, ['hash-object', '-w', '--stdin'], {
+										input: committedBody,
+									})
+								).trim();
+								const commitCommands: string[] = ['feature done'];
+								for (let commitIndex = 0; commitIndex < commitCount; commitIndex += 1) {
+									const commitMark = commitIndex + 1;
+									const message = `promoted refresh chain ${reviewedHeadAdvanceSequence} commit ${commitMark}`;
+									commitCommands.push(
+										`commit ${privateChainRef}`,
+										`mark :${commitMark}`,
+										'committer Bridge Vite Product E2E <bridge-vite-e2e@example.invalid> 0 +0000',
+										`data ${Buffer.byteLength(message)}`,
+										message,
+										`from ${commitIndex === 0 ? previousHeadOID : `:${commitIndex}`}`,
+									);
+									if (commitIndex === 0) {
+										commitCommands.push(`M 100644 ${committedBodyBlobOID} ${changedPath}`);
+									}
+									commitCommands.push('');
+								}
+								commitCommands.push('done', '');
+								await runFixtureGit(worktreeRoot, ['fast-import', '--quiet'], {
+									input: commitCommands.join('\n'),
+								});
+								const finalHeadOID = (
+									await runFixtureGit(worktreeRoot, ['rev-parse', privateChainRef])
+								).trim();
+								const importedCommitCount = Number(
+									(
+										await runFixtureGit(worktreeRoot, [
+											'rev-list',
+											'--count',
+											`${previousHeadOID}..${finalHeadOID}`,
+										])
+									).trim(),
+								);
+								if (importedCommitCount !== commitCount) {
+									throw new Error(
+										`Reviewed-head chain expected ${commitCount} commits, received ${importedCommitCount}.`,
+									);
+								}
+								// This is the only observed reviewed-head transition. Private object construction above
+								// never moves the checked-out ref or exposes an intermediate reviewed head.
+								await runFixtureGit(worktreeRoot, [
+									'update-ref',
+									'HEAD',
+									finalHeadOID,
+									previousHeadOID,
+								]);
+								return { finalHeadOID, importedCommitCount, previousHeadOID };
+							} finally {
+								await runFixtureGit(worktreeRoot, ['update-ref', '-d', privateChainRef]);
+							}
 						},
-					],
-				});
-			},
-			mutateLargeFile: async (): Promise<BridgeViewerViteProductContentOracle> => {
-				const mutatedFirstMarker = 'BRIDGE_VITE_PRODUCT_MUTATED_FIRST_BYTE_MARKER';
-				const mutatedMiddleMarker = 'BRIDGE_VITE_PRODUCT_MUTATED_MIDDLE_BYTE_MARKER';
-				const mutatedFinalMarker = 'BRIDGE_VITE_PRODUCT_MUTATED_FINAL_BYTE_MARKER';
-				const mutatedLines = largeFileLines.map((line, lineIndex): string =>
-					lineIndex === 0
-						? mutatedFirstMarker
-						: lineIndex === routineCompleteFileMiddleLineIndex
-							? mutatedMiddleMarker
-							: lineIndex === routineCompleteFileFinalLineIndex
-								? mutatedFinalMarker
-								: line,
-				);
-				const content = `${mutatedLines.join('\n')}\n`;
-				await writeFile(join(worktreeRoot, largeFilePath), content);
-				return fileContentOracle({
-					content,
-					firstMarker: mutatedFirstMarker,
-					finalMarker: mutatedFinalMarker,
-					middleMarker: mutatedMiddleMarker,
-				});
-			},
-			mutateReviewFile: async (): Promise<BridgeViewerReviewWorktreeMutation> => {
-				const changedPath = nestedPaths[0];
-				if (changedPath === undefined) {
-					throw new Error('Proportional Review fixture path is missing.');
-				}
-				const currentBody = await readFile(join(worktreeRoot, changedPath), 'utf8');
-				reviewWorktreeMutationSequence += 1;
-				await writeFile(
-					join(worktreeRoot, changedPath),
-					`${currentBody}export const proportionalWorktreeMutation${reviewWorktreeMutationSequence} = ${reviewWorktreeMutationSequence};\n`,
-				);
-				return { path: changedPath };
-			},
-			oracle: {
-				baseRef,
-				changedPaths,
-				comparisonTargetName,
-				testLaunch: fixtureLaunch,
-				dataRootPath,
-				expectedReviewItemIds: reviewFiles.map(({ itemId }): string => itemId),
-				fileContent,
-				fileProofCodeContent: codeProofContent,
-				fileProofTargets: {
-					codePath: codeProofPath,
-					markdownPath: markdownProofPath,
-					markdownRenderedText: markdownProofRenderedText,
-				},
-				fileTreeDeepPath: fileTreeOnlyPaths.at(-1) ?? '',
-				largeFileLineCount: largeFileLines.length,
-				largeFilePath,
-				largeFileSha256: sha256(largeFileContent),
-				paneId,
-				reviewFiles,
-				worktreeRoot,
-			},
-		};
+						dispose: async (): Promise<void> => {
+							await fixtureLaunch?.dispose();
+							await runAllOwnedCleanupOperations({
+								operations: [
+									{
+										name: 'Vite product fixture worktree',
+										run: async (): Promise<void> => {
+											await rm(worktreeRoot, { force: true, recursive: true });
+										},
+									},
+									{
+										name: 'Vite product fixture data root',
+										run: async (): Promise<void> => {
+											await fixtureLaunch?.dispose();
+										},
+									},
+								],
+							});
+						},
+						mutateLargeFile: async (): Promise<BridgeViewerViteProductContentOracle> => {
+							const mutatedFirstMarker = 'BRIDGE_VITE_PRODUCT_MUTATED_FIRST_BYTE_MARKER';
+							const mutatedMiddleMarker = 'BRIDGE_VITE_PRODUCT_MUTATED_MIDDLE_BYTE_MARKER';
+							const mutatedFinalMarker = 'BRIDGE_VITE_PRODUCT_MUTATED_FINAL_BYTE_MARKER';
+							const mutatedLines = largeFileLines.map((line, lineIndex): string =>
+								lineIndex === 0
+									? mutatedFirstMarker
+									: lineIndex === routineCompleteFileMiddleLineIndex
+										? mutatedMiddleMarker
+										: lineIndex === routineCompleteFileFinalLineIndex
+											? mutatedFinalMarker
+											: line,
+							);
+							const content = `${mutatedLines.join('\n')}\n`;
+							await writeFile(join(worktreeRoot, largeFilePath), content);
+							return fileContentOracle({
+								content,
+								firstMarker: mutatedFirstMarker,
+								finalMarker: mutatedFinalMarker,
+								middleMarker: mutatedMiddleMarker,
+							});
+						},
+						mutateReviewFile: async (): Promise<BridgeViewerReviewWorktreeMutation> => {
+							const changedPath = nestedPaths[0];
+							if (changedPath === undefined) {
+								throw new Error('Proportional Review fixture path is missing.');
+							}
+							const currentBody = await readFile(join(worktreeRoot, changedPath), 'utf8');
+							reviewWorktreeMutationSequence += 1;
+							await writeFile(
+								join(worktreeRoot, changedPath),
+								`${currentBody}export const proportionalWorktreeMutation${reviewWorktreeMutationSequence} = ${reviewWorktreeMutationSequence};\n`,
+							);
+							return { path: changedPath };
+						},
+						oracle: {
+							baseRef,
+							changedPaths,
+							comparisonTargetName,
+							testLaunch: fixtureOwner,
+							dataRootPath,
+							expectedReviewItemIds: reviewFiles.map(({ itemId }): string => itemId),
+							fileContent,
+							fileProofCodeContent: codeProofContent,
+							fileProofTargets: {
+								codePath: codeProofPath,
+								markdownPath: markdownProofPath,
+								markdownRenderedText: markdownProofRenderedText,
+							},
+							fileTreeDeepPath: fileTreeOnlyPaths.at(-1) ?? '',
+							largeFileLineCount: largeFileLines.length,
+							largeFilePath,
+							largeFileSha256: sha256(largeFileContent),
+							paneId,
+							reviewFiles,
+							worktreeRoot,
+						},
+					};
+				})(),
+			)
+			.value();
 	} catch (error: unknown) {
 		await runAllOwnedCleanupOperations({
 			operations: [
