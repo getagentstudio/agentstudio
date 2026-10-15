@@ -145,6 +145,9 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         #expect(try await facts.expectHandledEnvelope(seq: 1) == .routed)
         #expect(await actor.rootPathByWorktreeId[worktreeId] != nil)
         #expect(await calls.value == 0)
+        #expect(await actor.refreshAttribution.requestSequenceByWorktreeId[worktreeId] == nil)
+        #expect(await actor.worktreeTasks[worktreeId] == nil)
+        #expect(await actor.automaticRefreshDeadlineByWorktreeId[worktreeId] != nil)
 
         await setPromotedAttention(actor: actor, worktreeId: worktreeId)
         try await facts.expectRefreshStarted(worktreeId: worktreeId, requestSequence: 1)
@@ -269,6 +272,38 @@ struct GitWorkingDirectoryProjectorAutomaticPacingTests {
         await gate.releaseAll()
         await actor.shutdown()
     }
+
+    @Test("held governor registration observes the owner's alarm instead of the start estimate")
+    func heldGovernorRegistrationUsesOwnedAlarm() async throws {
+        let registration = HeldStep<TestPushClock.Instant>("governor sleep before clock registration")
+        let clock = TestPushClock(pendingSleepFactSink: { fact in
+            if case .waiterRegistered = fact { registration.release() }
+        })
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
+        let actor = GitWorkingDirectoryProjector(
+            bus: EventBus<RuntimeEnvelope>(),
+            gitWorkingTreeProvider: StubGitWorkingTreeStatusProvider { _ in nil },
+            coalescingWindow: .zero,
+            sleepClock: GitProjectorHeldDeadlineClock(clock: clock, registration: registration),
+            factSink: source.sink)
+        let worktreeId = UUIDv7.generate()
+        await armHeldGitProjectorPacingDeadline(actor, worktreeId: worktreeId)
+        let scope = try await source.expectDeadlineRegistered(
+            facts: facts, worktreeId: worktreeId, kind: .governorPacing)
+        let requestedSleep = try await registration.firstArrival()
+        #expect(requestedSleep == clock.now.advanced(by: .milliseconds(11)))
+
+        // Only the observer's exact wait releases registration, so the real
+        // re-arm occurs after its read, without depending on scheduler speed.
+        let observed = try await observeHeldGitProjectorPacingDeadline(actor, scope: scope, clock: clock)
+        #expect(observed.scope == scope)
+        #expect(observed.scheduledStart == .milliseconds(10))
+        #expect(observed.registeredSleep == requestedSleep)
+        await actor.shutdown()
+        try await facts.finish()
+    }
+
 }
 
 private struct PreparedLowerTierPacingScenario {

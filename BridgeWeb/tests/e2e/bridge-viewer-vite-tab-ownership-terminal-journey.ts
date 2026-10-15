@@ -2,8 +2,10 @@ import type { Browser, Page, Route } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
-import { handleLaunchPromise } from '../../scripts/dev-server/handled-launch-promise.ts';
-import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import {
+	handleLaunchPromise,
+	type HandledLaunchPromise,
+} from '../../scripts/dev-server/handled-launch-promise.ts';
 import {
 	selectReviewFile,
 	waitForSelectedReviewReady,
@@ -18,7 +20,11 @@ import {
 	bridgeViewerViteProductReviewUrl,
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
-import { waitForTabOwnershipReviewReady } from './bridge-viewer-vite-tab-ownership-test-support.ts';
+import {
+	createTabOwnershipReplacementHold,
+	observeTabOwnershipReplacementRoute,
+	waitForTabOwnershipReviewReady,
+} from './bridge-viewer-vite-tab-ownership-test-support.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 export function registerTabOwnershipTerminalJourney(): void {
@@ -29,9 +35,8 @@ export function registerTabOwnershipTerminalJourney(): void {
 			let browser: Browser | null = null;
 			let firstTab: Page | null = null;
 			let primaryFailure: { readonly error: unknown } | null = null;
-			const heldCommit = createBridgeProductDeferred<void>();
-			const releaseRoutes = createBridgeProductDeferred<void>();
-			const routeJobs: Promise<void>[] = [];
+			const replacementHold = createTabOwnershipReplacementHold(context.signal);
+			const routeJobs: HandledLaunchPromise<void>[] = [];
 			let replacementTransportCount = 0;
 			try {
 				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
@@ -76,12 +81,12 @@ export function registerTabOwnershipTerminalJourney(): void {
 						const response = await route.fetch();
 						try {
 							expect(response.status()).toBe(200);
-							heldCommit.resolve();
-							await releaseRoutes.promise;
+							replacementHold.committed.resolve();
+							await replacementHold.released;
 						} finally {
 							await response.dispose();
 						}
-					} else await releaseRoutes.promise;
+					} else await replacementHold.released;
 					try {
 						await route.abort();
 					} catch (error: unknown) {
@@ -90,9 +95,16 @@ export function registerTabOwnershipTerminalJourney(): void {
 					}
 				};
 				await firstTab.route('**/__bridge-product/bootstrap', (route): Promise<void> => {
-					const operation = holdReplacement(route);
+					const operation = observeTabOwnershipReplacementRoute({
+						hold: replacementHold,
+						run: async (): Promise<void> => {
+							await holdReplacement(route);
+						},
+					});
 					routeJobs.push(operation);
-					return operation;
+					// The retained outcome is joined below. Delivering a rejected route
+					// promise to Playwright would leave a separate unhandled rejection.
+					return operation.settled.then((): void => {});
 				});
 				await firstTab.evaluate((): void => {
 					document.dispatchEvent(new Event('__tq109_fail_comm_worker'));
@@ -100,7 +112,7 @@ export function registerTabOwnershipTerminalJourney(): void {
 				await server.testLaunch
 					.observeStep(
 						'TQ109 first-tab replacement native commit held before Main delivery',
-						heldCommit.promise,
+						replacementHold.committed.promise,
 					)
 					.value();
 
@@ -148,7 +160,7 @@ export function registerTabOwnershipTerminalJourney(): void {
 				await firstTab.evaluate((): void => {
 					document.dispatchEvent(new Event('__tq109_stop_owner_observation'));
 				});
-				releaseRoutes.resolve();
+				replacementHold.release();
 				await firstTab.close();
 				firstTab = null;
 				const readinessOutcome = await readiness.settled;
@@ -164,7 +176,7 @@ export function registerTabOwnershipTerminalJourney(): void {
 				primaryFailure = { error };
 				throw error;
 			} finally {
-				releaseRoutes.resolve();
+				replacementHold.dispose();
 				await runAllOwnedCleanupOperations({
 					operations: [
 						{
@@ -187,7 +199,11 @@ export function registerTabOwnershipTerminalJourney(): void {
 						{
 							name: 'tab readiness held routes',
 							run: async (): Promise<void> => {
-								await Promise.all(routeJobs);
+								await Promise.all(
+									routeJobs.map(async (routeJob): Promise<void> => {
+										await routeJob.value();
+									}),
+								);
 							},
 						},
 						{
