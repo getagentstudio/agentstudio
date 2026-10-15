@@ -1,10 +1,12 @@
+@testable import AgentStudioBridge
+
 /// Product frames a hidden pane admitted between two carrier traces.
 ///
 /// These are the frames the isolation invariant is actually about. The metadata
 /// stream sequence is deliberately absent: it also counts protocol
 /// acknowledgements, which must keep flowing while a pane is hidden.
 struct BridgeProductWebKitHiddenStormProductDeltas: Sendable, Equatable {
-    let panePresentationEventCount: Int
+    let admittedPanePresentationCount: Int
     let fileMetadataPhaseCount: Int
     let reviewMetadataPhaseCount: Int
 }
@@ -29,7 +31,7 @@ enum BridgeProductWebKitMetadataStormDiagnostic {
         return BridgeProductWebKitHiddenStormSummary(
             message: message(nativeBefore: nativeBefore, nativeAfter: nativeAfter, admitted: admitted),
             productDeltas: BridgeProductWebKitHiddenStormProductDeltas(
-                panePresentationEventCount: admitted.paneEvents.count,
+                admittedPanePresentationCount: admitted.admittedPanePresentationCount,
                 fileMetadataPhaseCount: admitted.filePhases.count,
                 reviewMetadataPhaseCount: admitted.reviewPhases.count
             )
@@ -56,7 +58,9 @@ enum BridgeProductWebKitMetadataStormDiagnostic {
     }
 
     private struct AdmittedFrames {
+        // Keep rejected attempts in the diagnostic, but count only admitted frames.
         let paneEvents: ArraySlice<BridgeProductWebKitCarrierPanePresentationTrace>
+        let admittedPanePresentationCount: Int
         let filePhases: ArraySlice<String>
         let reviewPhases: ArraySlice<String>
     }
@@ -66,11 +70,15 @@ enum BridgeProductWebKitMetadataStormDiagnostic {
         traceBefore: BridgeProductWebKitCarrierTrace,
         traceAfter: BridgeProductWebKitCarrierTrace
     ) -> AdmittedFrames {
-        AdmittedFrames(
-            paneEvents: appendedValues(
-                traceAfter.panePresentationEvents,
-                after: traceBefore.panePresentationEvents
-            ),
+        let paneEvents = appendedValues(
+            traceAfter.panePresentationEvents,
+            after: traceBefore.panePresentationEvents
+        )
+        return AdmittedFrames(
+            paneEvents: paneEvents,
+            admittedPanePresentationCount: paneEvents.count(where: {
+                $0.stage == BridgePanePresentationTraceEvent.Stage.enqueued.rawValue
+            }),
             filePhases: appendedValues(
                 traceAfter.fileMetadataPhases,
                 after: traceBefore.fileMetadataPhases

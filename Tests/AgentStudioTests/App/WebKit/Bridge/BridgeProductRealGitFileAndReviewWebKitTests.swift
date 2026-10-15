@@ -168,7 +168,7 @@ extension WebKitSerializedTests {
             // subscription.update() promise strands. So the isolation invariant is
             // stated on the product frames a hidden pane must not admit.
             #expect(
-                proof.hiddenStormProductDeltas.panePresentationEventCount == 0,
+                proof.hiddenStormProductDeltas.admittedPanePresentationCount == 0,
                 Comment(rawValue: proof.hiddenMetadataStormDiagnostic)
             )
             #expect(
