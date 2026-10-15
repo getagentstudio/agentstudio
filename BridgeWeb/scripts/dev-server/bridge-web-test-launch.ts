@@ -10,6 +10,7 @@ import {
 	startOwnedBridgeDevelopmentServer,
 	type OwnedBridgeDevelopmentServer,
 } from './bridge-development-server-process.ts';
+import { BridgeWebLaunchStepDiagnostics } from './bridge-web-launch-step-diagnostics.ts';
 import type {
 	BridgeWebOwnedProductDataClient,
 	BridgeWebTestLaunchCleanup,
@@ -56,7 +57,9 @@ export class BridgeWebTestLaunch {
 	#operations: LaunchCleanupOperation[] = [];
 	#disposal: HandledLaunchPromise<BridgeWebTestLaunchCleanup> | null = null;
 	#closed = false;
-	readonly #pendingSteps = new Map<symbol, string>();
+	readonly #stepDiagnostics = new BridgeWebLaunchStepDiagnostics(
+		(): boolean => this.#browser !== null,
+	);
 	readonly #children = new Set<BridgeWebTestLaunch>();
 	readonly #signal: AbortSignal;
 	readonly #deadline: ReturnType<typeof createOwnedVerifierJourneyDeadline> | null;
@@ -167,15 +170,14 @@ export class BridgeWebTestLaunch {
 	}
 
 	observeStep<TValue>(name: string, promise: Promise<TValue>): HandledLaunchPromise<TValue> {
-		const observation = handleLaunchPromise(promise, name);
-		const identity = Symbol(name);
-		this.#pendingSteps.set(identity, name);
-		if (this.#closed && this.#signal.aborted)
-			process.stderr.write(`BRIDGE_LAUNCH_RETIREMENT waiting=${name}\n`);
-		void observation.settled.then((): void => {
-			this.#pendingSteps.delete(identity);
-		});
-		return observation;
+		return this.#stepDiagnostics.observe(name, promise, this.#closed);
+	}
+
+	observeRetirementStep<TValue>(
+		name: string,
+		promise: Promise<TValue>,
+	): HandledLaunchPromise<TValue> {
+		return this.#stepDiagnostics.observe(name, promise, true);
 	}
 
 	get signal(): AbortSignal {
@@ -183,8 +185,14 @@ export class BridgeWebTestLaunch {
 	}
 	get pendingSteps(): readonly string[] {
 		return [
-			...this.#pendingSteps.values(),
+			...this.#stepDiagnostics.pendingSteps,
 			...[...this.#children].flatMap((child) => child.pendingSteps),
+		];
+	}
+	get pendingStepDiagnostics(): readonly string[] {
+		return [
+			...this.#stepDiagnostics.pendingDiagnostics,
+			...[...this.#children].flatMap((child) => child.pendingStepDiagnostics),
 		];
 	}
 	startJourneyHangBound(): AbortSignal {

@@ -112,6 +112,64 @@ test('dispose is idempotent and every fixture cleanup runs after a predecessor f
 	expect(launch.cleanup.dataRootRemoved).toBe(true);
 });
 
+test('abort diagnostics distinguish browserless cleanup and record fixture settlement', async (): Promise<void> => {
+	const owner = new AbortController();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const launch = await BridgeWebTestLaunch.start({ signal: owner.signal });
+	const cleanupEntered = makeDeferred<void>();
+	const cleanupRelease = makeDeferred<void>();
+	launch.ownFixture('held test fixture', async (): Promise<void> => {
+		cleanupEntered.resolve();
+		await cleanupRelease.promise;
+	});
+	try {
+		owner.abort(new Error('fixture owner aborted'));
+		await cleanupEntered.promise;
+		expect(stderr).not.toHaveBeenCalledWith(expect.stringContaining('nativeBrowser=true'));
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringMatching(
+				/^BRIDGE_LAUNCH_RETIREMENT waiting=retire held test fixture; timestamp=\S+Z launch=[\da-f-]+ nativeBrowser=false operation="retire held test fixture" phase=start outcome=started\n$/,
+			),
+		);
+		expect(stderr).not.toHaveBeenCalledWith(
+			expect.stringMatching(/operation="retire held test fixture" phase=settle/),
+		);
+		cleanupRelease.resolve();
+		await launch.dispose();
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringMatching(
+				/^BRIDGE_LAUNCH_RETIREMENT waiting=retire held test fixture; timestamp=\S+Z launch=[\da-f-]+ nativeBrowser=false operation="retire held test fixture" phase=settle outcome=succeeded\n$/,
+			),
+		);
+	} finally {
+		cleanupRelease.resolve();
+		await launch.dispose();
+		stderr.mockRestore();
+	}
+});
+
+test('failed cleanup records settlement while retaining its failure verdict', async (): Promise<void> => {
+	const owner = new AbortController();
+	const launch = await BridgeWebTestLaunch.start({ signal: owner.signal });
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	launch.ownFixture('failed fixture dispose', async (): Promise<void> => {
+		throw new Error('fixture disposal failed');
+	});
+	try {
+		owner.abort(new Error('fixture owner aborted'));
+		await expect(launch.dispose()).rejects.toThrow('owned stack teardown');
+		expect(launch.cleanup.failures).toContain('failed fixture dispose');
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringMatching(
+				/^BRIDGE_LAUNCH_RETIREMENT waiting=retire failed fixture dispose; timestamp=\S+Z launch=[\da-f-]+ nativeBrowser=false operation="retire failed fixture dispose" phase=settle outcome=failed\n$/,
+			),
+		);
+	} finally {
+		await handleLaunchPromise(launch.dispose(), 'failed diagnostic fixture cleanup').settled;
+		stderr.mockRestore();
+	}
+});
+
 test.each(['closed', 'failed'] as const)(
 	'product data is gated by client release: %s',
 	async (disposition) => {

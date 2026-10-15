@@ -35,7 +35,6 @@ no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-product.e2e
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-comparison-observation.ts	1
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-comparison-round-trip.e2e.test.ts	2
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-proportional-refresh.e2e.test.ts	2
-no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-stream-recovery.e2e.test.ts	1
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-worker-recovery.e2e.test.ts	11
 no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-backpressure-journey.ts	1
 no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-catalog-performance.ts	1

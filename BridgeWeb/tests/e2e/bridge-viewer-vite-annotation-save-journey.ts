@@ -1,6 +1,7 @@
 import type { Page, Request, Response } from 'playwright';
 import { expect, test } from 'vitest';
 
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { selectReviewTreeFilePath } from '../../scripts/verify-bridge-viewer-worktree-dev-server/review-tree-click.ts';
 import { createProjectedAnnotationDraft } from './bridge-viewer-vite-annotation-initial-draft.ts';
 import {
@@ -39,6 +40,7 @@ import {
 	bridgeViewerViteProductReviewUrl,
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
+import { waitForReviewOwnerOutcome } from './bridge-viewer-vite-review-owner-wait.ts';
 import {
 	installReviewRenderObservation,
 	readReviewRenderObservation,
@@ -610,9 +612,25 @@ function cssAttributeValue(value: string): string {
 export async function selectReviewFile(props: {
 	readonly page: Page;
 	readonly path: string;
+	readonly testLaunch?: BridgeWebTestLaunch;
 }): Promise<void> {
-	await props.page.locator('[data-testid="review-viewer-shell"]').waitFor({ state: 'attached' });
-	await selectReviewTreeFilePath({ page: props.page, path: props.path });
+	const waitForShell = async (): Promise<void> => {
+		const outcome = await waitForReviewOwnerOutcome({ page: props.page, goal: 'shell' });
+		if (outcome.kind === 'terminal') {
+			const owner =
+				outcome.owner === 'open-elsewhere' ? 'bridge-dev-session-inactive' : outcome.owner;
+			throw new Error(
+				`Review shell mount refused by ${owner} before selecting ${props.path}; ${JSON.stringify(outcome)}`,
+			);
+		}
+	};
+	const selectRequestedReviewFile = async (): Promise<void> => {
+		await waitForShell();
+		await selectReviewTreeFilePath({ page: props.page, path: props.path });
+	};
+	const name = `Review file selection: shell mount and tree row for ${props.path}`;
+	if (props.testLaunch === undefined) await selectRequestedReviewFile();
+	else await props.testLaunch.observeStep(name, selectRequestedReviewFile()).value();
 }
 
 export async function selectRangeForAnnotation(props: {

@@ -238,7 +238,7 @@ struct BridgeDevelopmentHTTPRoutingTests {
                     )
                     // Assert: no new capability is issued; the original session still serves calls.
                     #expect(response.status == .conflict)
-                    _ = try await queryHTTPFileSource(client: client, connection: connection, requestSequence: 2)
+                    _ = try await queryHTTPFileSource(client: client, connection: connection)
                 } catch {
                     try await shutdownHTTPHostAndDrainMetadataStream(host: host, drain: metadata.drain)
                     throw error

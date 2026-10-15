@@ -39,6 +39,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		);
 
 		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -170,6 +175,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		};
 
 		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -261,6 +271,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		const deferredStreamsByDescriptorId = new Map<string, DeferredReviewContentStream>();
 
 		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -410,6 +425,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 
 		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -499,6 +519,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 
 		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -592,6 +617,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		const fetchCallsByItemId = new Map<string, number>();
 
 		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [
@@ -745,6 +775,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		const deferredStreamsByDescriptorId = new Map<string, DeferredReviewContentStream>();
 
 		await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -847,6 +882,11 @@ describe('Bridge comm worker runtime visible demand protocol', () => {
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		const itemIds = Array.from({ length: 9 }, (_, index): string => `visible-item-${index + 1}`);
 		await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: itemIds.map((itemId) => makeWorkerReviewContentMetadata({ itemId })),

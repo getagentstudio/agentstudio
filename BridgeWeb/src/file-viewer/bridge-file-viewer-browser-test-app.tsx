@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, type ReactElement } from 'react';
 
+import type { ExpectedRetainedRenderWakes } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import { createBridgePaneRuntime } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeProductFileContentDescriptor } from '../core/comm-worker/bridge-product-content-contracts.js';
 import type { BridgeProductSubscriptionOptions } from '../core/comm-worker/bridge-product-subscription-contracts.js';
@@ -26,6 +27,7 @@ import { BridgeFileViewerSurfaceClientProvider } from './bridge-file-viewer-rend
 import { BridgeFileViewerShell } from './bridge-file-viewer-shell.js';
 
 export interface BridgeFileViewerBrowserHarnessAppProps extends BridgeFileViewerAppProps {
+	readonly expectedRetainedRenderWakes?: ExpectedRetainedRenderWakes;
 	readonly fileProductSession?: BridgeFileViewerBrowserTestProductSession;
 	readonly fileViewPaneSessionFactory?: BridgeFileViewerBrowserTestPaneSessionFactory;
 	readonly initialFileBatch?: BridgeProductViewInstallation;
@@ -67,6 +69,7 @@ export interface BridgeFileViewerBrowserTestProductSession {
 export function BridgeFileViewerBrowserHarnessApp(
 	props: BridgeFileViewerBrowserHarnessAppProps = {},
 ): ReactElement {
+	const renderWakeExpectationRef = useRef(props.expectedRetainedRenderWakes);
 	const productSessionRef = useRef<BridgeFileViewerBrowserTestProductSession | undefined>(
 		undefined,
 	);
@@ -82,7 +85,12 @@ export function BridgeFileViewerBrowserHarnessApp(
 	const fileViewPaneSessionFactory = useMemo(
 		() =>
 			props.fileViewPaneSessionFactory ??
-			createBridgeFileViewerBrowserTestPaneSessionFactory({ productSessionRef }),
+			createBridgeFileViewerBrowserTestPaneSessionFactory({
+				productSessionRef,
+				...(renderWakeExpectationRef.current === undefined
+					? {}
+					: { expectedRetainedRenderWakes: renderWakeExpectationRef.current }),
+			}),
 		[props.fileViewPaneSessionFactory],
 	);
 	const paneRuntime = useMemo(
@@ -95,6 +103,7 @@ export function BridgeFileViewerBrowserHarnessApp(
 	);
 	useEffect((): (() => void) => (): void => paneRuntime.dispose(), [paneRuntime]);
 	const {
+		expectedRetainedRenderWakes: _expectedRetainedRenderWakes,
 		fileProductSession: _fileProductSession,
 		fileViewPaneSessionFactory: _fileViewPaneSessionFactory,
 		initialFileBatch: _initialFileBatch,

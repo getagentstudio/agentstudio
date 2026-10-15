@@ -99,6 +99,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'Final clicked-file publication may retain its lease after the visible selection proof.',
+				}}
 				autoOpenInitialFile
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={initialBatch}
@@ -260,6 +266,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'The metadata-only auto-open case ends at visible code with its render lease retained.',
+				}}
 				autoOpenInitialFile
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={initialBatch}
@@ -328,6 +340,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'The navigation-target publication may retain its lease after the visible content proof.',
+				}}
 				autoOpenInitialFile={true}
 				initialFileBatch={makeBrowserFileBatchWithDescriptors(
 					'open',
@@ -372,6 +390,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'The foreground navigation case ends at visible code with its render lease retained.',
+				}}
 				autoOpenInitialFile={true}
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={initialBatch}
@@ -442,6 +466,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'The streamed-metadata auto-open case may retain its render lease until paint acceptance.',
+				}}
 				autoOpenInitialFile={true}
 				initialFileBatch={initialBatch}
 				fileProductSession={{
@@ -481,6 +511,11 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 
 		await render(
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason: 'The layout case ends at visible code with its render lease retained.',
+				}}
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', targetDescriptor)}
 				navigationCommand={fileNavigationCommandForPath('src/plain.ts')}
@@ -540,6 +575,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			};
 			return (
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'The resolved slow-file publication may retain its lease after the viewport proof.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', targetDescriptor)}
 					{...(navigationCommand === undefined ? {} : { navigationCommand })}
@@ -616,6 +657,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 		await render(
 			<div style={{ display: 'grid', height: '360px', overflow: 'hidden', width: '960px' }}>
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'Resolving the held content leaves a publication whose render receipt is outside this loading-layout proof.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', targetDescriptor)}
 					navigationCommand={fileNavigationCommandForPath('src/large-loading.ts')}
@@ -672,6 +719,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			};
 			return (
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'The resolved replacement publication may retain its lease after the viewport proof.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors(
 						'open',
@@ -750,6 +803,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			};
 			return (
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'The resolved large-file publication may retain its lease after the scroll extent proof.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors(
 						'open',
@@ -830,6 +889,12 @@ describe('BridgeFileViewerApp Browser Mode', () => {
 			};
 			return (
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'The resolved replacement publication may retain its lease after the scroll reset proof.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors(
 						'open',

@@ -166,6 +166,59 @@ test('V2a finished cleanup joins a held launch and its held browser closure', as
 	expect(finishReturned).toBe(true);
 });
 
+test('aborted browser retirement names its launch and records close start before settlement', async (): Promise<void> => {
+	const owner = new AbortController();
+	const closeEntered = createControlledPromise<void>();
+	const closeRelease = createControlledPromise<void>();
+	const browser = makeControlledBrowser(async (): Promise<void> => {
+		closeEntered.resolve();
+		await closeRelease.promise;
+	});
+	vi.spyOn(chromium, 'launch').mockResolvedValue(browser.browser);
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	await launchBridgeViewerE2EChromium({ testSignal: owner.signal });
+	let finish: Promise<void> | undefined;
+	try {
+		owner.abort(new Error('held browser retirement probe'));
+		await closeEntered.promise;
+		const lines = stderr.mock.calls.map(([line]): string => String(line));
+		const start = lines.find(
+			(line): boolean =>
+				line.includes('operation="retire browser"') && line.includes('phase=start'),
+		);
+		expect(start).toMatch(
+			/^BRIDGE_LAUNCH_RETIREMENT waiting=retire browser; timestamp=\d{4}-\d{2}-\d{2}T\S+Z launch=[\da-f-]+ nativeBrowser=true operation="retire browser" phase=start outcome=started\n$/,
+		);
+		const launchId = start?.match(/ launch=([\da-f-]+) /)?.[1];
+		if (launchId === undefined) throw new Error('Missing browser retirement launch identity.');
+		const closeSettlements = (): string[] =>
+			stderr.mock.calls
+				.map(([line]): string => String(line))
+				.filter(
+					(line): boolean =>
+						line.includes(`launch=${launchId} `) &&
+						line.includes('operation="retire browser"') &&
+						line.includes('phase=settle'),
+				);
+		expect(closeSettlements()).toEqual([]);
+		finish = closeBridgeViewerE2ETestBrowsers(owner.signal);
+		expect(browser.closed()).toBe(false);
+		closeRelease.resolve();
+		await finish;
+		expect(browser.closed()).toBe(true);
+		expect(closeSettlements()).toEqual([
+			expect.stringMatching(
+				/^BRIDGE_LAUNCH_RETIREMENT waiting=retire browser; timestamp=\d{4}-\d{2}-\d{2}T\S+Z launch=[\da-f-]+ nativeBrowser=true operation="retire browser" phase=settle outcome=succeeded\n$/,
+			),
+		]);
+	} finally {
+		closeRelease.resolve();
+		await finish;
+		await closeBridgeViewerE2ETestBrowsers(owner.signal);
+		stderr.mockRestore();
+	}
+});
+
 function makeControlledBrowser(beforeClose: () => Promise<void> = async (): Promise<void> => {}): {
 	readonly browser: Browser;
 	readonly closed: () => boolean;
