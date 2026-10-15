@@ -262,10 +262,12 @@ extension WebKitSerializedTests {
             let mainState = paneState(for: mainTarget)
             let comparison = makeComparison()
             let sourceProvider = makeContributionProvider(comparison: comparison)
+            let buildFacts = try BridgePaneReviewBuildAdmissionTrace()
             let controller = makeController(
                 target: targetA,
                 comparison: comparison,
                 provider: sourceProvider,
+                reviewBuildAdmissionFactSink: buildFacts.source.sink,
                 contributionTargetCommit: { target in
                     if target == targetA { return .applied(stateA) }
                     if target == mismatchedTarget { return .unchanged(mismatchedState) }
@@ -283,6 +285,7 @@ extension WebKitSerializedTests {
             let pageReviewBuilt = await showReviewPageAndAwaitInitialPackage(fixture)
             #expect(pageReviewBuilt)
             guard pageReviewBuilt else { return }
+            #expect(try await buildFacts.nextAttemptOutcome() == .succeeded)
             let acceptedADispatch = try await fixture.dispatchComparisonUpdate(
                 target: targetA,
                 requestSequence: 2,
@@ -290,8 +293,7 @@ extension WebKitSerializedTests {
             )
             let acceptedAResult = try await fixture.readOperationResult(for: acceptedADispatch)
             #expect(acceptedAResult.outcome == .succeeded)
-            let acceptedATargetBuild = try #require(controller.activeReviewRefreshTask)
-            await acceptedATargetBuild.value
+            #expect(try await buildFacts.nextAttemptOutcome() == .succeeded)
             let packageA = try #require(controller.paneState.diff.packageMetadata)
             let lastGoodIdentity = BridgePaneReviewDisplayedSnapshotIdentity(
                 packageId: packageA.packageId,
@@ -338,8 +340,7 @@ extension WebKitSerializedTests {
             )
             if case .response = mainDispatch {
                 let mainResult = try await fixture.readOperationResult(for: mainDispatch)
-                let mainTargetBuild = try #require(controller.activeReviewRefreshTask)
-                await mainTargetBuild.value
+                #expect(try await buildFacts.nextAttemptOutcome() == .succeeded)
                 #expect(mainResult.outcome == .succeeded)
                 #expect(controller.bridgePaneState == mainState)
                 #expect(controller.productAdmissionGate.diagnosticSnapshot.isOpen)
@@ -349,6 +350,7 @@ extension WebKitSerializedTests {
             }
 
             await fixture.finish()
+            try await buildFacts.finish()
             // finish tears the pane down; actual removal still ends E1.
             #expect(!controller.productAdmissionGate.diagnosticSnapshot.isOpen)
             #expect(controller.refreshAdmissionCoordinator.diagnosticSnapshot.activity == .closed)
@@ -710,6 +712,7 @@ extension WebKitSerializedTests {
             comparison: BridgeEndpointComparison,
             provider: BridgeReviewSourceProviderFake,
             reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
+            reviewBuildAdmissionFactSink: BridgePaneReviewBuildAdmissionFactSink? = nil,
             contributionTargetCommit:
                 (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
         ) -> BridgePaneController {
@@ -731,7 +734,8 @@ extension WebKitSerializedTests {
                 reviewSourceProvider: provider,
                 initialPaneActivity: .foreground,
                 reviewConstructionProgress: reviewConstructionProgress,
-                contributionTargetCommit: contributionTargetCommit
+                contributionTargetCommit: contributionTargetCommit,
+                reviewBuildAdmissionFactSink: reviewBuildAdmissionFactSink
             )
         }
 

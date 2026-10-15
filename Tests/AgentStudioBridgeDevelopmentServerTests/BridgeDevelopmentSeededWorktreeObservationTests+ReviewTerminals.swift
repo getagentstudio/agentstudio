@@ -49,4 +49,37 @@ extension BridgeDevelopmentSeededWorktreeObservationTests {
     func deletionObservationAcceptsSuccessorAfterStaleTerminal() async throws {
         try await exerciseSeededReviewOracleScenario(.predecessorTerminal)
     }
+
+    @Test(
+        "a deletion commit requires its own terminal and must advance the observation baseline",
+        arguments: SeededReviewRejectedHistory.allCases)
+    func deletionObservationRejectsIncompleteHistory(_ scenario: SeededReviewRejectedHistory) async throws {
+        let fixture = try await captureControllableReviewPublications()
+        let recorder = SeededReviewLifecycleRecorder()
+        let publication = fixture.publication(fixture.deletion, correlation: "deletion-review")
+        if scenario == .commitBeforeOpening { recorder.recordCommit(publication) }
+        let opening = recorder.openDeletionObservation()
+        if scenario != .commitBeforeOpening && scenario != .terminalWithoutCommit {
+            recorder.recordCommit(publication)
+        }
+        await recorder.record(
+            seededReviewLifecycle(
+                correlation: scenario == .unrelatedTerminal ? "predecessor-review" : "deletion-review",
+                stage: .refreshOperationTerminal))
+        // This finite fixture history ends explicitly. It is not a production
+        // claim that an arbitrary terminal excludes a not-yet-announced successor.
+        try await recorder.finish()
+        await #expect(throws: SourceEnded.self) {
+            try await recorder.requireCommittedDeletion(
+                path: "tracked.txt", after: opening,
+                baseline: scenario == .unchangedRevision ? fixture.deletion : fixture.baseline)
+        }
+    }
+}
+
+enum SeededReviewRejectedHistory: CaseIterable, Sendable {
+    case commitBeforeOpening
+    case unchangedRevision
+    case unrelatedTerminal
+    case terminalWithoutCommit
 }

@@ -6,6 +6,8 @@ import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-p
 import { stopBridgeViewerOwnedViteProductProcesses } from './bridge-viewer-vite-product-fixture.ts';
 import {
 	createTabOwnershipCleanup,
+	createTabOwnershipReplacementHold,
+	observeTabOwnershipReplacementRoute,
 	createTabOwnershipStepCheckpoint,
 	observeTabOwnershipBootstrap,
 	recordTabOwnershipBootstrapHistory,
@@ -430,3 +432,47 @@ async function startOwnedNodeChild(): Promise<OwnedNodeChild> {
 		},
 	};
 }
+
+test('failed native replacement route rejects the held commit and releases route cleanup', async () => {
+	const owner = new AbortController();
+	const hold = createTabOwnershipReplacementHold(owner.signal);
+	const failure = new Error('TQ116 bootstrap response was not 200');
+	const route = observeTabOwnershipReplacementRoute({
+		hold,
+		run: async (): Promise<void> => {
+			throw failure;
+		},
+	});
+	try {
+		await expect(hold.committed.promise).rejects.toBe(failure);
+		await hold.released;
+		await expect(route.value()).rejects.toMatchObject({ cause: failure });
+	} finally {
+		hold.dispose();
+		await route.settled;
+	}
+});
+
+test.each(['already aborted', 'after native commit', 'disposed before commit'] as const)(
+	'held replacement route release is owned: %s',
+	async (phase) => {
+		const owner = new AbortController();
+		if (phase === 'already aborted') owner.abort(new Error('TQ116 early abort'));
+		const hold = createTabOwnershipReplacementHold(owner.signal);
+		try {
+			if (phase === 'after native commit') {
+				hold.committed.resolve();
+				await hold.committed.promise;
+				owner.abort(new Error('TQ116 abort after commit'));
+			} else {
+				if (phase === 'disposed before commit') hold.dispose();
+				await expect(hold.committed.promise).rejects.toThrow(
+					phase === 'already aborted' ? 'owner aborted' : 'owner disposed before commit',
+				);
+			}
+			await hold.released;
+		} finally {
+			hold.dispose();
+		}
+	},
+);
