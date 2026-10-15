@@ -11,6 +11,7 @@ import { handleLaunchPromise } from '../../scripts/dev-server/handled-launch-pro
 import { makeDeferred } from '../../scripts/verify-bridge-viewer-worktree-dev-server/utils.ts';
 import { createOwnedVerifierJourneyDeadline } from '../../scripts/verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
 import { endToEndTestTimeoutMilliseconds } from '../vitest-hang-bounds.ts';
+import { createTabOwnershipReplacementHold } from './bridge-viewer-vite-tab-ownership-test-support.ts';
 import BridgeWebE2ERunner from './bridge-web-e2e-runner.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
@@ -155,6 +156,89 @@ test('the actual runner boundary joins held fixture cleanup and the timed-out ra
 		await body.settled;
 		await deadline.dispose();
 		await launch?.dispose();
+		stderr.mockRestore();
+		vi.useRealTimers();
+	}
+});
+
+test('the unchanged runner hang bound retires a tab replacement whose native commit never arrives', async () => {
+	vi.useFakeTimers();
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const entered = makeDeferred<void>();
+	const resourceRetired = makeDeferred<void>();
+	let launch: BridgeWebTestLaunch | undefined;
+	let bodyRetired = false;
+	const deadline = createOwnedVerifierJourneyDeadline({
+		pendingSteps: (): readonly string[] => launch?.pendingSteps ?? ['TQ109 held native commit'],
+		closePages: async (): Promise<void> => {},
+	});
+	const replacementHold = createTabOwnershipReplacementHold(deadline.signal);
+	const body = handleLaunchPromise(
+		runBridgeWebE2ETestBody(
+			{
+				signal: deadline.signal,
+				task: { id: 'tq116-held-commit', name: 'TQ116 held native replacement commit' },
+			},
+			async (): Promise<void> => {
+				launch = await BridgeWebTestLaunch.start();
+				launch.ownFixture(
+					'TQ116 resource retirement',
+					async (): Promise<void> => resourceRetired.resolve(),
+				);
+				try {
+					const waiting = launch.observeStep(
+						'TQ109 first-tab replacement native commit held before Main delivery',
+						replacementHold.committed.promise,
+					);
+					entered.resolve();
+					await waiting.value();
+				} finally {
+					replacementHold.dispose();
+					await launch.dispose();
+					bodyRetired = true;
+				}
+			},
+		),
+		'TQ116 raw body',
+	);
+	let boundary: ReturnType<typeof handleLaunchPromise<void>> | undefined;
+	try {
+		await entered.promise;
+		await vi.advanceTimersByTimeAsync(endToEndTestTimeoutMilliseconds);
+		expect(deadline.signal.aborted).toBe(true);
+		boundary = handleLaunchPromise(
+			BridgeWebE2ERunner.prototype.onTaskFinished({
+				id: 'tq116-held-commit',
+				result: { state: 'fail' },
+			}),
+			'TQ116 actual runner boundary',
+		);
+		await resourceRetired.promise;
+		// Resource close is the correlated end of abort disposal. The local commit
+		// observation must already be terminal; no extra clock or turn may decide it.
+		await expect(
+			Promise.race([
+				replacementHold.committed.promise,
+				Promise.reject(
+					new Error(
+						'TQ109 native commit still pending after runner expiry and owned resource retirement',
+					),
+				),
+			]),
+		).rejects.toThrow('TQ109 held native commit owner aborted');
+		await boundary.settled;
+		expect(bodyRetired).toBe(true);
+		await expect(body.value()).rejects.toThrow('TQ109 held native commit owner aborted');
+		expect(launch?.cleanup.dataRootRemoved).toBe(true);
+	} finally {
+		// Settle the old unowned deferred after the red assertion, so the proof
+		// itself never waits for a second timeout and never leaves a detached body.
+		replacementHold.committed.reject(new Error('TQ116 red proof cleanup'));
+		replacementHold.dispose();
+		await body.settled;
+		await boundary?.settled;
+		await launch?.dispose();
+		await deadline.dispose();
 		stderr.mockRestore();
 		vi.useRealTimers();
 	}
