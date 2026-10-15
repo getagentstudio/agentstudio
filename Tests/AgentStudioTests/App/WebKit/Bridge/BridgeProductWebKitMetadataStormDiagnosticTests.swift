@@ -1,21 +1,43 @@
 import Testing
 
+@testable import AgentStudioBridge
+
 @Suite("Hidden metadata storm admission summary")
 struct BridgeProductWebKitMetadataStormDiagnosticTests {
     @Test(
         "only enqueued presentations count as hidden admission",
         arguments: [
-            (stage: "pane_presentation_not_enqueued", reason: "deduplicated", expectedCount: 0),
-            (stage: "pane_presentation_not_enqueued", reason: "producer_rejected", expectedCount: 0),
-            (stage: "pane_presentation_enqueued", reason: "none", expectedCount: 1),
-            (stage: "pane_presentation_enqueued", reason: "producer_queue_reset", expectedCount: 1),
+            (
+                stage: BridgePanePresentationTraceEvent.Stage.notEnqueued,
+                reason: BridgePanePresentationTraceEvent.ResultReason.deduplicated,
+                expectedCount: 0
+            ),
+            (
+                stage: BridgePanePresentationTraceEvent.Stage.notEnqueued,
+                reason: BridgePanePresentationTraceEvent.ResultReason.producerRejected,
+                expectedCount: 0
+            ),
+            (
+                stage: BridgePanePresentationTraceEvent.Stage.enqueued,
+                reason: BridgePanePresentationTraceEvent.ResultReason.noReason,
+                expectedCount: 1
+            ),
+            (
+                stage: BridgePanePresentationTraceEvent.Stage.enqueued,
+                reason: BridgePanePresentationTraceEvent.ResultReason.producerQueueReset,
+                expectedCount: 1
+            ),
         ]
     )
-    func countsOnlyEnqueuedPresentations(stage: String, reason: String, expectedCount: Int) {
+    func countsOnlyEnqueuedPresentations(
+        stage: BridgePanePresentationTraceEvent.Stage,
+        reason: BridgePanePresentationTraceEvent.ResultReason,
+        expectedCount: Int
+    ) {
         // Arrange
         let baseline = makeTrace(paneEvents: [])
         let after = makeTrace(paneEvents: [
-            .init(presentationRevision: 16, resultReason: reason, stage: stage)
+            .init(presentationRevision: 16, resultReason: reason.rawValue, stage: stage.rawValue)
         ])
 
         // Act
@@ -27,24 +49,28 @@ struct BridgeProductWebKitMetadataStormDiagnosticTests {
         )
 
         // Assert: rejected attempts remain visible even though no frame was admitted.
-        #expect(summary.productDeltas.panePresentationEventCount == expectedCount)
+        #expect(summary.productDeltas.admittedPanePresentationCount == expectedCount)
         #expect(summary.productDeltas.fileMetadataPhaseCount == 0)
         #expect(summary.productDeltas.reviewMetadataPhaseCount == 0)
-        #expect(summary.message.contains("pane=+1[\(stage)@16:\(reason)]"))
+        #expect(summary.message.contains("pane=+1[\(stage.rawValue)@16:\(reason.rawValue)]"))
     }
 
     @Test("admission counts only the appended trace suffix and retains other product deltas")
     func excludesBaselineBeforeCountingAdmissions() {
         // Arrange
+        let enqueuedStage = BridgePanePresentationTraceEvent.Stage.enqueued.rawValue
+        let notEnqueuedStage = BridgePanePresentationTraceEvent.Stage.notEnqueued.rawValue
+        let noReason = BridgePanePresentationTraceEvent.ResultReason.noReason.rawValue
+        let deduplicatedReason = BridgePanePresentationTraceEvent.ResultReason.deduplicated.rawValue
         let priorPresentation = BridgeProductWebKitCarrierPanePresentationTrace(
-            presentationRevision: 15, resultReason: "none", stage: "pane_presentation_enqueued"
+            presentationRevision: 15, resultReason: noReason, stage: enqueuedStage
         )
         let baseline = makeTrace(paneEvents: [priorPresentation], filePhases: ["prior"], reviewPhases: ["prior"])
         let after = makeTrace(
             paneEvents: [
                 priorPresentation,
-                .init(presentationRevision: 15, resultReason: "deduplicated", stage: "pane_presentation_not_enqueued"),
-                .init(presentationRevision: 16, resultReason: "none", stage: "pane_presentation_enqueued"),
+                .init(presentationRevision: 15, resultReason: deduplicatedReason, stage: notEnqueuedStage),
+                .init(presentationRevision: 16, resultReason: noReason, stage: enqueuedStage),
             ],
             filePhases: ["prior", "file-added"],
             reviewPhases: ["prior", "review-added", "review-added-again"]
@@ -59,12 +85,12 @@ struct BridgeProductWebKitMetadataStormDiagnosticTests {
         )
 
         // Assert
-        #expect(summary.productDeltas.panePresentationEventCount == 1)
+        #expect(summary.productDeltas.admittedPanePresentationCount == 1)
         #expect(summary.productDeltas.fileMetadataPhaseCount == 1)
         #expect(summary.productDeltas.reviewMetadataPhaseCount == 2)
         #expect(
             summary.message.contains(
-                "pane=+2[pane_presentation_not_enqueued@15:deduplicated,pane_presentation_enqueued@16:none]"
+                "pane=+2[\(notEnqueuedStage)@15:\(deduplicatedReason),\(enqueuedStage)@16:\(noReason)]"
             )
         )
         #expect(summary.message.contains("file=+1[file-added]"))
