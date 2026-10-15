@@ -39,6 +39,89 @@ struct WorktreeAnnotationOutputRepositoryTests {
         #expect(prepared.attempt.formatVersion == 2)
     }
 
+    @Test(
+        "listed comment staleness conflicts without durable output rows",
+        arguments: ["revision", "deleted", "draft", "foreign"])
+    func staleListedCommentConflictsWithoutOutputRows(_ mutation: String) throws {
+        let fixture = try makeOutputRepositoryFixture()
+        let props = try fixture.prepareProps()
+        let foreignSessionID: WorktreeAnnotationSessionID?
+        if mutation == "foreign" {
+            foreignSessionID = try fixture.repository.createRootDraft(
+                .init(
+                    admission: .newSession,
+                    repositoryID: "repository-1",
+                    worktreeID: "worktree-other",
+                    sourceFingerprint: .init(
+                        repositoryID: "repository-1", worktreeID: "worktree-other",
+                        fileSourceIdentity: "foreign-source", reviewComparisonOrigin: nil
+                    ),
+                    origin: try #require(fixture.detail.threads.first?.thread.origin),
+                    body: "Foreign session draft", editToken: "foreign-editor",
+                    now: Date(timeIntervalSince1970: 4)
+                )
+            ).canonicalResult.session.id
+        } else {
+            foreignSessionID = nil
+        }
+        try fixture.databaseQueue.write { database in
+            switch mutation {
+            case "revision":
+                try database.execute(sql: "UPDATE annotation_message SET saved_revision = saved_revision + 1")
+            case "deleted":
+                try database.execute(sql: "DELETE FROM annotation_message")
+            case "draft":
+                try database.execute(
+                    sql: """
+                        INSERT INTO annotation_message_draft(message_id, body, body_utf8_bytes, draft_revision, updated_at)
+                        VALUES (?, 'draft', 5, 0, 4)
+                        """,
+                    arguments: [fixture.message.id.databaseValue]
+                )
+            default:
+                let foreignID = try #require(foreignSessionID)
+                try database.execute(
+                    sql: "UPDATE annotation_thread SET session_id = ?, created_ordinal = 2 WHERE id = ?",
+                    arguments: [foreignID.databaseValue, fixture.detail.threads[0].thread.id.databaseValue]
+                )
+            }
+        }
+
+        #expect(
+            throws: WorktreeAnnotationRepositoryError.conflict(
+                currentRevision: fixture.detail.session.semanticRevision
+            )
+        ) {
+            try fixture.repository.prepareOutput(props)
+        }
+        try fixture.databaseQueue.read { database in
+            for tableName in [
+                "annotation_output_attempt", "annotation_output_attempt_message", "annotation_output_event",
+            ] {
+                let count = try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM \(tableName)")
+                #expect(count == 0)
+            }
+        }
+    }
+
+    @Test("mutable source context and thread resolution do not invalidate listed comments")
+    func mutableContextDoesNotInvalidateListedComments() throws {
+        let fixture = try makeOutputRepositoryFixture()
+        let props = try fixture.prepareProps()
+        try fixture.databaseQueue.write { database in
+            try database.execute(
+                sql:
+                    "UPDATE annotation_session SET semantic_revision = semantic_revision + 1, source_relationship = 'uncertain'"
+            )
+            try database.execute(sql: "UPDATE annotation_thread SET resolution = 'resolved'")
+        }
+
+        let prepared = try fixture.repository.prepareOutput(props).canonicalResult
+
+        #expect(prepared.memberships.map(\.messageID) == [fixture.message.id])
+        #expect(prepared.attempt.exactBytes == fixture.exactBytes)
+    }
+
     @Test("new preparation rejects any non-v2 format declaration")
     func newPreparationRejectsV1FormatDeclaration() throws {
         let fixture = try makeOutputRepositoryFixture()

@@ -3,6 +3,7 @@ import Foundation
 
 enum WorktreeAnnotationSourceResolutionError: Error, Equatable, Sendable {
     case invalidSource
+    case reviewPublicationUnavailable
     case unavailable
 }
 
@@ -211,7 +212,11 @@ final class WorktreeAnnotationTransportAdapter {
             return BridgeProductWorktreeAnnotationCommandOutcomeDTO(outcome, receipt: applied.receipt)
         } catch {
             let status: WorktreeAnnotationCommandOutcomeStatus
-            if case WorktreeAnnotationRepositoryError.sessionSelectionRequired(let choice) = error {
+            if case .outputScopeCommit = request.operation,
+                error as? WorktreeAnnotationSourceResolutionError == .reviewPublicationUnavailable
+            {
+                status = .failed(.conflict)
+            } else if case WorktreeAnnotationRepositoryError.sessionSelectionRequired(let choice) = error {
                 status = .admissionRequired(choice)
             } else {
                 status = .failed(Self.failureCode(for: error))
@@ -816,7 +821,7 @@ final class WorktreeAnnotationTransportAdapter {
         } else if let sourceError = error as? WorktreeAnnotationSourceResolutionError {
             switch sourceError {
             case .invalidSource: .invalidSource
-            case .unavailable: .unavailable
+            case .unavailable, .reviewPublicationUnavailable: .unavailable
             }
         } else if let adapterError = error as? WorktreeAnnotationTransportAdapterError {
             switch adapterError {

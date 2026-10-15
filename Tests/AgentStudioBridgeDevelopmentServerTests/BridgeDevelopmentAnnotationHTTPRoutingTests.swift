@@ -281,13 +281,16 @@ private func assertHTTPAnnotationOutputResult(
         client: client,
         connection: connection,
         operation: [
-            "displayedProjectionRevision": projection.header.projectionRevision,
-            "expectedSessionRevision": savedMessage.sessionRevision,
+            "messages": [
+                [
+                    "messageId": savedMessage.messageId.uuidString.lowercased(),
+                    "savedRevision": try #require(savedMessage.savedRevision),
+                ]
+            ],
             "kind": "output.scope.commit",
             "outputKind": "clipboardMarkdown",
             "scope": "all",
             "sessionId": sessionID.uuidString.lowercased(),
-            "sourceGeneration": preparation.fileSourceGeneration,
         ],
         requestID: "annotation-output-result-copy",
     )
