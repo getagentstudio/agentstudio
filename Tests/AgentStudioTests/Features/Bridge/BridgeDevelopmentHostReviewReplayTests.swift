@@ -17,7 +17,9 @@ struct BridgeDevelopmentHostReviewReplayTests {
     @Test("fresh File bootstrap replays every certified Review batch part with returned credits")
     func freshFileBootstrapReplaysEveryCertifiedReviewBatchPart() async throws {
         // Arrange
-        let expectedItemCount = 1699
+        // More than two credit windows must arrive in each worker's replay,
+        // so credit replenishment must continue beyond the first refill.
+        let expectedItemCount = 3 * AppPolicies.Bridge.productViewCreditParts
         let repositoryURL = try await FilesystemTestGitRepo.create(
             named: "bridge-development-product-host-review-replay"
         )

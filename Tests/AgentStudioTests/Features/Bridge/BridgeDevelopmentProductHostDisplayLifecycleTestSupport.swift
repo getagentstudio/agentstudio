@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 import WebKit
@@ -55,7 +56,10 @@ struct DevelopmentDisplayMetadataStream {
         var partsByIndex: [Int: BridgeProductBatchPart] = [:]
 
         while true {
-            let frame = try await nextFrame()
+            let frame = try await nextFrame(
+                expectedFrame: "Review metadata delivery after \(partsByIndex.count) parts",
+                scope: worker.workerInstanceId
+            )
             if case .batch(.part(let part)) = frame {
                 try await returnReviewCredit(for: part, using: worker)
             }
@@ -159,8 +163,20 @@ struct DevelopmentDisplayMetadataStream {
         for part: BridgeProductBatchPartFrame,
         using worker: DevelopmentDisplayWorkerClient
     ) async throws {
+        let expectationLog = ExpectationLog.environment
+        let pendingReply = expectationLog.expecting(
+            expectedCase: "Review credit reply for delivery sequence \(part.deliverySequence)",
+            scope: worker.workerInstanceId,
+            test: #function,
+            callSite: "\(#fileID):\(#line)"
+        )
+        var outcome = ExpectationLog.Settlement.unexpected
+        defer {
+            expectationLog.settled(pendingReply, outcome: Task.isCancelled ? .cancelled : outcome)
+        }
         do throws(DevelopmentDisplayAcknowledgementFailure) {
             try await worker.acknowledge(part)
+            outcome = .matched
         } catch {
             throw DevelopmentDisplayWorkerClientError.reviewCreditRejected(
                 deliverySequence: part.deliverySequence,
@@ -169,14 +185,30 @@ struct DevelopmentDisplayMetadataStream {
         }
     }
 
-    private mutating func nextFrame() async throws -> BridgeProductMetadataFrame {
+    private mutating func nextFrame(
+        expectedFrame: String = "development metadata stream opening frame",
+        scope: String = "development metadata stream"
+    ) async throws -> BridgeProductMetadataFrame {
+        let expectationLog = ExpectationLog.environment
+        let pendingDelivery = expectationLog.expecting(
+            expectedCase: expectedFrame,
+            scope: scope,
+            test: #function,
+            callSite: "\(#fileID):\(#line)"
+        )
+        var outcome = ExpectationLog.Settlement.unexpected
+        defer {
+            expectationLog.settled(pendingDelivery, outcome: Task.isCancelled ? .cancelled : outcome)
+        }
         // One sequential consumer owns this iterator; do not lend an actor-isolated
         // stored property to a mutating async call across its suspension.
         var iterator = frameIterator
         defer { frameIterator = iterator }
         guard let frame = try await iterator.next(isolation: #isolation) else {
+            outcome = .ended
             throw DevelopmentDisplayWorkerClientError.metadataStreamEndedBeforeExpectedFrame
         }
+        outcome = .matched
         return frame
     }
 }
