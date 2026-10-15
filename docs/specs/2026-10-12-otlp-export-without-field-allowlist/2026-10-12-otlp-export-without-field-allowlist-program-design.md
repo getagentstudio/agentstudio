@@ -22,7 +22,7 @@ flowchart LR
   C["loopback guard<br/>AgentStudioTraceConfiguration (unchanged)"] -.-> P
 ```
 
-`✎` marks a changed component. Recording, JSONL, the trace event queue, the loopback guard and the tag selection stay unchanged.
+`✎` marks a changed component. Recording, JSONL, the loopback guard and the tag selection stay unchanged. The trace event queues change in one way: each registers with, and reports to, the process-level queue aggregate (E5).
 
 ## Where each entity lives
 
@@ -32,7 +32,7 @@ flowchart LR
 | E2 Exported log record | `AgentStudioOTLPTraceProjection` | `Infrastructure/Diagnostics/AgentStudioOTLPTraceProjection*.swift` (modified: key/value allowlists, identifier, error and payload-name gates and the array omission are removed) | `AgentStudioOTLPProjectedLogRecord` (existing) | `.string`, `.int`, `.double`, `.bool`, `.stringArray` → OTLP AnyValue (array support added) | exported |
 | E3 Metric sample | `AgentStudioOTLPPerformanceMetrics` | `Infrastructure/Diagnostics/AgentStudioOTLPPerformanceMetrics.swift` (modified) | `AgentStudioOTLPPerformanceMetricSample` (existing) | record → sample(label, dimensions, value) (existing) | derived |
 | E4 Measurement | `AgentStudioOTLPPerformanceMetrics` (explicit list) | sibling `AgentStudioOTLPMeasurementList.swift` (new) | `Set<String>` of attribute names, each with a comment naming its emitter (new) | gate in the sample mapping (changed); the admitted-event counter (`counter(for: metricEvent)`, metrics file line 31) and the duration-derived instruments stay outside the gate | static |
-| E5 Queue statistics | each `AgentStudioTraceEventQueue` reports into one process-level aggregate (new); the metric builder reads the totals | `Infrastructure/Diagnostics/AgentStudioTraceQueueStatistics.swift` (new, lock-protected value owner); the six queues (Bridge, RepoExplorer, AtomLib, Performance, Startup, TCC) register on creation | per queue: dropped (cumulative), pending, backlog. Totals: sum of dropped (survives retirement), sum of pending, peak of summed backlog | three gauges `…trace_queue_*` with resource labels only, read at export time; the per-event attribute copies stay in logs (R1) and stop feeding metrics | derived |
+| E5 Queue statistics | each `AgentStudioTraceEventQueue` reports into one process-level aggregate (new). On every change the aggregate records its three swift-metrics `Gauge`s directly, so an SDK export reads current totals without waiting for a log emission | `Infrastructure/Diagnostics/AgentStudioTraceQueueStatistics.swift` (new, lock-protected value owner); the six queues (Bridge, RepoExplorer, AtomLib, Performance, Startup, TCC) register on creation | per queue: dropped (cumulative), pending, backlog. Totals: sum of dropped (survives retirement), sum of pending, peak of summed backlog | Edges: queue enqueue, drop, drain and retire → `report(queueId, delta)` → recompute totals → `Gauge.record` for dropped (cumulative), pending and peak backlog. Retirement removes the queue's pending and backlog, keeps its drops, and records the gauges at once. The three gauges carry resource labels only. The per-event attribute copies stay in logs (R1) and stop feeding metrics. | derived |
 | E6 Local stack | shared host (out of scope) | `~/dev/ai-tools/observability` (unchanged) | — | loopback OTLP HTTP (unchanged) | external |
 
 Other changes:
@@ -41,7 +41,7 @@ Other changes:
 - **Verifier scripts:**
   - `verify-debug-observability.sh`, `verify-beta-observability.sh` and `verify-bridge-observability.sh` drop their ID and path absence checks and keep their secret-value checks;
   - `verify-sidebar-performance-workload.sh` reads the process-level queue gauge instead of the copy on `runtime_delivery.snapshot`.
-- **Docs:** the observability doc's "OTLP Projection" section and the CLAUDE.md "OTLP output is source-scrubbed" sentence are updated (R8). The new CLAUDE.md sentence keeps the rule that agent message text is never recorded in telemetry (R10).
+- **Docs:** every passage found by the V6 search is updated (R8). That includes the observability doc's "OTLP Projection" section, its JSONL-only identifier rule (~line 99) and its allowlisted-fields safety line (~line 227), and the CLAUDE.md "OTLP output is source-scrubbed" sentence. The new CLAUDE.md sentence keeps the rule that agent message text is never recorded in telemetry (R10).
 
 ## Request path, before and after
 
@@ -70,7 +70,7 @@ sequenceDiagram
 
 ## The explicit measurement list
 
-The list is derived from the current emitters in source, not from a metric-store snapshot. The first implementation slice enumerates every `agentstudio.performance.*` numeric attribute an emitter records, with its file anchor. It then classifies each one as a real duration, count, size or occupancy, or as a flag, sequence or bookkeeping value. The runtime census (`tmp/otlp-lane3-evidence.md` §3: 20 flag and 3 sequence gauges) is a cross-check, not the source. Measurements that are rare at runtime, such as IPC detail duration and reply bytes, stay. Booleans never become samples. A future numeric field becomes a metric only by adding it to the list in the same change that emits it. That is the review point for cardinality.
+The list is derived from the current emitters in source, not from a metric-store snapshot. The first implementation slice enumerates every numeric attribute an emitter records under both metric source namespaces, `agentstudio.performance.*` and `agentstudio.bridge.*` (the Bridge mapping is `AgentStudioOTLPPerformanceMetrics.swift:662`), each with its file anchor. Existing Bridge measurements, such as `agentstudio.bridge.native_capacity.entry.count`, stay. It then classifies each one as a real duration, count, size or occupancy, or as a flag, sequence or bookkeeping value. The runtime census (`tmp/otlp-lane3-evidence.md` §3: 20 flag and 3 sequence gauges) is a cross-check, not the source. Measurements that are rare at runtime, such as IPC detail duration and reply bytes, stay. Booleans never become samples. A future numeric field becomes a metric only by adding it to the list in the same change that emits it. That is the review point for cardinality.
 
 ## Invalid states and how they are kept out
 
