@@ -7,6 +7,7 @@ enum RepoExplorerPaneRowLine: Equatable, Sendable {
     case note(String)
     case agentLine(RepoExplorerPaneContextLine)
     case sessionStatus(RepoExplorerPaneContextLine)
+    case connectionIssue(RepoExplorerPaneContextLine)
 
     var kind: RepoExplorerPaneLineKind {
         switch self {
@@ -15,6 +16,7 @@ enum RepoExplorerPaneRowLine: Equatable, Sendable {
         case .note: .note
         case .agentLine: .agentLine
         case .sessionStatus: .sessionStatus
+        case .connectionIssue: .connectionIssue
         }
     }
 }
@@ -49,6 +51,7 @@ struct RepoExplorerPaneRowVariants: Equatable, Sendable {
         isActive: Bool,
         agentLine: AgentLineDetail? = nil,
         sessionStatus: AgentSessionStatus? = nil,
+        connectionIssue: AgentConnectionRefusalReason? = nil,
         messageCount: Int = 0
     ) -> Self {
         let candidates: [RepoExplorerPaneLineKind: RepoExplorerPaneRowLine?] = [
@@ -56,6 +59,7 @@ struct RepoExplorerPaneRowVariants: Equatable, Sendable {
             .worktreeBranch: branchContext.map(RepoExplorerPaneRowLine.worktreeBranch),
             .note: note.map(RepoExplorerPaneRowLine.note),
             .agentLine: agentLine.map { .agentLine(RepoExplorerPaneContextLine.agent($0)) },
+            .connectionIssue: connectionIssue.map { .connectionIssue(RepoExplorerPaneContextLine.connection($0)) },
             .sessionStatus: sessionStatus.flatMap(RepoExplorerPaneContextLine.session).map(
                 RepoExplorerPaneRowLine.sessionStatus),
         ]

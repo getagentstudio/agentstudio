@@ -196,6 +196,7 @@ func withS5PaneCLIContext<Output: Sendable>(
     _ body: (S5PaneCLIContext) async throws -> Output
 ) async throws -> Output {
     let executableURL = try cliExecutableURL()
+    let claimWorkspaceID = UUIDv7.generate()
     let output = try await withPaneContextIPCDomain { domain in
         let writer = try await domain.bind()
         let port = S5RecordingPaneContextPort(
@@ -206,6 +207,9 @@ func withS5PaneCLIContext<Output: Sendable>(
             makeFixture: {
                 try LiveServerFixture(
                     channel: .debug, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)], paneContextPort: port,
+                    paneClaimAdmission: .init(membershipRefusal: { claim in
+                        claim.paneId == domain.paneId && claim.workspaceId == claimWorkspaceID ? nil : .otherWorkspace
+                    }),
                     makeConnectionIO: { connection in
                         port.wire.recordConnection()
                         let frames = S5CLIFrameRecorder(wire: port.wire)
@@ -248,6 +252,7 @@ func withS5PaneCLIContext<Output: Sendable>(
                         environment: [
                             "AGENTSTUDIO_IPC_SOCKET": fixture.paths.socketURL.path,
                             "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
+                            "AGENTSTUDIO_WORKSPACE_ID": claimWorkspaceID.uuidString,
                             "AGENTSTUDIO_PANE_ID": domain.paneId.uuidString,
                             "AGENTSTUDIO_CLI": executableURL.path,
                             "CLAUDE_CODE_SESSION_ID": writer.conversationId,
@@ -276,6 +281,8 @@ final class S5CLIClientOwner: @unchecked Sendable {
 struct S5TitleAttempt: Sendable {
     let text: String?
     let number: IPCPaneWriteNumber
+    let writer: IPCPaneWriterClaim?
+    let paneClaim: IPCPaneClaim?
 }
 
 /// Observes and holds the real typed admission boundary; every outcome still
@@ -360,7 +367,9 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
     func setTitle(paneId: UUID, params: IPCPaneTitleSetParams) async throws -> IPCPaneOrderedWriteResult {
         if let proof = orderedWriteProof { proof.facts.sink(proof.scope, .orderedWriteSent) }
         let held = lock.withLock { () -> (UUID, HeldStep<IPCPaneTitleSetParams>)? in
-            titleAttempts.append(.init(text: params.text, number: params.writeNumber))
+            titleAttempts.append(
+                .init(text: params.text, number: params.writeNumber, writer: params.writer, paneClaim: params.paneClaim)
+            )
             let held = nextTitleHold
             nextTitleHold = nil
             return held

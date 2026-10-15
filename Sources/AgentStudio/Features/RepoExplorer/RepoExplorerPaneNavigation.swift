@@ -134,7 +134,7 @@ struct RepoExplorerPaneRowContent: View {
                         } else {
                             RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
                         }
-                    case .sessionStatus(let line):
+                    case .sessionStatus(let line), .connectionIssue(let line):
                         RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
                     }
                 }

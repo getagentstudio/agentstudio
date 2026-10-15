@@ -3,11 +3,14 @@ import Foundation
 /// Provider lifecycle events and the retained session read. Pane messages
 /// and asks have their own typed descriptors and service.
 package struct IPCSessionMethodDescriptors: Sendable {
+    package let sessionStatus: IPCMethodDescriptor<IPCSessionStatusParams, IPCSessionEventResult>
     package let sessionEvent: IPCMethodDescriptor<IPCSessionEventParams, IPCSessionEventResult>
     package let sessionRefusal: IPCMethodDescriptor<IPCSessionRefusalParams, IPCSessionRefusalResult>
     package let sessionQuery: IPCMethodDescriptor<IPCSessionQueryParams, IPCSessionQueryResult>
 
     init(examples: IPCBuiltInMethodExampleContext) throws {
+        sessionStatus = try Self.sessionStatusEntry.makeDescriptor(
+            inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
         sessionEvent = try Self.sessionEventEntry.makeDescriptor(
             inputs: IPCBuiltInMethodCatalogInputs(examples: examples))
         sessionRefusal = try Self.sessionRefusalEntry.makeDescriptor(
@@ -17,10 +20,36 @@ package struct IPCSessionMethodDescriptors: Sendable {
     }
 
     init(representations: [String: any IPCMethodDescriptorRepresentation]) throws {
+        sessionStatus = try Self.sessionStatusEntry.typedDescriptor(in: representations)
         sessionEvent = try Self.sessionEventEntry.typedDescriptor(in: representations)
         sessionRefusal = try Self.sessionRefusalEntry.typedDescriptor(in: representations)
         sessionQuery = try Self.sessionQueryEntry.typedDescriptor(in: representations)
     }
+
+    static let sessionStatusEntry = IPCBuiltInMethodEntry<IPCSessionStatusParams, IPCSessionEventResult>(
+        name: "session.status", summary: "Report unverified pane status without binding or session writes.",
+        modelCalls: [], correlationPolicy: .required, agentEligibility: nil,
+        makeDescriptor: { name, summary, _, eligibility, inputs in
+            try IPCMethodDescriptor(
+                name: name, description: summary, callIntent: .status,
+                examples: [
+                    .init(
+                        description: "Report a missing provider session",
+                        parameters: IPCSessionStatusParams(
+                            paneClaim: .init(paneId: inputs.examples.paneId, workspaceId: inputs.examples.workspaceId),
+                            tokenOutcome: .rejected, report: .refusal(reason: .noSessionId),
+                            correlationId: inputs.examples.correlationId),
+                        result: IPCSessionEventResult(
+                            paneId: inputs.examples.paneId, disposition: .admitted,
+                            correlationId: inputs.examples.correlationId))
+                ],
+                exposure: .allChannels, requiredPrivileges: [.sessionReportWrite], dataScope: .sessionReport,
+                allowedTargetKinds: [.pane], commandRelationship: .noInteractiveIdentity,
+                executionOwner: .sessionsIngest,
+                principalAvailability: .authenticated, resultSemantics: .accepted,
+                documentedErrors: Self.sessionErrors, isMutating: true, correlationPolicy: .required,
+                agentEligibility: eligibility)
+        })
 
     static let sessionEventEntry = IPCBuiltInMethodEntry<IPCSessionEventParams, IPCSessionEventResult>(
         name: "session.event",
@@ -33,7 +62,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .identity,
                 examples: [
                     .init(
                         description: "Record a provider session start",
@@ -83,7 +112,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
         modelCalls: [], correlationPolicy: .required, agentEligibility: nil,
         makeDescriptor: { name, summary, _, eligibility, inputs in
             try IPCMethodDescriptor(
-                name: name, description: summary,
+                name: name, description: summary, callIntent: .identity,
                 examples: [
                     .init(
                         description: "Report a missing session identity",
@@ -107,7 +136,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 examples: [
                     .init(
                         description: "Read one pane's current session state",
@@ -154,6 +183,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
     var descriptorRepresentations: [any IPCMethodDescriptorRepresentation] {
         get throws {
             let representations: [any IPCMethodDescriptorRepresentation] = try [
+                IPCMethodDescriptorRepresentations(typedDescriptor: sessionStatus),
                 IPCMethodDescriptorRepresentations(typedDescriptor: sessionEvent),
                 IPCMethodDescriptorRepresentations(typedDescriptor: sessionQuery),
                 IPCMethodDescriptorRepresentations(typedDescriptor: sessionRefusal),

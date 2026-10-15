@@ -20,7 +20,7 @@ struct PaneContextUIReadersTests {
             let pane = store.createPane(title: "Terminal title")
             let paneId = PaneId(existingUUID: pane.id)
             let statusAtom = SessionStatusAtom()
-            statusAtom.apply([paneId: .set(.idle(.ended))])
+            statusAtom.apply([paneId: .set(.init(status: .idle(.ended)))])
             let display = PaneContextDisplay(
                 revision: .init(7), agentTitle: "Agent title", agentLine: nil,
                 own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
@@ -70,4 +70,15 @@ struct PaneContextUIReadersTests {
             #expect(readers.titleForPane(.generateUUIDv7()) == nil)
         }
     }
+    @Test("the pane renders Needs you together with the persistent refusal line")
+    func paneStatusAndConnectionIssue() async throws {
+        let lines = await PaneContextToolbarControls.shapeStatus(
+            .init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized))
+        #expect(lines.status?.text == "Needs you · approval")
+        #expect(lines.connection?.text == "agent not connected · credentialNotRecognized")
+        let verified = await PaneContextToolbarControls.shapeStatus(.init(status: .working(.active)))
+        #expect(verified.status?.text == "Working")
+        #expect(verified.connection == nil)
+    }
+
 }

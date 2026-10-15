@@ -1,0 +1,107 @@
+import AgentStudioIPCTransport
+import AgentStudioPrimitives
+import AgentStudioProgrammaticControl
+import Foundation
+import Synchronization
+import Testing
+
+@testable import AgentStudioIPCClientCore
+
+@Suite("Provider hook status fallback budget")
+struct ProviderHookStatusFallbackTests {
+    @Test(
+        "input, rejected login and status delivery keep one absolute expiration",
+        arguments: [CodexHookEventName.stop, .sessionEnd], [false, true])
+    func rejectedLoginSharesExpiration(event: CodexHookEventName, exhaustLogin: Bool) throws {
+        let timing = StatusFallbackTiming()
+        let limit: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
+        let deadline = CallDeadline(limit: limit, timing: timing)
+        let paneID = UUIDv7.generate()
+        let workspaceID = UUIDv7.generate()
+        let payload = try CodexFixtures.data(for: event)
+        let reports = Mutex<[IPCSessionStatusParams]>([])
+        let fallbackBudgets = Mutex<[Duration]>([])
+        let diagnostics = Mutex<[String]>([])
+        let loginCost: Duration = exhaustLogin ? limit - .milliseconds(100) : .milliseconds(50)
+        let delivery = ProviderHookDelivery(
+            deliver: { _, _, authenticationDeadline in
+                #expect(authenticationDeadline.remainingBudget == limit - .milliseconds(100))
+                timing.advance(by: loginCost)
+                throw IPCDescriptorClientFailure(disposition: .authenticationRejected, reason: .authenticationResponse)
+            },
+            recordRefusal: { _, _, _ in Issue.record("Valid payload must not report a refusal") },
+            reportStatus: { params, configuration, fallbackDeadline in
+                #expect(configuration.authToken == nil)
+                reports.withLock { $0.append(params) }
+                fallbackBudgets.withLock { $0.append(fallbackDeadline.remainingBudget) }
+                timing.advance(by: limit - .milliseconds(150))
+                #expect(fallbackDeadline.remainingBudget == .zero)
+            })
+        let exitCode = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: event.rawValue,
+                environment: [
+                    "AGENTSTUDIO_PANE_TOKEN": "refused-fixture-token", "AGENTSTUDIO_IPC_SOCKET": "/fixture/socket",
+                    "AGENTSTUDIO_PANE_ID": paneID.uuidString, "AGENTSTUDIO_WORKSPACE_ID": workspaceID.uuidString,
+                ],
+                standardInput: {
+                    timing.advance(by: .milliseconds(100))
+                    return payload
+                },
+                correlationIdProvider: { UUIDv7.generate() }, delivery: delivery,
+                standardErrorSink: { label in diagnostics.withLock { $0.append(label) } }, deadline: deadline))
+        #expect(exitCode == 0)
+        #expect(deadline.remainingBudget == .zero)
+        #expect(timing.elapsed == limit)
+        let statuses = reports.withLock { $0 }
+        if exhaustLogin {
+            #expect(statuses.isEmpty)
+            #expect(fallbackBudgets.withLock { $0.isEmpty })
+            #expect(diagnostics.withLock { $0 } == ["credentialNotRecognized", "deadlineExceeded"])
+        } else {
+            #expect(statuses.count == 1)
+            #expect(statuses.first?.paneClaim == .init(paneId: paneID, workspaceId: workspaceID))
+            #expect(statuses.first?.tokenOutcome == .rejected)
+            #expect(fallbackBudgets.withLock { $0 } == [limit - .milliseconds(150)])
+            #expect(diagnostics.withLock { $0 } == ["credentialNotRecognized"])
+        }
+    }
+
+    @Test("authentication transport failure grants no status fallback")
+    func authenticationTransportFailureIsFinal() throws {
+        let timing = StatusFallbackTiming()
+        let diagnostics = Mutex<[String]>([])
+        let payload = try CodexFixtures.data(for: .stop)
+        let exitCode = ProviderHookInvocation.runCodexHook(
+            .init(
+                eventName: "Stop",
+                environment: [
+                    "AGENTSTUDIO_PANE_TOKEN": "fixture-token", "AGENTSTUDIO_IPC_SOCKET": "/fixture/socket",
+                    "AGENTSTUDIO_PANE_ID": UUIDv7.generate().uuidString,
+                    "AGENTSTUDIO_WORKSPACE_ID": UUIDv7.generate().uuidString,
+                ],
+                standardInput: { payload }, correlationIdProvider: { UUIDv7.generate() },
+                delivery: .init(
+                    deliver: { _, _, _ in
+                        throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .authenticationTransport)
+                    },
+                    recordRefusal: { _, _, _ in Issue.record("Unexpected refusal request") },
+                    reportStatus: { _, _, _ in Issue.record("Transport failure must not reconnect for fallback") }),
+                standardErrorSink: { label in diagnostics.withLock { $0.append(label) } },
+                deadline: CallDeadline(limit: .seconds(2), timing: timing)))
+        #expect(exitCode == 0)
+        #expect(diagnostics.withLock { $0 } == ["appUnavailable"])
+    }
+}
+
+private final class StatusFallbackTiming: CallDeadlineTiming, Sendable {
+    private let origin = ContinuousClock.now
+    private let elapsedTime = Mutex<Duration>(.zero)
+    var elapsed: Duration { elapsedTime.withLock { $0 } }
+    func now() -> ContinuousClock.Instant { origin.advanced(by: elapsed) }
+    func advance(by duration: Duration) { elapsedTime.withLock { $0 += duration } }
+    func waitForReadiness(fileDescriptor: Int32, events: Int16, timeout: Duration) -> CallDeadlineReadiness {
+        Issue.record("Delivery seam must not perform socket I/O")
+        return .timedOut
+    }
+}

@@ -13,7 +13,7 @@ extension SessionsIngestionTests {
         let otherPane = UUIDv7.generate()
         let first = SessionsHookRefusal(reason: .noSessionId, event: "SessionStart", at: Date(timeIntervalSince1970: 1))
         let replacement = SessionsHookRefusal(
-            reason: .undecodablePayload, event: nil, at: Date(timeIntervalSince1970: 2))
+            reason: .undecodablePayload, event: nil, at: Date(timeIntervalSince1970: 2), count: 2)
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
             await ingestion.recordRefusal(paneId: pane, refusal: first)
             await ingestion.recordRefusal(paneId: otherPane, refusal: first)

@@ -225,8 +225,13 @@ enum AppIPCPaneContextTargetSupport {
     static func credentialTarget<Parameters: Sendable>(
         _ parameters: Parameters, handle: String, context: AppIPCConnectionContext
     ) throws -> AppIPCTargetResolution<Parameters> {
-        guard case .spawnedPaneAgent(let boundPaneId, _)? = context.principal?.kind else {
-            throw AuthorizationError(reason: .unauthorized)
+        let boundPaneId: String
+        switch context.principal?.kind {
+        case .spawnedPaneAgent(let paneId, _): boundPaneId = paneId
+        case .paneClaim(let paneId, _):
+            try context.revalidatePaneClaim()
+            boundPaneId = paneId.uuidString
+        default: throw AuthorizationError(reason: .unauthorized)
         }
         guard handle == "self" else { throw AppIPCPaneContextError(reason: .notOwnPane) }
         guard

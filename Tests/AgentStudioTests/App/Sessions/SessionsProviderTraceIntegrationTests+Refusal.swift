@@ -107,7 +107,7 @@ extension SessionsProviderTraceIntegrationTests {
             held.release()
             _ = try await first.value
             let afterCommit = try await adapter.readSessionState(paneId: pane, params: .init(handle: "self"))
-            #expect(afterCommit.lastRefusal == result.lastRefusal)
+            #expect(afterCommit.lastRefusal == nil)
             #expect(afterCommit.sourceHealth == .live)
             await ingestion.finish()
         } catch {

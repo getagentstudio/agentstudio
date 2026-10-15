@@ -27,7 +27,7 @@ struct PaneCLICommandRunner: Sendable {
         let correlationID = props.identifierGenerator()
         switch intent {
         case .title, .line:
-            try orderedWrite(
+            try orderedWriteWithFallback(
                 intent, writer: writer, descriptors: descriptors, client: client, correlationID: correlationID)
         case .notify(let draft):
             let parameters = IPCPaneMessageSendParams(
@@ -144,11 +144,40 @@ struct PaneCLICommandRunner: Sendable {
         if let interruptedBy { throw interruptedBy }
     }
 
-    private func orderedWrite(
+    private func orderedWriteWithFallback(
         _ intent: PaneCLIIntent, writer: IPCPaneWriterClaim?, descriptors: [IPCAnyMethodDescriptor],
         client: AgentStudioIPCClient, correlationID: UUID
     ) throws {
-        guard let store = openStore() else { throw PaneCLICommandFailure.orderingStoreUnavailable }
+        if global.configuration.authToken != nil {
+            do {
+                try orderedWrite(
+                    intent, writer: writer, paneClaim: nil, descriptors: descriptors, client: client,
+                    correlationID: correlationID)
+                return
+            } catch let failure as IPCDescriptorClientFailure where failure.disposition == .authenticationRejected {
+                // Login is rejected before any claim or write is sent. A remote
+                // stale result is final and never reaches this recovery branch.
+            }
+        }
+        guard let claim = ProviderHookStatusReporting.paneClaim(environment: props.environment) else {
+            throw PaneCLICommandFailure.orderingStoreUnavailable
+        }
+        let paneClient = AgentStudioIPCClient(
+            configuration: global.configuration.withAuthToken(nil), descriptors: descriptors, deadline: deadline)
+        try orderedWrite(
+            intent, writer: nil, paneClaim: claim, descriptors: descriptors, client: paneClient,
+            correlationID: correlationID)
+    }
+
+    private func orderedWrite(
+        _ intent: PaneCLIIntent, writer: IPCPaneWriterClaim?, paneClaim: IPCPaneClaim?,
+        descriptors: [IPCAnyMethodDescriptor], client: AgentStudioIPCClient, correlationID: UUID
+    ) throws {
+        guard let store = openStore(allowOrderingDiscovery: true) else {
+            CLIDiagnostics.recordHook(
+                IPCAgentConnectionRefusalReason.orderingStoreUnavailable.rawValue, environment: props.environment)
+            throw PaneCLICommandFailure.orderingStoreUnavailable
+        }
         defer { try? store.close() }
         let stream: IPCPaneWriteStream
         let kind: CLIStateKind
@@ -170,12 +199,13 @@ struct PaneCLICommandRunner: Sendable {
             first = try invocation(
                 "pane.writer.claimEpoch",
                 parameters: IPCPaneWriterClaimEpochParams(
-                    handle: "self", writer: writer, stream: stream, claimId: claimID,
+                    handle: "self", writer: writer, paneClaim: paneClaim, stream: stream, claimId: claimID,
                     correlationId: props.identifierGenerator()),
                 descriptors: descriptors)
         case .allocated(let number):
             first = try orderedInvocation(
-                intent, writer: writer, number: number, descriptors: descriptors, correlationID: correlationID)
+                intent, writer: writer, paneClaim: paneClaim, number: number,
+                descriptors: descriptors, correlationID: correlationID)
         }
         try client.withAuthenticatedExchange(first: first) { exchange in
             let number: CLIAllocatedWriteNumber
@@ -194,7 +224,8 @@ struct PaneCLICommandRunner: Sendable {
                     throw PaneCLICommandFailure.orderingStoreUnavailable
                 }
                 let write = try orderedInvocation(
-                    intent, writer: writer, number: number, descriptors: descriptors, correlationID: correlationID)
+                    intent, writer: writer, paneClaim: paneClaim, number: number,
+                    descriptors: descriptors, correlationID: correlationID)
                 response = try result(exchange.call(write))
             case .allocated(let allocated):
                 number = allocated
@@ -221,7 +252,7 @@ struct PaneCLICommandRunner: Sendable {
     }
 
     private func orderedInvocation(
-        _ intent: PaneCLIIntent, writer: IPCPaneWriterClaim?, number: CLIAllocatedWriteNumber,
+        _ intent: PaneCLIIntent, writer: IPCPaneWriterClaim?, paneClaim: IPCPaneClaim?, number: CLIAllocatedWriteNumber,
         descriptors: [IPCAnyMethodDescriptor], correlationID: UUID
     ) throws -> IPCDescriptorInvocation {
         let wireNumber = IPCPaneWriteNumber(epoch: UInt64(number.epoch), counter: UInt64(number.counter))
@@ -230,13 +261,15 @@ struct PaneCLICommandRunner: Sendable {
             return try invocation(
                 "pane.title.set",
                 parameters: IPCPaneTitleSetParams(
-                    handle: "self", writer: writer, text: text, writeNumber: wireNumber, correlationId: correlationID),
+                    handle: "self", writer: writer, paneClaim: paneClaim, text: text,
+                    writeNumber: wireNumber, correlationId: correlationID),
                 descriptors: descriptors)
         case .line(let line):
             return try invocation(
                 "pane.line.set",
                 parameters: IPCPaneLineSetParams(
-                    handle: "self", writer: writer, line: line, writeNumber: wireNumber, correlationId: correlationID),
+                    handle: "self", writer: writer, paneClaim: paneClaim, line: line,
+                    writeNumber: wireNumber, correlationId: correlationID),
                 descriptors: descriptors)
         default: throw PaneCLIIntent.invalid()
         }
@@ -265,10 +298,21 @@ struct PaneCLICommandRunner: Sendable {
         return id
     }
 
-    private func openStore() -> CLIStore? {
-        guard let path = props.environment["AGENTSTUDIO_CLI_STORE"], !path.isEmpty,
-            let channel = props.environment["AGENTSTUDIO_CLI_STORE_CHANNEL"].flatMap(CLIStoreChannel.init(rawValue:))
-        else { return nil }
+    private func openStore(allowOrderingDiscovery: Bool = false) -> CLIStore? {
+        let path: String
+        let channel: CLIStoreChannel
+        if let explicitPath = props.environment["AGENTSTUDIO_CLI_STORE"], !explicitPath.isEmpty {
+            guard
+                let explicitChannel = props.environment["AGENTSTUDIO_CLI_STORE_CHANNEL"]
+                    .flatMap(CLIStoreChannel.init(rawValue:))
+            else { return nil }
+            path = explicitPath
+            channel = explicitChannel
+        } else {
+            guard allowOrderingDiscovery, let discovered = discoveredOrderingStore() else { return nil }
+            path = discovered.path
+            channel = discovered.channel
+        }
         switch CLIStore.openWriter(
             url: URL(fileURLWithPath: path), channel: channel, migrationLockWaitBudget: { deadline.remainingBudget })
         {
@@ -277,6 +321,20 @@ struct PaneCLICommandRunner: Sendable {
             CLIDiagnostics.record(.init(cleanupFailure: failure))
             return nil
         }
+    }
+
+    private func discoveredOrderingStore() -> (path: String, channel: CLIStoreChannel)? {
+        guard let socket = props.environment["AGENTSTUDIO_IPC_SOCKET"], !socket.isEmpty,
+            socket == global.configuration.socketPath
+        else { return nil }
+        let directory = URL(fileURLWithPath: socket).deletingLastPathComponent()
+        guard let data = try? Data(contentsOf: directory.appending(path: "runtime.json")),
+            let metadata = try? JSONDecoder().decode(CLIOrderingRuntimeMetadata.self, from: data),
+            metadata.socketPath == socket, let channel = CLIStoreChannel(rawValue: metadata.channel)
+        else { return nil }
+        let storeURL = directory.appending(path: "cli.sqlite")
+        guard FileManager.default.fileExists(atPath: storeURL.path) else { return nil }
+        return (storeURL.path, channel)
     }
 
     private func invocation(_ name: String, parameters: some Encodable, descriptors: [IPCAnyMethodDescriptor]) throws
@@ -319,4 +377,9 @@ enum PaneCLICommandFailure: Error {
             }
         }
     }
+}
+
+private struct CLIOrderingRuntimeMetadata: Decodable {
+    let socketPath: String
+    let channel: String
 }

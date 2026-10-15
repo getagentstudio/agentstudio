@@ -29,7 +29,7 @@ package struct IPCTerminalMethodDescriptors: Sendable {
             let example = inputs.examples
             return try IPCBuiltInDescriptorSupport.read(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameters: IPCPaneSelectorParams(handle: "self"),
                 result: IPCTerminalStatusResult(
                     paneId: example.paneId,
@@ -91,7 +91,7 @@ package struct IPCTerminalMethodDescriptors: Sendable {
             let example = inputs.examples
             return try IPCBuiltInDescriptorSupport.read(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameters: IPCPaneSelectorParams(handle: "self"),
                 result: IPCTerminalSnapshotResult(
                     paneId: example.paneId,
@@ -129,7 +129,7 @@ package struct IPCTerminalMethodDescriptors: Sendable {
             )
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameterSchema: try Self.waitParameterSchema(),
                 resultSchema: try IPCTerminalWaitResponse.ipcSchema(),
                 examples: [

@@ -450,7 +450,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
                 return nil
             }
             return .pane(paneID: paneUUID, workspaceID: workspaceID)
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             return .diagnostic(runtimeID: runtimeId)
         }
     }

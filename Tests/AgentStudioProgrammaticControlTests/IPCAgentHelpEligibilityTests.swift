@@ -58,6 +58,7 @@ struct IPCAgentHelpEligibilityTests {
         "session.event": .legacy,
         "session.query": .legacy,
         "session.refusal": .legacy,
+        "session.status": .legacy,
         "sidebar.grouping.get": .notYetAllowed,
         "sidebar.surface.get": .notYetAllowed,
         "system.identify": .anyTarget,

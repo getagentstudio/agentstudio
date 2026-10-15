@@ -162,7 +162,7 @@ package struct IPCWorkspaceQueryMethodDescriptors: Sendable {
             )
             return try Self.query(
                 entryName, entrySummary, IPCPaneListResult(panes: [pane]),
-                .paneContextRead, .paneContext, agentEligibility: entryEligibility)
+                .paneContextRead, .paneContext, callIntent: .read, agentEligibility: entryEligibility)
         })
 
     static let paneCurrentEntry = IPCBuiltInMethodEntry<IPCEmptyParams, IPCPaneSnapshotResult>(
@@ -216,7 +216,7 @@ package struct IPCWorkspaceQueryMethodDescriptors: Sendable {
             let paneResult = IPCPaneSnapshotResult(pane: pane, tab: tab, workspace: workspace)
             return try Self.query(
                 entryName, entrySummary, paneResult,
-                .paneContextRead, .paneContext, agentEligibility: entryEligibility)
+                .paneContextRead, .paneContext, callIntent: .read, agentEligibility: entryEligibility)
         })
 
     static let paneSnapshotEntry = IPCBuiltInMethodEntry<IPCPaneSelectorParams, IPCPaneSnapshotResult>(
@@ -270,7 +270,7 @@ package struct IPCWorkspaceQueryMethodDescriptors: Sendable {
             let paneResult = IPCPaneSnapshotResult(pane: pane, tab: tab, workspace: workspace)
             return try IPCBuiltInDescriptorSupport.read(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameters: IPCPaneSelectorParams(handle: "self"),
                 result: paneResult,
                 privilege: .paneContextRead,
@@ -288,11 +288,13 @@ package struct IPCWorkspaceQueryMethodDescriptors: Sendable {
         _ result: Result,
         _ privilege: IPCPrivilegeClass,
         _ dataScope: IPCDataScope,
+        callIntent: IPCCallIntent = .control,
         agentEligibility: IPCAgentEligibility?
     ) throws -> IPCMethodDescriptor<IPCEmptyParams, Result> {
         try IPCBuiltInDescriptorSupport.read(
             name: name,
             description: description,
+            callIntent: callIntent,
             parameters: IPCEmptyParams(),
             result: result,
             privilege: privilege,

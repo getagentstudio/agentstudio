@@ -7,10 +7,10 @@ import Foundation
 
 /// Wire mapping only. Sessions owns the serialized binding and status decisions.
 struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
-    private let ingestion: SessionsIngestion
-    private let now: @Sendable () -> Date
-    private let continuousNow: @Sendable () -> ContinuousClock.Instant
-    private let activityClock: PaneActivityClock?
+    let ingestion: SessionsIngestion
+    let now: @Sendable () -> Date
+    let continuousNow: @Sendable () -> ContinuousClock.Instant
+    let activityClock: PaneActivityClock?
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
@@ -86,7 +86,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionRefusalResult {
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
-        let reason: SessionsHookRefusalReason
+        let reason: AgentConnectionRefusalReason
         switch params.reason {
         case .noSessionId: reason = .noSessionId
         case .undecodablePayload: reason = .undecodablePayload
@@ -103,13 +103,10 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         let read: SessionsStatusReadResult
         do { read = try await ingestion.readSessionStatus(paneId: paneId) } catch { throw Self.portError(from: error) }
         let refusal = await ingestion.lastRefusal(paneId: paneId).map { value in
-            let reason: IPCSessionLastRefusalReason
-            switch value.reason {
-            case .noSessionId: reason = .noSessionId
-            case .undecodablePayload: reason = .undecodablePayload
-            case .queueFull: reason = .queueFull
-            }
-            return IPCSessionLastRefusal(reason: reason, event: value.event, at: value.at)
+            let reason = Self.wireRefusal(value.reason)
+            let intent = Self.wireIntent(value.intent)
+            return IPCSessionLastRefusal(
+                reason: reason, event: value.event, at: value.at, intent: intent, count: value.count)
         }
         switch read {
         case .unbound:
@@ -124,7 +121,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                 lastRefusal: refusal)
         }
     }
-    private static func portError(from error: any Error) -> any Error {
+    static func portError(from error: any Error) -> any Error {
         guard let repositoryError = error as? SessionsRepositoryError else { return error }
         switch repositoryError {
         case .ingestionFinished, .paneQueueFull, .globalQueueFull:

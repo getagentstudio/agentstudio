@@ -24,7 +24,15 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "showPaneAgentLine")),
             tone: tone, stale: line.stale)
     }
-    static func session(_ status: AgentSessionStatus) -> Self? {
+    package static func connection(_ reason: AgentConnectionRefusalReason) -> Self {
+        let spec = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
+        return Self(
+            text: spec.label, icon: spec.icon,
+            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "paneAgentConnectionIssue")),
+            tone: .warning, stale: false)
+    }
+
+    package static func session(_ status: AgentSessionStatus) -> Self? {
         guard status != .unknown else { return nil }
         let spec = LocalActionSpec.paneSessionStatus(status).actionSpec
         let tone: PaneContextChipTone =

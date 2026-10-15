@@ -319,7 +319,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         }
         let providerDiagnostics: @Sendable (String) -> Void
         if isHook {
-            providerDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
+            providerDiagnostics = { [environment = props.environment] label in
+                CLIDiagnostics.recordHook(label, environment: environment)
+            }
         } else {
             providerDiagnostics = props.standardErrorSink
         }
@@ -343,7 +345,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         let isHook: Bool = props.arguments.first == "hook"
         let packageDiagnostics: @Sendable (String) -> Void
         if isHook {
-            packageDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
+            packageDiagnostics = { [environment = props.environment] label in
+                CLIDiagnostics.recordHook(label, environment: environment)
+            }
         } else {
             packageDiagnostics = props.standardErrorSink
         }

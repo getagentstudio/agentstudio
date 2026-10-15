@@ -44,16 +44,19 @@ package enum IPCPaneWriteStream: String, Codable, CaseIterable, Equatable, Senda
 package struct IPCPaneWriterClaimEpochParams: Codable, Equatable, Sendable, IPCSchemaProviding {
     package let handle: String
     package let writer: IPCPaneWriterClaim?
+    package let paneClaim: IPCPaneClaim?
     package let stream: IPCPaneWriteStream
     package let claimId: UUID
     package let correlationId: UUID
 
     package init(
-        handle: String, writer: IPCPaneWriterClaim? = nil, stream: IPCPaneWriteStream, claimId: UUID,
+        handle: String, writer: IPCPaneWriterClaim? = nil, paneClaim: IPCPaneClaim? = nil, stream: IPCPaneWriteStream,
+        claimId: UUID,
         correlationId: UUID
     ) {
         self.handle = handle
         self.writer = writer
+        self.paneClaim = paneClaim
         self.stream = stream
         self.claimId = claimId
         self.correlationId = correlationId
@@ -62,6 +65,7 @@ package struct IPCPaneWriterClaimEpochParams: Codable, Equatable, Sendable, IPCS
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(name: "handle", description: "handle", schema: .string()),
+            .optional("paneClaim", description: "Exact pane and workspace claim", schema: try IPCPaneClaim.ipcSchema()),
             .optional("writer", description: "writer", schema: try IPCPaneWriterClaim.ipcSchema()),
             .init(name: "stream", description: "stream", schema: try IPCPaneWriteStream.ipcSchema()),
             .init(name: "claimId", description: "claimId", schema: IPCSchemaScalars.uuid),
@@ -109,16 +113,19 @@ package enum IPCPaneEpochClaimResult: Codable, Equatable, Sendable, IPCSchemaPro
 package struct IPCPaneTitleSetParams: Codable, Equatable, Sendable, IPCSchemaProviding {
     package let handle: String
     package let writer: IPCPaneWriterClaim?
+    package let paneClaim: IPCPaneClaim?
     package let text: String?
     package let writeNumber: IPCPaneWriteNumber
     package let correlationId: UUID
 
     package init(
-        handle: String, writer: IPCPaneWriterClaim? = nil, text: String? = nil, writeNumber: IPCPaneWriteNumber,
+        handle: String, writer: IPCPaneWriterClaim? = nil, paneClaim: IPCPaneClaim? = nil, text: String? = nil,
+        writeNumber: IPCPaneWriteNumber,
         correlationId: UUID
     ) {
         self.handle = handle
         self.writer = writer
+        self.paneClaim = paneClaim
         self.text = text
         self.writeNumber = writeNumber
         self.correlationId = correlationId
@@ -127,6 +134,7 @@ package struct IPCPaneTitleSetParams: Codable, Equatable, Sendable, IPCSchemaPro
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(name: "handle", description: "handle", schema: .string()),
+            .optional("paneClaim", description: "Exact pane and workspace claim", schema: try IPCPaneClaim.ipcSchema()),
             .optional("writer", description: "writer", schema: try IPCPaneWriterClaim.ipcSchema()),
             .optional("text", description: "text", schema: .string()),
             .init(name: "writeNumber", description: "writeNumber", schema: try IPCPaneWriteNumber.ipcSchema()),
@@ -138,16 +146,19 @@ package struct IPCPaneTitleSetParams: Codable, Equatable, Sendable, IPCSchemaPro
 package struct IPCPaneLineSetParams: Codable, Equatable, Sendable, IPCSchemaProviding {
     package let handle: String
     package let writer: IPCPaneWriterClaim?
+    package let paneClaim: IPCPaneClaim?
     package let line: IPCPaneAgentLineInput?
     package let writeNumber: IPCPaneWriteNumber
     package let correlationId: UUID
 
     package init(
-        handle: String, writer: IPCPaneWriterClaim? = nil, line: IPCPaneAgentLineInput? = nil,
+        handle: String, writer: IPCPaneWriterClaim? = nil, paneClaim: IPCPaneClaim? = nil,
+        line: IPCPaneAgentLineInput? = nil,
         writeNumber: IPCPaneWriteNumber, correlationId: UUID
     ) {
         self.handle = handle
         self.writer = writer
+        self.paneClaim = paneClaim
         self.line = line
         self.writeNumber = writeNumber
         self.correlationId = correlationId
@@ -156,6 +167,7 @@ package struct IPCPaneLineSetParams: Codable, Equatable, Sendable, IPCSchemaProv
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(name: "handle", description: "handle", schema: .string()),
+            .optional("paneClaim", description: "Exact pane and workspace claim", schema: try IPCPaneClaim.ipcSchema()),
             .optional("writer", description: "writer", schema: try IPCPaneWriterClaim.ipcSchema()),
             .optional("line", description: "line", schema: try IPCPaneAgentLineInput.ipcSchema()),
             .init(name: "writeNumber", description: "writeNumber", schema: try IPCPaneWriteNumber.ipcSchema()),

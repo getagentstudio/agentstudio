@@ -59,6 +59,10 @@ extension AgentStudioAppIPCRequestError {
             self = requestError
         case let authorizationError as AuthorizationError:
             self.init(authorizationError)
+        case let refusal as AppIPCPaneClaimError:
+            self.init(
+                code: -32_001, message: "unauthenticated",
+                data: .object(["reason": .string(refusal.reason.rawValue)]))
         case let queryError as AppIPCQueryError:
             self.init(queryError.reason)
         case let layoutError as AppIPCLayoutError:

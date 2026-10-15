@@ -125,6 +125,7 @@ struct LiveServerFixture: Sendable {
         ownPaneScopes: [AppIPCOwnPaneScope] = [],
         cliStoreReadThroughPort: (any AppIPCCLIStoreReadThroughPort)? = nil,
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
+        paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
         eventBroker: IPCEventBroker = IPCEventBroker(),
         makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
         makeConnectionWriter: @escaping @Sendable (AppIPCConnectionIO, Int) -> AgentStudioAppIPCConnectionWriter = {
@@ -160,7 +161,7 @@ struct LiveServerFixture: Sendable {
                 // terminal with an empty drawer, so its own pane is itself.
                 ownPaneScopePort: StaticOwnPaneScopePort(scopes: ownPaneScopes),
                 agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry(),
-                paneContextPort: paneContextPort
+                paneContextPort: paneContextPort, paneClaimAdmission: paneClaimAdmission
             )
             let catalog = try makeLiveServerBuiltInCatalog(
                 runtimeId: runtimeId,
