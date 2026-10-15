@@ -114,19 +114,19 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 							},
 						},
 						{
-							name: 'browser',
+							name: 'browser close',
 							run: async (): Promise<void> => {
 								await browser?.close();
 							},
 						},
 						{
-							name: 'fault proxy',
+							name: 'fault proxy stop',
 							run: async (): Promise<void> => {
 								await proxy?.stop();
 							},
 						},
 						{
-							name: 'Vite and Swift',
+							name: 'server stop',
 							run: async (): Promise<void> => {
 								if (server === null) return;
 								const cleanup = await server.stop();
@@ -134,8 +134,15 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 								expect(cleanup.forcedTerminationRequired).toBe(false);
 							},
 						},
-						{ name: 'fixture', run: fixture.dispose },
-					],
+						{ name: 'fixture dispose', run: fixture.dispose },
+					].map((operation) => ({
+						name: operation.name,
+						run: async (): Promise<void> => {
+							const retiring = operation.run();
+							if (server === null) await retiring;
+							else await server.testLaunch.observeRetirementStep(operation.name, retiring).value();
+						},
+					})),
 					...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
 				});
 			}
