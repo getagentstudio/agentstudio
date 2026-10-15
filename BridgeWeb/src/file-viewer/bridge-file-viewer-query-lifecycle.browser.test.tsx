@@ -3,7 +3,10 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
-import { observeBridgeTransitionDOMFact } from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.ts';
+import {
+	observeBridgeTransitionDOMFact,
+	runBridgeTransitionFramesInAct,
+} from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode mounts the production File shell.
 import '../app/bridge-app.css';
@@ -40,6 +43,11 @@ import {
 	waitForSelectedDisplayPath,
 	waitForBridgeFileViewerWorkerMessageDrain,
 } from './bridge-file-viewer-browser-test-harness.js';
+import {
+	createHeldFileMenuOpeningChallenge,
+	missingFileMenuOpeningCapture,
+	retiredFileMenuOpeningCapture,
+} from './bridge-file-viewer-held-menu-opening.browser.test-support.js';
 
 describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 	beforeEach((): void => {
@@ -448,6 +456,73 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 			.toBe(renderResult.getByTestId('worktree-file-search-toggle').element());
 	});
 
+	test.for([
+		{ mode: 'matched', name: 'owns the File menu opening tick held beyond the capture-frame join' },
+		{
+			mode: 'missing',
+			name: 'names missing opening capture when the real File menu finishes opening',
+		},
+		{
+			mode: 'failure',
+			name: 'joins capture and retires a held File opening after challenge failure before release',
+		},
+		{
+			mode: 'retirement',
+			name: 'joins capture and retires a held File opening after owner retirement before release',
+		},
+	] as const)('$name', async ({ mode }, context) => {
+		await render(
+			<BridgeFileViewerBrowserHarnessApp initialFileBatch={makeMixedFileClassBatch()} />,
+		);
+		await waitForMetadataTreeRowCount(19);
+		const owner = new AbortController();
+		const challenge = createHeldFileMenuOpeningChallenge({
+			ownerSignals: [context.signal, owner.signal],
+			...(mode === 'missing' ? { matchesRegistration: (): boolean => false } : {}),
+			beforeRelease: (): void => {
+				if (mode === 'failure')
+					throw new Error('Injected File opening challenge failure before release');
+				if (mode === 'retirement') owner.abort();
+			},
+		});
+		const operation = challenge.run(
+			(afterCapture): Promise<void> =>
+				dispatchFileViewerShortcut({ altKey: true }, document, afterCapture),
+		);
+		if (mode === 'matched') {
+			await operation;
+			expect(challenge.snapshot().captureDisposition).toBe('released');
+		} else {
+			const expectedError =
+				mode === 'missing'
+					? missingFileMenuOpeningCapture
+					: mode === 'retirement'
+						? retiredFileMenuOpeningCapture
+						: 'Injected File opening challenge failure before release';
+			await expect(operation).rejects.toThrow(expectedError);
+			expect(challenge.snapshot().captureDisposition).toBe('retired');
+		}
+		expect(challenge.snapshot()).toMatchObject({
+			captureContinuationJoined: true,
+			interactionJoined: mode === 'matched',
+			observationsDisposed: true,
+			spiesRestored: true,
+			hasHeldDelivery: false,
+		});
+		if (mode === 'failure' || mode === 'retirement') {
+			expect(challenge.snapshot()).toMatchObject({
+				heldFrameCancelled: true,
+				staleDeliveryIgnored: true,
+			});
+		} else {
+			if (mode === 'missing') expect(challenge.snapshot().openingCompleted).toBe(true);
+			expect(
+				document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
+			).not.toBeNull();
+		}
+		await dispatchFileViewerShortcut({ altKey: true });
+	});
+
 	test('File category filters use real native classes, preserve ancestors, and Clear restores the tree', async () => {
 		// Arrange
 		const renderResult = await render(
@@ -628,21 +703,32 @@ function requireHTMLElement(element: Element | null): HTMLElement {
 async function dispatchFileViewerShortcut(
 	modifiers: Readonly<{ altKey?: boolean; shiftKey?: boolean }>,
 	target: EventTarget = document,
+	afterCaptureFrame?: () => Promise<void>,
 ): Promise<void> {
-	await act(async (): Promise<void> => {
-		target.dispatchEvent(
-			new KeyboardEvent('keydown', {
-				altKey: modifiers.altKey ?? false,
-				bubbles: true,
-				cancelable: true,
-				key: 'f',
-				metaKey: true,
-				shiftKey: modifiers.shiftKey ?? false,
-			}),
-		);
-	});
-	await actFrame();
-	if (modifiers.altKey) await settleFileViewerMenuTransition();
+	const interaction = async (): Promise<void> => {
+		await act(async (): Promise<void> => {
+			target.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					altKey: modifiers.altKey ?? false,
+					bubbles: true,
+					cancelable: true,
+					key: 'f',
+					metaKey: true,
+					shiftKey: modifiers.shiftKey ?? false,
+				}),
+			);
+		});
+		await actFrame();
+		await afterCaptureFrame?.();
+		if (modifiers.altKey) await settleFileViewerMenuTransition();
+	};
+	if (modifiers.altKey) {
+		// Base UI's opening tick may outlive the interaction/capture act turns.
+		// Own its native frame delivery through the exact menu completion/DOM fact.
+		await runBridgeTransitionFramesInAct(interaction);
+	} else {
+		await interaction();
+	}
 }
 
 async function dispatchFileViewerSearchCommand(props: {

@@ -494,6 +494,7 @@ struct SwiftLaneIsolationListGateTests {
                 "source scripts/swift-test-helpers.sh; \(helperFunction)",
             ]
             process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            process.environment = testProcessEnvironmentWithoutLaneState()
             process.standardOutput = output
             process.standardError = output
 

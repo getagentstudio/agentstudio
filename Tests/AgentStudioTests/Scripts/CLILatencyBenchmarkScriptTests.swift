@@ -43,8 +43,7 @@ struct CLILatencyBenchmarkScriptTests {
             """#
         let output = try await runProcessToExit(
             executableURL: URL(fileURLWithPath: "/usr/bin/perl"),
-            arguments: ["-I", projectRoot.appendingPathComponent("scripts").path, "-e", script],
-            environment: ProcessInfo.processInfo.environment)
+            arguments: ["-I", projectRoot.appendingPathComponent("scripts").path, "-e", script])
         #expect(output.terminationStatus == 0)
         let fields = try object(output.standardOutput)
         let passed = try #require(fields["passed"] as? [String: Any])
@@ -192,7 +191,7 @@ struct CLILatencyBenchmarkScriptTests {
     }
 
     private func runHarness(_ fixture: BenchmarkScriptFixture) async throws -> ExitedProcessOutput {
-        var environment = ProcessInfo.processInfo.environment
+        var environment = testProcessEnvironmentWithoutLaneState()
         environment["AGENTSTUDIO_CLI_BENCHMARK_OUTPUT"] = fixture.outputURL.path
         environment["CLAUDE_CODE_SESSION_ID"] = "parent-claude-sentinel"
         environment["CODEX_THREAD_ID"] = "parent-codex-sentinel"
