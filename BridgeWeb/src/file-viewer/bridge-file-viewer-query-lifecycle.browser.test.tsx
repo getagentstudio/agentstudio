@@ -8,7 +8,6 @@ import { runBridgeTransitionFramesInAct } from '../../tests/test-support/bridge-
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode mounts the production File shell.
 import '../app/bridge-app.css';
 import { bridgeAppControlProbeSchema } from '../app/bridge-app-control.js';
-import type { BridgeWorkerMainToServerMessage } from '../core/comm-worker/bridge-worker-contracts.js';
 import {
 	settleFileViewerMenuTransition,
 	waitForFileViewerMenuOptionContaining,
@@ -17,25 +16,17 @@ import {
 import { BridgeFileViewerBrowserHarnessApp } from './bridge-file-viewer-browser-test-app.js';
 import {
 	makeBrowserFileBatch,
-	makeBrowserFileBatchWithDescriptors,
 	makeBrowserFileDescriptorOutcome,
-	makeBrowserFileDescriptorOutcomeForContent,
 	makeBrowserFileRow,
 } from './bridge-file-viewer-browser-test-batches.js';
-import {
-	fileNavigationCommandForPath,
-	makeFileContent,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+import { fileNavigationCommandForPath } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
 	actClick,
 	actFrame,
 	actUpdate,
 	interactAndWaitForBridgeFileViewerQueryCompletion,
 	installBridgeFileViewerNoopResizeObserver,
-	makeDeferredContent,
-	settleBridgeFileViewerBrowserUpdates,
 	waitForMetadataTreeRowCount,
-	waitForOpenFileState,
 	selectedDisplayPath,
 	waitForSelectedDisplayPath,
 	waitForBridgeFileViewerWorkerMessageDrain,
@@ -45,6 +36,7 @@ import {
 	missingFileMenuOpeningCapture,
 	retiredFileMenuOpeningCapture,
 } from './bridge-file-viewer-held-menu-opening.browser.test-support.js';
+import { assertUnchangedQueryContentPublication } from './bridge-file-viewer-query-content-render.browser.test-support.js';
 
 describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 	beforeEach((): void => {
@@ -57,47 +49,12 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 		document.body.replaceChildren();
 	});
 
-	test('does not reschedule the unchanged query when content publications update the snapshot', async () => {
-		// Arrange
-		const content = makeFileContent('export const queryLifecycle = "settled";\n');
-		const descriptor = await makeBrowserFileDescriptorOutcomeForContent({
-			content,
-			descriptorId: 'query-lifecycle-content',
-			fileId: 'file-query-lifecycle',
-			path: 'src/query-lifecycle.ts',
-		});
-		const dispatchedMessages: BridgeWorkerMainToServerMessage[] = [];
-		const deferredContent = makeDeferredContent();
+	test('does not reschedule the unchanged query when content publications update the snapshot', async (context) => {
+		await assertUnchangedQueryContentPublication({ holdApplied: false, signal: context.signal });
+	});
 
-		// Act
-		await render(
-			<BridgeFileViewerBrowserHarnessApp
-				autoOpenInitialFile={true}
-				fileProductSession={{
-					onWorkerCommand: (message): void => {
-						dispatchedMessages.push(message);
-					},
-					readContent: (): Promise<string> => deferredContent.promise,
-				}}
-				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
-			/>,
-		);
-		await waitForMetadataTreeRowCount(2);
-		await waitForOpenFileState('loading');
-		await actUpdate((): void => {
-			deferredContent.resolve(content);
-		});
-		await waitForOpenFileState('ready');
-		await settleBridgeFileViewerBrowserUpdates();
-
-		// Assert
-		const queryUpdates = dispatchedMessages.filter(
-			(message): boolean => message.command === 'fileQueryUpdate',
-		);
-		expect(queryUpdates).toHaveLength(1);
-		expect(
-			dispatchedMessages.filter((message): boolean => message.command === 'select'),
-		).toHaveLength(1);
+	test('joins the selected File render receipt held beyond content-ready and frame settling', async (context) => {
+		await assertUnchangedQueryContentPublication({ holdApplied: true, signal: context.signal });
 	});
 
 	test('clears an excluded File selection without auto-selecting a filtered replacement', async () => {
