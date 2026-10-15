@@ -27,6 +27,10 @@ test('keeps one File annotation stable through repeated edit, reply, resolve, an
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let phase = 'fixture-ready';
 		let commandObservation: AnnotationCommandObservation | null = null;
+		const retireStep = <TValue>(name: string, operation: Promise<TValue>): Promise<TValue> =>
+			server === null
+				? operation
+				: server.testLaunch.observeRetirementStep(name, operation).value();
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
@@ -107,17 +111,17 @@ test('keeps one File annotation stable through repeated edit, reply, resolve, an
 			);
 		} finally {
 			try {
-				await page?.close();
-				await browser?.close();
+				await retireStep('page close', page?.close() ?? Promise.resolve());
+				await retireStep('browser close', browser?.close() ?? Promise.resolve());
 			} finally {
 				try {
 					if (server !== null) {
-						const cleanup = await server.stop();
+						const cleanup = await retireStep('server stop', server.stop());
 						expect(cleanup.forcedTerminationRequired).toBe(false);
 						expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
 					}
 				} finally {
-					await fixture.dispose();
+					await retireStep('fixture dispose', fixture.dispose());
 				}
 			}
 		}

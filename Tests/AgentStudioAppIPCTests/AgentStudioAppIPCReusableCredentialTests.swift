@@ -216,11 +216,75 @@ struct AgentStudioAppIPCReusableCredentialTests {
                 #expect(heldCredential.paneID == serverFixture.boundPaneId)
                 #expect(barrierPort.registrationCallCount == 1)
 
-                barrierPort.releaseRegistration()
+                // Keep shutdown's snapshot enqueue in the same in-flight coalescing window.
+                // Once the lane retires the record, a later enqueue is a new registration.
                 await serverFixture.stopAcceptingConnections()
+                barrierPort.releaseRegistration()
                 #expect(await serverFixture.server.drainCredentialPersistence().failedOperationCount == 0)
                 #expect(barrierPort.registrationCallCount == 1)
             })
+    }
+
+    @Test("a retained shutdown snapshot stays idempotent after the original registration retires")
+    func deferredShutdownSnapshotPreservesOneDurableRecord() async throws {
+        let fixture = try ReusableCredentialFixture()
+        defer { fixture.cleanup() }
+        let datastore = fixture.makeDatastore()
+        try #require(await fixture.prepareDatastoreForIPC(datastore))
+        let repository = IPCContinuityRepository(datastore: datastore)
+        let registry = AgentStudioIPCPrincipalRegistry(
+            runtimeId: UUIDv7.generate(),
+            credentialResolver: IPCContinuityCredentialResolver(repository: repository),
+            canonicalPaneMembership: { _, _ in true }
+        )
+        defer { registry.shutdown() }
+        let barrierPort = HeldCredentialContinuityPort(repository: repository)
+        let lane = AgentStudioIPCCredentialPersistenceLane(continuityPort: barrierPort)
+        let credential = AgentStudioIPCIssuedPaneCredential(
+            paneID: UUIDv7.generate(), workspaceID: UUIDv7.generate(), credentialRecordID: UUIDv7.generate(),
+            verifierSHA256: Data(repeating: 0xA5, count: 32)
+        )
+        try registry.registerIssuedPaneCredential(
+            paneID: credential.paneID, workspaceID: credential.workspaceID,
+            credentialRecordID: credential.credentialRecordID, verifierSHA256: credential.verifierSHA256
+        )
+        let enqueueRegistration: @Sendable (AgentStudioIPCIssuedPaneCredential) -> Void = { candidate in
+            lane.enqueueRegistration(
+                candidate,
+                remainsEligible: { registry.registrationRemainsEligible(candidate) },
+                didPersist: { registry.markIssuedCredentialDurable(recordID: candidate.credentialRecordID) }
+            )
+        }
+
+        do {
+            enqueueRegistration(credential)
+            let heldCredential = try await barrierPort.waitUntilRegistrationHeld()
+            #expect(heldCredential == credential)
+            let shutdownSnapshot = registry.beginGracefulShutdownAndSnapshotUnsavedCredentials()
+            #expect(shutdownSnapshot == [credential])
+
+            barrierPort.releaseRegistration()
+            #expect(await lane.drain().failedOperationCount == 0)
+            #expect(registry.issuedCredentialCandidates().isEmpty)
+
+            // Resume a snapshot captured before durability only after the first operation retires.
+            for candidate in shutdownSnapshot { enqueueRegistration(candidate) }
+            #expect(await lane.drain().failedOperationCount == 0)
+            // A retained snapshot may be replayed after retirement; its durable row stays unchanged.
+            let stored = try await repository.paneCredentials(paneID: credential.paneID)
+            #expect(
+                stored == [
+                    IPCPaneCredential(
+                        paneID: credential.paneID, workspaceID: credential.workspaceID,
+                        credentialRecordID: credential.credentialRecordID,
+                        verifierSHA256: credential.verifierSHA256, status: .registered
+                    )
+                ])
+        } catch {
+            barrierPort.releaseRegistration()
+            _ = await lane.drain()
+            throw error
+        }
     }
 
     /// Joining connection handlers before draining credentials is the fix for

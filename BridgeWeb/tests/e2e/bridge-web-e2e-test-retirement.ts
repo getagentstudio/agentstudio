@@ -33,7 +33,7 @@ export async function runBridgeWebE2ETestBody(
 	const signal = context.signal;
 	const retireOnAbort = (): void => {
 		process.stderr.write(
-			`BRIDGE_E2E_ABORT waiting=body retirement: ${context.task.name}; ${[...launches.keys()].flatMap((launch) => launch.pendingSteps).join(', ')}\n`,
+			`BRIDGE_E2E_ABORT waiting=body retirement: ${context.task.name}; ${[...launches.keys()].flatMap((launch) => launch.pendingStepDiagnostics).join(', ')}\n`,
 		);
 		for (const launch of launches.keys())
 			void handleLaunchPromise(launch.dispose(), 'aborted E2E launch retirement').settled;

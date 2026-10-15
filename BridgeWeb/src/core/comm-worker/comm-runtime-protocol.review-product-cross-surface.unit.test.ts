@@ -4,7 +4,7 @@ import {
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import type { BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import { drainBridgeCommWorkerPreparationUntilIdle } from './bridge-comm-worker-runtime-protocol.review-product-preparation.test-support.js';
 import {
@@ -30,6 +30,11 @@ describe('Bridge comm worker Review product cross-surface lifecycle', () => {
 		);
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			productTransport: makeReviewProductTransport({

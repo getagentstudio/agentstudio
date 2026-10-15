@@ -309,3 +309,48 @@ async function waitForFileViewerMenuState(props: {
 		isExpected: (settled): boolean => settled,
 	});
 }
+
+export async function dispatchFileViewerShortcut(
+	modifiers: Readonly<{ altKey?: boolean; shiftKey?: boolean }>,
+	target: EventTarget = document,
+	afterCaptureFrame?: () => Promise<void>,
+): Promise<void> {
+	const interaction = async (): Promise<void> => {
+		await act(async (): Promise<void> => {
+			target.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					altKey: modifiers.altKey ?? false,
+					bubbles: true,
+					cancelable: true,
+					key: 'f',
+					metaKey: true,
+					shiftKey: modifiers.shiftKey ?? false,
+				}),
+			);
+		});
+		const captureAndComplete = async (): Promise<void> => {
+			await actFrame();
+			await afterCaptureFrame?.();
+			if (modifiers.altKey) await settleFileViewerMenuTransition();
+		};
+		const isClosingFilterMenu =
+			modifiers.altKey === true &&
+			document
+				.querySelector('[data-testid="worktree-file-filter-menu"]')
+				?.getAttribute('aria-expanded') === 'false';
+		if (isClosingFilterMenu) {
+			// Animation.finished can call Base UI's unmount after the capture frame.
+			// Keep capture and the native close/DOM facts in one continuous act scope.
+			await act(captureAndComplete);
+		} else {
+			await captureAndComplete();
+		}
+	};
+	if (modifiers.altKey) {
+		// Base UI's opening tick may outlive the interaction/capture act turns.
+		// Own its native frame delivery through the exact menu completion/DOM fact.
+		await runBridgeTransitionFramesInAct(interaction);
+	} else {
+		await interaction();
+	}
+}
