@@ -1,9 +1,10 @@
-import { describe, expect, test } from 'vitest';
+import { beforeEach, describe, expect, test } from 'vitest';
 
 import {
 	registerBridgeCommWorkerEntry,
 	type BridgeCommWorkerGlobalScope,
 } from './bridge-comm-worker-entry.js';
+import { installTestBridgeCommWorkerEntryRenderWakes } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import { createBridgeProductDeferred } from './bridge-product-async-queue.js';
 import {
 	BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH,
@@ -22,6 +23,8 @@ import {
 	bridgeWorkerServerToMainWireMessageSchema,
 	type BridgeWorkerServerToMainWireMessage,
 } from './bridge-worker-contracts.js';
+
+beforeEach(installTestBridgeCommWorkerEntryRenderWakes);
 
 describe('Bridge comm worker session-suspect request', () => {
 	test('exhausted admission replay emits one typed replacement request', async () => {

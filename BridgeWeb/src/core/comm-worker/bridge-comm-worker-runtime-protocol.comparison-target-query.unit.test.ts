@@ -4,7 +4,7 @@ import {
 	encodeBridgeWorkerReviewComparisonTargetsQueryCancelCommand,
 	encodeBridgeWorkerReviewComparisonTargetsQueryCommand,
 } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,

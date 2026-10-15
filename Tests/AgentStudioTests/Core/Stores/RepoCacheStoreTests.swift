@@ -122,9 +122,12 @@ struct RepoCacheStoreTests {
         await store.restoreAsync(for: workspaceId)
         store.startObserving()
 
+        let debounceDeadline = clock.now.advanced(by: .milliseconds(10))
         atom.setRepoEnrichment(.awaitingOrigin(repoId: repoId))
-        await clock.waitForPendingSleepCount()
-        clock.advance(by: .milliseconds(10))
+        // The maximum-delay sleep can register before the debounce.
+        let registeredDeadline = await clock.waitForPendingSleep(deadline: debounceDeadline)
+        #expect(registeredDeadline == debounceDeadline)
+        clock.advance(to: registeredDeadline)
 
         let savedSourceRevision = try await facts.expectNextSaveCompleted(workspaceId: workspaceId)
         #expect(savedSourceRevision == atom.sourceRevision)
@@ -214,6 +217,7 @@ struct RepoCacheStoreTests {
         }
         store.startObserving()
 
+        let debounceDeadline = clock.now.advanced(by: .milliseconds(10))
         atom.setWorktreeEnrichment(
             WorktreeEnrichment(
                 worktreeId: worktreeId,
@@ -228,8 +232,10 @@ struct RepoCacheStoreTests {
                 )
             )
         )
-        await clock.waitForPendingSleepCount()
-        clock.advance(by: .milliseconds(10))
+        // Snapshot-only changes still schedule both autosave timers.
+        let registeredDeadline = await clock.waitForPendingSleep(deadline: debounceDeadline)
+        #expect(registeredDeadline == debounceDeadline)
+        clock.advance(to: registeredDeadline)
         await Task.yield()
 
         let currentUpdatedAt = try await fixture.databaseQueue.read { database in

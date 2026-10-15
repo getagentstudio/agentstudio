@@ -5,7 +5,7 @@ import {
 	encodeBridgeWorkerRenderDispositionCommand,
 	encodeBridgeWorkerSelectCommand,
 } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import {
 	createBridgeCommWorkerReviewProductTestSource,
 	makeContentRequestDescriptor,
@@ -158,6 +158,10 @@ describe('Bridge comm worker duplex backpressure over an actual MessageChannel',
 			reviewProductSource.productTransport,
 		);
 		registerBridgeCommWorkerRuntimePortProtocol(channel.port1, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'Review publication thirteen remains unacknowledged after the ordering proof.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			openReviewContent: openReviewContentFromDescriptorMap,
@@ -299,6 +303,10 @@ describe('Bridge comm worker duplex backpressure over an actual MessageChannel',
 			subscriptionKind: 'file.metadata',
 		};
 		registerBridgeCommWorkerRuntimePortProtocol(channel.port1, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'Selection B remains unacknowledged after the painted-A ordering proof.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			fileViewBudget: fileViewProductTestBudget,

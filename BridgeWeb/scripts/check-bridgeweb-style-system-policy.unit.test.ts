@@ -1,8 +1,8 @@
-import { mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 
-import { describe, expect, test } from 'vitest';
+import { describe, expect, onTestFinished, test } from 'vitest';
 
 import type { StyleSystemReport } from './check-bridgeweb-style-system-model.ts';
 import { checkBridgeWebStyleSystem } from './check-bridgeweb-style-system.ts';
@@ -129,7 +129,10 @@ describe('BridgeWeb style-system embedded CSS policy', () => {
 
 async function checkFixture(files: Readonly<Record<string, string>>): Promise<StyleSystemReport> {
 	const packageRootPath = await mkdtemp(join(tmpdir(), 'bridge-style-policy-'));
-	await Promise.all(
+	onTestFinished(async (): Promise<void> => {
+		await rm(packageRootPath, { recursive: true, force: true });
+	});
+	await joinFixtureOperations(
 		Object.entries({
 			'src/app/bridge-app.css': canonicalCss,
 			'src/design-tokens/bridge-design-palette.ts': canonicalMirror,
@@ -150,4 +153,18 @@ function rulePaths(
 	return report.findings
 		.filter((finding) => finding.ruleId === ruleId)
 		.map(({ relativePath }) => relativePath);
+}
+
+// Test-finish cleanup must not race any allocation, write, or assertion already started.
+async function joinFixtureOperations(operations: readonly Promise<unknown>[]): Promise<void> {
+	let firstFailure: { readonly reason: unknown } | undefined;
+	await Promise.allSettled(
+		operations.map((operation) =>
+			operation.catch((reason: unknown): never => {
+				firstFailure ??= { reason };
+				throw reason;
+			}),
+		),
+	);
+	if (firstFailure !== undefined) throw firstFailure.reason;
 }

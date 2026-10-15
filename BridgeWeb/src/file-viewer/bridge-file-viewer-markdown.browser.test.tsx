@@ -305,6 +305,12 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		});
 		const activeApp = (
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'The deliberately suspended Markdown publication retains its captured lifecycle wake.',
+				}}
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 				isActive={true}
@@ -324,6 +330,12 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 
 			await rendered.rerender(
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'The deliberately suspended Markdown publication retains its captured lifecycle wake.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					isActive={false}
@@ -381,6 +393,11 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		try {
 			await render(
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason: 'This UI Retry case leaves the worker lifecycle retry capture undelivered.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
@@ -543,6 +560,12 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			beginWait('pending-publication File Viewer mount');
 			const rendered = await render(
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'Unmount deliberately closes the worker ports with the held publication lease retained.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 					markdownWorkerClient={readiness.workerClient}

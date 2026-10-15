@@ -7,10 +7,8 @@ import {
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerFileViewerMode,
 	activateBridgeCommWorkerFileViewerModeAndFlush,
@@ -53,6 +51,11 @@ describe('Bridge comm worker File product runtime', () => {
 		};
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			productTransport: makeProductTransport({
@@ -147,6 +150,11 @@ describe('Bridge comm worker File product runtime', () => {
 		};
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			fileViewBudget: fileViewProductTestBudget,
@@ -212,6 +220,11 @@ describe('Bridge comm worker File product runtime', () => {
 		};
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			fileViewBudget: fileViewProductTestBudget,
@@ -529,6 +542,11 @@ describe('Bridge comm worker File product runtime', () => {
 		let reviewWarmupCount = 0;
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			productTransport: makeProductTransport({
@@ -635,6 +653,11 @@ describe('Bridge comm worker File product runtime', () => {
 		let panePresentationSink: ((frame: BridgeProductPanePresentationFrame) => void) | null = null;
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			fileViewBudget: fileViewProductTestBudget,
@@ -844,6 +867,11 @@ describe('Bridge comm worker File product runtime', () => {
 		};
 		const { dispatch } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its File publication without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			fileViewBudget: fileViewProductTestBudget,
