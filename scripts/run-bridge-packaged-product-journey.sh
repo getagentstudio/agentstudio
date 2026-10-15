@@ -368,6 +368,7 @@ fixture_root="$journey_root/fixture"
 run_state_file="$journey_root/journey.env"
 mkdir -p "$fixture_root" "$(dirname "$JOURNEY_STATE_FILE")"
 chmod 700 "$journey_root" "$fixture_root"
+ipc_debug_escrow_path="$(/usr/bin/python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$journey_root/ipc-escrow.json")"
 
 journey_status=preparing
 journey_reason=""
@@ -432,6 +433,7 @@ write_receipt() {
     write_state_value AGENTSTUDIO_BRIDGE_JOURNEY_DATA_ROOT "$runtime_data_root"
     write_state_value RUN_STATE_FILE "$run_state_file"
     write_state_value AGENTSTUDIO_BRIDGE_JOURNEY_OBSERVABILITY_STATE_FILE "$OBSERVABILITY_STATE_FILE"
+    write_state_value AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW "$ipc_debug_escrow_path"
     write_state_value AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_ROOT "$fixture_root"
     write_state_value AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_IDENTITY "$fixture_identity"
     write_state_value AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_BASE_SHA "$fixture_base_sha"
@@ -574,6 +576,7 @@ if [ "$complete_journey" = true ]; then
     launch_receipt_path="$launch_data_root/bridge-complete-journey/native-launch.json"
     preserved_receipt_path="$journey_root/$launch_id.json"
     launch_state_file="$journey_root/$launch_id-observability.env"
+    launch_escrow_path="$(dirname "$ipc_debug_escrow_path")/$launch_id-ipc-escrow.json"
     mkdir -p "$(dirname "$launch_config_path")"
     printf '{"enabled":true,"mode":"native","attemptCount":%s,"launchId":"%s"}\n' \
       "$complete_journey_attempt_count" "$launch_id" >"$launch_config_path"
@@ -586,7 +589,7 @@ if [ "$complete_journey" = true ]; then
     if ! AGENTSTUDIO_DEBUG_DIRECT_FALLBACK=0 \
       AGENTSTUDIO_DEBUG_LAUNCH_ACTIVATE=1 \
       AGENTSTUDIO_DEBUG_DATA_DIR="$launch_data_root" \
-      AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+      AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$launch_escrow_path" \
       AGENTSTUDIO_STARTUP_WATCH_FOLDER="$fixture_root" \
       AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=bridge-product-paint-correlation \
       AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$launch_state_file" \
@@ -640,7 +643,8 @@ if [ "$complete_journey" = true ]; then
       echo "complete journey receipt wait attempts must be positive" >&2
       exit 2
     fi
-    while [ ! -f "$launch_receipt_path" ] && [ "$receipt_wait_attempt" -le "$receipt_wait_limit" ]; do
+    while { [ ! -f "$launch_receipt_path" ] || [ ! -s "$launch_escrow_path" ]; } \
+      && [ "$receipt_wait_attempt" -le "$receipt_wait_limit" ]; do
       if ! "$PROCESS_SIGNAL_COMMAND" -0 "$active_launch_pid" >/dev/null 2>&1; then
         echo "$launch_id exited before producing its complete journey receipt" >&2
         exit 1
@@ -650,6 +654,10 @@ if [ "$complete_journey" = true ]; then
     done
     if [ ! -f "$launch_receipt_path" ]; then
       echo "$launch_id did not produce its complete journey receipt within the bounded wait" >&2
+      exit 1
+    fi
+    if [ ! -s "$launch_escrow_path" ]; then
+      echo "$launch_id did not produce debug IPC escrow: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$launch_escrow_path" >&2
       exit 1
     fi
     /usr/bin/python3 - "$launch_receipt_path" "$launch_id" "$complete_journey_attempt_count" <<'PY'
@@ -695,7 +703,7 @@ fi
 
 if ! AGENTSTUDIO_DEBUG_DIRECT_FALLBACK=0 \
   AGENTSTUDIO_DEBUG_DATA_DIR="$runtime_data_root" \
-  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$ipc_debug_escrow_path" \
   AGENTSTUDIO_STARTUP_WATCH_FOLDER="$fixture_root" \
   AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=bridge-product-paint-correlation \
   AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$OBSERVABILITY_STATE_FILE" \

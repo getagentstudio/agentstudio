@@ -1,7 +1,9 @@
 import { act, cloneElement, type ReactElement } from 'react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
+import type { Locator } from 'vitest/browser';
 
+import { observeBridgeTransitionDOMFact } from '../../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
 import {
 	annotationHeadThreadId,
 	annotationMessage,
@@ -12,10 +14,7 @@ import {
 	useWorktreeAnnotationEditorInstallationPreparation,
 	useWorktreeAnnotationEditSurfaceToken,
 } from '../../worktree-annotations/worktree-annotation-surface-provider.js';
-import {
-	createDeferred,
-	waitForWorktreeAnnotationBrowserDomState,
-} from '../../worktree-annotations/worktree-annotation-thread.browser.test-support.js';
+import { createDeferred } from '../../worktree-annotations/worktree-annotation-thread.browser.test-support.js';
 import { markdownCanvas } from './bridge-markdown-annotation-test-support.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Exercise the real renderer and host geometry.
@@ -90,23 +89,67 @@ test('keeps saved thread coordinates with the painted document while another edi
 	});
 	expect(screen.getByPlaceholder('Write an annotation in Markdown').element()).toBe(editor);
 	await expect.element(screen.getByRole('status')).toHaveTextContent('File changed');
-	const precedingTarget = (): string | null | undefined =>
-		screen
-			.getByText('Saved second target', { exact: true })
-			.element()
-			.closest('.bridge-markdown-annotation-host')?.previousElementSibling?.textContent;
-	expect(precedingTarget()).toBe('Commented target');
+	expect(
+		await waitForSavedThreadPrecedingTarget(
+			screen.getByText('Saved second target', { exact: true }),
+		),
+	).toBe('Commented target');
 	await act(async (): Promise<void> => {
 		await screen.getByRole('button', { name: 'Revert annotation draft' }).click();
 	});
 	await expect.element(screen.getByText('New target', { exact: true })).toBeVisible();
 	expect(
-		await waitForWorktreeAnnotationBrowserDomState({
-			readState: precedingTarget,
-			isExpected: (target): boolean => target === 'Commented target',
-		}),
+		await waitForSavedThreadPrecedingTarget(
+			screen.getByText('Saved second target', { exact: true }),
+		),
 	).toBe('Commented target');
 });
+
+test('awaits saved thread placement when its publication is held until observation starts', async (): Promise<void> => {
+	const harness = createWorktreeAnnotationBrowserProviderHarness('fileView');
+	const screen = await render(
+		harness.wrap(await markdownCanvas('First target\n\nCommented target')),
+	);
+	const publicationReleased = createDeferred<void>();
+	const publicationCompleted = publicationReleased.promise.then((): void => {
+		act((): void => {
+			harness.surface.publishProjection(1, 1);
+			harness.surface.publishThreadMessages(savedThread(1, 3));
+		});
+	});
+	const placement = waitForSavedThreadPrecedingTarget(
+		screen.getByText('Saved second target', { exact: true }),
+	);
+	// Observe a rejected initial read as well, so the red counterexample stays joined.
+	void placement.catch((): void => {});
+	publicationReleased.resolve(undefined);
+	await publicationCompleted;
+	expect(await placement).toBe('Commented target');
+});
+
+function readSavedThreadPrecedingTarget(savedMessage: Locator): string | null | undefined {
+	return savedMessage.query()?.closest('.bridge-markdown-annotation-host')?.previousElementSibling
+		?.textContent;
+}
+
+async function waitForSavedThreadPrecedingTarget(
+	savedMessage: Locator,
+): Promise<string | null | undefined> {
+	let observedTarget: string | null | undefined;
+	const placement = observeBridgeTransitionDOMFact({
+		label: 'saved annotation thread attached to Commented target in the painted Markdown document',
+		isCommitted: (): boolean => {
+			observedTarget = readSavedThreadPrecedingTarget(savedMessage);
+			return observedTarget === 'Commented target';
+		},
+	});
+	try {
+		await placement.promise;
+		return observedTarget;
+	} finally {
+		placement.close();
+	}
+}
 
 test('updates saved comment text while retaining its displayed source coordinates', async (): Promise<void> => {
 	const harness = createWorktreeAnnotationBrowserProviderHarness('fileView');
