@@ -47,7 +47,7 @@ func waitForHTTPFileSourceIdentity(
     }
 }
 
-struct HTTPFileBatchSnapshot {
+struct HTTPFileBatchSnapshot: Sendable {
     let source: BridgeProductFileSourceIdentity
     let descriptorByPath: [String: BridgeProductFileContentDescriptor]
     let certificatePartCount: Int?
@@ -55,56 +55,135 @@ struct HTTPFileBatchSnapshot {
     let memberStatus: BridgeProductFileMemberStatusRecord
 }
 
-private func nextHTTPFileBatchSnapshot(
+func nextHTTPFileBatchSnapshot(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
     recorder: HTTPMetadataFrameRecorder,
-    retainedState: inout HTTPFileBatchRetainedState
+    retainedState: inout HTTPFileBatchRetainedState,
+    beforeResnapshot: @Sendable (BridgeProductBatchBeginFrame, Int?) async throws -> Void = { _, _ in }
 ) async throws -> HTTPFileBatchSnapshot {
     var activeBegin: BridgeProductBatchBeginFrame?
-    var partsByIndex: [Int: BridgeProductBatchPart] = [:]
+    var staleBegin: BridgeProductBatchBeginFrame?
+    var requestedRecovery: BridgeProductBatchBeginFrame?
+    var parts: [BridgeProductBatchPart] = []
     while true {
         let frame = try await recorder.nextFrame()
-        try await acknowledgeHTTPMetadataFrame(client: client, connection: connection, frame: frame)
         guard case .batch(let batch) = frame,
             batch.identity.subscriptionKind == .fileMetadata
-        else { continue }
+        else {
+            try await acknowledgeHTTPMetadataFrame(client: client, connection: connection, frame: frame)
+            continue
+        }
         switch batch {
         case .begin(let begin):
-            activeBegin = begin
-            partsByIndex.removeAll(keepingCapacity: true)
+            if let requestedRecovery {
+                guard begin.mode == .snapshot, begin.snapshotCause == .requested,
+                    sameHTTPFileView(begin.identity, requestedRecovery.identity),
+                    begin.scope == requestedRecovery.scope
+                else { continue }
+            }
+            activeBegin = nil
+            parts.removeAll(keepingCapacity: true)
+            if retainedState.isStale(begin) {
+                staleBegin = begin
+            } else {
+                activeBegin = begin
+            }
         case .part(let part):
-            guard part.identity.batchId == activeBegin?.identity.batchId else {
+            if let staleBegin, part.identity.batchId == staleBegin.identity.batchId,
+                sameHTTPFileView(part.identity, staleBegin.identity)
+            {
+                if requestedRecovery == nil { try await beforeResnapshot(staleBegin, part.deliverySequence) }
+                try await requestHTTPFileRecoveryIfNeeded(
+                    staleBegin: staleBegin, requestedRecovery: &requestedRecovery,
+                    client: client, connection: connection)
+                continue
+            }
+            guard let begin = activeBegin else {
+                if requestedRecovery != nil { continue }
                 throw HTTPAnnotationIntegrationError.incompleteFileBatch
             }
-            partsByIndex[part.partIndex] = part.part
+            guard part.identity.batchId == begin.identity.batchId,
+                sameHTTPFileView(part.identity, begin.identity),
+                part.partIndex == parts.count, part.partIndex < begin.partCount
+            else { throw HTTPAnnotationIntegrationError.incompleteFileBatch }
+            parts.append(part.part)
+            try await acknowledgeHTTPViewPart(client: client, connection: connection, part: part)
         case .complete(let complete):
-            guard let begin = activeBegin,
-                complete.identity.batchId == begin.identity.batchId,
-                complete.coveredScope == begin.scope,
-                partsByIndex.count == begin.partCount
+            if let staleBegin, complete.identity.batchId == staleBegin.identity.batchId,
+                sameHTTPFileView(complete.identity, staleBegin.identity)
+            {
+                if requestedRecovery == nil { try await beforeResnapshot(staleBegin, nil) }
+                try await requestHTTPFileRecoveryIfNeeded(
+                    staleBegin: staleBegin, requestedRecovery: &requestedRecovery,
+                    client: client, connection: connection)
+                continue
+            }
+            guard let begin = activeBegin else {
+                if requestedRecovery != nil { continue }
+                throw HTTPAnnotationIntegrationError.incompleteFileBatch
+            }
+            guard complete.identity.batchId == begin.identity.batchId,
+                sameHTTPFileView(complete.identity, begin.identity),
+                complete.coveredScope == begin.scope, parts.count == begin.partCount
             else { throw HTTPAnnotationIntegrationError.incompleteFileBatch }
             try retainedState.beginApplying(begin)
-            for index in 0..<begin.partCount {
-                guard let part = partsByIndex[index] else {
-                    throw HTTPAnnotationIntegrationError.incompleteFileBatch
-                }
-                try retainedState.apply(part, begin: begin)
-            }
+            for part in parts { try retainedState.apply(part, begin: begin) }
             return try retainedState.finishApplying(begin)
         }
     }
 }
 
+private func requestHTTPFileRecoveryIfNeeded(
+    staleBegin: BridgeProductBatchBeginFrame,
+    requestedRecovery: inout BridgeProductBatchBeginFrame?,
+    client: some TestClientProtocol,
+    connection: HTTPProductConnection
+) async throws {
+    guard requestedRecovery == nil else { return }
+    // Match W4's missing-stage PART/COMPLETE disposition. BEGIN alone neither
+    // receives credit nor requests recovery; subsequent stale frames coalesce.
+    let identity = staleBegin.identity
+    let response = try await executeHTTPControl(
+        client: client, connection: connection,
+        object: [
+            "kind": "subscription.resnapshot", "wireVersion": BridgeProductWireContract.version,
+            "paneSessionId": identity.frame.paneSessionId, "workerInstanceId": identity.frame.workerInstanceId,
+            "requestId": "file-resnapshot-\(identity.batchId)",
+            "subscriptionId": identity.subscriptionId, "subscriptionKind": "file.metadata",
+            "domain": identity.domain, "handle": identity.handle,
+            "incarnation": identity.incarnation, "scopeRevision": identity.scopeRevision,
+        ])
+    guard case .viewAccepted(let accepted) = response, accepted.kind == .resnapshot else {
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "stale File recovery", receivedKind: response.kind)
+    }
+    requestedRecovery = staleBegin
+}
+
+private func sameHTTPFileView(
+    _ lhs: BridgeProductBatchFrameIdentity, _ rhs: BridgeProductBatchFrameIdentity
+) -> Bool {
+    lhs.subscriptionId == rhs.subscriptionId && lhs.subscriptionKind == rhs.subscriptionKind
+        && lhs.domain == rhs.domain && lhs.handle == rhs.handle && lhs.incarnation == rhs.incarnation
+        && lhs.scopeRevision == rhs.scopeRevision && lhs.frame.paneSessionId == rhs.frame.paneSessionId
+        && lhs.frame.workerInstanceId == rhs.frame.workerInstanceId
+        && lhs.frame.metadataStreamId == rhs.frame.metadataStreamId
+}
+
 /// File inventory certification and later descriptor changes share one keyed installation.
-struct HTTPFileBatchRetainedState {
+struct HTTPFileBatchRetainedState: Sendable {
     private var identity: BridgeProductBatchFrameIdentity?
     private var rowsByKey: [String: BridgeProductFileBatchRow] = [:]
     private var revisionByKey: [String: Int] = [:]
     private var memberStatus: BridgeProductFileMemberStatusRecord?
     private var cursor = 0
     private var certificatePartCount: Int?
-    private var shouldApplyCurrentBatch = true
+
+    func isStale(_ begin: BridgeProductBatchBeginFrame) -> Bool {
+        guard let identity, sameHTTPFileView(identity, begin.identity) else { return false }
+        return begin.targetRevision < cursor
+    }
 
     mutating func beginApplying(_ begin: BridgeProductBatchBeginFrame) throws {
         if let identity,
@@ -116,11 +195,9 @@ struct HTTPFileBatchRetainedState {
             self = Self()
         }
         identity = begin.identity
-        // A capture can finish sealing after a newer capture has installed.
-        // Match the product receiver's stale-target disposition; do not roll
-        // back its cursor, status, descriptors, or inventory certificate.
-        shouldApplyCurrentBatch = begin.targetRevision >= cursor
-        guard shouldApplyCurrentBatch else { return }
+        guard begin.targetRevision >= cursor else {
+            throw invalidHTTPFileBatchRecord(begin: begin, reason: "target behind installed cursor=\(cursor)")
+        }
         switch begin.mode {
         case .snapshot:
             rowsByKey.removeAll(keepingCapacity: true)
@@ -139,7 +216,6 @@ struct HTTPFileBatchRetainedState {
     }
 
     mutating func apply(_ part: BridgeProductBatchPart, begin: BridgeProductBatchBeginFrame) throws {
-        guard shouldApplyCurrentBatch else { return }
         switch part {
         case .put(let key, let revision, let value):
             try validateRevision(revision, begin: begin)
@@ -173,10 +249,8 @@ struct HTTPFileBatchRetainedState {
 
     mutating func finishApplying(_ begin: BridgeProductBatchBeginFrame) throws -> HTTPFileBatchSnapshot {
         guard let memberStatus else { throw HTTPAnnotationIntegrationError.incompleteFileBatch }
-        if shouldApplyCurrentBatch {
-            cursor = begin.targetRevision
-            if begin.mode == .snapshot { certificatePartCount = begin.partCount }
-        }
+        cursor = begin.targetRevision
+        if begin.mode == .snapshot { certificatePartCount = begin.partCount }
         return .init(
             source: memberStatus.source,
             descriptorByPath: Dictionary(

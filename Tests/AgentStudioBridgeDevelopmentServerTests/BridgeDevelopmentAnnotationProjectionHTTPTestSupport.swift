@@ -20,14 +20,14 @@ func fetchHTTPFileAnnotationProjection(
     connection: HTTPProductConnection,
     demandedSessionIDs: [UUID],
     sourceGeneration: Int,
-    requestSequence: Int
+    queryOrdinal: Int
 ) async throws -> HTTPAnnotationProjectionSnapshot {
     let descriptor = try await queryHTTPFileAnnotationProjection(
         client: client,
         connection: connection,
         demandedSessionIDs: demandedSessionIDs,
         sourceGeneration: sourceGeneration,
-        requestSequence: requestSequence
+        queryOrdinal: queryOrdinal
     )
     guard descriptor.page.isLastPage, descriptor.page.nextCursor == nil else {
         throw HTTPAnnotationProjectionIntegrationError.unexpectedPagedFixture
@@ -37,7 +37,7 @@ func fetchHTTPFileAnnotationProjection(
         host: host,
         connection: connection,
         descriptor: descriptor,
-        requestSequence: requestSequence
+        queryOrdinal: queryOrdinal
     )
     guard sha256Hex(pageData) == descriptor.page.aggregateSHA256 else {
         throw HTTPAnnotationProjectionIntegrationError.aggregateIntegrityMismatch
@@ -75,13 +75,12 @@ private func queryHTTPFileAnnotationProjection(
     connection: HTTPProductConnection,
     demandedSessionIDs: [UUID],
     sourceGeneration: Int,
-    requestSequence: Int
+    queryOrdinal: Int
 ) async throws -> BridgeProductAnnotationProjectionContentDescriptor {
-    let requestID = "annotation-projection-query-\(requestSequence)"
+    let requestID = "annotation-projection-query-\(queryOrdinal)"
     let queryObject = httpAnnotationProjectionControlIdentity(
         connection: connection,
-        requestID: requestID,
-        requestSequence: requestSequence
+        requestID: requestID
     ).merging([
         "call": [
             "method": "file.annotations.projection.query",
@@ -114,10 +113,10 @@ private func openHTTPAnnotationProjectionContent(
     host: BridgeDevelopmentProductHost,
     connection: HTTPProductConnection,
     descriptor: BridgeProductAnnotationProjectionContentDescriptor,
-    requestSequence: Int
+    queryOrdinal: Int
 ) async throws -> Data {
-    let contentRequestID = "annotation-projection-content-\(requestSequence)"
-    let leaseID = "annotation-projection-lease-\(requestSequence)"
+    let contentRequestID = "annotation-projection-content-\(queryOrdinal)"
+    let leaseID = "annotation-projection-lease-\(queryOrdinal)"
     let requestObject: [String: Any] = [
         "contentKind": "annotation.projection",
         "contentRequestId": contentRequestID,
@@ -268,14 +267,12 @@ private func acknowledgeHTTPContentThrough(
 
 private func httpAnnotationProjectionControlIdentity(
     connection: HTTPProductConnection,
-    requestID: String,
-    requestSequence: Int
+    requestID: String
 ) -> [String: Any] {
     [
         "kind": "product.call",
         "paneSessionId": connection.bootstrap.paneSessionId,
         "requestId": requestID,
-        "requestSequence": requestSequence,
         "wireVersion": BridgeProductWireContract.version,
         "workerDerivationEpoch": 0,
         "workerInstanceId": connection.bootstrap.workerInstanceId,

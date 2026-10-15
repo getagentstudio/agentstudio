@@ -7,8 +7,8 @@ import Testing
 
 extension BridgeDevelopmentLocatedAnnotationHTTPRoutingTests {
     @MainActor
-    @Test("a delayed complete coverage batch cannot invalidate a newer File certificate")
-    func delayedFileCoveragePreservesNewerCertificate() async throws {
+    @Test("a delayed stale coverage BEGIN is excluded from the retained File stage")
+    func delayedFileCoverageHasNoRetainedStage() async throws {
         let gate = BridgeProductAdmissionGate()
         defer { gate.close() }
         let admission = try #require(gate.acquire())
@@ -46,13 +46,15 @@ extension BridgeDevelopmentLocatedAnnotationHTTPRoutingTests {
             beforeSeal.release()
             let lateCoverage = try await delayedCapture.value
 
-            // Both are actual sealed, complete producer records. Only their
-            // capture-to-seal ordering changes; no partial frame is installed.
-            let observed = try applyLocatedAnnotationFileBatch(lateCoverage, to: &retained)
-            #expect(observed.targetRevision == newer.targetRevision)
-            #expect(observed.memberStatus.status == .ready)
-            #expect(observed.memberStatus.branchName == "main")
-            #expect(observed.certificatePartCount == certificate.parts.count)
+            let stream = BridgeProductMetadataStreamCorrelation(
+                metadataStreamId: "metadata-stream", paneSessionId: "pane-session",
+                wireVersion: BridgeProductWireContract.version, workerInstanceId: "worker-instance")
+            guard
+                case .batch(.begin(let lateBegin)) = try lateCoverage.frame(
+                    atOrdinal: 0, stream: stream, streamSequence: 100, snapshotCause: nil)
+            else { throw HTTPAnnotationIntegrationError.incompleteFileBatch }
+            #expect(retained.isStale(lateBegin))
+
         } catch {
             beforeSeal.release()
             delayedCapture.cancel()
