@@ -1,6 +1,6 @@
 # Sidebar opens as you left it — Program Design
 
-Requirements: [requirements](2026-10-12-sidebar-memory-before-presentation-requirements.md) (U1–U5) → Specification: [specification](2026-10-12-sidebar-memory-before-presentation.md) (E1–E6, R1–R9, V1–V6) → this Program Design.
+Requirements: [requirements](2026-10-12-sidebar-memory-before-presentation-requirements.md) (U1–U5) → Specification: [specification](2026-10-12-sidebar-memory-before-presentation.md) (E1–E6, R1–R9, V1–V6; revised 2026-10-15 after review) → this Program Design.
 
 ## How it works
 
@@ -41,12 +41,12 @@ flowchart LR
 
 | E | Semantic owner | Home | Schema / type home | Shape at each boundary | Disposition | Convention |
 | --- | --- | --- | --- | --- | --- | --- |
-| E1 Saved sidebar memory | `UIStateStore` restores and persists it. `WorkspaceSidebarState` holds the live value. | `Core/State/MainActor/Persistence/UIStateStore.swift` (existing, unchanged); live value in `Core/State/MainActor/Atoms/WorkspaceSidebarState.swift` (existing, unchanged) | Main-window UI-state record in `local_window_state` (existing columns); `WorkspaceSidebarMemoryAtom` fields (existing) | SQLite → `LocalSQLiteRestoreOutcome` `.loaded(state?)` or `.unavailable(error)` → `WorkspaceSidebarState.hydrate(filterText:isFilterVisible:sidebarCollapsed:sidebarSurface:…)` (all existing) | persisted | Swift enums and records; repo `CLAUDE.md` atom rules |
+| E1 Saved sidebar memory | `UIStateStore` restores and persists it. `WorkspaceSidebarState` holds the live value. | `Core/State/MainActor/Persistence/UIStateStore.swift` (existing, unchanged); live value in `Core/State/MainActor/Atoms/WorkspaceSidebarState.swift` (existing, unchanged) | Main-window UI-state record in `local_window_state` (existing columns); `WorkspaceSidebarMemoryAtom` fields (existing) | SQLite → `LocalUILoadResult` `.loaded(state?)` or `.unavailable(failure)` → `WorkspaceSidebarState.hydrate(filterText:isFilterVisible:sidebarCollapsed:sidebarSurface:…)` (all existing) | persisted | Swift enums and records; repo `CLAUDE.md` atom rules |
 | E2 Sidebar visibility | `MainSplitViewController` (native `NSSplitViewItem.isCollapsed`). The atom's `sidebarCollapsed` is its saved mirror. | `App/Windows/MainSplitViewController.swift` (existing, unchanged) | `Bool sidebarCollapsed` (existing) | read once in `viewDidLoad`; native → atom in `saveSidebarState` (existing) | persisted through E1, runtime native | — |
 | E3 Sidebar list | `RepoExplorerProjectionAdapter` builds it on demand; `RepoExplorerTableMaterializer` draws rows | `Features/RepoExplorer` (existing, unchanged) | `isProjectionDemanded: Bool` from `SidebarSurfaceHost` (existing); projection request snapshot with surface and query (existing) | `SidebarSurfaceHost` → `RepoExplorerView.onChange/.task` → `updateDemand(isVisible:query:)` (existing) | derived | — |
-| E4 Sidebar git refresh | repository fact demand fed by the sidebar's visible-worktree snapshot | `App/Coordination/WorkspaceSurfaceCoordinator+RepositoryFactDemand.swift` (existing, unchanged) | visible worktree snapshot (existing) | sidebar viewport publication → visible worktrees (existing) | derived | — |
-| E5 Launch-to-usable time | `ApplicationLifecycleMonitor.publishFirstInteractiveFrame` → `recordStartupUsable` | `App/Lifecycle/ApplicationLifecycleMonitor.swift` (existing, unchanged) | `performance.startup.usable` record: `agentstudio.performance.elapsed_ms` (launch→usable), `startup.layout_settle_to_usable_elapsed_ms`, `startup.source` (existing) | app → JSONL/OTLP trace (existing) | measured | — |
-| E6 First usable window | `AppDelegate.presentWindowAfterWorkspaceComposition` | `App/Boot/AppDelegate.swift` (existing, unchanged) | — | — | runtime | — |
+| E4 Sidebar git refresh | repository fact demand | `App/Coordination/WorkspaceSurfaceCoordinator+RepositoryFactDemand.swift` (existing, unchanged) | `sidebarIsAttended` = window presented and `!workspaceSidebarState.sidebarCollapsed` (line 65), over topology membership worktrees (existing) | window presentation + semantic collapsed + topology membership → repository fact demand → `visible_sidebar` git tier (existing) | derived | — |
+| E5 Launch times | First-window time: bounded from existing timestamped records — after `establishRuntimeBus` starts and before the post-presentation `loadCacheStore` starts — minus the same launch's `app.process.start`. Usable time: `ApplicationLifecycleMonitor.recordStartupUsable`. | `App/Boot` step records; `App/Lifecycle/ApplicationLifecycleMonitor.swift` (existing, unchanged) | `workspace.boot.step` records; `app.process.start`; `performance.startup.usable` (`agentstudio.performance.elapsed_ms`) | app → JSONL/OTLP trace (existing) | measured | — |
+| E6 First window | `AppDelegate.presentWindowAfterWorkspaceComposition` | `App/Boot/AppDelegate.swift` (existing, unchanged) | — | — | runtime | — |
 
 The only modified code is the boot step list and its dispatch: `App/Boot/WorkspaceBootSequence.swift` and `App/Boot/AppDelegate+WorkspaceBoot.swift`. They gain `loadSidebarMemory`, and `loadUIStore` becomes `loadWorkspaceSettings`. The boot-order lines in `docs/architecture/structure/component_architecture.md` and `docs/architecture/state/workspace_data_architecture.md` change with them.
 
@@ -95,17 +95,26 @@ Here is how the edges change:
 
 | Case | What happens | Owner |
 | --- | --- | --- |
-| E1 absent (first launch) | `restoreAsync` gets `.loaded(nil)` and calls `clear()`. Defaults apply before the window: open, Repos, empty filter. | `UIStateStore` (existing) |
-| E1 unreadable | `.unavailable` → `clear()` to defaults, plus a persistence-recovery report, as today but before the window. | `UIStateStore` (existing) |
+| E1 absent (first launch) | `restoreAsync` gets `.loaded(nil)` and calls `clear()`. Defaults apply before the window: Repos, empty filter, and open, except collapsed when the workspace has no repositories (`MainSplitViewController.swift:290`, unchanged). | `UIStateStore` (existing) |
+| E1 unreadable | `.unavailable(failure)` → `clear()` to the same defaults, including the no-repositories exception, plus a persistence-recovery report, as today but before the window. | `UIStateStore` (existing) |
 | Datastore slow or stuck | The window already waits on the same datastore for `loadCanonicalStore`. This adds one small read to that same dependency, with no new timeout or fallback. | existing boot |
 | Quit during startup | Unchanged and out of scope. Hydration finishing earlier only shortens the window in which defaults could be flushed. | — |
 
-Concurrency: the hydrate runs on the MainActor before any window, view or persistence observer exists, so nothing can interleave with it. After launch, ordering is unchanged.
+Concurrency: no window, view or persistence observer exists yet. The SQLite read is an `await`, so a termination request can interleave with it; that early-quit race is out of scope and unchanged. Applying the returned values (`hydrate` or `clear`) is synchronous on the MainActor, so no sidebar reader can see a half-applied state. After launch, ordering is unchanged.
 
 ## Startup time
 
-- **Cost:** one main-window row read moves in front of the window. Its earlier position in the post-window `loadUIStore` step (settings plus UI state together) measured 20–206 ms on the owner's 0.0.105–0.0.111 launches, queued behind cache loads. Alone and earlier it should be shorter, but that has not been measured yet.
-- **Proof (R9):** compare E5 over repeated launches of `main` and of this change, on the same Mac and workspace. Read E5 from the existing `performance.startup.usable` launch-to-usable value; the `workspace.boot.step` timestamps show the new step's own duration.
+- **Cost:** one main-window row read moves in front of the window. Historical evidence covers only the combined post-window `loadUIStore` step (settings plus UI state together, queued behind cache loads):
+  - 20–206 ms on the owner's 0.0.105–0.0.111 production launches;
+  - 77.5–78.6 ms over three debug launches on sunclaw (2026-10-12).
+
+  Neither measures the isolated read's new cost before the window; V6 measures that.
+- **Proof (R9):** compare both E5 values over repeated launches of `main` and of this change, on the same Mac and workspace.
+  - **First-window time:** bounded by the `workspace.boot.step` records around presentation, minus `app.process.start`.
+  - **Usable time:** read from `performance.startup.usable`.
+  - **The new step:** its own duration comes from its step record.
+
+  If the bracket is too wide to decide R9, first-window latency is reported as unverified.
 
 ## Alternatives considered
 
@@ -123,11 +132,11 @@ Concurrency: the hydrate runs on the MainActor before any window, view or persis
 | U1 | R2: saved surface and filter shown at E6; list built for them | E1, E3, E6 | `RepoExplorerProjectionAdapter` | `.task` → `updateDemand(isVisible:query:)`; input capture reads the surface (existing) | `SidebarSurface`, `filterText` in `WorkspaceSidebarMemoryAtom` | first projection uses hydrated values | defaults on failure | V1 real launch matrix (filter box text, selected surface, row content) |
 | U2 | R3: list current after launch without interaction | E2, E3 | `RepoExplorerProjectionAdapter` + `RepoExplorerTableMaterializer` | demand true from the start | `isProjectionDemanded` | never suspended at launch | — | V1 (all visible rows drawn before any interaction); V2 (demand and bindings) |
 | U2 | R4: later changes update the list all session | E2, E3 | `RepoExplorerProjectionAdapter` observation tokens | installed when demanded (existing) | invalidation tokens (existing) | demanded → observing | — | V3 live-update check |
-| U2 | R5: sidebar git refresh runs while open | E2, E4 | repository fact demand | sidebar visible-worktree snapshot (existing) | visible worktree snapshot | published while demanded | — | V3 (sidebar-tier git status records in the app log) |
+| U2 | R5: sidebar git refresh runs while open | E2, E4 | repository fact demand | `sidebarIsAttended` (window presented and not collapsed) over topology membership (existing) | semantic `sidebarCollapsed` | hydrated before the window, so attended from the first presentation | — | V3 (a non-active `visible_sidebar` worktree refreshes, with its completion record) |
 | U1, U2 | R6: visible state and acted-on state always agree | E2, E3, E4 | `MainSplitViewController` (sole collapsed writer after launch) | collapse/expand/`saveSidebarState` (existing) | `Bool sidebarCollapsed` | illegal combinations unreachable (table above) | — | V2 plus the boot-order test; V1 log check (no hidden readback while open) |
 | U1 | R7: saved value matches what is seen | E1, E2 | `UIStateStore` persistence (armed after restore) | `startObserving` / autosave (existing) | `local_window_state` UI columns (existing) | armed after restore | — | V4 saved-record readback vs visible state |
 | U1, U2 | R8: missing or unreadable → defaults, never blank | E1, E2, E3, E6 | `UIStateStore.restoreAsync` | `.loaded(nil)` / `.unavailable` → `clear()` (existing) | `LocalSQLiteRestoreOutcome` | defaults before E6 | recovery report on unreadable | V5 first-launch and unreadable-record checks |
-| U3 | R9: no startup regression beyond the baseline spread; numbers reported | E5 | `ApplicationLifecycleMonitor` | `recordStartupUsable` (existing) | `performance.startup.usable` record | measured per launch | — | V6 repeated-launch measurement, before and after |
+| U3 | R9: no regression in first-window or usable time beyond the baseline spread; numbers reported | E5 | boot step records + `ApplicationLifecycleMonitor` | existing timestamped records | `app.process.start`, `workspace.boot.step`, `performance.startup.usable` | measured per launch | bracket too wide → unverified | V6 repeated-launch measurement, before and after |
 
 Accepted requirements coverage:
 
@@ -139,12 +148,14 @@ Accepted requirements coverage:
 
 ## Proof seams
 
-- **V2, restore-to-window integration.** Seed a saved record (collapsed, Panes, filter) in a test datastore. Run the real presentation-prerequisite step list with the real `UIStateStore`. Then build the window and sidebar and read:
+- **V2, restore-to-window integration.** Two fixtures in a test datastore: (1) collapsed, Panes, filter; (2) open, Panes, non-empty filter, with known matching and excluded rows. Run the real presentation-prerequisite step list with the real `UIStateStore`. Then build the window and sidebar and read:
   - native collapsed;
   - the demand the sidebar host passes;
   - the filter the view copies;
-  - whether visible cells are bound.
+  - which rows are listed, and which visible cells are bound, by identity.
+
+  Waits use the observed state or the owner's completion fact. No polling, no timer for correctness, no time budget.
 
   The seam must use `WorkspaceBootSequence`'s real step list, not a hand-written order, so the test fails on today's code. Real: SQLite datastore, `UIStateStore`, boot step list and split view. Test stand-in: the window host, plus any heavy runtime service unrelated to the sidebar.
 - **V1, V3, V4 and V5, real app.** A debug build with its own identity. Saved state is set through the app (IPC `toggleSidebar` and the surface and filter commands), never by editing data. The app is stopped by PID and relaunched. Checks: a screenshot before any interaction, the app's own sidebar projection readbacks (`demand_state`, `presentation_state`), sidebar-tier git status records, and a read-only look at the saved record.
-- **V6, startup time.** Repeated launches of each build from a stopped state. Read the `performance.startup.usable` launch-to-usable value per launch. Report the median and range per build.
+- **V6, startup time.** Repeated launches of each build from a stopped state. Per launch, read the first-window bound (the boot step records around presentation, minus `app.process.start`) and the `performance.startup.usable` value. Report per-launch values, and the median and range per build. Report uncertainty; it never counts as a pass.
