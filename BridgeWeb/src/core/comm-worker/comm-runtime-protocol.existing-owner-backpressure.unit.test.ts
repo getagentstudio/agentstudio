@@ -5,10 +5,8 @@ import {
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerReviewViewerMode,
 	activateBridgeCommWorkerFileViewerModeAndFlush,
@@ -120,6 +118,11 @@ describe('Bridge comm worker existing Review owner backpressure', () => {
 		const itemIds = Array.from({ length: 12 }, (_unused, index) => `item-${index + 1}`);
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			createSequence: createBridgeWorkerSequenceCounter(1_000),
@@ -198,6 +201,11 @@ async function createFileBackpressureHarness(
 		},
 	});
 	registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+		expectedRetainedRenderWakes: {
+			count: 1,
+			reason:
+				'This backpressure harness ends with its last File publication awaiting a terminal renderer receipt.',
+		},
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 		fileViewBudget: fileViewProductTestBudget,
