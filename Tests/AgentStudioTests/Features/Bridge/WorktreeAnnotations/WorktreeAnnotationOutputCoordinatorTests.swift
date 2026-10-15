@@ -229,10 +229,21 @@ struct WorktreeAnnotationOutputCoordinatorTests {
         let result = try await fixture.coordinator.executeRepeat(
             sourceAttemptID: sourceAttemptID, productAdmission: try BridgeProductAdmissionTestContext.make().context)
 
-        guard case .succeeded = result else {
+        guard case .succeeded(let output) = result else {
             Issue.record("Expected successful repetition")
             return
         }
+        #expect(output.attempt.id == .init(rawValue: outputCoordinatorTestUUID(10)))
+        #expect(output.attempt.sessionID == fixture.detail.session.id)
+        #expect(output.attempt.repeatedFromAttemptID == sourceAttemptID)
+        #expect(output.attempt.state == .succeeded)
+        #expect(output.attempt.exactBytes == persistedBytes)
+        #expect(output.canonicalSnapshot == .v2(fixture.snapshot))
+        #expect(output.memberships.count == 1)
+        let membership = try #require(output.memberships.first)
+        #expect(membership.messageID == fixture.selection.messageID)
+        #expect(membership.expectedSavedRevision == fixture.selection.expectedSavedRevision)
+        #expect(membership.batchOrdinal == 0)
         #expect(await fixture.effect.lastRequest?.exactBytes == persistedBytes)
         #expect(await fixture.recorder.events == ["repeat", "effect", "finalize"])
     }

@@ -3,6 +3,39 @@ import {
 	type BridgeViewerProductOnlyJourneyProof,
 	type BridgeViewerProductRouteTranscriptEntry,
 } from './product-only-real-router-contract.ts';
+import type { BridgeViewerReviewPaintFailureSnapshot } from './product-only-real-router-review-paint.ts';
+
+export function paintSnapshotForTest(
+	overrides: Partial<BridgeViewerReviewPaintFailureSnapshot> = {},
+): BridgeViewerReviewPaintFailureSnapshot {
+	return {
+		actualScrollTop: 900,
+		captureError: null,
+		codeScroll: { clientHeight: 900, scrollHeight: 1_800, scrollTop: 900 },
+		header: {
+			contentState: 'hydrated',
+			paintedPublicationId: 'item-publication',
+			paintedSourceCorrelations: '[]',
+			renderDispositionSettledOutcome: 'settled-ok',
+			renderDispositionSettledPublicationId: 'item-publication',
+		},
+		headerRendered: true,
+		itemElement: null,
+		itemInDom: true,
+		itemRect: {
+			bottom: 900,
+			height: 100,
+			left: 0,
+			right: 1_000,
+			top: 800,
+			width: 1_000,
+		},
+		requestedScrollTop: 900,
+		viewportRelation: 'in-view',
+		workerLastPublishedVisibleItemIds: null,
+		...overrides,
+	};
+}
 
 export function makePassingProductOnlyProof(
 	overrides: {
@@ -90,6 +123,7 @@ export function makePassingProductOnlyProof(
 				(label) => ({
 					hydratedNonSelectedItemIds: ['review-item-2'],
 					label,
+					readableNonSelectedItemIds: ['review-item-2'],
 					visibleNonSelectedItemIds: ['review-item-2'],
 				}),
 			),
@@ -97,6 +131,16 @@ export function makePassingProductOnlyProof(
 			metadataItemCount: 4,
 			mountedHeaderOrderViolations: [],
 			observedHeaderItemIds: ['review-item-1', 'review-item-2', 'review-item-3', 'review-item-4'],
+			paintLedger: ['review-item-2', 'review-item-3', 'review-item-4'].map((itemId) => ({
+				actualScrollTop: 900,
+				displayPath: `${itemId}.swift`,
+				itemId,
+				publicationId: `${itemId}-publication`,
+				reason: null,
+				requestedScrollTop: 900,
+				status: 'painted' as const,
+				targetSnapshot: paintSnapshotForTest(),
+			})),
 			selectedItemIdAtCompletion: 'review-item-1',
 			selectedItemIdAtStart: 'review-item-1',
 			treeHostIdentityStable: true,

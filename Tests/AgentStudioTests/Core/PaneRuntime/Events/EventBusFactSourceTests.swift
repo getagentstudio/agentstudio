@@ -9,7 +9,7 @@ private enum BusTestFact: Sendable, Equatable {
     case closed
 }
 
-private struct BusTestEnvelope: Sendable {
+private struct BusTestEnvelope: Sendable, Equatable {
     let scope: String
     let fact: BusTestFact
 }
@@ -26,7 +26,8 @@ struct EventBusFactSourceTests {
 
     private func attach(
         bus: EventBus<BusTestEnvelope>,
-        policy: BusSubscriberPolicy = .criticalUnbounded
+        policy: BusSubscriberPolicy = .criticalUnbounded,
+        observeEnvelope: @escaping @Sendable (BusTestEnvelope) -> Void = { _ in }
     ) async -> FactRecorder<String, BusTestFact> {
         let subscription = await bus.subscribe(policy: policy, subscriberName: #function)
         return EventBusFactSource.attach(
@@ -35,7 +36,10 @@ struct EventBusFactSourceTests {
                 if case .possiblyTruncated = subscription.replayStatus { return true }
                 return false
             },
-            classify: { ($0.scope, $0.fact) }
+            classify: {
+                observeEnvelope($0)
+                return ($0.scope, $0.fact)
+            }
         )
     }
 
@@ -120,10 +124,35 @@ struct EventBusFactSourceTests {
         try await firstRecorder.finish()
 
         let secondBus = EventBus<BusTestEnvelope>()
-        let secondRecorder = await attach(bus: secondBus)
+        let subscriptionFacts = LocalFactSource(
+            vocabulary: FactVocabulary<String, BusTestEnvelope>(
+                describeScope: { $0 },
+                describeFact: { "\($0.scope)/\($0.fact)" },
+                isClosing: { _, envelope in envelope == BusTestEnvelope(scope: "new", fact: .closed) }
+            )
+        )
+        let observedFacts = try subscriptionFacts.attach()
+        let opening = await observedFacts.mark("second subscription")
+        let secondRecorder = await attach(
+            bus: secondBus,
+            observeEnvelope: { subscriptionFacts.sink("second subscription", $0) }
+        )
         _ = await secondBus.post(BusTestEnvelope(scope: "new", fact: .closed))
 
-        try await secondRecorder.expectNext(in: "new", .closed)
+        do {
+            try await secondRecorder.expectNext(in: "new", .closed)
+            try await observedFacts.expectNone(
+                of: { $0.scope == "old" }, "old subscription facts", from: opening,
+                closedBy: { $0 == BusTestEnvelope(scope: "new", fact: .closed) }
+            )
+        } catch {
+            try await secondRecorder.finish()
+            subscriptionFacts.end()
+            try? await observedFacts.finish()
+            throw error
+        }
         try await secondRecorder.finish()
+        subscriptionFacts.end()
+        try await observedFacts.finish()
     }
 }

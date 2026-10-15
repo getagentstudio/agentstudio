@@ -3,10 +3,8 @@ import { expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
-import {
-	selectReviewFile,
-	waitForSelectedReviewReady,
-} from './bridge-viewer-vite-annotation-save-journey.ts';
+import { selectReviewFile } from './bridge-viewer-vite-annotation-save-journey.ts';
+import { registerReviewActivationWaitProof } from './bridge-viewer-vite-budget-wait-journey.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import { createBridgeViewerExplorationFixture } from './bridge-viewer-vite-exploration-fixture.ts';
 import { observeInteractionProfileFailures } from './bridge-viewer-vite-interaction-profile-diagnostics.ts';
@@ -16,6 +14,7 @@ import {
 } from './bridge-viewer-vite-product-fixture.ts';
 import { bridgeViewerViteProductFileUrl } from './bridge-viewer-vite-product-url.ts';
 import { observeBrowserRuntimeDiagnostics } from './bridge-viewer-vite-review-comparison-observation.ts';
+import { waitForReviewOwnerOutcome } from './bridge-viewer-vite-review-owner-wait.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 test('activates Review after a File-only bootstrap and returns to the selected Markdown document', async (context): Promise<void> => {
@@ -53,35 +52,66 @@ test('activates Review after a File-only bootstrap and returns to the selected M
 					workerDerivationEpoch: parsed.data.workerDerivationEpoch,
 				});
 			});
-			await page.goto(bridgeViewerViteProductFileUrl(server.origin, 'README.md'), {
-				waitUntil: 'domcontentloaded',
-			});
+			await server.testLaunch
+				.observeStep(
+					'File-only bootstrap: document DOMContentLoaded',
+					page.goto(bridgeViewerViteProductFileUrl(server.origin, 'README.md'), {
+						waitUntil: 'domcontentloaded',
+					}),
+				)
+				.value();
 			const fileHost = page.getByTestId('bridge-viewer-mode-host-file');
-			await fileHost
-				.getByRole('heading', { name: 'Exploration README.md', exact: true })
-				.waitFor({ state: 'visible' });
+			await server.testLaunch
+				.observeStep(
+					'File-only bootstrap: selected Markdown heading visible',
+					fileHost
+						.getByRole('heading', { name: 'Exploration README.md', exact: true })
+						.waitFor({ state: 'visible' }),
+				)
+				.value();
 
 			// Act — use the existing visible mode action, never a bootstrap/replacement call.
-			await fileHost.getByRole('button', { name: 'Review', exact: true }).click();
+			await server.testLaunch
+				.observeStep(
+					'File-to-Review: mode action delivery',
+					fileHost.getByRole('button', { name: 'Review', exact: true }).click(),
+				)
+				.value();
 			const reviewFile = fixture.oracle.reviewFiles[0];
 			if (reviewFile === undefined)
 				throw new Error('Review activation fixture requires one changed file.');
-			await selectReviewFile({ page, path: reviewFile.path });
+			await selectReviewFile({ page, path: reviewFile.path, testLaunch: server.testLaunch });
 
 			// Assert — real Review content renders, then the retained File selection remains usable.
-			await waitForSelectedReviewReady({ page, itemId: reviewFile.itemId });
+			const reviewReady = await server.testLaunch
+				.observeStep(
+					'Review activation: selected item ready and painted',
+					waitForReviewOwnerOutcome({ page, itemId: reviewFile.itemId, goal: 'selected-painted' }),
+				)
+				.value();
+			expect(reviewReady, JSON.stringify(reviewReady)).toMatchObject({ kind: 'ready' });
 			expect(
 				modeRequests.some(
 					(request): boolean => request.method === 'review.activeViewerMode.update',
 				),
 			).toBe(true);
-			await page
-				.getByTestId('bridge-viewer-mode-host-review')
-				.getByRole('button', { name: 'Files', exact: true })
-				.click();
-			await fileHost
-				.getByRole('heading', { name: 'Exploration README.md', exact: true })
-				.waitFor({ state: 'visible' });
+			await server.testLaunch
+				.observeStep(
+					'Review-to-File: mode action delivery',
+					page
+						.getByTestId('bridge-viewer-mode-host-review')
+						.getByRole('button', { name: 'Files', exact: true })
+						.click(),
+				)
+				.value();
+			await server.testLaunch
+				.observeStep(
+					'File return: retained selected Markdown heading visible',
+					fileHost
+						.getByRole('heading', { name: 'Exploration README.md', exact: true })
+						.waitFor({ state: 'visible' }),
+				)
+				.value();
 		} catch (error: unknown) {
 			primaryFailure = {
 				error: new Error(
@@ -114,3 +144,5 @@ test('activates Review after a File-only bootstrap and returns to the selected M
 		}
 	});
 });
+
+registerReviewActivationWaitProof();

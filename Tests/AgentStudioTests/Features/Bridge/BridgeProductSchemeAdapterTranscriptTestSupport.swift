@@ -2,6 +2,7 @@ import AgentStudioTestHarness
 import AgentStudioTestSupport
 import CryptoKit
 import Foundation
+import Synchronization
 
 @testable import AgentStudioBridge
 
@@ -118,6 +119,8 @@ struct BridgeProductSchemeAdapterTranscriptHarness {
     let capabilityHeader: String
     let provider: BridgeProductSchemeTranscriptProvider
     let session: BridgeProductSession
+    let frameWaiterFacts: FactRecorder<BridgeProductTranscriptPullScope, BridgeProductTranscriptPullFact>
+    let releaseObservedSession: @Sendable () -> Void
 
     static func make(
         paneSessionId: String,
@@ -125,12 +128,29 @@ struct BridgeProductSchemeAdapterTranscriptHarness {
     ) throws -> Self {
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(capabilityBytes)
+        let sessionHolder = Mutex<BridgeProductSession?>(nil)
+        let facts = FactRecorder<BridgeProductTranscriptPullScope, BridgeProductTranscriptPullFact>(
+            vocabulary: .init(
+                describeScope: { "producer \($0.lease.id), next frame \($0.nextSequence)" },
+                describeFact: { String(describing: $0) }, isClosing: { _, _ in false }))
         let session = try BridgeProductSession(
             paneSessionId: paneSessionId,
             workerInstanceId: workerInstanceId,
             capabilityBytes: capabilityBytes,
-            deadlineClock: TestPushClock()
+            deadlineClock: TestPushClock(),
+            producerFrameWaiterRegistrationObserver: { lease in
+                guard let owner = sessionHolder.withLock({ $0 }) else {
+                    preconditionFailure("Transcript observer was not bound before stream startup")
+                }
+                // The owner invokes this callback synchronously on its actor after registering the pull.
+                owner.assumeIsolated { isolatedOwner in
+                    if let observation = isolatedOwner.transcriptPendingPull(for: lease) {
+                        facts.append(scope: observation.scope, fact: observation.fact)
+                    }
+                }
+            }
         )
+        sessionHolder.withLock { $0 = session }
         let provider = BridgeProductSchemeTranscriptProvider()
         let productAdmissionGate = BridgeProductAdmissionGate()
         return .init(
@@ -142,7 +162,9 @@ struct BridgeProductSchemeAdapterTranscriptHarness {
             ),
             capabilityHeader: capabilityHeader,
             provider: provider,
-            session: session
+            session: session,
+            frameWaiterFacts: facts,
+            releaseObservedSession: { sessionHolder.withLock { $0 = nil } }
         )
     }
 
@@ -160,13 +182,15 @@ struct BridgeProductSchemeAdapterTranscriptHarness {
         )
     }
 
-    func teardown(routingTasks: [Task<Void, Never>]) async -> TeardownResult {
+    func teardown(routingTasks: [Task<Void, Never>]) async throws -> TeardownResult {
         for routingTask in routingTasks { routingTask.cancel() }
         for routingTask in routingTasks { await routingTask.value }
         let revocation = await session.revoke { acknowledgement in
             await provider.acknowledgeLifecycle(acknowledgement)
         }
         let revoked = await revocation.wait()
+        releaseObservedSession()
+        try await frameWaiterFacts.finish()
         return .init(
             producerSnapshot: await session.producerSnapshot(),
             providerSnapshot: await provider.snapshot,
@@ -270,6 +294,14 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
         }
     }
 
+    func metadataProducerLease() async throws -> BridgeProductProducerLease {
+        try await metadataOperationGate.firstArrival()
+    }
+
+    func contentProducerLease() async throws -> BridgeProductProducerLease {
+        try await contentOperationGate.firstArrival()
+    }
+
     func acknowledgeLifecycle(
         _ acknowledgement: BridgeProductProducerLifecycleAcknowledgement
     ) async -> Bool {
@@ -294,5 +326,40 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
             metadataRequestCount: metadataRequestCount,
             producerFailureCount: producerFailures.count
         )
+    }
+}
+
+struct BridgeProductTranscriptPullScope: Hashable, Sendable {
+    let lease: BridgeProductProducerLease
+    let nextSequence: Int
+}
+
+enum BridgeProductTranscriptPullFact: Sendable {
+    case registered(waiterToken: UUID)
+    case missingRegistration
+}
+
+extension BridgeProductSession {
+    /// Capture the semantic pull announced by the observer, rather than an earlier opening-frame wait.
+    func transcriptPendingPull(for lease: BridgeProductProducerLease)
+        -> (scope: BridgeProductTranscriptPullScope, fact: BridgeProductTranscriptPullFact)?
+    {
+        guard let state = producerRegistry.producersByLeaseId[lease.id],
+            state.openingFrameState == .delivered,
+            state.inFlightFrameReceipt == nil, state.queuedFrames.isEmpty
+        else { return nil }
+        let nextSequence: Int
+        switch state.key {
+        case .metadata:
+            guard let sequence = state.nextMetadataStreamSequence else { return nil }
+            nextSequence = sequence
+        case .content:
+            nextSequence = state.nextContentSequence
+        }
+        let fact: BridgeProductTranscriptPullFact =
+            state.frameWaiterToken.map {
+                .registered(waiterToken: $0)
+            } ?? .missingRegistration
+        return (.init(lease: lease, nextSequence: nextSequence), fact)
     }
 }

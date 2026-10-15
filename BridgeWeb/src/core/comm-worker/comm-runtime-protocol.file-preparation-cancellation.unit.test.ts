@@ -4,10 +4,8 @@ import {
 	encodeBridgeWorkerActiveViewerModeUpdateCommand,
 	encodeBridgeWorkerSelectCommand,
 } from './bridge-comm-worker-protocol.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import { type ReviewMetadataSubscription } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
 import {
 	activateBridgeCommWorkerFileViewerMode,
@@ -50,6 +48,10 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 		let nowMilliseconds = 0;
 		const scheduledWakes: TestScheduledRenderFulfillmentWake[] = [];
 		const harness = await createPendingFilePreparationHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
 			now: (): number => nowMilliseconds,
 			scheduleRenderFulfillmentWake: (delayMilliseconds, wake): (() => void) => {
 				const scheduledWake = { active: true, delayMilliseconds, wake };
@@ -96,7 +98,12 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 	});
 
 	test('keeps the selected load alive across identity-equivalent descriptor replay', async () => {
-		const harness = await createPendingFilePreparationHarness();
+		const harness = await createPendingFilePreparationHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+		});
 
 		await harness.installFileBatch({ revision: 5 });
 
@@ -112,7 +119,12 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 	});
 
 	test('keeps the selected load alive across an unrelated descriptor delta', async () => {
-		const harness = await createPendingFilePreparationHarness();
+		const harness = await createPendingFilePreparationHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+		});
 
 		await harness.installFileBatch({ includeUnrelatedFile: true, revision: 5 });
 
@@ -128,7 +140,12 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 	});
 
 	test('reissues selected File load once after an unexpected EOF terminal failure', async () => {
-		const harness = await createPendingFilePreparationHarness();
+		const harness = await createPendingFilePreparationHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+		});
 
 		await failAttempt(harness, 0, 'descriptor-file-1');
 
@@ -150,7 +167,12 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 	});
 
 	test('keeps a completed selected File replacement ready after a contentChanged invalidation', async () => {
-		const harness = await createPendingFilePreparationHarness();
+		const harness = await createPendingFilePreparationHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+		});
 
 		await completeAttempt(harness, 0, 'descriptor-file-1');
 		expect(fileAvailabilityPatches(harness.postedMessages)).toContainEqual(
@@ -172,7 +194,12 @@ describe('Bridge comm worker selected File preparation cancellation', () => {
 	});
 
 	test('cancels once and reopens when the selected descriptor is replaced', async () => {
-		const harness = await createPendingFilePreparationHarness();
+		const harness = await createPendingFilePreparationHarness({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+		});
 
 		await harness.installFileBatch({
 			descriptorId: 'descriptor-file-1-replacement',
@@ -339,6 +366,9 @@ interface TestScheduledRenderFulfillmentWake {
 
 async function createPendingFilePreparationHarness(
 	props: {
+		readonly expectedRetainedRenderWakes?: Parameters<
+			typeof registerBridgeCommWorkerRuntimePortProtocol
+		>[1]['expectedRetainedRenderWakes'];
 		readonly includeDescriptor?: boolean;
 		readonly initialRefreshingLanes?: BridgeProductPanePresentationFrame['refreshingLanes'];
 		readonly now?: () => number;
@@ -429,6 +459,9 @@ async function createPendingFilePreparationHarness(
 	};
 	const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 	registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+		...(props.expectedRetainedRenderWakes === undefined
+			? {}
+			: { expectedRetainedRenderWakes: props.expectedRetainedRenderWakes }),
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 		fileViewBudget: {

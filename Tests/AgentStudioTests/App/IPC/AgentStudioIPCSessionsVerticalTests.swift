@@ -90,5 +90,30 @@ struct AgentStudioIPCSessionsVerticalTests {
         let result = try await harness.rawSessionReport(paneId: harness.boundPaneId, kind: "done", explanation: nil)
         #expect(result.error != nil)
         #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .unbound)
+
+        // A restored pane-only method could reject the diagnostic caller above.
+        // Exercise valid pane provenance too, through the same real socket path.
+        let paneResult = try await harness.response(
+            method: "session.report",
+            params: .object([
+                "handle": .string(harness.boundPaneId.uuidString),
+                "kind": .string("done"),
+                "correlationId": .string(UUIDv7.generate().uuidString),
+            ]),
+            authentication: .pane(harness.boundPaneId))
+        for response in [result, paneResult] {
+            #expect(response.id == .number(2))
+            #expect(response.result == nil)
+            #expect(response.error?.code == -32_601)
+            #expect(response.error?.message == "method not found")
+            #expect(
+                response.error?.data
+                    == .object([
+                        "reason": .string("unknownMethod"),
+                        "fieldPath": .string("$.method"),
+                        "catalogMethod": .string("system.capabilities"),
+                    ]))
+        }
+        #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .unbound)
     }
 }

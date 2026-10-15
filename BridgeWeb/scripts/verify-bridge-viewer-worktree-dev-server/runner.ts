@@ -216,7 +216,12 @@ export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(prop
 	const browser = await props.launch.launchBrowser({ headless: true });
 	installVerifierBrowser(browser, props.launch.startJourneyHangBound(), props.launch);
 	try {
-		return await collectBridgeDevelopmentCompleteJourneyLaunch(props);
+		return await collectBridgeDevelopmentCompleteJourneyLaunch(props, {
+			ownerSignal: props.launch.signal,
+			observeStep: <TValue>(name: string, promise: Promise<TValue>): Promise<TValue> =>
+				props.launch.observeStep(name, promise).value(),
+			renewLaunchHangBound: (): void => props.launch.renewJourneyHangBound(),
+		});
 	} finally {
 		clearVerifierBrowser();
 		await closeAllWorktreeFileSurfaces();

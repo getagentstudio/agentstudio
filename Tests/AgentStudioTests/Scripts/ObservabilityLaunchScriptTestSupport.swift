@@ -92,8 +92,7 @@ struct LauncherScriptFixture {
             exit 0
             """
         )
-        var mergedEnvironment = ProcessInfo.processInfo.environment
-        mergedEnvironment.removeValue(forKey: "SWIFT_BUILD_DIR")
+        var mergedEnvironment = testProcessEnvironmentWithoutLaneState()
         mergedEnvironment["HOME"] = root.path
         mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES"] = "1"
         mergedEnvironment["AI_TOOLS_OBSERVABILITY_STACK_HELPER"] = stackHelper.path
@@ -117,8 +116,7 @@ struct LauncherScriptFixture {
         stateFile: URL,
         environment: [String: String]
     ) async throws -> ScriptRunResult {
-        var mergedEnvironment = ProcessInfo.processInfo.environment
-        mergedEnvironment.removeValue(forKey: "SWIFT_BUILD_DIR")
+        var mergedEnvironment = testProcessEnvironmentWithoutLaneState()
         mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_STATE_FILE"] = stateFile.path
         for (key, value) in environment {
             mergedEnvironment[key] = value

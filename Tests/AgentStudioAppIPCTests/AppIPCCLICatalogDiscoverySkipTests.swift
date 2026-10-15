@@ -4,6 +4,7 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Synchronization
 import Testing
@@ -43,7 +44,7 @@ struct AppIPCCLICatalogDiscoverySkipTests {
             makeFixture: { try LiveServerFixture(accessMode: .unsafeDebug, channel: .debug) },
             body: { fixture in
                 try fixture.server.start()
-                var environment = ProcessInfo.processInfo.environment
+                var environment = testProcessEnvironmentWithoutLaneState()
                 environment["AGENTSTUDIO_IPC_SOCKET"] = fixture.paths.socketURL.path
                 environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
 

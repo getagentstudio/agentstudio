@@ -8,6 +8,7 @@ import {
 import type { BridgeProductBatchFrameSinks } from '../bridge-product-batch-frame-router.js';
 import type { BridgeProductTransportSession } from '../bridge-product-transport.js';
 import type { BridgeProductViewInstallation } from '../bridge-product-view-batch-receiver.js';
+import { ControlledBatchDeadlineClock } from '../bridge-product-view-batch-receiver.test-support.js';
 
 export type WindowedReviewBatchPart = {
 	readonly begin?: BridgeProductViewInstallation['begin'];
@@ -45,6 +46,7 @@ self.addEventListener('message', (event: MessageEvent<unknown>): void => {
 });
 
 function installWindowedReviewRuntime(controlPort: MessagePort): void {
+	const renderWakes = new ControlledBatchDeadlineClock();
 	let batchSinks: BridgeProductBatchFrameSinks | null = null;
 	let begin: BridgeProductViewInstallation['begin'] | null = null;
 	const stagedRecords: BridgeProductViewInstallation['records'][number][] = [];
@@ -91,6 +93,7 @@ function installWindowedReviewRuntime(controlPort: MessagePort): void {
 	});
 	controlPort.start();
 	registerBridgeCommWorkerRuntimePortProtocol(self, {
+		scheduleRenderFulfillmentWake: (delay, wake): (() => void) => renderWakes.schedule(delay, wake),
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 		productTransport: makeReviewProductTransport({

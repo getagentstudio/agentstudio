@@ -1,13 +1,171 @@
-import { describe, expect, test } from 'vitest';
+import type { Page } from 'playwright';
+import { describe, expect, test, vi } from 'vitest';
 
-import { bridgeCompleteJourneyFailedAttempt } from './complete-journey-collector.ts';
+import type { BridgeCompleteJourneyPhaseCompletions } from './complete-journey-cohort.ts';
+import {
+	bridgeCompleteJourneyFailedAttempt,
+	collectBridgeDevelopmentCompleteJourneyLaunch,
+} from './complete-journey-collector.ts';
 import {
 	bridgeCompleteJourneyActivationSequenceAfter,
 	bridgeCompleteJourneyTelemetryWitnessesSatisfied,
 } from './complete-journey-telemetry.ts';
 import type { WorktreeBridgeTelemetrySampleProof } from './types.ts';
+import { createOwnedVerifierJourneyDeadline } from './verifier-journey-deadline.ts';
 
 describe('Bridge complete journey telemetry correlation', () => {
+	test('fails a held attempt by its pending step and stops before another page acquisition', async () => {
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const page = { close: pageClose } as unknown as Page;
+		const pendingSteps = new Set<string>();
+		const deadlineControl: { expiry: (() => void) | null } = { expiry: null };
+		const deadline = createOwnedVerifierJourneyDeadline(
+			{
+				closePages: async (): Promise<void> => page.close(),
+				pendingSteps: (): readonly string[] => [...pendingSteps],
+			},
+			{
+				schedule: (expire): (() => void) => {
+					deadlineControl.expiry = expire;
+					return (): void => {
+						if (deadlineControl.expiry === expire) deadlineControl.expiry = null;
+					};
+				},
+			},
+		);
+		let pageAcquisitionCount = 0;
+		let resolvePageAcquired: (() => void) | undefined;
+		const pageAcquired = new Promise<void>((resolve): void => {
+			resolvePageAcquired = resolve;
+		});
+		let resolveJourney: (() => void) | undefined;
+		const heldJourney = new Promise<void>((resolve): void => {
+			resolveJourney = resolve;
+		});
+		let resolveJourneyStarted: (() => void) | undefined;
+		const journeyStarted = new Promise<void>((resolve): void => {
+			resolveJourneyStarted = resolve;
+		});
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async (): Promise<Response> =>
+					new Response(
+						JSON.stringify({
+							acceptedSampleCount: 0,
+							failedBatchCount: 0,
+							marker: 'test',
+							serviceVersion: 'test',
+							worktreeHash: 'test',
+						}),
+					),
+			),
+		);
+		try {
+			const collection = collectBridgeDevelopmentCompleteJourneyLaunch(
+				{ attemptCount: 2, launchId: 'launch', sourceHead: 'HEAD' },
+				{
+					collectJourney: async (): Promise<BridgeCompleteJourneyPhaseCompletions> => {
+						resolveJourneyStarted?.();
+						await heldJourney;
+						return {};
+					},
+					makePage: async (): Promise<Page> => {
+						pageAcquisitionCount += 1;
+						resolvePageAcquired?.();
+						return page;
+					},
+					ownerSignal: deadline.signal,
+					pendingSteps,
+					renewLaunchHangBound: deadline.renew,
+				},
+			);
+			await pageAcquired;
+			await journeyStarted;
+			const expiry = deadlineControl.expiry;
+			if (typeof expiry !== 'function')
+				throw new Error('Expected the launch deadline to be armed.');
+			expiry();
+			await expect(collection).rejects.toThrow(
+				'BRIDGE_VERIFIER_JOURNEY_DEADLINE_EXCEEDED waiting=firstFile journey',
+			);
+			expect(pageAcquisitionCount).toBe(1);
+			expect(pageClose).toHaveBeenCalled();
+			resolveJourney?.();
+			await deadline.dispose();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
+	test('allows a cohort longer than one bound when every attempt finishes before its own bound', async () => {
+		const page = { close: vi.fn(async (): Promise<void> => {}) } as unknown as Page;
+		const pendingSteps = new Set<string>();
+		let activeExpiry: (() => void) | null = null;
+		const deadline = createOwnedVerifierJourneyDeadline(
+			{
+				closePages: async (): Promise<void> => page.close(),
+				pendingSteps: (): readonly string[] => [...pendingSteps],
+			},
+			{
+				schedule: (expire): (() => void) => {
+					activeExpiry = expire;
+					return (): void => {
+						if (activeExpiry === expire) activeExpiry = null;
+					};
+				},
+			},
+		);
+		let pageAcquisitionCount = 0;
+		let launchBoundRenewals = 0;
+		vi.stubGlobal(
+			'fetch',
+			vi.fn(
+				async (): Promise<Response> =>
+					new Response(
+						JSON.stringify({
+							acceptedSampleCount: 0,
+							failedBatchCount: 0,
+							marker: 'test',
+							serviceVersion: 'test',
+							worktreeHash: 'test',
+						}),
+					),
+			),
+		);
+		try {
+			const launch = await collectBridgeDevelopmentCompleteJourneyLaunch(
+				{ attemptCount: 2, launchId: 'launch', sourceHead: 'HEAD' },
+				{
+					collectJourney: async (): Promise<BridgeCompleteJourneyPhaseCompletions> => ({
+						commitPaint: 1,
+					}),
+					makePage: async (): Promise<Page> => {
+						pageAcquisitionCount += 1;
+						return page;
+					},
+					ownerSignal: deadline.signal,
+					pendingSteps,
+					renewLaunchHangBound: (): void => {
+						launchBoundRenewals += 1;
+						deadline.renew();
+					},
+				},
+			);
+			expect(launch.attemptsByJourney.firstFile).toHaveLength(2);
+			expect(
+				launch.attemptsByJourney.firstFile.every((attempt) => attempt.outcome === 'succeeded'),
+			).toBe(true);
+			expect(pageAcquisitionCount).toBe(8);
+			expect(launchBoundRenewals).toBe(8);
+			expect(activeExpiry).not.toBeNull();
+			expect(deadline.signal.aborted).toBe(false);
+			await deadline.dispose();
+		} finally {
+			vi.unstubAllGlobals();
+		}
+	});
+
 	test('preserves completed phases when a later journey phase fails', () => {
 		const attempt = bridgeCompleteJourneyFailedAttempt({
 			attemptId: 'development-launch-1-firstReview-4',

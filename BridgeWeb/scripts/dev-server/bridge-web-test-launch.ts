@@ -10,6 +10,7 @@ import {
 	startOwnedBridgeDevelopmentServer,
 	type OwnedBridgeDevelopmentServer,
 } from './bridge-development-server-process.ts';
+import { BridgeWebLaunchStepDiagnostics } from './bridge-web-launch-step-diagnostics.ts';
 import type {
 	BridgeWebOwnedProductDataClient,
 	BridgeWebTestLaunchCleanup,
@@ -56,7 +57,9 @@ export class BridgeWebTestLaunch {
 	#operations: LaunchCleanupOperation[] = [];
 	#disposal: HandledLaunchPromise<BridgeWebTestLaunchCleanup> | null = null;
 	#closed = false;
-	readonly #pendingSteps = new Map<symbol, string>();
+	readonly #stepDiagnostics = new BridgeWebLaunchStepDiagnostics(
+		(): boolean => this.#browser !== null,
+	);
 	readonly #children = new Set<BridgeWebTestLaunch>();
 	readonly #signal: AbortSignal;
 	readonly #deadline: ReturnType<typeof createOwnedVerifierJourneyDeadline> | null;
@@ -167,15 +170,14 @@ export class BridgeWebTestLaunch {
 	}
 
 	observeStep<TValue>(name: string, promise: Promise<TValue>): HandledLaunchPromise<TValue> {
-		const observation = handleLaunchPromise(promise, name);
-		const identity = Symbol(name);
-		this.#pendingSteps.set(identity, name);
-		if (this.#closed && this.#signal.aborted)
-			process.stderr.write(`BRIDGE_LAUNCH_RETIREMENT waiting=${name}\n`);
-		void observation.settled.then((): void => {
-			this.#pendingSteps.delete(identity);
-		});
-		return observation;
+		return this.#stepDiagnostics.observe(name, promise, this.#closed);
+	}
+
+	observeRetirementStep<TValue>(
+		name: string,
+		promise: Promise<TValue>,
+	): HandledLaunchPromise<TValue> {
+		return this.#stepDiagnostics.observe(name, promise, true);
 	}
 
 	get signal(): AbortSignal {
@@ -183,13 +185,25 @@ export class BridgeWebTestLaunch {
 	}
 	get pendingSteps(): readonly string[] {
 		return [
-			...this.#pendingSteps.values(),
+			...this.#stepDiagnostics.pendingSteps,
 			...[...this.#children].flatMap((child) => child.pendingSteps),
+		];
+	}
+	get pendingStepDiagnostics(): readonly string[] {
+		return [
+			...this.#stepDiagnostics.pendingDiagnostics,
+			...[...this.#children].flatMap((child) => child.pendingStepDiagnostics),
 		];
 	}
 	startJourneyHangBound(): AbortSignal {
 		this.#requireOpen();
 		return this.#signal;
+	}
+
+	renewJourneyHangBound(): void {
+		this.#requireOpen();
+		this.#deadline?.renew();
+		this.#parent?.renewJourneyHangBound();
 	}
 
 	async run<TValue>(operation: () => Promise<TValue>): Promise<TValue> {
@@ -274,19 +288,28 @@ export class BridgeWebTestLaunch {
 		backend: NonNullable<BridgeWebTestLaunchSpec['backend']>,
 	): Promise<BridgeWebTestLaunch> {
 		this.#requireOpen();
-		const child = await BridgeWebTestLaunch.start({ signal: this.#signal }, this.#dependencies);
-		child.#parent = this;
-		child.#attachScope();
+		const child = await this.startChildWithoutBackend();
 		try {
-			this.ownFixture('child stack', async (): Promise<void> => {
-				await child.dispose();
-			});
 			await child.#startBackend(backend, this.dataRootPath);
 			child.#requireOpen();
 			return child;
 		} catch (error: unknown) {
 			return await child.disposeAfterFailure(error);
 		}
+	}
+
+	async startChildWithoutBackend(
+		spec: Pick<BridgeWebTestLaunchSpec, 'dataRootPrefix'> = {},
+	): Promise<BridgeWebTestLaunch> {
+		this.#requireOpen();
+		const child = await BridgeWebTestLaunch.start(
+			{ ...spec, signal: this.#signal },
+			this.#dependencies,
+		);
+		child.#parent = this;
+		this.#children.add(child);
+		child.#attachScope();
+		return child;
 	}
 
 	// Own clients before open() suspends; normal completion acknowledges release,
