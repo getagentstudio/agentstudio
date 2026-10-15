@@ -324,8 +324,8 @@ package actor FilesystemActor {
     }
 
     package func start() async {
-        // Ingress/drain tasks are initialized during actor init; start is explicit for
-        // lifecycle parity with other filesystem source conformers.
+        // Start shared ingress before registration. Later ingress owners call this idempotently.
+        startIngressTaskIfNeeded()
     }
 
     package func runtimeTerminals() -> AsyncStream<FSEventStreamRuntimeTerminal> {

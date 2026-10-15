@@ -89,7 +89,6 @@ struct BridgeDevelopmentAnnotationHTTPRoutingTests {
                         sourceIdentity: preparationA.descriptor.descriptorId
                     ),
                     requestID: "annotation-create-two-pane",
-                    requestSequence: 7
                 )
                 guard case .committed = outcome.status,
                     let sessionID = outcome.sessionId
@@ -118,7 +117,7 @@ struct BridgeDevelopmentAnnotationHTTPRoutingTests {
                     connection: connectionA,
                     demandedSessionIDs: [sessionID],
                     sourceGeneration: preparationA.fileSourceGeneration,
-                    requestSequence: 9
+                    queryOrdinal: 9
                 )
                 let projectionB = try await fetchHTTPFileAnnotationProjection(
                     client: clientB,
@@ -126,7 +125,7 @@ struct BridgeDevelopmentAnnotationHTTPRoutingTests {
                     connection: connectionB,
                     demandedSessionIDs: [sessionID],
                     sourceGeneration: preparationB.fileSourceGeneration,
-                    requestSequence: 8
+                    queryOrdinal: 8
                 )
 
                 #expect(catalogA.targetRevision == catalogB.targetRevision)
@@ -234,7 +233,6 @@ private func assertHTTPAnnotationOutputResult(
         connection: connection,
         operation: twoPaneRootCreateOperation(sourceIdentity: preparation.descriptor.descriptorId),
         requestID: "annotation-output-result-create",
-        requestSequence: 7
     )
     let createReceipt = try requireHTTPAnnotationMessage(createOutcome)
     let sessionID = try #require(createOutcome.sessionId)
@@ -242,7 +240,6 @@ private func assertHTTPAnnotationOutputResult(
         client: client,
         connection: connection,
         openResponse: preparation.commentSubscription,
-        requestSequence: 8,
         scopeRevision: 2,
         sessionIDs: [sessionID]
     )
@@ -263,7 +260,6 @@ private func assertHTTPAnnotationOutputResult(
             "sessionId": sessionID.uuidString.lowercased(),
         ],
         requestID: "annotation-output-result-save",
-        requestSequence: 9
     )
     #expect(saveOutcome.status == .committed)
     _ = try await waitForHTTPAnnotationSessionChange(
@@ -278,7 +274,7 @@ private func assertHTTPAnnotationOutputResult(
         connection: connection,
         demandedSessionIDs: [sessionID],
         sourceGeneration: preparation.fileSourceGeneration,
-        requestSequence: 10
+        queryOrdinal: 10
     )
     let savedMessage = try #require(projection.messages.first?.message)
     let outputOutcome = try await executeHTTPAnnotationCommand(
@@ -294,7 +290,6 @@ private func assertHTTPAnnotationOutputResult(
             "sourceGeneration": preparation.fileSourceGeneration,
         ],
         requestID: "annotation-output-result-copy",
-        requestSequence: 11
     )
     guard case .output(.succeeded(let summary)) = outputOutcome.status else {
         Issue.record("Expected the successful output result to cross the HTTP response")
@@ -325,7 +320,6 @@ private func acceptHTTPCommentScopeInBothPanes(
         client: clientA,
         connection: connectionA,
         openResponse: commentSubscriptions.paneA,
-        requestSequence: 8,
         scopeRevision: 2,
         sessionIDs: [sessionID]
     )
@@ -333,7 +327,6 @@ private func acceptHTTPCommentScopeInBothPanes(
         client: clientB,
         connection: connectionB,
         openResponse: commentSubscriptions.paneB,
-        requestSequence: 7,
         scopeRevision: 2,
         sessionIDs: [sessionID]
     )
@@ -422,7 +415,6 @@ private func createHTTPAnnotationDraftBeforeRestart(
             connection: connection,
             operation: createOperation,
             requestID: "annotation-create-before-restart",
-            requestSequence: 7
         )
         guard case .committed = createOutcome.status,
             let sessionID = createOutcome.sessionId
@@ -431,7 +423,6 @@ private func createHTTPAnnotationDraftBeforeRestart(
             client: client,
             connection: connection,
             openResponse: preparation.commentSubscription,
-            requestSequence: 8,
             scopeRevision: 2,
             sessionIDs: [sessionID]
         )
@@ -446,7 +437,7 @@ private func createHTTPAnnotationDraftBeforeRestart(
             connection: connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: preparation.fileSourceGeneration,
-            requestSequence: 9
+            queryOrdinal: 9
         )
         let createdMessage = try #require(projection.messages.first?.message)
         #expect(createdMessage.draft?.body == draftBody)
@@ -464,7 +455,6 @@ private func createHTTPAnnotationDraftBeforeRestart(
             connection: connection,
             operation: releaseOperation,
             requestID: "annotation-release-before-restart",
-            requestSequence: 10
         )
         guard case .committed = releaseOutcome.status else {
             throw HTTPAnnotationIntegrationError.annotationCommandFailed
@@ -481,7 +471,7 @@ private func createHTTPAnnotationDraftBeforeRestart(
             connection: connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: preparation.fileSourceGeneration,
-            requestSequence: 11
+            queryOrdinal: 11
         )
         #expect(releasedProjection.messages.first?.message.draft?.activeEditToken == nil)
         try await shutdownHTTPHostAndDrainMetadataStream(
@@ -516,12 +506,10 @@ private func restoreHTTPAnnotationDraftAfterRestart(
         let fileSource = try await queryHTTPFileSource(
             client: client,
             connection: connection,
-            requestSequence: 2,
         )
         _ = try await openHTTPSubscription(
             client: client,
             connection: connection,
-            requestSequence: 3,
             subscription: [
                 "source": try jsonObject(fileSource),
                 "subscriptionKind": "file.metadata",
@@ -538,7 +526,6 @@ private func restoreHTTPAnnotationDraftAfterRestart(
             path: nil,
             client: client,
             connection: connection,
-            requestSequence: 4,
             subscriptionID: "file-metadata-annotation-second"
         )
         let acceptedFileSource = try await waitForHTTPFileSourceIdentity(
@@ -547,7 +534,6 @@ private func restoreHTTPAnnotationDraftAfterRestart(
         let commentOpen = try await openHTTPSubscription(
             client: client,
             connection: connection,
-            requestSequence: 5,
             subscription: ["subscriptionKind": "file.annotations"],
             subscriptionID: "file-annotations-second"
         )
@@ -561,7 +547,6 @@ private func restoreHTTPAnnotationDraftAfterRestart(
             client: client,
             connection: connection,
             openResponse: commentOpen,
-            requestSequence: 6,
             sessionIDs: [sessionID]
         )
         _ = try await waitForHTTPAnnotationCatalogCommit(
@@ -575,7 +560,7 @@ private func restoreHTTPAnnotationDraftAfterRestart(
             connection: connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: acceptedFileSource.subscriptionGeneration,
-            requestSequence: 7
+            queryOrdinal: 7
         )
         #expect(restoredProjection.messages.first?.message.draft?.body == draftBody)
         try await shutdownHTTPHostAndDrainMetadataStream(

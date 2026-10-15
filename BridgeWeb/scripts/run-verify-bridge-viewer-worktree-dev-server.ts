@@ -25,6 +25,7 @@ try {
 						'/scripts/verify-bridge-viewer-worktree-dev-server/runner.ts',
 					);
 				},
+				launch,
 			);
 		});
 	});

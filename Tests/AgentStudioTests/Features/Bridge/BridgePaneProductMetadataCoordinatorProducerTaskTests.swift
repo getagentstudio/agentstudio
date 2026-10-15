@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Synchronization
 import Testing
@@ -152,7 +153,13 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
         let lease = try await harness.admitMetadataFrames(through: 0)
-        let source = CoordinatorReplacementBootstrapFileMetadataSource()
+        let unexpectedOpenRelease = HeldStep<Void>(
+            "unexpected duplicate File open", cancellation: .holdThroughCancellation
+        )
+        unexpectedOpenRelease.release()
+        let source = CoordinatorReplacementBootstrapFileMetadataSource(
+            unexpectedOpenRelease: unexpectedOpenRelease
+        )
         let traceRecorder = CoordinatorProducerTaskTraceRecorder()
         let reconciler = BridgeFileSurfaceReconciler()
         let coordinator = BridgePaneProductMetadataCoordinator(
@@ -179,6 +186,8 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
             await coordinator.fileSurfaceInputBasis(for: subscription, activeStream: activeStream)
         )
         let initialAttempt = try #require(await reconciler.activeAttempt)
+        let openingOrdinals = await source.openOrdinals
+        #expect(openingOrdinals == [1])
         await coordinator.apply(
             .subscriptionOpened(subscription),
             productAdmission: harness.productAdmission.context
@@ -198,6 +207,7 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
         #expect(await reconciler.activeAttempt == nil)
         #expect(await reconciler.currentFailure == nil)
         await coordinator.uninstall(lease: lease)
+        #expect(await source.openOrdinals == openingOrdinals)
     }
 
     @Test("retained File source reopens after a cancelled bootstrap and resumed stream replay")
@@ -250,6 +260,9 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
             session: harness.session
         )
 
+        // Install's return must already have joined the cancelled predecessor;
+        // replacement replay cannot be the operation that finally retires it.
+        #expect(await source.openObservedCancellation(openOrdinal: 1))
         await coordinator.replaySubscriptionsForInstalledStream()
         await source.waitUntilOpenStarted(openOrdinal: 2)
         #expect(await coordinator.fileSurfaceReconciler.activeAttempt != nil)
@@ -357,9 +370,6 @@ struct BridgeMetadataCoordinatorProducerTaskTests {
 
         // Act
         await source.waitUntilCancelledOpenReachedDrainBarrier()
-        for _ in 0..<1000 where !(await completionProbe.didComplete) {
-            await Task.yield()
-        }
         let completedBeforeDrain = await completionProbe.didComplete
         await source.releaseOpenDrain()
         await replacementInstall.value
@@ -653,6 +663,14 @@ private actor CoordinatorThrowingReviewMetadataSource: BridgePaneProductReviewMe
 private actor CoordinatorReplacementBootstrapFileMetadataSource:
     BridgePaneProductFileMetadataProducing
 {
+    private let unexpectedOpenRelease: HeldStep<Void>?
+
+    init(unexpectedOpenRelease: HeldStep<Void>? = nil) {
+        self.unexpectedOpenRelease = unexpectedOpenRelease
+    }
+
+    var openOrdinals: Set<Int> { startedOpenOrdinals }
+
     func captureKeyedSnapshot(
         subscriptionId _: String,
         demand _: BridgePaneProductFileViewDemand,
@@ -683,8 +701,12 @@ private actor CoordinatorReplacementBootstrapFileMetadataSource:
         for waiter in startedOpenWaiters.removeValue(forKey: openOrdinal) ?? [] {
             waiter.resume()
         }
-        await withCheckedContinuation { continuation in
-            openReleaseByOrdinal[openOrdinal] = continuation
+        if openOrdinal > 1, let unexpectedOpenRelease {
+            try await unexpectedOpenRelease.arrive(())
+        } else {
+            await withCheckedContinuation { continuation in
+                openReleaseByOrdinal[openOrdinal] = continuation
+            }
         }
         observedCancellationByOpenOrdinal[openOrdinal] = Task.isCancelled
         finishedOpenOrdinals.insert(openOrdinal)

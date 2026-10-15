@@ -84,7 +84,7 @@ private struct HTTPAnnotationMessageMutation {
     let body: String
     let createReceipt: BridgeProductWorktreeAnnotationMessageEntry
     let editToken: String
-    let requestSequence: Int
+    let requestOrdinal: Int
     let sessionID: UUID
 }
 
@@ -112,7 +112,7 @@ private func createHTTPRootAndFiveSavedReplies(
         let sessionID = root.sessionID
         var latestSavedReceipt = root.savedReceipt
         var messageIDs = [latestSavedReceipt.messageId]
-        var requestSequence = 11
+        var requestOrdinal = 11
         for (replyIndex, replyBody) in expectedBodies.dropFirst().enumerated() {
             let editToken = "backend-reply-editor-\(replyIndex + 1)"
             let replyCreateOutcome = try await executeHTTPAnnotationCommand(
@@ -127,7 +127,6 @@ private func createHTTPRootAndFiveSavedReplies(
                     "threadId": latestSavedReceipt.threadId.uuidString.lowercased(),
                 ],
                 requestID: "backend-reply-\(replyIndex + 1)-create",
-                requestSequence: requestSequence
             )
             #expect(replyCreateOutcome.status == .committed)
             let replyCreateReceipt = try requireHTTPAnnotationMessage(replyCreateOutcome)
@@ -144,12 +143,12 @@ private func createHTTPRootAndFiveSavedReplies(
                     body: replyBody,
                     createReceipt: replyCreateReceipt,
                     editToken: editToken,
-                    requestSequence: requestSequence + 1,
+                    requestOrdinal: requestOrdinal + 1,
                     sessionID: sessionID
                 )
             )
             messageIDs.append(latestSavedReceipt.messageId)
-            requestSequence += 3
+            requestOrdinal += 3
         }
         let savedProjection = try await fetchHTTPFileAnnotationProjection(
             client: client,
@@ -157,7 +156,7 @@ private func createHTTPRootAndFiveSavedReplies(
             connection: connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: context.fileSourceGeneration,
-            requestSequence: requestSequence
+            queryOrdinal: requestOrdinal
         )
         assertHTTPRootAndFiveSavedReplies(
             projection: savedProjection,
@@ -205,7 +204,6 @@ private func createHTTPSavedRoot(
             ],
         ],
         requestID: "backend-root-create",
-        requestSequence: 7
     )
     #expect(createOutcome.status == .committed)
     let sessionID = try #require(createOutcome.sessionId)
@@ -214,7 +212,6 @@ private func createHTTPSavedRoot(
         client: client,
         connection: connection,
         openResponse: commentSubscription,
-        requestSequence: 8,
         scopeRevision: 2,
         sessionIDs: [sessionID]
     )
@@ -231,7 +228,7 @@ private func createHTTPSavedRoot(
             body: body,
             createReceipt: createReceipt,
             editToken: "backend-root-editor",
-            requestSequence: 9,
+            requestOrdinal: 9,
             sessionID: sessionID
         )
     )
@@ -260,8 +257,7 @@ private func flushAndSaveHTTPAnnotationMessage(
             "messageId": mutation.createReceipt.messageId.uuidString.lowercased(),
             "sessionId": mutation.sessionID.uuidString.lowercased(),
         ],
-        requestID: "backend-draft-flush-\(mutation.requestSequence)",
-        requestSequence: mutation.requestSequence
+        requestID: "backend-draft-flush-\(mutation.requestOrdinal)",
     )
     #expect(flushOutcome.status == .committed)
     let flushReceipt = try requireHTTPAnnotationMessage(flushOutcome)
@@ -282,8 +278,7 @@ private func flushAndSaveHTTPAnnotationMessage(
             "messageId": flushReceipt.messageId.uuidString.lowercased(),
             "sessionId": mutation.sessionID.uuidString.lowercased(),
         ],
-        requestID: "backend-draft-save-\(mutation.requestSequence + 1)",
-        requestSequence: mutation.requestSequence + 1
+        requestID: "backend-draft-save-\(mutation.requestOrdinal + 1)",
     )
     #expect(saveOutcome.status == .committed)
     let saveReceipt = try requireHTTPAnnotationMessage(saveOutcome)
@@ -316,7 +311,7 @@ private func restoreHTTPRootAndFiveSavedReplies(
             connection: context.connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: context.fileSourceGeneration,
-            requestSequence: 7
+            queryOrdinal: 7
         )
         try await shutdownHTTPHostAndDrainMetadataStream(
             host: runtime.host,

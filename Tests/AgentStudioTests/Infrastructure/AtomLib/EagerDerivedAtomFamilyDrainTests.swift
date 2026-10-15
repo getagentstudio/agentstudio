@@ -20,72 +20,72 @@ struct EagerDerivedAtomFamilyDrainTests {
     }
 
     @Test("remove and drain revokes readiness before awaiting termination")
-    func removeAndDrainRevokesReadinessBeforeAwaitingTermination() async {
-        let gate = EagerDerivedAtomProjectionGate()
+    func removeAndDrainRevokesReadinessBeforeAwaitingTermination() async throws {
+        let projectionCount = EagerDerivedAtomTestCounter()
         let family = makeFamily()
         family.admit(
             makeEagerDerivedAtomTestRequest(
-                identity: 1,
-                outputContent: 1,
-                gate: gate,
-                projectionCount: EagerDerivedAtomTestCounter()
+                identity: 1, outputContent: 1, projectionCount: projectionCount
             ),
             for: 1
         )
-        _ = await requireEagerDerivedAtomTestEvent("projection start") {
-            await gate.waitUntilStarted()
-        }
-
+        let removedAtom = try #require(family.atom(for: 1))
         family.remove(for: 1)
         #expect(family.atom(for: 1) == nil)
         #expect(family.currentValue(for: 1) == nil)
-        async let drain: Void = family.removeAndDrain(for: 1)
-        gate.release()
-        await drain
+
+        // No suspension since admit: projection's required MainActor completion
+        // cannot have run yet. The drain must let it finish before replying.
+        #expect(removedAtom.hasUnsettledProjectionTasks)
+        await family.removeAndDrain(for: 1)
+        #expect(!removedAtom.hasUnsettledProjectionTasks)
+        #expect(projectionCount.count == 1)
+        // Retain and join the node itself even when a broken family omits its join.
+        await removedAtom.stopAndDrain()
 
         await family.removeAndDrain(for: 1)
         #expect(family.atom(for: 1) == nil)
     }
 
     @Test("family stop and drain awaits every removed and active slot")
-    func stopAndDrainAwaitsRemovedAndActiveSlots() async {
-        let firstGate = EagerDerivedAtomProjectionGate()
-        let secondGate = EagerDerivedAtomProjectionGate()
+    func stopAndDrainAwaitsRemovedAndActiveSlots() async throws {
+        let firstProjectionCount = EagerDerivedAtomTestCounter()
+        let secondProjectionCount = EagerDerivedAtomTestCounter()
         let family = makeFamily()
         family.admit(
             makeEagerDerivedAtomTestRequest(
-                identity: 1,
-                outputContent: 1,
-                gate: firstGate,
-                projectionCount: EagerDerivedAtomTestCounter()
+                identity: 1, outputContent: 1, projectionCount: firstProjectionCount
             ),
             for: 1
         )
         family.admit(
             makeEagerDerivedAtomTestRequest(
-                identity: 2,
-                outputContent: 2,
-                gate: secondGate,
-                projectionCount: EagerDerivedAtomTestCounter()
+                identity: 2, outputContent: 2, projectionCount: secondProjectionCount
             ),
             for: 2
         )
-        _ = await requireEagerDerivedAtomTestEvent("first projection start") {
-            await firstGate.waitUntilStarted()
-        }
-        _ = await requireEagerDerivedAtomTestEvent("second projection start") {
-            await secondGate.waitUntilStarted()
-        }
-
+        let removedAtom = try #require(family.atom(for: 1))
+        let activeAtom = try #require(family.atom(for: 2))
         family.remove(for: 1)
         family.stop()
+        #expect(family.atoms.isEmpty)
+        #expect(removedAtom.hasUnsettledProjectionTasks)
+        #expect(activeAtom.hasUnsettledProjectionTasks)
+
+        // Same actor segment as admission/revocation. Only a real drain can
+        // suspend it long enough for both owned completions to run.
+        await family.stopAndDrain()
+        #expect(!removedAtom.hasUnsettledProjectionTasks)
+        #expect(!activeAtom.hasUnsettledProjectionTasks)
+        #expect(firstProjectionCount.count == 1)
+        #expect(secondProjectionCount.count == 1)
+        await removedAtom.stopAndDrain()
+        await activeAtom.stopAndDrain()
+
         async let firstDrain: Void = family.stopAndDrain()
         async let secondDrain: Void = family.stopAndDrain()
-        #expect(family.atoms.isEmpty)
-        firstGate.release()
-        secondGate.release()
         _ = await (firstDrain, secondDrain)
-
+        #expect(family.atoms.isEmpty)
         await family.stopAndDrain()
         #expect(family.atoms.isEmpty)
     }

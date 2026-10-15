@@ -6,6 +6,7 @@ struct BridgeDevelopmentProductProviderPreparationInput {
     // Production passes nothing. A test supplies an observer so it can await the commit
     // instead of sampling the host's diagnostic read.
     let didCommitReviewPublication: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
+    let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     let gitReadContext: BridgeGitReadContext
     let operationDeadlineClock: (any Clock<Duration> & Sendable)?
     let reviewInitialization: BridgeDevelopmentProductReviewInitialization
@@ -32,6 +33,7 @@ struct BridgeDevelopmentProductProviderPreparation {
 }
 
 private struct BridgeDevelopmentProductProviderDependencies {
+    let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     let annotationOutputSource: BridgePaneProductWorktreeAnnotationOutputSource
     let annotationProjectionSource: BridgeAnnotationProjectionSource
     let annotationSource: BridgePaneAnnotationNotificationSource
@@ -67,6 +69,45 @@ private struct BridgeDevelopmentProductProviderDependencies {
 }
 
 extension BridgeDevelopmentProductHost {
+    package init(
+        source: BridgeDevelopmentProductSource,
+        worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
+        worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
+        operationDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
+        retirementClock: (any Clock<Duration> & Sendable)? = nil,
+        shutdownFactSink: BridgeDevelopmentProductHostFactSink? = nil,
+        contributionTargetCommit:
+            @escaping @MainActor @Sendable (WorkspaceReviewContributionTarget) ->
+            BridgePaneStateMutationResult,
+        statusPhysicalGate: AgentStudioGitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate(),
+        makeReviewProvider: @Sendable (URL, BridgeGitReadContext) -> any BridgeReviewSourceProvider,
+        // Production passes nothing. A test supplies a census with a termination
+        // observer to pin the window this host's bootstrap gate now handles.
+        schemeTaskCensus: BridgeProductSchemeTaskCensus = BridgeProductSchemeTaskCensus(),
+        // Keep the package observer payload-free without widening the publication type.
+        // Tests receive the exact payload through the internal recorder-aware constructor.
+        didCommitReviewPublication: (@MainActor @Sendable () -> Void)? = nil
+    ) async throws {
+        var commitObservation: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
+        if let observeCommit = didCommitReviewPublication {
+            commitObservation = { _ in observeCommit() }
+        }
+        try await self.init(
+            source: source,
+            worktreeAnnotationStore: worktreeAnnotationStore,
+            worktreeAnnotationOutputCoordinator: worktreeAnnotationOutputCoordinator,
+            operationDeadlineClock: operationDeadlineClock,
+            retirementClock: retirementClock,
+            shutdownFactSink: shutdownFactSink,
+            contributionTargetCommit: contributionTargetCommit,
+            statusPhysicalGate: statusPhysicalGate,
+            makeReviewProvider: makeReviewProvider,
+            schemeTaskCensus: schemeTaskCensus,
+            didCommitReviewPublication: commitObservation,
+            lifecycleTraceRecorder: nil
+        )
+    }
+
     static func makeProductProviderPreparation(
         _ input: BridgeDevelopmentProductProviderPreparationInput
     ) async throws -> BridgeDevelopmentProductProviderPreparation {
@@ -113,6 +154,7 @@ extension BridgeDevelopmentProductHost {
         }
         let productProvider = makeProductProvider(
             dependencies: BridgeDevelopmentProductProviderDependencies(
+                lifecycleTraceRecorder: input.lifecycleTraceRecorder,
                 annotationOutputSource: BridgePaneProductWorktreeAnnotationOutputSource(
                     store: input.worktreeAnnotationStore
                 ),
@@ -311,7 +353,8 @@ extension BridgeDevelopmentProductHost {
                 reviewSourceProvider: dependencies.reviewSourceProvider
             ),
             initialPanePresentation: dependencies.initialPresentation,
-            refreshWorkAdmissionSource: dependencies.refreshWorkAdmissionSource
+            refreshWorkAdmissionSource: dependencies.refreshWorkAdmissionSource,
+            lifecycleTraceRecorder: dependencies.lifecycleTraceRecorder
         )
     }
 

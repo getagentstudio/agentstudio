@@ -262,6 +262,11 @@ retire_current_candidate() {
     AGENTSTUDIO_DEBUG_DATA_DIR="$STRICT_DISPOSABLE_DATA_ROOT" \
     "$DEBUG_RUNNER" --retire-candidate
   APP_PID=""
+  # IPC v2 retires escrow at shutdown (IPC escrow and startup diagnostics).
+  if [ -n "${IPC_DEBUG_ESCROW_PATH:-}" ] && [ -e "$IPC_DEBUG_ESCROW_PATH" ]; then
+    echo "debug IPC escrow was not retired at shutdown: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
+    return 1
+  fi
 }
 
 validate_current_candidate() {
@@ -2711,10 +2716,10 @@ validate_compare_baseline_fixture() {
 
 run_authenticated_sidebar_ipc_workload() {
   local metadata_path="${1:?missing metadata path}"
-  local debug_token_path="${2:?missing debug token path}"
+  local escrow_path="${2:?missing debug escrow path}"
   local sort_direction_receipt_path="$ARTIFACT/repos-sort-direction-receipts.jsonl"
   : >"$sort_direction_receipt_path"
-  /usr/bin/python3 - "$metadata_path" "$debug_token_path" "$LOGS_QUERY_URL" "$TRACE_MARKER" \
+  /usr/bin/python3 - "$metadata_path" "$escrow_path" "$LOGS_QUERY_URL" "$TRACE_MARKER" \
     "$sort_direction_receipt_path" <<'PY'
 import datetime
 import json
@@ -2724,9 +2729,10 @@ import sys
 import time
 import urllib.parse
 import urllib.request
+import uuid
 
 metadata_path = sys.argv[1]
-debug_token_path = sys.argv[2]
+escrow_path = sys.argv[2]
 logs_query_url = sys.argv[3]
 trace_marker = sys.argv[4]
 sort_direction_receipt_path = sys.argv[5]
@@ -2741,10 +2747,15 @@ socket_path = metadata.get("socketPath")
 if not socket_path:
     print(f"IPC metadata missing socketPath: {metadata_path}", file=sys.stderr)
     sys.exit(1)
-with open(debug_token_path, "r", encoding="utf-8") as token_file:
-    token = token_file.read().strip()
-if not token:
-    print(f"IPC debug token file is empty: {debug_token_path}", file=sys.stderr)
+with open(escrow_path, "r", encoding="utf-8") as escrow_file:
+    escrow = json.load(escrow_file)
+token = escrow.get("token")
+if not isinstance(token, str) or not token:
+    print(f"IPC debug escrow has no token: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW={escrow_path}", file=sys.stderr)
+    sys.exit(1)
+if (escrow.get("socketPath") != socket_path or not escrow.get("runtimeId")
+        or escrow.get("runtimeId") != metadata.get("runtimeId")):
+    print("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata", file=sys.stderr)
     sys.exit(1)
 
 
@@ -2846,14 +2857,26 @@ def wait_for_sidebar_projection(surface, expected_grouping=None, expected_sort_o
 session = Session(socket_path)
 try:
     require_success(session.request(1, "auth.login", {"token": token}), "auth.login")
-    if os.path.exists(debug_token_path):
-        print(f"IPC debug token was not consumed: {debug_token_path}", file=sys.stderr)
+    # IPC v2 escrow is reusable until shutdown (IPC escrow and startup diagnostics).
+    if not os.path.isfile(escrow_path):
+        print(f"IPC debug escrow disappeared: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW={escrow_path}", file=sys.stderr)
         sys.exit(1)
     replay = Session(socket_path)
     try:
-        require_error(replay.request(900, "auth.login", {"token": token}), "auth.login replay", -32001, "unauthenticated")
+        replay_result = require_success(replay.request(900, "auth.login", {"token": token}), "auth.login replay")
+        if replay_result.get("authenticated") is not True:
+            print("auth.login replay did not authenticate", file=sys.stderr)
+            sys.exit(1)
     finally:
         replay.close()
+
+    tampered_token = ("A" if token[0] != "A" else "B") + token[1:]
+    denied_session = Session(socket_path)
+    try:
+        require_error(denied_session.request(901, "auth.login", {"token": tampered_token}),
+                      "auth.login tampered credential", -32001, "unauthenticated")
+    finally:
+        denied_session.close()
 
     request_id = [2]
 
@@ -2862,6 +2885,13 @@ try:
         request_id[0] += 1
         return current
 
+    window_list = require_success(session.request(next_id(), "window.list", {}), "window.list")
+    windows = window_list.get("windows", [])
+    if len(windows) != 1:
+        print(f"sidebar proof requires exactly one workspace window; got {len(windows)}", file=sys.stderr)
+        sys.exit(1)
+    workspace_window_arguments = {"workspaceWindowId": str(uuid.UUID(windows[0]["id"]))}
+
     def execute_sidebar_command(command_id, arguments, label):
         result = require_success(
             session.request(
@@ -2869,13 +2899,14 @@ try:
                 "command.execute",
                 {
                     "commandId": command_id,
-                    "targetHandle": None,
-                    "arguments": arguments,
+                    "correlationId": str(uuid.uuid4()),
+                    "arguments": {**workspace_window_arguments, **arguments},
                 },
             ),
             label,
         )
-        if result.get("applied") is not True:
+        # IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+        if result.get("kind") != "applied":
             print(f"{label} did not apply: {result}", file=sys.stderr)
             sys.exit(1)
         return result
@@ -2907,8 +2938,11 @@ try:
         if command_entry is None:
             print(f"command.list omitted retained retired command {command_id}", file=sys.stderr)
             sys.exit(1)
-        if command_entry.get("executionModes") != [] or command_entry.get("requiredPrivileges") != []:
-            print(f"retired command retained IPC authority: {command_entry}", file=sys.stderr)
+        # AppCommand+IPCProjection.swift:25,242,327,459 declares headless/unavailable and these privileges.
+        if (command_entry.get("executionMode") != "headless"
+                or set(command_entry.get("requiredPrivileges", [])) != {"appCommandExecute", "sidebarStateMutate"}
+                or command_entry.get("resultVariants") != ["unavailable"]):
+            print(f"retired command IPC descriptor mismatch: {command_entry}", file=sys.stderr)
             sys.exit(1)
 
     def assert_fixed_panes_projection(projection, label):
@@ -2925,16 +2959,18 @@ try:
         before = wait_for_sidebar_projection("panes")
         assert_fixed_panes_projection(before, "Panes projection before retired commands")
         for command_id in sorted(retired_panes_organization_commands):
-            require_error(
+            retired_result = require_success(
                 session.request(
                     next_id(),
                     "command.execute",
-                    {"commandId": command_id, "targetHandle": None, "arguments": {}},
+                    {"commandId": command_id, "correlationId": str(uuid.uuid4()), "arguments": workspace_window_arguments},
                 ),
                 f"command.execute retired {command_id}",
-                -32007,
-                "parameters required",
             )
+            # AppDelegate+HeadlessIPCCommandHandling.swift:60 leaves retired Panes settings unavailable.
+            if retired_result.get("kind") != "unavailable" or retired_result.get("reason") != "featureUnavailable":
+                print(f"retired Panes command outcome mismatch: {retired_result}", file=sys.stderr)
+                sys.exit(1)
         after = wait_for_sidebar_projection("panes")
         assert_fixed_panes_projection(after, "Panes projection after retired commands")
         for attribute in (
@@ -3002,8 +3038,10 @@ try:
                 "initial": initial_order,
                 "opposite": opposite_order,
                 "restored": restored_projection.get("agentstudio.performance.sidebar.sort_order"),
-                "firstApplied": first_toggle_result.get("applied"),
-                "secondApplied": second_toggle_result.get("applied"),
+                # IPCCommandExecutionResult.swift:204 replaces the wire applied boolean.
+                "firstApplied": first_toggle_result.get("kind") == "applied",
+                # IPCCommandExecutionResult.swift:204 replaces the wire applied boolean.
+                "secondApplied": second_toggle_result.get("kind") == "applied",
             }, sort_keys=True) + "\n")
         pace_projection_application()
 
@@ -3287,6 +3325,7 @@ if path_bytes > 103:
 PY_SOCKET_PATH
 fi
 mkdir -p "$ARTIFACT" "$(dirname "$STATE_FILE")"
+IPC_DEBUG_ESCROW_PATH="$(/usr/bin/python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$ARTIFACT/ipc-escrow.json")"
 
 sidebar_metric_query='agentstudio_performance_events_total{agent.proof.marker="'$(metric_label_selector "$TRACE_MARKER")'",event="performance.sidebar.projection",surface="repo",phase=~"startup_diagnostic|request_build_mainactor|mainactor_apply|projection_worker|row_index"}'
 
@@ -3495,7 +3534,7 @@ env \
   AGENTSTUDIO_TRACE_TAGS="$WORKLOAD_TRACE_TAGS" \
   AGENTSTUDIO_TRACE_NAME="$TRACE_MARKER" \
   AGENTSTUDIO_SIDEBAR_IPC_CYCLES="$WORKLOAD_CYCLES" \
-  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$IPC_DEBUG_ESCROW_PATH" \
   AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=sidebar-performance-proof \
   AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$STATE_FILE" \
   "$DEBUG_RUNNER" --detach
@@ -3521,9 +3560,12 @@ fi
 
 state_data_dir="$(decode_env_file_value "$STATE_FILE" AGENTSTUDIO_OBSERVABILITY_DATA_DIR)"
 ipc_metadata_path="${AGENTSTUDIO_OBSERVABILITY_IPC_METADATA:-$state_data_dir/ipc/runtime.json}"
-ipc_debug_token_path="${AGENTSTUDIO_OBSERVABILITY_IPC_DEBUG_TOKEN:-$state_data_dir/ipc/debug-token}"
+if [ ! -s "$IPC_DEBUG_ESCROW_PATH" ]; then
+  echo "missing debug IPC escrow: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
+  exit 1
+fi
 AGENTSTUDIO_SIDEBAR_IPC_CYCLES="$WORKLOAD_CYCLES" \
-  run_authenticated_sidebar_ipc_workload "$ipc_metadata_path" "$ipc_debug_token_path"
+  run_authenticated_sidebar_ipc_workload "$ipc_metadata_path" "$IPC_DEBUG_ESCROW_PATH"
 stop_pid "$CPU_SAMPLER_PID"
 CPU_SAMPLER_PID=""
 process_cpu_summary="$(summarize_process_cpu "$CPU_SAMPLES_FILE" "$APP_PID")"

@@ -10,8 +10,10 @@ struct SwiftBuildSlotFixture: Sendable {
     let fakeExecutableDirectory: URL
     let openFilesMarkerURL: URL
     private let processRegistry = SwiftBuildSlotProcessRegistry()
+    private let inheritedEnvironment: [String: String]?
 
-    init() throws {
+    init(inheritedEnvironment: [String: String]? = nil) throws {
+        self.inheritedEnvironment = inheritedEnvironment
         rootURL = FileManager.default.temporaryDirectory
             .appending(path: "swift-build-slot-\(UUIDv7.generate().uuidString)")
         fakeExecutableDirectory = rootURL.appending(path: "fake-bin")
@@ -66,8 +68,7 @@ struct SwiftBuildSlotFixture: Sendable {
     }
 
     func makeProcess(_ script: String, environment overrides: [String: String] = [:]) -> SwiftBuildSlotChildProcess {
-        var environment = ProcessInfo.processInfo.environment
-        environment.removeValue(forKey: "SWIFT_BUILD_DIR")
+        var environment = testProcessEnvironmentWithoutLaneState(inheritedEnvironment)
         let existingPath = environment["PATH"] ?? "/usr/bin:/bin"
         environment["PATH"] = "\(fakeExecutableDirectory.path):\(existingPath)"
         environment["SWIFT_BUILD_SLOT_FAKE_START"] = "Mon Sep 1 00:00:00 2025"

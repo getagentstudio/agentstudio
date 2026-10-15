@@ -391,8 +391,8 @@ private final class SwiftInputFixture {
         _ arguments: String..., extra: [String: String] = [:], expectedExitCode: Int32 = 0,
         includeDiagnostics: Bool = false
     ) async throws -> String {
-        let environment = ProcessInfo.processInfo.environment.merging(
-            [
+        let environment = testProcessEnvironmentWithoutLaneState(
+            overrides: [
                 "CI_SWIFT_ROOT": root.path,
                 "CI_SWIFT_BUILD_PATH": root.appendingPathComponent("build").path,
                 "CI_SWIFT_ALL_FILES": "1",
@@ -403,8 +403,7 @@ private final class SwiftInputFixture {
                 "CI_SWIFT_SDK_BUILD": "sdk-fixture", "CI_SWIFT_GHOSTTY_GITLINK": "ghostty-fixture",
                 "CI_SWIFT_ZMX_GITLINK": "zmx-fixture", "CI_SWIFT_PRODUCER_COMMIT": "producer",
                 "CI_SWIFT_PRODUCER_RUN": "10", "CI_SWIFT_PRODUCER_REF": "refs/heads/main",
-            ].merging(extra) { _, new in new }
-        ) { _, new in new }
+            ].merging(extra) { _, new in new })
         let output = try await runProcessToExit(
             executableURL: URL(fileURLWithPath: "/bin/bash"),
             arguments: ["scripts/ci-swift-build-inputs.sh"] + arguments,

@@ -216,7 +216,12 @@ export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(prop
 	const browser = await props.launch.launchBrowser({ headless: true });
 	installVerifierBrowser(browser, props.launch.startJourneyHangBound(), props.launch);
 	try {
-		return await collectBridgeDevelopmentCompleteJourneyLaunch(props);
+		return await collectBridgeDevelopmentCompleteJourneyLaunch(props, {
+			ownerSignal: props.launch.signal,
+			observeStep: <TValue>(name: string, promise: Promise<TValue>): Promise<TValue> =>
+				props.launch.observeStep(name, promise).value(),
+			renewLaunchHangBound: (): void => props.launch.renewJourneyHangBound(),
+		});
 	} finally {
 		clearVerifierBrowser();
 		await closeAllWorktreeFileSurfaces();
@@ -548,9 +553,14 @@ export async function verifyWorktreeDevServer(): Promise<WorktreeDevServerVerifi
 		const performanceSurface = await fetchWorktreeSurface();
 		const performanceDescriptors =
 			await fetchPerformanceWorktreeFileDescriptors(performanceSurface);
+		const resetFilterOption = bridgeViewerFileCategoryOptions.find(
+			(option) => option.value === 'all',
+		);
+		if (resetFilterOption === undefined)
+			throw new Error('Product File category reset option is missing.');
 		await resetWorktreeFileTreeForPerformanceSamples({
 			page,
-			resetFilterLabel: 'All files',
+			resetFilterLabel: resetFilterOption.label,
 			totalMetadataTreeRowCount: worktreeFileTreeRows(performanceSurface.frames).length,
 		});
 		const interactionPerformanceProof = await collectWorktreeInteractionPerformanceProof({

@@ -219,19 +219,44 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		});
 		if (markdownWorkerClient === null) throw new Error('expected markdown worker client');
 
+		const readiness = createHeldFileMarkdownReadiness({
+			workerClient: markdownWorkerClient,
+			mermaidRenderer: createBridgeMermaidRenderer(),
+		});
 		try {
 			await render(
 				<BridgeFileViewerApp
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
-					markdownWorkerClient={markdownWorkerClient}
-					mermaidRenderer={createBridgeMermaidRenderer()}
+					markdownWorkerClient={readiness.workerClient}
+					mermaidRenderer={readiness.mermaidRenderer}
 					navigationCommand={fileNavigationCommandForPath('docs/stable.md')}
-					fileProductSession={{ readContent: async (): Promise<string> => markdownContent }}
+					fileProductSession={{
+						readContent: async (): Promise<string> => markdownContent,
+						onWorkerCommand: readiness.observeCommand,
+					}}
 				/>,
 			);
-			await waitForMarkdownOpenFileState('ready');
-			await waitForMarkdownSelector('[data-bridge-mermaid-state="ready"] svg');
+			const task = await readiness.workerStarted;
+			const completion = await readiness.workerCompleted;
+			if (completion.status !== 'success')
+				throw new Error('Expected real stable Markdown completion.');
+			await actUpdate(async (): Promise<void> => {
+				readiness.releaseWorker();
+				await task.completed;
+			});
+			const article = await observeFileMarkdownArticle(task);
+			const diagramId = completion.response.mermaidDiagrams[0]?.id;
+			if (diagramId === undefined) throw new Error('Expected the stable Markdown diagram.');
+			await actUpdate(async (): Promise<void> => {
+				await readiness.waitForPainted(task, article);
+				await observeFileMermaidReady({
+					article,
+					task,
+					diagramId,
+					release: readiness.releaseMermaid,
+				});
+			});
 			const originalCanvas = requireHTMLElement(
 				document.querySelector('[data-testid="bridge-markdown-canvas"]'),
 			);
@@ -258,6 +283,7 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 				),
 			).toBeNull();
 		} finally {
+			readiness.close();
 			markdownWorkerClient.dispose();
 		}
 	});
@@ -279,6 +305,12 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		});
 		const activeApp = (
 			<BridgeFileViewerApp
+				expectedRetainedRenderWakes={{
+					count: 1,
+					allowFullyDischarged: true,
+					reason:
+						'The deliberately suspended Markdown publication retains its captured lifecycle wake.',
+				}}
 				codeViewWorkerPoolEnabled={false}
 				initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 				isActive={true}
@@ -298,6 +330,12 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 
 			await rendered.rerender(
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'The deliberately suspended Markdown publication retains its captured lifecycle wake.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					isActive={false}
@@ -355,6 +393,11 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 		try {
 			await render(
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason: 'This UI Retry case leaves the worker lifecycle retry capture undelivered.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', markdownDescriptor)}
 					markdownWorkerClient={markdownWorkerClient}
@@ -517,6 +560,12 @@ describe('BridgeFileViewerApp Markdown Browser Mode', () => {
 			beginWait('pending-publication File Viewer mount');
 			const rendered = await render(
 				<BridgeFileViewerApp
+					expectedRetainedRenderWakes={{
+						count: 1,
+						allowFullyDischarged: true,
+						reason:
+							'Unmount deliberately closes the worker ports with the held publication lease retained.',
+					}}
 					codeViewWorkerPoolEnabled={false}
 					initialFileBatch={makeBrowserFileBatchWithDescriptors('open', descriptor)}
 					markdownWorkerClient={readiness.workerClient}

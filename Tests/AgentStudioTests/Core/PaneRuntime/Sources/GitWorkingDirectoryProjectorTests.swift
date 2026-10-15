@@ -22,9 +22,11 @@ struct GitWorkingDirectoryProjectorTests {
             performanceTraceRecorder: recorder
         )
 
+        #expect(recorder.recordInvocationCount(for: .gitLogicalDebt) == 0)
         await actor.recordLogicalDebtSnapshotIfChanged()
 
         #expect(recorder.recordedAttributes(for: .gitLogicalDebt).isEmpty)
+        #expect(recorder.recordInvocationCount(for: .gitLogicalDebt) == 0)
     }
 
     @Test("logical debt trace suppresses countdown-only changes")
@@ -5012,6 +5014,7 @@ private final class GitProjectorTraceRecorderSpy: GitProjectorPerformanceRecordi
     private let lock = NSLock()
     let isEnabled: Bool
     private var recordedEvents: [RecordedEvent] = []
+    private var recordInvocationCounts: [AgentStudioPerformanceTraceRecorder.Event: Int] = [:]
     private var eventWaiters: [EventWaiter] = []
     private var recordedGitAggregateSnapshots: [GitWorkingDirectoryPerformanceSnapshot] = []
 
@@ -5023,9 +5026,14 @@ private final class GitProjectorTraceRecorderSpy: GitProjectorPerformanceRecordi
         _ event: AgentStudioPerformanceTraceRecorder.Event,
         attributes: @autoclosure () -> [String: AgentStudioTraceValue]
     ) {
+        lock.withLock { recordInvocationCounts[event, default: 0] += 1 }
         guard isEnabled else { return }
         let evaluatedAttributes = attributes()
         appendRecordedEvent(event, attributes: evaluatedAttributes)
+    }
+
+    func recordInvocationCount(for event: AgentStudioPerformanceTraceRecorder.Event) -> Int {
+        lock.withLock { recordInvocationCounts[event, default: 0] }
     }
 
     func recordDuration(

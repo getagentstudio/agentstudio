@@ -57,6 +57,12 @@ export class BridgeSemanticBatchFaultTransformer {
 	} | null = null;
 	#closed = false;
 	readonly #observedKinds = new Set<BridgeSemanticBatchKind>();
+	readonly #resetFirstReviewOpen: boolean;
+	#resetReviewSubscriptionId: string | null = null;
+	#firstReviewAcceptance: Extract<
+		BridgeProductMetadataFrame,
+		{ readonly kind: 'subscription.accepted' }
+	> | null = null;
 
 	get observedKinds(): readonly BridgeSemanticBatchKind[] {
 		return [...this.#observedKinds];
@@ -65,9 +71,11 @@ export class BridgeSemanticBatchFaultTransformer {
 	constructor(
 		onInputFrame?: (frame: BridgeProductMetadataFrame) => void,
 		onForwardedFrame?: (frame: BridgeProductMetadataFrame) => void,
+		options: { readonly resetFirstReviewOpen?: boolean } = {},
 	) {
 		this.#onInputFrame = onInputFrame;
 		this.#onForwardedFrame = onForwardedFrame;
+		this.#resetFirstReviewOpen = options.resetFirstReviewOpen === true;
 	}
 
 	get lastForwardedStreamSequence(): number | null {
@@ -135,6 +143,39 @@ export class BridgeSemanticBatchFaultTransformer {
 	}
 
 	#forwardFrame(frame: BridgeProductMetadataFrame, forwarded: Uint8Array[]): void {
+		if (frame.kind === 'subscription.accepted' && frame.subscriptionKind === 'review.metadata')
+			this.#firstReviewAcceptance ??= frame;
+		if ('subscriptionId' in frame && frame.subscriptionId === this.#resetReviewSubscriptionId)
+			return;
+		if (
+			this.#resetFirstReviewOpen &&
+			this.#resetReviewSubscriptionId === null &&
+			frame.kind === 'subscription.batchBegin' &&
+			frame.subscriptionKind === 'review.metadata'
+		) {
+			const acceptance = this.#firstReviewAcceptance;
+			if (acceptance === null || acceptance.subscriptionId !== frame.subscriptionId)
+				throw new Error('Reset fault requires the actual first Review acceptance.');
+			this.#resetReviewSubscriptionId = frame.subscriptionId;
+			// Replace the first bank begin with a native reset before any installation can certify.
+			// A reset ends that incarnation: suppress its later data and keep the forwarded stream contiguous.
+			forwarded.push(
+				this.#encodeForwarded({
+					kind: 'subscription.reset',
+					reason: 'stale_source',
+					metadataStreamId: frame.metadataStreamId,
+					paneSessionId: frame.paneSessionId,
+					streamSequence: frame.streamSequence,
+					wireVersion: frame.wireVersion,
+					workerInstanceId: frame.workerInstanceId,
+					workerDerivationEpoch: acceptance.workerDerivationEpoch,
+					subscriptionId: frame.subscriptionId,
+					subscriptionKind: frame.subscriptionKind,
+					subscriptionSequence: 1,
+				}),
+			);
+			return;
+		}
 		if (frame.kind === 'subscription.batchBegin') this.#selectTarget(frame);
 		if (frame.kind === 'subscription.batchPart' && this.#isTargetPart(frame)) {
 			this.#forwardTargetPart(frame, forwarded);

@@ -1,5 +1,9 @@
 import { act } from 'react';
 
+import {
+	observeBridgeTransitionDOMFact,
+	runBridgeTransitionFramesInAct,
+} from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
 import { findBridgeViewerTreeItemButton } from '../review-viewer/test-support/bridge-viewer-browser-dom.js';
 import { waitForBridgeFileViewerBrowserDomState } from './bridge-file-viewer-browser-test-dom-state.js';
 import {
@@ -180,10 +184,35 @@ export async function actInteractAndSettleFileViewerCheckedMenuOption(props: {
 	readonly onDiagnosticPhase?: (phase: FileViewerCheckedMenuDiagnosticPhase) => void;
 	readonly option: HTMLElement;
 }): Promise<void> {
-	props.onDiagnosticPhase?.('before-interaction-act');
-	await act(props.interaction);
-	props.onDiagnosticPhase?.('after-interaction-act');
-	await settleBaseUiTransitionMachine(props.onDiagnosticPhase);
+	const oldIndicator = document.querySelector(
+		'[data-testid="worktree-file-filter-menu-option"][aria-checked="true"] [data-checked]',
+	);
+	const selectedIndicatorBefore = props.option.querySelector('[data-checked]');
+	const operationCommitted = observeBridgeTransitionDOMFact({
+		label: 'File category old indicator retirement and selected indicator settled',
+		isCommitted: (): boolean => {
+			const selectedIndicator = props.option.querySelector('[data-checked]');
+			return (
+				(oldIndicator === selectedIndicatorBefore || oldIndicator?.isConnected !== true) &&
+				props.option.getAttribute('aria-checked') === 'true' &&
+				selectedIndicator instanceof HTMLElement &&
+				!selectedIndicator.hasAttribute('data-starting-style') &&
+				!selectedIndicator.hasAttribute('data-ending-style')
+			);
+		},
+	});
+	try {
+		await runBridgeTransitionFramesInAct(async (): Promise<void> => {
+			props.onDiagnosticPhase?.('before-interaction-act');
+			await act(props.interaction);
+			props.onDiagnosticPhase?.('after-interaction-act');
+			props.onDiagnosticPhase?.('before-indicator-completion');
+			await operationCommitted.promise;
+			props.onDiagnosticPhase?.('after-indicator-completion');
+		});
+	} finally {
+		operationCommitted.close();
+	}
 
 	const checkedIndicator = props.option.querySelector(
 		'[data-slot="dropdown-menu-checkbox-item-indicator"] [data-checked]',
@@ -207,9 +236,8 @@ export async function actInteractAndSettleFileViewerCheckedMenuOption(props: {
 export type FileViewerCheckedMenuDiagnosticPhase =
 	| 'before-interaction-act'
 	| 'after-interaction-act'
-	| 'before-transition-frame-1'
-	| 'after-transition-frame-1'
-	| 'after-transition-frame-2';
+	| 'before-indicator-completion'
+	| 'after-indicator-completion';
 
 export async function actClickAndSettleFileViewerMenu(element: HTMLElement): Promise<void> {
 	const expectedExpandedState = element.getAttribute('aria-expanded') === 'true' ? 'false' : 'true';
@@ -260,20 +288,6 @@ async function commitFileViewerMenuTransition(): Promise<void> {
 	});
 }
 
-async function settleBaseUiTransitionMachine(
-	onDiagnosticPhase?: (phase: FileViewerCheckedMenuDiagnosticPhase) => void,
-): Promise<void> {
-	// Base UI schedules transitionStatus='starting' cleanup on an animation frame. Its
-	// animation-complete hook starts on another frame and can synchronously unmount an
-	// ending indicator. Each frame gets its own act boundary so React commits the first
-	// transition before Base UI schedules work from the next state.
-	onDiagnosticPhase?.('before-transition-frame-1');
-	await actFrame();
-	onDiagnosticPhase?.('after-transition-frame-1');
-	await actFrame();
-	onDiagnosticPhase?.('after-transition-frame-2');
-}
-
 async function waitForFileViewerMenuState(props: {
 	readonly element: HTMLElement;
 	readonly expectedExpandedState: 'false' | 'true';
@@ -294,4 +308,49 @@ async function waitForFileViewerMenuState(props: {
 		},
 		isExpected: (settled): boolean => settled,
 	});
+}
+
+export async function dispatchFileViewerShortcut(
+	modifiers: Readonly<{ altKey?: boolean; shiftKey?: boolean }>,
+	target: EventTarget = document,
+	afterCaptureFrame?: () => Promise<void>,
+): Promise<void> {
+	const interaction = async (): Promise<void> => {
+		await act(async (): Promise<void> => {
+			target.dispatchEvent(
+				new KeyboardEvent('keydown', {
+					altKey: modifiers.altKey ?? false,
+					bubbles: true,
+					cancelable: true,
+					key: 'f',
+					metaKey: true,
+					shiftKey: modifiers.shiftKey ?? false,
+				}),
+			);
+		});
+		const captureAndComplete = async (): Promise<void> => {
+			await actFrame();
+			await afterCaptureFrame?.();
+			if (modifiers.altKey) await settleFileViewerMenuTransition();
+		};
+		const isClosingFilterMenu =
+			modifiers.altKey === true &&
+			document
+				.querySelector('[data-testid="worktree-file-filter-menu"]')
+				?.getAttribute('aria-expanded') === 'false';
+		if (isClosingFilterMenu) {
+			// Animation.finished can call Base UI's unmount after the capture frame.
+			// Keep capture and the native close/DOM facts in one continuous act scope.
+			await act(captureAndComplete);
+		} else {
+			await captureAndComplete();
+		}
+	};
+	if (modifiers.altKey) {
+		// Base UI's opening tick may outlive the interaction/capture act turns.
+		// Own its native frame delivery through the exact menu completion/DOM fact.
+		await runBridgeTransitionFramesInAct(interaction);
+	} else {
+		await interaction();
+	}
 }

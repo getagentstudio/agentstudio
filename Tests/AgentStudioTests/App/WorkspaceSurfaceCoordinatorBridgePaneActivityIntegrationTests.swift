@@ -1,8 +1,10 @@
+import AgentStudioTestHarness
 import Foundation
 import Observation
 import Testing
 
 @testable import AgentStudio
+@testable import AgentStudioBridge
 @testable import AgentStudioCore
 @testable import AgentStudioTestSupport
 
@@ -438,6 +440,9 @@ extension WebKitSerializedTests {
         @Test("close then undo installs fresh authority immune to stale retirement completion")
         func closeThenUndoInstallsFreshAuthority() async throws {
             let harness = makeBridgePaneActivityTestHarness(store: try makeWorkspaceJournalTestStore())
+            let retirementGate = HeldStep<Void>(
+                "prior Bridge controller review refresh", cancellation: .holdThroughCancellation)
+            var heldRefreshTask: Task<Void, Never>?
             do {
                 try await installBridgeControllerAndEnterForeground(harness)
                 let originalAuthorityIdentity = try #require(
@@ -447,17 +452,34 @@ extension WebKitSerializedTests {
                     harness.viewRegistry.allBridgeViews[harness.bridgePane.id]?.controller
                 )
 
+                try #require(originalController.activeReviewRefreshTask == nil)
+                let heldTask = Task<Void, Never> { try? await retirementGate.arrive(()) }
+                heldRefreshTask = heldTask
+                originalController.activeReviewRefreshTask = heldTask
+                _ = try await retirementGate.firstArrival()
+
                 try await harness.coordinator.execute(.closeTab(tabId: harness.tabId))
+                try await retirementGate.cancellationObserved()
                 #expect(harness.coordinator.bridgePaneActivity(for: harness.bridgePane.id) == .closed)
                 #expect(harness.coordinator.pendingBridgePaneRetirementCount == 1)
 
+                let retirementTask = try #require(
+                    harness.coordinator.bridgePaneRetirementTasksByPaneId[harness.bridgePane.id])
                 try await harness.coordinator.undoCloseTab()
 
                 let replacementAuthorityIdentity = try #require(
                     harness.coordinator.bridgePaneActivityAuthorityIdentity(for: harness.bridgePane.id)
                 )
                 #expect(replacementAuthorityIdentity != originalAuthorityIdentity)
-                await harness.coordinator.drainBridgePaneRetirements()
+                #expect(harness.coordinator.pendingBridgePaneRetirementCount == 1)
+                retirementGate.release()
+                await heldTask.value
+                await retirementTask.value
+                #expect(harness.coordinator.pendingBridgePaneRetirementCount == 0)
+                try #require(
+                    harness.coordinator.bridgePaneActivityAuthorityIdentity(for: harness.bridgePane.id)
+                        == replacementAuthorityIdentity,
+                    "Stale retirement must preserve the fresh undo authority")
                 await expectBridgePaneActivity(
                     .foreground,
                     for: harness.bridgePane.id,
@@ -473,6 +495,8 @@ extension WebKitSerializedTests {
                         == replacementAuthorityIdentity
                 )
             } catch {
+                retirementGate.release()
+                await heldRefreshTask?.value
                 await harness.finish()
                 throw error
             }

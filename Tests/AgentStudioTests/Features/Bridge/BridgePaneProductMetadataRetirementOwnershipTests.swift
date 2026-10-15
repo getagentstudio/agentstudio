@@ -165,7 +165,9 @@ struct BridgeMetadataRetirementOwnershipTests {
             #expect(delivered.descriptor.expectedSha256 == expectedSHA)
             #expect(delivered.complete.identity.subscriptionId == subscription.subscriptionId)
             #expect(delivered.complete.identity.frame.streamSequence > accepted.frameIdentity.streamSequence)
+            #expect(await observations.next() == .replacementFinished)
             let callbackCountBeforePredecessorCompletion = scenario.publishedFileFailures.snapshot().count
+            #expect(callbackCountBeforePredecessorCompletion == 1, "The successor applied its successful clear")
 
             // Finish the stale predecessor only after the successor's certificate is delivered.
             await scenario.probe.releaseProducerFailure()
@@ -425,6 +427,7 @@ private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTr
         case predecessorFailureHeld
         case resetEnqueued
         case replacementOpened
+        case replacementFinished
         case failedProducerFinished
     }
 
@@ -497,6 +500,8 @@ private actor MetadataRetirementOwnershipProbe: BridgeProductMetadataLifecycleTr
         } else if holdPredecessorFailure, event.stage == .producerFailed {
             continuation.yield(.predecessorFailureHeld)
             try? await producerFailureRelease.arrive(())
+        } else if event.stage == .bootstrapFinished, event.result == .success {
+            continuation.yield(.replacementFinished)
         } else if event.stage == .bootstrapFinished, event.result == .failure {
             failedProducerReason = event.failureReason
             failedProducerFinished = true

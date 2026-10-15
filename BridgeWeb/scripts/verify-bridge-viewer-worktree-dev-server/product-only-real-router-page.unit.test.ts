@@ -9,11 +9,11 @@ import type { BridgeViewerDocumentGenerations } from './product-only-real-router
 import { createOwnedProductJourneyDeadline } from './product-only-real-router-journey-deadline.ts';
 import {
 	BridgeViewerRealRouterObserver,
-	captureBridgeViewerProductOnlyJourneyFailure,
 	freshReviewInitialWindowRequiresTraversal,
 	mountedHeaderOrderViolationForExpectedOrder,
 	nextFreshReviewTraversalScrollTop,
 } from './product-only-real-router-page.ts';
+import { captureBridgeViewerProductOnlyJourneyFailure } from './product-only-real-router-review-failure.ts';
 import { previousFreshReviewTraversalScrollTop } from './product-only-real-router-review-hydration-window.ts';
 
 type PageEventName = 'request' | 'requestfailed' | 'requestfinished' | 'response';
