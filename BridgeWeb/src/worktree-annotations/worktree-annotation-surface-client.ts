@@ -90,7 +90,7 @@ interface PendingAnnotationCommandSettlement {
 interface SessionDemandAcquisition {
 	attemptId: number;
 	consecutiveFailedAttempts: number;
-	refreshesSourceOnReacquire: boolean;
+	sourceRefreshPending: boolean;
 	state: 'acquiring' | 'awaitingWorker' | 'committed';
 }
 
@@ -403,10 +403,16 @@ export function createWorktreeAnnotationSurfaceClient(
 		didCommit: boolean,
 	): void => {
 		const acquisition = demandAcquisitionBySessionId.get(sessionId);
-		if (isDisposed || acquisition?.attemptId !== attemptId) return;
+		if (
+			isDisposed ||
+			acquisition?.attemptId !== attemptId ||
+			!demandCountBySessionId.has(sessionId)
+		)
+			return;
 		if (didCommit) {
 			acquisition.state = 'committed';
 			acquisition.consecutiveFailedAttempts = 0;
+			if (acquisition.sourceRefreshPending) refreshDemandedSession(sessionId);
 			return;
 		}
 		acquisition.consecutiveFailedAttempts += 1;
@@ -435,12 +441,7 @@ export function createWorktreeAnnotationSurfaceClient(
 	const reacquireDemandAwaitingWorker = (): void => {
 		for (const [sessionId, acquisition] of demandAcquisitionBySessionId) {
 			if (acquisition.state !== 'awaitingWorker') continue;
-			const refreshesSource = acquisition.refreshesSourceOnReacquire;
-			acquisition.refreshesSourceOnReacquire = false;
 			sendDemandAcquire(sessionId);
-			if (refreshesSource && demandAcquisitionBySessionId.has(sessionId)) {
-				refreshDemandedSession(sessionId);
-			}
 		}
 	};
 	const retireDemandForWorkerReplacement = (): void => {
@@ -449,7 +450,7 @@ export function createWorktreeAnnotationSurfaceClient(
 			nextDemandAcquireAttemptId += 1;
 			acquisition.attemptId = nextDemandAcquireAttemptId;
 			acquisition.consecutiveFailedAttempts = 0;
-			acquisition.refreshesSourceOnReacquire = true;
+			acquisition.sourceRefreshPending = true;
 			acquisition.state = 'awaitingWorker';
 		}
 	};
@@ -493,6 +494,13 @@ export function createWorktreeAnnotationSurfaceClient(
 		});
 	};
 	const refreshDemandedSession = (sessionId: string): void => {
+		const acquisition = demandAcquisitionBySessionId.get(sessionId);
+		if (isDisposed || acquisition === undefined || !demandCountBySessionId.has(sessionId)) return;
+		// A refresh captures the current source. Keep its latest request pending until
+		// this worker's matching acquisition commits, including source/worker changes.
+		acquisition.sourceRefreshPending = true;
+		if (acquisition.state !== 'committed') return;
+		acquisition.sourceRefreshPending = false;
 		nextSourceRefreshEpoch += 1;
 		void execute({
 			kind: 'source.refresh',
@@ -544,11 +552,10 @@ export function createWorktreeAnnotationSurfaceClient(
 				demandAcquisitionBySessionId.set(sessionId, {
 					attemptId: 0,
 					consecutiveFailedAttempts: 0,
-					refreshesSourceOnReacquire: false,
+					sourceRefreshPending: true,
 					state: 'acquiring',
 				});
 				sendDemandAcquire(sessionId);
-				refreshDemandedSession(sessionId);
 				void execute({ kind: 'output.history', sessionId }).catch((): void => {});
 			}
 			let isReleased = false;
