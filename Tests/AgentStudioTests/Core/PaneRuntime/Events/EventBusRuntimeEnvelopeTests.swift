@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -98,7 +99,7 @@ struct EventBusRuntimeEnvelopeTests {
     }
 
     @Test("replay keeps at most 256 envelopes per source")
-    func replayBoundPerSource() async {
+    func replayBoundPerSource() async throws {
         let bus = EventBus<RuntimeEnvelope>(
             replayConfiguration: .init(
                 capacityPerSource: 256,
@@ -116,15 +117,8 @@ struct EventBusRuntimeEnvelopeTests {
         }
 
         let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: "replayBoundPerSource")
-        var iterator = subscription.makeAsyncIterator()
-        var replayed: [RuntimeEnvelope] = []
-        for _ in 0..<(256 * 2) {
-            guard let envelope = await iterator.next() else {
-                Issue.record("Expected replay payload for all retained runtime envelopes")
-                return
-            }
-            replayed.append(envelope)
-        }
+        let replayed = try await consumeReplayThroughLiveMarker(bus: bus, subscription: subscription)
+        #expect(replayed.count == 256 * 2)
 
         let paneASeqs = replayed.filter { $0.source == .pane(paneA) }.map(\.seq)
         let paneBSeqs = replayed.filter { $0.source == .pane(paneB) }.map(\.seq)
@@ -132,12 +126,21 @@ struct EventBusRuntimeEnvelopeTests {
         #expect(paneBSeqs.count == 256)
         #expect(paneASeqs.first == 45)
         #expect(paneASeqs.last == 300)
+        #expect(paneASeqs == (45...300).map { UInt64($0) })
         #expect(paneBSeqs.first == 45)
         #expect(paneBSeqs.last == 300)
+        #expect(paneBSeqs == (45...300).map { UInt64($0) })
+        let expectedTranscript = (45...300).flatMap { sequence in
+            [
+                ReplayTranscriptEntry(source: .pane(paneA), sequence: UInt64(sequence)),
+                ReplayTranscriptEntry(source: .pane(paneB), sequence: UInt64(sequence)),
+            ]
+        }
+        #expect(replayed.map { ReplayTranscriptEntry(source: $0.source, sequence: $0.seq) } == expectedTranscript)
     }
 
     @Test("replay bound is isolated per source")
-    func replayBoundIsolationPerSource() async {
+    func replayBoundIsolationPerSource() async throws {
         let bus = EventBus<RuntimeEnvelope>(
             replayConfiguration: .init(
                 capacityPerSource: 256,
@@ -158,26 +161,25 @@ struct EventBusRuntimeEnvelopeTests {
 
         let subscription = await bus.subscribe(
             policy: .criticalUnbounded, subscriberName: "replayBoundIsolationPerSource")
-        var iterator = subscription.makeAsyncIterator()
-        var replayed: [RuntimeEnvelope] = []
-        for _ in 0..<(256 + 3) {
-            guard let envelope = await iterator.next() else {
-                Issue.record("Expected replay payload for bounded + sparse sources")
-                return
-            }
-            replayed.append(envelope)
-        }
+        let replayed = try await consumeReplayThroughLiveMarker(bus: bus, subscription: subscription)
+
+        #expect(replayed.count == 256 + 3)
 
         let hotSeqs = replayed.filter { $0.source == .pane(hotPane) }.map(\.seq)
         let coolSeqs = replayed.filter { $0.source == .pane(coolPane) }.map(\.seq)
         #expect(hotSeqs.count == 256)
         #expect(hotSeqs.first == 145)
         #expect(hotSeqs.last == 400)
+        #expect(hotSeqs == (145...400).map { UInt64($0) })
         #expect(coolSeqs == [1, 2, 3])
+        let expectedTranscript =
+            (145...400).map { ReplayTranscriptEntry(source: .pane(hotPane), sequence: UInt64($0)) }
+            + (1...3).map { ReplayTranscriptEntry(source: .pane(coolPane), sequence: UInt64($0)) }
+        #expect(replayed.map { ReplayTranscriptEntry(source: $0.source, sequence: $0.seq) } == expectedTranscript)
     }
 
     @Test("replay source eviction removes closed pane history")
-    func replaySourceEvictionRemovesClosedPaneHistory() async {
+    func replaySourceEvictionRemovesClosedPaneHistory() async throws {
         let bus = EventBus<RuntimeEnvelope>(
             replayConfiguration: .init(
                 capacityPerSource: 256,
@@ -194,10 +196,12 @@ struct EventBusRuntimeEnvelopeTests {
         await bus.evictReplay(sourceKey: EventSource.pane(evictedPane).description)
 
         let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: "replaySourceEviction")
-        var iterator = subscription.makeAsyncIterator()
-        let envelope = await iterator.next()
+        let replayed = try await consumeReplayThroughLiveMarker(bus: bus, subscription: subscription)
+        let envelope = replayed.first
 
         #expect(envelope?.source == .pane(retainedPane))
+        #expect(replayed.map(\.source) == [.pane(retainedPane)])
+        #expect(replayed.map(\.seq) == [2])
     }
 
     @Test("replay drops are counted when subscriber buffering is smaller than replay snapshot")
@@ -479,6 +483,47 @@ struct EventBusRuntimeEnvelopeTests {
         #expect(retiredSnapshot.eventBusActiveSubscriberCount == 0)
     }
 
+    /// The marker closes replay; cancellation then drives the owned consumer to
+    /// stream nil, whose existing callback joins subscriber removal.
+    private func consumeReplayThroughLiveMarker(
+        bus: EventBus<RuntimeEnvelope>,
+        subscription: EventBusSubscription<RuntimeEnvelope>
+    ) async throws -> [RuntimeEnvelope] {
+        let markerPane = PaneId.generateUUIDv7()
+        let marker = makePaneEnvelope(paneId: markerPane, seq: 1)
+        let markerArrival = HeldStep<[RuntimeEnvelope]>("complete replay through live marker")
+        markerArrival.release()
+        let consumer = Task {
+            var replayed: [RuntimeEnvelope] = []
+            var observedMarker = false
+            for await envelope in subscription {
+                guard !observedMarker else { continue }
+                if envelope.source == marker.source && envelope.seq == marker.seq {
+                    observedMarker = true
+                    try? await markerArrival.arrive(replayed)
+                } else {
+                    replayed.append(envelope)
+                }
+            }
+        }
+        let markerPost = await bus.post(marker)
+        do {
+            let replayed = try await markerArrival.firstArrival()
+            consumer.cancel()
+            await consumer.value
+            #expect(await bus.subscriberCount == 0)
+            #expect(!markerArrival.recordedArrivals.isEmpty)
+            #expect(markerPost.droppedCount == 0)
+            #expect(markerPost.subscriberCount == 1)
+            return replayed
+        } catch {
+            consumer.cancel()
+            await consumer.value
+            #expect(await bus.subscriberCount == 0)
+            throw error
+        }
+    }
+
     private func makePaneEnvelope(paneId: PaneId, seq: UInt64) -> RuntimeEnvelope {
         .pane(
             PaneEnvelope.test(
@@ -537,4 +582,9 @@ struct EventBusRuntimeEnvelopeTests {
         #expect(overlap == 3)
         #expect(snapshot.activeSubscribers.count == 3)
     }
+}
+
+private struct ReplayTranscriptEntry: Equatable, Sendable {
+    let source: EventSource
+    let sequence: UInt64
 }
