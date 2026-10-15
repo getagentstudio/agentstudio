@@ -470,6 +470,8 @@ struct BridgeProductSchemeAdapterTests {
         // Arrange
         let harness = try BridgeProductSchemeAdapterHarness.make()
         #expect(try await harness.openSession().response?.statusCode == 200)
+        // Opening admission does not commit the active session required by either stream.
+        try #require(await harness.session.waitUntilActive())
         let metadataRequest = try bridgeProductMetadataStreamRequest(
             metadataStreamId: "metadata-stream-adapter",
             resumeFromStreamSequence: nil
@@ -497,7 +499,8 @@ struct BridgeProductSchemeAdapterTests {
                         request: request
                     ) {
                         switch result {
-                        case .response:
+                        case .response(let response):
+                            #expect((response as? HTTPURLResponse)?.statusCode == 200)
                             await recorder.record(.response)
                         case .data:
                             await recorder.record(.data)
@@ -585,6 +588,9 @@ struct BridgeProductSchemeAdapterTests {
             contentReturnsWithoutTerminal: true
         )
         #expect(try await harness.openSession().response?.statusCode == 200)
+        // The opening HTTP response acknowledges admission before the provider
+        // commits the active session required by content registration.
+        try #require(await harness.session.waitUntilActive())
         let contentRequest = try bridgeProductFileContentRequest(
             identitySuffix: "missing-terminal",
             workerDerivationEpoch: 1
@@ -599,10 +605,11 @@ struct BridgeProductSchemeAdapterTests {
             )
         )
         var iterator = routedReply.stream.makeAsyncIterator()
-        guard case .response = try #require(await iterator.next()) else {
+        guard case .response(let response) = try #require(await iterator.next()) else {
             Issue.record("Content response did not precede its opening frame")
             return
         }
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
         guard case .data = try #require(await iterator.next()) else {
             Issue.record("Content producer did not emit its opening frame")
             return
