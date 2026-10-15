@@ -39,13 +39,15 @@ func exerciseSeededReviewOracleScenario(_ scenario: SeededReviewOracleScenario) 
     if case .earlierReservation = scenario {
         await recorder.record(seededReviewLifecycle(correlation: "earlier-review", stage: .refreshReserved))
         await recorder.record(seededReviewLifecycle(correlation: "unrelated-review", stage: .refreshReserved))
+        // The observation excludes an already-committed deletion, not an earlier
+        // reservation whose later read can legitimately contain the new deletion.
+        recorder.recordCommit(unrelatedDeletion)
     }
     let opening = recorder.openDeletionObservation()
     let producer = Task {
         switch scenario {
         case .earlierReservation:
             recorder.recordCommit(earlierPublication)
-            recorder.recordCommit(unrelatedDeletion)
         case .predecessorTerminal:
             await recorder.record(seededReviewLifecycle(correlation: "predecessor-review", stage: .refreshReserved))
             await recorder.record(
@@ -56,8 +58,12 @@ func exerciseSeededReviewOracleScenario(_ scenario: SeededReviewOracleScenario) 
         try await successorAnnouncement.arrive(())
         await recorder.record(seededReviewLifecycle(correlation: "deletion-review", stage: .refreshReserved))
         recorder.recordCommit(expectedPublication)
+        await recorder.record(
+            seededReviewLifecycle(correlation: "deletion-review", stage: .refreshOperationTerminal))
     }
-    let consumer = Task { try await recorder.requireCommittedDeletion(path: "tracked.txt", after: opening) }
+    let consumer = Task {
+        try await recorder.requireCommittedDeletion(path: "tracked.txt", after: opening, baseline: fixture.baseline)
+    }
     do {
         _ = try await successorAnnouncement.firstArrival()
         successorAnnouncement.release()
