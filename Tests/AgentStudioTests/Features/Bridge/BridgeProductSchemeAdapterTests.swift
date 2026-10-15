@@ -585,6 +585,9 @@ struct BridgeProductSchemeAdapterTests {
             contentReturnsWithoutTerminal: true
         )
         #expect(try await harness.openSession().response?.statusCode == 200)
+        // The opening HTTP response acknowledges admission before the provider
+        // commits the active session required by content registration.
+        try #require(await harness.session.waitUntilActive())
         let contentRequest = try bridgeProductFileContentRequest(
             identitySuffix: "missing-terminal",
             workerDerivationEpoch: 1
@@ -599,10 +602,11 @@ struct BridgeProductSchemeAdapterTests {
             )
         )
         var iterator = routedReply.stream.makeAsyncIterator()
-        guard case .response = try #require(await iterator.next()) else {
+        guard case .response(let response) = try #require(await iterator.next()) else {
             Issue.record("Content response did not precede its opening frame")
             return
         }
+        #expect((response as? HTTPURLResponse)?.statusCode == 200)
         guard case .data = try #require(await iterator.next()) else {
             Issue.record("Content producer did not emit its opening frame")
             return
