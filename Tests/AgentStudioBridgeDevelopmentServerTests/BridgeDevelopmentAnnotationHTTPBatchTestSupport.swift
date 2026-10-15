@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import HTTPTypes
@@ -65,6 +66,8 @@ func nextHTTPFileBatchSnapshot(
     var activeBegin: BridgeProductBatchBeginFrame?
     var staleBegin: BridgeProductBatchBeginFrame?
     var requestedRecovery: BridgeProductBatchBeginFrame?
+    var recoveryWait: HTTPFileReplacementWait?
+    defer { recoveryWait?.settle(Task.isCancelled ? .cancelled : .ended) }
     var parts: [BridgeProductBatchPart] = []
     while true {
         let frame = try await recorder.nextFrame()
@@ -81,6 +84,7 @@ func nextHTTPFileBatchSnapshot(
                     sameHTTPFileView(begin.identity, requestedRecovery.identity),
                     begin.scope == requestedRecovery.scope
                 else { continue }
+                recoveryWait?.receivedBegin()
             }
             activeBegin = nil
             parts.removeAll(keepingCapacity: true)
@@ -97,6 +101,9 @@ func nextHTTPFileBatchSnapshot(
                 try await requestHTTPFileRecoveryIfNeeded(
                     staleBegin: staleBegin, requestedRecovery: &requestedRecovery,
                     client: client, connection: connection)
+                if recoveryWait == nil, let requestedRecovery {
+                    recoveryWait = HTTPFileReplacementWait(staleBegin: requestedRecovery)
+                }
                 continue
             }
             guard let begin = activeBegin else {
@@ -117,6 +124,9 @@ func nextHTTPFileBatchSnapshot(
                 try await requestHTTPFileRecoveryIfNeeded(
                     staleBegin: staleBegin, requestedRecovery: &requestedRecovery,
                     client: client, connection: connection)
+                if recoveryWait == nil, let requestedRecovery {
+                    recoveryWait = HTTPFileReplacementWait(staleBegin: requestedRecovery)
+                }
                 continue
             }
             guard let begin = activeBegin else {
@@ -129,7 +139,9 @@ func nextHTTPFileBatchSnapshot(
             else { throw HTTPAnnotationIntegrationError.incompleteFileBatch }
             try retainedState.beginApplying(begin)
             for part in parts { try retainedState.apply(part, begin: begin) }
-            return try retainedState.finishApplying(begin)
+            let snapshot = try retainedState.finishApplying(begin)
+            recoveryWait?.settle(.matched)
+            return snapshot
         }
     }
 }
