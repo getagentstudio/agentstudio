@@ -470,6 +470,8 @@ struct BridgeProductSchemeAdapterTests {
         // Arrange
         let harness = try BridgeProductSchemeAdapterHarness.make()
         #expect(try await harness.openSession().response?.statusCode == 200)
+        // Opening admission does not commit the active session required by either stream.
+        try #require(await harness.session.waitUntilActive())
         let metadataRequest = try bridgeProductMetadataStreamRequest(
             metadataStreamId: "metadata-stream-adapter",
             resumeFromStreamSequence: nil
@@ -497,7 +499,8 @@ struct BridgeProductSchemeAdapterTests {
                         request: request
                     ) {
                         switch result {
-                        case .response:
+                        case .response(let response):
+                            #expect((response as? HTTPURLResponse)?.statusCode == 200)
                             await recorder.record(.response)
                         case .data:
                             await recorder.record(.data)
