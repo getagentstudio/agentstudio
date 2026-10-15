@@ -675,9 +675,6 @@ extension WorktreeAnnotationSQLiteRepository {
         props: PrepareOutputProps
     ) throws {
         let detail = try loadSessionDetail(database, sessionID: props.sessionID)
-        guard detail.session.lifecycle == .living else {
-            throw WorktreeAnnotationRepositoryError.sessionReadOnly
-        }
         let snapshot = props.canonicalSnapshot
         guard snapshot.session.sessionID == detail.session.id,
             snapshot.session.repositoryID == detail.session.repositoryID,

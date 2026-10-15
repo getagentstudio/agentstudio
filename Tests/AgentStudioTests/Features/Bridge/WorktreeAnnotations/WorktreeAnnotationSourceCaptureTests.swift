@@ -550,7 +550,7 @@ struct WorktreeAnnotationSourceCaptureTests {
         )
         #expect(retained.fingerprint.reviewComparisonOrigin?.reviewedHeadOID == "head-oid")
         _ = coordinator.close()
-        await #expect(throws: WorktreeAnnotationSourceResolutionError.reviewPublicationUnavailable) {
+        await #expect(throws: WorktreeAnnotationSourceResolutionError.unavailable) {
             _ = try await WorktreeAnnotationSourceCapture.reviewRefresh(
                 identity: identity,
                 publicationCoordinator: coordinator,

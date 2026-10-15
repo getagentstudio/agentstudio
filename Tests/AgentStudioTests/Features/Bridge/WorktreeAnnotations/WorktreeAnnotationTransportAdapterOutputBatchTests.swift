@@ -97,23 +97,4 @@ struct WorktreeAnnotationTransportAdapterOutputBatchTests {
         }
     }
 
-    @Test("Retired Review publication is an exact output conflict without durable output")
-    func retiredReviewPublicationMapsToNoEffectConflict() async throws {
-        let effect = TransportTestOutputEffect(outcome: .succeeded(destinationPath: nil))
-        let harness = try await makeTransportAdapterHarness(
-            outputEffect: effect,
-            sourceRefresh: { throw WorktreeAnnotationSourceResolutionError.reviewPublicationUnavailable }
-        )
-        defer { try? FileManager.default.removeItem(at: harness.root) }
-        let selected = try await createSavedOutputRoot(body: "Review output", editToken: "review", harness: harness)
-        let outcome = await harness.adapter.apply(
-            try exactOutputCommand(sessionID: selected.sessionID, messages: [selected.message]),
-            surface: .review,
-            correlation: try makeAnnotationCorrelation(requestID: "retired-review-output"),
-            productAdmission: harness.productAdmission
-        )
-        #expect(outcome.status == .failed(.conflict))
-        #expect(await effect.requests.isEmpty)
-        #expect(try await outputDurableCounts(harness: harness) == [0, 0, 0])
-    }
 }

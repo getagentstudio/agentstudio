@@ -543,7 +543,7 @@ enum WorktreeAnnotationSourceCapture {
                 productAdmission: productAdmission
             )
         else {
-            throw WorktreeAnnotationSourceResolutionError.reviewPublicationUnavailable
+            throw WorktreeAnnotationSourceResolutionError.unavailable
         }
         return publication
     }

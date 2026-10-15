@@ -130,7 +130,7 @@ enum OutputSelectionMutation: String, CaseIterable, Sendable {
 }
 
 enum OutputContextMutation: String, CaseIterable, Sendable {
-    case sourceRefresh, resolve, unlistedEdit, unrelatedWorktreePublication, projectionBump
+    case sourceRefresh, resolve, unlistedEdit, unrelatedWorktreePublication, projectionBump, lifecycle
 }
 
 @MainActor
@@ -243,6 +243,15 @@ private func mutateOutputContext(
                     fileSourceIdentity: "other-source", reviewComparisonOrigin: nil),
                 origin: try #require(detail.threads.first?.thread.origin), body: "Other worktree",
                 editToken: "other-worktree", now: Date(timeIntervalSince1970: 712))
+        )
+    case .lifecycle:
+        _ = try await harness.store.setSessionLifecycle(
+            .init(
+                sessionID: selected.sessionID, lifecycle: .completed,
+                expectedSessionRevision: detail.session.semanticRevision,
+                expectedOpenThreadCount: detail.threads.filter { $0.thread.resolution == .open }.count,
+                confirmsUnresolvedWork: true, now: Date(timeIntervalSince1970: 713)
+            )
         )
     case .projectionBump:
         let before = try await harness.store.captureProjection(
