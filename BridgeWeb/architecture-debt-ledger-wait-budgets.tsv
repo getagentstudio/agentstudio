@@ -28,11 +28,6 @@ no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-restart-journey.ts	18
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-file-deep-scroll-observation.ts	1
 no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-product.e2e.test.tsx	11
-no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-comparison-observation.ts	1
-no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-comparison-round-trip.e2e.test.ts	2
-no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-proportional-refresh.e2e.test.ts	2
-no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-stream-recovery.e2e.test.ts	1
-no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-worker-recovery.e2e.test.ts	11
 no-vitest-wait-calls	BridgeWeb/src/app/bridge-app-dev-product-session-host.unit.test.ts	4
 no-vitest-wait-calls	BridgeWeb/src/core/comm-worker/bridge-main-review-publication-recovery.unit.test.ts	5
 no-vitest-wait-calls	BridgeWeb/src/core/telemetry-worker/bridge-telemetry-worker-entry.unit.test.ts	1
