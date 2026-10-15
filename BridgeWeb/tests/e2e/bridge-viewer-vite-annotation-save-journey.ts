@@ -680,10 +680,13 @@ export async function selectReviewFile(props: {
 			);
 		}
 	};
-	const name = `Review shell mount: metadata and presentation projection before selecting ${props.path}`;
-	if (props.testLaunch === undefined) await waitForShell();
-	else await props.testLaunch.observeStep(name, waitForShell()).value();
-	await selectReviewTreeFilePath({ page: props.page, path: props.path });
+	const selectRequestedReviewFile = async (): Promise<void> => {
+		await waitForShell();
+		await selectReviewTreeFilePath({ page: props.page, path: props.path });
+	};
+	const name = `Review file selection: shell mount and tree row for ${props.path}`;
+	if (props.testLaunch === undefined) await selectRequestedReviewFile();
+	else await props.testLaunch.observeStep(name, selectRequestedReviewFile()).value();
 }
 
 export async function selectRangeForAnnotation(props: {
