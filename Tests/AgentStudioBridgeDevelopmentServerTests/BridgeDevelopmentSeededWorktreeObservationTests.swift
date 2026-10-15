@@ -261,7 +261,7 @@ struct BridgeDevelopmentSeededWorktreeObservationTests {
             let deletionChangeset = try await probe.nextFiles(paths: ["tracked.txt"])
             #expect(deletionChangeset.paths == ["tracked.txt"])
             let deletedPublication = try await lifecycle.requireCommittedDeletion(
-                path: "tracked.txt", after: deletionOpening)
+                path: "tracked.txt", after: deletionOpening, baseline: baselinePublication)
 
             // Assert deletion.
             #expect(deletedPublication.package.reviewGeneration == baselinePublication.package.reviewGeneration)

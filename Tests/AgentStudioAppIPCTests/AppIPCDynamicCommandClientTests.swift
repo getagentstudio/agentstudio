@@ -4,6 +4,7 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Dispatch
 import Foundation
 import Testing
@@ -160,7 +161,7 @@ struct AppIPCDynamicCommandClientTests {
         try await DynamicCommandScenario.withScope(body: { scenario in
             try scenario.fixture.server.start()
             let executableURL = try cliExecutableURL()
-            var environment = ProcessInfo.processInfo.environment
+            var environment = testProcessEnvironmentWithoutLaneState()
             environment["AGENTSTUDIO_IPC_SOCKET"] = scenario.fixture.paths.socketURL.path
             environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
 
@@ -617,7 +618,7 @@ private func makeCLIEnvironment(for scenario: DynamicCommandScenario) -> [String
 }
 
 private func makeCLIEnvironment(socketPath: String) -> [String: String] {
-    var environment = ProcessInfo.processInfo.environment
+    var environment = testProcessEnvironmentWithoutLaneState()
     environment["AGENTSTUDIO_IPC_SOCKET"] = socketPath
     environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
     return environment
