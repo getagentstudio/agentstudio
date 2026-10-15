@@ -29,7 +29,7 @@ enum BridgeProductWebKitMetadataStormDiagnostic {
         return BridgeProductWebKitHiddenStormSummary(
             message: message(nativeBefore: nativeBefore, nativeAfter: nativeAfter, admitted: admitted),
             productDeltas: BridgeProductWebKitHiddenStormProductDeltas(
-                panePresentationEventCount: admitted.paneEvents.count,
+                panePresentationEventCount: admitted.panePresentationEventCount,
                 fileMetadataPhaseCount: admitted.filePhases.count,
                 reviewMetadataPhaseCount: admitted.reviewPhases.count
             )
@@ -56,7 +56,9 @@ enum BridgeProductWebKitMetadataStormDiagnostic {
     }
 
     private struct AdmittedFrames {
+        // Keep rejected attempts in the diagnostic, but count only admitted frames.
         let paneEvents: ArraySlice<BridgeProductWebKitCarrierPanePresentationTrace>
+        let panePresentationEventCount: Int
         let filePhases: ArraySlice<String>
         let reviewPhases: ArraySlice<String>
     }
@@ -66,11 +68,13 @@ enum BridgeProductWebKitMetadataStormDiagnostic {
         traceBefore: BridgeProductWebKitCarrierTrace,
         traceAfter: BridgeProductWebKitCarrierTrace
     ) -> AdmittedFrames {
-        AdmittedFrames(
-            paneEvents: appendedValues(
-                traceAfter.panePresentationEvents,
-                after: traceBefore.panePresentationEvents
-            ),
+        let paneEvents = appendedValues(
+            traceAfter.panePresentationEvents,
+            after: traceBefore.panePresentationEvents
+        )
+        return AdmittedFrames(
+            paneEvents: paneEvents,
+            panePresentationEventCount: paneEvents.count(where: { $0.stage == "pane_presentation_enqueued" }),
             filePhases: appendedValues(
                 traceAfter.fileMetadataPhases,
                 after: traceBefore.fileMetadataPhases
