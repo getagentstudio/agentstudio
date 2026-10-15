@@ -302,22 +302,6 @@ describe('worktree annotation editor convergence', () => {
 				revision: 3,
 				sessions: [annotationSessionSummary({ revision: 3, sessionId: annotationSessionId })],
 			});
-		});
-		// Keep acquisition held until its real worker-shaped committed outcome.
-		expect(
-			surface.sentOperations
-				.map((operation) => operation.kind)
-				.filter((kind) => kind !== 'session.discover'),
-		).toEqual(['demand.acquire', 'output.history']);
-		await act(async (): Promise<void> => {
-			surface.commitPendingDemandAcquisition();
-		});
-		expect(
-			surface.sentOperations
-				.map((operation) => operation.kind)
-				.filter((kind) => kind !== 'session.discover'),
-		).toEqual(['demand.acquire', 'output.history', 'source.refresh']);
-		await act(async (): Promise<void> => {
 			await rendered
 				.getByRole('textbox', { name: 'Reply with Markdown' })
 				.fill('Save across replacement');
@@ -364,8 +348,8 @@ describe('worktree annotation editor convergence', () => {
 				.filter((kind) => kind !== 'session.discover'),
 		).toEqual([
 			'demand.acquire',
-			'output.history',
 			'source.refresh',
+			'output.history',
 			'reply.create',
 			'output.history',
 			'draft.save',

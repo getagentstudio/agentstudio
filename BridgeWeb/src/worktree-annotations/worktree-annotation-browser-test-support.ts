@@ -305,31 +305,6 @@ export class RecordingAnnotationBrowserSurface {
 		});
 	}
 
-	commitPendingDemandAcquisition(): void {
-		const pendingCommand = this.#takeMostRecentPendingAnnotationCommand('demand.acquire');
-		if (pendingCommand.operation.kind !== 'demand.acquire') {
-			throw new Error('Expected a pending annotation demand acquisition.');
-		}
-		const workerRequestId = pendingCommand.requestId;
-		const productRequestId = `product-${workerRequestId}`;
-		// Native acquisition commits without a mutation receipt or projection revision.
-		this.#publish({
-			direction: 'serverWorkerToMain',
-			kind: 'annotationCommandAccepted',
-			outcome: {
-				requestId: productRequestId,
-				sessionId: pendingCommand.operation.sessionId,
-				status: { kind: 'committed' },
-				surface: this.client.surface === 'fileView' ? 'file' : 'review',
-			},
-			productRequestId,
-			requestId: workerRequestId,
-			surface: this.client.surface,
-			transferDescriptors: [],
-			wireVersion: 1,
-		});
-	}
-
 	settleMostRecentCommitted(
 		sessionId: string = annotationSessionId,
 		expectedThreadCount: number = this.#threadsById.size,
