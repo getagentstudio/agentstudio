@@ -1,5 +1,6 @@
 import { access } from 'node:fs/promises';
 
+import { chromium, type Browser } from 'playwright';
 import { expect, test, vi } from 'vitest';
 
 import {
@@ -11,9 +12,87 @@ import { handleLaunchPromise } from '../../scripts/dev-server/handled-launch-pro
 import { makeDeferred } from '../../scripts/verify-bridge-viewer-worktree-dev-server/utils.ts';
 import { createOwnedVerifierJourneyDeadline } from '../../scripts/verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
 import { endToEndTestTimeoutMilliseconds } from '../vitest-hang-bounds.ts';
+import {
+	closeBridgeViewerE2ETestBrowsers,
+	launchBridgeViewerE2EChromium,
+} from './bridge-viewer-vite-e2e-browser.ts';
 import { createTabOwnershipReplacementHold } from './bridge-viewer-vite-tab-ownership-test-support.ts';
 import BridgeWebE2ERunner from './bridge-web-e2e-runner.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
+
+test('a failed body names its already-pending browser close and joins it across owner abort', async () => {
+	const owner = new AbortController();
+	const closeEntered = makeDeferred<void>();
+	const closeRelease = makeDeferred<void>();
+	const primaryFailure = new Error('named journey operation failed');
+	let connected = true;
+	let nativeCloseCount = 0;
+	let bodyRetired = false;
+	let boundaryRetired = false;
+	const controlledBrowser = {
+		close: async (): Promise<void> => {
+			nativeCloseCount += 1;
+			closeEntered.resolve();
+			await closeRelease.promise;
+			connected = false;
+		},
+		contexts: (): [] => [],
+		isConnected: (): boolean => connected,
+		on: (): void => {},
+	} as unknown as Browser;
+	const launchChromium = vi.spyOn(chromium, 'launch').mockResolvedValue(controlledBrowser);
+	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
+	const task = { id: 'tq127-failed-body-close', name: 'TQ127 failed journey browser retirement' };
+	const body = handleLaunchPromise(
+		runBridgeWebE2ETestBody({ signal: owner.signal, task }, async (): Promise<void> => {
+			const browser = await launchBridgeViewerE2EChromium({ testSignal: owner.signal });
+			try {
+				throw primaryFailure;
+			} finally {
+				await browser.close();
+				bodyRetired = true;
+			}
+		}),
+		'TQ127 failed raw body',
+	);
+	let boundary: ReturnType<typeof handleLaunchPromise<void>> | undefined;
+	try {
+		await closeEntered.promise;
+		owner.abort(new Error('TQ127 owner aborted during physical retirement'));
+		boundary = handleLaunchPromise(
+			BridgeWebE2ERunner.prototype
+				.onTaskFinished({ id: task.id, result: { state: 'fail' } })
+				.finally((): void => {
+					boundaryRetired = true;
+				}),
+			'TQ127 runner physical retirement',
+		);
+		expect(stderr).toHaveBeenCalledWith(
+			expect.stringMatching(
+				/^BRIDGE_E2E_ABORT waiting=body retirement: TQ127 failed journey browser retirement; launch=(?<launch>[\da-f-]+) nativeBrowser=true operation="retire browser"(?:, launch=\k<launch> nativeBrowser=true operation="retire (?:Vite child|Swift backend)"){0,2}\n$/,
+			),
+		);
+		expect(nativeCloseCount).toBe(1);
+		expect(bodyRetired).toBe(false);
+		expect(boundaryRetired).toBe(false);
+		expect(controlledBrowser.isConnected()).toBe(true);
+		closeRelease.resolve();
+		await boundary.settled;
+		await expect(body.value()).rejects.toThrow(primaryFailure.message);
+		await expect(boundary.value()).rejects.toThrow(primaryFailure.message);
+		expect(nativeCloseCount).toBe(1);
+		expect(bodyRetired).toBe(true);
+		expect(boundaryRetired).toBe(true);
+		expect(controlledBrowser.isConnected()).toBe(false);
+	} finally {
+		closeRelease.resolve();
+		await body.settled;
+		await boundary?.settled;
+		await closeBridgeViewerE2ETestBrowsers(owner.signal);
+		launchChromium.mockRestore();
+		stderr.mockRestore();
+	}
+});
 
 test.each(['completed', 'failed'] as const)(
 	'final retirement joins A registering B registering held C: %s',
@@ -140,7 +219,9 @@ test('the actual runner boundary joins held fixture cleanup and the timed-out ra
 		);
 		await cleanupStarted.promise;
 		expect(stderr).toHaveBeenCalledWith(
-			'BRIDGE_LAUNCH_RETIREMENT waiting=retire held fixture cleanup\n',
+			expect.stringMatching(
+				/^BRIDGE_LAUNCH_RETIREMENT waiting=retire held fixture cleanup; timestamp=\S+Z launch=[\da-f-]+ nativeBrowser=false operation="retire held fixture cleanup" phase=start outcome=started\n$/,
+			),
 		);
 		expect(nextTestEntered).toBe(false);
 		expect(bodyRetired).toBe(false);
