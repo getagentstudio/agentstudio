@@ -236,7 +236,8 @@ private enum DiffCommandPageModeAdmissionTraceError: Error {
 
 @MainActor
 func makeDiffCommandPageModeFixture(
-    includesContentHandle: Bool = false
+    includesContentHandle: Bool = false,
+    reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init()
 ) async throws -> DiffCommandPageModeFixture {
     let baseEndpoint = makeBridgeEndpoint(endpointId: "baseline-headMinusOne", kind: .gitRef)
     let headEndpoint = makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree)
@@ -267,6 +268,7 @@ func makeDiffCommandPageModeFixture(
         ),
         reviewSourceProvider: reviewProviderFixture.provider,
         initialPaneActivity: .foreground,
+        reviewConstructionProgress: reviewConstructionProgress,
         contributionTargetCommit: { target in
             .applied(
                 BridgePaneState(

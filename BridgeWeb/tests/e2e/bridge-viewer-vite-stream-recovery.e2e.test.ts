@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { waitForSelectedFileReady } from './bridge-viewer-vite-annotation-save-journey.ts';
+import { registerStreamRecoveryWaitProof } from './bridge-viewer-vite-budget-wait-journey.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import { observeSelectedFileRetention } from './bridge-viewer-vite-file-retention-probe.ts';
 import { observeInteractionProfileFailures } from './bridge-viewer-vite-interaction-profile-diagnostics.ts';
@@ -17,6 +18,7 @@ import {
 	startBridgeStreamFaultProxy,
 	type BridgeStreamFaultProxy,
 } from './bridge-viewer-vite-stream-fault-proxy.ts';
+import { waitForStreamRecoveryFilePaint } from './bridge-viewer-vite-stream-recovery-readiness.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 test.for(['direct', 'healthy', 'disconnected'] as const)(
@@ -62,30 +64,12 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 				const updatedContent = await fixture.mutateLargeFile();
 
 				// Assert — no second click, explicit subscribe, reload, or replacement call from the test.
-				await page.waitForFunction(
-					(expectedSha256: string): boolean => {
-						const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
-						const painted = canvas?.querySelector(
-							'diffs-container[data-bridge-painted-source-correlations]',
-						);
-						const correlations: unknown = JSON.parse(
-							painted?.getAttribute('data-bridge-painted-source-correlations') ?? '[]',
-						);
-						return (
-							canvas?.getAttribute('data-worktree-open-file-state') === 'ready' &&
-							Array.isArray(correlations) &&
-							correlations.some(
-								(correlation: unknown): boolean =>
-									typeof correlation === 'object' &&
-									correlation !== null &&
-									'observedSha256' in correlation &&
-									correlation.observedSha256 === expectedSha256,
-							)
-						);
-					},
-					updatedContent.sha256,
-					{ timeout: 30_000 },
-				);
+				await waitForStreamRecoveryFilePaint({
+					page,
+					expectedSha256: updatedContent.sha256,
+					streamState,
+					testLaunch: server.testLaunch,
+				});
 				if (proxy !== null && before !== undefined && streamState === 'healthy') {
 					expect(proxy.snapshot().metadataRequestCount).toBe(before.metadataRequestCount);
 				} else if (proxy !== null && before !== undefined) {
@@ -142,3 +126,5 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 		});
 	},
 );
+
+registerStreamRecoveryWaitProof();

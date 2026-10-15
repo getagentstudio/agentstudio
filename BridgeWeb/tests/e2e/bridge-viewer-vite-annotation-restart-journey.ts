@@ -27,12 +27,16 @@ import {
 	observeBrowserRuntimeDiagnostics,
 	waitForSettledReviewComparisonWithDiagnostics,
 } from './bridge-viewer-vite-review-comparison-observation.ts';
+import { registerReviewMountRefusalJourneyTests } from './bridge-viewer-vite-review-mount-refusal-journey.ts';
+import { registerReviewResetReopenJourney } from './bridge-viewer-vite-review-reset-reopen-journey.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const annotationRestartJourneyTimeoutMilliseconds = 120_000;
 const annotationComposedConvergenceTimeoutMilliseconds = 30_000;
 
 export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
+	registerReviewMountRefusalJourneyTests();
+	registerReviewResetReopenJourney();
 	test('restores distinct File and Review annotations after a cold Vite and Swift restart', async (context) => {
 		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			const fixture = await createBridgeViewerViteProductFixture();
@@ -99,7 +103,11 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 				if (reviewOriginFile === undefined) {
 					throw new Error('Restart journey requires a Review-origin file.');
 				}
-				await selectReviewFile({ page, path: reviewOriginFile.path });
+				await selectReviewFile({
+					page,
+					path: reviewOriginFile.path,
+					testLaunch: serverB.testLaunch,
+				});
 				await waitForSelectedReviewReady({ itemId: reviewOriginFile.itemId, page });
 				await page
 					.getByText('Review Save must settle from its exact command receipt.', { exact: true })
@@ -190,7 +198,14 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 				if (affectedFile === undefined || unaffectedFile === undefined) {
 					throw new Error('Promoted refresh journey requires two Review files.');
 				}
-				await selectReviewFile({ page, path: affectedFile.path });
+				try {
+					await selectReviewFile({ page, path: affectedFile.path, testLaunch: server.testLaunch });
+				} catch (error: unknown) {
+					throw new Error(
+						`Initial Review shell mount did not settle: server=${server.diagnostics()} runtime=${await runtimeDiagnostics.describe()}`,
+						{ cause: error },
+					);
+				}
 				await waitForSelectedReviewReady({ itemId: affectedFile.itemId, page });
 				const initialPackage = await requireReviewPackageIdentity(page);
 
@@ -354,7 +369,7 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 					expectedReviewGeneration: verifiedAppliedComparison.reviewGeneration,
 					page,
 				});
-				await selectReviewFile({ page, path: unaffectedFile.path });
+				await selectReviewFile({ page, path: unaffectedFile.path, testLaunch: server.testLaunch });
 				await waitForSelectedReviewReady({ itemId: unaffectedFile.itemId, page });
 				const automaticallyInstalledComparison =
 					await waitForSettledReviewComparisonWithDiagnostics({

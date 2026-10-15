@@ -1106,12 +1106,14 @@ final class WorkspaceStoreTests {
             Issue.record("expected valid repository topology fixture")
             return
         }
-        let nextSleepGeneration = clock.scheduledSleepGeneration
+        let debounceDeadline = clock.now.advanced(by: .milliseconds(10))
         topologyAtom.replaceTopology(replacement)
         let capturedRevision = topologyAtom.lifecycleRevision
-        await clock.waitForPendingSleepGeneration(nextSleepGeneration)
+        // The store's maximum-delay sleep can register before its debounce.
+        let registeredDeadline = await clock.waitForPendingSleep(deadline: debounceDeadline)
+        #expect(registeredDeadline == debounceDeadline)
         #expect(topologyStore.isDirty)
-        clock.advance(by: .milliseconds(10))
+        clock.advance(to: registeredDeadline)
 
         _ = try await facts.expectNextSaveCompleted(captureRevision: capturedRevision)
         guard case .loaded(let snapshot) = await sqliteDatastore.loadRepositoryTopologySnapshot() else {

@@ -70,6 +70,8 @@ export async function startBridgeStreamFaultProxy(
 	upstreamOrigin: string,
 	options: {
 		readonly semanticBatchFaults?: boolean;
+		readonly resetFirstReviewOpen?: boolean;
+		readonly onForwardedMetadataFrame?: (frame: BridgeProductMetadataFrame) => void;
 		readonly onMetadataFrame?: (frame: BridgeProductMetadataFrame) => void;
 	} = {},
 ): Promise<BridgeStreamFaultProxy> {
@@ -101,7 +103,8 @@ export async function startBridgeStreamFaultProxy(
 			(pendingAckLoss !== null || lostAckRequestBytes !== null);
 		let loseAckResponse = false;
 		let exactAckReplay = false;
-		const transformMetadata = isMetadata && options.semanticBatchFaults === true;
+		const transformMetadata =
+			isMetadata && (options.semanticBatchFaults === true || options.resetFirstReviewOpen === true);
 		if (isMetadata) metadataRequestCount += 1;
 		const responseId = metadataRequestCount;
 		let closureCause: string | null = null;
@@ -154,11 +157,13 @@ export async function startBridgeStreamFaultProxy(
 								transformer: new BridgeSemanticBatchFaultTransformer(
 									options.onMetadataFrame,
 									(frame): void => {
+										options.onForwardedMetadataFrame?.(frame);
 										if (frame.kind !== 'subscription.batchComplete') return;
 										forwardedBatchCompletes.add(frame.batchId);
 										batchCompleteWaiters.get(frame.batchId)?.();
 										batchCompleteWaiters.delete(frame.batchId);
 									},
+									{ resetFirstReviewOpen: options.resetFirstReviewOpen === true },
 								),
 								write: (encodedFrames): void => {
 									for (const frame of encodedFrames) {

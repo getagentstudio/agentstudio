@@ -24,6 +24,61 @@ const batchKinds = [
 const faultModes = ['drop', 'duplicate', 'reorder', 'stall'] as const;
 
 describe('semantic metadata batch fault transform', () => {
+	test('a first-open Review reset preserves E3 identity and admits the successor bank, not the retired bank', () => {
+		const sourceBank = makeThreePartBatch('review.metadata', 2, 'first-bank');
+		const firstBegin = sourceBank[0];
+		if (firstBegin?.kind !== 'subscription.batchBegin')
+			throw new Error('Expected first bank begin.');
+		const firstAcceptance = bridgeProductMetadataFrameSchema.parse({
+			kind: 'subscription.accepted',
+			subscriptionSequence: 0,
+			workerDerivationEpoch: 7,
+			metadataStreamId: firstBegin.metadataStreamId,
+			paneSessionId: firstBegin.paneSessionId,
+			streamSequence: 1,
+			subscriptionId: firstBegin.subscriptionId,
+			subscriptionKind: firstBegin.subscriptionKind,
+			wireVersion: firstBegin.wireVersion,
+			workerInstanceId: firstBegin.workerInstanceId,
+		});
+		const successorId = 'review-successor';
+		const successorBank = makeThreePartBatch('review.metadata', 8, 'successor-bank').map((frame) =>
+			bridgeProductMetadataFrameSchema.parse({ ...frame, subscriptionId: successorId }),
+		);
+		const successorAcceptance = bridgeProductMetadataFrameSchema.parse({
+			...firstAcceptance,
+			streamSequence: 7,
+			subscriptionId: successorId,
+			workerDerivationEpoch: 8,
+		});
+		const transformer = new BridgeSemanticBatchFaultTransformer(undefined, undefined, {
+			resetFirstReviewOpen: true,
+		});
+		const result = decodeFrames(
+			transformer.push(
+				concatenateBytes(
+					...[firstAcceptance, ...sourceBank, successorAcceptance, ...successorBank].map(
+						encodeBridgeProductMetadataFrame,
+					),
+				),
+			),
+		);
+		const reset = result.find((frame) => frame.kind === 'subscription.reset');
+		expect(reset).toMatchObject({
+			subscriptionId: firstBegin.subscriptionId,
+			subscriptionSequence: 1,
+			workerDerivationEpoch: 7,
+			reason: 'stale_source',
+		});
+		expect(result.filter((frame) => frame.kind === 'subscription.batchComplete')).toMatchObject([
+			{ batchId: 'successor-bank', subscriptionId: successorId },
+		]);
+		expect(result.map((frame) => frame.streamSequence)).toEqual(
+			result.map((_frame, index) => index + 1),
+		);
+		expect(result.filter((frame) => frame.kind === 'subscription.reset')).toHaveLength(1);
+	});
+
 	test.each(
 		batchKinds.flatMap((subscriptionKind) =>
 			faultModes.map((mode) => ({

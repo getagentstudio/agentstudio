@@ -428,7 +428,9 @@ struct FilesystemActorFilteringTests {
     @Test("ignored-only changes do not emit filesChanged envelope")
     func ignoredOnlyChangesDoNotEmitFilesChangedEnvelope() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let actor = makeActor(bus: bus)
+        let actor = FilesystemActor(
+            bus: bus, fseventStreamClient: ControllableFSEventStreamClient(), sleepClock: TestPushClock(),
+            debounceWindow: .zero, maxFlushLatency: .zero)
 
         let rootPath = FileManager.default.temporaryDirectory
             .appending(path: "ignored-only-\(UUIDv7.generate().uuidString)")
@@ -443,26 +445,18 @@ struct FilesystemActorFilteringTests {
         let worktreeId = UUIDv7.generate()
         await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
 
-        let observed = FilteringObservedFilesystemChanges()
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        let collectionTask = Task {
-            for await envelope in stream {
-                await observed.record(envelope)
-            }
-        }
-        defer { collectionTask.cancel() }
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        _ = await probe.begin()
 
         await actor.enqueueRawPaths(
             worktreeId: worktreeId,
             paths: ["cache.tmp", ".git/FETCH_HEAD"]
         )
-        for _ in 0..<300 {
-            await Task.yield()
-        }
-
-        #expect(await observed.filesChangedCount(for: worktreeId) == 0)
+        #expect(await actor.pendingWorktreeLogicalDebtCount == 0)
 
         await actor.shutdown()
+        try await probe.closeAfterProducerReturn()
+        #expect(probe.changesets.isEmpty)
     }
 
     @Test("gitignore modification reloads filter for subsequent batches")

@@ -605,9 +605,10 @@ extension SidebarPerformanceWorkloadScriptTests {
         #expect(source.contains("activity/descending/no-subgroup"))
         #expect(source.contains("retired_panes_organization_commands"))
         #expect(source.contains("command.list omitted retained retired command"))
-        #expect(source.contains("retired command retained IPC authority"))
+        #expect(source.contains("retired command IPC descriptor mismatch"))
         #expect(source.contains("command.execute retired"))
-        #expect(source.contains("\"parameters required\""))
+        #expect(
+            source.contains("retired_result.get(\"kind\") != \"unavailable\"") && source.contains("featureUnavailable"))
         #expect(source.contains("\"auth.login replay\""))
         #expect(source.contains("repo_pane_projection_worker_elapsed_ms_p95"))
         #expect(source.contains("repo_pane_projection_worker_elapsed_ms_count"))
@@ -721,7 +722,6 @@ extension SidebarPerformanceWorkloadScriptTests {
         defer {
             try? FileManager.default.removeItem(at: proofRoot)
         }
-
         let result = try await runSidebarScript(
             arguments: [scriptPath, "--prepare-only"],
             environment: [
@@ -970,7 +970,7 @@ func runSidebarScript(
     arguments: [String],
     environment: [String: String] = [:]
 ) async throws -> ProcessResult {
-    var mergedEnvironment = ProcessInfo.processInfo.environment
+    var mergedEnvironment: [String: String] = [:]
     let implicitProofRoot: URL?
     if environment["AGENTSTUDIO_SIDEBAR_PROOF_ROOT"] == nil {
         implicitProofRoot = FileManager.default.temporaryDirectory.appending(

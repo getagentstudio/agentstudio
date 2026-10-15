@@ -1,10 +1,11 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
 @testable import AgentStudioCore
 
 @MainActor
-@Suite("SwiftPaneRuntime lifecycle")
+@Suite("SwiftPaneRuntime lifecycle", .serialized)
 struct SwiftPaneRuntimeTests {
     @Test("swift pane runtime openFile loads content and emits fileOpened")
     func swiftRuntimeOpenFile() async throws {
@@ -114,6 +115,8 @@ struct SwiftPaneRuntimeTests {
             paneEventBus: paneEventBus
         )
         runtime.transitionToReady()
+        let busStream = await paneEventBus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        var busIterator = busStream.makeAsyncIterator()
         _ = await runtime.handleCommand(
             makeEnvelope(
                 command: .editor(.openFile(path: tempFile.path, line: nil, column: nil)),
@@ -121,12 +124,12 @@ struct SwiftPaneRuntimeTests {
             )
         )
 
+        let initialOpen = await busIterator.next()
+        #expect(initialOpen?.seq == 1)
+
         try "print(\"after\")\n".write(to: tempFile, atomically: true, encoding: .utf8)
 
-        let busStream = await paneEventBus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        var busIterator = busStream.makeAsyncIterator()
-
-        let revertCommandId = UUID()
+        let revertCommandId = UUIDv7.generate()
         let revertResult = await runtime.handleCommand(
             makeEnvelope(
                 commandId: revertCommandId,
@@ -135,7 +138,17 @@ struct SwiftPaneRuntimeTests {
             )
         )
 
+        // The emitter increments sequence synchronously. Its command return
+        // closes this window before a lagging initial-open delivery can mask it.
+        let snapshot = runtime.snapshot()
+        #expect(snapshot.lastSeq == 2)
+        guard snapshot.lastSeq == 2 else {
+            Issue.record("Revert did not emit its own second fileOpened envelope")
+            _ = await runtime.shutdown(timeout: .zero)
+            return
+        }
         let busEnvelope = await busIterator.next()
+        _ = await runtime.shutdown(timeout: .zero)
 
         #expect(revertResult == .success(commandId: revertCommandId))
         #expect(runtime.displayedText == "print(\"after\")\n")
@@ -152,6 +165,9 @@ struct SwiftPaneRuntimeTests {
             Issue.record("Expected editor.fileOpened event for revert command")
             return
         }
+        #expect(paneEnvelope.seq == 2)
+        #expect(paneEnvelope.commandId == revertCommandId)
+        #expect(paneEnvelope.paneId == runtime.paneId)
         #expect(openedPath == tempFile.path)
         #expect(language == "swift")
     }

@@ -209,7 +209,7 @@ struct BridgePackagedProductJourneyScriptTests {
             #"generation_before = initial_package.get("reviewGeneration")"#
         let initialPageReadyWait = "initial_review_page = wait_for("
         let refreshRequest =
-            #"session.request("bridge.diff.refresh", {"handle": review_handle})"#
+            #"session.request("bridge.diff.refresh", {"handle": review_handle, "correlationId": str(uuid.uuid4())})"#
         let postRefreshReadyWait = "package = wait_for("
         let strictGenerationAdvance =
             #"value.get("reviewGeneration") > generation_before"#
@@ -521,7 +521,7 @@ struct BridgePackagedProductJourneyScriptTests {
 
         #expect(source.contains("scripts/run-debug-observability.sh"))
         #expect(source.contains("AGENTSTUDIO_DEBUG_DIRECT_FALLBACK=0"))
-        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1"))
+        #expect(source.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=\"$launch_escrow_path\""))
         #expect(source.contains("AGENTSTUDIO_STARTUP_WATCH_FOLDER"))
         #expect(source.contains("AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION"))
         #expect(source.contains(#"AGENTSTUDIO_OBSERVABILITY_APP=//p"#))
