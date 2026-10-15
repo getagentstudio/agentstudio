@@ -3,10 +3,7 @@ import { expect, test, type TestContext } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { installBridgeViewerDocumentGenerations } from '../../scripts/verify-bridge-viewer-worktree-dev-server/product-only-real-router-document-generations.ts';
-import {
-	selectReviewFile,
-	waitForSelectedReviewReady,
-} from './bridge-viewer-vite-annotation-save-journey.ts';
+import { selectReviewFile } from './bridge-viewer-vite-annotation-save-journey.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import {
 	createBridgeViewerViteProductFixture,
@@ -17,6 +14,8 @@ import {
 	bridgeViewerViteProductReviewUrl,
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
+import { registerReviewResetReopenJourney } from './bridge-viewer-vite-review-reset-reopen-journey.ts';
+import { registerTabOwnershipTerminalJourney } from './bridge-viewer-vite-tab-ownership-terminal-journey.ts';
 import {
 	createTabOwnershipCleanup,
 	createTabOwnershipStepCheckpoint,
@@ -24,6 +23,7 @@ import {
 	recordTabOwnershipBootstrapHistory,
 	tabOwnershipBootstrapTransportForPage,
 	type TabOwnershipBootstrapHistory,
+	waitForTabOwnershipReviewReady,
 } from './bridge-viewer-vite-tab-ownership-test-support.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
@@ -106,7 +106,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				checkpoint.begin('select first tab Review file');
 				await selectReviewFile({ page: firstTab, path: reviewFile.path });
 				checkpoint.begin('first tab Review ready');
-				await waitForSelectedReviewReady({ page: firstTab, itemId: reviewFile.itemId });
+				await waitForTabOwnershipReviewReady({ page: firstTab, itemId: reviewFile.itemId });
 
 				// Act: opening a competing tab must not displace the active tab.
 				checkpoint.begin('create competing browser context and page');
@@ -127,7 +127,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				checkpoint.begin('competing tab inactive notice');
 				await secondTab.getByTestId('bridge-dev-session-inactive').waitFor({ state: 'visible' });
 				checkpoint.begin('first tab remains ready after competing tab opens');
-				await waitForSelectedReviewReady({ page: firstTab, itemId: reviewFile.itemId });
+				await waitForTabOwnershipReviewReady({ page: firstTab, itemId: reviewFile.itemId });
 				expect(await secondTab.getByRole('button').count()).toBe(1);
 
 				// Refresh retries admission; it must never take control from the active tab.
@@ -146,7 +146,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				checkpoint.begin('new document competing tab inactive notice');
 				await secondTab.getByTestId('bridge-dev-session-inactive').waitFor({ state: 'visible' });
 				checkpoint.begin('first tab remains ready after refused Refresh');
-				await waitForSelectedReviewReady({ page: firstTab, itemId: reviewFile.itemId });
+				await waitForTabOwnershipReviewReady({ page: firstTab, itemId: reviewFile.itemId });
 
 				// Closing the first tab releases its stream; Refresh then opens usable content.
 				// The native termination oracle is still a separate Bridge-owned gap; no retry here.
@@ -157,13 +157,13 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 				checkpoint.begin('select second tab Review file after first tab close');
 				await selectReviewFile({ page: secondTab, path: reviewFile.path });
 				checkpoint.begin('second tab Review ready after first tab close');
-				await waitForSelectedReviewReady({ page: secondTab, itemId: reviewFile.itemId });
+				await waitForTabOwnershipReviewReady({ page: secondTab, itemId: reviewFile.itemId });
 				checkpoint.begin('reload admitted second tab');
 				await secondTab.reload({ waitUntil: 'domcontentloaded' });
 				checkpoint.begin('select reloaded second tab Review file');
 				await selectReviewFile({ page: secondTab, path: reviewFile.path });
 				checkpoint.begin('reloaded second tab Review ready');
-				await waitForSelectedReviewReady({ page: secondTab, itemId: reviewFile.itemId });
+				await waitForTabOwnershipReviewReady({ page: secondTab, itemId: reviewFile.itemId });
 				checkpoint.begin('assert closed first tab never re-bootstrapped');
 				firstBootstrapHistory.assertSingleBootstrapForDocument(firstDocumentGeneration);
 				checkpoint.begin('assert page errors');
@@ -182,3 +182,7 @@ test.for(['shared-profile', 'separate-profile'] as const)(
 		});
 	},
 );
+
+registerTabOwnershipTerminalJourney();
+
+registerReviewResetReopenJourney({ waitForReadiness: waitForTabOwnershipReviewReady });
