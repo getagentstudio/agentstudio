@@ -409,20 +409,24 @@ struct DarwinSharedLocalFSEventObserverTests {
         let eventId: FSEventStreamEventId = 71
         let changedPath = DarwinFSEventPathCanonicalizer.canonicalURL(firstWorktreeRoot)
             .appending(path: "Changed.swift").path
-        let routedWorktreeIds = Task<Set<UUID>?, Never> {
+        // Open before stimulus; consume every batch through the correlated
+        // ingress fence placed after the synchronous routing call returns.
+        let routedWorktreeIds = Task<Set<UUID>, Never> {
             var worktreeIds: Set<UUID> = []
             for await ingressItem in client.events() {
-                guard case .batch(let batch) = ingressItem,
-                    batch.observations.contains(where: { $0.eventID == eventId })
-                else {
-                    continue
-                }
-                worktreeIds.insert(batch.worktreeId)
-                if worktreeIds.count == 2 {
+                switch ingressItem {
+                case .batch(let batch):
+                    if batch.observations.contains(where: { $0.eventID == eventId }) {
+                        worktreeIds.insert(batch.worktreeId)
+                    }
+                case .activityProcessingFence(let fenceId):
+                    client.acknowledgeActivityProcessingFence(fenceId)
                     return worktreeIds
+                case .activityObservations:
+                    break
                 }
             }
-            return nil
+            return worktreeIds
         }
 
         // Act
@@ -437,9 +441,8 @@ struct DarwinSharedLocalFSEventObserverTests {
         )
 
         // Assert
-        let routed = try #require(
-            await firstCompletedValue(from: routedWorktreeIds, timeout: .seconds(5))
-        )
+        #expect(await client.ingressBuffer.enqueueActivityProcessingFence())
+        let routed = await routedWorktreeIds.value
         #expect(routed == [rootRegistrationId, firstWorktreeId])
         #expect(!routed.contains(secondWorktreeId))
     }

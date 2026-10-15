@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
 	bootstrapBridgeCommWorkerEntry,
@@ -7,6 +7,7 @@ import {
 	type BridgeCommWorkerPort,
 } from './bridge-comm-worker-entry.js';
 import { encodeBridgeWorkerSelectCommand } from './bridge-comm-worker-protocol.js';
+import { installTestBridgeCommWorkerEntryRenderWakes } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import { executeAgentStudioBridgeProductRequest } from './bridge-product-agent-studio-request-executor.js';
 import {
 	BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH,
@@ -69,6 +70,8 @@ function makeTestEntryDependencies(): BridgeCommWorkerEntryDependencies {
 			makeTestInstalledProductSession(input),
 	};
 }
+
+beforeEach(installTestBridgeCommWorkerEntryRenderWakes);
 
 describe('Bridge comm worker one-shot install lifecycle', () => {
 	afterEach((): void => {

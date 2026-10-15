@@ -101,12 +101,10 @@ func prepareHTTPAnnotationAuthoring(
     let fileSource = try await queryHTTPFileSource(
         client: client,
         connection: connection,
-        requestSequence: 2
     )
     _ = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 3,
         subscription: [
             "source": try jsonObject(fileSource),
             "subscriptionKind": "file.metadata",
@@ -123,7 +121,6 @@ func prepareHTTPAnnotationAuthoring(
         path: "tracked.txt",
         client: client,
         connection: connection,
-        requestSequence: 4,
         subscriptionID: "file-metadata-annotation-authoring"
     )
     let fileObservation = try await waitForHTTPFileContentDescriptor(
@@ -134,7 +131,6 @@ func prepareHTTPAnnotationAuthoring(
     let commentOpen = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 5,
         subscription: ["subscriptionKind": "file.annotations"],
         subscriptionID: "file-annotations-authoring"
     )
@@ -148,7 +144,6 @@ func prepareHTTPAnnotationAuthoring(
         client: client,
         connection: connection,
         openResponse: commentOpen,
-        requestSequence: 6
     )
     _ = try await waitForHTTPAnnotationCatalogCommit(
         client: client,
@@ -168,7 +163,6 @@ func acceptHTTPFileViewScope(
     path: String?,
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
-    requestSequence: Int,
     subscriptionID: String
 ) async throws {
     let interests: [[String: Any]] = path.map { [["lane": "foreground", "paths": [$0]]] } ?? []
@@ -179,7 +173,6 @@ func acceptHTTPFileViewScope(
             connection: connection,
             kind: "subscription.setScope",
             requestID: "file-scope-\(subscriptionID)",
-            requestSequence: requestSequence
         ).merging([
             "domain": "default",
             "handle": "file-view-\(subscriptionID)",
@@ -209,7 +202,6 @@ func acceptHTTPCommentViewScope(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
     openResponse: BridgeProductSubscriptionOpenAcceptedResponse,
-    requestSequence: Int,
     scopeRevision: Int = 1,
     sessionIDs: [UUID] = []
 ) async throws {
@@ -221,7 +213,6 @@ func acceptHTTPCommentViewScope(
             connection: connection,
             kind: "subscription.setScope",
             requestID: "comment-scope-\(openResponse.subscriptionId)-\(scopeRevision)",
-            requestSequence: requestSequence
         ).merging([
             "domain": "default",
             "handle": "comment-view-\(openResponse.subscriptionId)",
@@ -281,12 +272,10 @@ func prepareHTTPAnnotationLocatedRestore(
     let fileSource = try await queryHTTPFileSource(
         client: client,
         connection: connection,
-        requestSequence: 2
     )
     _ = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 3,
         subscription: [
             "source": try jsonObject(fileSource),
             "subscriptionKind": "file.metadata",
@@ -303,7 +292,6 @@ func prepareHTTPAnnotationLocatedRestore(
         path: nil,
         client: client,
         connection: connection,
-        requestSequence: 4,
         subscriptionID: "file-metadata-located-restore"
     )
     let acceptedFileSource = try await waitForHTTPFileSourceIdentity(
@@ -312,7 +300,6 @@ func prepareHTTPAnnotationLocatedRestore(
     let commentOpen = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 5,
         subscription: ["subscriptionKind": "file.annotations"],
         subscriptionID: "file-annotations-located-restore"
     )
@@ -326,7 +313,6 @@ func prepareHTTPAnnotationLocatedRestore(
         client: client,
         connection: connection,
         openResponse: commentOpen,
-        requestSequence: 6,
         sessionIDs: [sessionID]
     )
     _ = try await waitForHTTPAnnotationCatalogCommit(
@@ -344,6 +330,7 @@ func prepareHTTPAnnotationLocatedRestore(
 struct HTTPProductConnection: Sendable {
     let bootstrap: BridgeProductSessionBootstrap
     let capability: String
+    let controlSequence = HTTPProductControlSequence()
 }
 
 struct HTTPMetadataStreamHandle {
@@ -470,7 +457,6 @@ func openHTTPProductConnection(
             connection: connection,
             kind: "workerSession.open",
             requestID: "worker-session-open",
-            requestSequence: 1
         ).merging(["request": NSNull()]) { _, newValue in newValue }
     )
     guard case .workerSessionAccepted = response else {
@@ -485,7 +471,6 @@ func openHTTPProductConnection(
 func queryHTTPFileSource(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
-    requestSequence: Int
 ) async throws -> BridgeProductFileSourceSpec {
     let response = try await executeHTTPControl(
         client: client,
@@ -494,7 +479,6 @@ func queryHTTPFileSource(
             connection: connection,
             kind: "product.call",
             requestID: "file-source-current",
-            requestSequence: requestSequence
         ).merging([
             "call": [
                 "method": "file.source.current",
@@ -516,7 +500,6 @@ func queryHTTPFileSource(
 func openHTTPSubscription(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
-    requestSequence: Int,
     subscription: [String: Any],
     subscriptionID: String
 ) async throws -> BridgeProductSubscriptionOpenAcceptedResponse {
@@ -527,7 +510,6 @@ func openHTTPSubscription(
             connection: connection,
             kind: "subscription.open",
             requestID: "subscription-open-\(subscriptionID)",
-            requestSequence: requestSequence
         ).merging([
             "subscription": subscription,
             "subscriptionId": subscriptionID,
@@ -549,7 +531,6 @@ func executeHTTPAnnotationCommand(
     connection: HTTPProductConnection,
     operation: [String: Any],
     requestID: String,
-    requestSequence: Int
 ) async throws -> BridgeProductWorktreeAnnotationCommandOutcomeDTO {
     let response = try await executeHTTPControl(
         client: client,
@@ -558,7 +539,6 @@ func executeHTTPAnnotationCommand(
             connection: connection,
             kind: "product.call",
             requestID: requestID,
-            requestSequence: requestSequence
         ).merging([
             "call": [
                 "method": "file.annotations.command",
@@ -581,6 +561,9 @@ func executeHTTPControl(
     connection: HTTPProductConnection,
     object: [String: Any]
 ) async throws -> BridgeProductControlResponse {
+    guard object["requestSequence"] == nil else { throw HTTPAnnotationIntegrationError.invalidJSONObject }
+    var object = object
+    object["requestSequence"] = await connection.controlSequence.takeNextRequestSequence()
     let capabilityHeader = try #require(
         HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
     )
@@ -667,20 +650,24 @@ func executeHTTPControl(
     } catch {
         throw HTTPAnnotationIntegrationError.invalidOperationResult
     }
-    return try requireCompletedHTTPControl(admission: admission, result: result)
+    return try requireCompletedHTTPControl(
+        admission: admission, result: result,
+        requestContext: "\(object["kind"] ?? "unknown") \(object["requestId"] ?? "unknown")")
 }
 
 private func requireCompletedHTTPControl(
     admission: BridgeProductOperationAdmittedResponse,
-    result: BridgeProductOperationResultResponse
+    result: BridgeProductOperationResultResponse,
+    requestContext: String
 ) throws -> BridgeProductControlResponse {
     guard result.operationId == admission.operationId,
         result.outcome == .succeeded,
         let resultValue = result.result
     else {
         throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
-            callSite: "executeHTTPControl.operationResult",
-            receivedKind: "operation.result outcome=\(result.outcome) hasResult=\(result.result != nil)"
+            callSite: "executeHTTPControl.operationResult \(requestContext)",
+            receivedKind:
+                "operation.result outcome=\(result.outcome) failure=\(String(describing: result.failureCode)) hasResult=\(result.result != nil)"
         )
     }
     do {
@@ -697,13 +684,11 @@ private func httpControlIdentity(
     connection: HTTPProductConnection,
     kind: String,
     requestID: String,
-    requestSequence: Int
 ) -> [String: Any] {
     [
         "kind": kind,
         "paneSessionId": connection.bootstrap.paneSessionId,
         "requestId": requestID,
-        "requestSequence": requestSequence,
         "wireVersion": BridgeProductWireContract.version,
         "workerInstanceId": connection.bootstrap.workerInstanceId,
     ]
@@ -713,13 +698,11 @@ private func httpSurfaceControlIdentity(
     connection: HTTPProductConnection,
     kind: String,
     requestID: String,
-    requestSequence: Int
 ) -> [String: Any] {
     httpControlIdentity(
         connection: connection,
         kind: kind,
         requestID: requestID,
-        requestSequence: requestSequence
     ).merging(["workerDerivationEpoch": 0]) { _, newValue in newValue }
 }
 

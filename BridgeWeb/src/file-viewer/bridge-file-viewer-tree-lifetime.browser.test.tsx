@@ -1,7 +1,9 @@
 import { act, type ReactElement } from 'react';
-import { afterAll, afterEach, beforeEach, expect, test } from 'vitest';
+import { afterAll, afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 import { page } from 'vitest/browser';
+
+import { BridgeTestFactRecorder } from '../../tests/test-support/bridge-test-fact-recorder.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Exercise the production File layout.
 import '../app/bridge-app.css';
@@ -10,7 +12,14 @@ import {
 	createBridgeMarkdownRenderModuleWorkerFactory,
 	createBridgeMarkdownRenderWebWorkerClient,
 } from '../app/markdown/worker/bridge-markdown-render-worker-transport.js';
+import { readBridgeCommWorkerAbsoluteNowMilliseconds } from '../core/comm-worker/bridge-comm-worker-clock.js';
+import { createBridgeProductDeferred } from '../core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeProductFileContentDescriptor } from '../core/comm-worker/bridge-product-content-contracts.js';
+import type {
+	BridgeWorkerMainToServerMessage,
+	BridgeWorkerServerToMainWireMessage,
+} from '../core/comm-worker/bridge-worker-contracts.js';
+import type { BridgeWorkerRenderReceiptIdentity } from '../core/comm-worker/bridge-worker-render-fulfillment.js';
 import { waitForBridgeReviewRecoveryDomState } from '../review-viewer/test-support/bridge-review-recovery-dom-state.test-support.js';
 import { terminateBridgePierreWorkerPoolSingletonForTest } from '../review-viewer/workers/pierre/bridge-pierre-worker-pool.js';
 import {
@@ -23,12 +32,22 @@ import {
 } from './bridge-file-viewer-browser-test-batches.js';
 import { fileNavigationCommandForPath } from './bridge-file-viewer-browser-test-fixtures.js';
 import {
+	createBridgeFileViewerBrowserTestPaneSessionFactory,
 	installBridgeFileViewerNoopResizeObserver,
 	waitForBridgeFileViewerWorkerMessageDrain,
 } from './bridge-file-viewer-browser-test-harness.js';
 
 const originalResizeObserver = globalThis.ResizeObserver;
-beforeEach((): void => installBridgeFileViewerNoopResizeObserver());
+beforeEach((): void => {
+	installBridgeFileViewerNoopResizeObserver();
+	// Preserve native frame delivery and protect its React layout publications.
+	const requestFrame = window.requestAnimationFrame.bind(window);
+	vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback): number =>
+		requestFrame((timestamp): void => {
+			act((): void => callback(timestamp));
+		}),
+	);
+});
 afterAll((): void => {
 	Object.assign(globalThis, { ResizeObserver: originalResizeObserver });
 });
@@ -39,11 +58,15 @@ afterEach(async (): Promise<void> => {
 		await cleanup();
 	});
 	terminateBridgePierreWorkerPoolSingletonForTest();
+	vi.restoreAllMocks();
 });
 
 test.each([{ persistentFailure: false }, { persistentFailure: true }])(
 	'File tree survives Markdown settlement and still opens code (persistent failure $persistentFailure)',
 	async ({ persistentFailure }): Promise<void> => {
+		let clockMilliseconds: number | null = null;
+		const workerFacts = new BridgeTestFactRecorder<BridgeWorkerServerToMainWireMessage>();
+		const commandFacts = new BridgeTestFactRecorder<BridgeWorkerMainToServerMessage>();
 		const codeContent = 'let stableTree = true;\n';
 		const markdownContent = '# Stable tree document\n';
 		const codeDescriptor = await makeBrowserFileDescriptorOutcomeForContent({
@@ -66,31 +89,50 @@ test.each([{ persistentFailure: false }, { persistentFailure: true }])(
 		const markdownSettlement = new Promise<void>((resolve): void => {
 			releaseMarkdown = resolve;
 		});
+		const markdownRenderStarted =
+			createBridgeProductDeferred<ReturnType<BridgeMarkdownRenderWorkerClient['startRender']>>();
 		const controlledMarkdownClient: BridgeMarkdownRenderWorkerClient = {
 			startRender: (request) => {
 				const task = markdownWorkerClient.startRender(request);
+				markdownRenderStarted.resolve(task);
 				return { ...task, completed: markdownSettlement.then(() => task.completed) };
 			},
 			abort: markdownWorkerClient.abort,
 			dispose: markdownWorkerClient.dispose,
 		};
+		const fileProductSession = {
+			onWorkerCommand: (message: BridgeWorkerMainToServerMessage): void =>
+				commandFacts.record(message),
+			readContent: async ({
+				descriptor,
+			}: {
+				readonly descriptor: BridgeProductFileContentDescriptor;
+			}): Promise<string> =>
+				descriptor.fileId === 'stable-markdown' ? markdownContent : codeContent,
+		};
+		const initialFileBatch = makeBrowserFileBatchWithDescriptors(
+			'open',
+			codeDescriptor,
+			markdownDescriptor,
+		);
+		const fileViewPaneSessionFactory = createBridgeFileViewerBrowserTestPaneSessionFactory({
+			expectedRetainedRenderWakes: {
+				count: persistentFailure ? 0 : 1,
+				allowFullyDischarged: true,
+				reason:
+					'The final code selection retains a render lease when the viewer is enabled; the failed-start surface does not render it.',
+			},
+			now: (): number => clockMilliseconds ?? readBridgeCommWorkerAbsoluteNowMilliseconds(),
+			observeAppliedWorkerMessage: (message): void => workerFacts.record(message),
+			productSessionRef: { current: { ...fileProductSession, initialFileBatch } },
+		});
 		const appProps = {
 			codeViewWorkerPoolEnabled: false,
-			initialFileBatch: makeBrowserFileBatchWithDescriptors(
-				'open',
-				codeDescriptor,
-				markdownDescriptor,
-			),
+			fileViewPaneSessionFactory,
+			initialFileBatch,
 			markdownWorkerClient: controlledMarkdownClient,
 			navigationCommand: fileNavigationCommandForPath('First.swift'),
-			fileProductSession: {
-				readContent: async ({
-					descriptor,
-				}: {
-					readonly descriptor: BridgeProductFileContentDescriptor;
-				}): Promise<string> =>
-					descriptor.fileId === 'stable-markdown' ? markdownContent : codeContent,
-			},
+			fileProductSession,
 		} satisfies BridgeFileViewerBrowserHarnessAppProps;
 		const paneFailedStart = { kind: 'failedStart', cause: 'configurationUnavailable' } as const;
 		const summaryCounts: number[] = [];
@@ -128,6 +170,66 @@ test.each([{ persistentFailure: false }, { persistentFailure: true }])(
 			await act(async (): Promise<void> => {
 				requireTreeButton(originalTree, 'Readme.md').click();
 			});
+			const queuedMarkdown = await commandFacts.waitFor(
+				(message): boolean =>
+					message.command === 'renderDisposition' &&
+					message.receipts.some(
+						(receipt) =>
+							receipt.kind === 'render.disposition' &&
+							receipt.itemId === 'stable-markdown' &&
+							receipt.disposition === 'queued',
+					),
+				'the first Markdown publication queued disposition',
+			);
+			await workerFacts.waitFor(
+				(message): boolean =>
+					message.kind === 'health' &&
+					message.requestId === queuedMarkdown.requestId &&
+					message.status === 'ready',
+				'the worker acceptance of the queued Markdown disposition',
+			);
+			const markdownRender = await markdownRenderStarted.promise;
+			const renderedMarkdown = await markdownRender.completed;
+			expect(renderedMarkdown.status).toBe('success');
+			// This fixture's first queued publication has no painted receipt. Drive its
+			// captured lease expiry after the real renderer has prepared the held result.
+			await act(async (): Promise<void> => {
+				const renderClock = fileViewPaneSessionFactory.renderWakes().clock;
+				const receiptLease = renderClock.activeDeadline();
+				clockMilliseconds = receiptLease.atMilliseconds;
+				receiptLease.fire();
+				const retryWake = renderClock.activeDeadline();
+				clockMilliseconds = retryWake.atMilliseconds;
+				retryWake.fire();
+			});
+			const retryPublication = await workerFacts.waitFor(
+				(message): boolean =>
+					message.kind === 'filePierreRenderJob' &&
+					message.renderReceiptIdentity.itemId === 'stable-markdown',
+				'the Markdown lease-retry publication',
+				2,
+			);
+			if (retryPublication.kind !== 'filePierreRenderJob') {
+				throw new Error('Expected the correlated Markdown retry publication.');
+			}
+			const queuedRetry = await commandFacts.waitFor(
+				(message): boolean =>
+					message.command === 'renderDisposition' &&
+					message.receipts.some(
+						(receipt) =>
+							receipt.kind === 'render.disposition' &&
+							receipt.disposition === 'queued' &&
+							matchesRenderReceiptIdentity(receipt, retryPublication.renderReceiptIdentity),
+					),
+				'the main-side queued disposition for the exact Markdown retry identity',
+			);
+			await workerFacts.waitFor(
+				(message): boolean =>
+					message.kind === 'health' &&
+					message.requestId === queuedRetry.requestId &&
+					message.status === 'ready',
+				'the worker acceptance of the exact Markdown retry disposition',
+			);
 			await waitForBridgeReviewRecoveryDomState({
 				readState: (): string | null =>
 					document
@@ -150,6 +252,19 @@ test.each([{ persistentFailure: false }, { persistentFailure: true }])(
 				readState: (): string =>
 					document.querySelector('[data-testid="bridge-markdown-canvas"] h1')?.textContent ?? '',
 				isExpected: (text): boolean => text === 'Stable tree document',
+			});
+			await act(async (): Promise<void> => {
+				await commandFacts.waitFor(
+					(message): boolean =>
+						message.command === 'renderDisposition' &&
+						message.receipts.some(
+							(receipt) =>
+								receipt.kind === 'render.disposition' &&
+								receipt.disposition === 'painted' &&
+								matchesRenderReceiptIdentity(receipt, retryPublication.renderReceiptIdentity),
+						),
+					'the painted disposition for the exact Markdown retry identity',
+				);
 			});
 			expect(
 				document.querySelector(
@@ -213,9 +328,30 @@ test.each([{ persistentFailure: false }, { persistentFailure: true }])(
 				await cleanup();
 			});
 			markdownWorkerClient.dispose();
+			workerFacts.close(new Error('Tree-lifetime worker observations closed.'));
+			commandFacts.close(new Error('Tree-lifetime command observations closed.'));
 		}
 	},
 );
+
+function matchesRenderReceiptIdentity(
+	receipt: BridgeWorkerRenderReceiptIdentity,
+	identity: BridgeWorkerRenderReceiptIdentity,
+): boolean {
+	return (
+		receipt.attemptId === identity.attemptId &&
+		receipt.itemId === identity.itemId &&
+		receipt.operationCorrelationId === identity.operationCorrelationId &&
+		receipt.paneSessionId === identity.paneSessionId &&
+		receipt.publicationId === identity.publicationId &&
+		receipt.publicationSequence === identity.publicationSequence &&
+		receipt.submissionId === identity.submissionId &&
+		receipt.surface === identity.surface &&
+		receipt.windowKey === identity.windowKey &&
+		receipt.workerDerivationEpoch === identity.workerDerivationEpoch &&
+		receipt.workerInstanceId === identity.workerInstanceId
+	);
+}
 
 function requireTreeButton(tree: Element, path: string): HTMLButtonElement {
 	const button = tree.shadowRoot?.querySelector(`button[data-item-path="${path}"]`);

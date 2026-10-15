@@ -26,7 +26,13 @@ import type { BridgeWorkerReviewContentOpen } from './bridge-worker-review-conte
 describe('Bridge comm worker runtime Review hover demand', () => {
 	test('finishes started hover work across hover replacement and does not refetch ready content', async () => {
 		// Arrange
-		const fixture = await createHoverRuntimeFixture({ itemIds: ['hover-a', 'hover-b'] });
+		const fixture = await createHoverRuntimeFixture({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+			itemIds: ['hover-a', 'hover-b'],
+		});
 
 		// Act: replace hover A with B before the preparation pump runs.
 		fixture.dispatch.message(
@@ -91,7 +97,13 @@ describe('Bridge comm worker runtime Review hover demand', () => {
 	});
 
 	test('does not refetch warmed hover content when selection changes independently', async () => {
-		const fixture = await createHoverRuntimeFixture({ itemIds: ['selected-a', 'hover-b'] });
+		const fixture = await createHoverRuntimeFixture({
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason: 'The case retains its published render lease without a terminal renderer receipt.',
+			},
+			itemIds: ['selected-a', 'hover-b'],
+		});
 
 		fixture.dispatch.message(
 			encodeBridgeWorkerHoverCommand({
@@ -204,6 +216,9 @@ interface HoverRuntimeFixture {
 }
 
 async function createHoverRuntimeFixture(props: {
+	readonly expectedRetainedRenderWakes?: Parameters<
+		typeof registerBridgeRuntimeWithInitialReviewSource
+	>[1]['expectedRetainedRenderWakes'];
 	readonly itemIds: readonly string[];
 	readonly openReviewContent?: BridgeWorkerReviewContentOpen;
 }): Promise<HoverRuntimeFixture> {
@@ -214,6 +229,9 @@ async function createHoverRuntimeFixture(props: {
 		props.openReviewContent ?? openReviewContentFromDescriptorMap,
 	);
 	await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+		...(props.expectedRetainedRenderWakes === undefined
+			? {}
+			: { expectedRetainedRenderWakes: props.expectedRetainedRenderWakes }),
 		bridgeDemandRank: { lane: 'selected', priority: 0 },
 		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 		contentItems: props.itemIds.map((itemId) => makeWorkerReviewContentMetadata({ itemId })),

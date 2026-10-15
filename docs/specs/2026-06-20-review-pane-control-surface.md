@@ -304,6 +304,14 @@ dynamic reason; they must not hand-write parallel tooltip copy.
 
 Programmatic methods must resolve a target pane explicitly:
 
+> **Superseded by [Agent IPC v2, R-08](2026-09-12-agent-ipc-v2/specification.md).**
+> Methods take a `handle` with one of three spellings: `self`, a bare canonical
+> pane UUID, or `pane:<n>` (a positive ordinal). `pane:<uuid>`, `pane:active`
+> and `surface:<id>` are rejected with `invalidParams` at `$.handle`. The Bridge
+> openers take a `worktreeId` and return the canonical handle for follow-up
+> calls. The block below is the original 2026-06-20 proposal, kept as history;
+> do not use these forms.
+
 ```text
 target: pane:active
 target: pane:<uuid>
