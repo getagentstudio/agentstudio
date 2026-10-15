@@ -1,6 +1,6 @@
 # Pane agent status by call intent — Program Design
 
-Requirements: [requirements](2026-10-15-pane-agent-status-by-intent-requirements.md) → Specification: [specification](2026-10-15-pane-agent-status-by-intent.md) (E1–E7, R1–R11, V1–V7) → this Program Design
+Requirements: [requirements](2026-10-15-pane-agent-status-by-intent-requirements.md) → Specification: [specification](2026-10-15-pane-agent-status-by-intent.md) (E1–E7, R1–R12, V1–V8; revised 2026-10-15 after review) → this Program Design
 
 ## Current system
 
@@ -41,22 +41,22 @@ Facts this design rests on, all checked on origin/main:
 | How a claim authenticates | A new principal kind, `paneClaim(paneId, workspaceId)`. It needs the existing same-user peer check plus live membership of the pane in that workspace, and may call only methods whose descriptor declares status intent. | Weakening `spawnedPaneAgent` would leak identity, message and read rights to claims. |
 | Agent title and Agent Line | `pane.title.set`, `pane.line.set` and `pane.writer.claimEpoch` declare status intent for the pane writer, meaning no session writer claim. With a session writer claim they stay identity intent. | Moving every epoch claim to the token side would block the Agent Line, which the owner made pane-ID-only. This corrects the Lead's earlier table, which had put writer ordering under identity. |
 | Status without a binding | An in-memory `UnverifiedPaneStatusRuntime` inside `SessionsIngestion`, keyed by pane. It reuses `SessionStatusState`'s transition rules and follows an unverified main session. | Persisting it, or creating a binding, would turn a claim into identity (R4). |
-| Where the refusal shows | Extend the session status value the row already reads (`SessionStatusAtom`) with `notConnected(reason)`, shown through the existing status line and its `LocalActionSpec`. | A new atom, toast or banner (U5); the owner must approve new atoms. |
+| Where the refusal shows | `SessionStatusAtom` publishes one cohesive per-pane value: `PaneAgentStatusPresentation { status: AgentSessionStatus, connectionIssue: AgentConnectionRefusalReason? }`. Sessions derives it outside the atom; the atom keeps assign, equality and index methods only. The row and pane render the status line and, when present, a second "agent not connected · reason" line, both through `LocalActionSpec`. | A `notConnected` status case would make the warning hide `Needs you` (review finding). A new atom, toast or banner is not needed (U5). |
 | Diagnostics | Hook diagnostics carry the pane id and a reason from the fixed set, instead of the generic label. | Payload or credential detail (R10). |
 
 ## Entity binding
 
 | E | Owner | Home | Shape at boundaries | Kind |
 | --- | --- | --- | --- | --- |
-| E1 Agent call | IPC client and server | `AgentStudioIPCClientCore/ProviderHooks`, `AgentStudioAppIPC` | JSON-RPC request; `session.status` params `{ paneClaim: { paneId, workspaceId }, providerSessionId, event, tokenOutcome: rejected \| absent }` | transient |
+| E1 Agent call | IPC client and server | `AgentStudioIPCClientCore/ProviderHooks`, `AgentStudioAppIPC` | JSON-RPC request; `session.status` params `{ paneClaim: { paneId, workspaceId }, tokenOutcome: rejected \| absent, report: hook(event, provider, providerSessionId) \| refusal(reason) }`. The `refusal` variant needs no session id, so a missing-id or unreadable-payload hook can still report. `session.refusal` stays token-only. | transient |
 | E2 Call intent | Method descriptor | `AgentStudioProgrammaticControl/BuiltInDescriptors` (existing) | new descriptor field `callIntent: status \| identity \| message \| read \| control`; pane-context methods vary by writer claim | derived |
 | E3 Pane claim | Server admission | `AgentStudioAppIPC` (new `AppIPCPaneClaimAdmission`) | `{ paneId: UUID, workspaceId: UUID }`; checked against `PaneContextMembershipDirectory` (existing) | transient |
 | E4 Verified binding | Sessions (existing) | `sessions_pane_binding` | unchanged | persisted |
 | E5 Unverified pane status | Sessions | new `UnverifiedPaneStatusRuntime` in `Features/Sessions/Runtime` | `[paneId: (mainProviderSessionId, SessionStatusState)]` | cached, in memory |
-| E6 Unverified main agent | Sessions | inside E5 | provider session id string | cached |
+| E6 Unverified main agent | Sessions | inside E5 | `(provider, providerSessionId)`, plus a per-pane released set for the late-predecessor fence | cached |
 | E7 Refusal record | Sessions | extends existing `lastRefusalByPane` | `{ reason: AgentConnectionRefusalReason, intent: CallIntent, at: Date, count: Int }`; reason is a closed enum | cached, in memory |
 
-`SessionStatusAtom` gains one value case, `notConnected(AgentConnectionRefusalReason)`. It is related state on an existing atom, not a new atom.
+`SessionStatusAtom`'s per-pane value becomes `PaneAgentStatusPresentation`: the same status plus an optional connection issue. That is related observed state on an existing atom, not a new atom.
 
 ## Components and flow after the change
 
@@ -86,12 +86,21 @@ sequenceDiagram
 
 - **Server admission:** `AppIPCTypedMethodRegistration` runs the claim path only for unauthenticated connections calling a status-intent method. It builds a `paneClaim` principal after the membership check. Every other method on such a connection gets `intentRequiresToken`.
 - **Sessions:** `session.status` goes to `SessionsIngestion.recordUnverifiedStatus`. If the pane has an active binding it is ignored, because verified status wins. Otherwise it follows the main-session rule and applies the same `SessionStatusState` transition. It submits hook activity to `PaneActivityClock` and publishes to `SessionStatusAtom`.
-- **Lifecycle:** E5 and E7 clear when a binding becomes active, when the pane is retired, and at app quit.
-- **Title and Agent Line:** on a refused login, the CLI repeats the pane-writer claim and write as status intent with the pane claim. A session writer claim keeps today's path and is refused as `intentRequiresToken`.
+- **Lifecycle:**
+  - E5 and E7 clear when a binding becomes active, when the pane is retired, and at app quit.
+  - The unverified main is released by a status-path SessionEnd, or by the pane's authoritative command-exit fact. The existing command-exit handler (`SessionsIngestion+Status.swift:125`) returns early when there is no verified binding; it is extended to release E6 instead.
+  - A released `(provider, providerSessionId)` is fenced, so its delayed facts are ignored.
+- **Title and Agent Line:**
+  - On a refused login, the CLI drops its automatic session attribution (`writerClaim` from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, `PaneCLICommandRunner.swift:245`). It writes as the pane writer, with status intent and the pane claim.
+  - With the CLI store (`AGENTSTUDIO_CLI_STORE`), it uses its stored epoch and counter as today.
+  - Without the store, as in old shells, it claims a fresh pane-writer epoch per write (`claimEpoch` with a new UUIDv7 `claimId`) and writes counter 1.
+  - Stale results stay final and are never renumbered.
+- **Deadline:** login, the fallback reconnect and the fallback call share one absolute `CallDeadline` (`AgentStudioIPCTransport/CallDeadline.swift`). If the budget is exhausted, the hook exits 0 silently and logs `deadlineExceeded`.
+- **Pre-dispatch refusals:** login rejection happens before any method runs. The fallback call carries `tokenOutcome`, and the server records `credentialNotRecognized` on the claimed pane after the membership check.
 
 ## Failure, ordering and concurrency
 
-- **Fallback timing:** a stale token fails at login quickly, so the fallback runs within the hook's existing limits (2 s ordinary, 250 ms for synchronous lifecycle). If no budget is left, the hook records `deadlineExceeded` in its diagnostic and exits 0.
+- **Fallback timing:** the fallback shares the hook's existing absolute deadline (2 s ordinary, 250 ms for synchronous lifecycle) with the login attempt. Its speed is not assumed. If no budget is left, the hook records `deadlineExceeded` in its diagnostic and exits 0. Healthy panes send no fallback request.
 - **Ordering:** status calls go through the same Sessions FIFO as `session.event`, so ordering per pane is unchanged.
 - **Race with a later valid token:** a pane whose binding becomes active stops using E5 at once.
 - **App down:** nothing changes from today (silent exit 0).
@@ -108,7 +117,8 @@ sequenceDiagram
 | U1 | R5 | E4, E5 | Sessions → row | `SessionStatusAtom` | `UnverifiedPaneStatusRuntime` (new) | in memory | binding wins | V3, V6 |
 | U4 | R6 | E5, E6 | Sessions | main-session rule | inside E5 | in memory | other sessions ignored | V3 |
 | U1 | R7 | E1 | activity clock | `PaneActivityClock.submit(.hook)` | existing | persisted (existing) | — | V3 |
-| U3, U5 | R8 | E7 | Sessions → row | `notConnected(reason)` | `lastRefusalByPane` (extended) | in memory | — | V4, V6 |
+| U3, U5 | R8 | E7 | Sessions → row | `PaneAgentStatusPresentation.connectionIssue` | `lastRefusalByPane` (extended); `session.status` `refusal` report | in memory | — | V4, V6 |
+| U1, U2 | R12 | E1, E2 | CLI | pane-writer fallback in `PaneCLICommandRunner` | per-write epoch claim without a store | client-side | stale write stays final | V8, V6 |
 | Protected | R9 | E1 | hook client | fallback in `ProviderHookInvocation` | existing budget | none | `deadlineExceeded` | V5 |
 | U3 | R10 | E1, E7 | CLI diagnostics | `CLIDiagnostics` routing | reason enum + pane id | none | — | V4 |
 | U2 | R11 | E3 | server admission | membership check | `PaneContextMembershipDirectory` | none | reason by case | V1 |

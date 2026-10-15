@@ -54,5 +54,5 @@ Evidence: `tmp/sol-pane-auth-report.md` and `tmp/sol-pane-status-map.md` in the 
 - **Acceptable complexity:** one status-only admission route, one pane-keyed status for panes with no binding, and one refusal record per pane shown through the existing status line. No new subsystem, persistence or toast.
 - **Acceptable evidence:**
   - unit and integration tests at the admission, Sessions and row boundaries;
-  - a real debug app with a real Claude Code and Codex: one pane with a valid token, and one pane whose token is made stale by issuing a new credential while the shell lives;
+  - a real debug app with a real Claude Code and Codex: one pane with a valid token, and one isolated fixture pane whose shell holds a token the app demonstrably does not recognize, shown by a rejected-login receipt. Issuing a second credential is not enough, because registration is additive and the old token keeps working;
   - the reason for the 7 unexplained panes, reproduced or named.
