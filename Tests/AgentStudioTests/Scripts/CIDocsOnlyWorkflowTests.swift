@@ -460,9 +460,9 @@ private struct ChangeScopeGitFixture {
                 to: fixtureChecker.deletingLastPathComponent().appendingPathComponent(
                     "architecture-doc-fixture-root.txt"))
         }
-        let environment = ProcessInfo.processInfo.environment.merging([
+        let environment = testProcessEnvironmentWithoutLaneState(overrides: [
             "BASE_SHA": base, "HEAD_SHA": head, "EVENT_NAME": "pull_request",
-        ]) { _, new in new }
+        ])
         return try await runProcessToExit(
             executableURL: URL(fileURLWithPath: "/bin/bash"), arguments: ["-euc", script], currentDirectoryURL: root,
             environment: environment)

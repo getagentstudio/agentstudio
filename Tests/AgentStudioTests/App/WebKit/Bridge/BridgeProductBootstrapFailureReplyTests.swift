@@ -19,12 +19,14 @@ extension WebKitSerializedTests {
         func failedDeliveryAnswersRequestWithTypedFailure() async throws {
             // Arrange
             var failureReplies: [BootstrapFailureReply] = []
+            var failedInstallation: BridgeProductSessionInstallation?
             let controller = BridgePaneController(
                 paneId: UUIDv7.generate(),
                 state: BridgePaneState(panelKind: .fileViewer, source: .commit(sha: "failed-delivery")),
                 appRootURL: testBridgeAppRootURL(),
                 initialPaneActivity: .foreground,
-                productSessionBootstrapSink: { _, _, _, _, _ in
+                productSessionBootstrapSink: { _, _, installation, _, _ in
+                    failedInstallation = installation
                     throw BridgeError.encoding("simulated bootstrap delivery failure")
                 },
                 productSessionBootstrapFailureSink: { _, requestId, reason, _ in
@@ -43,6 +45,8 @@ extension WebKitSerializedTests {
                 failureReplies == [.init(requestId: "failed-delivery-bootstrap", reason: .deliveryFailed)]
             )
             #expect(await controller.productSessionOwner.activeBootstrap() == nil)
+            let retiredInstallation = try #require(failedInstallation)
+            #expect(await retiredInstallation.session.snapshot.lifecycle == .revoked)
             #expect(await controller.beginTeardown().value)
         }
 

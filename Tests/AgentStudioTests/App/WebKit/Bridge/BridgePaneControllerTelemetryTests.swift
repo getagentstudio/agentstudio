@@ -148,11 +148,13 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
+            #expect(await recorder.drainInvocationCount == 0)
             let result = try await controller.flushTelemetryForIPC()
 
             #expect(result.kind == .unavailable)
             #expect(result.unavailableReason == .disabled)
             #expect(result.report == nil)
+            #expect(await recorder.drainInvocationCount == 0)
         }
     }
 }
@@ -165,6 +167,7 @@ private actor BridgeTelemetryRecorderSpy: BridgePerformanceTraceRecording {
     private var recordedSamples: [BridgeTelemetrySample] = []
     private var recordedDrops: [BridgeTelemetryDropReason] = []
     private var shouldFailDrain = false
+    private(set) var drainInvocationCount = 0
 
     func record(sample: BridgeTelemetrySample, receivedAtUnixNano: UInt64) async {
         recordedSamples.append(sample)
@@ -189,6 +192,7 @@ private actor BridgeTelemetryRecorderSpy: BridgePerformanceTraceRecording {
     }
 
     func drain() async throws {
+        drainInvocationCount += 1
         if shouldFailDrain {
             throw Failure.drainFailed
         }

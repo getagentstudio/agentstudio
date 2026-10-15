@@ -5,6 +5,16 @@ import Testing
 
 @Suite("RunToExit process")
 struct RunToExitProcessTests {
+    @Test("an explicit environment cannot restore omitted ambient values")
+    func explicitEnvironmentRemainsReplacement() async throws {
+        let output = try await runProcessToExit(
+            executableURL: URL(fileURLWithPath: "/usr/bin/env"), arguments: [],
+            environment: ["FIXTURE_OWNED_VALUE": "owned"])
+        let environment = try #require(String(data: output.standardOutput, encoding: .utf8))
+        #expect(output.terminationStatus == 0)
+        #expect(environment.split(separator: "\n") == ["FIXTURE_OWNED_VALUE=owned"])
+    }
+
     @Test("cancellation before process launch leaves no child")
     func cancellationBeforeProcessLaunchLeavesNoChild() async throws {
         let fixtureDirectory = FileManager.default.temporaryDirectory
