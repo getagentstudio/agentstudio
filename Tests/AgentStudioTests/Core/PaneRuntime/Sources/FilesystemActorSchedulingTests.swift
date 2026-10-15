@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -107,63 +108,77 @@ extension FilesystemActorTests {
             maxFlushLatency: .seconds(1)
         )
 
-        let observed = ObservedFilesystemChanges()
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        let collectionTask = Task {
-            for await envelope in stream {
-                await observed.record(envelope)
-            }
-        }
-        defer { collectionTask.cancel() }
-
-        let worktreeId = UUID()
+        let worktreeId = UUIDv7.generate()
         await actor.register(
             worktreeId: worktreeId,
             repoId: worktreeId,
-            rootPath: URL(fileURLWithPath: "/tmp/shutdown-drain-\(UUID().uuidString)")
+            rootPath: URL(fileURLWithPath: "/tmp/shutdown-drain-\(UUIDv7.generate().uuidString)")
         )
 
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        _ = await probe.begin()
         await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ["Sources/Cancelled.swift"])
-        await Task.yield()
+        await clock.waitForPendingSleepCount()
+
         await actor.shutdown()
         clock.advance(by: .milliseconds(300))
-        await Task.yield()
-        #expect(await observed.filesChangedCount(for: worktreeId) == 0)
+        try await probe.closeAfterProducerReturn()
+        #expect(probe.changesets.isEmpty)
+
     }
 
     @Test("shutdown closes filesystem admission before asynchronous cleanup")
-    func shutdownClosesFilesystemAdmission() async {
+    func shutdownClosesFilesystemAdmission() async throws {
         let clock = TestPushClock()
         let streamClient = ControllableFSEventStreamClient()
+        let scan = HeldStep<WatchedFolderScanRequest>(
+            "shutdown cleanup scan", cancellation: .holdThroughCancellation)
+        let provider = FilesystemHeldScanProvider(steps: [scan], results: [completeResult(entries: [])])
+        let scheduler = try await provider.makeScheduler()
         let actor = FilesystemActor(
-            bus: EventBus<RuntimeEnvelope>(),
-            fseventStreamClient: streamClient,
-            sleepClock: clock,
-            debounceWindow: .milliseconds(200),
-            maxFlushLatency: .seconds(1)
-        )
+            bus: EventBus<RuntimeEnvelope>(), fseventStreamClient: streamClient,
+            watchedFolderScanScheduler: scheduler, sleepClock: clock,
+            debounceWindow: .milliseconds(200), maxFlushLatency: .seconds(1))
+        let root = FileManager.default.temporaryDirectory.appending(path: "shutdown-admission-\(UUIDv7.generate())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
         let worktreeID = UUIDv7.generate()
-        await actor.register(
-            worktreeId: worktreeID,
-            repoId: worktreeID,
-            rootPath: URL(fileURLWithPath: "/tmp/shutdown-admission-\(UUIDv7.generate())")
-        )
-
-        await actor.shutdown()
-        let revisionAfterShutdown = await actor.logicalDebtSnapshotPublicationRevision
+        await actor.register(worktreeId: worktreeID, repoId: worktreeID, rootPath: root)
+        let descriptor = try FilesystemSourceConfiguration.registerRoot(
+            from: .hostAuthorized(
+                FilesystemHostAuthorizedRootInput(
+                    registration: FSEventRegistrationToken(
+                        sourceID: FilesystemSourceID(kind: .watchedParentMembership, rootID: UUIDv7.generate()),
+                        registrationGeneration: 1, rootGeneration: 1),
+                    authorizedBoundary: root, registeredRoot: root)))
+        _ = await scheduler.submit(WatchedFolderScanRequest(canonicalRoot: descriptor, cause: .manual))
+        let request = try await scan.firstArrival()
+        #expect(request.canonicalRoot.registration == descriptor.registration)
+        let shutdown = Task { await actor.shutdown() }
+        try await scan.cancellationObserved()
+        let revisionDuringCleanup = await actor.logicalDebtSnapshotPublicationRevision
         let postShutdownWorktreeID = UUIDv7.generate()
         await actor.register(
-            worktreeId: postShutdownWorktreeID,
-            repoId: postShutdownWorktreeID,
-            rootPath: URL(fileURLWithPath: "/tmp/post-shutdown-registration")
-        )
+            worktreeId: postShutdownWorktreeID, repoId: postShutdownWorktreeID,
+            rootPath: URL(fileURLWithPath: "/tmp/post-shutdown-registration"))
+        await actor.enqueueRawPaths(worktreeId: worktreeID, paths: ["Sources/PostShutdown.swift"])
+        #expect(await actor.hasBegunShutdown)
+        #expect(await actor.logicalDebtSnapshotPublicationRevision == revisionDuringCleanup)
+        #expect(await actor.pendingWorktreeLogicalDebtCount == 0)
+        #expect(streamClient.registeredWorktreeIds == [worktreeID])
+        scan.release()
+        await shutdown.value
+        let revisionAfterShutdown = await actor.logicalDebtSnapshotPublicationRevision
+        await actor.register(
+            worktreeId: postShutdownWorktreeID, repoId: postShutdownWorktreeID,
+            rootPath: URL(fileURLWithPath: "/tmp/post-shutdown-registration"))
         await actor.enqueueRawPaths(worktreeId: worktreeID, paths: ["Sources/PostShutdown.swift"])
         clock.advance(by: .seconds(1))
-        await Task.yield()
-
         #expect(await actor.logicalDebtSnapshotPublicationRevision == revisionAfterShutdown)
+        #expect(await actor.pendingWorktreeLogicalDebtCount == 0)
         #expect(await actor.logicalDebtSnapshot().logicalDebtCount == 0)
         #expect(streamClient.registeredWorktreeIds == [worktreeID])
+        await actor.shutdown()
     }
 
     @Test("unregister during debounce window prevents stale filesChanged emission")
@@ -178,31 +193,36 @@ extension FilesystemActorTests {
             maxFlushLatency: .seconds(1)
         )
 
-        let observed = ObservedFilesystemChanges()
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        let collectionTask = Task {
-            for await envelope in stream {
-                await observed.record(envelope)
-            }
-        }
-        defer { collectionTask.cancel() }
-
-        let worktreeId = UUID()
+        let worktreeId = UUIDv7.generate()
         await actor.register(
             worktreeId: worktreeId,
             repoId: worktreeId,
-            rootPath: URL(fileURLWithPath: "/tmp/unregister-debounce-\(UUID().uuidString)")
+            rootPath: URL(fileURLWithPath: "/tmp/unregister-debounce-\(UUIDv7.generate().uuidString)")
         )
 
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        let opening = await probe.begin()
         await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ["Sources/Stale.swift"])
-        await Task.yield()
+        await clock.waitForPendingSleepCount()
+
         clock.advance(by: .milliseconds(25))
-        await Task.yield()
+
         await actor.unregister(worktreeId: worktreeId)
         clock.advance(by: .milliseconds(300))
-        await Task.yield()
-        #expect(await observed.filesChangedCount(for: worktreeId) == 0)
+
         await actor.shutdown()
+        try await probe.closeAfterProducerReturn()
+        try await probe.facts.expectNone(
+            of: { FilesystemPublicationProbe.changeset($0) != nil }, "stale filesChanged",
+            from: opening,
+            closedBy: { envelope in
+                guard case .system(let system) = envelope,
+                    case .topology(.worktreeUnregistered(let removedWorktree, let removedRepo)) = system.event
+                else { return false }
+                return removedWorktree == worktreeId && removedRepo == worktreeId
+                    && system.source == .builtin(.filesystemWatcher)
+            })
+        #expect(probe.changesets.isEmpty)
     }
 }
 

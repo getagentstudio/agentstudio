@@ -126,6 +126,7 @@ ARTIFACT="$PROOF_ROOT/$TRACE_NAME"
 STATE_FILE="${AGENTSTUDIO_OBSERVABILITY_STATE_FILE:-$ARTIFACT/debug-observability.env}"
 APP_PID=""
 mkdir -p "$ARTIFACT" "$(dirname "$STATE_FILE")"
+IPC_DEBUG_ESCROW_PATH="$(/usr/bin/python3 -c 'import os,sys; print(os.path.abspath(sys.argv[1]))' "$ARTIFACT/ipc-escrow.json")"
 
 decode_state() {
   local raw
@@ -138,15 +139,25 @@ PY
 }
 
 ipc_runtime_matches_app_pid() {
-  /usr/bin/python3 - "$1" "$2" <<'PY'
+  /usr/bin/python3 - "$1" "$2" "$3" <<'PY'
 import json, sys
 try:
     with open(sys.argv[1], encoding="utf-8") as stream:
         runtime = json.load(stream)
     expected_pid = int(sys.argv[2])
+    with open(sys.argv[3], encoding="utf-8") as stream:
+        escrow = json.load(stream)
 except (OSError, TypeError, ValueError, json.JSONDecodeError):
     raise SystemExit(1)
-raise SystemExit(0 if runtime.get("processIdentifier") == expected_pid else 1)
+matches = (
+    runtime.get("processIdentifier") == expected_pid
+    and bool(escrow.get("runtimeId"))
+    and escrow.get("runtimeId") == runtime.get("runtimeId")
+    and bool(escrow.get("socketPath"))
+    and escrow.get("socketPath") == runtime.get("socketPath")
+    and isinstance(escrow.get("token"), str) and bool(escrow["token"])
+)
+raise SystemExit(0 if matches else 1)
 PY
 }
 
@@ -292,7 +303,7 @@ reset_disposable_debug_root
 env \
   AGENTSTUDIO_TRACE_TAGS="$WORKLOAD_TRACE_TAGS" \
   AGENTSTUDIO_TRACE_NAME="$TRACE_MARKER" \
-  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1 \
+  AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW="$IPC_DEBUG_ESCROW_PATH" \
   AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION=sidebar-performance-proof \
   AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$STATE_FILE" \
   "$PROJECT_ROOT/scripts/run-debug-observability.sh" --detach
@@ -309,30 +320,32 @@ case "$APP_PID" in
 esac
 DATA_DIR="$(decode_state AGENTSTUDIO_OBSERVABILITY_DATA_DIR)"
 IPC_RUNTIME_FILE="$DATA_DIR/ipc/runtime.json"
-IPC_DEBUG_TOKEN_FILE="$DATA_DIR/ipc/debug-token"
 IPC_READINESS_ATTEMPTS=80
 METRIC_EXPORT_ATTEMPTS=45
 ipc_readiness_attempt=0
 while [ "$ipc_readiness_attempt" -lt "$IPC_READINESS_ATTEMPTS" ]; do
-  if [ -s "$IPC_DEBUG_TOKEN_FILE" ] \
-    && ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID"
+  if [ -s "$IPC_DEBUG_ESCROW_PATH" ] \
+    && ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID" "$IPC_DEBUG_ESCROW_PATH"
   then
     break
   fi
   ipc_readiness_attempt=$((ipc_readiness_attempt + 1))
   /bin/sleep 0.25
 done
-if [ ! -s "$IPC_DEBUG_TOKEN_FILE" ] \
-  || ! ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID"
+if [ ! -s "$IPC_DEBUG_ESCROW_PATH" ] \
+  || ! ipc_runtime_matches_app_pid "$IPC_RUNTIME_FILE" "$APP_PID" "$IPC_DEBUG_ESCROW_PATH"
 then
-  echo "authenticated IPC for the launched PID did not become ready before timeout" >&2
+  echo "authenticated IPC for the launched PID did not become ready before timeout: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
   exit 1
 fi
 
-/usr/bin/python3 - "$IPC_RUNTIME_FILE" "$IPC_DEBUG_TOKEN_FILE" "$LOGS_QUERY_URL" "$TRACE_MARKER" <<'PY'
-import datetime, json, socket, sys, time, urllib.parse, urllib.request
+/usr/bin/python3 - "$IPC_RUNTIME_FILE" "$IPC_DEBUG_ESCROW_PATH" "$LOGS_QUERY_URL" "$TRACE_MARKER" <<'PY'
+import datetime, json, socket, sys, time, urllib.parse, urllib.request, uuid
 with open(sys.argv[1], encoding="utf-8") as stream: socket_path = json.load(stream)["socketPath"]
-with open(sys.argv[2], encoding="utf-8") as stream: token = stream.read().strip()
+with open(sys.argv[2], encoding="utf-8") as stream: escrow = json.load(stream)
+if escrow.get("socketPath") != socket_path:
+    raise SystemExit("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata")
+token = escrow["token"]
 logs_url, marker = sys.argv[3:5]
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM); sock.settimeout(20); sock.connect(socket_path)
 reader = sock.makefile("rb"); request_id = 0
@@ -430,7 +443,7 @@ def wait_for_terminal_pane(timeout=20):
         pane = next((item for item in panes if item.get("contentKind") == "terminal"), None)
         if pane is not None: return pane
         time.sleep(0.25)
-    raise RuntimeError("timed out waiting for sidebar-performance-proof terminal")
+    raise RuntimeError("timed out waiting for verifier-created terminal")
 def wait_for_startup_diagnostic_completion(timeout=20):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -469,26 +482,40 @@ def wait_for_repo_sort_projection(expected_order=None, after_ns=0, timeout=10):
         f"timed out waiting for completed repo sort projection order={expected_order}: {latest}"
     )
 request("auth.login", {"token":token})
+windows = request("window.list", {}).get("windows", [])
+if len(windows) != 1:
+    raise RuntimeError(f"title/pane proof requires exactly one workspace window; got {len(windows)}")
+workspace_window_arguments = {"workspaceWindowId": str(uuid.UUID(windows[0]["id"]))}
 show_repos_result = request(
     "command.execute",
-    {"commandId":"showReposSidebar","targetHandle":None,"arguments":{}},
+    {"commandId":"showReposSidebar","correlationId":str(uuid.uuid4()),"arguments":workspace_window_arguments},
 )
-if show_repos_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+if show_repos_result.get("kind") != "applied":
     raise RuntimeError(f"showReposSidebar did not apply: {show_repos_result}")
+# The sidebar proof creates no terminal; the verifier opens its own through IPC.
+new_tab_result = request(
+    "command.execute",
+    {"commandId":"newTab","correlationId":str(uuid.uuid4()),"arguments":workspace_window_arguments},
+)
+if new_tab_result.get("kind") != "applied":
+    raise RuntimeError(f"newTab did not apply: {new_tab_result}")
 pane = wait_for_terminal_pane()
 wait_for_startup_diagnostic_completion()
-handle = f"pane:{pane['id']}"
+# IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+handle = pane["id"]
 initial_sort_projection = wait_for_repo_sort_projection()
 initial_sort_order = initial_sort_projection["agentstudio.performance.sidebar.sort_order"]
 first_sort_toggle_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if first_sort_toggle_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+if first_sort_toggle_result.get("kind") != "applied":
     raise RuntimeError(f"first repo sort toggle did not apply: {first_sort_toggle_result}")
 opposite_sort_order = "descending" if initial_sort_order == "ascending" else "ascending"
 first_sort_projection = wait_for_repo_sort_projection(
@@ -499,11 +526,12 @@ second_sort_toggle_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if second_sort_toggle_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+if second_sort_toggle_result.get("kind") != "applied":
     raise RuntimeError(f"second repo sort toggle did not apply: {second_sort_toggle_result}")
 wait_for_repo_sort_projection(
     expected_order=initial_sort_order,
@@ -518,7 +546,8 @@ ordinary_command = (
     "i=$((i+1)); done; sleep 2\n"
 )
 title_interval_start_ns = time.time_ns()
-request("terminal.send", {"handle":handle,"input":ordinary_command})
+# ipc-catalog-15211f2b3.json: terminal.send requires a correlation UUID.
+request("terminal.send", {"handle":handle,"input":ordinary_command,"correlationId":str(uuid.uuid4())})
 request("terminal.wait", {"handle":handle,"condition":"titleChanged","timeoutSeconds":5})
 title_interval_end_ns = time.time_ns()
 request("terminal.wait", {"handle":handle,"condition":"commandFinished","timeoutSeconds":5})
@@ -536,9 +565,10 @@ if title_delta["tab_affected"] != 1:
 equal_title_offer_count = 20
 equal_title_baseline = quiescent_snapshot()
 for _ in range(equal_title_offer_count):
+    # ipc-catalog-15211f2b3.json: terminal.send requires a correlation UUID per call.
     request(
         "terminal.send",
-        {"handle":handle,"input":"printf '\\033]0;cadence-private-title\\007'\n"},
+        {"handle":handle,"input":"printf '\\033]0;cadence-private-title\\007'\n","correlationId":str(uuid.uuid4())},
     )
     request("terminal.wait", {"handle":handle,"condition":"commandFinished","timeoutSeconds":5})
 equal_title_after = quiescent_snapshot()
@@ -587,17 +617,21 @@ immediate_records = [
 ]
 if not any(title_interval_start_ns <= record_time_ns(record) <= title_interval_end_ns for record in immediate_records):
     raise RuntimeError("immediate drain did not occur inside the pending-title interval")
-request("terminal.send", {"handle":handle,"input":"printf '\\033]0;Cadence Barrier\\007\\033]7;file://localhost/tmp\\007'\n"})
+# ipc-catalog-15211f2b3.json: terminal.send requires a correlation UUID.
+request("terminal.send", {"handle":handle,"input":"printf '\\033]0;Cadence Barrier\\007\\033]7;file://localhost/tmp\\007'\n","correlationId":str(uuid.uuid4())})
 request("terminal.wait", {"handle":handle,"condition":"commandFinished","timeoutSeconds":5})
 pane_structural_baseline = quiescent_snapshot()
 before = {item["id"] for item in request("pane.list", {}).get("panes", [])}
-request("pane.split", {"handle":handle,"direction":"right","correlationId":None})
+# ipc-catalog-15211f2b3.json: pane.split requires a non-null correlation UUID.
+request("pane.split", {"handle":handle,"direction":"right","correlationId":str(uuid.uuid4())})
 after = request("pane.list", {}).get("panes", [])
 created = next((item for item in after if item["id"] not in before), None)
 if created is None: raise RuntimeError("pane.split did not create a pane")
-created_handle = f"pane:{created['id']}"
+# IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+created_handle = created["id"]
 request("pane.snapshot", {"handle":created_handle})
-request("pane.close", {"handle":created_handle,"correlationId":None})
+# ipc-catalog-15211f2b3.json: pane.close requires a non-null correlation UUID.
+request("pane.close", {"handle":created_handle,"correlationId":str(uuid.uuid4())})
 if created["id"] in {item["id"] for item in request("pane.list", {}).get("panes", [])}:
     raise RuntimeError("pane.close readback retained the created pane")
 pane_structural_delta = wait_for_delta(
@@ -619,11 +653,12 @@ capability_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if capability_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+if capability_result.get("kind") != "applied":
     raise RuntimeError(f"repo sort toggle did not apply: {capability_result}")
 capability_delta = wait_for_delta(capability_baseline, lambda value: value["repo_events"] >= 1, "capability presentation telemetry")
 capability_after = quiescent_snapshot()
@@ -644,11 +679,12 @@ capability_restore_result = request(
     "command.execute",
     {
         "commandId":"toggleReposSortDirection",
-        "targetHandle":None,
-        "arguments":{},
+        "correlationId":str(uuid.uuid4()),
+        "arguments":workspace_window_arguments,
     },
 )
-if capability_restore_result.get("applied") is not True:
+# IPCCommandExecutionResult.swift:204 encodes the kind discriminator.
+if capability_restore_result.get("kind") != "applied":
     raise RuntimeError(f"repo sort restoration toggle did not apply: {capability_restore_result}")
 wait_for_repo_sort_projection(
     expected_order=initial_sort_order,

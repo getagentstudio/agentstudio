@@ -26,18 +26,25 @@ enum SeededReviewObservationFact: Sendable {
 
 /// Consumes the actual host lifecycle calls and commit callback in one ordered history.
 /// A success-only no-op cannot stand in for the required deletion publication.
+/// Reservation time does not bound when the operation reads the filesystem.
 final class SeededReviewLifecycleRecorder: BridgeProductMetadataLifecycleTraceRecording, Sendable {
     private let diagnosticLog: HeldStepEventLog
     private let emitConsoleDiagnostic: @Sendable (String) -> Void
+    private let reviewPreparationStep: HeldStep<String>?
+    private let reviewTerminalStep: HeldStep<BridgeOperationLifecycleTraceEvent>?
 
     init(
         diagnosticLog: HeldStepEventLog = .environment,
         emitConsoleDiagnostic: @escaping @Sendable (String) -> Void = { diagnostic in
             FileHandle.standardOutput.write(Data(diagnostic.utf8))
-        }
+        },
+        reviewPreparationStep: HeldStep<String>? = nil,
+        reviewTerminalStep: HeldStep<BridgeOperationLifecycleTraceEvent>? = nil
     ) {
         self.diagnosticLog = diagnosticLog
         self.emitConsoleDiagnostic = emitConsoleDiagnostic
+        self.reviewPreparationStep = reviewPreparationStep
+        self.reviewTerminalStep = reviewTerminalStep
     }
 
     private let facts = FactRecorder<String, SeededReviewObservationFact>(
@@ -47,8 +54,12 @@ final class SeededReviewLifecycleRecorder: BridgeProductMetadataLifecycleTraceRe
 
     func record(_ event: BridgeOperationLifecycleTraceEvent) async {
         guard event.surface == .review else { return }
+        if event.stage == .reviewPrepareStarted, let reviewPreparationStep {
+            try? await reviewPreparationStep.arrive(event.operationCorrelationID)
+        }
         switch event.stage {
-        case .refreshReserved: break
+        case .refreshReserved:
+            logObservation("reserved correlation=\(event.operationCorrelationID)")
         case .refreshOperationTerminal, .filePrepareTerminal, .reviewPrepareTerminal,
             .refreshCommitTerminal, .metadataEnqueueTerminal, .metadataDeliveryTerminal:
             let diagnostic =
@@ -60,15 +71,29 @@ final class SeededReviewLifecycleRecorder: BridgeProductMetadataLifecycleTraceRe
             return
         }
         facts.append(scope: "Review refresh", fact: .lifecycle(event))
+        if event.stage == .refreshOperationTerminal, let reviewTerminalStep {
+            try? await reviewTerminalStep.arrive(event)
+        }
     }
     func record(_: BridgeProductMetadataLifecycleTraceEvent) async {}
     func record(_: BridgeProductReviewMetadataPublicationTraceEvent) async {}
     func recordCommit(_ publication: BridgeReviewCommittedPublication) {
+        let deletions = publication.package.itemsById.values.filter { $0.headPath == nil }.compactMap(\.basePath)
+        logObservation(
+            "committed correlation=\(publication.operationCorrelationID ?? "none") revision=\(publication.package.revision) deletions=\(deletions.sorted())"
+        )
         facts.append(scope: "Review refresh", fact: .committed(publication))
+    }
+
+    private func logObservation(_ description: String) {
+        let diagnostic = "TQ114 Review observation: \(description)\n"
+        TestEventLogWriter.append(diagnostic, path: diagnosticLog.path)
+        emitConsoleDiagnostic(diagnostic)
     }
 
     func openDeletionObservation() -> UUID {
         let opening = UUIDv7.generate()
+        logObservation("deletion opening=\(opening)")
         facts.append(scope: "Review refresh", fact: .opening(opening))
         return opening
     }
@@ -103,11 +128,13 @@ final class SeededReviewLifecycleRecorder: BridgeProductMetadataLifecycleTraceRe
         }
     }
 
-    func requireCommittedDeletion(path: String, after opening: UUID) async throws
+    func requireCommittedDeletion(
+        path: String, after opening: UUID, baseline: BridgeReviewCommittedPublication
+    ) async throws
         -> BridgeReviewCommittedPublication
     {
         var observationOpened = false
-        var operationReservations: Set<String> = []
+        var deletionPublicationByCorrelation: [String: BridgeReviewCommittedPublication] = [:]
         while true {
             let fact = try await nextFact()
             if case .opening(let observedOpening) = fact, observedOpening == opening {
@@ -117,17 +144,24 @@ final class SeededReviewLifecycleRecorder: BridgeProductMetadataLifecycleTraceRe
             guard observationOpened else { continue }
             switch fact {
             case .lifecycle(let event):
-                if event.stage == .refreshReserved {
-                    operationReservations.insert(event.operationCorrelationID)
+                if event.stage == .refreshOperationTerminal,
+                    let publication = deletionPublicationByCorrelation[event.operationCorrelationID]
+                {
+                    // A stale/cancelled terminal can follow a real commit. The callback
+                    // proves publication; this correlated terminal proves the operation ended.
+                    return publication
                 }
             case .committed(let publication):
                 guard let correlation = publication.operationCorrelationID,
-                    operationReservations.contains(correlation),
+                    publication.package.packageId == baseline.package.packageId,
+                    publication.package.reviewGeneration == baseline.package.reviewGeneration,
+                    publication.package.query == baseline.package.query,
+                    publication.package.revision > baseline.package.revision,
                     publication.package.itemsById.values.contains(where: {
                         $0.basePath == path && $0.headPath == nil
                     })
                 else { continue }
-                return publication
+                deletionPublicationByCorrelation[correlation] = publication
             case .opening: continue
             }
         }
@@ -192,7 +226,8 @@ func captureControllableReviewPublications() async throws -> SeededReviewPublica
             paths: ["tracked.txt"], timestamp: .now, batchSeq: 1
         )
         await host.handleObservedWorktreeInvalidation(.filesChanged(changeset))
-        let publication = try await lifecycle.requireCommittedDeletion(path: "tracked.txt", after: opening)
+        let publication = try await lifecycle.requireCommittedDeletion(
+            path: "tracked.txt", after: opening, baseline: baseline)
         #expect(publication.package.itemsById.values.contains { $0.basePath == "tracked.txt" && $0.headPath == nil })
         await host.shutdown()
         try await lifecycle.finish()

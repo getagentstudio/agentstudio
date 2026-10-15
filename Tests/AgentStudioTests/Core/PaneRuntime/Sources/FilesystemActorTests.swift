@@ -577,14 +577,16 @@ struct FilesystemActorTests {
     @Test("large path bursts split into fixed-size ordered filesChanged batches")
     func largeBurstSplitsIntoBoundedSortedBatches() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let actor = makeActor(bus: bus)
+        let actor = FilesystemActor(
+            bus: bus, fseventStreamClient: ControllableFSEventStreamClient(), sleepClock: TestPushClock(),
+            debounceWindow: .zero, maxFlushLatency: .zero)
 
-        let worktreeId = UUID()
+        let worktreeId = UUIDv7.generate()
         await actor.register(
             worktreeId: worktreeId, repoId: worktreeId, rootPath: URL(fileURLWithPath: "/tmp/large-batch"))
 
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        var iterator = stream.makeAsyncIterator()
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        _ = await probe.begin()
 
         let batchLimit = FilesystemActor.maxPathsPerFilesChangedEvent
         let uniquePathCount = batchLimit * 2 + 17
@@ -597,12 +599,11 @@ struct FilesystemActorTests {
 
         await actor.enqueueRawPaths(worktreeId: worktreeId, paths: rawPaths)
 
-        var receivedChangesets: [FileChangeset] = []
-        for _ in 0..<expectedChunkCount {
-            let envelope = try #require(await iterator.next())
-            let changeset = try #require(filesChangedChangeset(from: envelope))
-            receivedChangesets.append(changeset)
-        }
+        for _ in 0..<expectedChunkCount { _ = try await probe.nextChangeset() }
+        await actor.shutdown()
+        try await probe.closeAfterProducerReturn()
+        let receivedChangesets = probe.changesets
+        #expect(receivedChangesets.allSatisfy { $0.worktreeId == worktreeId && $0.repoId == worktreeId })
 
         let flattenedPaths = receivedChangesets.flatMap(\.paths)
         let batchSequences = receivedChangesets.map(\.batchSeq)
@@ -612,7 +613,6 @@ struct FilesystemActorTests {
         #expect(flattenedPaths == expectedSortedPaths)
         #expect(batchSequences == Array(1...UInt64(expectedChunkCount)))
 
-        await actor.shutdown()
     }
 
     @Test("debounce coalesces bursts and flushes once after debounce window")
@@ -627,37 +627,33 @@ struct FilesystemActorTests {
             maxFlushLatency: .seconds(1)
         )
 
-        let observed = ObservedFilesystemChanges()
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        let collectionTask = Task {
-            for await envelope in stream {
-                await observed.record(envelope)
-            }
-        }
-
-        defer { collectionTask.cancel() }
-
-        let worktreeId = UUID()
+        let worktreeId = UUIDv7.generate()
         await actor.register(
             worktreeId: worktreeId,
             repoId: worktreeId,
-            rootPath: URL(fileURLWithPath: "/tmp/debounce-\(UUID().uuidString)")
+            rootPath: URL(fileURLWithPath: "/tmp/debounce-\(UUIDv7.generate().uuidString)")
         )
 
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        _ = await probe.begin()
         await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ["Sources/A.swift"])
         await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ["Sources/B.swift"])
 
         await clock.waitForPendingSleepCount()
+        let expectedDeadline = TestPushClock().now.advanced(by: .milliseconds(60))
+        #expect(clock.pendingSleepDeadlines == [expectedDeadline])
         clock.advance(by: .milliseconds(20))
-        await Task.yield()
-        #expect(await observed.filesChangedCount(for: worktreeId) == 0)
+        #expect(clock.pendingSleepDeadlines == [expectedDeadline])
 
         clock.advance(by: .milliseconds(40))
-        let changeset = await observed.next()
+        let changeset = try await probe.nextChangeset()
         #expect(changeset.worktreeId == worktreeId)
         #expect(Set(changeset.paths) == Set(["Sources/A.swift", "Sources/B.swift"]))
 
         await actor.shutdown()
+        try await probe.closeAfterProducerReturn()
+        #expect(probe.changesets.count == 1)
+        #expect(probe.changesets.allSatisfy { $0.worktreeId == worktreeId && $0.repoId == worktreeId })
     }
 
     @Test("logical debt retains drain custody until the accepted filesystem batch finishes")
@@ -716,33 +712,30 @@ struct FilesystemActorTests {
             sleepClock: clock
         )
 
-        let observed = ObservedFilesystemChanges()
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        let collectionTask = Task {
-            for await envelope in stream {
-                await observed.record(envelope)
-            }
-        }
-        defer { collectionTask.cancel() }
-
-        let worktreeId = UUID()
+        let worktreeId = UUIDv7.generate()
         await actor.register(
             worktreeId: worktreeId,
             repoId: worktreeId,
-            rootPath: URL(fileURLWithPath: "/tmp/default-debounce-\(UUID().uuidString)")
+            rootPath: URL(fileURLWithPath: "/tmp/default-debounce-\(UUIDv7.generate().uuidString)")
         )
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        _ = await probe.begin()
         await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ["Sources/Isolated.swift"])
 
         await clock.waitForPendingSleepCount()
+        let expectedDeadline = TestPushClock().now.advanced(by: .milliseconds(500))
+        #expect(clock.pendingSleepDeadlines == [expectedDeadline])
         clock.advance(by: .milliseconds(499))
-        await Task.yield()
-        #expect(await observed.filesChangedCount(for: worktreeId) == 0)
+        #expect(clock.pendingSleepDeadlines == [expectedDeadline])
 
         clock.advance(by: .milliseconds(1))
-        let changeset = await observed.next()
+        let changeset = try await probe.nextChangeset()
         #expect(changeset.paths == ["Sources/Isolated.swift"])
 
         await actor.shutdown()
+        try await probe.closeAfterProducerReturn()
+        #expect(probe.changesets.count == 1)
+        #expect(probe.changesets.allSatisfy { $0.worktreeId == worktreeId && $0.repoId == worktreeId })
     }
 
     private func filesChangedChangeset(from envelope: RuntimeEnvelope) -> FileChangeset? {
