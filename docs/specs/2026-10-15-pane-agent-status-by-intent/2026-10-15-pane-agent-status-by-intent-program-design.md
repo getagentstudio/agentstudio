@@ -88,12 +88,13 @@ sequenceDiagram
 - **Sessions:** `session.status` goes to `SessionsIngestion.recordUnverifiedStatus`. If the pane has an active binding it is ignored, because verified status wins. Otherwise it follows the main-session rule and applies the same `SessionStatusState` transition. It submits hook activity to `PaneActivityClock` and publishes to `SessionStatusAtom`.
 - **Lifecycle:**
   - E5 and E7 clear when a binding becomes active, when the pane is retired, and at app quit.
-  - The unverified main is released by a status-path SessionEnd, or by the pane's authoritative command-exit fact. The existing command-exit handler (`SessionsIngestion+Status.swift:125`) returns early when there is no verified binding; it is extended to release E6 instead.
-  - A released `(provider, providerSessionId)` is fenced, so its delayed facts are ignored.
+  - E6 records the instant it was established.
+  - The unverified main is released by a status-path SessionEnd, or by the pane's command-exit fact. A command exit releases it only when its `reportedAt` is after that instant; this is the same source-time fence the verified path applies (`SessionsIngestion+Status.swift:135`). The existing handler (`:125`) returns early when there is no verified binding; it is extended to apply that fence and release E6.
+  - Late ordinary facts from a released `(provider, providerSessionId)` are ignored. A `SessionStart` from it may re-establish it as main when no live main blocks it, mirroring `decideBinding`'s SessionStart branch (`SessionsEvidenceReducer+Mutations.swift:29`).
 - **Title and Agent Line:**
   - On a refused login, the CLI drops its automatic session attribution (`writerClaim` from `CLAUDE_CODE_SESSION_ID` or `CODEX_THREAD_ID`, `PaneCLICommandRunner.swift:245`). It writes as the pane writer, with status intent and the pane claim.
   - With the CLI store (`AGENTSTUDIO_CLI_STORE`), it uses its stored epoch and counter as today.
-  - Without the store, as in old shells, it claims a fresh pane-writer epoch per write (`claimEpoch` with a new UUIDv7 `claimId`) and writes counter 1.
+  - Without the store, as in old shells, every write uses one deterministic epoch claim per `(pane, stream)`. Its `claimId` is a name-based UUID of the pane id and the stream, so a repeated claim is idempotent and returns the same epoch. The counter is the host's continuous-clock nanoseconds, captured when the CLI command starts and before any IPC. A delayed older call therefore carries a smaller counter and is rejected as `lastAccepted` by the existing admission (`PaneContextStorage+CurrentValues.swift:184`). Per-write fresh epochs are not used: they would let a delayed older write win (N10).
   - Stale results stay final and are never renumbered.
 - **Deadline:** login, the fallback reconnect and the fallback call share one absolute `CallDeadline` (`AgentStudioIPCTransport/CallDeadline.swift`). If the budget is exhausted, the hook exits 0 silently and logs `deadlineExceeded`.
 - **Pre-dispatch refusals:** login rejection happens before any method runs. The fallback call carries `tokenOutcome`, and the server records `credentialNotRecognized` on the claimed pane after the membership check.
