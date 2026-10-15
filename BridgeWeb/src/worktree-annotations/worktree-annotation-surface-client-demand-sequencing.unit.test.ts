@@ -122,6 +122,106 @@ describe('source refresh depends on current committed annotation demand', () => 
 		}
 	});
 
+	test('a File source change recovers parked demand without worker convergence', () => {
+		const harness = createSurfaceClientHarness([], 'fileView');
+		const releaseSession = harness.client.acquireSession(sessionId);
+		try {
+			settleDemand(harness, demandRequestIds(harness)[0], { kind: 'failed', code: 'unavailable' });
+			settleDemand(harness, demandRequestIds(harness)[1], { kind: 'failed', code: 'unavailable' });
+			settleDemand(harness, demandRequestIds(harness)[2], { kind: 'failed', code: 'unavailable' });
+			expect(demandRequestIds(harness)).toHaveLength(3);
+			expect(sourceRefreshCommands(harness)).toEqual([]);
+
+			// File activation/source acceptance advances the owner's epoch after early failures.
+			advanceSourceEpoch(harness, 7);
+			expect(demandRequestIds(harness)).toHaveLength(4);
+			expect(sourceRefreshCommands(harness)).toEqual([]);
+			advanceSourceEpoch(harness, 9);
+			expect(demandRequestIds(harness)).toHaveLength(4);
+			settleDemand(harness, demandRequestIds(harness)[3]);
+
+			expect(sourceRefreshCommands(harness)).toEqual([
+				{
+					command: 'annotationCommand',
+					epoch: 9,
+					surface: 'fileView',
+					operation: { kind: 'source.refresh', sessionId, sourceEpoch: 1 },
+				},
+			]);
+		} finally {
+			releaseSession();
+			harness.client.dispose();
+		}
+	});
+
+	test('a source change during the final held acquisition still re-admits demand', () => {
+		const harness = createSurfaceClientHarness([]);
+		const releaseSession = harness.client.acquireSession(sessionId);
+		try {
+			settleDemand(harness, demandRequestIds(harness)[0], { kind: 'failed', code: 'unavailable' });
+			settleDemand(harness, demandRequestIds(harness)[1], { kind: 'failed', code: 'unavailable' });
+			advanceSourceEpoch(harness, 7);
+			expect(demandRequestIds(harness)).toHaveLength(3);
+			expect(sourceRefreshCommands(harness)).toEqual([]);
+
+			// The pre-activation rejection arrives after the new source was accepted.
+			settleDemand(harness, demandRequestIds(harness)[2], { kind: 'failed', code: 'unavailable' });
+			expect(demandRequestIds(harness)).toHaveLength(4);
+			settleDemand(harness, demandRequestIds(harness)[3]);
+			expect(sourceRefreshCommands(harness)).toHaveLength(1);
+			expect(sourceRefreshCommands(harness)[0]?.epoch).toBe(7);
+		} finally {
+			releaseSession();
+			harness.client.dispose();
+		}
+	});
+
+	test('each source change re-admits only one attempt after the failed-acquisition budget', () => {
+		const harness = createSurfaceClientHarness([]);
+		const releaseSession = harness.client.acquireSession(sessionId);
+		try {
+			settleDemand(harness, demandRequestIds(harness)[0], { kind: 'failed', code: 'unavailable' });
+			settleDemand(harness, demandRequestIds(harness)[1], { kind: 'failed', code: 'unavailable' });
+			settleDemand(harness, demandRequestIds(harness)[2], { kind: 'failed', code: 'unavailable' });
+
+			advanceSourceEpoch(harness, 7);
+			expect(demandRequestIds(harness)).toHaveLength(4);
+			settleDemand(harness, demandRequestIds(harness)[3], { kind: 'failed', code: 'unavailable' });
+			expect(demandRequestIds(harness)).toHaveLength(4);
+			advanceSourceEpoch(harness, 8);
+			expect(demandRequestIds(harness)).toHaveLength(5);
+			settleDemand(harness, demandRequestIds(harness)[4], { kind: 'failed', code: 'unavailable' });
+			expect(demandRequestIds(harness)).toHaveLength(5);
+			expect(sourceRefreshCommands(harness)).toEqual([]);
+		} finally {
+			releaseSession();
+			harness.client.dispose();
+		}
+	});
+
+	test('source changes wait for convergence when the worker itself is being replaced', () => {
+		const harness = createSurfaceClientHarness([]);
+		const releaseSession = harness.client.acquireSession(sessionId);
+		try {
+			settleDemand(harness, demandRequestIds(harness)[0]);
+			harness.fireWorkerReplacement();
+			advanceSourceEpoch(harness, 7);
+			expect(demandRequestIds(harness)).toHaveLength(1);
+			expect(sourceRefreshCommands(harness)).toHaveLength(1);
+
+			publishWorkerConvergence(harness);
+			expect(demandRequestIds(harness)).toHaveLength(2);
+			settleDemand(harness, demandRequestIds(harness)[1]);
+			expect(sourceRefreshCommands(harness).at(-1)).toMatchObject({
+				epoch: 7,
+				operation: { kind: 'source.refresh', sourceEpoch: 2 },
+			});
+		} finally {
+			releaseSession();
+			harness.client.dispose();
+		}
+	});
+
 	test('keeps refresh pending through failed attempts and worker recovery', () => {
 		const harness = createSurfaceClientHarness([]);
 		const releaseSession = harness.client.acquireSession(sessionId);
@@ -129,11 +229,11 @@ describe('source refresh depends on current committed annotation demand', () => 
 			settleDemand(harness, demandRequestIds(harness)[0], { kind: 'failed', code: 'unavailable' });
 			settleDemand(harness, demandRequestIds(harness)[1], { kind: 'failed', code: 'unavailable' });
 			settleDemand(harness, demandRequestIds(harness)[2], { kind: 'failed', code: 'unavailable' });
-			advanceSourceEpoch(harness, 7);
 			expect(sourceRefreshCommands(harness)).toEqual([]);
 			expect(demandRequestIds(harness)).toHaveLength(3);
 
 			publishWorkerConvergence(harness);
+			advanceSourceEpoch(harness, 7);
 			expect(demandRequestIds(harness)).toHaveLength(4);
 			expect(sourceRefreshCommands(harness)).toEqual([]);
 			settleDemand(harness, demandRequestIds(harness)[3]);

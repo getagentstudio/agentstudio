@@ -24,7 +24,7 @@ import {
 const noopUnsubscribe = (): void => {};
 const maximumRetainedOrphanCorrelationCount = 128;
 // Consecutive demand acquisitions sent before the client waits for the next worker
-// convergence event. Bounds retries without a clock; every worker event re-admits one.
+// convergence or source change. Bounds retries without a clock; each event re-admits one.
 const maximumConsecutiveDemandAcquireAttempts = 3;
 // The worker's deadline passed after dispatch: native may still commit, and a late
 // receipt reconciles the comments. This copy must not claim the change failed.
@@ -86,9 +86,11 @@ interface PendingAnnotationCommandSettlement {
 
 // The worker registers a demanded session only on a committed `demand.acquire`, and a
 // replacement worker starts with none. `committed` is demand this worker holds;
-// `awaitingWorker` is demand to re-acquire on the next worker convergence event.
+// `awaitingWorker` waits for worker convergence; exhausted attempts may also be
+// re-admitted when the source changes.
 interface SessionDemandAcquisition {
 	attemptId: number;
+	attemptSurfaceEpoch: number;
 	consecutiveFailedAttempts: number;
 	sourceRefreshPending: boolean;
 	state: 'acquiring' | 'awaitingWorker' | 'committed';
@@ -416,7 +418,12 @@ export function createWorktreeAnnotationSurfaceClient(
 			return;
 		}
 		acquisition.consecutiveFailedAttempts += 1;
-		if (acquisition.consecutiveFailedAttempts < maximumConsecutiveDemandAcquireAttempts) {
+		// A source change while the old attempt was in flight supplies one new
+		// admission opportunity too; its late rejection must not consume that event.
+		if (
+			acquisition.consecutiveFailedAttempts < maximumConsecutiveDemandAcquireAttempts ||
+			acquisition.attemptSurfaceEpoch !== currentSurfaceEpoch(surfaceClient)
+		) {
 			sendDemandAcquire(sessionId);
 			return;
 		}
@@ -428,6 +435,7 @@ export function createWorktreeAnnotationSurfaceClient(
 		nextDemandAcquireAttemptId += 1;
 		const attemptId = nextDemandAcquireAttemptId;
 		acquisition.attemptId = attemptId;
+		acquisition.attemptSurfaceEpoch = currentSurfaceEpoch(surfaceClient);
 		acquisition.state = 'acquiring';
 		dispatchCommand(
 			{ kind: 'demand.acquire', sessionId },
@@ -499,6 +507,15 @@ export function createWorktreeAnnotationSurfaceClient(
 		// A refresh captures the current source. Keep its latest request pending until
 		// this worker's matching acquisition commits, including source/worker changes.
 		acquisition.sourceRefreshPending = true;
+		if (
+			acquisition.state === 'awaitingWorker' &&
+			acquisition.consecutiveFailedAttempts >= maximumConsecutiveDemandAcquireAttempts
+		) {
+			// Re-admit one failed-budget attempt without resetting the budget. Replacement
+			// workers have zero failures and still wait for their first convergence.
+			sendDemandAcquire(sessionId);
+			return;
+		}
 		if (acquisition.state !== 'committed') return;
 		acquisition.sourceRefreshPending = false;
 		nextSourceRefreshEpoch += 1;
@@ -551,6 +568,7 @@ export function createWorktreeAnnotationSurfaceClient(
 				projectionStore.markSessionDemanded(sessionId);
 				demandAcquisitionBySessionId.set(sessionId, {
 					attemptId: 0,
+					attemptSurfaceEpoch: currentSurfaceEpoch(surfaceClient),
 					consecutiveFailedAttempts: 0,
 					sourceRefreshPending: true,
 					state: 'acquiring',
