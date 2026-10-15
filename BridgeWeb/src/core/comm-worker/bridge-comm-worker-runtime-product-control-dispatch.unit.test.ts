@@ -232,7 +232,6 @@ describe.each(['fileView', 'review'] as const)(
 			dispatchAnnotationOutput({
 				surface,
 				operation: {
-					destination: 'remembered',
 					kind: 'output.scope.commit',
 					messages: [{ messageId: '00000000-0000-7000-8000-000000000011', savedRevision: 4 }],
 					outputKind: 'clipboardMarkdown',
