@@ -1,6 +1,6 @@
 # Local telemetry without the field filter — Program Design
 
-Requirements: [requirements](2026-10-12-otlp-export-without-field-allowlist-requirements.md) (U1–U4) → Specification: [specification](2026-10-12-otlp-export-without-field-allowlist.md) (E1–E6, R1–R9, V1–V6) → this Program Design.
+Requirements: [requirements](2026-10-12-otlp-export-without-field-allowlist-requirements.md) (U1–U4) → Specification: [specification](2026-10-12-otlp-export-without-field-allowlist.md) (E1–E6, R1–R10, V1–V7; revised 2026-10-15 after review) → this Program Design.
 
 ## How it works
 
@@ -31,8 +31,8 @@ flowchart LR
 | E1 Recorded event | `AgentStudioTraceRuntime` | `Infrastructure/Diagnostics/AgentStudioTraceRuntime.swift` (existing, unchanged) | `[String: AgentStudioTraceValue]` attributes, body, resource (existing) | runtime → sinks (existing) | runtime |
 | E2 Exported log record | `AgentStudioOTLPTraceProjection` | `Infrastructure/Diagnostics/AgentStudioOTLPTraceProjection*.swift` (modified: key/value allowlists, identifier, error and payload-name gates and the array omission are removed) | `AgentStudioOTLPProjectedLogRecord` (existing) | `.string`, `.int`, `.double`, `.bool`, `.stringArray` → OTLP AnyValue (array support added) | exported |
 | E3 Metric sample | `AgentStudioOTLPPerformanceMetrics` | `Infrastructure/Diagnostics/AgentStudioOTLPPerformanceMetrics.swift` (modified) | `AgentStudioOTLPPerformanceMetricSample` (existing) | record → sample(label, dimensions, value) (existing) | derived |
-| E4 Measurement | `AgentStudioOTLPPerformanceMetrics` (explicit list) | same file, or a sibling `…MeasurementList.swift` if the list is long (new) | `Set<String>` of attribute names (new) | gate in the sample mapping (changed) | static |
-| E5 Queue statistics | trace event queue (producer, unchanged); metric builder (process-level reporting, changed) | `AgentStudioTraceEventQueue.swift` (unchanged); metrics file (modified) | three `agentstudio.performance.trace_queue.*` attributes (existing) | metric gauges `…trace_queue_*` with resource labels only (changed: no `event` dimension) | derived |
+| E4 Measurement | `AgentStudioOTLPPerformanceMetrics` (explicit list) | sibling `AgentStudioOTLPMeasurementList.swift` (new) | `Set<String>` of attribute names, each with a comment naming its emitter (new) | gate in the sample mapping (changed); the admitted-event counter (`counter(for: metricEvent)`, metrics file line 31) and the duration-derived instruments stay outside the gate | static |
+| E5 Queue statistics | each `AgentStudioTraceEventQueue` reports into one process-level aggregate (new); the metric builder reads the totals | `Infrastructure/Diagnostics/AgentStudioTraceQueueStatistics.swift` (new, lock-protected value owner); the six queues (Bridge, RepoExplorer, AtomLib, Performance, Startup, TCC) register on creation | per queue: dropped (cumulative), pending, backlog. Totals: sum of dropped (survives retirement), sum of pending, peak of summed backlog | three gauges `…trace_queue_*` with resource labels only, read at export time; the per-event attribute copies stay in logs (R1) and stop feeding metrics | derived |
 | E6 Local stack | shared host (out of scope) | `~/dev/ai-tools/observability` (unchanged) | — | loopback OTLP HTTP (unchanged) | external |
 
 Other changes:
@@ -70,7 +70,7 @@ sequenceDiagram
 
 ## The explicit measurement list
 
-The list contains the measurement names the evidence census classified as real durations, counts, sizes or occupancies. That is every current metric name except the 20 flag gauges and 3 sequence gauges; the census source is `tmp/otlp-lane3-evidence.md` §3, in the implementation worktree. Booleans never become samples. A future numeric field becomes a metric only by adding it to the list in the same change that emits it. That is the review point for cardinality.
+The list is derived from the current emitters in source, not from a metric-store snapshot. The first implementation slice enumerates every `agentstudio.performance.*` numeric attribute an emitter records, with its file anchor. It then classifies each one as a real duration, count, size or occupancy, or as a flag, sequence or bookkeeping value. The runtime census (`tmp/otlp-lane3-evidence.md` §3: 20 flag and 3 sequence gauges) is a cross-check, not the source. Measurements that are rare at runtime, such as IPC detail duration and reply bytes, stay. Booleans never become samples. A future numeric field becomes a metric only by adding it to the list in the same change that emits it. That is the review point for cardinality.
 
 ## Invalid states and how they are kept out
 
@@ -78,7 +78,7 @@ The list contains the measurement names the evidence census classified as real d
 | --- | --- |
 | A flag, sequence or unlisted number becomes a metric series | Rejected at the sample mapping: a name not on the list produces no sample. Enforced by an automated test (V3). |
 | Queue statistics labeled per event | The queue keys are handled before the per-event sample path and emitted without the `event` dimension (automated test, V3). |
-| Export to a non-loopback address | Unchanged guard in the trace configuration (existing tests, V2). |
+| Export to a non-loopback address | Unchanged guard in the trace configuration, for every signal (existing tests, V2). Redirects: a known residual, because swift-otel follows up to 20. Recorded in R2 with its owner decision. |
 
 ## Failure
 
@@ -89,13 +89,13 @@ The list contains the measurement names the evidence census classified as real d
 
 | U | R | E | Owner | Interface | Shape and home | State | Failure | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| U1, U3 | R1: every recorded attribute appears unchanged in the exported log | E1, E2 | `AgentStudioOTLPTraceProjection` | `project(record)` (existing entry) | `AgentStudioOTLPProjectedLogRecord`, AnyValue incl. arrays | stateless | none: no filter left to fail | V1 projection tests per family; V4 real launch log query |
+| U1, U3 | R1: every recorded attribute appears unchanged in the encoded export (app boundary) | E1, E2 | `AgentStudioOTLPTraceProjection` | `project(record)` (existing entry) | `AgentStudioOTLPProjectedLogRecord`, AnyValue incl. arrays | stateless | none: no filter left to fail | V1 projection tests per family; V4 real launch log query |
 | U3 | R2: loopback-only export | E6 | `AgentStudioTraceConfiguration` | endpoint validation (existing) | endpoint config (existing) | unchanged | non-loopback → JSONL only (existing) | V2 existing configuration tests |
 | U3 | R3: atoms opt-in unchanged | E1 | `AgentStudioTraceTag` | wildcard parsing (existing) | tag set (existing) | unchanged | — | V2 existing tests |
 | U2, U3 | R4: samples only for listed measurements and queue stats | E3, E4, E5 | `AgentStudioOTLPPerformanceMetrics` | sample mapping gated by the measurement list | `Set<String>` list; `AgentStudioOTLPPerformanceMetricSample` | stateless | unlisted → no sample | V3 metric tests; V4 series census |
 | U2, U4 | R5: hand-picked labels; Panes and activity admitted | E3 | metric taxonomy | dimension selection (existing) | `SidebarMetricSurface` + group-mode values (modified) | stateless | — | V3 |
-| U3 | R6: queue statistics process-level only | E5, E3 | `AgentStudioOTLPPerformanceMetrics` | queue-key branch (new) | three gauges with resource labels only | latest value per process | — | V3; V4 (no `trace_queue` series with `event` label) |
+| U3 | R6: queue totals process-level only | E5, E3 | `AgentStudioTraceQueueStatistics` + metrics builder | queue registration and report (new) | three total gauges, resource labels only | cumulative drops survive retirement; pending and backlog are current | — | V3 (several queues, loss, retirement, backlog back to zero); V4 (no `trace_queue` series with `event` label) |
 | U2 | R7: fewer series, counts reported | E3 | `AgentStudioOTLPPerformanceMetrics` | — | — | — | — | V4 before/after census on the same workload |
 | U3, U5 | R8: docs and CLAUDE.md updated; message-text rule kept | none: documentation | docs owner | — | the two passages | — | — | V6 |
 | U5 | R10: message text never recorded, so never exported | E1, E2 | the event recorders (unchanged: none records message text today) | — | — | — | a future recorder adding message text breaks V7 | V7 marker-scoped launch before/after |
-| U3 | R9: verifiers pass; secret checks kept | E2, E3 | verifier scripts | their queries | the scripts named above | — | — | V5 real-launch verifier runs |
+| U3 | R9: verifiers pass; only negatives tied to the retired export filter removed | E2, E3 | verifier scripts | their queries | the scripts named above; Bridge ingress validation (`BridgeTelemetryWireSchema.swift:19`) unchanged | — | — | V5 real-launch verifier runs |
