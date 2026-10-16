@@ -5,6 +5,8 @@ import { type Page, type Request } from 'playwright';
 import { uuidv7 } from 'uuidv7';
 import { expect } from 'vitest';
 
+import { waitForInitialAnnotationCatalogCommit } from './bridge-viewer-vite-annotation-catalog-owner-observation.ts';
+
 export interface AnnotationCatalogTransferTelemetryObservation {
 	readonly mainBeginStartTimeMilliseconds: number;
 	readonly mainCommitStartTimeMilliseconds: number;
@@ -149,17 +151,7 @@ SELECT
 export async function latestAnnotationCatalogCommit(
 	page: Page,
 ): Promise<{ readonly catalogRevision: number }> {
-	const status = await fetchTelemetryStatus(page);
-	const commit = annotationCatalogSamples(status).findLast(
-		(sample) =>
-			sample.stringAttributes['agentstudio.bridge.phase'] === 'annotation_catalog_main_commit',
-	);
-	if (commit === undefined) {
-		throw new Error('Large catalog proof requires an initial Main catalog commit.');
-	}
-	return {
-		catalogRevision: numberAttribute(commit, 'agentstudio.bridge.annotation.catalog.revision'),
-	};
+	return { catalogRevision: await waitForInitialAnnotationCatalogCommit(page) };
 }
 
 export function observeAnnotationProjectionQueries(

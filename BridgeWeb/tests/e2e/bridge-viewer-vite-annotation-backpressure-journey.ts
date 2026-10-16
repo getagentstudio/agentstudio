@@ -1,6 +1,7 @@
 import type { Page, Request } from 'playwright';
 import { expect, test } from 'vitest';
 
+import { observeAnnotationCatalogOwner } from './bridge-viewer-vite-annotation-catalog-owner-observation.ts';
 import {
 	annotationCatalogLongTasksOverlappingMainStaging,
 	beginAnnotationCatalogLongTaskObservation,
@@ -439,6 +440,7 @@ async function runAnnotationBackpressureJourney(props: {
 		page = createdPage;
 		const frameAcknowledgementQuiescence = observeSubscriptionReceiptQuiescence(createdPage);
 		const selectedItemApplyObservation = observeSelectedItemApplies(createdPage);
+		const catalogOwnerObservation = await observeAnnotationCatalogOwner(createdPage);
 		const observedReviewFile = props.oracle.reviewFiles[0];
 		if (observedReviewFile === undefined)
 			throw new Error('Stress Review fixture has no changed file.');
@@ -467,6 +469,7 @@ async function runAnnotationBackpressureJourney(props: {
 			milestones: props.milestones,
 			operation: async () => waitForSelectedFileReady({ oracle: props.oracle, page: createdPage }),
 		});
+		await catalogOwnerObservation.install();
 		const fileTelemetry = await runMilestone({
 			after: 'file.telemetry.ready',
 			before: 'file.telemetry.waiting',
