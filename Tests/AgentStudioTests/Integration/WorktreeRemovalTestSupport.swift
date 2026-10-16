@@ -29,9 +29,11 @@ struct WorktreeRemovalRepository {
         branch: String,
         directoryName: String? = nil
     ) async throws -> URL {
-        let name = directoryName ?? "\(path.lastPathComponent).\(branch.replacingOccurrences(of: "/", with: "-"))"
-        let worktreePath = path.deletingLastPathComponent()
-            .appending(path: name, directoryHint: .isDirectory)
+        let worktreePath =
+            try directoryName.map { try namedWorktreePath($0) }
+            ?? path.deletingLastPathComponent().appending(
+                path: "\(path.lastPathComponent).\(branch.replacingOccurrences(of: "/", with: "-"))",
+                directoryHint: .isDirectory)
         _ = try await client.createWorktree(
             GitCreateWorktreeRequest(
                 repositoryPath: path,
@@ -46,8 +48,7 @@ struct WorktreeRemovalRepository {
         branch: String,
         directoryName: String
     ) async throws -> URL {
-        let worktreePath = path.deletingLastPathComponent()
-            .appending(path: directoryName, directoryHint: .isDirectory)
+        let worktreePath = try namedWorktreePath(directoryName)
         _ = try await removalGit(path, "worktree", "add", "--force", "--checkout", worktreePath.path, branch)
         linkedWorktreePaths.append(worktreePath)
         return worktreePath
@@ -57,7 +58,21 @@ struct WorktreeRemovalRepository {
         for worktreePath in linkedWorktreePaths {
             try? FileManager.default.removeItem(at: worktreePath)
         }
+        try? FileManager.default.removeItem(at: namedWorktreeRoot)
         FilesystemTestGitRepo.destroy(path)
+    }
+
+    /// Explicitly named linked worktrees live under this fixture's own directory, so a
+    /// leftover from an interrupted run can never collide with a later fixture's name.
+    private var namedWorktreeRoot: URL {
+        path.deletingLastPathComponent()
+            .appending(path: "\(path.lastPathComponent).worktrees", directoryHint: .isDirectory)
+    }
+
+    private func namedWorktreePath(_ directoryName: String) throws -> URL {
+        // libgit2 does not create a missing parent directory for a new worktree.
+        try FileManager.default.createDirectory(at: namedWorktreeRoot, withIntermediateDirectories: true)
+        return namedWorktreeRoot.appending(path: directoryName, directoryHint: .isDirectory)
     }
 }
 
