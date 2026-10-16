@@ -11,6 +11,7 @@ import {
 	waitForSelectedReviewReady,
 } from './bridge-viewer-vite-annotation-save-journey.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
+import { appendJourneyFailureDiagnostics } from './bridge-viewer-vite-journey-failure.ts';
 import {
 	createBridgeViewerViteProductFixture,
 	startBridgeViewerOwnedViteProductServer,
@@ -20,6 +21,10 @@ import {
 	bridgeViewerViteProductReviewUrl,
 	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
+import {
+	installSelectedContentOwnerObservation,
+	readSelectedContentOwnerObservation,
+} from './bridge-viewer-vite-selected-content-observation.ts';
 import {
 	createTabOwnershipReplacementHold,
 	observeTabOwnershipReplacementRoute,
@@ -34,7 +39,10 @@ export function registerTabOwnershipTerminalJourney(): void {
 			let server: BridgeViewerOwnedViteProductServer | null = null;
 			let browser: Browser | null = null;
 			let firstTab: Page | null = null;
-			let primaryFailure: { readonly error: unknown } | null = null;
+			let primaryFailure: { readonly error: Error } | null = null;
+			let readiness: HandledLaunchPromise<void> | null = null;
+			let competingReadiness: HandledLaunchPromise<void> | null = null;
+			let phase = 'initial selected Review';
 			const replacementHold = createTabOwnershipReplacementHold(context.signal);
 			const routeJobs: HandledLaunchPromise<void>[] = [];
 			let replacementTransportCount = 0;
@@ -43,6 +51,7 @@ export function registerTabOwnershipTerminalJourney(): void {
 				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				const sharedProfile = await browser.newContext({ viewport: { width: 1728, height: 980 } });
 				firstTab = await sharedProfile.newPage();
+				await installSelectedContentOwnerObservation(firstTab);
 				await installControlledFirstTabReplacement(firstTab);
 				const reviewFile = fixture.oracle.reviewFiles[0];
 				if (reviewFile === undefined) throw new Error('Tab ownership proof needs a Review file.');
@@ -116,13 +125,16 @@ export function registerTabOwnershipTerminalJourney(): void {
 					)
 					.value();
 
+				phase = 'competing tab refusal';
 				const competingTab = await sharedProfile.newPage();
+				await installSelectedContentOwnerObservation(competingTab);
 				await competingTab.goto(url, { waitUntil: 'domcontentloaded' });
 				await competingTab.getByTestId('bridge-dev-session-inactive').waitFor({ state: 'visible' });
-				const competingReadiness = handleLaunchPromise(
+				competingReadiness = handleLaunchPromise(
 					waitForTabOwnershipReviewReady({ page: competingTab, itemId: reviewFile.itemId }),
 					'TQ109 competing tab readiness after live-owner refusal',
 				);
+				phase = 'controlled replacement owner exhaustion';
 				// Drive the existing native-failure budget, not its elapsed-time deadline.
 				for (let failure = 0; failure < 4; failure += 1) {
 					// oxlint-disable-next-line no-await-in-loop -- Each delivery consumes the next correlated native bootstrap request.
@@ -142,27 +154,25 @@ export function registerTabOwnershipTerminalJourney(): void {
 					`TQ109_HELD_BOOTSTRAP competing=inactive first=pane-failed replacementRequests=4 detail=${await firstTab.locator('[data-bridge-region="pane-failure"]').textContent()}`,
 				);
 
+				phase = 'read terminal owner diagnostic fields';
 				expect(
-					await firstTab.evaluate(() => ({
-						state: document.documentElement.dataset['tq109ExhaustedOwnerState'],
-						reason: document.documentElement.dataset['tq109ExhaustedOwnerReason'],
-					})),
+					await server.testLaunch
+						.observeStep(
+							phase,
+							firstTab.evaluate(() => ({
+								state: document.documentElement.dataset['tq109ExhaustedOwnerState'],
+								reason: document.documentElement.dataset['tq109ExhaustedOwnerReason'],
+							})),
+						)
+						.value(),
 				).toEqual({ state: 'failed', reason: 'bootstrapBudgetExhausted' });
-				const readiness = handleLaunchPromise(
+				phase = 'join first and competing tab terminal owner results';
+				readiness = handleLaunchPromise(
 					waitForTabOwnershipReviewReady({ page: firstTab, itemId: reviewFile.itemId }),
 					'TQ35 shared-profile: first tab remains ready after competing tab opens',
 				);
-				// Owner fact precedes explicit closure. The old positive-only wait also settles on closure,
-				// giving a deterministic red without a test timeout or leaked observer.
-				await firstTab
-					.locator('[data-bridge-region="pane-failure"][data-presentation-state="failed"]')
-					.waitFor({ state: 'attached' });
-				await firstTab.evaluate((): void => {
-					document.dispatchEvent(new Event('__tq109_stop_owner_observation'));
-				});
-				replacementHold.release();
-				await firstTab.close();
-				firstTab = null;
+				// Join the owner result while the replacement delivery and live document remain held.
+				// Page closure is cleanup, never a substitute terminal fact.
 				const readinessOutcome = await readiness.settled;
 				if (readinessOutcome.kind === 'failed')
 					console.log(`TQ109_TERMINAL_FACT ${readinessOutcome.error.message}`);
@@ -172,9 +182,27 @@ export function registerTabOwnershipTerminalJourney(): void {
 				await expect(competingReadiness.value()).rejects.toThrow(
 					'Tab ownership Review readiness ended: open-elsewhere',
 				);
+				replacementHold.release();
+				await firstTab.close();
+				firstTab = null;
 			} catch (error: unknown) {
-				primaryFailure = { error };
-				throw error;
+				primaryFailure = {
+					error: new Error(`Tab ownership terminal journey failed while awaiting ${phase}`, {
+						cause: error,
+					}),
+				};
+				await appendJourneyFailureDiagnostics({
+					primaryError: primaryFailure.error,
+					reads: [
+						{ name: 'backend', read: (): string => server?.diagnostics() ?? 'not started' },
+						{
+							name: 'owner',
+							read: async (): Promise<unknown> =>
+								firstTab === null ? 'no first tab' : readSelectedContentOwnerObservation(firstTab),
+						},
+					],
+				});
+				throw primaryFailure.error;
 			} finally {
 				replacementHold.dispose();
 				await runAllOwnedCleanupOperations({
@@ -183,9 +211,6 @@ export function registerTabOwnershipTerminalJourney(): void {
 							name: 'tab readiness page',
 							run: async (): Promise<void> => {
 								if (firstTab !== null && !firstTab.isClosed()) {
-									await firstTab.evaluate((): void => {
-										document.dispatchEvent(new Event('__tq109_stop_owner_observation'));
-									});
 									await firstTab.close();
 								}
 							},
@@ -194,6 +219,12 @@ export function registerTabOwnershipTerminalJourney(): void {
 							name: 'tab readiness browser',
 							run: async (): Promise<void> => {
 								await browser?.close();
+							},
+						},
+						{
+							name: 'tab readiness observer joins',
+							run: async (): Promise<void> => {
+								await Promise.all([readiness?.settled, competingReadiness?.settled]);
 							},
 						},
 						{
