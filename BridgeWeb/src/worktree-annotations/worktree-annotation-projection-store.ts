@@ -271,6 +271,9 @@ export class WorktreeAnnotationProjectionStore {
 			this.#publish({ ...this.#snapshot, readStatus: { kind: 'refreshing' } });
 		}
 		const result = this.#catalogStaging.accept(event);
+		if (result.status === 'rejected' && catalogRejectionMakesReadUnavailable(result.reason)) {
+			this.markUnavailable(true);
+		}
 		if (result.status !== 'completed') return result;
 		for (const sessionId of this.#completeContentRevisionBySessionId.keys()) {
 			if (!result.catalog.sessionsById.has(sessionId)) {
@@ -452,6 +455,36 @@ export class WorktreeAnnotationProjectionStore {
 		};
 		for (const listener of this.#listeners) listener();
 	}
+}
+
+function catalogRejectionMakesReadUnavailable(
+	reason: Extract<
+		BridgeCommWorkerAnnotationCatalogApplicatorResult,
+		{ readonly status: 'rejected' }
+	>['reason'],
+): boolean {
+	switch (reason) {
+		case 'unexpected_authority':
+		case 'revision_not_newer':
+		case 'noncurrent_transfer':
+			return false;
+		case 'candidate_capacity_exceeded':
+		case 'commit_count_mismatch':
+		case 'entry_count_exceeded':
+		case 'malformed_transfer':
+		case 'window_ordinal_mismatch':
+		case 'duplicate_message_id':
+		case 'duplicate_message_ordinal':
+		case 'duplicate_session_id':
+		case 'duplicate_thread_id':
+		case 'duplicate_thread_ordinal':
+		case 'generation_mismatch':
+		case 'unknown_session':
+		case 'unknown_thread':
+			return true;
+	}
+	const unhandledReason: never = reason;
+	throw new Error(`Unhandled annotation catalog rejection: ${JSON.stringify(unhandledReason)}`);
 }
 
 function commandConfirmedThreads(
