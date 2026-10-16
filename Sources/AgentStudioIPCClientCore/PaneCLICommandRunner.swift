@@ -13,6 +13,38 @@ struct PaneCLICommandRunner: Sendable {
     let totalDeadline: CallDeadline
 
     func run(_ intent: PaneCLIIntent) throws {
+        do {
+            try runCommand(intent)
+        } catch {
+            switch intent {
+            case .title, .line: break
+            case .notify, .ask, .withdraw, .answers, .pane:
+                if global.configuration.authToken == nil {
+                    reportCredentialRefusal(tokenOutcome: .absent)
+                } else if let failure = error as? IPCDescriptorClientFailure,
+                    failure.disposition == .authenticationRejected
+                {
+                    reportCredentialRefusal(tokenOutcome: .rejected)
+                }
+            }
+            throw error
+        }
+    }
+
+    private func reportCredentialRefusal(tokenOutcome: IPCSessionTokenOutcome) {
+        guard deadline.remainingBudget > .zero,
+            let claim = ProviderHookStatusReporting.paneClaim(environment: props.environment)
+        else { return }
+        // Report only the refusal through the existing status client. The
+        // protected verb retains its original failure and never receives a claim.
+        try? ProviderHookDelivery.liveIPC(exampleIdentifierProvider: props.identifierGenerator).reportStatus(
+            .init(
+                paneClaim: claim, tokenOutcome: tokenOutcome, report: .refusal(reason: .credentialNotRecognized),
+                correlationId: props.identifierGenerator()),
+            global.configuration.withAuthToken(nil), deadline)
+    }
+
+    private func runCommand(_ intent: PaneCLIIntent) throws {
         let writer = writerClaim
         let inputs = IPCBuiltInMethodCatalogInputs(examples: .init(illustrativeIdentifier: props.identifierGenerator()))
         let descriptors = try IPCCompiledInvocationResolver().resolve(

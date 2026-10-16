@@ -277,6 +277,10 @@ extension AgentStudioAppIPCRequestError {
                 ]))
         case .ingestionUnavailable:
             self = Self(code: -32_005, message: "sessions ingestion unavailable")
+        case .queueFull:
+            self = Self(
+                code: -32_005, message: "sessions queue full",
+                data: .object(["reason": .string(IPCAgentConnectionRefusalReason.queueFull.rawValue)]))
         case .validationRejected:
             self = Self(code: -32_007, message: "validation rejected")
         }

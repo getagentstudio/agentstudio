@@ -127,16 +127,46 @@ struct CLIPaneContextStatusFallbackTests {
     }
 
     @Test(
-        "protected verbs keep the refused token and never send a pane claim",
-        arguments: ["notify", "ask", "answers", "pane"])
-    func protectedVerbsNeverFallBack(verb: String) async throws {
-        try await withRefusedTokenPaneCLIContext { context in
+        "protected verbs remain refused and record E7 only through session.status",
+        arguments: ["notify", "ask", "answers", "pane"], [false, true])
+    func protectedVerbsNeverFallBack(verb: String, absentToken: Bool) async throws {
+        try await withRefusedTokenPaneCLIContext(bindSession: false) { context in
             let arguments = ["notify", "ask"].contains(verb) ? [verb, "protected"] : [verb]
-            let output = await runFallbackCLI(context, arguments: arguments)
+            var environment = context.callEnvironment(store: nil, useStore: true)
+            if absentToken { environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN") }
+            let output = await runFallbackCLI(context, arguments: arguments, environment: environment)
             #expect(output.exitCode != 0)
-            #expect(context.port.wire.methods == ["auth.login"])
+            #expect(!output.standardError.isEmpty)
+            let protectedMethod: String
+            switch verb {
+            case "notify", "ask": protectedMethod = "pane.message.send"
+            case "answers": protectedMethod = "pane.message.changes"
+            default: protectedMethod = "pane.context.get"
+            }
+            #expect(context.port.wire.methods == [absentToken ? protectedMethod : "auth.login", "session.status"])
+            let requests = context.port.wire.requests
+            for request in requests where request.method == protectedMethod {
+                guard case .object(let parameters) = request.params else {
+                    Issue.record("Missing protected method parameters")
+                    continue
+                }
+                #expect(parameters["paneClaim"] == nil)
+            }
+            let statusRequest = try #require(requests.first { $0.method == "session.status" })
+            let status = try JSONDecoder().decode(
+                IPCSessionStatusParams.self, from: JSONEncoder().encode(statusRequest.params))
+            #expect(status.paneClaim.paneId == context.domain.paneId)
+            #expect(status.tokenOutcome == (absentToken ? .absent : .rejected))
+            #expect(status.report == .refusal(reason: .credentialNotRecognized))
             #expect(context.port.claims.isEmpty)
             #expect(context.port.messages.isEmpty)
+            let refusal = await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId)
+            #expect(refusal?.reason == .credentialNotRecognized)
+            #expect(refusal?.count == 1)
+            let mailbox = await context.domain.ingestion.statusPublicationMailbox
+            #expect(
+                mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
+                    == .set(.init(status: .unknown, connectionIssue: .credentialNotRecognized)))
         }
     }
 

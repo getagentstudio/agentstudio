@@ -79,4 +79,66 @@ extension SessionsProviderTraceIntegrationTests {
             throw error
         }
     }
+
+    @Test("a bound pane's unverified hook records E7 but changes neither status nor activity")
+    func boundUnverifiedHookRecordsRefusalWithoutActivity() async throws {
+        let fixture = try RecordedStatusDatabase()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let pane = UUIDv7.generate()
+        let activity = Mutex<[PaneActivityOccurrence]>([])
+        let clock = PaneActivityClock(
+            submissionObserver: { occurrence in activity.withLock { $0.append(occurrence) } }, sink: { _ in })
+        do {
+            try await fixture.withIngestion(activityClock: clock) { ingestion, adapter in
+                let provider = IPCSessionProviderIdentity(identifier: "codex", version: "0.160.0", mode: "cli")
+                _ = try await adapter.recordProviderEvent(
+                    paneId: pane,
+                    params: .init(
+                        handle: "self", provider: provider,
+                        event: .init(
+                            name: .turnStart, conversationId: "verified", turnId: nil,
+                            requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
+                        correlationId: UUIDv7.generate()), provenance: .matchingPane)
+                let statusMailbox = await ingestion.statusPublicationMailbox
+                #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .working(.active))))
+                let before = activity.withLock { $0.count }
+                let reply = try await adapter.recordUnverifiedStatus(
+                    paneId: pane,
+                    params: .init(
+                        paneClaim: .init(paneId: pane, workspaceId: UUIDv7.generate()), tokenOutcome: .rejected,
+                        report: .hook(
+                            event: .init(
+                                name: .permission, conversationId: "unverified", turnId: nil,
+                                requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
+                            provider: provider, providerSessionId: "unverified"),
+                        correlationId: UUIDv7.generate()), revalidateClaim: {})
+                #expect(reply.disposition == .admitted)
+                #expect(activity.withLock { $0.count } == before)
+                let state = try await adapter.readSessionState(paneId: pane, params: .init(handle: "self"))
+                #expect(state.lastRefusal?.reason == .credentialNotRecognized)
+                #expect(state.lastRefusal?.count == 1)
+                #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
+                #expect(statusMailbox.takeBatch().isEmpty)
+                #expect(await ingestion.unverifiedStatusRuntime.panes[pane] == nil)
+            }
+            await clock.shutdown()
+        } catch {
+            await clock.shutdown()
+            throw error
+        }
+    }
+
+    @Test("Sessions capacity errors map to the documented queueFull wire reason")
+    func capacityPortErrorPreservesQueueFull() {
+        for error in [SessionsRepositoryError.paneQueueFull(UUIDv7.generate()), .globalQueueFull] {
+            let mapped = AgentStudioIPCSessionsAdapter.portError(from: error)
+            #expect((mapped as? AppIPCSessionsError)?.reason.rawValue == "queueFull")
+            let wire = AgentStudioAppIPCRequestError(mapped)
+            #expect(wire.code == -32_005)
+            #expect(wire.data == .object(["reason": .string("queueFull")]))
+        }
+        #expect(
+            (AgentStudioIPCSessionsAdapter.portError(from: SessionsRepositoryError.ingestionFinished)
+                as? AppIPCSessionsError)?.reason == .ingestionUnavailable)
+    }
 }

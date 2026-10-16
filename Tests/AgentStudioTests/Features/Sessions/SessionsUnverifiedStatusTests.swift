@@ -20,7 +20,7 @@ struct SessionsUnverifiedStatusTests {
             let before = try await Self.protectedCounts(fixture)
             let applied = try await Self.submit(
                 ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
-            #expect(applied)
+            #expect(applied == .hookApplied)
             let batch = statusMailbox.takeBatch()
             #expect(batch[key] == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
             #expect(try await ingestion.readSessionStatus(paneId: pane) == .unbound)
@@ -32,9 +32,44 @@ struct SessionsUnverifiedStatusTests {
                     eventName: .turnStart, signal: .turnStart, turnId: nil))
             #expect(statusMailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
-            #expect(!(try await Self.submit(ingestion, pane: pane, signal: .turnDone)))
+            #expect(try await Self.submit(ingestion, pane: pane, signal: .turnDone) == .hookAcceptedWithoutStatus)
+            #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
             #expect(statusMailbox.takeBatch().isEmpty)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
+        }
+    }
+
+    @Test(
+        "a bound pane records an unverified hook or refusal without changing verified status",
+        arguments: [false, true])
+    func boundPaneRecordsRefusalWithoutApplyingStatus(refusalOnly: Bool) async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            _ = try await ingestion.submitHook(
+                makeHookAdmission(
+                    paneId: pane, sessionId: "verified", eventName: .turnStart, signal: .turnStart, turnId: nil))
+            let statusMailbox = await ingestion.statusPublicationMailbox
+            #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .working(.active))))
+            let protectedBefore = try await Self.protectedCounts(fixture)
+            let outcome: SessionsUnverifiedStatusOutcome
+            if refusalOnly {
+                outcome = try await ingestion.recordUnverifiedStatus(
+                    paneId: pane, hook: nil,
+                    refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast, intent: .status),
+                    remainsPresent: { true })
+            } else {
+                outcome = try await Self.submit(
+                    ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
+            }
+            #expect(outcome == (refusalOnly ? .refusalRecorded : .hookAcceptedWithoutStatus))
+            let refusal = await ingestion.lastRefusal(paneId: pane)
+            #expect(refusal?.reason == .credentialNotRecognized)
+            #expect(refusal?.intent == .status)
+            #expect(refusal?.count == 1)
+            #expect(statusMailbox.takeBatch().isEmpty)
+            #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
+            #expect(try await Self.protectedCounts(fixture) == protectedBefore)
         }
     }
 
@@ -46,10 +81,11 @@ struct SessionsUnverifiedStatusTests {
             let statusMailbox = await ingestion.statusPublicationMailbox
             let before = try await Self.protectedCounts(fixture)
             for (index, reason) in AgentConnectionRefusalReason.allCases.enumerated() {
-                _ = try await ingestion.recordUnverifiedStatus(
+                let outcome = try await ingestion.recordUnverifiedStatus(
                     paneId: pane, hook: nil,
                     refusal: .init(reason: reason, event: nil, at: .distantPast, intent: .status),
                     remainsPresent: { true })
+                #expect(outcome == .refusalRecorded)
                 let refusal = await ingestion.lastRefusal(paneId: pane)
                 #expect(refusal?.reason == reason)
                 #expect(refusal?.count == index + 1)
@@ -83,7 +119,7 @@ struct SessionsUnverifiedStatusTests {
             })
         let statusMailbox = await ingestion.statusPublicationMailbox
         let predecessor = Task { try await ingestion.submitHook(makeHookAdmission(paneId: other)) }
-        var status: Task<Bool, any Error>?
+        var status: Task<SessionsUnverifiedStatusOutcome, any Error>?
         do {
             try await held.firstArrival()
             status = Task {
@@ -97,7 +133,7 @@ struct SessionsUnverifiedStatusTests {
             held.release()
             _ = try await predecessor.value
             let pending = try #require(status)
-            #expect(!(try await pending.value))
+            #expect(try await pending.value == .notAccepted)
             try await recorder.expectNext(in: pane, 0)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             let publication = statusMailbox.takeBatch()[.init(existingUUID: pane)]
@@ -141,7 +177,8 @@ struct SessionsUnverifiedStatusTests {
                 #expect(try await pendingExit.value == nil)
                 #expect(statusMailbox.takeBatch().isEmpty)
                 #expect(
-                    !(try await Self.submit(ingestion, pane: pane, signal: .turnDone, instant: origin + .seconds(4))))
+                    try await Self.submit(ingestion, pane: pane, signal: .turnDone, instant: origin + .seconds(4))
+                        == .hookAcceptedWithoutStatus)
             } catch {
                 oldExit.release()
                 _ = try? await pendingExit.value
@@ -189,7 +226,7 @@ struct SessionsUnverifiedStatusTests {
                     paneId: pane, sessionId: "verified",
                     eventName: .turnStart, signal: .turnStart, turnId: nil))
         }
-        var status: Task<Bool, any Error>?
+        var status: Task<SessionsUnverifiedStatusOutcome, any Error>?
         do {
             try await held.firstArrival()
             try await recorder.expectNext(in: pane, 1)
@@ -200,10 +237,10 @@ struct SessionsUnverifiedStatusTests {
             held.release()
             _ = try await binding.value
             let pending = try #require(status)
-            #expect(!(try await pending.value))
+            #expect(try await pending.value == .hookAcceptedWithoutStatus)
             try await recorder.expectNext(in: pane, 1)
             try await recorder.expectNext(in: pane, 0)
-            #expect(await ingestion.lastRefusal(paneId: pane) == nil)
+            #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]
@@ -256,7 +293,7 @@ struct SessionsUnverifiedStatusTests {
         _ ingestion: SessionsIngestion, pane: UUID, session: String = "A",
         signal: SessionProviderSignal, instant: ContinuousClock.Instant = ContinuousClock.now,
         remainsPresent: @escaping @Sendable () -> Bool = { true }
-    ) async throws -> Bool {
+    ) async throws -> SessionsUnverifiedStatusOutcome {
         try await ingestion.recordUnverifiedStatus(
             paneId: pane,
             hook: makeHookAdmission(

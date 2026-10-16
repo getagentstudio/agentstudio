@@ -34,13 +34,16 @@ extension AgentStudioIPCSessionsAdapter {
             eventName = event.name.rawValue
         }
         do {
-            let applied = try await ingestion.recordUnverifiedStatus(
+            let outcome = try await ingestion.recordUnverifiedStatus(
                 paneId: paneId, hook: hook,
                 refusal: .init(reason: reason, event: eventName, at: at, intent: .status),
                 remainsPresent: { (try? revalidateClaim()) != nil })
             try revalidateClaim()
-            if applied {
+            // Like the verified path's bound/applied rule: only a hook that takes effect moves activity.
+            switch outcome {
+            case .hookApplied:
                 activityClock?.submit(.init(paneId: paneId, source: .hook, orderingInstant: instant, wallTime: at))
+            case .hookAcceptedWithoutStatus, .notAccepted, .refusalRecorded: break
             }
         } catch { throw Self.portError(from: error) }
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)

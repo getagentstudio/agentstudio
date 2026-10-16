@@ -132,6 +132,43 @@ struct ProviderHookStatusFallbackTests {
         #expect(exitCode == 0)
         #expect(diagnostics.withLock { $0 } == ["appUnavailable"])
     }
+
+    @Test(
+        "Sessions queueFull survives real-socket decoding and hook diagnostic classification",
+        arguments: ["session.status", "session.event"])
+    func queueFullKeepsDiagnosticReason(method: String) async throws {
+        let observed = try await valueFromDedicatedThread { () throws -> ClaimRefusalObservation in
+            let descriptors = try IPCCompiledInvocationResolver().resolve(
+                arguments: [method], authenticated: false,
+                inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+            guard let descriptor = descriptors.first(where: { $0.metadata.name == method }),
+                let sample = descriptor.metadata.examples.first
+            else { return .missingCompiledExample }
+            let invocation = try IPCDescriptorInvocation(
+                descriptor: descriptor,
+                normalizedParameters: descriptor.normalizeParameters(sample.encodedParameters()),
+                presentation: .tooling)
+            let endpoint = UnixSocketEndpoint(path: temporaryIPCDescriptorClientSocketPath())
+            let listener = UnixSocketListener(endpoint: endpoint)
+            try listener.start { connection in
+                defer { connection.close() }
+                var decoder = NDJSONFrameDecoder(maxFrameBytes: 65_536)
+                let request = try receiveIPCDescriptorClientRequest(connection: connection, decoder: &decoder)
+                try connection.send(
+                    makeIPCDescriptorClientErrorFrame(
+                        id: request.id, code: -32_005, message: "sessions queue full",
+                        data: .object(["reason": .string("queueFull")])))
+            }
+            defer { listener.stop() }
+            let client = AgentStudioIPCClient(configuration: .init(socketPath: endpoint.path), descriptors: descriptors)
+            guard case .remoteFailure(let failure) = try client.call(invocation) else { return .notRefused }
+            return .refused(
+                code: failure.code, documentedReason: failure.documentedReason,
+                classifiedReason: ProviderHookStatusReporting.reason(
+                    for: failure, deadline: CallDeadline(limit: .seconds(2), timing: StatusFallbackTiming())))
+        }
+        #expect(observed == .refused(code: -32_005, documentedReason: "queueFull", classifiedReason: .queueFull))
+    }
 }
 
 private final class StatusFallbackTiming: CallDeadlineTiming, Sendable {

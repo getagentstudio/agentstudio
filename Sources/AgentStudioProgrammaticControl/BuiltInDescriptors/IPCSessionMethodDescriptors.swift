@@ -170,6 +170,9 @@ package struct IPCSessionMethodDescriptors: Sendable {
             IPCBuiltInDescriptorSupport.targetNotFound,
             IPCBuiltInDescriptorSupport.unavailable,
             .init(
+                reason: IPCAgentConnectionRefusalReason.queueFull.rawValue,
+                description: "The pane or global Sessions ingestion queue is full."),
+            .init(
                 reason: IPCAgentConnectionRefusalReason.paneNotFound.rawValue,
                 description: "The claimed pane is absent."),
             .init(

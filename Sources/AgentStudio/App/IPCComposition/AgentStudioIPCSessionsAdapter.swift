@@ -124,7 +124,9 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     static func portError(from error: any Error) -> any Error {
         guard let repositoryError = error as? SessionsRepositoryError else { return error }
         switch repositoryError {
-        case .ingestionFinished, .paneQueueFull, .globalQueueFull:
+        case .paneQueueFull, .globalQueueFull:
+            return AppIPCSessionsError(reason: .queueFull)
+        case .ingestionFinished:
             return AppIPCSessionsError(reason: .ingestionUnavailable)
         default: return AppIPCSessionsError(reason: .validationRejected)
         }

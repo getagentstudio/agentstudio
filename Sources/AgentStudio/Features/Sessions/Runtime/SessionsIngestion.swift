@@ -26,6 +26,14 @@ package struct SessionsIngestionStatistics: Sendable, Equatable {
 
 package typealias SessionsIngestionProbe = @Sendable (SessionsIngestionStatistics) -> Void
 
+/// Hook acceptance drives activity independently of whether its status wins.
+package enum SessionsUnverifiedStatusOutcome: Sendable, Equatable {
+    case notAccepted
+    case refusalRecorded
+    case hookAcceptedWithoutStatus
+    case hookApplied
+}
+
 package actor SessionsIngestion {
     private struct PendingHook {
         let hook: SessionsHookAdmission
@@ -39,7 +47,7 @@ package actor SessionsIngestion {
         let paneId: UUID
         let refusal: SessionsHookRefusal
         let remainsPresent: @Sendable () -> Bool
-        let continuation: CheckedContinuation<Bool, any Error>
+        let continuation: CheckedContinuation<SessionsUnverifiedStatusOutcome, any Error>
     }
 
     private struct PendingCommandFinished {
@@ -105,14 +113,14 @@ package actor SessionsIngestion {
     package func recordUnverifiedStatus(
         paneId: UUID, hook: SessionsHookAdmission?, refusal: SessionsHookRefusal,
         remainsPresent: @escaping @Sendable () -> Bool
-    ) async throws -> Bool {
+    ) async throws -> SessionsUnverifiedStatusOutcome {
         guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
-        guard remainsPresent() else { return false }
+        guard remainsPresent() else { return .notAccepted }
         if let error = currentCapacityError(for: paneId) {
             await startPaneViewedIngressIfNeeded()
             consumePaneViewedBatch()
             guard remainsPresent(), !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else {
-                return false
+                return .notAccepted
             }
             await recordRefusal(
                 paneId: paneId,
@@ -281,7 +289,7 @@ extension SessionsIngestion {
                     guard pending.remainsPresent(), !isStatusClosed,
                         !statusRuntime.retiredPaneIds.contains(paneId)
                     else {
-                        pending.continuation.resume(returning: false)
+                        pending.continuation.resume(returning: .notAccepted)
                         break
                     }
                     try await restoreStatusIfNeeded(paneId: paneId, remainsPresent: pending.remainsPresent)
@@ -289,20 +297,26 @@ extension SessionsIngestion {
                     guard pending.remainsPresent(), !isStatusClosed,
                         !statusRuntime.retiredPaneIds.contains(paneId)
                     else {
-                        pending.continuation.resume(returning: false)
-                        break
-                    }
-                    guard !hasActiveBinding(paneId: paneId) else {
-                        pending.continuation.resume(returning: false)
+                        pending.continuation.resume(returning: .notAccepted)
                         break
                     }
                     storeRefusal(paneId: paneId, refusal: pending.refusal)
-                    let applied = pending.hook.map { unverifiedStatusRuntime.apply($0) } ?? false
+                    guard let hook = pending.hook else {
+                        publishStatus(paneId: paneId)
+                        pending.continuation.resume(returning: .refusalRecorded)
+                        break
+                    }
+                    guard !hasActiveBinding(paneId: paneId) else {
+                        publishStatus(paneId: paneId)
+                        pending.continuation.resume(returning: .hookAcceptedWithoutStatus)
+                        break
+                    }
+                    let applied = unverifiedStatusRuntime.apply(hook)
                     if let viewedAt = statusRuntime.latestViewedAt[paneId] {
                         unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
                     }
                     publishStatus(paneId: paneId)
-                    pending.continuation.resume(returning: applied)
+                    pending.continuation.resume(returning: applied ? .hookApplied : .hookAcceptedWithoutStatus)
                 case .commandFinished(let commandFinished):
                     let committed = try await closeLiveBindingForCommandExit(
                         paneId: paneId, reportedAt: commandFinished.reportedAt)

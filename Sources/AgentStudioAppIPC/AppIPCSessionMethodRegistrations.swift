@@ -7,6 +7,7 @@ package struct AppIPCSessionsError: Error, Equatable, Sendable {
         case bindingRequired
         case correlationConflict
         case ingestionUnavailable
+        case queueFull
         case validationRejected
     }
 
