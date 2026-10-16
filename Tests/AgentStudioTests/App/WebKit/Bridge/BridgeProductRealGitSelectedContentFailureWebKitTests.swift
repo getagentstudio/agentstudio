@@ -34,6 +34,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
         // actual read boundary, with no parked read competing against live deadlines.
         provider.contentRead.release()
         _ = try #require(await controller.productSessionOwner.activeInstallation)
+        try BridgeProductWebKitSelectedReviewFailureCapture.install(on: controller)
         let run = try await BridgeProductWebKitCarrierTestSupport.withHostedController(controller) { hosted in
             try #require(try await observeSelectedReadLiveShell(hosted))
             _ = try await BridgePaneControllerEventWaits.waitForValue {
@@ -53,7 +54,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
                 do {
                     _ = try await BridgeProductWebKitSelectedReviewContentWait.wait(
                         page, expectedPath: "tracked.txt", expectedHashes: hashes,
-                        expectedGeneration: generation)
+                        expectedGeneration: generation, expectedItemId: selected.itemId)
                 } catch is BridgeProductWebKitSelectedReviewContentFailure {
                     // A native rejection or transport failure can close before
                     // the provider is called. Do not await a nonexistent read.
@@ -99,6 +100,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             )
             let arguments: [String: Any] = [
                 "expectedPath": "tracked.txt", "expectedHashes": hashes, "expectedGeneration": generation,
+                "expectedItemId": selected.itemId,
             ]
             // Probe the production test's reader on the real failed DOM first.
             // The old reader returns nil here; require records red immediately
@@ -106,19 +108,43 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             _ = try #require(
                 try await hosted.page.callJavaScript(
                     BridgeProductWebKitSelectedReviewContentWait.reader, arguments: arguments))
-            do {
-                _ = try await BridgeProductWebKitSelectedReviewContentWait.wait(
-                    hosted.page, expectedPath: "tracked.txt", expectedHashes: hashes,
-                    expectedGeneration: generation)
-                Issue.record("A terminal selected read must fail the rendered-content wait")
-                return false
-            } catch let failure as BridgeProductWebKitSelectedReviewContentFailure {
-                #expect(failure == .init(path: "tracked.txt", generation: generation, state: "failed"))
-                return true
-            }
+            return try await expectSelectedWaitFailsNamingLoadFailed(
+                hosted, hashes: hashes, generation: generation, itemId: selected.itemId)
         }
         #expect(run.value)
         #expect(run.teardownSnapshot.hasZeroResidue)
+    }
+
+    /// A terminal real-git hash mismatch must fail the rendered-content wait, and the failure
+    /// must name the worker's `load_failed` publication for the selected item.
+    private func expectSelectedWaitFailsNamingLoadFailed(
+        _ hosted: BridgePaneController, hashes: String, generation: Int, itemId: String
+    ) async throws -> Bool {
+        do {
+            _ = try await BridgeProductWebKitSelectedReviewContentWait.wait(
+                hosted.page, expectedPath: "tracked.txt", expectedHashes: hashes,
+                expectedGeneration: generation, expectedItemId: itemId)
+            Issue.record("A terminal selected read must fail the rendered-content wait")
+            return false
+        } catch let failure as BridgeProductWebKitSelectedReviewContentFailure {
+            #expect(failure.path == "tracked.txt")
+            #expect(failure.generation == generation)
+            #expect(failure.state == "failed")
+            let diagnostic = try #require(
+                try JSONSerialization.jsonObject(with: Data(failure.diagnostic.utf8)) as? [String: Any])
+            #expect(diagnostic["captureInstalled"] as? Bool == true)
+            #expect(diagnostic["pageAvailability"] as? String == "failed")
+            let workerRecords = try #require(diagnostic["correlatedWorkerAvailability"] as? [[String: Any]])
+            #expect(
+                workerRecords.contains { record in
+                    let availability = record["availability"] as? [String: Any]
+                    return record["itemId"] as? String == itemId
+                        && availability?["state"] as? String == "failed"
+                        && availability?["reason"] as? String == "load_failed"
+                })
+            #expect(failure.description.contains("load_failed"))
+            return true
+        }
     }
 
     private func observeSelectedReadLiveShell(_ hosted: BridgePaneController) async throws -> Bool {
