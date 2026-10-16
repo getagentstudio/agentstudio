@@ -1,6 +1,7 @@
 import AgentStudioIPCTransport
 import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
+import AgentStudioTestHarness
 import Foundation
 import Synchronization
 import Testing
@@ -64,6 +65,45 @@ struct ProviderHookStatusFallbackTests {
             #expect(statuses.first?.tokenOutcome == .rejected)
             #expect(fallbackBudgets.withLock { $0 } == [limit - .milliseconds(150)])
             #expect(diagnostics.withLock { $0 } == ["credentialNotRecognized"])
+        }
+    }
+
+    @Test(
+        "compiled status methods retain claim refusal reasons through real remote-error decoding",
+        arguments: ["session.status", "pane.title.set", "pane.line.set", "pane.writer.claimEpoch"],
+        [IPCAgentConnectionRefusalReason.paneNotFound, .paneRetired, .otherWorkspace, .intentRequiresToken])
+    func claimRefusalKeepsDiagnosticReason(method: String, reason: IPCAgentConnectionRefusalReason) async throws {
+        try await valueFromDedicatedThread {
+            let descriptors = try IPCCompiledInvocationResolver().resolve(
+                arguments: [method], authenticated: false,
+                inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
+            let descriptor = try #require(descriptors.first { $0.metadata.name == method })
+            let sample = try #require(descriptor.metadata.examples.first)
+            let invocation = try IPCDescriptorInvocation(
+                descriptor: descriptor,
+                normalizedParameters: descriptor.normalizeParameters(sample.encodedParameters()), presentation: .tooling
+            )
+            let endpoint = UnixSocketEndpoint(path: temporaryIPCDescriptorClientSocketPath())
+            let listener = UnixSocketListener(endpoint: endpoint)
+            try listener.start { connection in
+                defer { connection.close() }
+                var decoder = NDJSONFrameDecoder(maxFrameBytes: 65_536)
+                let request = try receiveIPCDescriptorClientRequest(connection: connection, decoder: &decoder)
+                try connection.send(
+                    makeIPCDescriptorClientErrorFrame(
+                        id: request.id, code: -32_001, message: "unauthenticated",
+                        data: .object(["reason": .string(reason.rawValue)])))
+            }
+            defer { listener.stop() }
+            let client = AgentStudioIPCClient(configuration: .init(socketPath: endpoint.path), descriptors: descriptors)
+            guard case .remoteFailure(let failure) = try client.call(invocation) else {
+                Issue.record("Expected claim admission refusal")
+                return
+            }
+            #expect(failure.code == -32_001)
+            #expect(failure.documentedReason == reason.rawValue)
+            let deadline = CallDeadline(limit: .seconds(2), timing: StatusFallbackTiming())
+            #expect(ProviderHookStatusReporting.reason(for: failure, deadline: deadline) == reason)
         }
     }
 

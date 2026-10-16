@@ -114,18 +114,21 @@ package struct IPCPaneTitleSetParams: Codable, Equatable, Sendable, IPCSchemaPro
     package let handle: String
     package let writer: IPCPaneWriterClaim?
     package let paneClaim: IPCPaneClaim?
+    package let tokenOutcome: IPCSessionTokenOutcome?
     package let text: String?
     package let writeNumber: IPCPaneWriteNumber
     package let correlationId: UUID
 
     package init(
-        handle: String, writer: IPCPaneWriterClaim? = nil, paneClaim: IPCPaneClaim? = nil, text: String? = nil,
+        handle: String, writer: IPCPaneWriterClaim? = nil, paneClaim: IPCPaneClaim? = nil,
+        tokenOutcome: IPCSessionTokenOutcome? = nil, text: String? = nil,
         writeNumber: IPCPaneWriteNumber,
         correlationId: UUID
     ) {
         self.handle = handle
         self.writer = writer
         self.paneClaim = paneClaim
+        self.tokenOutcome = tokenOutcome
         self.text = text
         self.writeNumber = writeNumber
         self.correlationId = correlationId
@@ -136,6 +139,9 @@ package struct IPCPaneTitleSetParams: Codable, Equatable, Sendable, IPCSchemaPro
             .init(name: "handle", description: "handle", schema: .string()),
             .optional("paneClaim", description: "Exact pane and workspace claim", schema: try IPCPaneClaim.ipcSchema()),
             .optional("writer", description: "writer", schema: try IPCPaneWriterClaim.ipcSchema()),
+            .optional(
+                "tokenOutcome", description: "Credential outcome for a pane-claimed status write",
+                schema: try IPCSessionTokenOutcome.ipcSchema()),
             .optional("text", description: "text", schema: .string()),
             .init(name: "writeNumber", description: "writeNumber", schema: try IPCPaneWriteNumber.ipcSchema()),
             .init(name: "correlationId", description: "correlationId", schema: IPCSchemaScalars.uuid),
@@ -147,18 +153,20 @@ package struct IPCPaneLineSetParams: Codable, Equatable, Sendable, IPCSchemaProv
     package let handle: String
     package let writer: IPCPaneWriterClaim?
     package let paneClaim: IPCPaneClaim?
+    package let tokenOutcome: IPCSessionTokenOutcome?
     package let line: IPCPaneAgentLineInput?
     package let writeNumber: IPCPaneWriteNumber
     package let correlationId: UUID
 
     package init(
         handle: String, writer: IPCPaneWriterClaim? = nil, paneClaim: IPCPaneClaim? = nil,
-        line: IPCPaneAgentLineInput? = nil,
+        tokenOutcome: IPCSessionTokenOutcome? = nil, line: IPCPaneAgentLineInput? = nil,
         writeNumber: IPCPaneWriteNumber, correlationId: UUID
     ) {
         self.handle = handle
         self.writer = writer
         self.paneClaim = paneClaim
+        self.tokenOutcome = tokenOutcome
         self.line = line
         self.writeNumber = writeNumber
         self.correlationId = correlationId
@@ -169,6 +177,9 @@ package struct IPCPaneLineSetParams: Codable, Equatable, Sendable, IPCSchemaProv
             .init(name: "handle", description: "handle", schema: .string()),
             .optional("paneClaim", description: "Exact pane and workspace claim", schema: try IPCPaneClaim.ipcSchema()),
             .optional("writer", description: "writer", schema: try IPCPaneWriterClaim.ipcSchema()),
+            .optional(
+                "tokenOutcome", description: "Credential outcome for a pane-claimed status write",
+                schema: try IPCSessionTokenOutcome.ipcSchema()),
             .optional("line", description: "line", schema: try IPCPaneAgentLineInput.ipcSchema()),
             .init(name: "writeNumber", description: "writeNumber", schema: try IPCPaneWriteNumber.ipcSchema()),
             .init(name: "correlationId", description: "correlationId", schema: IPCSchemaScalars.uuid),

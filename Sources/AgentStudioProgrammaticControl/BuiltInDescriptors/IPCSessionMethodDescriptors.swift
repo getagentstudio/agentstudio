@@ -170,6 +170,18 @@ package struct IPCSessionMethodDescriptors: Sendable {
             IPCBuiltInDescriptorSupport.targetNotFound,
             IPCBuiltInDescriptorSupport.unavailable,
             .init(
+                reason: IPCAgentConnectionRefusalReason.paneNotFound.rawValue,
+                description: "The claimed pane is absent."),
+            .init(
+                reason: IPCAgentConnectionRefusalReason.paneRetired.rawValue,
+                description: "The claimed pane is retired."),
+            .init(
+                reason: IPCAgentConnectionRefusalReason.otherWorkspace.rawValue,
+                description: "The pane belongs to another workspace."),
+            .init(
+                reason: IPCAgentConnectionRefusalReason.intentRequiresToken.rawValue,
+                description: "This intent requires a recognized token."),
+            .init(
                 reason: IPCSessionFailureReason.bindingRequired,
                 description: "The pane has no active conversation binding for a deliberate report."
             ),

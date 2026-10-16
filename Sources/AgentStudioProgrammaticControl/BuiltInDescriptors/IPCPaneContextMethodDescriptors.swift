@@ -200,7 +200,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 executionOwner: .paneContextService,
                 principalAvailability: .authenticated,
                 resultSemantics: .discriminated,
-                documentedErrors: Self.errors,
+                documentedErrors: Self.statusWriteErrors,
                 isMutating: true,
                 correlationPolicy: .required,
                 agentEligibility: entryEligibility
@@ -234,7 +234,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 executionOwner: .paneContextService,
                 principalAvailability: .authenticated,
                 resultSemantics: .discriminated,
-                documentedErrors: Self.errors,
+                documentedErrors: Self.statusWriteErrors,
                 isMutating: true,
                 correlationPolicy: .required,
                 agentEligibility: entryEligibility
@@ -266,7 +266,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 executionOwner: .paneContextService,
                 principalAvailability: .authenticated,
                 resultSemantics: .discriminated,
-                documentedErrors: Self.errors,
+                documentedErrors: Self.statusWriteErrors,
                 isMutating: true,
                 correlationPolicy: .required,
                 agentEligibility: entryEligibility
@@ -305,6 +305,16 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 agentEligibility: entryEligibility
             )
         })
+
+    private static var statusWriteErrors: [IPCMethodErrorCase] {
+        errors
+            + [
+                IPCAgentConnectionRefusalReason.paneNotFound, .paneRetired, .otherWorkspace, .intentRequiresToken,
+            ].map { reason in
+                IPCMethodErrorCase(
+                    reason: reason.rawValue, description: "Pane claim admission refused: \(reason.rawValue).")
+            }
+    }
 
     private static var errors: [IPCMethodErrorCase] {
         [

@@ -26,49 +26,58 @@ package struct CLIAllocatedWriteNumber: Sendable {
 }
 
 package enum CLIWriteReservation: Sendable {
-    case claim(UUID)
+    case claim(UUID, counter: Int64)
     case allocated(CLIAllocatedWriteNumber)
 }
 
 extension CLIStore {
-    /// The pending identity commits before network I/O. Concurrent first users
-    /// therefore retry the same claim, not competing newly generated epochs.
-    package func reserveWrite(_ key: CLIStateKey) throws -> CLIWriteReservation {
-        guard key.kind != .answerPosition else { throw CLIStoreFailure.unavailable }
+    /// Reserve every candidate writer before network I/O in one transaction.
+    /// Pending claims share an identity, but each intent keeps its own counter.
+    package func reserveWrites(_ keys: [CLIStateKey]) throws -> [CLIWriteReservation] {
+        guard keys.allSatisfy({ $0.kind != .answerPosition }) else { throw CLIStoreFailure.unavailable }
         return try stateTransaction { database in
-            try Self.ensureStateRow(key, in: database)
-            let row = try Self.stateRow(key, in: database)
-            if let epoch: Int64 = row["epoch"] {
-                return .allocated(try Self.allocateNumber(key, epoch: epoch, in: database))
-            }
-            if let stored: String = row["claim_id"] {
-                guard let claim = UUID(uuidString: stored), UUIDv7.isV7(claim) else {
-                    throw CLIStoreFailure.unavailable
+            try keys.map { key in
+                try Self.ensureStateRow(key, in: database)
+                let row = try Self.stateRow(key, in: database)
+                let counter = try Self.allocateCounter(key, in: database)
+                if let epoch: Int64 = row["epoch"] {
+                    guard epoch > 0 else { throw CLIStoreFailure.unavailable }
+                    return .allocated(CLIAllocatedWriteNumber(epoch: epoch, counter: counter))
                 }
-                return .claim(claim)
+                if let stored: String = row["claim_id"] {
+                    guard let claim = UUID(uuidString: stored), UUIDv7.isV7(claim) else {
+                        throw CLIStoreFailure.unavailable
+                    }
+                    return .claim(claim, counter: counter)
+                }
+                let claim = UUIDv7.generate()
+                try database.execute(
+                    sql: "UPDATE cli_state SET claim_id = ? WHERE id = ?",
+                    arguments: [claim.uuidString, row["id"] as String])
+                return .claim(claim, counter: counter)
             }
-            let claim = UUIDv7.generate()
-            try database.execute(
-                sql: "UPDATE cli_state SET claim_id = ? WHERE id = ?",
-                arguments: [claim.uuidString, row["id"] as String])
-            return .claim(claim)
         }
     }
 
-    package func acceptClaim(_ key: CLIStateKey, claimID: UUID, epoch: Int64) throws -> CLIAllocatedWriteNumber {
-        guard epoch > 0 else { throw CLIStoreFailure.unavailable }
+    package func acceptClaim(_ key: CLIStateKey, claimID: UUID, epoch: Int64, counter: Int64) throws
+        -> CLIAllocatedWriteNumber
+    {
+        guard epoch > 0, counter > 0 else { throw CLIStoreFailure.unavailable }
         return try stateTransaction { database in
             let row = try Self.stateRow(key, in: database)
             let storedClaim: String? = row["claim_id"]
-            guard storedClaim == claimID.uuidString else { throw CLIStoreFailure.unavailable }
+            let reservedCounter: Int64 = row["value"]
+            guard storedClaim == claimID.uuidString, counter <= reservedCounter else {
+                throw CLIStoreFailure.unavailable
+            }
             if let storedEpoch: Int64 = row["epoch"] {
                 guard storedEpoch == epoch else { throw CLIStoreFailure.unavailable }
             } else {
                 try database.execute(
-                    sql: "UPDATE cli_state SET epoch = ?, value = 0 WHERE id = ?",
+                    sql: "UPDATE cli_state SET epoch = ? WHERE id = ?",
                     arguments: [epoch, row["id"] as String])
             }
-            return try Self.allocateNumber(key, epoch: epoch, in: database)
+            return CLIAllocatedWriteNumber(epoch: epoch, counter: counter)
         }
     }
 
@@ -146,15 +155,13 @@ extension CLIStore {
         return row
     }
 
-    private static func allocateNumber(_ key: CLIStateKey, epoch: Int64, in database: Database) throws
-        -> CLIAllocatedWriteNumber
-    {
+    private static func allocateCounter(_ key: CLIStateKey, in database: Database) throws -> Int64 {
         let row = try stateRow(key, in: database)
         let value: Int64 = row["value"]
-        guard epoch > 0, value >= 0, value < Int64.max else { throw CLIStoreFailure.unavailable }
+        guard value >= 0, value < Int64.max else { throw CLIStoreFailure.unavailable }
         let counter = value + 1
         try database.execute(
             sql: "UPDATE cli_state SET value = ? WHERE id = ?", arguments: [counter, row["id"] as String])
-        return CLIAllocatedWriteNumber(epoch: epoch, counter: counter)
+        return counter
     }
 }

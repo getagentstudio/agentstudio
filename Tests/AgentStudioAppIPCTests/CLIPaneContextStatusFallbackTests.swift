@@ -1,12 +1,15 @@
 import AgentStudioCore
 import AgentStudioDeadlineTestSupport
 import AgentStudioIPCClientCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
 import Foundation
 import Synchronization
 import Testing
+
+@testable import AgentStudioSessions
 
 @Suite("Pane CLI status fallback ordering", .serialized)
 struct CLIPaneContextStatusFallbackTests {
@@ -42,6 +45,84 @@ struct CLIPaneContextStatusFallbackTests {
             }
             #expect(value.session?.sessionRef.value == context.writer.conversationId)
             #expect(context.port.messages.isEmpty)
+        }
+    }
+
+    @Test(
+        "an unbound refused-token status write applies and publishes its credential refusal",
+        arguments: ["title", "line"])
+    func unboundWriteRetainsCredentialRefusal(verb: String) async throws {
+        try await withRefusedTokenPaneCLIContext(bindSession: false) { context in
+            let result = await runFallbackCLI(context, arguments: [verb, "visible status"])
+            #expect(result.exitCode == 0)
+            let read = await context.domain.service.readDetail(
+                .init(paneId: PaneId(existingUUID: context.domain.paneId), page: .first))
+            guard case .detail(let detail) = read else {
+                Issue.record("Missing unbound pane detail")
+                return
+            }
+            #expect(detail.session == nil)
+            if verb == "title" {
+                #expect(detail.agentTitle == "visible status")
+            } else {
+                #expect(detail.agentLine?.summary == "visible status")
+            }
+            let refusal = await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId)
+            #expect(refusal?.reason == .credentialNotRecognized)
+            #expect(refusal?.intent == .status)
+            let mailbox = await context.domain.ingestion.statusPublicationMailbox
+            #expect(
+                mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
+                    == .set(.init(status: .unknown, connectionIssue: .credentialNotRecognized)))
+        }
+    }
+
+    @Test(
+        "an older call held at rejected login keeps its pre-login slot for first and cached epochs",
+        arguments: [false, true], ["title", "line"])
+    func rejectedLoginCannotRenumberOlderCall(cachedEpoch: Bool, verb: String) async throws {
+        try await withRefusedTokenPaneCLIContext { context in
+            if cachedEpoch {
+                try #require(await runFallbackCLI(context, arguments: [verb, "seed"]).exitCode == 0)
+            }
+            let claimsBefore = context.port.claims.count
+            let hold = context.port.holdNextRejectedLogin()
+            let older = Task {
+                let result = await runFallbackCLI(context, arguments: [verb, "older"])
+                hold.retire()
+                return result
+            }
+            do {
+                let bytes = try await hold.firstArrival()
+                let frame = try #require(String(data: bytes, encoding: .utf8))
+                let rejected = try JSONRPCCodec.decodeResponse(frame)
+                #expect(rejected.error != nil)
+                #expect(context.port.claims.count == claimsBefore)
+                let newer = await runFallbackCLI(context, arguments: [verb, "newer"])
+                try #require(newer.exitCode == 0)
+                hold.release()
+                let stale = await older.value
+                #expect(stale.exitCode != 0)
+                #expect(stale.standardError.contains("lastAccepted"))
+                let read = await context.domain.service.readDetail(
+                    .init(paneId: PaneId(existingUUID: context.domain.paneId), page: .first))
+                guard case .detail(let detail) = read else {
+                    Issue.record("Missing final pane detail")
+                    return
+                }
+                if verb == "title" {
+                    #expect(detail.agentTitle == "newer")
+                    let attempts = context.port.titles.filter { $0.text != "seed" }
+                    #expect(attempts.map(\.text) == ["newer", "older"])
+                    #expect(attempts.map(\.number.counter) == (cachedEpoch ? [3, 2] : [2, 1]))
+                } else {
+                    #expect(detail.agentLine?.summary == "newer")
+                }
+            } catch {
+                hold.release()
+                _ = await older.value
+                throw error
+            }
         }
     }
 
@@ -190,9 +271,9 @@ struct CLIPaneContextStatusFallbackTests {
 }
 
 private func withRefusedTokenPaneCLIContext<Output: Sendable>(
-    provider: String = "claude", _ body: (S5PaneCLIContext) async throws -> Output
+    provider: String = "claude", bindSession: Bool = true, _ body: (S5PaneCLIContext) async throws -> Output
 ) async throws -> Output {
-    try await withS5PaneCLIContext { context in
+    try await withS5PaneCLIContext(bindSession: bindSession) { context in
         var environment = context.environment
         environment["AGENTSTUDIO_PANE_TOKEN"] = "unrecognized-pane-cli-fixture-token"
         if provider == "codex" {
