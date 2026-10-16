@@ -29,6 +29,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             throw LiveProofError.appDidNotMount
         }
         let initialWorkerInstanceId = initialInstallation.bootstrap.workerInstanceId
+        try BridgeProductWebKitSelectedReviewFailureCapture.install(on: controller)
         return
             try await BridgeProductWebKitCarrierTestSupport
             .withHostedController(controller) { hostedController in
@@ -169,7 +170,8 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             controller.page,
             expectedPath: sourceOracle.path,
             expectedHashes: expectedSelectedContentHashes,
-            expectedGeneration: successorGeneration
+            expectedGeneration: successorGeneration,
+            expectedItemId: selectedDescriptor.itemId
         )
         guard displayedPath as? String == sourceOracle.path else {
             throw LiveProofError.successorReviewPublicationMissing
