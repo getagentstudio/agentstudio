@@ -11,6 +11,8 @@ import Testing
 @MainActor
 @Suite("Sidebar memory defaults at presentation", .serialized)
 struct SidebarMemoryDefaultsPresentationTests {
+    init() { installTestCoreAtomsIfNeeded() }
+
     @Test("absent sidebar record uses defaults and native visibility agrees", arguments: [true, false])
     func absentRecordUsesNativeAndSemanticDefaults(withRepositories: Bool) async throws {
         try await restoreDefaultsIntoWindow(withRepositories: withRepositories, unreadableRecord: false)
@@ -60,7 +62,7 @@ struct SidebarMemoryDefaultsPresentationTests {
                     // Preserve a real row and database; reject only its typed UI
                     // payload, exercising loadUIState's unavailable disposition.
                     let database = try SQLiteDatabaseFactory.makeFileBackedPool(at: localURL)
-                    try database.write { database in
+                    try await database.write { database in
                         try database.execute(
                             sql: """
                                 UPDATE local_window_state SET sidebar_surface = 'unsupported-surface'

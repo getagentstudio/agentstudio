@@ -12,6 +12,8 @@ import Testing
 @MainActor
 @Suite("Sidebar memory before presentation", .serialized)
 struct SidebarMemoryBeforePresentationTests {
+    init() { installTestCoreAtomsIfNeeded() }
+
     @Test("saved collapsed Panes sidebar is collapsed at first window construction")
     func collapsedPanesMemoryPrecedesWindowConstruction() async throws {
         try await restoreIntoWindow(sidebarCollapsed: true)
@@ -150,6 +152,9 @@ private final class SidebarLaunchObservation {
         var visibleRows: [RepoExplorerRowID] = []
         var boundRows: [RepoExplorerRowID] = []
         if let table, let snapshot = materializer?.snapshot, host.isPresentationReady {
+            // The table binds row cells during its own layout; run it synchronously so the
+            // read observes what a display pass would draw, without waiting.
+            table.layoutSubtreeIfNeeded()
             let range = table.rows(in: table.enclosingScrollView?.documentVisibleRect ?? table.bounds)
             if range.location != NSNotFound {
                 for index in range.location..<min(NSMaxRange(range), snapshot.rows.count) {
