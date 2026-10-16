@@ -16,8 +16,10 @@ this skill is the route through them. Cite the doc, not this file.
 ## Route (write or review, in order)
 
 1. **Name the behavior.** Write one sentence that a user or caller relies on.
-   A test whose only subject is a wait helper, a fixture, or the exact shape of a
-   diagnostic payload is out.
+   Do not assert the exact shape of a diagnostic payload. A test whose only
+   subject is a wait helper or a fixture is out, unless that helper's failure
+   would otherwise be invisible (it could make a product test hang or pass
+   without exercising its path).
    [Test the product, not the harness](../../../docs/architecture/testing/testing_architecture.md#test-the-product-not-the-harness).
 2. **Place it.** Put the test in the owning target and lane.
    [Test target ownership](../../../docs/architecture/testing/testing_architecture.md#test-target-ownership),

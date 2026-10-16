@@ -8,7 +8,6 @@ export type SelectedContentReadyTarget =
 			readonly surface: 'file';
 			readonly expectedSha256: string;
 			readonly itemId?: string;
-			readonly goal?: 'descriptor-prepared' | 'content-closed';
 	  };
 
 /** The same script is consumed by Playwright and the deterministic Node adapter proofs. */
@@ -61,9 +60,7 @@ export function selectedContentOwnerWaitScript(props: {
 							}
 							const painted = panel?.querySelector('diffs-container[data-bridge-painted-source-correlations]');
 							const correlations = JSON.parse(painted?.getAttribute('data-bridge-painted-source-correlations') ?? '[]');
-						const ready = input.surface === 'file' && input.goal != null
-							? workerSessionState === 'ready' && observation?.selectedItemId === itemId && (input.goal === 'descriptor-prepared' ? observation?.preparedSha256 : observation?.contentClosedSha256) === input.expectedSha256
-							: input.surface === 'review'
+							const ready = input.surface === 'review'
 								? panel?.getAttribute('data-selected-content-state') === 'ready' && painted != null
 								: (input.itemId == null || panel?.getAttribute('data-worktree-rendered-item-id') === input.itemId) && panel?.getAttribute('data-worktree-open-file-state') === 'ready' && Array.isArray(correlations) && correlations.some(correlation => correlation?.observedSha256 === input.expectedSha256);
 							if (ready) finish(null);

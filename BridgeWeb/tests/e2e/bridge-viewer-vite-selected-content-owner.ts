@@ -43,8 +43,6 @@ export interface SelectedContentOwnerSnapshot {
 	readonly publicationId: string | null;
 	readonly phase: 'awaiting-selection' | 'selected' | 'source-installed' | 'content-result';
 	readonly failure: SelectedContentOwnerFailure | null;
-	readonly contentClosedSha256?: string | null;
-	readonly preparedSha256?: string | null;
 }
 
 /** Self-contained so the exact reducer tested in Node can run in a page init script. */
@@ -71,11 +69,6 @@ export function createSelectedContentOwnerRecorder(
 	let fileRecovery: {
 		readonly subscriptionId: string;
 		readonly status: 'ready' | 'recovering' | 'failedRetryable';
-	} | null = null;
-	let preparedFile: {
-		readonly itemId: string;
-		readonly sequence: number;
-		readonly sha256: string;
 	} | null = null;
 	const sequences = { file: -1, review: -1 };
 	// oxlint-disable-next-line unicorn/consistent-function-scoping -- Serialized with this enclosing recorder into the page realm.
@@ -116,7 +109,6 @@ export function createSelectedContentOwnerRecorder(
 				sequences.review = -1;
 				fileRefreshFailure = null;
 				fileRecovery = null;
-				preparedFile = null;
 				return;
 			}
 			if (channelId !== currentChannelId || message['wireVersion'] !== 1) return;
@@ -165,10 +157,7 @@ export function createSelectedContentOwnerRecorder(
 					selectionRequestId: requestId,
 					phase: 'selected',
 					failure: null,
-					contentClosedSha256: null,
-					preparedSha256: null,
 				};
-				if (surface === 'file') preparedFile = null;
 				return;
 			}
 			if (message['direction'] !== 'serverWorkerToMain') return;
@@ -197,42 +186,9 @@ export function createSelectedContentOwnerRecorder(
 					publicationId,
 					phase: 'source-installed',
 					failure: changed ? null : previous.failure,
-					...(changed ? { contentClosedSha256: null, preparedSha256: null } : {}),
 				};
-				if (changed && surface === 'file') preparedFile = null;
 				if (changed) sequences[surface] = -1;
 				if (changed && surface === 'file') fileRefreshFailure = null;
-				return;
-			}
-			if (kind === 'filePierreRenderJob' && surface === 'file') {
-				const job = message['job'];
-				const sequence = message['publicationSequence'];
-				if (
-					message['workerDerivationEpoch'] !== previous.workerDerivationEpoch ||
-					typeof sequence !== 'number' ||
-					!Number.isSafeInteger(sequence) ||
-					sequence < Math.max(0, sequences.file, preparedFile?.sequence ?? -1) ||
-					!record(job) ||
-					job['itemId'] !== previous.selectedItemId ||
-					!Array.isArray(job['sourceCorrelations'])
-				)
-					return;
-				for (const correlation of job['sourceCorrelations']) {
-					if (
-						record(correlation) &&
-						correlation['itemId'] === previous.selectedItemId &&
-						typeof correlation['observedSha256'] === 'string' &&
-						previous.selectedItemId !== null
-					) {
-						preparedFile = {
-							itemId: previous.selectedItemId,
-							sequence,
-							sha256: correlation['observedSha256'],
-						};
-						snapshots.file = { ...previous, preparedSha256: correlation['observedSha256'] };
-						break;
-					}
-				}
 				return;
 			}
 			if (kind !== 'fileRenderPatch' && kind !== 'reviewRenderPatch') return;
@@ -324,12 +280,6 @@ export function createSelectedContentOwnerRecorder(
 				snapshots[surface] = {
 					...previous,
 					phase: 'content-result',
-					...(surface === 'file' &&
-					state === 'ready' &&
-					preparedFile?.itemId === previous.selectedItemId &&
-					preparedFile?.sequence === sequence
-						? { contentClosedSha256: preparedFile.sha256 }
-						: {}),
 					failure: classify({
 						surface,
 						current,
