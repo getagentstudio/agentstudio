@@ -1,6 +1,15 @@
 import type { Page, Request, Response } from 'playwright';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import {
+	handleLaunchPromise,
+	type HandledLaunchPromise,
+} from '../../scripts/dev-server/handled-launch-promise.ts';
+import {
+	createBridgeProductDeferred,
+	type BridgeProductDeferred,
+} from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import { waitForSelectedContentOwnerReady } from './bridge-viewer-vite-selected-content-wait.ts';
 
 interface TabOwnershipCleanupProps {
 	readonly registerOnFinished: (cleanup: () => Promise<void>) => void;
@@ -217,4 +226,68 @@ export function observeTabOwnershipBootstrap<
 		);
 		props.signal.addEventListener('abort', onAbort, { once: true });
 	});
+}
+
+export async function waitForTabOwnershipReviewReady(props: {
+	readonly page: Page;
+	readonly itemId: string;
+}): Promise<void> {
+	await waitForSelectedContentOwnerReady({
+		page: props.page,
+		label: 'Tab ownership Review readiness',
+		target: { surface: 'review', itemId: props.itemId },
+	});
+}
+
+export interface TabOwnershipReplacementHold {
+	readonly committed: BridgeProductDeferred<void>;
+	readonly released: Promise<void>;
+	readonly release: () => void;
+	readonly dispose: () => void;
+}
+
+/** The test's held native commit must retire even when no browser response can arrive. */
+export function createTabOwnershipReplacementHold(
+	signal: AbortSignal,
+): TabOwnershipReplacementHold {
+	const commit = createBridgeProductDeferred<void>();
+	const release = createBridgeProductDeferred<void>();
+	const fail = (error: unknown): void => {
+		commit.reject(error);
+		release.resolve();
+	};
+	const abort = (): void =>
+		fail(new Error('TQ109 held native commit owner aborted', { cause: signal.reason }));
+	signal.addEventListener('abort', abort, { once: true });
+	void commit.promise.catch((): void => {});
+	if (signal.aborted) abort();
+	return {
+		committed: {
+			promise: commit.promise,
+			resolve: (): void => commit.resolve(),
+			reject: fail,
+		},
+		released: release.promise,
+		release: (): void => release.resolve(),
+		dispose: (): void => {
+			signal.removeEventListener('abort', abort);
+			fail(new Error('TQ109 held native commit owner disposed before commit'));
+		},
+	};
+}
+
+/** Preserve route failures for cleanup and also wake the body awaiting the commit. */
+export function observeTabOwnershipReplacementRoute(props: {
+	readonly hold: TabOwnershipReplacementHold;
+	readonly run: () => Promise<void>;
+}): HandledLaunchPromise<void> {
+	return handleLaunchPromise(
+		Promise.resolve()
+			.then(props.run)
+			.catch((error: unknown): never => {
+				props.hold.committed.reject(error);
+				throw error;
+			}),
+		'TQ109 held replacement bootstrap route',
+	);
 }

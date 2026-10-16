@@ -33,16 +33,18 @@ test('Review settles after switching the comparison target to another branch and
 			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			const page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			const diagnostics = observeBrowserRuntimeDiagnostics(page);
-			await page.goto(
-				bridgeViewerViteProductReviewUrl(
-					server.origin,
-					requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-				),
-				{
-					timeout: roundTripTimeoutMilliseconds,
-					waitUntil: 'domcontentloaded',
-				},
-			);
+			await fixture.oracle.testLaunch
+				.observeStep(
+					'Review comparison: initial navigation DOM content loaded',
+					page.goto(
+						bridgeViewerViteProductReviewUrl(
+							server.origin,
+							requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+						),
+						{ waitUntil: 'domcontentloaded' },
+					),
+				)
+				.value();
 			await waitForSettledReviewComparison({
 				expectedTargetLabel: 'HEAD',
 				expectedTargetOID: fixture.oracle.baseRef,
@@ -65,9 +67,12 @@ test('Review settles after switching the comparison target to another branch and
 					page,
 					timeoutMilliseconds: roundTripTimeoutMilliseconds,
 				});
-				await page
-					.getByTestId('comparison-branch-main')
-					.click({ timeout: roundTripTimeoutMilliseconds });
+				await fixture.oracle.testLaunch
+					.observeStep(
+						'Review comparison: select main branch',
+						page.getByTestId('comparison-branch-main').click(),
+					)
+					.value();
 				await waitForSettledReviewComparison({
 					expectedTargetLabel: 'main',
 					expectedTargetOID: fixture.oracle.baseRef,

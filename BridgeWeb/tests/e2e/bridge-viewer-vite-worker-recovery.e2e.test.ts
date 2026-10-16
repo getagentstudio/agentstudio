@@ -59,10 +59,12 @@ test.for(['proxy502', 'abortedDelivery'] as const)(
 				if (unchangedFile === undefined)
 					throw new Error('Receipt recovery requires two Review files.');
 				await installReviewRenderObservation({ itemId: unchangedFile.itemId, page });
-				const initialBootstrap = page.waitForResponse(
-					(response): boolean => isBootstrapResponse(response, 'initial'),
-					{ timeout: 30_000 },
-				);
+				const initialBootstrap = fixture.oracle.testLaunch
+					.observeStep(
+						'Worker recovery: initial bootstrap response',
+						page.waitForResponse((response): boolean => isBootstrapResponse(response, 'initial')),
+					)
+					.value();
 				const admissionAttemptLimit = initialBootstrap.then(async (response): Promise<number> => {
 					const bytes = Uint8Array.from(await response.body());
 					return (
@@ -106,10 +108,14 @@ test.for(['proxy502', 'abortedDelivery'] as const)(
 					}
 					await route.continue();
 				});
-				const replacementBootstrap = page.waitForResponse(
-					(response): boolean => isBootstrapResponse(response, 'workerReplacement'),
-					{ timeout: 30_000 },
-				);
+				const replacementBootstrap = fixture.oracle.testLaunch
+					.observeStep(
+						'Worker recovery: replacement bootstrap response',
+						page.waitForResponse((response): boolean =>
+							isBootstrapResponse(response, 'workerReplacement'),
+						),
+					)
+					.value();
 				let mainFrameNavigationCount = 0;
 				page.on('framenavigated', (frame): void => {
 					if (frame === page.mainFrame()) mainFrameNavigationCount += 1;
@@ -120,16 +126,18 @@ test.for(['proxy502', 'abortedDelivery'] as const)(
 				const [initialResponse, replacementResponse] = await Promise.all([
 					initialBootstrap,
 					replacementBootstrap,
-					page.goto(
-						bridgeViewerViteProductReviewUrl(
-							server.origin,
-							requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-						),
-						{
-							timeout: 120_000,
-							waitUntil: 'domcontentloaded',
-						},
-					),
+					fixture.oracle.testLaunch
+						.observeStep(
+							'Worker recovery: Review navigation DOM content loaded',
+							page.goto(
+								bridgeViewerViteProductReviewUrl(
+									server.origin,
+									requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+								),
+								{ waitUntil: 'domcontentloaded' },
+							),
+						)
+						.value(),
 				]);
 				expect(rejectedReceiptCount).toBe(await admissionAttemptLimit);
 				expect(new Set(replayedAdmissionBodies).size).toBe(1);
@@ -270,22 +278,26 @@ test('reclaims a durable Review draft after worker failure and one unavailable r
 				}
 				await route.continue();
 			});
-			const initialBootstrapResponse = page.waitForResponse(
-				(response): boolean => isBootstrapResponse(response, 'initial'),
-				{ timeout: 30_000 },
-			);
+			const initialBootstrapResponse = fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: initial bootstrap response',
+					page.waitForResponse((response): boolean => isBootstrapResponse(response, 'initial')),
+				)
+				.value();
 			const [initialResponse] = await Promise.all([
 				initialBootstrapResponse,
-				page.goto(
-					bridgeViewerViteProductReviewUrl(
-						server.origin,
-						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-					),
-					{
-						timeout: 120_000,
-						waitUntil: 'domcontentloaded',
-					},
-				),
+				fixture.oracle.testLaunch
+					.observeStep(
+						'Durable Review draft: Review navigation DOM content loaded',
+						page.goto(
+							bridgeViewerViteProductReviewUrl(
+								server.origin,
+								requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+							),
+							{ waitUntil: 'domcontentloaded' },
+						),
+					)
+					.value(),
 			]);
 			const initialWorkerInstanceId = await bootstrapWorkerInstanceId(initialResponse);
 			await selectReviewFile({ page, path: reviewFile.path });
@@ -297,28 +309,43 @@ test('reclaims a durable Review draft after worker failure and one unavailable r
 				draftCreated,
 				page.getByRole('textbox', { name: 'Write an annotation in Markdown' }).fill(draftBody),
 			]);
-			await page
-				.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
-				.waitFor({ state: 'visible', timeout: 30_000 });
+			await fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: projected draft visible',
+					page
+						.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
+						.waitFor({ state: 'visible' }),
+				)
+				.value();
 			const worker = page
 				.workers()
 				.find((candidate) => candidate.url().includes('bridge-comm-worker-vite-entry.ts'));
 			if (worker === undefined) throw new Error('The real pane comm worker was not created.');
 
 			// Act — an uncaught worker error retires the worker; one proxy failure interrupts replacement.
-			const unavailableReplacement = page.waitForResponse(
-				(response): boolean =>
-					isBootstrapResponse(response, 'workerReplacement') && response.status() === 502,
-				{ timeout: 30_000 },
-			);
-			const freshBootstrapResponse = page.waitForResponse(
-				(response): boolean => isBootstrapResponse(response, 'initial'),
-				{ timeout: 30_000 },
-			);
-			const pageReload = page.waitForEvent('framenavigated', {
-				predicate: (frame): boolean => frame === page.mainFrame(),
-				timeout: 30_000,
-			});
+			const unavailableReplacement = fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: unavailable replacement bootstrap response',
+					page.waitForResponse(
+						(response): boolean =>
+							isBootstrapResponse(response, 'workerReplacement') && response.status() === 502,
+					),
+				)
+				.value();
+			const freshBootstrapResponse = fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: fresh bootstrap response',
+					page.waitForResponse((response): boolean => isBootstrapResponse(response, 'initial')),
+				)
+				.value();
+			const pageReload = fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: main frame reload',
+					page.waitForEvent('framenavigated', {
+						predicate: (frame): boolean => frame === page.mainFrame(),
+					}),
+				)
+				.value();
 			const [, , freshResponse] = await Promise.all([
 				unavailableReplacement,
 				pageReload,
@@ -336,7 +363,12 @@ test('reclaims a durable Review draft after worker failure and one unavailable r
 			await selectReviewFile({ page, path: reviewFile.path });
 			await waitForSelectedReviewReady({ itemId: reviewFile.itemId, page });
 			const restoredDraft = page.getByText(draftBody, { exact: true });
-			await restoredDraft.waitFor({ state: 'visible', timeout: 30_000 });
+			await fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: restored draft visible',
+					restoredDraft.waitFor({ state: 'visible' }),
+				)
+				.value();
 
 			// Act — reclaim the persisted draft through the replacement worker and save an edit.
 			await page.getByRole('button', { name: 'Edit annotation', exact: true }).click();
@@ -349,9 +381,12 @@ test('reclaims a durable Review draft after worker failure and one unavailable r
 			]);
 
 			// Assert — a new committed mutation proves the old worker no longer owns the draft.
-			await page
-				.getByText(savedBody, { exact: true })
-				.waitFor({ state: 'visible', timeout: 30_000 });
+			await fixture.oracle.testLaunch
+				.observeStep(
+					'Durable Review draft: saved body visible',
+					page.getByText(savedBody, { exact: true }).waitFor({ state: 'visible' }),
+				)
+				.value();
 		} catch (error) {
 			throw new Error(
 				`Worker replacement journey failed. Backend: ${server?.diagnostics() ?? 'not started'}`,

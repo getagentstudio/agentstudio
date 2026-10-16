@@ -212,13 +212,12 @@ private final class CacheApiFixture {
     }
 
     func run(_ arguments: String..., extra: [String: String] = [:]) async throws -> CacheScriptResult {
-        let environment = ProcessInfo.processInfo.environment.merging(
-            [
+        let environment = testProcessEnvironmentWithoutLaneState(
+            overrides: [
                 "CI_CACHE_API": "bash \(root.appendingPathComponent("api.sh").path)",
                 "CI_CACHE_FIXTURE_ROOT": root.path,
                 "GITHUB_REPOSITORY": "owner/repo",
-            ].merging(extra) { _, new in new }
-        ) { _, new in new }
+            ].merging(extra) { _, new in new })
         let output = try await runProcessToExit(
             executableURL: URL(fileURLWithPath: "/bin/bash"),
             arguments: ["scripts/ci-swift-build-cache-publish.sh"] + arguments,

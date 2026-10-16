@@ -7,7 +7,7 @@ import {
 	encodeBridgeWorkerActiveViewerModeUpdateCommand,
 	encodeBridgeWorkerReviewComparisonTargetsQueryCommand,
 } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import type { ReviewMetadataSubscription } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
 import {
 	createIdleWorktreeAnnotationSubscription,

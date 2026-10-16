@@ -168,7 +168,7 @@ extension WebKitSerializedTests {
             // subscription.update() promise strands. So the isolation invariant is
             // stated on the product frames a hidden pane must not admit.
             #expect(
-                proof.hiddenStormProductDeltas.panePresentationEventCount == 0,
+                proof.hiddenStormProductDeltas.admittedPanePresentationCount == 0,
                 Comment(rawValue: proof.hiddenMetadataStormDiagnostic)
             )
             #expect(
@@ -686,7 +686,7 @@ extension WebKitSerializedTests {
             }
         }
 
-        private func seedHeavyReviewChanges(
+        func seedHeavyReviewChanges(
             at repoURL: URL,
             trackedFileCount: Int
         ) async throws {
@@ -725,6 +725,7 @@ extension WebKitSerializedTests {
         func makeController(
             repoURL: URL,
             traceRecorder: BridgeProductWebKitCarrierTraceRecorder,
+            reviewSourceProviderTransform: (any BridgeReviewSourceProvider) -> any BridgeReviewSourceProvider = { $0 },
             worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
             worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil
         ) -> BridgePaneController {
@@ -753,11 +754,12 @@ extension WebKitSerializedTests {
                         cwd: repoURL
                     )
                 ),
-                reviewSourceProvider: BridgeReviewSourceProviderFactory.gitProvider(
-                    repositoryPath: repoURL,
-                    gitReadContext: gitReadContext,
-                    statusPhysicalGate: statusPhysicalGate
-                ),
+                reviewSourceProvider: reviewSourceProviderTransform(
+                    BridgeReviewSourceProviderFactory.gitProvider(
+                        repositoryPath: repoURL,
+                        gitReadContext: gitReadContext,
+                        statusPhysicalGate: statusPhysicalGate
+                    )),
                 gitReadContext: gitReadContext,
                 worktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator(),
                 worktreeAnnotationStore: worktreeAnnotationStore,
