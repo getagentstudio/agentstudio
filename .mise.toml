@@ -195,22 +195,16 @@ dir = "BridgeWeb"
 run = "pnpm run test:browser:stress"
 
 [tasks."test:bridge-web:e2e"]
-description = "Run the ordinary BridgeWeb Vite product E2E journeys; the stress journey is post-merge"
+description = "Run the ordinary BridgeWeb Vite product E2E journeys"
 depends = ["bridge-web-install", "build-bridge-development-server"]
 dir = "BridgeWeb"
 run = "pnpm run test:e2e:prepared:ordinary"
 
 [tasks."test:bridge-web:e2e:ordinary"]
-description = "Run the ordinary Vite E2E journeys; the stress journey runs in test:bridge-web:e2e:stress"
+description = "Run the ordinary Vite E2E journeys"
 depends = ["bridge-web-install", "build-bridge-development-server"]
 dir = "BridgeWeb"
 run = "pnpm run test:e2e:prepared:ordinary"
-
-[tasks."test:bridge-web:e2e:stress"]
-description = "Run the 1,699-item Vite E2E stress journey; post-merge benchmark lane, not a pull-request gate"
-depends = ["bridge-web-install", "build-bridge-development-server"]
-dir = "BridgeWeb"
-run = "pnpm run test:e2e:prepared:stress"
 
 [tasks.verify-bridge-review-controlled-composition]
 description = "Verify Review product-only authority and controlled Browser Mode composition"

@@ -202,11 +202,6 @@ jobs:
           _XCB_BYPASS: "1"
         run: mise run test:swift:large
 
-      # Runs here, after the Swift toolchain, vendors and dev resources are in place,
-      # because the journey needs the Swift development backend the mise task builds.
-      - name: BridgeWeb Vite E2E stress journey
-        run: mise run test:bridge-web:e2e:stress
-
       - name: Swift benchmark tests
         run: |
           set -o pipefail

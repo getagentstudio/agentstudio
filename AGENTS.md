@@ -45,9 +45,8 @@ WebKit, and general E2E tests, and `git diff --check`. Use
 `mise run test:swift -- --filter "CommandBarState"`,
 `mise run test:bridge-web`, or `mise run test:architecture`. Scope-specific
 manual, packaged, observability, performance, release, or UI proof remains
-additional when the change requires it. Post-merge benchmark/stress tasks,
-the Vite E2E stress journey (`test:bridge-web:e2e:stress`), and the opt-in zmx
-lifecycle lane are not pull-request gates. Do not claim a branch
+additional when the change requires it. Post-merge benchmark/stress tasks and
+the opt-in zmx lifecycle lane are not pull-request gates. Do not claim a branch
 or PR is ready until `mise run test` exits successfully on the current HEAD.
 
 CI runs these same mise tasks on a 3-core runner, so the Swift cooperative pool

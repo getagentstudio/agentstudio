@@ -84,6 +84,10 @@ export function createSurfaceClientHarness(
 			for (const replacementListener of workerReplacementListeners) replacementListener();
 		},
 		publish: (message): void => {
+			// Explicit staging owns catalog installation in catalog lifecycle tests.
+			if (message.kind === 'annotationCatalogStaging' && message.surface === surface) {
+				catalogStaged = true;
+			}
 			if (
 				!catalogStaged &&
 				message.kind === 'annotationProjectionConvergence' &&

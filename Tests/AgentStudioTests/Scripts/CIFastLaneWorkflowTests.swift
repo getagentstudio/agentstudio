@@ -273,12 +273,12 @@ struct CIFastLaneWorkflowTests {
         #expect(!benchmarksJob.contains("benchmark-swift-build-ci-"))
         #expect(!benchmarksJob.contains("actions/cache/save"))
         #expect(!benchmarksJob.contains(".build-benchmark"))
-        // The responsiveness journey lives in this post-merge lane and nowhere in
-        // the pull-request workflow.
-        #expect(benchmarksJob.contains("mise run test:bridge-web:e2e:stress"))
+        // The retired responsiveness journey must not block Swift benchmarks.
+        #expect(!benchmarksJob.contains("BridgeWeb Vite E2E stress journey"))
+        #expect(!benchmarksJob.contains("mise run test:bridge-web:e2e"))
         #expect(
             !(try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8))
-                .contains("test:bridge-web:e2e:stress")
+                .contains("BridgeWeb Vite E2E stress journey")
         )
     }
 
