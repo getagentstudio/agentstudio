@@ -435,7 +435,7 @@ struct TerminalActivityProjectorRestorePhaseTests {
             await projector.commandFinished(surfaceID: surfaceID, paneID: paneID)
         }
         #expect(readSequence.readCount == 0)
-        #expect(activityRecorder.isEmpty)
+        #expect(!activityRecorder.hasOccurrences)
         #expect(await projector.scheduledTimerCount == 0)
 
         await projector.applyOrderedControl(
@@ -443,7 +443,7 @@ struct TerminalActivityProjectorRestorePhaseTests {
             control: .restorePhaseEnded(generation))
         await projector.commandFinished(surfaceID: surfaceID, paneID: paneID)
         #expect(readSequence.readCount == 1)
-        #expect(activityRecorder.isEmpty)
+        #expect(!activityRecorder.hasOccurrences)
         await projector.commandFinished(surfaceID: surfaceID, paneID: paneID)
         #expect(readSequence.readCount == 2)
         #expect(activityRecorder.count == 1)
