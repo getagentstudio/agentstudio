@@ -141,8 +141,10 @@ package enum AppPolicies {
         package static let paneCount: Int = 36
         package static let activePTYCount: Int = 1
         package static let strictWatchedRootURLs: [URL] = [
-            URL(fileURLWithPath: "/Users/shravansunder/Documents/dev/open-source", isDirectory: true),
-            URL(fileURLWithPath: "/Users/shravansunder/Documents/dev/project-dev", isDirectory: true),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("code/opensource", isDirectory: true),
+            FileManager.default.homeDirectoryForCurrentUser
+                .appendingPathComponent("code/projects", isDirectory: true),
         ]
         package static let strictTabCount: Int = 5
         package static let strictPaneModelCount: Int = 20
