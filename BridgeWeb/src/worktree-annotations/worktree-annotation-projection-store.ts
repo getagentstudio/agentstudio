@@ -106,6 +106,7 @@ export const emptyWorktreeAnnotationProjectionSnapshot: WorktreeAnnotationProjec
 };
 
 export class WorktreeAnnotationProjectionStore {
+	#catalogInstallationFailed = false;
 	#catalogProjection: WorktreeAnnotationCatalogProjection = { kind: 'unknown' };
 	readonly #catalogStaging = new WorktreeAnnotationCatalogStaging();
 	readonly #completeContentRevisionBySessionId = new Map<string, number>();
@@ -271,10 +272,21 @@ export class WorktreeAnnotationProjectionStore {
 			this.#publish({ ...this.#snapshot, readStatus: { kind: 'refreshing' } });
 		}
 		const result = this.#catalogStaging.accept(event);
+		if (
+			this.#catalogInstallationFailed &&
+			authorityReplaced &&
+			event.transfer.kind === 'catalog.begin' &&
+			result.status === 'accepted'
+		) {
+			this.#catalogInstallationFailed = false;
+			this.markRefreshing();
+		}
 		if (result.status === 'rejected' && catalogRejectionMakesReadUnavailable(result.reason)) {
-			this.markUnavailable(true);
+			this.#catalogInstallationFailed = true;
+			this.markUnavailable(false);
 		}
 		if (result.status !== 'completed') return result;
+		this.#catalogInstallationFailed = false;
 		for (const sessionId of this.#completeContentRevisionBySessionId.keys()) {
 			if (!result.catalog.sessionsById.has(sessionId)) {
 				this.#completeContentRevisionBySessionId.delete(sessionId);
@@ -297,11 +309,16 @@ export class WorktreeAnnotationProjectionStore {
 	}
 
 	prepareForWorkerReplacement(): void {
+		const catalogInstallationFailed = this.#catalogInstallationFailed;
+		this.#catalogInstallationFailed = false;
 		this.#catalogStaging.retireExpectedAuthority();
 		this.#completeContentRevisionBySessionId.clear();
 		this.#pendingReviewAnnotationApplication = null;
-		if (this.#catalogProjection.kind !== 'current') return;
-		this.#catalogProjection = { ...this.#catalogProjection, kind: 'stale' };
+		if (this.#catalogProjection.kind === 'current') {
+			this.#catalogProjection = { ...this.#catalogProjection, kind: 'stale' };
+		} else if (!catalogInstallationFailed) {
+			return;
+		}
 		this.#publish({
 			...this.#snapshot,
 			readStatus: { kind: 'refreshing' },
@@ -310,7 +327,7 @@ export class WorktreeAnnotationProjectionStore {
 	}
 
 	markRefreshing(): void {
-		if (this.#snapshot.readStatus.kind === 'refreshing') return;
+		if (this.#catalogInstallationFailed || this.#snapshot.readStatus.kind === 'refreshing') return;
 		this.#publish({ ...this.#snapshot, readStatus: { kind: 'refreshing' } });
 	}
 
@@ -331,15 +348,16 @@ export class WorktreeAnnotationProjectionStore {
 	}
 
 	markUnavailable(retryable: boolean): void {
+		const effectiveRetryable = retryable && !this.#catalogInstallationFailed;
 		if (
 			this.#snapshot.readStatus.kind === 'unavailable' &&
-			this.#snapshot.readStatus.retryable === retryable
+			this.#snapshot.readStatus.retryable === effectiveRetryable
 		) {
 			return;
 		}
 		this.#publish({
 			...this.#snapshot,
-			readStatus: { kind: 'unavailable', retryable },
+			readStatus: { kind: 'unavailable', retryable: effectiveRetryable },
 		});
 	}
 
@@ -451,6 +469,10 @@ export class WorktreeAnnotationProjectionStore {
 		this.#snapshot = {
 			...snapshot,
 			presentationRevision: this.#snapshot.presentationRevision + 1,
+			// Query convergence cannot replay a rejected catalog installation.
+			readStatus: this.#catalogInstallationFailed
+				? { kind: 'unavailable', retryable: false }
+				: snapshot.readStatus,
 			reviewAnnotationApplication: this.#pendingReviewAnnotationApplication,
 		};
 		for (const listener of this.#listeners) listener();

@@ -6,11 +6,17 @@ import { BRIDGE_METADATA_CATALOG_MAXIMUM_ENTRY_COUNT } from '../core/comm-worker
 import { installBridgeProductCommentBatch } from '../core/comm-worker/bridge-product-comment-batch-installer.js';
 import type { BridgeProductWorktreeAnnotationCatalogEntry } from '../core/comm-worker/bridge-product-worktree-annotation-contracts.js';
 import type { BridgeWorkerAnnotationCatalogStagingEvent } from '../core/comm-worker/bridge-worker-annotation-contracts.js';
+import {
+	BRIDGE_WORKER_WIRE_VERSION,
+	type BridgeWorkerServerToMainMessage,
+} from '../core/comm-worker/bridge-worker-contracts.js';
 import { makeCommentCatalogInstallation } from '../core/comm-worker/test-fixtures/bridge-comm-worker-annotation-projection.test-support.js';
 import { WorktreeAnnotationCatalogStaging } from './worktree-annotation-catalog-staging.js';
 import {
 	catalogStagingMessages,
 	createSurfaceClientHarness,
+	projectionSnapshot,
+	reviewPublicationIdentity,
 	sessionId,
 	threadId,
 } from './worktree-annotation-surface-client.test-support.js';
@@ -65,7 +71,7 @@ describe('large Review annotation catalog completion', () => {
 			expect(harness.client.getCatalogSnapshot()).toEqual({ kind: 'unknown' });
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 		} finally {
 			harness.client.dispose();
@@ -97,7 +103,7 @@ describe('Review annotation catalog rejection', () => {
 			expect(retained.catalog).toBe(previousCatalog.catalog);
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 		} finally {
 			harness.client.dispose();
@@ -130,7 +136,7 @@ describe('Review annotation catalog rejection', () => {
 			expect(harness.client.getCatalogSnapshot()).toEqual({ kind: 'unknown' });
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 		} finally {
 			harness.client.dispose();
@@ -158,7 +164,7 @@ describe('Review annotation catalog rejection', () => {
 			expect(harness.client.getCatalogSnapshot()).toBe(previousCatalog);
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 		} finally {
 			harness.client.dispose();
@@ -241,7 +247,7 @@ describe('Review annotation catalog rejection', () => {
 			expect(harness.client.getCatalogSnapshot()).toEqual({ kind: 'unknown' });
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 		} finally {
 			harness.client.dispose();
@@ -281,7 +287,7 @@ describe('Review annotation catalog rejection', () => {
 				expect(harness.client.getCatalogSnapshot()).toEqual({ kind: 'unknown' });
 				expect(harness.client.getSnapshot().readStatus).toEqual({
 					kind: 'unavailable',
-					retryable: true,
+					retryable: false,
 				});
 			} finally {
 				harness.client.dispose();
@@ -342,7 +348,7 @@ describe('Review annotation catalog rejection', () => {
 			}
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 			for (const message of catalogStagingMessages(8, 'review')) harness.publish(message);
 			expect(harness.client.getCatalogSnapshot()).toMatchObject({
@@ -371,13 +377,180 @@ describe('Review annotation catalog rejection', () => {
 			expect(harness.client.getCatalogSnapshot()).toEqual({ kind: 'unknown' });
 			expect(harness.client.getSnapshot().readStatus).toEqual({
 				kind: 'unavailable',
-				retryable: true,
+				retryable: false,
 			});
 		} finally {
 			harness.client.dispose();
 		}
 	});
 });
+
+describe('catalog failure survives query-only convergence', () => {
+	test.each(['unknown', 'stale', 'current'] as const)(
+		'keeps the %s catalog unavailable until a valid catalog commits',
+		(catalogKind) => {
+			const harness = createSurfaceClientHarness([], 'review');
+			const epoch = catalogKind === 'stale' ? 2 : 1;
+			try {
+				if (catalogKind !== 'unknown') {
+					for (const message of catalogStagingMessages(7, 'review')) harness.publish(message);
+				}
+				publishRejectedCatalog(harness.publish, epoch);
+				expect(harness.client.getCatalogSnapshot().kind).toBe(catalogKind);
+				expect(harness.client.getSnapshot().readStatus.kind).toBe('unavailable');
+
+				harness.publish(queryConvergence({ catalogAuthorityRetired: false, kind: 'refreshing' }));
+				expect(harness.client.getSnapshot().readStatus).toEqual({
+					kind: 'unavailable',
+					retryable: false,
+				});
+				harness.publish(queryReady(8));
+				expect(harness.client.getSnapshot().readStatus).toEqual({
+					kind: 'unavailable',
+					retryable: false,
+				});
+				expect(harness.client.getCatalogSnapshot().kind).toBe(catalogKind);
+				// A query failure also cannot offer a retry that cannot replay the catalog.
+				harness.publish(
+					queryConvergence({
+						catalogAuthorityRetired: false,
+						kind: 'unavailable',
+						retryable: true,
+					}),
+				);
+				expect(harness.client.getSnapshot().readStatus).toEqual({
+					kind: 'unavailable',
+					retryable: false,
+				});
+
+				for (const message of catalogStagingMessages(9, 'review')) {
+					harness.publish({
+						...message,
+						authority: { ...message.authority, workerDerivationEpoch: epoch },
+					});
+				}
+				expect(harness.client.getCatalogSnapshot()).toMatchObject({
+					kind: 'current',
+					catalog: { catalogRevision: 9 },
+				});
+				expect(harness.client.getSnapshot().readStatus).toEqual({ kind: 'refreshing' });
+				harness.publish(queryConvergence({ catalogAuthorityRetired: false, kind: 'refreshing' }));
+				harness.publish(queryReady(9));
+				expect(harness.client.getSnapshot().readStatus).toEqual({ kind: 'ready' });
+				expect(harness.client.getSnapshot().threads).toHaveLength(1);
+			} finally {
+				harness.client.dispose();
+			}
+		},
+	);
+
+	test('query ready cannot clear a catalog failure against a retained current catalog', () => {
+		const harness = createSurfaceClientHarness([], 'review');
+		try {
+			for (const message of catalogStagingMessages(7, 'review')) harness.publish(message);
+			publishRejectedCatalog(harness.publish, 1);
+			harness.publish(queryReady(8));
+			expect(harness.client.getSnapshot().readStatus).toEqual({
+				kind: 'unavailable',
+				retryable: false,
+			});
+		} finally {
+			harness.client.dispose();
+		}
+	});
+
+	test('session demand cannot clear a first-install catalog failure', () => {
+		const harness = createSurfaceClientHarness([], 'review');
+		try {
+			publishRejectedCatalog(harness.publish, 1);
+			const release = harness.client.acquireSession(sessionId);
+			try {
+				expect(harness.client.getSnapshot().readStatus).toEqual({
+					kind: 'unavailable',
+					retryable: false,
+				});
+			} finally {
+				release();
+			}
+		} finally {
+			harness.client.dispose();
+		}
+	});
+
+	test.each(['unknown', 'stale'] as const)(
+		'authority retirement starts catalog recovery after a %s catalog failure',
+		(catalogKind) => {
+			const harness = createSurfaceClientHarness([], 'review');
+			try {
+				if (catalogKind === 'stale') {
+					for (const message of catalogStagingMessages(7, 'review')) harness.publish(message);
+				}
+				publishRejectedCatalog(harness.publish, catalogKind === 'stale' ? 2 : 1);
+				harness.publish(queryConvergence({ catalogAuthorityRetired: true, kind: 'refreshing' }));
+				expect(harness.client.getSnapshot().readStatus).toEqual({ kind: 'refreshing' });
+				expect(harness.client.getCatalogSnapshot().kind).toBe(catalogKind);
+			} finally {
+				harness.client.dispose();
+			}
+		},
+	);
+
+	test('an accepted begin from a replacement authority starts real catalog recovery', () => {
+		const harness = createSurfaceClientHarness([], 'review');
+		try {
+			publishRejectedCatalog(harness.publish, 1);
+			const begin = catalogStagingMessages(1, 'review')[0];
+			if (begin === undefined) throw new Error('Catalog begin missing.');
+			harness.publish({ ...begin, authority: { ...begin.authority, workerDerivationEpoch: 2 } });
+			expect(harness.client.getSnapshot().readStatus).toEqual({ kind: 'refreshing' });
+		} finally {
+			harness.client.dispose();
+		}
+	});
+});
+
+function publishRejectedCatalog(
+	publish: (message: BridgeWorkerServerToMainMessage) => void,
+	workerDerivationEpoch: number,
+): void {
+	for (const message of catalogStagingMessages(8, 'review')) {
+		publish({
+			...message,
+			authority: { ...message.authority, workerDerivationEpoch },
+			transfer:
+				message.transfer.kind === 'catalog.commit'
+					? { ...message.transfer, entryCount: 4 }
+					: message.transfer,
+		});
+	}
+}
+
+type QueryConvergenceMessage = Extract<
+	BridgeWorkerServerToMainMessage,
+	{ readonly kind: 'annotationProjectionConvergence' }
+>;
+
+function queryConvergence(state: QueryConvergenceMessage['state']): QueryConvergenceMessage {
+	return {
+		direction: 'serverWorkerToMain',
+		kind: 'annotationProjectionConvergence',
+		operationCorrelationId: 'a'.repeat(64),
+		state,
+		surface: 'review',
+		transferDescriptors: [],
+		wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+	};
+}
+
+function queryReady(revision: number): QueryConvergenceMessage {
+	return queryConvergence({
+		contentSessionIds: [sessionId],
+		kind: 'ready',
+		reviewPublicationIdentity,
+		snapshot: projectionSnapshot(revision, 12),
+		stageAttempt: 0,
+	});
+}
 
 function largeReviewCatalogStaging(): readonly BridgeWorkerAnnotationCatalogStagingEvent[] {
 	const entries: BridgeProductWorktreeAnnotationCatalogEntry[] = [
