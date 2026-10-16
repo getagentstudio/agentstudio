@@ -11,6 +11,7 @@ export interface ReviewComparisonBrowserObservation {
 
 export interface BrowserRuntimeDiagnostics {
 	readonly describe: () => Promise<string>;
+	readonly readRetained: () => string;
 }
 
 export function observeBrowserRuntimeDiagnostics(page: Page): BrowserRuntimeDiagnostics {
@@ -56,6 +57,14 @@ export function observeBrowserRuntimeDiagnostics(page: Page): BrowserRuntimeDiag
 		);
 	});
 	return {
+		readRetained: (): string =>
+			JSON.stringify({
+				consoleErrors,
+				failedRequests,
+				pageErrors,
+				productResponses,
+				productRequestPaths,
+			}),
 		describe: async (): Promise<string> => {
 			const responseBodyRead = await readBrowserDiagnosticWithinDeadline(
 				Promise.allSettled(responseBodyReads),

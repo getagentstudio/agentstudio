@@ -8,6 +8,7 @@ import {
 	bridgeWorkerSelectCommandSchema,
 	type BridgeWorkerServerToMainWireMessage,
 } from '../../src/core/comm-worker/bridge-worker-contracts.js';
+import { bridgeWorkerViewRecoveryStatusEventSchema } from '../../src/core/comm-worker/bridge-worker-view-recovery-contracts.js';
 import {
 	selectedContentTerminalFailure,
 	createSelectedContentOwnerRecorder,
@@ -125,6 +126,42 @@ function selectedFileRecorder(): ReturnType<typeof createSelectedContentOwnerRec
 	});
 	return recorder;
 }
+
+function fileRecoveryStatus(
+	status: 'recovering' | 'ready' | 'failedRetryable',
+	subscriptionId: string = 'file-subscription',
+): unknown {
+	return bridgeWorkerViewRecoveryStatusEventSchema.parse({
+		wireVersion: 1,
+		direction: 'serverWorkerToMain',
+		kind: 'viewRecoveryStatus',
+		transferDescriptors: [],
+		view: { kind: 'file.metadata', subscriptionId },
+		status,
+	});
+}
+
+test('File view recovery exhaustion retains the existing subscription owner fact', () => {
+	const recorder = selectedFileRecorder();
+	recorder.observe(1, fileRecoveryStatus('recovering'));
+	expect(recorder.read('file').failure).toBeNull();
+	recorder.observe(1, fileRecoveryStatus('failedRetryable'));
+	expect(recorder.read('file').failure).toMatchObject({
+		itemId: 'selected-file',
+		reason: 'file-view-recovery:failedRetryable:file-subscription',
+	});
+});
+
+test('a retired File subscription and worker cannot fail the current recovery', () => {
+	const recorder = selectedFileRecorder();
+	recorder.observe(1, fileRecoveryStatus('recovering', 'old-subscription'));
+	recorder.observe(1, fileRecoveryStatus('recovering'));
+	recorder.observe(1, fileRecoveryStatus('failedRetryable', 'old-subscription'));
+	recorder.observe(0, fileRecoveryStatus('failedRetryable'));
+	expect(recorder.read('file').failure).toBeNull();
+	recorder.observe(1, fileRecoveryStatus('ready'));
+	expect(recorder.read('file').failure).toBeNull();
+});
 
 function unavailableFilePatch(
 	props: {

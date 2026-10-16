@@ -4,7 +4,11 @@ import { reviewWaitTerminalOwner } from './bridge-viewer-vite-review-owner-wait.
 
 export type SelectedContentReadyTarget =
 	| { readonly surface: 'review'; readonly itemId: string }
-	| { readonly surface: 'file'; readonly expectedSha256: string; readonly itemId?: string };
+	| {
+			readonly surface: 'file';
+			readonly expectedSha256: string;
+			readonly itemId?: string;
+	  };
 
 /** The same script is consumed by Playwright and the deterministic Node adapter proofs. */
 export function selectedContentOwnerWaitScript(props: {
