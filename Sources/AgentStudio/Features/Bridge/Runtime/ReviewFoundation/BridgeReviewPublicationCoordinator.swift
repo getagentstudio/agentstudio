@@ -176,6 +176,17 @@ final class BridgeReviewPublicationCoordinator {
         self.didCommitPublication = didCommitPublication
     }
 
+    /// Staging begins Publishing; commit keeps that attempt alive through delivery/install.
+    func hasStartedPublication(reviewGeneration: BridgeReviewGeneration) -> Bool {
+        pendingPublication?.publication.preparedPublication.package.reviewGeneration == reviewGeneration
+            || activePublication?.preparedPublication.package.reviewGeneration == reviewGeneration
+    }
+
+    func hasStartedPublication(operationCorrelationID: String) -> Bool {
+        pendingPublication?.publication.operationCorrelationID == operationCorrelationID
+            || activePublication?.operationCorrelationID == operationCorrelationID
+    }
+
     var diagnosticSnapshot: BridgeReviewPublicationStateSnapshot {
         BridgeReviewPublicationStateSnapshot(
             active: activePublication.map(Self.diagnostic),
@@ -268,17 +279,36 @@ final class BridgeReviewPublicationCoordinator {
     ) -> Bool {
         guard !isClosed,
             let pendingPublication,
-            pendingPublication.publication.productAdmission.matches(productAdmission)
+            Self.pendingPublicationCanBeSuperseded(
+                producerAdmission: pendingPublication.publication.productAdmission,
+                retirementAdmission: productAdmission
+            )
         else { return false }
-        return productAdmission.withValidAdmission {
+        let pendingPublicationId = pendingPublication.publication.publicationId
+        return pendingPublication.publication.productAdmission.withValidAdmission {
             guard !isClosed,
-                let pendingPublication = self.pendingPublication,
-                pendingPublication.publication.productAdmission.matches(productAdmission)
+                let currentPendingPublication = self.pendingPublication,
+                currentPendingPublication.publication.publicationId == pendingPublicationId,
+                Self.pendingPublicationCanBeSuperseded(
+                    producerAdmission: currentPendingPublication.publication.productAdmission,
+                    retirementAdmission: productAdmission
+                )
             else { return false }
-            releasePublication(pendingPublication.publication)
+            releasePublication(currentPendingPublication.publication)
             self.pendingPublication = nil
             return true
         } ?? false
+    }
+
+    private static func pendingPublicationCanBeSuperseded(
+        producerAdmission: BridgeProductAdmissionContext,
+        retirementAdmission: BridgeProductAdmissionContext
+    ) -> Bool {
+        // Pane retirement may not carry the staged E1 token. The producer's own admission
+        // validates that E1 here; SessionOwner closes it before publishing a successor.
+        producerAdmission.matches(retirementAdmission)
+            || (retirementAdmission.isPaneOnly
+                && producerAdmission.hasSamePaneAuthority(as: retirementAdmission))
     }
 
     /// Commits native B and presents pane B without suspension.
@@ -297,7 +327,7 @@ final class BridgeReviewPublicationCoordinator {
         guard pendingMatches(token, productAdmission: productAdmission) else {
             return .superseded
         }
-        return productAdmission.withValidAdmission {
+        return productAdmission.withCanonicalPaneAuthority { canonicalPaneAdmission in
             guard !isClosed,
                 let pendingPublication,
                 pendingPublication.publication.publicationId == token.publicationId,
@@ -329,7 +359,7 @@ final class BridgeReviewPublicationCoordinator {
             activePublication = Publication(
                 publicationId: pendingPublication.publication.publicationId,
                 preparedPublication: pendingPublication.publication.preparedPublication,
-                productAdmission: pendingPublication.publication.productAdmission,
+                productAdmission: canonicalPaneAdmission,
                 committedPublication: committedPublication,
                 operationCorrelationID: pendingPublication.publication.operationCorrelationID
             )
@@ -357,6 +387,13 @@ final class BridgeReviewPublicationCoordinator {
                 publicationId: publicationId,
                 productAdmission: productAdmission
             )
+        } ?? false
+    }
+
+    /// E1 delivery consumes the current pane-owned publication without changing its producer authority.
+    func isCurrentCanonicalPublication(publicationId: UUID, productAdmission: BridgeProductAdmissionContext) -> Bool {
+        productAdmission.withValidAdmission {
+            !isClosed && activePanePublicationMatches(publicationId: publicationId, productAdmission: productAdmission)
         } ?? false
     }
 
@@ -396,7 +433,10 @@ final class BridgeReviewPublicationCoordinator {
         var activeHandle: BridgeContentHandle?
         _ = productAdmission.withValidAdmission {
             guard let activePublication,
-                activePublication.productAdmission.matches(productAdmission),
+                publicationProducerAdmissionAllowsRead(
+                    storedProducerAdmission: activePublication.productAdmission,
+                    requestAdmission: productAdmission
+                ),
                 activePublication.preparedPublication.package.reviewGeneration
                     == requestedGeneration
             else {
@@ -466,7 +506,10 @@ final class BridgeReviewPublicationCoordinator {
         var replayPublication: BridgeReviewCommittedPublication?
         _ = productAdmission.withValidAdmission {
             guard let activePublication,
-                activePublication.productAdmission.matches(productAdmission)
+                publicationProducerAdmissionAllowsRead(
+                    storedProducerAdmission: activePublication.productAdmission,
+                    requestAdmission: productAdmission
+                )
             else {
                 return
             }
@@ -482,7 +525,10 @@ final class BridgeReviewPublicationCoordinator {
         var displayedPublication: BridgeReviewCommittedPublication?
         _ = productAdmission.withValidAdmission {
             guard let publication = publication(identifiedBy: acknowledgedDisplayedPublicationId),
-                publication.productAdmission.matches(productAdmission)
+                publicationProducerAdmissionAllowsRead(
+                    storedProducerAdmission: publication.productAdmission,
+                    requestAdmission: productAdmission
+                )
             else { return }
             displayedPublication = publication.committedPublication
         }
@@ -497,7 +543,10 @@ final class BridgeReviewPublicationCoordinator {
         var retainedPublication: BridgeReviewCommittedPublication?
         _ = productAdmission.withValidAdmission {
             guard let publication = publication(identifiedBy: identity.publicationId),
-                publication.productAdmission.matches(productAdmission),
+                publicationProducerAdmissionAllowsRead(
+                    storedProducerAdmission: publication.productAdmission,
+                    requestAdmission: productAdmission
+                ),
                 publication.preparedPublication.package.packageId == identity.packageId,
                 publication.preparedPublication.package.reviewGeneration.rawValue
                     == identity.reviewGeneration,
@@ -521,16 +570,12 @@ final class BridgeReviewPublicationCoordinator {
                     expectedDisplayedPublicationId,
                     workerInstanceId: workerInstanceId
                 ),
-                activeMatches(
+                activePanePublicationMatches(
                     publicationId: candidatePublicationId,
                     productAdmission: productAdmission
                 ),
                 admittedDisplayInstallation == nil
-                    || admittedDisplayInstallation
-                        == DisplayInstallationAdmission(
-                            workerInstanceId: workerInstanceId,
-                            publicationId: candidatePublicationId
-                        )
+                    || admittedDisplayInstallation?.workerInstanceId == workerInstanceId
             else {
                 return BridgeReviewDisplayInstallAdmissionResult.rejected
             }
@@ -538,6 +583,8 @@ final class BridgeReviewPublicationCoordinator {
                 workerInstanceId: workerInstanceId,
                 publicationId: candidatePublicationId
             )
+            // The displayed fence attests that the prior pin was never applied by this worker.
+            releaseSupersededUnprotectedRetiringPublications()
             return .admitted
         } ?? .rejected
     }
@@ -549,14 +596,20 @@ final class BridgeReviewPublicationCoordinator {
     ) -> BridgeReviewDisplayedApplicationResult {
         guard !isClosed,
             let displayedPublication = publication(identifiedBy: publicationId),
-            displayedPublication.productAdmission.matches(productAdmission)
+            publicationProducerAdmissionAllowsRead(
+                storedProducerAdmission: displayedPublication.productAdmission,
+                requestAdmission: productAdmission
+            )
         else {
             return .rejected
         }
         return productAdmission.withValidAdmission {
             guard !isClosed,
                 let displayedPublication = publication(identifiedBy: publicationId),
-                displayedPublication.productAdmission.matches(productAdmission)
+                publicationProducerAdmissionAllowsRead(
+                    storedProducerAdmission: displayedPublication.productAdmission,
+                    requestAdmission: productAdmission
+                )
             else {
                 return BridgeReviewDisplayedApplicationResult.rejected
             }
@@ -652,7 +705,29 @@ final class BridgeReviewPublicationCoordinator {
     ) -> Bool {
         guard let activePublication else { return false }
         return activePublication.publicationId == publicationId
-            && activePublication.productAdmission.matches(productAdmission)
+            && publicationProducerAdmissionAllowsRead(
+                storedProducerAdmission: activePublication.productAdmission,
+                requestAdmission: productAdmission
+            )
+    }
+
+    private func activePanePublicationMatches(publicationId: UUID, productAdmission: BridgeProductAdmissionContext)
+        -> Bool
+    {
+        guard let activePublication else { return false }
+        return activePublication.publicationId == publicationId
+            && publicationProducerAdmissionAllowsRead(
+                storedProducerAdmission: activePublication.productAdmission,
+                requestAdmission: productAdmission
+            )
+    }
+
+    private func publicationProducerAdmissionAllowsRead(
+        storedProducerAdmission: BridgeProductAdmissionContext,
+        requestAdmission: BridgeProductAdmissionContext
+    ) -> Bool {
+        storedProducerAdmission.matches(requestAdmission)
+            || storedProducerAdmission.isCanonicalPaneAuthority(for: requestAdmission)
     }
 
     private func publication(identifiedBy publicationId: UUID?) -> Publication? {
@@ -759,7 +834,10 @@ final class BridgeReviewPublicationCoordinator {
         sourceIdentity: String,
         productAdmission: BridgeProductAdmissionContext
     ) -> Bool {
-        publication.productAdmission.matches(productAdmission)
+        publicationProducerAdmissionAllowsRead(
+            storedProducerAdmission: publication.productAdmission,
+            requestAdmission: productAdmission
+        )
             && publication.preparedPublication.package.packageId == packageId
             && publication.preparedPublication.package.reviewGeneration == requestedGeneration
             && publication.preparedPublication.package.query.queryId == sourceIdentity

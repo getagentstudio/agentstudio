@@ -13,6 +13,8 @@ import {
 	BRIDGE_PRODUCT_WIRE_VERSION,
 } from '../core/comm-worker/bridge-product-contract-primitives.js';
 import type { BridgeTelemetryWorkerBootstrap } from '../core/telemetry-worker/bridge-telemetry-worker-contracts.js';
+import pageConfigurationFixture from '../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
+import validProductSessionCorpus from '../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import {
 	installBridgePageHandshake,
 	installBridgePageHandshakeSession,
@@ -25,7 +27,11 @@ describe('bridge page handshake', () => {
 
 		target.addEventListener('__bridge_handshake_request', () => {
 			eventNames.push('__bridge_handshake_request');
-			target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+			target.dispatchEvent(
+				new CustomEvent('__bridge_handshake', {
+					detail: { pageConfiguration: pageConfigurationFixture },
+				}),
+			);
 		});
 		target.addEventListener('__bridge_ready', () => {
 			eventNames.push('__bridge_ready');
@@ -34,7 +40,11 @@ describe('bridge page handshake', () => {
 		const uninstall = installBridgePageHandshake(target);
 		expect(eventNames).toEqual(['__bridge_handshake_request']);
 		await Promise.resolve();
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		uninstall();
 
 		expect(eventNames).toEqual(['__bridge_handshake_request', '__bridge_ready']);
@@ -51,7 +61,11 @@ describe('bridge page handshake', () => {
 		const session = installBridgePageHandshakeSession(target);
 		expect(eventNames).toEqual([]);
 
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		expect(eventNames).toEqual([]);
 		await Promise.resolve();
 		session.uninstall();
@@ -68,8 +82,16 @@ describe('bridge page handshake', () => {
 		});
 
 		const session = installBridgePageHandshakeSession(target);
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 		session.uninstall();
 
@@ -83,6 +105,7 @@ describe('bridge page handshake', () => {
 			target.dispatchEvent(
 				new CustomEvent('__bridge_handshake', {
 					detail: {
+						pageConfiguration: pageConfigurationFixture,
 						telemetryConfig: {
 							enabledScopes: ['web', 'webkit'],
 							scenario: 'bridge-runtime',
@@ -95,9 +118,7 @@ describe('bridge page handshake', () => {
 		const session = installBridgePageHandshakeSession(target);
 		target.dispatchEvent(
 			new CustomEvent('__bridge_handshake', {
-				detail: {
-					telemetryConfig: null,
-				},
+				detail: { pageConfiguration: pageConfigurationFixture, telemetryConfig: null },
 			}),
 		);
 		session.uninstall();
@@ -118,6 +139,7 @@ describe('bridge page handshake', () => {
 		target.dispatchEvent(
 			new CustomEvent('__bridge_handshake', {
 				detail: {
+					pageConfiguration: pageConfigurationFixture,
 					telemetryConfig: {
 						enabledScopes: ['web'],
 						scenario: 'metadata_apply_content_fetch_v1',
@@ -128,6 +150,7 @@ describe('bridge page handshake', () => {
 		target.dispatchEvent(
 			new CustomEvent('__bridge_handshake', {
 				detail: {
+					pageConfiguration: pageConfigurationFixture,
 					telemetryConfig: {
 						enabledScopes: ['web'],
 						scenario: 'ignored_later_config',
@@ -156,7 +179,11 @@ describe('bridge page handshake', () => {
 				events.push('ready-callback');
 			},
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 		expect(events).toEqual(['ready-event']);
 		expect(readyRequestId).not.toBeNull();
@@ -188,7 +215,11 @@ describe('bridge page handshake', () => {
 				events.push('ready-callback');
 			},
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 		target.dispatchEvent(
 			new CustomEvent('__bridge_ready_ack', {
@@ -215,7 +246,11 @@ describe('bridge page handshake', () => {
 				events.push('ready-callback');
 			},
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 		target.dispatchEvent(
 			new CustomEvent('__bridge_ready_ack', {
@@ -248,7 +283,11 @@ describe('bridge page handshake', () => {
 				events.push('ready-callback');
 			},
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 		target.dispatchEvent(
 			new CustomEvent('__bridge_ready_ack', {
@@ -276,11 +315,17 @@ describe('bridge page handshake', () => {
 				events.push('ready-callback');
 			},
 			onReadyError: (error): void => {
-				events.push(`${error.kind}:${error.requestId.length > 0 ? 'request' : 'missing'}`);
+				events.push(
+					`${error.kind}:${error.requestId !== null && error.requestId.length > 0 ? 'request' : 'missing'}`,
+				);
 			},
 			readyAcknowledgementTimeoutMilliseconds: 25,
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 
 		vi.advanceTimersByTime(25);
@@ -308,7 +353,11 @@ describe('bridge page handshake', () => {
 			},
 			readyAcknowledgementTimeoutMilliseconds: 25,
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 
 		vi.advanceTimersByTime(25);
@@ -343,7 +392,11 @@ describe('bridge page handshake', () => {
 				events.push('ready-callback');
 			},
 		});
-		target.dispatchEvent(new CustomEvent('__bridge_handshake'));
+		target.dispatchEvent(
+			new CustomEvent('__bridge_handshake', {
+				detail: { pageConfiguration: pageConfigurationFixture },
+			}),
+		);
 		await Promise.resolve();
 		target.dispatchEvent(
 			new CustomEvent('__bridge_ready_ack', {
@@ -387,6 +440,58 @@ describe('bridge page handshake', () => {
 		]);
 		expect(bootstrapRequests[0]?.requestId).not.toBe(bootstrapRequests[1]?.requestId);
 		expect(deliveredWorkerInstanceIds).toEqual(['worker-1', 'worker-2']);
+	});
+
+	test('reports one correlated typed product bootstrap failure and ignores uncorrelated replies', () => {
+		// Arrange
+		const target = new EventTarget();
+		const bootstrapRequests: Array<{ readonly reason: string; readonly requestId: string }> = [];
+		target.addEventListener('__bridge_product_session_bootstrap_request', (event): void => {
+			bootstrapRequests.push(extractProductBootstrapRequest(event));
+		});
+		const failures: unknown[] = [];
+		const deliveredWorkerInstanceIds: string[] = [];
+		const session = installBridgePageHandshakeSession(target, {
+			onProductSessionBootstrap: ({ bootstrap }): void => {
+				deliveredWorkerInstanceIds.push(bootstrap.workerInstanceId);
+			},
+			onProductSessionBootstrapFailure: (failure): void => {
+				failures.push(failure);
+			},
+		});
+		const initialRequest = bootstrapRequests[0];
+		if (initialRequest === undefined) {
+			throw new Error('Expected initial bootstrap request.');
+		}
+		const dispatchFailure = (detail: object): void => {
+			target.dispatchEvent(new CustomEvent('__bridge_product_session_bootstrap', { detail }));
+		};
+
+		// Act
+		dispatchFailure({ failure: { reason: 'retirement_failed' }, requestId: 'uncorrelated' });
+		dispatchFailure({ failure: { reason: 'unknown_reason' }, requestId: initialRequest.requestId });
+		target.dispatchEvent(
+			new CustomEvent('__bridge_product_session_bootstrap', {
+				detail: makeProductBootstrapDetail(initialRequest.requestId, 'worker-initial'),
+			}),
+		);
+		session.requestProductSessionReplacement();
+		const replacementRequest = bootstrapRequests[1];
+		if (replacementRequest === undefined)
+			throw new Error('Expected replacement bootstrap request.');
+		dispatchFailure({
+			failure: { reason: 'retirement_failed' },
+			requestId: replacementRequest.requestId,
+		});
+		dispatchFailure({
+			failure: { reason: 'retirement_failed' },
+			requestId: replacementRequest.requestId,
+		});
+		session.uninstall();
+
+		// Assert: a malformed failure leaves its request pending for the real answer.
+		expect(failures).toEqual([{ reason: 'retirement_failed', requestReason: 'workerReplacement' }]);
+		expect(deliveredWorkerInstanceIds).toEqual(['worker-initial']);
 	});
 
 	test('copies an isolated-world product capability into the page realm', () => {
@@ -631,12 +736,22 @@ function makeProductBootstrapDetail(
 			kind: 'productSession.bootstrap',
 			paneSessionId: 'pane-session-1',
 			policy: {
+				...validProductSessionCorpus.bootstrap.policy,
+				admissionRetryCount: validProductSessionCorpus.bootstrap.policy.admissionRetryCount,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
 				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
+				telemetryPreReadyBufferMaxBytes:
+					validProductSessionCorpus.bootstrap.policy.telemetryPreReadyBufferMaxBytes,
+				telemetryPreReadyBufferMaxSamples:
+					validProductSessionCorpus.bootstrap.policy.telemetryPreReadyBufferMaxSamples,
+				workerSettlementDeadlineMilliseconds:
+					validProductSessionCorpus.bootstrap.policy.workerSettlementDeadlineMilliseconds,
 			},
 			wireVersion: BRIDGE_PRODUCT_WIRE_VERSION,
 			workerInstanceId,

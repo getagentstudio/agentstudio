@@ -38,6 +38,20 @@ for library in metadata["AvailableLibraries"]:
         library["LibraryPath"] = normalized
         if library.get("BinaryPath") == original:
             library["BinaryPath"] = normalized
+    # SwiftPM's Swift Build engine copies every binary target's headers into one
+    # shared Products/<config>/include/. GhosttyKit and agentstudio-git's
+    # CLibGit2Local both ship Headers/module.modulemap at the root, so the two
+    # module maps collide there. Nesting ours under Headers/GhosttyKit/ gives it a
+    # unique path; Clang still finds it as <search dir>/GhosttyKit/module.modulemap.
+    headers = directory / library.get("HeadersPath", "Headers")
+    nested = headers / "GhosttyKit"
+    if headers.is_symlink() or not headers.resolve(strict=True).is_relative_to(framework_root):
+        raise SystemExit("Headers directory escapes copied framework")
+    if not (nested / "module.modulemap").exists():
+        nested.mkdir()
+        for entry in sorted(headers.iterdir()):
+            if entry != nested:
+                entry.rename(nested / entry.name)
     # strip rewrites archive member dates; stable dates keep the copied
     # framework digest identical across fresh CI runners.
     subprocess.run(

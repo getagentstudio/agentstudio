@@ -26,6 +26,33 @@ import {
 import { buildBridgeWorkerPierreRenderJob } from './bridge-worker-pierre-render-job.js';
 
 describe('BridgeWorkerContracts', () => {
+	test('carries strict per-view recovery status and retry commands', () => {
+		const event = {
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+			direction: 'serverWorkerToMain',
+			kind: 'viewRecoveryStatus',
+			transferDescriptors: [],
+			view: { kind: 'review.annotations', subscriptionId: 'review-comments-1' },
+			status: 'failedRetryable',
+		} as const;
+		const retry = {
+			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
+			direction: 'mainToServerWorker',
+			kind: 'command',
+			command: 'viewRecoveryRetry',
+			requestId: 'view-recovery-retry-1',
+			epoch: 3,
+			transferDescriptors: [],
+			view: { kind: 'review.annotations', subscriptionId: 'review-comments-1' },
+		} as const;
+
+		expect(bridgeWorkerServerToMainMessageSchema.parse(event)).toEqual(event);
+		expect(
+			bridgeWorkerServerToMainMessageSchema.safeParse({ ...event, status: 'retrying' }).success,
+		).toBe(false);
+		expect(bridgeWorkerMainToServerMessageSchema.parse(retry)).toEqual(retry);
+	});
+
 	test('carries strict annotation commands, acceptance correlation, and complete snapshots per surface', () => {
 		const command = {
 			wireVersion: BRIDGE_WORKER_WIRE_VERSION,
@@ -82,6 +109,7 @@ describe('BridgeWorkerContracts', () => {
 			state: {
 				contentSessionIds: [],
 				kind: 'ready',
+				stageAttempt: 0,
 				snapshot: {
 					expectedMessageCount: 0,
 					expectedSessionCount: 0,
@@ -100,7 +128,7 @@ describe('BridgeWorkerContracts', () => {
 			direction: 'serverWorkerToMain',
 			kind: 'annotationProjectionConvergence',
 			operationCorrelationId: 'a'.repeat(64),
-			state: { kind: 'refreshing' },
+			state: { catalogAuthorityRetired: false, kind: 'refreshing' },
 			surface: command.surface,
 			transferDescriptors: [],
 		} as const;
@@ -445,7 +473,6 @@ describe('BridgeWorkerContracts', () => {
 					kind: 'productMetadataStream',
 					lastSubscriptionTermination: null,
 					routeFailureSubscriptionId: null,
-					acknowledgedFrameCount: 1,
 					activeSubscriptionCount: 1,
 					committedFrameCount: 1,
 					decoderState: 'poisoned',
@@ -454,7 +481,6 @@ describe('BridgeWorkerContracts', () => {
 					failureCode: 'stream_identity_mismatch',
 					identityMismatchField: 'metadataStreamId',
 					lastChunkByteCount: 128,
-					lastAcknowledgedStreamSequence: 0,
 					lastCommittedFrameKind: 'metadataStream.accepted',
 					lastRoutedFrameKind: 'metadataStream.accepted',
 					lifecycleState: 'failed',

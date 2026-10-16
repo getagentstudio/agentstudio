@@ -466,7 +466,7 @@ describe('Bridge Review production recovery Browser witnesses', () => {
 			<ReviewBoundaryActivationProbe readyPresentation={readyPresentation} />,
 		);
 		await expect
-			.element(rendered.getByTestId('bridge-review-projection-pending-shell'))
+			.element(rendered.getByTestId('bridge-review-metadata-loading-shell'))
 			.toBeVisible();
 
 		await act(async (): Promise<void> => {
@@ -482,7 +482,7 @@ describe('Bridge Review production recovery Browser witnesses', () => {
 
 		// Assert
 		await expect
-			.element(rendered.getByTestId('bridge-review-projection-pending-shell'))
+			.element(rendered.getByTestId('bridge-review-metadata-loading-shell'))
 			.toBeVisible();
 	});
 	test('keeps selection local-first and mark-viewed retries bounded across A to B to A', async () => {
@@ -845,7 +845,7 @@ function ReviewBoundaryActivationProbe(props: {
 	);
 	return (
 		<>
-			<button onClick={(): void => setPresentationState({ status: 'empty' })} type="button">
+			<button onClick={(): void => setPresentationState({ status: 'noTarget' })} type="button">
 				Show empty Review fallback
 			</button>
 			<button onClick={(): void => setPresentationState(props.readyPresentation)} type="button">

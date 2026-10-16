@@ -3,6 +3,7 @@ import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInboxNotification
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AgentStudioTerminal
 
 @MainActor
@@ -20,6 +21,9 @@ final class AtomRegistry {
     let inboxSidebarState: InboxSidebarState
     let paneInboxPresentationState: PaneInboxPresentationAtom
     let bridgePaneAttendance: BridgePaneAttendanceAtom
+    let sessionStatus: SessionStatusAtom
+    let sessionsPaneViewedMailbox: SessionsPaneViewedMailbox
+    var paneContextPresentation: PaneContextPresentationAtom { core.paneContextPresentation }
 
     init(
         core: CoreAtoms = .init(),
@@ -32,7 +36,9 @@ final class AtomRegistry {
         inboxSidebarMemory: InboxSidebarMemoryAtom = .init(),
         inboxSidebarRuntime: InboxSidebarRuntimeAtom = .init(),
         paneInboxPresentationState: PaneInboxPresentationAtom = .init(),
-        bridgePaneAttendance: BridgePaneAttendanceAtom = .init()
+        bridgePaneAttendance: BridgePaneAttendanceAtom = .init(),
+        sessionStatus: SessionStatusAtom = .init(),
+        sessionsPaneViewedMailbox: SessionsPaneViewedMailbox = .init()
     ) {
         self.core = core
         self.repoExplorerSidebarPrefs =
@@ -55,5 +61,7 @@ final class AtomRegistry {
         )
         self.paneInboxPresentationState = paneInboxPresentationState
         self.bridgePaneAttendance = bridgePaneAttendance
+        self.sessionStatus = sessionStatus
+        self.sessionsPaneViewedMailbox = sessionsPaneViewedMailbox
     }
 }

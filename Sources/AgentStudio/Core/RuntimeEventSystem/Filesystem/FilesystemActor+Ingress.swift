@@ -35,12 +35,14 @@ extension FilesystemActor {
         )
         var qualifyingRepositoryStableKeys: Set<String> = []
         var coverageLostRepositoryStableKeys: Set<String> = []
+        var ancestorCachesByWorktreeID: [UUID: FilesystemPathFilter.DirectoryIgnoreCache] = [:]
         for rawPath in paths {
             guard
                 let classification = await ingestRawPath(
                     rawPath,
                     sourceWorktreeID: worktreeId,
-                    activityContext: activityContext
+                    activityContext: activityContext,
+                    ancestorCachesByWorktreeID: &ancestorCachesByWorktreeID
                 )
             else { return }
             if let qualifyingRepositoryStableKey = classification.qualifyingRepositoryStableKey {
@@ -83,7 +85,8 @@ extension FilesystemActor {
     private func ingestRawPath(
         _ rawPath: String,
         sourceWorktreeID: UUID,
-        activityContext: RawPathActivityContext
+        activityContext: RawPathActivityContext,
+        ancestorCachesByWorktreeID: inout [UUID: FilesystemPathFilter.DirectoryIgnoreCache]
     ) async -> RawPathActivityClassification? {
         guard let ownedPath = rootOwnership.route(sourceWorktreeId: sourceWorktreeID, rawPath: rawPath)
         else {
@@ -121,7 +124,10 @@ extension FilesystemActor {
         }
 
         var pendingChanges = pendingChangesByWorktreeId[ownedPath.worktreeId] ?? PendingWorktreeChanges()
-        let pathDisposition = root.pathFilter.classify(relativePath: ownedPath.relativePath)
+        let pathDisposition = root.pathFilter.classify(
+            relativePath: ownedPath.relativePath,
+            ancestorCache: &ancestorCachesByWorktreeID[ownedPath.worktreeId, default: .init()]
+        )
         switch pathDisposition {
         case .projected:
             pendingChanges.projectedPaths.insert(ownedPath.relativePath)

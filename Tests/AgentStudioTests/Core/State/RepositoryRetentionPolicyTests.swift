@@ -81,7 +81,10 @@ struct RepositoryRetentionPolicyTests {
         let elapsed = try #require(RepositoryRetentionPolicy.elapsedSeconds(for: reanchored, at: jumped))
         #expect(elapsed == TimeInterval(25 * 86_400 + 1))
         #expect(!RepositoryRetentionPolicy.isDue(reanchored, at: jumped))
-        guard case .confirmed(let timing) = reanchored else { return }
+        guard case .confirmed(let timing) = reanchored else {
+            Issue.record("Reanchored absence did not remain confirmed")
+            return
+        }
         #expect(timing.firstAbsentAt == start.utc)
     }
 

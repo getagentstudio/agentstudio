@@ -36,7 +36,8 @@ struct WorktreeCreationCoordinatorTests {
                     GitCreateWorktreeRequest(
                         repositoryPath: fixture.repository.repoPath,
                         destinationPath: destination,
-                        mode: .newBranch(name: "feat/ledger", startPoint: .named("refs/remotes/origin/main"))
+                        mode: .newBranch(
+                            name: "feat/ledger", startPoint: .named("refs/remotes/origin/main"), upstream: nil)
                     )),
                 .release,
                 .refresh(fixture.watchedPath.id),
@@ -64,7 +65,7 @@ struct WorktreeCreationCoordinatorTests {
         #expect(
             await ledger.events.contains { event in
                 if case .create(let request) = event,
-                    case .newBranch(_, let startPoint) = request.mode
+                    case .newBranch(_, let startPoint, _) = request.mode
                 {
                     return startPoint == .named("refs/heads/main")
                 }
@@ -91,7 +92,8 @@ struct WorktreeCreationCoordinatorTests {
                     GitCreateWorktreeRequest(
                         repositoryPath: fixture.repository.repoPath,
                         destinationPath: destination,
-                        mode: .newBranch(name: "feat/new", startPoint: .named("refs/heads/feature/source"))
+                        mode: .newBranch(
+                            name: "feat/new", startPoint: .named("refs/heads/feature/source"), upstream: nil)
                     ))))
     }
 
@@ -174,7 +176,9 @@ struct WorktreeCreationCoordinatorTests {
                     GitForkWorktreeRequest(
                         sourceWorktreePath: fixture.worktree.path,
                         destinationPath: destination,
-                        mode: .newBranch(name: "fork/ledger")
+                        mode: .newBranch(name: "fork/ledger", start: .sourceHead, upstream: nil),
+                        materialization: .copyOnWrite,
+                        copyRules: GitWorktreeCopyRules(ignoredPaths: .copyAll)
                     )),
                 .release,
                 .refresh(fixture.watchedPath.id),
@@ -319,10 +323,13 @@ private struct FakeWorktreeCreationGitClient: WorktreeCreationGitClient {
     let createError: GitDataPlaneError?
     let forkError: GitWorktreeForkError?
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         await ledger.record(.create(request))
         if let createError { throw createError }
-        return Self.snapshot(destination: request.destinationPath, repositoryPath: request.repositoryPath)
+        return GitWorktreeCreation(
+            worktree: Self.snapshot(destination: request.destinationPath, repositoryPath: request.repositoryPath),
+            largeFiles: GitLargeFileFill(materializedCount: 0, missing: [], residuePaths: [], scan: .complete)
+        )
     }
 
     func forkWorktree(_ request: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult {
@@ -330,17 +337,20 @@ private struct FakeWorktreeCreationGitClient: WorktreeCreationGitClient {
         if let forkError { throw forkError }
         return GitForkWorktreeResult(
             worktree: Self.snapshot(destination: request.destinationPath, repositoryPath: request.sourceWorktreePath),
-            materialization: GitWorktreeMaterializationReport(
-                clonedRegularFileCount: 1,
-                createdDirectoryCount: 1,
-                recreatedSymbolicLinkCount: 0,
-                preservedHardLinkCount: 0,
-                preservedGitRepositoryCount: 0,
-                recreatedFIFOCount: 0,
-                logicalRegularFileBytes: 1,
-                skippedEntries: [],
-                normalizedEntries: []
-            )
+            materialization: .copyOnWrite(
+                GitWorktreeMaterializationReport(
+                    clonedRegularFileCount: 1,
+                    createdDirectoryCount: 1,
+                    recreatedSymbolicLinkCount: 0,
+                    preservedHardLinkCount: 0,
+                    preservedGitRepositoryCount: 0,
+                    recreatedFIFOCount: 0,
+                    logicalRegularFileBytes: 1,
+                    skippedEntries: [],
+                    normalizedEntries: [],
+                    ignoredIncludedPatterns: [], ignoredExcludedCount: 0, nestedWorktreesSkipped: [],
+                    sourceState: .asIs, submodulesNotAtStart: [], largeFiles: nil
+                ))
         )
     }
 

@@ -1,5 +1,6 @@
 import { vi } from 'vitest';
 
+import { BridgeTestFactRecorder } from '../../../tests/test-support/bridge-test-fact-recorder.ts';
 import type { BridgeTelemetrySample } from '../../foundation/telemetry/bridge-telemetry-event.js';
 import type { BridgeTelemetryRecorder } from '../../foundation/telemetry/bridge-telemetry-recorder.js';
 import {
@@ -42,6 +43,10 @@ export interface ReviewIdentity {
 }
 
 export interface Harness {
+	readonly expectNoCommandUntilAck: (
+		kind: BridgeWorkerMainToServerMessage['command'],
+		requestId: string,
+	) => Promise<void>;
 	readonly requestWorkerReplacement: () => void;
 	readonly commandKinds: readonly string[];
 	readonly courierJobs: Array<BridgeWorkerReviewPierreRenderJobEvent['job']>;
@@ -61,6 +66,9 @@ export interface Harness {
 	readonly nextCommand: (
 		kind: BridgeWorkerMainToServerMessage['command'],
 	) => Promise<BridgeWorkerMainToServerMessage>;
+	readonly waitForPendingCommand: (
+		kind: BridgeWorkerMainToServerMessage['command'],
+	) => Promise<BridgeWorkerMainToServerMessage>;
 	readonly pendingCommandCount: (kind: BridgeWorkerMainToServerMessage['command']) => number;
 	readonly receive: (message: BridgeWorkerServerToMainMessage) => void;
 	readonly startCandidate: (
@@ -74,11 +82,19 @@ export function createHarness(
 	options: {
 		readonly prepareActiveEditorsForInstallation?: () => Promise<boolean>;
 		readonly synchronousAdmissionStatus?: 'admitted' | 'rejected';
+		readonly renderFulfillmentCoordinator?: Parameters<
+			typeof createBridgeMainReviewPublicationIntegration
+		>[0]['renderFulfillmentCoordinator'];
 	} = {},
 ): Harness {
 	let commandEpoch = 100;
 	const lifecycleStore = createBridgeWorkerRpcLifecycleStore();
 	const commandQueue: BridgeWorkerMainToServerMessage[] = [];
+	const commandFacts = new BridgeTestFactRecorder<BridgeWorkerMainToServerMessage>();
+	const receiptHistory = new BridgeTestFactRecorder<
+		| { readonly kind: 'dispatch'; readonly command: BridgeWorkerMainToServerMessage }
+		| { readonly kind: 'ack'; readonly requestId: string }
+	>();
 	const commandWaiters = new Map<
 		BridgeWorkerMainToServerMessage['command'],
 		Array<(command: BridgeWorkerMainToServerMessage) => void>
@@ -91,6 +107,8 @@ export function createHarness(
 			const waiter = commandWaiters.get(command.command)?.shift();
 			if (waiter === undefined) commandQueue.push(command);
 			else waiter(command);
+			commandFacts.record(command);
+			receiptHistory.record({ kind: 'dispatch', command });
 			if (
 				command.command === 'reviewPublicationInstallAdmit' &&
 				options.synchronousAdmissionStatus !== undefined
@@ -140,11 +158,12 @@ export function createHarness(
 		prepareActiveEditorsForInstallation:
 			options.prepareActiveEditorsForInstallation ??
 			((): Promise<boolean> => Promise.resolve(true)),
-		renderFulfillmentCoordinator: {
+		renderFulfillmentCoordinator: options.renderFulfillmentCoordinator ?? {
 			acceptPublication: (): 'accepted' => 'accepted',
 			bindPublicationItem: vi.fn(),
 			isBoundFinalItem: (): boolean => false,
 			markPublicationQueued: vi.fn(),
+			holdPublication: vi.fn(),
 			rejectPublication: (publication): void => {
 				rejectedItemIds.push(publication.job.itemId);
 			},
@@ -174,6 +193,15 @@ export function createHarness(
 	};
 	return {
 		requestWorkerReplacement,
+		expectNoCommandUntilAck: (kind, requestId) =>
+			receiptHistory.expectNone(
+				(fact): boolean => fact.kind === 'dispatch' && fact.command.command === kind,
+				(fact): boolean => fact.kind === 'ack' && fact.requestId === requestId,
+				{
+					from: receiptHistory.mark(),
+					label: `${kind} absent through installed receipt ${requestId}`,
+				},
+			),
 		ack: (command): void => {
 			receive({
 				direction: 'serverWorkerToMain',
@@ -183,6 +211,7 @@ export function createHarness(
 				transferDescriptors: [],
 				wireVersion: 1,
 			});
+			receiptHistory.record({ kind: 'ack', requestId: command.requestId });
 		},
 		admit: (command, identity, status): void => {
 			receive(
@@ -196,6 +225,8 @@ export function createHarness(
 		commandKinds,
 		courierJobs,
 		dispose: (): void => {
+			commandFacts.close(new Error('Review publication harness disposed'));
+			receiptHistory.close(new Error('Review publication harness disposed'));
 			integration.dispose();
 			unsubscribe();
 			rpcClient.dispose();
@@ -227,6 +258,11 @@ export function createHarness(
 				commandWaiters.set(kind, waiters);
 			});
 		},
+		waitForPendingCommand: (kind) =>
+			commandFacts.waitFor(
+				(command): boolean => command.command === kind && commandQueue.includes(command),
+				`Review publication queued ${kind}`,
+			),
 		pendingCommandCount: (kind): number =>
 			commandQueue.filter((command) => command.command === kind).length,
 		receive,

@@ -1,6 +1,11 @@
 import { createRef, type ReactElement, type ReactNode } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, test } from 'vitest';
 
+import {
+	BridgeReviewRefreshHeaderGroup,
+	bridgeReviewRegionRefreshHeaderPresentation,
+} from '../../app/bridge-review-refresh-header-chrome.js';
 import { BridgeViewerContentHeader } from '../../app/bridge-viewer-content-header.js';
 import { BridgeViewerResizableRailLayout } from '../../app/bridge-viewer-resizable-rail-layout.js';
 import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
@@ -172,6 +177,7 @@ describe('review viewer shell', () => {
 				kind: 'contribution' as const,
 				resolvedTargetOID: 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm',
 				reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
+				reviewedSubjectBranchName: null,
 				symbolicTarget: {
 					basis: 'commonCommit' as const,
 					branchName: 'master',
@@ -213,47 +219,57 @@ describe('review viewer shell', () => {
 		expect(contentHeader?.props.title).not.toContain(' vs ');
 	});
 
-	test('passes Review updating chrome to the shared header only while Review is active', () => {
-		// Arrange
+	test.each([
+		{ name: 'active in-flight', isActive: true, surface: { kind: 'updating' }, label: 'Updating…' },
+		{
+			name: 'active held',
+			isActive: true,
+			surface: { kind: 'updating', rest: 'held' },
+			label: 'Update ready',
+		},
+		{ name: 'hidden', isActive: false, surface: { kind: 'updating', rest: 'hidden' }, label: null },
+		{ name: 'settled', isActive: true, surface: { kind: 'current' }, label: null },
+	] as const)('passes exactly one parent-owned W6 indicator for $name', (scenario): void => {
 		const reviewPackage = makeBridgeReviewPackage();
-		const commonProps = {
+		const controls = (
+			<BridgeReviewRefreshHeaderGroup
+				onApplyNow={(): void => {}}
+				onRetry={(): void => {}}
+				presentation={bridgeReviewRegionRefreshHeaderPresentation({
+					isActive: scenario.isActive,
+					surface: scenario.surface,
+				})}
+			/>
+		);
+		const element = renderReviewViewerShellForTest({
 			onSelectItem: (): void => {},
 			projection: projectionForPackage(reviewPackage),
 			reviewPackage,
 			selectedContentText: null,
 			selectedItemId: 'item-source',
-		} as const;
-
-		// Act
-		const activeHeader = findElementByComponent(
-			renderReviewViewerShellForTest({
-				...commonProps,
-				isActive: true,
-				panelChromeSlice: { isLoading: true, message: 'Updating review…' },
-			}),
-			BridgeViewerContentHeader,
-		);
-		const inactiveHeader = findElementByComponent(
-			renderReviewViewerShellForTest({
-				...commonProps,
-				isActive: false,
-				panelChromeSlice: { isLoading: true, message: 'Updating files…' },
-			}),
-			BridgeViewerContentHeader,
-		);
-		const settledHeader = findElementByComponent(
-			renderReviewViewerShellForTest({
-				...commonProps,
-				isActive: true,
-				panelChromeSlice: { isLoading: false, message: null },
-			}),
-			BridgeViewerContentHeader,
-		);
-
-		// Assert
-		expect(activeHeader?.props.statusText).toBe('Updating review…');
-		expect(inactiveHeader?.props.statusText).toBeNull();
-		expect(settledHeader?.props.statusText).toBeNull();
+			isActive: scenario.isActive,
+			regionSurfaceStatus: scenario.surface,
+			viewerHeaderControls: controls,
+			panelChromeSlice: { isLoading: true, message: 'Updating files…' },
+		});
+		const header = findElementByComponent(element, BridgeViewerContentHeader);
+		expect(header).not.toBeNull();
+		expect(header?.props.controls).toBe(controls);
+		expect(controls.type).toBe(BridgeReviewRefreshHeaderGroup);
+		expect(header?.props.statusText).toBeNull();
+		expect(findElementByTestId(element, 'bridge-review-refresh-status-row')).toBeNull();
+		const markup = renderToStaticMarkup(header?.props.controls);
+		expect(markup.match(/role="status"/gu) ?? []).toHaveLength(scenario.label === null ? 0 : 1);
+		if (scenario.label !== null) expect(markup).toContain(`aria-label="${scenario.label}"`);
+		if (
+			scenario.surface.kind === 'updating' &&
+			'rest' in scenario.surface &&
+			scenario.surface.rest === 'held'
+		) {
+			expect(markup.match(/>Apply now</gu) ?? []).toHaveLength(1);
+		}
+		expect(markup).not.toContain('lucide-loader-circle');
+		expect(markup).not.toContain('Updating files…');
 	});
 
 	test('keeps parent-owned projection controls out of rail chrome', () => {
@@ -727,6 +743,7 @@ interface TestElementProps {
 	readonly children?: ReactNode;
 	readonly className?: string;
 	readonly content?: ReactNode;
+	readonly controls?: ReactNode;
 	readonly contentTestId?: string;
 	readonly 'data-bridge-shared-rail-toolbar'?: string;
 	readonly 'data-bridge-segmented-control'?: string;

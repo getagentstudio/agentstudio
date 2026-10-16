@@ -298,6 +298,15 @@ export function createBridgeWorkerReviewContentReadyPublication(
 						workerDerivationEpoch: props.workerDerivationEpoch,
 					});
 					if (!publication.shouldPublish) {
+						if (
+							publication.status === 'duplicate' &&
+							props.store.getState().availabilityByItemId.get(props.itemId) !== 'ready'
+						) {
+							publishReviewContentReadyForExistingPublication({
+								...props,
+								contentCacheKey: job.contentCacheKey,
+							});
+						}
 						return completeBridgeWorkerReviewContentReadyPublication();
 					}
 					commitPreparedBridgeWorkerReviewContentReady({
@@ -324,6 +333,28 @@ export function createBridgeWorkerReviewContentReadyPublication(
 			}
 		},
 	};
+}
+
+function publishReviewContentReadyForExistingPublication(
+	props: DispatchBridgeWorkerReviewContentReadyProps & { readonly contentCacheKey: string },
+): void {
+	props.store.actions.applyContentReady({
+		contentCacheKey: props.contentCacheKey,
+		itemId: props.itemId,
+	});
+	const slicePatch = props.store.actions.takePendingSlicePatchEvent({
+		epoch: props.workerDerivationEpoch,
+		sequence: props.sequence,
+	});
+	postPreparedBridgeCommWorkerMessage(
+		props.port,
+		prepareBridgeWorkerReviewRenderPatchEvent({
+			patches: bridgeWorkerReviewRenderPatchesFromSlicePatchEvent(slicePatch),
+			publicationSequence: props.sequence,
+			reviewPublicationIdentity: props.reviewPublicationIdentity,
+			workerDerivationEpoch: props.workerDerivationEpoch,
+		}),
+	);
 }
 
 type BridgeWorkerReviewContentReadyPublicationStage =

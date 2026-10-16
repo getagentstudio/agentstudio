@@ -1,6 +1,6 @@
 import { CodeView, type CodeViewOptions } from '@pierre/diffs';
 import { act } from 'react';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { cleanup } from 'vitest-browser-react';
 import { page, userEvent } from 'vitest/browser';
 
@@ -138,9 +138,8 @@ async function runBridgeReviewAnnotationSaveRetentionWitness(props: {
 		await harness.renderResult.getByRole('button', { name: 'Save annotation' }).click();
 		await nextAnimationFrame();
 	});
-	await expect
-		.poll(() => annotationWitness.pendingCommandCount('draft.flush'), { timeout: 5_000 })
-		.toBe(1);
+	await annotationWitness.waitForPendingCommand('draft.flush');
+	expect(annotationWitness.pendingCommandCount('draft.flush')).toBe(1);
 	await act(async (): Promise<void> => {
 		annotationWitness.settleNextCommitted('draft.flush');
 		await nextAnimationFrame();
@@ -316,3 +315,23 @@ async function nextAnimationFrame(): Promise<void> {
 		requestAnimationFrame((): void => resolve());
 	});
 }
+
+test('rejects a withheld Review flush fact even when the pending count claims one command', async () => {
+	const harness = await renderBridgeReviewRecoveryWitness(
+		makeBridgeReviewRecoveryWitnessFiles({
+			count: 1,
+			lineCount: 8,
+			markerPrefix: 'WITHHELD_FLUSH',
+		}),
+	);
+	const witness = createBridgeReviewAnnotationRetentionWitness(harness);
+	vi.spyOn(witness, 'pendingCommandCount').mockReturnValue(1);
+	const waiting = witness.waitForPendingCommand('draft.flush');
+	disposeBridgeReviewRecoveryWitnessHarnesses();
+	await expect(waiting).rejects.toThrow(
+		'Awaiting Review annotation pending draft.flush: Review recovery witness disposed',
+	);
+	await act(async (): Promise<void> => {
+		await harness.renderResult.unmount();
+	});
+});

@@ -17,9 +17,10 @@ import {
 
 export async function resetWorktreeFileTreeForPerformanceSamples(props: {
 	readonly page: Page;
+	readonly resetFilterLabel: string;
 	readonly totalMetadataTreeRowCount: number;
 }): Promise<void> {
-	await selectWorktreeFileFilter(props.page, 'All files');
+	await selectWorktreeFileFilter(props.page, props.resetFilterLabel);
 	if (await worktreeFileControlPressed(props.page, 'worktree-file-regex-toggle')) {
 		await clickWorktreeFileControl(props.page, 'worktree-file-regex-toggle');
 	}

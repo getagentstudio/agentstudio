@@ -15,6 +15,25 @@ import {
 import type { WorktreeAnnotationThreadProjection } from './worktree-annotation-surface-client.js';
 
 describe('worktree annotation Share preview', () => {
+	test('first Comments read uses the common card skeleton rather than loading copy', async () => {
+		await render(
+			<WorktreeAnnotationSharePreview
+				scope="all"
+				inlineThreads={[]}
+				otherThreads={[]}
+				readiness="unknown"
+			/>,
+		);
+		expect(
+			document
+				.querySelector('[data-bridge-region="comments"]')
+				?.getAttribute('data-presentation-state'),
+		).toBe('loading');
+		expect(
+			document.querySelector('[data-skeleton-shape="comments"] [data-slot="skeleton"]'),
+		).not.toBeNull();
+		expect(document.body.textContent).not.toContain('Loading comments');
+	});
 	test('renders every supplied saved message with literal body, context, author, and no interactions', async () => {
 		const markdownLookingBody =
 			'# Not a heading\n[not a link](https://example.com)\n' + 'x'.repeat(600);
@@ -330,8 +349,8 @@ describe('worktree annotation Share preview', () => {
 
 	test.each([
 		['current', 'No annotations yet.'],
-		['unknown', 'Loading comments…'],
-		['unconfirmed', 'Comments are still being confirmed.'],
+		['unknown', ''],
+		['unconfirmed', ''],
 	] satisfies readonly (readonly [WorktreeAnnotationSharePreviewReadiness, string])[])(
 		'renders the %s empty/readiness state without interactive descendants',
 		async (readiness, expectedText) => {
@@ -343,7 +362,14 @@ describe('worktree annotation Share preview', () => {
 					readiness={readiness}
 				/>,
 			);
-			const state = rendered.getByText(expectedText).element();
+			const state = document.querySelector('[data-bridge-region="comments"]');
+			if (state === null) throw new Error('Expected Comments region');
+			if (readiness === 'current')
+				await expect.element(rendered.getByText(expectedText)).toBeVisible();
+			else {
+				expect(state.getAttribute('data-presentation-state')).toBe('loading');
+				expect(state.querySelector('[data-slot="skeleton"]')).not.toBeNull();
+			}
 			expect(state.querySelector('a, button, input, textarea, [role="checkbox"]')).toBeNull();
 		},
 	);

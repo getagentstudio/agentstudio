@@ -138,7 +138,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
         var coldStartPlan: TerminalColdRestorePlan?
         if case .cold(let plan) = admission.restoreKind {
             let generation = allocateRestoreGeneration()
-            let acknowledgment = await Ghostty.ActionRouter.armRestorePhase(
+            let acknowledgment = await terminalActivityRouter?.armRestorePhase(
                 paneID: pane.id,
                 restoreGeneration: generation
             )
@@ -155,7 +155,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             // (and the attach command that could exit fast) exists, so a
             // `showChildExited` racing registration is never missed.
             let observer = ColdStartObserver()
-            Ghostty.ActionRouter.registerColdStartAttachExitObserver(paneID: pane.id, observer: observer)
+            coldStartAttachExitBinding.register(paneID: pane.id, observer: observer)
             coldStartObserver = observer
             coldStartPlan = plan
         }
@@ -178,7 +178,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             return .ready(surfaceID: mountedContent.surfaceID)
         case .failed(.surfaceAttachmentFailed):
             if coldStartObserver != nil {
-                Ghostty.ActionRouter.unregisterColdStartAttachExitObserver(paneID: pane.id)
+                coldStartAttachExitBinding.unregister(paneID: pane.id)
             }
             return .failed(
                 failure: .surfaceAttachmentFailed(code: "prepared_surface_attachment_failed"),
@@ -186,7 +186,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             )
         case .failed:
             if coldStartObserver != nil {
-                Ghostty.ActionRouter.unregisterColdStartAttachExitObserver(paneID: pane.id)
+                coldStartAttachExitBinding.unregister(paneID: pane.id)
             }
             return .failed(
                 failure: .surfaceCreationFailed(code: "prepared_mount_failed"),
@@ -230,7 +230,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             } else {
                 outcome = .unobservable(.identityUnverifiable)
             }
-            Ghostty.ActionRouter.unregisterColdStartAttachExitObserver(paneID: paneID)
+            coldStartAttachExitBinding.unregister(paneID: paneID)
             self.coldStartObservationTasksByPaneID.removeValue(forKey: paneID)
             self.handleColdStartOutcome(outcome, paneID: paneID)
         }
@@ -420,5 +420,22 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
         // `AGENTSTUDIO_RESTORE_TRACE`, not OTLP.
         RestoreTrace.log("postAttachRecreationCheck result=\(outcome)")
         return outcome
+    }
+}
+
+extension WorkspaceSurfaceCoordinator {
+    /// The shared tail of every fresh terminal mount: repair routing, then the surface, then its runtime.
+    func connectMountedTerminalView(
+        _ view: TerminalPaneMountView,
+        displaying surface: Ghostty.SurfaceView,
+        preparedRuntime: (runtime: TerminalRuntime, wasCreated: Bool)?
+    ) {
+        view.onRepairRequested = { [weak self] paneId in
+            self?.submitWorkspaceAction(.repair(.recreateSurface(paneId: paneId)))
+        }
+        view.displaySurface(surface)
+        if let runtime = preparedRuntime?.runtime {
+            view.bind(runtime: runtime)
+        }
     }
 }

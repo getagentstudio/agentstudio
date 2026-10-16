@@ -106,9 +106,14 @@ describe('Bridge viewer activation telemetry', () => {
 
 		recordBridgeCommWorkerSessionTelemetrySample({
 			snapshot: {
+				failureReason: null,
 				latestFileModeDispatchDisposition: 'posted',
 				latestFileSelectDispatchDisposition: 'queued_not_ready',
 				latestReviewSelectDispatchDisposition: null,
+				lastReplacementReason: {
+					kind: 'runtimeRecovery',
+					source: 'reviewInstalledReceiptFailed',
+				},
 				nativeBootstrapInstallCount: 1,
 				queuedCommandCount: 2,
 				replacementRequestCount: 1,
@@ -124,6 +129,8 @@ describe('Bridge viewer activation telemetry', () => {
 					'agentstudio.bridge.phase': 'comm_worker_session_snapshot',
 					'agentstudio.bridge.worker.file_select_dispatch': 'queued_not_ready',
 					'agentstudio.bridge.worker.session_state': 'replacement_requested',
+					'agentstudio.bridge.worker.replacement_reason': 'runtime_recovery',
+					'agentstudio.bridge.worker.replacement_source': 'review_installed_receipt_failed',
 				}),
 				numericAttributes: {
 					'agentstudio.bridge.worker.native_bootstrap_install.count': 1,

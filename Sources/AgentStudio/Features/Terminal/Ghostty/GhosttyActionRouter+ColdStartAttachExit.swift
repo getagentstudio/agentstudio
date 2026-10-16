@@ -1,18 +1,8 @@
 import AgentStudioCore
 import Foundation
 
-/// `package` (not `private`), matching `GhosttyTerminalActivityInputBinding`'s
-/// own reasoning: a dedicated test suite constructs a fresh instance to
-/// prove the routing mechanic in isolation, without touching the shared
-/// global singleton below.
-///
-/// SR5; Program Design item 3, "the surface's command exits before
-/// handoff, including while discovering": Ghostty's `showChildExited`
-/// action is the one event-driven fact present whether the attach client
-/// dies during discovery or after (`GhosttyActionRouter+StartupTracing
-/// .swift`'s `scheduleChildExitedStartupTrace` already resolves the pane
-/// for its own trace call; this binding is fed through that same
-/// resolution, not a second lookup).
+/// Instance-owned attach-exit observers. App composes the native callback with the
+/// coordinator's startup windows and post-attach checks before creating surfaces.
 @MainActor
 package final class ColdStartAttachExitBinding {
     private var observersByPaneID: [UUID: ColdStartObserver] = [:]
@@ -55,34 +45,5 @@ package final class ColdStartAttachExitBinding {
     package func cancelPendingColdStart(paneID: UUID) {
         guard let observer = observersByPaneID[paneID] else { return }
         Task { await observer.cancel() }
-    }
-}
-
-@MainActor private let coldStartAttachExitBinding = ColdStartAttachExitBinding()
-
-extension Ghostty.ActionRouter {
-    @MainActor
-    package static func bindAttachClientExitedHandler(_ handler: (@MainActor (UUID) -> Void)?) {
-        coldStartAttachExitBinding.bindAttachClientExitedHandler(handler)
-    }
-
-    @MainActor
-    package static func registerColdStartAttachExitObserver(paneID: UUID, observer: ColdStartObserver) {
-        coldStartAttachExitBinding.register(paneID: paneID, observer: observer)
-    }
-
-    @MainActor
-    package static func unregisterColdStartAttachExitObserver(paneID: UUID) {
-        coldStartAttachExitBinding.unregister(paneID: paneID)
-    }
-
-    @MainActor
-    static func reportColdStartAttachClientExited(paneID: UUID) {
-        coldStartAttachExitBinding.reportAttachClientExited(paneID: paneID)
-    }
-
-    @MainActor
-    package static func cancelPendingColdStart(paneID: UUID) {
-        coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
     }
 }

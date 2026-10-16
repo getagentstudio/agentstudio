@@ -1,6 +1,7 @@
 import AgentStudioBridge
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioSessions
 import AgentStudioTerminal
 import AppKit
 import Foundation
@@ -69,7 +70,12 @@ final class WorkspaceSurfaceCoordinator {
     }
 
     let store: WorkspaceStore
+    var terminalActivityRouter: TerminalActivityRouter?
+    let coldStartAttachExitBinding = ColdStartAttachExitBinding()
     var paneActivityClock: PaneActivityClock?
+    var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
+    var sessionsIngestion: SessionsIngestion?
+    weak var paneContextService: PaneContextService?
     let undoClock: @Sendable () async throws -> WorkspaceUndoJournalTime
     let undoDelay: AsyncDelay
     let undoDeadlineWakeups = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))
@@ -81,6 +87,9 @@ final class WorkspaceSurfaceCoordinator {
     let viewRegistry: ViewRegistry
     let runtime: SessionRuntime
     let surfaceManager: WorkspaceSurfaceManaging
+    let terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching
+    let terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations
+    let bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)?
     let startupTraceRecorder: AgentStudioStartupTraceRecorder?
     let runtimeRegistry: RuntimeRegistry
     let visibilityTierResolver: StoreVisibilityTierResolver
@@ -252,39 +261,14 @@ final class WorkspaceSurfaceCoordinator {
         undoCloses.map { $0.snapshot.restoreEntry }
     }
 
-    convenience init(
-        store: WorkspaceStore,
-        viewRegistry: ViewRegistry,
-        runtime: SessionRuntime,
-        windowLifecycleStore: WindowLifecycleAtom,
-        appLifecycleStore: AppLifecycleAtom = AppLifecycleAtom(),
-        ipcLifecycle: WorkspaceSurfaceIPCLifecycle,
-        bridgePaneAttendance: BridgePaneAttendanceAtom,
-        worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
-        worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil
-    ) {
-        self.init(
-            store: store,
-            viewRegistry: viewRegistry,
-            runtime: runtime,
-            surfaceManager: SurfaceManager.shared,
-            runtimeRegistry: .shared,
-            paneEventBus: PaneRuntimeEventBus.shared,
-            runtimeCommandClock: ContinuousClock(),
-            windowLifecycleStore: windowLifecycleStore,
-            appLifecycleStore: appLifecycleStore,
-            ipcLifecycle: ipcLifecycle,
-            bridgePaneAttendance: bridgePaneAttendance,
-            worktreeAnnotationStore: worktreeAnnotationStore,
-            worktreeAnnotationOutputCoordinator: worktreeAnnotationOutputCoordinator
-        )
-    }
-
     init(
         store: WorkspaceStore,
         viewRegistry: ViewRegistry,
         runtime: SessionRuntime,
         surfaceManager: WorkspaceSurfaceManaging,
+        terminalSurfaceCommandDispatcher: any TerminalSurfaceCommandDispatching,
+        terminalSurfaceOperations: TerminalPaneMountView.SurfaceOperations,
+        bridgePageCommandRunner: (@MainActor @Sendable (BridgePageCommand, UUID) -> Void)? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
         runtimeRegistry: RuntimeRegistry,
         paneEventBus: EventBus<RuntimeEnvelope> = PaneRuntimeEventBus.shared,
@@ -348,6 +332,9 @@ final class WorkspaceSurfaceCoordinator {
         self.runtime = runtime
         self.ipcLifecycle = ipcLifecycle
         self.surfaceManager = surfaceManager
+        self.terminalSurfaceCommandDispatcher = terminalSurfaceCommandDispatcher
+        self.terminalSurfaceOperations = terminalSurfaceOperations
+        self.bridgePageCommandRunner = bridgePageCommandRunner
         self.startupTraceRecorder = startupTraceRecorder
         self.runtimeRegistry = runtimeRegistry
         self.visibilityTierResolver = visibilityTierResolver
@@ -373,7 +360,6 @@ final class WorkspaceSurfaceCoordinator {
         store.paneAtom.setAssociationOutcomeRecorder { [weak performanceTraceRecorder] outcome in
             performanceTraceRecorder?.recordPaneAssociationOutcome(outcome)
         }
-        Ghostty.App.setRuntimeRegistry(runtimeRegistry)
         setupPrePersistHook()
         setupFilesystemSourceSync()
         startPaneEventIngress()
@@ -392,7 +378,7 @@ final class WorkspaceSurfaceCoordinator {
         }
         runtimeEventBridgeTasks.removeAll()
         for paneID in coldStartObservationTasksByPaneID.keys {
-            Ghostty.ActionRouter.cancelPendingColdStart(paneID: paneID)
+            coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
         }
         for task in coldStartObservationTasksByPaneID.values {
             task.cancel()
@@ -471,7 +457,7 @@ final class WorkspaceSurfaceCoordinator {
         }
         runtimeEventBridgeTasks.removeAll()
         for paneID in activeColdStartObservationPaneIDs {
-            Ghostty.ActionRouter.cancelPendingColdStart(paneID: paneID)
+            coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
         }
         for task in activeColdStartObservationTasks {
             task.cancel()
@@ -575,30 +561,21 @@ final class WorkspaceSurfaceCoordinator {
     /// .markUnseenActivityObserved`'s existing fire-and-forget pattern for
     /// posting a terminal-activity fact from a synchronous call site.
     func retirePanesPermanently(_ paneIDs: Set<UUID>) {
-        paneActivityClock?.retire(Array(paneIDs))
         for paneID in paneIDs {
-            Task { @MainActor in
-                await Ghostty.ActionRouter.retirePanePermanently(paneID: paneID)
+            Task { @MainActor [terminalActivityRouter] in
+                await terminalActivityRouter?.retirePanePermanently(paneID: paneID)
             }
-            // Program Design item 4: ends the pending cold-start window and
-            // removes its kqueue registrations; a no-op with no observer.
-            Ghostty.ActionRouter.cancelPendingColdStart(paneID: paneID)
-            coldStartObservationTasksByPaneID[paneID]?.cancel()
-            // SR2a: a still-running post-attach recreation check is no
-            // longer meaningful once the pane retires.
+            coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
             postAttachRecreationCheckTasksByPaneID[paneID]?.cancel()
-            // A6: a pane still waiting for its first output when it retires
-            // never gets one -- record the honest reason instead of leaving
-            // it pending forever (no task to cancel here: nothing has
-            // started yet, only a registration).
             if pendingPostAttachRecreationChecksByPaneID.removeValue(forKey: paneID) != nil {
                 postAttachRecreationCheckFactSink?(paneID, .uncheckable(.paneUnavailableBeforeFirstRender))
             }
-            // R2-2: a pane retiring permanently with no surface left to
-            // reinstall its preserved generation onto never gets one --
-            // there is no later repair to wait for.
             pendingRestorePhaseLatchesByPaneID.removeValue(forKey: paneID)
         }
+        let retiredPaneIDs = Array(paneIDs)
+        paneActivityClock?.retire(retiredPaneIDs)
+        sessionsPaneViewedMailbox?.retire(retiredPaneIDs)
+        paneContextService?.retire(retiredPaneIDs.map { PaneId(existingUUID: $0) })
     }
 
     private func updatePaneCWDAndResolvedContext(paneId: UUID, cwd: URL?) {
@@ -788,7 +765,7 @@ final class WorkspaceSurfaceCoordinator {
             let sourcePaneId = paneEnvelope.paneId
             switch paneEnvelope.event {
             case .terminal(let event):
-                handleTerminalRuntimeEvent(event, sourcePaneId: sourcePaneId)
+                await handleTerminalRuntimeEvent(event, sourcePaneId: sourcePaneId, reportedAt: paneEnvelope.timestamp)
             case .error(let errorEvent):
                 Self.logger.warning(
                     "Runtime error event received from pane \(sourcePaneId.uuid.uuidString, privacy: .public): \(String(describing: errorEvent), privacy: .public)"
@@ -822,13 +799,25 @@ final class WorkspaceSurfaceCoordinator {
         )
     }
 
-    private func handleTerminalRuntimeEvent(_ event: GhosttyEvent, sourcePaneId: PaneId) {
+    private func handleTerminalRuntimeEvent(
+        _ event: GhosttyEvent, sourcePaneId: PaneId, reportedAt: ContinuousClock.Instant
+    ) async {
         let sourcePaneUUID = sourcePaneId.uuid
         switch event {
         case .newTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits, .toggleSplitZoom,
             .closeTab, .gotoTab, .moveTab:
             Self.logger.debug(
                 "Ghostty structural runtime event dropped by coordinator for pane \(sourcePaneUUID.uuidString, privacy: .public) event=\(String(describing: event), privacy: .public)"
+            )
+            return
+        case .commandFinished(let exitCode, _):
+            do {
+                _ = try await sessionsIngestion?.submitCommandFinished(paneId: sourcePaneUUID, reportedAt: reportedAt)
+            } catch {
+                Self.logger.warning("Sessions command-finished admission failed")
+            }
+            Self.logger.debug(
+                "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
             )
             return
         default:
@@ -844,8 +833,8 @@ final class WorkspaceSurfaceCoordinator {
 
         switch event {
         case .newTab, .newSplit, .gotoSplit, .resizeSplit, .equalizeSplits, .toggleSplitZoom,
-            .closeTab, .gotoTab, .moveTab:
-            // Structural events return through the explicit drop above.
+            .closeTab, .gotoTab, .moveTab, .commandFinished:
+            // Structural events and command exits were handled above.
             return
         case .titleChanged(let title):
             store.paneAtom.updatePaneTitle(sourcePaneUUID, title: title)
@@ -856,10 +845,6 @@ final class WorkspaceSurfaceCoordinator {
             // normalize here so both runtime and surface facts converge in the
             // shared pane identity update path below.
             updatePaneCWDAndResolvedContext(paneId: sourcePaneUUID, cwd: CWDNormalizer.normalize(cwdPath))
-        case .commandFinished(let exitCode, _):
-            Self.logger.debug(
-                "Terminal commandFinished event received for pane \(sourcePaneUUID.uuidString, privacy: .public) exitCode=\(exitCode, privacy: .public)"
-            )
         case .bellRang:
             AppEventBus.post(.worktreeBellRang(paneId: sourcePaneUUID))
             Self.logger.debug(
@@ -878,3 +863,65 @@ final class WorkspaceSurfaceCoordinator {
         }
     }
 }
+
+extension WorkspaceSurfaceCoordinator: TopologyEffectHandler {
+    func topologyDidChange(_ delta: WorktreeTopologyDelta) {
+        applyTopologyRemovals(from: [delta])
+        applyTopologyAdoptions(from: [delta])
+        syncFilesystemRootsAndActivity()
+    }
+
+    func topologyDidChange(_ deltas: [WorktreeTopologyDelta]) {
+        applyTopologyRemovals(from: deltas)
+        applyTopologyAdoptions(from: deltas)
+        syncFilesystemRootsAndActivity()
+    }
+
+    private func applyTopologyRemovals(from deltas: [WorktreeTopologyDelta]) {
+        var removedWorktreeIDs = Set<UUID>()
+        for delta in deltas {
+            for entry in delta.removedWorktrees {
+                removedWorktreeIDs.insert(entry.id)
+                for _ in store.mutationCoordinator.clearPaneAssociations(forRemovedWorktreeID: entry.id) {
+                    performanceTraceRecorder?.recordPaneAssociationOutcome(.topologyRemoved)
+                }
+            }
+        }
+        guard !removedWorktreeIDs.isEmpty else { return }
+        // Scoped topology may already have cleared the source pane's optional facets.
+        // The retained companion still carries the checkout whose authority must retire.
+        for (sourcePaneID, companion) in store.panePresentationAtom.zoomCompanionsBySourcePaneId
+        where removedWorktreeIDs.contains(companion.resolvedWorktreeId) {
+            _ = reconcileZoomCompanion(sourcePaneId: sourcePaneID, owningTabId: companion.owningTabId)
+        }
+    }
+
+    private func applyTopologyAdoptions(from deltas: [WorktreeTopologyDelta]) {
+        let affectedWorktreeIDs = Set(
+            deltas.flatMap { $0.addedWorktreeIds + $0.preservedWorktreeIds }
+        )
+        let adoptedPaneIDs = store.mutationCoordinator.reconcilePaneAssociationsForCurrentTopology(
+            affectedWorktreeIDs: affectedWorktreeIDs
+        )
+        for _ in adoptedPaneIDs {
+            performanceTraceRecorder?.recordPaneAssociationOutcome(.resolvedChanged)
+        }
+    }
+
+    // MARK: - Tab Name Derivation
+
+    /// Seed a stable tab name once at creation time from the pane's context.
+    /// Worktree-backed panes get "folder · branch", others get the pane title.
+    /// We intentionally do not auto-rename tabs later when enrichment changes.
+    func tabNameForPane(_ pane: Pane) -> String {
+        atom(\.tabDisplay).title(
+            for: pane,
+            workspaceRepositoryTopology: store.repositoryTopologyAtom,
+            repoCache: atom(\.repoCache)
+        )
+    }
+}
+
+// Declared here, not in +RuntimeDispatch.swift: the protocol refines Sendable,
+// and Swift 6.4 requires an implied Sendable conformance in the class's own file.
+extension WorkspaceSurfaceCoordinator: PaneRuntimeCommandDispatching {}

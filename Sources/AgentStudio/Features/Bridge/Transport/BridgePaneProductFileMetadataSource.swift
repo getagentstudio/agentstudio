@@ -11,21 +11,29 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         var descriptorByPath: [String: BridgeProductFileDescriptorReadyPayload]
         var descriptorInterestRevisionByPath: [String: Int]
         var inFlightDescriptorInterestRevisionByPath: [String: Int]
-        var subscription: BridgeProductSubscriptionSnapshot
+        let subscription: BridgeProductSubscriptionSnapshot
+        var viewDemand: BridgePaneProductFileViewDemand?
+        var canonicalPathScope: [String]
+        var demandGeneration: Int
+        var initialEnumerationInFlight = true
+        var deferredChangedPaths: Set<String> = []
+        var deferredStatusResult: GitWorkingTreeStatusResult?
     }
 
     struct DescriptorReconciliationRequest: Sendable {
-        let emit: BridgePaneProductFileMetadataEventSink
+        let emit: BridgePaneProductFileSourceFactSink
         let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
         let productAdmission: BridgeProductAdmissionContext
         let productSource: BridgeProductFileSourceIdentity
         let rows: [BridgeWorktreeTreeRowMetadata]
-        let subscription: BridgeProductSubscriptionSnapshot
+        let subscriptionId: String
+        let demand: BridgePaneProductFileViewDemand
+        let demandGeneration: Int
     }
 
-    private struct InstalledContextBootstrapRequest: Sendable {
+    struct InstalledContextBootstrapRequest: Sendable {
         let context: SubscriptionContext
-        let emit: BridgePaneProductFileMetadataEventSink
+        let emit: BridgePaneProductFileSourceFactSink
         let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
         let pathScope: [String]
         let productAdmission: BridgeProductAdmissionContext
@@ -34,8 +42,8 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         let subscription: BridgeProductSubscriptionSnapshot
     }
 
-    fileprivate struct InitialTreeEnumerationRequest: Sendable {
-        let emit: BridgePaneProductFileMetadataEventSink
+    struct InitialTreeEnumerationRequest: Sendable {
+        let emit: BridgePaneProductFileSourceFactSink
         let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
         let manifestIndex: BridgeWorktreeFileManifestIndex
         let openedSource: BridgeWorktreeFileOpenedSource
@@ -45,23 +53,27 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         let subscription: BridgeProductSubscriptionSnapshot
     }
 
-    private struct RefreshedTreeDeltaRequest: Sendable {
+    struct RefreshedTreeDeltaRequest: Sendable {
         let demandedPaths: [String: BridgeProductDemandLane]
-        let emit: BridgePaneProductFileMetadataEventSink
+        let emit: BridgePaneProductFileSourceFactSink
         let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
         let productAdmission: BridgeProductAdmissionContext
         let productSource: BridgeProductFileSourceIdentity
         let rows: [BridgeWorktreeTreeRowMetadata]
-        let subscription: BridgeProductSubscriptionSnapshot
+        let subscriptionId: String
+        let demand: BridgePaneProductFileViewDemand
+        let demandGeneration: Int
     }
 
-    private struct DescriptorUnavailablePathInvalidationRequest: Sendable {
-        let emit: BridgePaneProductFileMetadataEventSink
+    struct DescriptorUnavailablePathInvalidationRequest: Sendable {
+        let emit: BridgePaneProductFileSourceFactSink
         let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
         let paths: Set<String>
         let productAdmission: BridgeProductAdmissionContext
         let productSource: BridgeProductFileSourceIdentity
-        let subscription: BridgeProductSubscriptionSnapshot
+        let subscriptionId: String
+        let demand: BridgePaneProductFileViewDemand
+        let demandGeneration: Int
     }
 
     let authority: BridgePaneProductFileSourceAuthority
@@ -70,8 +82,11 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
     let statusProvider: any GitWorkingTreeStatusProvider
     var sourceAcceptedObserver: BridgePaneProductFileSourceAcceptedObserver
     let treeRowRefresher: BridgePaneProductFileTreeRowRefresher
+    let revisionFloorCapture: @Sendable (BridgeWorktreeFileManifestIndex) async -> Int
     var contextBySubscriptionId: [String: SubscriptionContext] = [:]
+    var retiringContextBySubscriptionId: [String: SubscriptionContext] = [:]
     var nextSourceGeneration = 0
+    var lastIssuedFileViewRevision = 0
 
     init(
         authority: BridgePaneProductFileSourceAuthority,
@@ -79,6 +94,8 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         constructionCoordinator: BridgeWorktreeProductConstructionCoordinator,
         sourceAcceptedObserver: @escaping BridgePaneProductFileSourceAcceptedObserver = { _ in },
         statusProvider: any GitWorkingTreeStatusProvider,
+        revisionFloorCapture: @escaping @Sendable (BridgeWorktreeFileManifestIndex) async -> Int =
+            BridgePaneProductFileMetadataSource.captureRevisionFloor,
         snapshotPreparationLoader: BridgePaneProductFileSnapshotPreparationLoader? = nil,
         sharedSnapshotBuilder: @escaping BridgePaneProductFileSharedSnapshotBuilder =
             BridgeWorktreeFileMaterializer.buildSharedSnapshot,
@@ -90,6 +107,7 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         self.authority = authority
         self.descriptorMaterializer = descriptorMaterializer
         self.statusProvider = statusProvider
+        self.revisionFloorCapture = revisionFloorCapture
         let resolvedPreparationLoader: BridgePaneProductFileSnapshotPreparationLoader =
             if let snapshotPreparationLoader {
                 snapshotPreparationLoader
@@ -139,10 +157,56 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
             }
     }
 
+    nonisolated static func captureRevisionFloor(_ index: BridgeWorktreeFileManifestIndex) async -> Int {
+        await index.captureKeyedSnapshot().targetRevision
+    }
+
     func setSourceAcceptedObserver(
         _ observer: @escaping BridgePaneProductFileSourceAcceptedObserver
     ) {
         sourceAcceptedObserver = observer
+    }
+
+    func captureKeyedSnapshot(
+        subscriptionId: String,
+        demand: BridgePaneProductFileViewDemand,
+        productAdmission: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? {
+        guard let context = contextBySubscriptionId[subscriptionId],
+            context.viewDemand == demand,
+            context.productAdmission.matches(productAdmission),
+            productAdmission.withValidAdmission({ true }) == true
+        else { return nil }
+        let snapshot = await context.manifestIndex.captureKeyedSnapshot()
+        guard let current = contextBySubscriptionId[subscriptionId],
+            current.productSource == context.productSource,
+            current.viewDemand == demand,
+            current.demandGeneration == context.demandGeneration,
+            current.productAdmission.matches(productAdmission),
+            productAdmission.withValidAdmission({ true }) == true
+        else { return nil }
+        guard !current.canonicalPathScope.isEmpty else { return snapshot }
+        let canonicalRootURL = authority.worktree.path.standardizedFileURL.resolvingSymlinksInPath()
+        let canonicalRanges = current.canonicalPathScope.map {
+            canonicalRootURL.appending(path: $0).standardizedFileURL.resolvingSymlinksInPath().path
+        }
+        return .init(
+            isEnumerationComplete: snapshot.isEnumerationComplete,
+            memberStatus: snapshot.memberStatus,
+            records: snapshot.records.filter {
+                Self.isWithinPathScope($0.row.path, scope: current.canonicalPathScope)
+            },
+            targetRevision: snapshot.targetRevision,
+            tombstoneRevisionByKey: snapshot.tombstoneRevisionByKey.filter {
+                Self.isWithinPathScope($0.key, scope: canonicalRanges)
+            },
+            absenceFloorRevisionByRange: snapshot.absenceFloorRevisionByRange.filter { entry in
+                Self.isWithinPathScope(entry.key, scope: canonicalRanges)
+                    || canonicalRanges.contains {
+                        Self.isWithinPathScope($0, scope: [entry.key])
+                    }
+            }
+        )
     }
 
     func currentWorktreeAnnotationFingerprint(
@@ -171,12 +235,10 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         subscription: BridgeProductSubscriptionSnapshot,
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         try Task.checkCancellation()
-        guard let sourceSpec = subscription.subscription.fileMetadataSource,
-            let interestState = subscription.interestState.fileMetadataState
-        else {
+        guard let sourceSpec = subscription.subscription.fileMetadataSource else {
             return
         }
         await cancel(subscriptionId: subscription.subscriptionId)
@@ -185,7 +247,7 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
             let context = try installContext(
                 subscription: subscription,
                 sourceSpec: sourceSpec,
-                pathScope: interestState.pathScope,
+                pathScope: [],
                 productAdmission: productAdmission,
                 foregroundWorkAdmission: foregroundWorkAdmission
             )
@@ -198,7 +260,7 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
                     context: context,
                     emit: emit,
                     foregroundWorkAdmission: foregroundWorkAdmission,
-                    pathScope: interestState.pathScope,
+                    pathScope: [],
                     productAdmission: productAdmission,
                     productSource: productSource,
                     sourceSpec: sourceSpec,
@@ -221,400 +283,58 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         }
     }
 
-    /// Bootstraps an already-installed context, reporting whether the installed context
-    /// survives. Every give-up exit returns `false` so `open` can release the context it
-    /// installed; `open` owns that release for both the thrown and the given-up paths.
-    private func bootstrapInstalledContext(
-        _ request: InstalledContextBootstrapRequest
-    ) async throws -> Bool {
-        let productSource = request.productSource
-        let subscriptionId = request.subscription.subscriptionId
-        guard request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            (request.productAdmission.withValidAdmission { true }) == true
-        else { return false }
-        try await request.emit(.sourceAccepted(.init(source: productSource)))
-        await sourceAcceptedObserver(productSource)
-        let constructionLease = try await sharedConstructionBinder.acquire(
-            openedSource: request.context.openedSource
-        )
-        guard
-            attachConstructionLease(
-                constructionLease,
-                subscriptionId: subscriptionId,
-                productSource: productSource,
-                productAdmission: request.productAdmission,
-                foregroundWorkAdmission: request.foregroundWorkAdmission
-            )
-        else {
-            // The lease never reached the context, so `releaseContext` cannot release it.
-            await sharedConstructionBinder.release(constructionLease)
-            return false
-        }
-        let preparation = try await sharedConstructionBinder.preparation(for: constructionLease)
-        guard
-            let preparedContext = applyPreparation(
-                preparation,
-                subscriptionId: subscriptionId,
-                productSource: productSource,
-                productAdmission: request.productAdmission,
-                foregroundWorkAdmission: request.foregroundWorkAdmission
-            )
-        else { return false }
-        if request.sourceSpec.includeStatuses {
-            try await publishCurrentStatus(
-                preparation.statusResult,
-                emit: request.emit,
-                productAdmission: request.productAdmission,
-                productSource: productSource,
-                foregroundWorkAdmission: request.foregroundWorkAdmission
-            )
-        }
-        return try await enumerateInitialTree(
-            .init(
-                emit: request.emit,
-                foregroundWorkAdmission: request.foregroundWorkAdmission,
-                manifestIndex: preparedContext.manifestIndex,
-                openedSource: preparedContext.openedSource,
-                pathScope: request.pathScope,
-                productAdmission: request.productAdmission,
-                productSource: productSource,
-                subscription: request.subscription
-            ),
-            constructionLease: constructionLease
-        )
-    }
-
-    private func enumerateInitialTree(
-        _ request: InitialTreeEnumerationRequest,
-        constructionLease: BridgeSharedFileSnapshotConsumerLease
-    ) async throws -> Bool {
-        guard
-            await request.manifestIndex.beginEnumeration(
-                productAdmission: request.productAdmission,
-                foregroundWorkAdmission: request.foregroundWorkAdmission
-            )
-        else { return false }
-        var emittedWindow = false
-        var cursor = BridgeSharedFileSnapshotCursor(nextWindowOrdinal: 0)
-        readLoop: while true {
-            let read = try await sharedConstructionBinder.nextRead(
-                for: constructionLease,
-                cursor: cursor
-            )
-            let batch: BridgeWorktreeTreeRowWindowBatch
-            switch read {
-            case .window(let window):
-                batch = BridgeWorktreeTreeRowWindowBatch(
-                    discoveredRowCount: window.discoveredRowCount,
-                    isFinalWindow: window.isFinalWindow,
-                    rows: window.rows,
-                    startIndex: window.startIndex
-                )
-                cursor = BridgeSharedFileSnapshotCursor(
-                    nextWindowOrdinal: cursor.nextWindowOrdinal + 1
-                )
-            case .completed:
-                break readLoop
-            }
-            try Task.checkCancellation()
-            guard
-                isCurrent(
-                    subscriptionId: request.subscription.subscriptionId,
-                    source: request.productSource,
-                    productAdmission: request.productAdmission
-                ),
-                request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                (request.productAdmission.withValidAdmission { true }) == true
-            else {
-                return false
-            }
-            guard
-                await request.manifestIndex.appendEnumeratedRows(
-                    batch.rows,
-                    productAdmission: request.productAdmission,
-                    foregroundWorkAdmission: request.foregroundWorkAdmission
-                )
-            else { return false }
-            guard try await emitInitialTreeWindowBatch(batch, request: request) else {
-                return false
-            }
-            if let latestContext = contextBySubscriptionId[request.subscription.subscriptionId],
-                latestContext.productSource == request.productSource,
-                latestContext.productAdmission.matches(request.productAdmission),
-                latestContext.subscription.interestRevision > 0
-            {
-                try await update(
-                    subscription: latestContext.subscription,
-                    productAdmission: request.productAdmission,
-                    foregroundWorkAdmission: request.foregroundWorkAdmission,
-                    emit: request.emit
-                )
-            }
-            emittedWindow = true
-        }
-        guard
-            isCurrent(
-                subscriptionId: request.subscription.subscriptionId,
-                source: request.productSource,
-                productAdmission: request.productAdmission
-            ),
-            request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            (request.productAdmission.withValidAdmission { true }) == true
-        else {
-            return false
-        }
-        if !emittedWindow {
-            try await request.emit(
-                .treeWindow(
-                    try .init(
-                        finalWindow: true,
-                        lineage: .init(lane: .foreground, loadedBy: .startupWindow),
-                        pathScope: request.pathScope,
-                        rows: [],
-                        source: request.productSource,
-                        startIndex: 0,
-                        totalRowCount: 0
-                    )
-                )
-            )
-        }
-        return await request.manifestIndex.markEnumerationComplete(
-            productAdmission: request.productAdmission,
-            foregroundWorkAdmission: request.foregroundWorkAdmission
-        )
-    }
-
-    // swiftlint:disable:next function_body_length
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
-    ) async throws {
-        guard let interestGroups = subscription.interestState.fileMetadataState?.interests else { return }
-        var acceptedContext: SubscriptionContext?
-        let didAcceptContext =
-            foregroundWorkAdmission.withValidAdmission {
-                productAdmission.withValidAdmission { () -> Bool in
-                    guard var context = contextBySubscriptionId[subscription.subscriptionId],
-                        context.productAdmission.matches(productAdmission),
-                        subscription.interestRevision >= context.subscription.interestRevision
-                    else { return false }
-                    context.subscription = subscription
-                    contextBySubscriptionId[subscription.subscriptionId] = context
-                    acceptedContext = context
-                    return true
-                } ?? false
-            } == true
-        guard didAcceptContext, let context = acceptedContext else { return }
-        let productSource = context.productSource
-
-        let demandedPaths = BridgePaneProductFileMetadataEncoding.highestPriorityLaneByPath(
-            interestGroups
-        ).filter { path, _ in
-            context.descriptorInterestRevisionByPath[path] != subscription.interestRevision
-                && context.inFlightDescriptorInterestRevisionByPath[path] != subscription.interestRevision
-        }
-        guard !demandedPaths.isEmpty else { return }
-        let manifestPaths = await context.manifestIndex.memberPaths(of: Set(demandedPaths.keys))
-        try Task.checkCancellation()
-        guard
-            isCurrent(
-                subscription,
-                source: productSource,
-                productAdmission: productAdmission
-            ),
-            foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            (productAdmission.withValidAdmission { true }) == true
-        else { return }
-        let refreshed = await treeRowRefresher(authority.worktree.path, manifestPaths, false)
-        let refreshedFilePaths = Set(
-            refreshed.rows.lazy.filter { !$0.isDirectory }.map(\.path)
-        )
-        let descriptorUnavailablePaths = manifestPaths.subtracting(refreshedFilePaths)
-        try Task.checkCancellation()
-        guard
-            isCurrent(
-                subscription,
-                source: productSource,
-                productAdmission: productAdmission
-            ),
-            foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            await context.manifestIndex.applyRefreshedRows(
-                refreshed.rows,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            )
-        else { return }
-        guard
-            case .applied = await context.manifestIndex.removePaths(
-                refreshed.missingPaths,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            )
-        else { return }
-        try Task.checkCancellation()
-        guard
-            isCurrent(
-                subscription,
-                source: productSource,
-                productAdmission: productAdmission
-            ),
-            foregroundWorkAdmission.withValidAdmission({ true }) == true,
-            (productAdmission.withValidAdmission { true }) == true
-        else { return }
-
-        guard
-            try await emitRefreshedTreeDeltas(
-                .init(
-                    demandedPaths: demandedPaths,
-                    emit: emit,
-                    foregroundWorkAdmission: foregroundWorkAdmission,
-                    productAdmission: productAdmission,
-                    productSource: productSource,
-                    rows: refreshed.rows,
-                    subscription: subscription
-                )
-            )
-        else { return }
-
-        let descriptorRows = BridgeProductDemandLane.fileMetadataPriorityOrder.flatMap { lane in
-            refreshed.rows.filter {
-                !$0.isDirectory && demandedPaths[$0.path] == lane
-            }
-        }
-        try await reconcileDescriptors(
-            .init(
-                emit: emit,
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                productAdmission: productAdmission,
-                productSource: productSource,
-                rows: descriptorRows,
-                subscription: subscription
-            )
-        )
-        _ = try await emitDescriptorUnavailablePathInvalidations(
-            .init(
-                emit: emit,
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                paths: descriptorUnavailablePaths,
-                productAdmission: productAdmission,
-                productSource: productSource,
-                subscription: subscription
-            )
-        )
-    }
-
-    private func emitRefreshedTreeDeltas(
-        _ request: RefreshedTreeDeltaRequest
-    ) async throws -> Bool {
-        for lane in BridgeProductDemandLane.fileMetadataPriorityOrder {
-            let laneRows = request.rows.filter { request.demandedPaths[$0.path] == lane }
-            for rows in try BridgePaneProductFileMetadataEncoding.boundedProductRowChunks(
-                laneRows
-            ) {
-                try Task.checkCancellation()
-                guard
-                    isCurrent(
-                        request.subscription,
-                        source: request.productSource,
-                        productAdmission: request.productAdmission
-                    ),
-                    request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                    (request.productAdmission.withValidAdmission { true }) == true
-                else { return false }
-                try await request.emit(
-                    .treeDelta(
-                        try .init(
-                            operations: [.upsertRows(rows)],
-                            source: request.productSource
-                        )
-                    )
-                )
-            }
-        }
-        return true
-    }
-
-    private func emitDescriptorUnavailablePathInvalidations(
-        _ request: DescriptorUnavailablePathInvalidationRequest
-    ) async throws -> Bool {
-        for path in request.paths.sorted() {
-            try Task.checkCancellation()
-            var acceptedContext: SubscriptionContext?
-            let didAcceptContext =
-                request.foregroundWorkAdmission.withValidAdmission {
-                    request.productAdmission.withValidAdmission { () -> Bool in
-                        guard
-                            let currentContext = contextBySubscriptionId[
-                                request.subscription.subscriptionId
-                            ],
-                            currentContext.productSource == request.productSource,
-                            currentContext.productAdmission.matches(request.productAdmission),
-                            currentContext.subscription.interestRevision
-                                == request.subscription.interestRevision
-                        else { return false }
-                        acceptedContext = currentContext
-                        return true
-                    } ?? false
-                } == true
-            guard didAcceptContext, let currentContext = acceptedContext else { return false }
-            try await request.emit(
-                .invalidated(
-                    try .init(
-                        fileId: currentContext.descriptorByPath[path]?.fileId,
-                        path: path,
-                        reason: .filesystemEvent,
-                        replacementDescriptor: nil,
-                        source: request.productSource
-                    )
-                )
-            )
-        }
-        return true
-    }
-
-    private func reconcileDescriptors(
-        _ request: DescriptorReconciliationRequest
-    ) async throws {
-        for row in request.rows {
-            guard try await reconcileDescriptor(row, request: request) else { return }
-        }
-    }
-
     func publish(
         status: GitWorkingTreeStatus,
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
-    ) -> [BridgePaneProductFileMetadataEmission] {
-        foregroundWorkAdmission.withValidAdmission {
-            productAdmission.withValidAdmission {
-                contextBySubscriptionId.compactMap { subscriptionId, context in
-                    guard let sourceSpec = context.subscription.subscription.fileMetadataSource,
-                        context.productAdmission.matches(productAdmission),
-                        sourceSpec.includeStatuses
-                    else { return nil }
-                    return .init(
-                        event: BridgePaneProductFileMetadataEncoding.statusEvent(
-                            status,
-                            source: context.productSource
-                        ),
-                        subscriptionId: subscriptionId
-                    )
-                }
-            } ?? []
-        } ?? []
+    ) async -> [BridgePaneProductFileMetadataEmission] {
+        var emissions: [BridgePaneProductFileMetadataEmission] = []
+        for subscriptionId in contextBySubscriptionId.keys.sorted() {
+            if deferFileChanges(
+                subscriptionId: subscriptionId, changedPaths: [], statusResult: .available(status),
+                productAdmission: productAdmission, foregroundWorkAdmission: foregroundWorkAdmission)
+            {
+                continue
+            }
+            guard foregroundWorkAdmission.withValidAdmission({ true }) == true,
+                productAdmission.withValidAdmission({ true }) == true,
+                let context = contextBySubscriptionId[subscriptionId],
+                let sourceSpec = context.subscription.subscription.fileMetadataSource,
+                context.productAdmission.matches(productAdmission),
+                sourceSpec.includeStatuses,
+                (try? await context.manifestIndex.updateMemberStatus(
+                    state: .ready,
+                    branchName: status.branch,
+                    ahead: status.summary.aheadCount,
+                    behind: status.summary.behindCount,
+                    staged: status.summary.staged,
+                    unstaged: status.summary.changed,
+                    untracked: status.summary.untracked,
+                    productAdmission: productAdmission
+                )) == true
+            else { continue }
+            emissions.append(
+                .init(
+                    fact: .statusChanged(context.productSource),
+                    subscriptionId: subscriptionId
+                )
+            )
+        }
+        return emissions
     }
 
-    private func isCurrent(
-        _ subscription: BridgeProductSubscriptionSnapshot,
+    func isCurrent(
+        subscriptionId: String,
+        demand: BridgePaneProductFileViewDemand,
+        demandGeneration: Int,
         source: BridgeProductFileSourceIdentity,
         productAdmission: BridgeProductAdmissionContext
     ) -> Bool {
-        guard let context = contextBySubscriptionId[subscription.subscriptionId] else { return false }
+        guard let context = contextBySubscriptionId[subscriptionId] else { return false }
         return context.productSource == source
             && context.productAdmission.matches(productAdmission)
-            && context.subscription.interestRevision == subscription.interestRevision
+            && context.viewDemand == demand
+            && context.demandGeneration == demandGeneration
     }
 
     private func installContext(
@@ -647,7 +367,10 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         let context = SubscriptionContext(
             manifestIndex: .init(
                 generation: sourceGeneration,
-                productAdmission: productAdmission
+                rootURL: authority.worktree.path,
+                productAdmission: productAdmission,
+                source: productSource,
+                initialRevision: lastIssuedFileViewRevision + 1
             ),
             openedSource: openedSource,
             constructionLease: nil,
@@ -656,7 +379,10 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
             descriptorByPath: [:],
             descriptorInterestRevisionByPath: [:],
             inFlightDescriptorInterestRevisionByPath: [:],
-            subscription: subscription
+            subscription: subscription,
+            viewDemand: nil,
+            canonicalPathScope: [],
+            demandGeneration: 0
         )
         return foregroundWorkAdmission.withValidAdmission {
             productAdmission.withValidAdmission {
@@ -681,69 +407,40 @@ actor BridgePaneProductFileMetadataSource: BridgePaneProductFileMetadataProducin
         contextBySubscriptionId[subscriptionId] = context
     }
 
+    static func isWithinPathScope(_ path: String, scope: [String]) -> Bool {
+        scope.contains { scopedPath in
+            scopedPath == "." || path == scopedPath || path.hasPrefix("\(scopedPath)/")
+        }
+    }
+
 }
 
 extension BridgePaneProductFileMetadataSource {
-    fileprivate func emitInitialTreeWindowBatch(
-        _ batch: BridgeWorktreeTreeRowWindowBatch,
-        request: InitialTreeEnumerationRequest
-    ) async throws -> Bool {
-        let rowChunks = try BridgePaneProductFileMetadataEncoding.boundedProductRowChunks(
-            batch.rows
-        )
-        if rowChunks.isEmpty, batch.isFinalWindow {
-            guard request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                (request.productAdmission.withValidAdmission { true }) == true
-            else { return false }
-            try await request.emit(
-                .treeWindow(
-                    try .init(
-                        finalWindow: true,
-                        lineage: .init(lane: .foreground, loadedBy: .startupWindow),
-                        pathScope: request.pathScope,
-                        rows: [],
-                        source: request.productSource,
-                        startIndex: batch.startIndex,
-                        totalRowCount: batch.discoveredRowCount
-                    )
-                )
-            )
-            return true
-        }
-        var emittedRowCount = 0
-        for (chunkIndex, rows) in rowChunks.enumerated() {
-            let isLastChunk = chunkIndex + 1 == rowChunks.count
-            guard request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                (request.productAdmission.withValidAdmission { true }) == true
-            else {
-                return false
-            }
-            try await request.emit(
-                .treeWindow(
-                    try .init(
-                        finalWindow: batch.isFinalWindow && isLastChunk,
-                        lineage: .init(lane: .foreground, loadedBy: .startupWindow),
-                        pathScope: request.pathScope,
-                        rows: rows,
-                        source: request.productSource,
-                        startIndex: batch.startIndex + emittedRowCount,
-                        totalRowCount: batch.isFinalWindow && isLastChunk
-                            ? batch.discoveredRowCount
-                            : nil
-                    )
-                )
-            )
-            emittedRowCount += rows.count
-        }
-        return true
-    }
 
-    fileprivate func reconcileDescriptor(
+    func reconcileDescriptor(
         _ row: BridgeWorktreeTreeRowMetadata,
         request: DescriptorReconciliationRequest
     ) async throws -> Bool {
         guard reserveDescriptorInterest(for: row, request: request) else { return false }
-        let subscription = request.subscription
+        guard let context = contextBySubscriptionId[request.subscriptionId],
+            context.productSource == request.productSource,
+            let attempt = await context.manifestIndex.reserveDescriptorAttempt(
+                for: row.path,
+                source: request.productSource,
+                memberIncarnation: BridgeProductViewDomain.singleDomain.rawValue,
+                interestRevision: request.demandGeneration,
+                productAdmission: request.productAdmission,
+                foregroundWorkAdmission: request.foregroundWorkAdmission
+            )
+        else {
+            clearInFlightDescriptorInterest(
+                path: row.path,
+                revision: request.demandGeneration,
+                subscriptionId: request.subscriptionId,
+                source: request.productSource
+            )
+            return false
+        }
         let materialized: BridgePaneProductFileDescriptorMaterialization
         do {
             materialized = try await descriptorMaterializer(
@@ -757,8 +454,8 @@ extension BridgePaneProductFileMetadataSource {
         } catch {
             clearInFlightDescriptorInterest(
                 path: row.path,
-                revision: subscription.interestRevision,
-                subscriptionId: subscription.subscriptionId,
+                revision: request.demandGeneration,
+                subscriptionId: request.subscriptionId,
                 source: request.productSource
             )
             throw error
@@ -766,8 +463,8 @@ extension BridgePaneProductFileMetadataSource {
         guard !Task.isCancelled else {
             clearInFlightDescriptorInterest(
                 path: row.path,
-                revision: subscription.interestRevision,
-                subscriptionId: subscription.subscriptionId,
+                revision: request.demandGeneration,
+                subscriptionId: request.subscriptionId,
                 source: request.productSource
             )
             throw CancellationError()
@@ -775,8 +472,18 @@ extension BridgePaneProductFileMetadataSource {
         guard descriptorInterestIsAdmitted(for: row, request: request) else {
             clearInFlightDescriptorInterest(
                 path: row.path,
-                revision: subscription.interestRevision,
-                subscriptionId: subscription.subscriptionId,
+                revision: request.demandGeneration,
+                subscriptionId: request.subscriptionId,
+                source: request.productSource
+            )
+            return false
+        }
+        guard await context.manifestIndex.acceptDescriptorOutcome(materialized.payload, for: attempt)
+        else {
+            clearInFlightDescriptorInterest(
+                path: row.path,
+                revision: request.demandGeneration,
+                subscriptionId: request.subscriptionId,
                 source: request.productSource
             )
             return false
@@ -785,14 +492,14 @@ extension BridgePaneProductFileMetadataSource {
         else {
             clearInFlightDescriptorInterest(
                 path: row.path,
-                revision: subscription.interestRevision,
-                subscriptionId: subscription.subscriptionId,
+                revision: request.demandGeneration,
+                subscriptionId: request.subscriptionId,
                 source: request.productSource
             )
             return false
         }
         do {
-            try await request.emit(.descriptorReady(.init(payload: materialized.payload)))
+            try await request.emit(.descriptorReady(materialized.payload))
         } catch {
             rollbackDescriptorInterest(commit, for: row, request: request)
             throw error
@@ -808,21 +515,21 @@ extension BridgePaneProductFileMetadataSource {
         for row: BridgeWorktreeTreeRowMetadata,
         request: DescriptorReconciliationRequest
     ) -> Bool {
-        let subscription = request.subscription
-        return request.foregroundWorkAdmission.withValidAdmission({
+        request.foregroundWorkAdmission.withValidAdmission({
             request.productAdmission.withValidAdmission {
-                guard var currentContext = contextBySubscriptionId[subscription.subscriptionId],
+                guard var currentContext = contextBySubscriptionId[request.subscriptionId],
                     currentContext.productSource == request.productSource,
                     currentContext.productAdmission.matches(request.productAdmission),
-                    currentContext.subscription.interestRevision == subscription.interestRevision,
+                    currentContext.viewDemand == request.demand,
+                    currentContext.demandGeneration == request.demandGeneration,
                     currentContext.descriptorInterestRevisionByPath[row.path]
-                        != subscription.interestRevision,
+                        != request.demandGeneration,
                     currentContext.inFlightDescriptorInterestRevisionByPath[row.path]
-                        != subscription.interestRevision
+                        != request.demandGeneration
                 else { return false }
                 currentContext.inFlightDescriptorInterestRevisionByPath[row.path] =
-                    subscription.interestRevision
-                contextBySubscriptionId[subscription.subscriptionId] = currentContext
+                    request.demandGeneration
+                contextBySubscriptionId[request.subscriptionId] = currentContext
                 return true
             } ?? false
         }) == true
@@ -832,15 +539,15 @@ extension BridgePaneProductFileMetadataSource {
         for row: BridgeWorktreeTreeRowMetadata,
         request: DescriptorReconciliationRequest
     ) -> Bool {
-        let subscription = request.subscription
-        return request.foregroundWorkAdmission.withValidAdmission({
+        request.foregroundWorkAdmission.withValidAdmission({
             request.productAdmission.withValidAdmission {
-                guard let currentContext = contextBySubscriptionId[subscription.subscriptionId],
+                guard let currentContext = contextBySubscriptionId[request.subscriptionId],
                     currentContext.productSource == request.productSource,
                     currentContext.productAdmission.matches(request.productAdmission),
-                    currentContext.subscription.interestRevision == subscription.interestRevision,
+                    currentContext.viewDemand == request.demand,
+                    currentContext.demandGeneration == request.demandGeneration,
                     currentContext.inFlightDescriptorInterestRevisionByPath[row.path]
-                        == subscription.interestRevision
+                        == request.demandGeneration
                 else { return false }
                 return true
             } ?? false

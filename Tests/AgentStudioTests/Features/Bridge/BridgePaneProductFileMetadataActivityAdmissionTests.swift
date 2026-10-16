@@ -20,18 +20,19 @@ extension BridgePaneProductFileMetadataSourceTests {
             return try await BridgePaneProductFileContentSource.materialize(request)
         })
         let openSnapshot = try fixture.openSnapshot()
-        let updatedSnapshot = try fixture.updatedSnapshot(from: openSnapshot)
+        let viewDemand = try fixture.viewDemand()
         try await source.open(
             subscription: openSnapshot,
             productAdmission: fixture.productAdmission.context
         ) { _ in }
-        let collector = ProductFileMetadataEventCollector()
+        let collector = ProductFileSourceFactCollector()
         let activity = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
         let originalForegroundWork = try #require(activity.acquireForegroundWork())
         let staleUpdateTask = Task {
             try await updateFileMetadata(
                 source: source,
-                subscription: updatedSnapshot,
+                subscriptionId: openSnapshot.subscriptionId,
+                demand: viewDemand,
                 productAdmission: fixture.productAdmission.context,
                 foregroundWorkAdmission: originalForegroundWork,
                 collector: collector
@@ -49,7 +50,8 @@ extension BridgePaneProductFileMetadataSourceTests {
         let retryForegroundWork = try #require(activity.acquireForegroundWork())
         try await updateFileMetadata(
             source: source,
-            subscription: updatedSnapshot,
+            subscriptionId: openSnapshot.subscriptionId,
+            demand: viewDemand,
             productAdmission: fixture.productAdmission.context,
             foregroundWorkAdmission: retryForegroundWork,
             collector: collector
@@ -157,30 +159,33 @@ private actor ActivityFileDescriptorCancellationProbe {
 
 private func updateFileMetadata(
     source: BridgePaneProductFileMetadataSource,
-    subscription: BridgeProductSubscriptionSnapshot,
+    subscriptionId: String,
+    demand: BridgePaneProductFileViewDemand,
     productAdmission: BridgeProductAdmissionContext,
     foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-    collector: ProductFileMetadataEventCollector
+    collector: ProductFileSourceFactCollector
 ) async throws {
     guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
         throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
     }
-    try await source.update(
-        subscription: subscription,
+    try await source.applyViewDemand(
+        subscriptionId: subscriptionId,
+        demand: demand,
         productAdmission: productAdmission,
-        foregroundWorkAdmission: foregroundWorkAdmission
+        foregroundWorkAdmission: foregroundWorkAdmission,
+        forceRecapture: false
     ) { event in
         guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
             throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
         }
-        await collector.append(event)
+        await collector.append(event, source: source)
     }
     guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
         throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
     }
 }
 
-extension ProductFileMetadataEventCollector {
+extension ProductFileSourceFactCollector {
     fileprivate var descriptorReadyCount: Int {
         events.count { event in
             if case .descriptorReady = event { true } else { false }

@@ -38,6 +38,7 @@ struct BridgeProductSessionDependencyInput {
     let reviewContentLoaderCache: BridgeReviewContentLoaderCache
     let reviewPublicationCoordinator: BridgeReviewPublicationCoordinator
     let refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource
+    let recordCurrentFileRefreshFailure: @MainActor @Sendable (BridgeFileSurfaceOutcomeApplication) async -> Void
     let initialProductPresentation: BridgePaneProductPresentationSnapshot
     let telemetryRecorder: (any BridgePerformanceTraceRecording)?
     let reviewSourceProvider: any BridgeReviewSourceProvider
@@ -101,7 +102,9 @@ final class BridgePaneProductCommittedCallTarget {
 
     func applyFileRefreshRetry(productAdmission: BridgeProductAdmissionContext) async {
         guard (productAdmission.withValidAdmission { true }) == true else { return }
-        controller?.retryUnavailableFileRefresh()
+        await controller?.worktreeRefreshDriver.retryUnavailableFileRefreshAndWait(
+            ifAdmittedBy: productAdmission
+        )
     }
 
     func applyReviewIntakeReady(
@@ -116,17 +119,18 @@ final class BridgePaneProductCommittedCallTarget {
 
     func applyReviewComparisonUpdate(
         _ request: BridgeProductReviewComparisonUpdateRequest,
+        workerDerivationEpoch: Int,
         productAdmission: BridgeProductAdmissionContext
     ) async {
-        guard let controller,
-            await controller.handleCommittedProductReviewComparisonUpdate(
-                request,
-                productAdmission: productAdmission
-            )
-        else {
-            productAdmissionGate.close()
+        guard productAdmission.withValidAdmission({ true }) == true else { return }
+        guard let controller else {
             return
         }
+        _ = await controller.handleCommittedProductReviewComparisonUpdate(
+            request,
+            workerDerivationEpoch: workerDerivationEpoch,
+            productAdmission: productAdmission
+        )
     }
 }
 
@@ -303,9 +307,20 @@ extension BridgePaneController {
 
     func enqueueProductSessionBootstrapRequest(
         requestId: String,
-        reason: BridgeReadyMessageHandler.ProductSessionBootstrapReason
+        reason: BridgeReadyMessageHandler.ProductSessionBootstrapReason,
+        predecessor: BridgeProductInstallationFenceSnapshot? = nil
     ) async {
         guard let productAdmission = productAdmissionGate.acquire() else { return }
+        latestProductSessionBootstrapRequestId = requestId
+        let expected: BridgeProductInstallationFenceSnapshot?
+        if let predecessor {
+            expected = predecessor
+        } else if hasPublishedProductSessionBootstrap {
+            expected = productSessionOwner.closeActiveInstallation()
+            retirePendingExplicitReviewCommand()
+        } else {
+            expected = nil
+        }
         let precedingTransition = productSessionBootstrapTransitionTail
         let transition = Task { @MainActor [weak self] in
             if let precedingTransition {
@@ -314,7 +329,8 @@ extension BridgePaneController {
             await self?.performProductSessionBootstrapRequest(
                 requestId: requestId,
                 reason: reason,
-                productAdmission: productAdmission
+                productAdmission: productAdmission,
+                predecessor: expected
             )
         }
         productSessionBootstrapTransitionTail = transition
@@ -324,51 +340,40 @@ extension BridgePaneController {
     private func performProductSessionBootstrapRequest(
         requestId: String,
         reason: BridgeReadyMessageHandler.ProductSessionBootstrapReason,
-        productAdmission: BridgeProductAdmissionContext
+        productAdmission: BridgeProductAdmissionContext,
+        predecessor: BridgeProductInstallationFenceSnapshot?
     ) async {
+        guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else { return }
         bridgeProductBootstrapLogger.debug(
             "Preparing product session bootstrap requestId=\(requestId, privacy: .public) reason=\(reason.rawValue, privacy: .public)"
         )
         let installation: BridgeProductSessionInstallation
-        if hasPublishedProductSessionBootstrap {
-            surfaceSelectionAuthority.invalidateCurrentBinding()
-            do {
-                let candidate = try await productSessionOwner.prepareCandidate(
-                    productAdmission: productAdmission
+        if hasPublishedProductSessionBootstrap || predecessor != nil {
+            guard
+                let replacement = await activateReplacementProductSessionInstallation(
+                    requestId: requestId,
+                    reason: reason,
+                    productAdmission: productAdmission,
+                    predecessor: predecessor
                 )
-                let retirementReason: BridgePaneProductSessionRetirementReason =
-                    reason == .workerReplacement ? .workerReplacement : .pageReload
-                while await productSessionOwner.retire(reason: retirementReason) != .retired {
-                    guard (productAdmission.withValidAdmission { true }) == true else { return }
-                    await Task.yield()
-                }
-                guard
-                    await productSessionOwner.activatePreparedCandidate(
-                        candidate,
-                        productAdmission: productAdmission
-                    ) == .activated
-                else {
-                    setProductBootstrapConnectionErrorIfAdmitted(productAdmission)
-                    return
-                }
-                installation = candidate
-            } catch BridgePaneProductSessionOwnerError.ownerDisposed {
-                return
-            } catch {
-                bridgeProductBootstrapLogger.error("Bridge product session replacement failed: \(error)")
-                setProductBootstrapConnectionErrorIfAdmitted(productAdmission)
-                return
-            }
+            else { return }
+            installation = replacement
         } else {
             guard let activeInstallation = await productSessionOwner.activeInstallation else {
-                setProductBootstrapConnectionErrorIfAdmitted(productAdmission)
+                setProductBootstrapConnectionErrorIfAdmitted(productAdmission, requestId: requestId)
+                await answerProductSessionBootstrapFailure(
+                    requestId: requestId,
+                    reason: .noActiveSession,
+                    productAdmission: productAdmission
+                )
                 return
             }
-            guard (productAdmission.withValidAdmission { true }) == true else { return }
+            guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else { return }
             installation = activeInstallation
         }
 
-        guard
+        guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission),
+            let installationAdmission = installation.productAdapter.acquireAdmission(),
             (productAdmission.withValidAdmission {
                 hasPublishedProductSessionBootstrap = true
                 return true
@@ -381,7 +386,7 @@ extension BridgePaneController {
         {
             surfaceSelectionReplay = enqueueRetainedSurfaceSelectionReplay(
                 commandId: retainedCommandId,
-                productAdmission: productAdmission,
+                productAdmission: installationAdmission,
                 productSchemeProvider: productSchemeProvider,
                 bootstrap: installation.bootstrap
             )
@@ -389,34 +394,71 @@ extension BridgePaneController {
             surfaceSelectionReplay = nil
         }
         do {
-            try await productSessionBootstrapSink(
-                page,
-                requestId,
-                installation,
-                bridgeWorld,
-                productAdmission
-            )
+            let sink = productSessionBootstrapSink
+            let replyPage = page
+            let replyWorld = bridgeWorld
+            try await deliverProductBootstrapReply(requestId: requestId, admission: installationAdmission) {
+                try await sink(replyPage, requestId, installation, replyWorld, installationAdmission)
+            }
+            guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else {
+                // The successor captured this projection as its predecessor. Its
+                // replacement owner must perform retirement after that comparison.
+                return
+            }
             _ = await surfaceSelectionReplay?.value
+            guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else {
+                await retireProductBootstrapCandidateIfCurrent(installation)
+                return
+            }
             bridgeProductBootstrapLogger.debug(
                 "Delivered product session bootstrap requestId=\(requestId, privacy: .public)"
             )
         } catch {
+            guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else { return }
+            let failedInstallation = productSessionOwner.installationFenceProjection.snapshot
+            await retireProductBootstrapCandidateIfCurrent(installation)
+            guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else { return }
             bridgeProductBootstrapLogger.error("Bridge product session bootstrap delivery failed: \(error)")
-            guard (productAdmission.withValidAdmission { true }) == true else { return }
-            while await productSessionOwner.retire(reason: .pageReload) != .retired {
-                guard (productAdmission.withValidAdmission { true }) == true else { return }
-                await Task.yield()
+            // The undelivered capability must not stay live. A failed retirement stays
+            // owned by the session owner and is retried by the page's next request.
+            if failedInstallation.installation == installation.installationFence,
+                productSessionOwner.installationFenceProjection.snapshot.installation == nil
+            {
+                setProductBootstrapConnectionErrorIfAdmitted(productAdmission, requestId: requestId)
             }
-            setProductBootstrapConnectionErrorIfAdmitted(productAdmission)
+            await answerProductSessionBootstrapFailure(
+                requestId: requestId,
+                reason: .deliveryFailed,
+                productAdmission: productAdmission
+            )
         }
     }
 
-    private func setProductBootstrapConnectionErrorIfAdmitted(
-        _ productAdmission: BridgeProductAdmissionContext
+    func setProductBootstrapConnectionErrorIfAdmitted(
+        _ productAdmission: BridgeProductAdmissionContext,
+        requestId: String,
+        predecessor: BridgeProductInstallationFenceSnapshot? = nil
     ) {
+        guard isCurrentProductBootstrapRequest(requestId, productAdmission: productAdmission) else { return }
+        if let predecessor, productSessionOwner.installationFenceProjection.snapshot != predecessor { return }
         _ = productAdmission.withValidAdmission {
             paneState.connection.setHealth(.error)
         }
+    }
+
+    func isCurrentProductBootstrapRequest(
+        _ requestId: String,
+        productAdmission: BridgeProductAdmissionContext
+    ) -> Bool {
+        latestProductSessionBootstrapRequestId == requestId
+            && productAdmission.withValidAdmission { true } == true
+    }
+
+    func retireProductBootstrapCandidateIfCurrent(_ installation: BridgeProductSessionInstallation) async {
+        installation.installationFence.close()
+        let current = productSessionOwner.installationFenceProjection.snapshot
+        guard current.installation == installation.installationFence else { return }
+        _ = await productSessionOwner.retire(reason: .pageReload, installation: current)
     }
 
     static func dispatchProductSessionBootstrap(
@@ -511,10 +553,7 @@ extension BridgePaneController {
         let lifecycleTraceRecorder = input.telemetryRecorder.map(
             BridgeProductMetadataLifecycleTraceRecorder.init(recorder:)
         )
-        let annotationSource = makeWorktreeAnnotationSource(
-            input,
-            lifecycleTraceRecorder: lifecycleTraceRecorder
-        )
+        let annotationSource = makeWorktreeAnnotationSource(input)
         let annotationProjectionSource = makeWorktreeAnnotationProjectionSource(
             input,
             fileMetadataSource: fileMetadataSource
@@ -531,7 +570,7 @@ extension BridgePaneController {
             reviewPublicationReplay:
                 input.reviewPublicationCoordinator.committedPublicationForReplay,
             isReviewPublicationCurrent:
-                input.reviewPublicationCoordinator.isCurrentPublication,
+                input.reviewPublicationCoordinator.isCurrentCanonicalPublication,
             admitReviewPublicationInstallation: { request, correlation, productAdmission in
                 input.reviewPublicationCoordinator.admitDisplayInstallation(
                     expectedDisplayedPublicationId: request.expectedDisplayedPublicationId,
@@ -567,6 +606,7 @@ extension BridgePaneController {
             },
             applyReviewComparisonUpdate: committedCallTarget.applyReviewComparisonUpdate,
             applyFileRefreshRetry: committedCallTarget.applyFileRefreshRetry,
+            recordCurrentFileRefreshFailure: input.recordCurrentFileRefreshFailure,
             applyWorktreeAnnotationCommand: makeWorktreeAnnotationCommandHandler(
                 input,
                 fileMetadataSource: fileMetadataSource
@@ -650,16 +690,14 @@ extension BridgePaneController {
     }
 
     private static func makeWorktreeAnnotationSource(
-        _ input: BridgeProductSessionDependencyInput,
-        lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
+        _ input: BridgeProductSessionDependencyInput
     ) -> BridgePaneAnnotationNotificationSource {
         guard let service = input.worktreeAnnotationStore,
             let worktreeID = input.runtime.metadata.worktreeId?.uuidString.lowercased()
         else { return .unavailable }
         return BridgePaneAnnotationNotificationSource(
             service: service,
-            worktreeID: worktreeID,
-            lifecycleTraceRecorder: lifecycleTraceRecorder
+            worktreeID: worktreeID
         )
     }
 
@@ -822,144 +860,5 @@ extension BridgePaneController {
         } catch {
             preconditionFailure("Bridge product session owner construction failed: \(error)")
         }
-    }
-
-    static func registerAgentStudioSchemeHandler(
-        in config: inout WebPage.Configuration,
-        input: BridgeSchemeHandlerRegistrationInput
-    ) {
-        guard let scheme = URLScheme("agentstudio") else { return }
-        config.urlSchemeHandlers[scheme] = BridgeSchemeHandler(
-            paneId: input.paneId,
-            appRootURL: input.appRootURL,
-            telemetrySessionOwner: input.telemetrySessionOwner,
-            productSessionRouter: input.productSessionRouter
-        )
-    }
-
-    nonisolated static func makeTelemetrySessionDependencies(
-        scopeGate: BridgeTelemetryScopeGate,
-        recorder: (any BridgePerformanceTraceRecording)?
-    ) -> BridgePaneTelemetrySessionDependencies? {
-        guard scopeGate.isEnabled(.web), let recorder else { return nil }
-        do {
-            let projector = BridgeTelemetryNativeProjector(recorder: recorder)
-            let installation = try BridgeTelemetrySessionInstallation.make(
-                enabledScopes: [.web],
-                endpointURL: "agentstudio://telemetry/batch",
-                policy: .live,
-                projector: projector.project
-            )
-            return BridgePaneTelemetrySessionDependencies(
-                installation: installation,
-                owner: BridgePaneTelemetrySessionOwner(initialInstallation: installation)
-            )
-        } catch {
-            bridgeProductBootstrapLogger.error("Bridge telemetry session creation failed: \(error)")
-            return nil
-        }
-    }
-
-    nonisolated static func resolveTelemetryDependencies(
-        traceRuntime: AgentStudioTraceRuntime?,
-        telemetryRuntimePolicy: BridgeTelemetryRuntimePolicy,
-        telemetryScopeGate: BridgeTelemetryScopeGate?,
-        telemetryRecorder: (any BridgePerformanceTraceRecording)?,
-        telemetrySessionDependencies: BridgePaneTelemetrySessionDependencies?
-    ) -> (
-        scopeGate: BridgeTelemetryScopeGate,
-        recorder: (any BridgePerformanceTraceRecording)?,
-        sessionDependencies: BridgePaneTelemetrySessionDependencies?
-    ) {
-        guard telemetryRuntimePolicy.allowsTelemetry else {
-            return (BridgeTelemetryScopeGate(enabledScopes: []), nil, telemetrySessionDependencies)
-        }
-
-        let resolvedScopeGate = telemetryScopeGate ?? BridgeTelemetryScopeGate(traceRuntime: traceRuntime)
-        let resolvedRecorder =
-            telemetryRecorder
-            ?? (resolvedScopeGate.isEnabled ? BridgePerformanceTraceRecorder(traceRuntime: traceRuntime) : nil)
-        let resolvedSessionDependencies =
-            telemetrySessionDependencies
-            ?? makeTelemetrySessionDependencies(scopeGate: resolvedScopeGate, recorder: resolvedRecorder)
-        return (resolvedScopeGate, resolvedRecorder, resolvedSessionDependencies)
-    }
-
-    static func makeBootstrapScript(_ input: BridgeBootstrapScriptInput) -> WKUserScript {
-        WKUserScript(
-            source: BridgeBootstrap.generateScript(
-                appProtocol: Self.bridgeAppProtocol(for: input.panelKind),
-                reviewPaneId: input.reviewPaneId,
-                reviewStreamId: input.reviewStreamId,
-                telemetryConfig: input.telemetryConfig
-            ),
-            injectionTime: .atDocumentStart,
-            forMainFrameOnly: true,
-            in: input.bridgeWorld
-        )
-    }
-
-    static func makeBootstrapArtifacts(
-        paneId: UUID,
-        state: BridgePaneState,
-        telemetryScopeGate: BridgeTelemetryScopeGate,
-        viewerOpenTelemetryAnchor: BridgeViewerOpenTelemetryAnchor? = nil,
-        bridgeWorld: WKContentWorld
-    ) -> BridgeBootstrapArtifacts {
-        let reviewPaneId = paneId.uuidString
-        let reviewStreamId = "review:\(reviewPaneId)"
-        let webTelemetryScopes = telemetryScopeGate.browserExposedScopes
-        let telemetryConfig: BridgeTelemetryBootstrapConfig?
-        if webTelemetryScopes.isEmpty {
-            telemetryConfig = nil
-        } else {
-            telemetryConfig = BridgeTelemetryBootstrapConfig.enabled(
-                scopes: webTelemetryScopes,
-                scenario: BridgeTelemetryBootstrapConfig.packageApplyContentFetchScenario,
-                viewerOpenEpochUnixMillis: viewerOpenTelemetryAnchor?.openEpochUnixMillis,
-                viewerOpenTraceparent: viewerOpenTelemetryAnchor?.traceparent
-            )
-        }
-        let script = makeBootstrapScript(
-            BridgeBootstrapScriptInput(
-                reviewPaneId: reviewPaneId,
-                reviewStreamId: reviewStreamId,
-                panelKind: state.panelKind,
-                telemetryConfig: telemetryConfig,
-                bridgeWorld: bridgeWorld
-            )
-        )
-        return BridgeBootstrapArtifacts(script: script)
-    }
-
-    private static func bridgeAppProtocol(for panelKind: BridgePanelKind) -> String {
-        switch panelKind {
-        case .diffViewer:
-            "review"
-        case .fileViewer:
-            "worktree-file"
-        }
-    }
-
-    static func installInitialUserScripts(
-        in userContentController: WKUserContentController,
-        bootstrapScript: WKUserScript,
-        managementScript: WKUserScript
-    ) {
-        userContentController.addUserScript(bootstrapScript)
-        #if DEBUG
-            userContentController.addUserScript(Self.makePageDiagnosticsProbeScript())
-        #endif
-        userContentController.addUserScript(managementScript)
-    }
-
-    static func worktreeFileBootstrapRootURL(
-        metadata: PaneMetadata,
-        source: BridgePaneSource?
-    ) -> URL? {
-        if case .workspace(let rootPath, _)? = source {
-            return URL(fileURLWithPath: rootPath).standardizedFileURL.resolvingSymlinksInPath()
-        }
-        return metadata.cwd?.standardizedFileURL.resolvingSymlinksInPath()
     }
 }

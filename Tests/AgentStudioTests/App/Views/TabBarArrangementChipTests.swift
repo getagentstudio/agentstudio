@@ -17,7 +17,7 @@ struct TabBarArrangementChipTests {
             isHovered: false,
             isPressed: false,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
         #expect(chip.hasCustomArrangement == false)
     }
@@ -30,7 +30,7 @@ struct TabBarArrangementChipTests {
             isHovered: false,
             isPressed: false,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
         #expect(chip.hasCustomArrangement == true)
     }
@@ -43,7 +43,7 @@ struct TabBarArrangementChipTests {
             isHovered: false,
             isPressed: false,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
         #expect(chip.hasCustomArrangement == false)
     }
@@ -56,7 +56,7 @@ struct TabBarArrangementChipTests {
             isHovered: false,
             isPressed: false,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
         #expect(chip.hasCustomArrangement == false)
     }
@@ -69,7 +69,7 @@ struct TabBarArrangementChipTests {
             isHovered: false,
             isPressed: false,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
         #expect(chip.showsArrangementName)
     }
@@ -82,7 +82,7 @@ struct TabBarArrangementChipTests {
             isHovered: false,
             isPressed: false,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
         #expect(!chip.showsArrangementName)
     }
@@ -105,7 +105,7 @@ struct TabBarArrangementChipTests {
             isHovered: true,
             isPressed: true,
             nameMaxWidth: 100,
-            octiconLoader: OcticonLoader(resourceRootURL: testAgentStudioResourceRootURL())
+            octiconLoader: makeTestOcticonLoader()
         )
 
         #expect(chip.styleContract.height == AppStyles.Shell.Chrome.ToolbarButton.size)

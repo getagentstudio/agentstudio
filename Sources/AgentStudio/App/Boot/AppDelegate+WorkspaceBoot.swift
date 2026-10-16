@@ -104,10 +104,12 @@ extension AppDelegate {
             await bootPrepareDatabases()
         case .loadCanonicalStore:
             await bootLoadCanonicalStore()
+        case .loadSidebarMemory:
+            await bootLoadSidebarMemory()
         case .loadCacheStore:
             await bootLoadCacheStore()
-        case .loadUIStore:
-            await bootLoadUIStore()
+        case .loadWorkspaceSettings:
+            await bootLoadWorkspaceSettings()
         case .establishRuntimeBus:
             await bootEstablishRuntimeBus(paneRuntimeBus: paneRuntimeBus, filesystemSource: &filesystemSource)
         case .startFilesystemActor:
@@ -229,7 +231,6 @@ extension AppDelegate {
             }
         )
         workspaceSettingsStore = makeWorkspaceSettingsStore(sqliteDatastore: sqliteDatastore)
-        Ghostty.ActionRouter.bindTraceRuntime(traceRuntime)
         switch await store.loadCanonicalComposition() {
         case .loaded(let acceptance), .initializedDefaultWorkspace(let acceptance):
             acceptWorkspacePreparedContentMountCohort(acceptance.contentMountCohort)
@@ -304,12 +305,8 @@ extension AppDelegate {
     }
 
     private func configureInteractionPerformanceProbeOwners() {
-        let interactionProbe = AgentStudioInteractionPerformanceProbe(recorder: performanceTraceRecorder)
-        managementLayerMonitor = ManagementLayerMonitor(interactionProbe: interactionProbe)
-        AppCommandDispatcher.shared.interactionProbe = interactionProbe
-        AppCommandDispatcher.shared.onCommandRefreshAccepted = { [weak managementLayerMonitor] correlationId in
-            managementLayerMonitor?.prepareCommandRefreshSettlement(correlationId: correlationId)
-        }
+        managementLayerMonitor = ManagementLayerMonitor(
+            commandDispatcher: self.commandDispatcherForBoot(), interactionProbe: commandInteractionProbeForBoot())
     }
 
     private func makeWorkspaceSQLiteDatastore(traceRuntime: AgentStudioTraceRuntime?) -> WorkspaceSQLiteDatastoreActor {
@@ -342,9 +339,12 @@ extension AppDelegate {
         await sidebarCacheStore.restoreAsync(for: store.identityAtom.workspaceId)
     }
 
-    private func bootLoadUIStore() async {
-        await workspaceSettingsStore.restoreAsync(for: store.identityAtom.workspaceId)
+    private func bootLoadSidebarMemory() async {
         await uiStateStore.restoreAsync(for: store.identityAtom.workspaceId)
+    }
+
+    private func bootLoadWorkspaceSettings() async {
+        await workspaceSettingsStore.restoreAsync(for: store.identityAtom.workspaceId)
     }
 
     private func bootRecoverUndoJournal() async -> WorkspaceUndoJournalRecovery {
@@ -363,6 +363,7 @@ extension AppDelegate {
         filesystemSource: inout FilesystemGitPipeline?
     ) async {
         let undoRecovery = await bootRecoverUndoJournal()
+        await bootRestorePaneActivity()
         runtime = SessionRuntime(atom: atomStore.core.sessionRuntime, store: store)
         viewRegistry = ViewRegistry()
         closeTransitionCoordinator = PaneCloseTransitionCoordinator()
@@ -432,15 +433,19 @@ extension AppDelegate {
         gitStatusPhysicalGate: AgentStudioGitStatusPhysicalGate,
         undoRecovery: WorkspaceUndoJournalRecovery
     ) {
-        SurfaceManager.shared.setPerformanceTraceRecorder(performanceTraceRecorder)
-        SurfaceManager.shared.setAppCommandDispatcher(AppCommandDispatcher.shared)
+        let surfaceManager = terminalLookupForBoot()
         workspaceSurfaceCoordinator = WorkspaceSurfaceCoordinator(
             store: store,
             viewRegistry: viewRegistry,
             runtime: runtime,
-            surfaceManager: SurfaceManager.shared,
+            surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: surfaceManager,
+            terminalSurfaceOperations: surfaceManager.makeTerminalPaneSurfaceOperations(),
+            bridgePageCommandRunner: WorkspaceSurfaceCoordinator.makeBridgePageCommandRunner(
+                dispatcher: commandDispatcherForBoot()
+            ),
             startupTraceRecorder: startupTraceRecorder,
-            runtimeRegistry: .shared,
+            runtimeRegistry: startupRuntimeRegistry,
             paneEventBus: paneRuntimeBus,
             closeTransitionCoordinator: closeTransitionCoordinator,
             bridgeGitReadScheduler: bridgeGitReadScheduler,
@@ -464,7 +469,7 @@ extension AppDelegate {
         if let backend = ZmxBackend(configuration: workspaceSurfaceCoordinator.sessionConfig) {
             workspaceSurfaceCoordinator.startTerminalSessionCleanup(
                 using: backend,
-                canRetire: { sessionID in !SurfaceManager.shared.hasNativeAttachments(for: sessionID) })
+                canRetire: { sessionID in !surfaceManager.hasNativeAttachments(for: sessionID) })
         }
         bootInstallPreparedContentMountOwners(coordinator: workspaceSurfaceCoordinator)
         workspaceCacheCoordinator = WorkspaceCacheCoordinator(
@@ -510,19 +515,20 @@ extension AppDelegate {
         startWorkspacePaneRecencyObservation()
         bootInstallCommandBar()
         bootStartTerminalActivityRouter(bus: paneRuntimeBus)
-        AppCommandDispatcher.shared.appCommandRouter = self
+        markShellRuntimeOwnersInstalled()
         oauthService = OAuthService()
     }
 
     private func bootInstallCommandBar() {
+        let dispatcher = commandDispatcherForBoot()
         let searchService = SearchService(performanceTraceRecorder: performanceTraceRecorder)
         commandBarController = CommandBarPanelController(
             store: store,
             octiconLoader: octiconLoader,
             repoCache: repoCache,
-            dispatcher: AppCommandDispatcher.shared,
+            dispatcher: dispatcher,
             quickOpenDirectoryHandler: { directory, placement in
-                AppCommandDispatcher.shared.dispatchQuickOpenDirectory(
+                dispatcher.dispatchQuickOpenDirectory(
                     directory,
                     placement: placement
                 )

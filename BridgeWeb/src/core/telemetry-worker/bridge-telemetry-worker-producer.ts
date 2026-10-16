@@ -40,6 +40,11 @@ export interface BridgeTelemetryWorkerProducer {
 	readonly record: (
 		sample: BridgeTelemetryCompactSample,
 	) => BridgeTelemetryWorkerProducerRecordResult;
+	readonly recordPriorLoss: (input: {
+		readonly requiredCount: number;
+		readonly optionalCount: number;
+		readonly reason: BridgeTelemetryLossReason;
+	}) => void;
 	readonly flushLossSummary: () => boolean;
 	readonly grantSampleCredits: (count: number) => void;
 	readonly grantControlCredits: (count: number) => void;
@@ -170,7 +175,7 @@ export function createBridgeTelemetryWorkerProducer(
 			retainedPreReadyRequiredSampleEncodedBytes + encodedBytes >
 				preReadyRequiredSampleMaxEncodedBytes
 		) {
-			appendPreReadyLoss(sequence, true, 'queue_saturated');
+			appendPreReadyLoss(sequence, true, optionalLossReason);
 			return { disposition: 'loss_recorded', sequence };
 		}
 		preReadyEntries.push({ encodedBytes, kind: 'sample', sample, sequence });
@@ -240,6 +245,40 @@ export function createBridgeTelemetryWorkerProducer(
 	};
 
 	const producer: BridgeTelemetryWorkerProducer = {
+		recordPriorLoss: ({ requiredCount, optionalCount, reason }): void => {
+			const lostCount = requiredCount + optionalCount;
+			if (
+				state !== 'active' ||
+				generation !== null ||
+				!Number.isSafeInteger(requiredCount) ||
+				requiredCount < 0 ||
+				!Number.isSafeInteger(optionalCount) ||
+				optionalCount < 0 ||
+				!Number.isSafeInteger(nextSequence + lostCount)
+			) {
+				throw new Error('Invalid prior telemetry loss range');
+			}
+			if (lostCount === 0) return;
+			const start = nextSequence;
+			nextSequence += lostCount;
+			const tail = preReadyEntries.at(-1);
+			if (tail?.kind === 'loss' && tail.reason === reason && tail.range.end + 1 === start) {
+				tail.range.end += lostCount;
+				tail.range.requiredCount += requiredCount;
+				tail.range.optionalCount += optionalCount;
+				return;
+			}
+			preReadyEntries.push({
+				kind: 'loss',
+				range: {
+					start,
+					end: nextSequence - 1,
+					requiredCount,
+					optionalCount,
+				},
+				reason,
+			});
+		},
 		record: (sample): BridgeTelemetryWorkerProducerRecordResult => {
 			const sequence = nextSequence;
 			nextSequence += 1;

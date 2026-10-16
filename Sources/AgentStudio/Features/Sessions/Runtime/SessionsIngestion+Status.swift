@@ -1,0 +1,259 @@
+import AgentStudioCore
+import Foundation
+
+extension SessionsIngestion: SessionOpenAskInput {
+    package func receiveOpenAskSummary(_ update: SessionsOpenAskUpdate) async {
+        guard !isStatusClosed else { return }
+        let previous = statusRuntime.pendingAsks[update.bindingGenerationId]?.sequence ?? 0
+        guard update.summary.sequence > previous else { return }
+        statusRuntime.pendingAsks[update.bindingGenerationId] = update.summary
+        guard var state = statusRuntime.states[update.bindingGenerationId] else { return }
+        SessionStatusReducer.apply(
+            .init(
+                input: .openAsks(update.summary), sequence: update.summary.sequence, occurredAt: Date(),
+                admittedAt: ContinuousClock.now, turnId: nil), to: &state)
+        statusRuntime.states[update.bindingGenerationId] = state
+        if let paneId = statusRuntime.bindings[update.bindingGenerationId]?.paneId { publishStatus(paneId: paneId) }
+    }
+
+    package func receiveAgentLine(work: AgentLineWork?, bindingGenerationId: UUID) async {
+        guard !isStatusClosed else { return }
+        guard var state = statusRuntime.states[bindingGenerationId] else { return }
+        state.lineWork = work
+        statusRuntime.states[bindingGenerationId] = state
+        if let paneId = statusRuntime.bindings[bindingGenerationId]?.paneId { publishStatus(paneId: paneId) }
+    }
+
+    package func sessionSummary(paneId: UUID) async throws -> SessionSummary? {
+        try await restoreStatusIfNeeded(paneId: paneId)
+        consumePaneViewedBatch()
+        return try statusRuntime.summary(paneId: paneId)
+    }
+
+    package func readSessionStatus(paneId: UUID) async throws -> SessionsStatusReadResult {
+        try await restoreStatusIfNeeded(paneId: paneId)
+        consumePaneViewedBatch()
+        guard let generation = statusRuntime.currentBindingByPane[paneId] else { return .unbound }
+        guard let state = statusRuntime.states[generation], let summary = try statusRuntime.summary(paneId: paneId)
+        else { throw SessionsRepositoryError.invalidStoredValue("current session status") }
+        switch state.binding {
+        case .bound: return .live(summary)
+        case .ended, .replaced: return .ended(summary)
+        }
+    }
+
+    func restoreStatusIfNeeded(
+        paneId: UUID, remainsPresent: @Sendable () -> Bool = { true }
+    ) async throws {
+        guard !statusRuntime.retiredPaneIds.contains(paneId) else { return }
+        await startPaneViewedIngressIfNeeded()
+        if !didLoadOpenAsks {
+            do {
+                let updates = try await openAskSource.openAskSummaries()
+                for update in updates { await receiveOpenAskSummary(update) }
+                didLoadOpenAsks = true
+            } catch {
+                // Keep demand-driven hydration eligible after a transient failure.
+            }
+        }
+        guard !statusRuntime.restoredPaneIds.contains(paneId) else { return }
+        let context = try await repository.statusContext(paneId: paneId)
+        consumePaneViewedBatch()
+        guard remainsPresent(), !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
+        statusRuntime.restore(context, paneId: paneId, admittedAt: ContinuousClock.now)
+        consumePaneViewedBatch()
+        publishStatus(paneId: paneId)
+    }
+
+    func startPaneViewedIngressIfNeeded() async {
+        if statusIngressTask == nil {
+            statusIngressTask = Task { [weak self, paneViewedMailbox] in
+                for await _ in paneViewedMailbox.wakes {
+                    guard let self else { break }
+                    await self.consumePaneViewedBatch()
+                }
+            }
+            await statusPublicationLane?.start()
+        }
+    }
+
+    func applyCommittedHook(_ committed: SessionsHookCommit, admittedAt: ContinuousClock.Instant) async throws {
+        clearRefusal(paneId: committed.binding.paneId)
+        if committed.binding.status == .active {
+            unverifiedStatusRuntime.panes.removeValue(forKey: committed.binding.paneId)
+        }
+        guard committed.disposition != .recordedOnly else {
+            publishStatus(paneId: committed.binding.paneId)
+            return
+        }
+        let supersededBindingGenerationId: UUID?
+        if let superseded = committed.supersededBinding {
+            supersededBindingGenerationId = superseded.bindingGenerationId
+            statusRuntime.bindings[superseded.bindingGenerationId] = superseded
+            statusRuntime.confirmedLiveBindingIds.remove(superseded.bindingGenerationId)
+            statusRuntime.liveBindingBoundAt.removeValue(forKey: superseded.bindingGenerationId)
+            if var state = statusRuntime.states[superseded.bindingGenerationId] {
+                SessionStatusReducer.apply(
+                    .init(
+                        input: .bindingReplaced(by: committed.binding.bindingGenerationId),
+                        sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
+                        admittedAt: admittedAt, turnId: nil), to: &state)
+                statusRuntime.states[superseded.bindingGenerationId] = state
+            }
+        } else {
+            supersededBindingGenerationId = nil
+        }
+        let binding = committed.binding
+        if committed.disposition == .bound {
+            installStatusBinding(binding, boundAt: admittedAt)
+        } else if binding.status == .active {
+            statusRuntime.confirmedLiveBindingIds.insert(binding.bindingGenerationId)
+        }
+        statusRuntime.bindings[binding.bindingGenerationId] = binding
+        let input = SessionsStatusRuntime.statusInput(committed.evidence)
+        if let input {
+            let turnId: String? =
+                committed.disposition == .bound && committed.evidence.providerSignal == .sessionStart
+                ? nil : committed.evidence.turnId
+            updateStatus(
+                generation: binding.bindingGenerationId,
+                event: .init(
+                    input: input, sequence: committed.revision, occurredAt: committed.evidence.occurredAt,
+                    admittedAt: admittedAt, turnId: turnId))
+        }
+        consumePaneViewedBatch()
+        publishStatus(paneId: binding.paneId)
+        if let supersededBindingGenerationId {
+            await sessionEnded(supersededBindingGenerationId)
+        }
+        if case .sessionEnd? = input {
+            statusRuntime.liveBindingBoundAt.removeValue(forKey: binding.bindingGenerationId)
+            statusRuntime.confirmedLiveBindingIds.remove(binding.bindingGenerationId)
+            await sessionEnded(binding.bindingGenerationId)
+        }
+    }
+
+    func closeLiveBindingForCommandExit(
+        paneId: UUID, reportedAt: ContinuousClock.Instant
+    ) async throws -> SessionsBindingEndCommit? {
+        try await restoreStatusIfNeeded(paneId: paneId)
+        consumePaneViewedBatch()
+        if !hasActiveBinding(paneId: paneId), !statusRuntime.retiredPaneIds.contains(paneId) {
+            unverifiedStatusRuntime.commandFinished(paneId: paneId, reportedAt: reportedAt, at: Date())
+            publishStatus(paneId: paneId)
+            return nil
+        }
+        guard !statusRuntime.retiredPaneIds.contains(paneId),
+            let bindingGenerationId = statusRuntime.currentBindingByPane[paneId],
+            let binding = statusRuntime.bindings[bindingGenerationId],
+            binding.status == .active,
+            statusRuntime.states[bindingGenerationId] != nil
+        else { return nil }
+        // A restored binding predates every exit observed by this process.
+        if let boundAt = statusRuntime.liveBindingBoundAt[bindingGenerationId], boundAt >= reportedAt {
+            return nil
+        }
+
+        let endedAt = Date(timeIntervalSince1970: Date().timeIntervalSince1970)
+        guard
+            let committed = try await repository.endLiveBinding(expectedBinding: binding, endedAt: endedAt)
+        else { return nil }
+        applyCommittedCommandFinished(committed, reportedAt: reportedAt)
+        await sessionEnded(bindingGenerationId)
+        return committed
+    }
+
+    private func applyCommittedCommandFinished(
+        _ committed: SessionsBindingEndCommit, reportedAt: ContinuousClock.Instant
+    ) {
+        let binding = committed.binding
+        statusRuntime.bindings[binding.bindingGenerationId] = binding
+        if var state = statusRuntime.states[binding.bindingGenerationId] {
+            SessionStatusReducer.apply(
+                .init(
+                    input: .sessionEnd, sequence: committed.revision, occurredAt: committed.endedAt,
+                    admittedAt: reportedAt, turnId: nil), to: &state)
+            statusRuntime.states[binding.bindingGenerationId] = state
+        }
+        statusRuntime.liveBindingBoundAt.removeValue(forKey: binding.bindingGenerationId)
+        statusRuntime.confirmedLiveBindingIds.remove(binding.bindingGenerationId)
+        publishStatus(paneId: binding.paneId)
+    }
+
+    private func installStatusBinding(_ binding: SessionsBindingRecord, boundAt: ContinuousClock.Instant) {
+        guard !statusRuntime.retiredPaneIds.contains(binding.paneId) else { return }
+        statusRuntime.bindings[binding.bindingGenerationId] = binding
+        statusRuntime.currentBindingByPane[binding.paneId] = binding.bindingGenerationId
+        statusRuntime.liveBindingBoundAt[binding.bindingGenerationId] = boundAt
+        statusRuntime.confirmedLiveBindingIds.insert(binding.bindingGenerationId)
+        var state = SessionStatusState(binding: .bound(binding.bindingGenerationId))
+        if let asks = statusRuntime.pendingAsks[binding.bindingGenerationId] { state.openAsks = asks }
+        statusRuntime.states[binding.bindingGenerationId] = state
+    }
+
+    private func updateStatus(generation: UUID, event: SessionStatusEvent) {
+        guard var state = statusRuntime.states[generation], let binding = statusRuntime.bindings[generation] else {
+            return
+        }
+        SessionStatusReducer.apply(event, to: &state)
+        if let viewedAt = statusRuntime.latestViewedAt[binding.paneId] {
+            SessionStatusReducer.apply(
+                .init(
+                    input: .paneViewed(viewedAt), sequence: event.sequence, occurredAt: event.occurredAt,
+                    admittedAt: event.admittedAt, turnId: nil), to: &state)
+        }
+        statusRuntime.states[generation] = state
+    }
+
+    func consumePaneViewedBatch() {
+        let batch = paneViewedMailbox.takeBatch()
+        for paneId in batch.retiredPaneIds {
+            guard statusRuntime.retiredPaneIds.insert(paneId).inserted else { continue }
+            clearRefusal(paneId: paneId)
+            unverifiedStatusRuntime.panes.removeValue(forKey: paneId)
+            if let bindingGenerationId = statusRuntime.currentBindingByPane.removeValue(forKey: paneId) {
+                statusRuntime.liveBindingBoundAt.removeValue(forKey: bindingGenerationId)
+                statusRuntime.confirmedLiveBindingIds.remove(bindingGenerationId)
+            }
+            statusRuntime.latestViewedAt.removeValue(forKey: paneId)
+            statusPublicationMailbox.retire(.init(existingUUID: paneId))
+        }
+        for view in batch.views where !statusRuntime.retiredPaneIds.contains(view.paneId) {
+            let paneId = view.paneId
+            let viewedAt = view.viewedAt
+            if let latest = statusRuntime.latestViewedAt[paneId], latest >= viewedAt { continue }
+            statusRuntime.latestViewedAt[paneId] = viewedAt
+            unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
+            if let generation = statusRuntime.currentBindingByPane[paneId] {
+                updateStatus(
+                    generation: generation,
+                    event: .init(
+                        input: .paneViewed(viewedAt), sequence: 0, occurredAt: Date(), admittedAt: ContinuousClock.now,
+                        turnId: nil))
+            }
+            publishStatus(paneId: paneId)
+        }
+    }
+
+    func hasActiveBinding(paneId: UUID) -> Bool {
+        guard let generation = statusRuntime.currentBindingByPane[paneId] else { return false }
+        return statusRuntime.bindings[generation]?.status == .active
+    }
+
+    func publishStatus(paneId: UUID) {
+        guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
+        let verified = statusRuntime.currentBindingByPane[paneId].flatMap { statusRuntime.states[$0] }
+        let status: AgentSessionStatus
+        let issue: AgentConnectionRefusalReason?
+        if hasActiveBinding(paneId: paneId), let verified {
+            status = SessionStatusReducer.status(of: verified)
+            issue = nil
+        } else {
+            status =
+                unverifiedStatusRuntime.status(paneId: paneId)
+                ?? verified.map(SessionStatusReducer.status) ?? .unknown
+            issue = lastRefusalReason(paneId: paneId)
+        }
+        statusPublicationMailbox.offer(.init(status: status, connectionIssue: issue), for: .init(existingUUID: paneId))
+    }
+}

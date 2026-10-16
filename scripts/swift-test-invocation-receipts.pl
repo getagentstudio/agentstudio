@@ -188,6 +188,92 @@ if ($mode eq 'collect') {
     save_json("$stem.invocation.json", $record);
     write_lines("$stem.pending-waits.txt", \@pending_reports);
     print encode_utf8($_), "\n" for @reports;
+} elsif ($mode eq 'facts') {
+    my ($events_path, $expected_runs) = @ARGV;
+    $expected_runs = numeric($expected_runs) ? int($expected_runs) : 0;
+    my ($run_started, $run_ended, $open_runs, $unbalanced_runs, $tests_run, $tests_skipped, $unreadable_records) = (0, 0, 0, 0, 0, 0, 0);
+    my ($peak_announced, $running_cases, $peak_cases) = (0, 0, 0);
+    my ($failing_issues, $unattributed_issues) = (0, 0);
+    my (%definitions, %active_tests, %case_counts, %failed_tests, @failing_tests);
+    my $events_available = open(my $events, '<:raw', $events_path // '');
+    if ($events_available) {
+        while (my $line = <$events>) {
+            if ($line !~ /\n\z/) { $unreadable_records++; next }
+            my $raw = eval { $json->decode($line) };
+            if (ref($raw) ne 'HASH' || ref($raw->{payload}) ne 'HASH') { $unreadable_records++; next }
+            my $event = $raw->{payload};
+            my $kind = $event->{kind} // '';
+            if (($raw->{kind} // '') eq 'test') {
+                if (!defined($event->{id}) || ($kind ne 'suite' && $kind ne 'function')) { $unreadable_records++; next }
+                $definitions{$event->{id}} = $event;
+                next;
+            }
+            if (($raw->{kind} // '') ne 'event' || !length($kind)) { $unreadable_records++; next }
+            if ($kind eq 'runStarted') {
+                $unbalanced_runs++ if $open_runs;
+                $run_started++; $open_runs++;
+                next;
+            }
+            if ($kind eq 'runEnded') {
+                $unbalanced_runs++ if !$open_runs;
+                $run_ended++; $open_runs-- if $open_runs;
+                next;
+            }
+            my $id = $event->{testID};
+            my $test_definition = defined($id) ? $definitions{$id} : undef;
+            my $is_function = defined($test_definition) && (($test_definition->{kind} // '') eq 'function');
+            if (($kind eq 'testStarted' || $kind eq 'testEnded' || $kind eq 'testSkipped')
+                && !defined($test_definition)) {
+                $unreadable_records++;
+                next;
+            }
+            if ($kind eq 'testStarted' && $is_function) {
+                $active_tests{$id} = 1;
+                my $announced = scalar(keys %active_tests);
+                $peak_announced = $announced if $announced > $peak_announced;
+            } elsif ($kind eq 'testEnded' && $is_function) {
+                $tests_run++;
+                delete $active_tests{$id};
+            } elsif ($kind eq 'testSkipped' && $is_function) {
+                # ABI 6.3 emits skips for suite containers as well as functions.
+                $tests_skipped++;
+            } elsif ($kind eq 'testCaseStarted' && defined($id)) {
+                # ABI 6.3 has no case id. Paired starts/ends preserve the count.
+                $case_counts{$id}++;
+                $running_cases++;
+                $peak_cases = $running_cases if $running_cases > $peak_cases;
+            } elsif ($kind eq 'testCaseEnded' && defined($id)) {
+                if ($case_counts{$id}) { $case_counts{$id}--; $running_cases-- }
+            } elsif ($kind eq 'issueRecorded') {
+                my $issue = $event->{issue};
+                if (ref($issue) ne 'HASH' || (!exists($issue->{isFailure}) && !exists($issue->{isKnown}))) {
+                    $unreadable_records++;
+                    next;
+                }
+                my $failure = exists($issue->{isFailure}) ? $issue->{isFailure} : !$issue->{isKnown};
+                if ($failure) {
+                    $failing_issues++;
+                    if (!defined($id)) { $unattributed_issues++ }
+                    elsif (!$failed_tests{$id}++) { push @failing_tests, $id }
+                }
+            }
+        }
+        close $events;
+    }
+    my $stream = !$events_available ? 'missing'
+        : $unreadable_records ? 'unreadable'
+        : ($expected_runs < 1 || $unbalanced_runs || $run_started != $expected_runs || $run_ended != $expected_runs || $open_runs != 0) ? 'truncated'
+        : 'complete';
+    print "stream=$stream\n";
+    print "unreadable_records=$unreadable_records\n";
+    print "runs=$run_ended\n";
+    print "tests_run=$tests_run\n";
+    print "tests_skipped=$tests_skipped\n";
+    print "peak_announced_tests=$peak_announced\n";
+    print "peak_running_parameterized_cases=$peak_cases\n";
+    print "failing_issues=$failing_issues\n";
+    print "failing_test=$_\n" for @failing_tests;
+    print "failing_issue=unattributed\n" for 1 .. $unattributed_issues;
 } elsif ($mode eq 'resources') {
     my ($stem, $child, $dispatch, $complete, $timed_out) = @ARGV;
     my $record = load_json("$stem.invocation.json");

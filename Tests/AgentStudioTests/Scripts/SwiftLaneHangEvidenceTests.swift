@@ -73,12 +73,13 @@ struct SwiftLaneHangEvidenceTests {
 
         let laneOutput = try await laneBashAllowingFailure(
             "mkdir -p '\(workDirectory)'; "
-                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+                + "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'dump probe' 0 /bin/bash -c "
-                + "'while true; do sleep 1; done' AgentStudioPackageTests "
-                + "|| returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "'while true; do sleep 1; done' swiftpm-testing-helper AgentStudioTests.xctest "
+                + "|| returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armed
         )
         let dumpRange = try #require(laneOutput.range(of: "lane-report task_dump="))
         let reapRange = try #require(laneOutput.range(of: "lane-report timeout_reap="))
@@ -108,7 +109,7 @@ struct SwiftLaneHangEvidenceTests {
           >> "$AGENTSTUDIO_HELD_STEP_LOG"
         printf 'expecting\\tchild-1\\trefreshClosed\\tworktree-1\\tSuite.swift test()\\tSuite.swift:42 test()\\n' \
           >> "$AGENTSTUDIO_HELD_STEP_LOG"
-        touch "$LANE_WATCHDOG_ARM_PATH"
+        echo '\(laneWatchdogArmLine)'
         while true; do sleep 1; done
 
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
@@ -120,13 +121,13 @@ struct SwiftLaneHangEvidenceTests {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: workDirectory + "/bin/xcrun")
 
         let laneOutput = try await laneBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory)'; "
-                + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/watchdog-armed'; "
                 + "export PATH='\(workDirectory)/bin':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'evidence probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "AgentStudioPackageTests || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armedByFixture
         )
         let evidenceFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         let ledger = try #require(evidenceFiles.first { $0.hasSuffix(".events.jsonl") })
@@ -242,18 +243,18 @@ struct SwiftLaneHangEvidenceTests {
         try FileManager.default.createDirectory(atPath: workDirectory, withIntermediateDirectories: true)
         try """
         echo '[agentstudio-test-log] unavailable path=/missing/events.log errno=2' >&2
-        touch "$LANE_WATCHDOG_ARM_PATH"
+        echo '\(laneWatchdogArmLine)'
         while true; do sleep 1; done
 
         """.write(toFile: workDirectory + "/wedged-test.sh", atomically: true, encoding: .utf8)
 
         let report = try await laneBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/ci-runs'; "
-                + "export LANE_WATCHDOG_ARM_PATH='\(workDirectory)/armed'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'unavailable probe' 0 /bin/bash '\(workDirectory)/wedged-test.sh' "
-                + "AgentStudioPackageTests || returned=$?; echo \"RETURNED=${returned:-0}\""
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"",
+            innerWatchdog: .armedByFixture
         )
         let unavailableRange = try #require(report.range(of: "lane-report held_step_log_unavailable"))
         let reapRange = try #require(report.range(of: "lane-report timeout_reap="))
@@ -281,18 +282,20 @@ struct SwiftLaneHangEvidenceTests {
             )
         }
         func wedgedLane(inspectorDirectory: String) -> String {
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=0; BUILD_PATH='\(workDirectory)/\(inspectorDirectory)-build'; "
                 + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/\(inspectorDirectory)-runs'; "
                 + "export LANE_STACK_SAMPLE_TOOL='\(workDirectory)/no-such-sample'; "
                 + "export PATH='\(workDirectory)/\(inspectorDirectory)':$PATH; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'no sample probe' 0 /bin/bash -c 'while true; do sleep 1; done' "
-                + "AgentStudioPackageTests || returned=$?; echo \"RETURNED=${returned:-0}\"; "
+                + "swiftpm-testing-helper AgentStudioTests.xctest || returned=$?; echo \"RETURNED=${returned:-0}\"; "
                 + "echo \"DUMPS=$(ls -1 '\(workDirectory)/\(inspectorDirectory)-runs' | grep -c task-dump || true)\""
         }
 
-        let samplerMissing = try await laneBashAllowingFailure(wedgedLane(inspectorDirectory: "attaching"))
-        let bothMissing = try await laneBashAllowingFailure(wedgedLane(inspectorDirectory: "refusing"))
+        let samplerMissing = try await laneBashAllowingFailure(
+            wedgedLane(inspectorDirectory: "attaching"), innerWatchdog: .armed)
+        let bothMissing = try await laneBashAllowingFailure(
+            wedgedLane(inspectorDirectory: "refusing"), innerWatchdog: .armed)
 
         for laneOutput in [samplerMissing, bothMissing] {
             #expect(laneOutput.contains("RETURNED=124"))
@@ -381,6 +384,60 @@ struct SwiftLaneHangEvidenceTests {
         )
         let retainedFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory).sorted()
         #expect(retainedFiles == expectedFiles)
+    }
+
+    @Test("a failed retention check cannot remove a member of any kept evidence stem", arguments: ["grep", "sort"])
+    func failedRetentionCheckKeepsEveryStemMember(failingCommand: String) async throws {
+        let fixtureRoot = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentstudio-retention-failure-\(UUIDv7.generate())")
+        defer { try? FileManager.default.removeItem(at: fixtureRoot) }
+        let evidenceDirectory = fixtureRoot.appendingPathComponent("evidence")
+        let shimDirectory = fixtureRoot.appendingPathComponent("shims")
+        try FileManager.default.createDirectory(at: evidenceDirectory, withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: shimDirectory, withIntermediateDirectories: true)
+        var expectedFiles: [String] = []
+        for stemNumber in 2...6 {
+            let stem = "lane-retention-probe-20260924T00000\(stemNumber)-100"
+            for suffix in [".events.jsonl", ".timing.json", "-pid\(stemNumber)0.task-dump.txt"] {
+                let name = stem + suffix
+                try "evidence".write(
+                    to: evidenceDirectory.appendingPathComponent(name), atomically: true, encoding: .utf8)
+                expectedFiles.append(name)
+            }
+        }
+        // No discarded stem comes first: the third grep call checks kept stem2's timing file.
+        let grepShim = """
+            #!/bin/bash
+            invocation=0
+            if [[ -f "$GREP_INVOCATION_COUNTER" ]]; then
+              IFS= read -r invocation < "$GREP_INVOCATION_COUNTER"
+            fi
+            invocation=$((invocation + 1))
+            printf '%s\\n' "$invocation" > "$GREP_INVOCATION_COUNTER"
+            if [[ "$invocation" -eq 3 ]]; then
+              echo GREP_FAILURE=3 >&2
+              exit 2
+            fi
+            exec /usr/bin/grep "$@"
+            """
+        // A pipeline may emit a plausible partial set and still fail; do not use that set to delete.
+        let sortShim = """
+            #!/bin/bash
+            printf '%s\\n' 'lane-retention-probe-20260924T000006-100'
+            exit 2
+            """
+        let shimURL = shimDirectory.appendingPathComponent(failingCommand)
+        try (failingCommand == "grep" ? grepShim : sortShim).write(to: shimURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: shimURL.path)
+        let output = try await laneBash(
+            "export LANE_EVENT_STREAM_DIR='\(evidenceDirectory.path)' LANE_EVENT_STREAM_KEEP_PER_LABEL=5 "
+                + "LANE_EVENT_STREAM_RETAIN_ALWAYS=0 GREP_INVOCATION_COUNTER='\(fixtureRoot.path)/grep-counter'; "
+                + "source scripts/swift-test-helpers.sh; set -euo pipefail; "
+                + "PATH='\(shimDirectory.path)':$PATH prune_lane_event_streams retention-probe; echo PRUNE_STATUS=$?"
+        )
+        #expect(output.contains("PRUNE_STATUS=0"))
+        let remainingFiles = try FileManager.default.contentsOfDirectory(atPath: evidenceDirectory.path).sorted()
+        #expect(remainingFiles == expectedFiles.sorted(), Comment(rawValue: output))
     }
 
     @Test("a task dump is kept beside the ledger, and a refused attach is recorded with its reason")

@@ -3,6 +3,39 @@ import {
 	type BridgeViewerProductOnlyJourneyProof,
 	type BridgeViewerProductRouteTranscriptEntry,
 } from './product-only-real-router-contract.ts';
+import type { BridgeViewerReviewPaintFailureSnapshot } from './product-only-real-router-review-paint.ts';
+
+export function paintSnapshotForTest(
+	overrides: Partial<BridgeViewerReviewPaintFailureSnapshot> = {},
+): BridgeViewerReviewPaintFailureSnapshot {
+	return {
+		actualScrollTop: 900,
+		captureError: null,
+		codeScroll: { clientHeight: 900, scrollHeight: 1_800, scrollTop: 900 },
+		header: {
+			contentState: 'hydrated',
+			paintedPublicationId: 'item-publication',
+			paintedSourceCorrelations: '[]',
+			renderDispositionSettledOutcome: 'settled-ok',
+			renderDispositionSettledPublicationId: 'item-publication',
+		},
+		headerRendered: true,
+		itemElement: null,
+		itemInDom: true,
+		itemRect: {
+			bottom: 900,
+			height: 100,
+			left: 0,
+			right: 1_000,
+			top: 800,
+			width: 1_000,
+		},
+		requestedScrollTop: 900,
+		viewportRelation: 'in-view',
+		workerLastPublishedVisibleItemIds: null,
+		...overrides,
+	};
+}
 
 export function makePassingProductOnlyProof(
 	overrides: {
@@ -30,6 +63,12 @@ export function makePassingProductOnlyProof(
 		fileAfterReviewFirstSwitch: fileState(fileReady),
 		fileAfterFirstAcknowledgement: fileState(fileReady),
 		fileAtCompletion: fileState(fileReady),
+		fileMarkdownAtReviewFirstSwitch: {
+			articleCharacterCount: fileReady ? 128 : 0,
+			canvasVisible: fileReady,
+			selectedDisplayPath: 'README.md',
+			sourcePath: fileReady ? 'README.md' : null,
+		},
 		legacyIntakeTranscript: legacyTraffic
 			? [
 					{
@@ -84,6 +123,7 @@ export function makePassingProductOnlyProof(
 				(label) => ({
 					hydratedNonSelectedItemIds: ['review-item-2'],
 					label,
+					readableNonSelectedItemIds: ['review-item-2'],
 					visibleNonSelectedItemIds: ['review-item-2'],
 				}),
 			),
@@ -91,6 +131,16 @@ export function makePassingProductOnlyProof(
 			metadataItemCount: 4,
 			mountedHeaderOrderViolations: [],
 			observedHeaderItemIds: ['review-item-1', 'review-item-2', 'review-item-3', 'review-item-4'],
+			paintLedger: ['review-item-2', 'review-item-3', 'review-item-4'].map((itemId) => ({
+				actualScrollTop: 900,
+				displayPath: `${itemId}.swift`,
+				itemId,
+				publicationId: `${itemId}-publication`,
+				reason: null,
+				requestedScrollTop: 900,
+				status: 'painted' as const,
+				targetSnapshot: paintSnapshotForTest(),
+			})),
 			selectedItemIdAtCompletion: 'review-item-1',
 			selectedItemIdAtStart: 'review-item-1',
 			treeHostIdentityStable: true,
@@ -144,27 +194,33 @@ export function passingTranscript(): readonly BridgeViewerProductRouteTranscript
 		makeProductEntry(1, '/__bridge-product/command', 'workerSession.open', 200),
 		makeProductEntry(2, '/__bridge-product/stream', 'metadataStream.open', 200),
 		{
-			...makeProductEntry(3, '/__bridge-product/command', 'stream.frameObserved', 204),
-			streamKind: 'metadata',
-		},
-		{
-			...makeProductEntry(4, '/__bridge-product/command', 'subscription.open', 200),
-			responseKind: 'subscription.openAccepted',
+			...makeProductEntry(3, '/__bridge-product/command', 'subscription.open', 200),
+			responseKind: 'operation.admitted',
+			resultAcknowledged: true,
+			settledResponseKind: 'subscription.openAccepted',
 			subscriptionKind: 'review.metadata',
 		},
 		{
-			...makeProductEntry(5, '/__bridge-product/command', 'subscription.open', 200),
-			responseKind: 'subscription.openAccepted',
+			...makeProductEntry(4, '/__bridge-product/command', 'subscription.open', 200),
+			responseKind: 'operation.admitted',
+			resultAcknowledged: true,
+			settledResponseKind: 'subscription.openAccepted',
 			subscriptionKind: 'file.metadata',
+		},
+		{
+			...makeProductEntry(5, '/__bridge-product/command', 'subscription.acknowledge', 200),
+			responseKind: 'subscription.acknowledged',
 		},
 		{
 			...makeProductEntry(6, '/__bridge-product/content', null, 200),
 			contentKind: 'file.content',
 		},
+		makeProductEntry(7, '/__bridge-product/command', 'content.acknowledge', 204),
 		{
-			...makeProductEntry(7, '/__bridge-product/content', null, 200),
+			...makeProductEntry(8, '/__bridge-product/content', null, 200),
 			contentKind: 'review.content',
 		},
+		makeProductEntry(9, '/__bridge-product/command', 'content.acknowledge', 204),
 	];
 }
 
@@ -187,6 +243,8 @@ export function makeProductEntry(
 		requestSequence: ordinal,
 		responseCode: null,
 		responseKind: null,
+		resultAcknowledged: false,
+		settledResponseKind: null,
 		streamKind: null,
 		subscriptionKind: null,
 		workerInstanceId: 'worker-instance-1',

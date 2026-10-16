@@ -5,21 +5,12 @@ import Testing
 
 @Suite("Bridge product resync response contract")
 struct BridgeProductResyncResponseContractTests {
-    @Test("resync response carries ordered retained reset cancelled and reopen outcomes")
+    @Test("resync response carries ordered retained cancelled and reopen outcomes")
     func decodesEveryClosedReconciliationOutcome() throws {
         let response = try decode(
             BridgeProductControlResponse.self,
             object: responseObject(reconciliation: [
                 outcome(disposition: "retained", subscriptionId: "review-retained"),
-                outcome(
-                    disposition: "reset",
-                    subscriptionId: "file-reset",
-                    extras: [
-                        "interestRevision": 3,
-                        "interestSha256": String(repeating: "c", count: 64),
-                        "reason": "interest_mismatch",
-                    ]
-                ),
                 outcome(
                     disposition: "cancelled",
                     subscriptionId: "review-cancelled",
@@ -44,10 +35,10 @@ struct BridgeProductResyncResponseContractTests {
             return
         }
         #expect(accepted.metadataStreamSequenceBarrier == 15)
-        #expect(accepted.reconciliation.count == 4)
+        #expect(accepted.reconciliation.count == 3)
         #expect(
             accepted.reconciliation.map(\.dispositionName) == [
-                "retained", "reset", "cancelled", "reopenRequired",
+                "retained", "cancelled", "reopenRequired",
             ])
     }
 
@@ -87,11 +78,9 @@ struct BridgeProductResyncResponseContractTests {
         ]
         let dispositionFields: [String: Any]
         switch disposition {
-        case "retained", "reset":
+        case "retained":
             dispositionFields = [
-                "interestRevision": 4,
-                "interestSha256": String(repeating: "a", count: 64),
-                "workerDerivationEpoch": subscriptionId.hasPrefix("file") ? 3 : 7,
+                "workerDerivationEpoch": subscriptionId.hasPrefix("file") ? 3 : 7
             ]
         case "cancelled", "reopenRequired":
             dispositionFields = [:]

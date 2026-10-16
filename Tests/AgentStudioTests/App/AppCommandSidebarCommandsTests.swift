@@ -6,7 +6,7 @@ import Testing
 @testable import AgentStudioSharedComponents
 
 @MainActor
-@Suite("AppCommand sidebar commands", .serialized)
+@Suite("AppCommand sidebar commands")
 struct AppCommandSidebarCommandsTests {
     @Test("retired Panes grouping command identities are absent")
     func retiredPanesGroupingCommandsAreAbsent() {
@@ -20,7 +20,7 @@ struct AppCommandSidebarCommandsTests {
 
     @Test("focus sidebar is an interactive UI-presentation command")
     func focusSidebarIsInteractiveUIPresentationCommand() {
-        let definition = AppCommandDispatcher.shared.definition(for: .focusSidebar)
+        let definition = AppCommand.focusSidebar.definition
 
         #expect(definition.label == "Focus Sidebar")
         #expect(definition.icon == .system(.keyboard))
@@ -45,7 +45,7 @@ struct AppCommandSidebarCommandsTests {
         ]
 
         for (command, label, icon) in expectedCommands {
-            let definition = AppCommandDispatcher.shared.definition(for: command)
+            let definition = command.definition
             #expect(definition.label == label)
             #expect(definition.icon == icon)
             #expect(definition.surfacePolicy.exposes(.inlineControl))
@@ -56,7 +56,7 @@ struct AppCommandSidebarCommandsTests {
     @Test("drawer visibility is a scoped UI command with debug IPC classification")
     func drawerVisibilityCommandClassification() {
         let command = AppCommand.togglePanesShowsDrawers
-        let definition = AppCommandDispatcher.shared.definition(for: command)
+        let definition = command.definition
 
         #expect(definition.shortcut == .togglePanesShowsDrawers)
         #expect(definition.icon == .system(.rectangleBottomhalfFilled))
@@ -71,15 +71,15 @@ struct AppCommandSidebarCommandsTests {
     @Test("sidebar command specs own keyboard completion after accepted dispatch")
     func sidebarCommandSpecsOwnKeyboardCompletion() {
         #expect(
-            AppCommandDispatcher.shared.definition(for: .showReposSidebar).sidebarKeyboardCompletion
+            AppCommand.showReposSidebar.definition.sidebarKeyboardCompletion
                 == .returnToOrigin
         )
         #expect(
-            AppCommandDispatcher.shared.definition(for: .showPanesSidebar).sidebarKeyboardCompletion
+            AppCommand.showPanesSidebar.definition.sidebarKeyboardCompletion
                 == .returnToOrigin
         )
         #expect(
-            AppCommandDispatcher.shared.definition(for: .filterSidebar).sidebarKeyboardCompletion
+            AppCommand.filterSidebar.definition.sidebarKeyboardCompletion
                 == .preserveCommandFocus
         )
     }
@@ -89,7 +89,7 @@ struct AppCommandSidebarCommandsTests {
         for command in [
             AppCommand.setPanesSortFieldName, .setPanesSortFieldActivity, .togglePanesSortDirection,
         ] {
-            let definition = AppCommandDispatcher.shared.definition(for: command)
+            let definition = command.definition
             #expect(definition.surfacePolicy == .notPresented)
         }
     }
@@ -97,11 +97,11 @@ struct AppCommandSidebarCommandsTests {
     @Test("repository and pane pin commands keep independent durable targets")
     func repositoryAndPanePinCommandsKeepIndependentDurableTargets() {
         for command in [AppCommand.pinRepo, .unpinRepo] {
-            let definition = AppCommandDispatcher.shared.definition(for: command)
+            let definition = command.definition
             #expect(definition.targeting == .targeted([.repo]))
         }
         for command in [AppCommand.pinPane, .unpinPane] {
-            let definition = AppCommandDispatcher.shared.definition(for: command)
+            let definition = command.definition
             #expect(definition.targeting == .targeted([.pane]))
         }
     }

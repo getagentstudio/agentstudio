@@ -74,6 +74,10 @@ package struct BridgeTelemetrySessionInstallation: Sendable {
     }
 }
 
+struct BridgeTelemetrySessionProofCaptureID: Hashable, Sendable {
+    fileprivate let rawValue: Int
+}
+
 actor BridgeTelemetrySession {
     private struct AcceptedBatchReceipt: Sendable {
         let batchSequence: Int
@@ -94,6 +98,9 @@ actor BridgeTelemetrySession {
     private var requiredLossCount = 0
     private var optionalLossCount = 0
     private var revoked = false
+    private var nextProofCaptureID = 0
+    private var proofSnapshotsByCapture: [BridgeTelemetrySessionProofCaptureID: [Int: BridgeTelemetrySessionSnapshot]] =
+        [:]
 
     init(
         bootstrap: BridgeTelemetryWorkerBootstrap,
@@ -119,6 +126,25 @@ actor BridgeTelemetrySession {
             optionalLossCount: optionalLossCount,
             revoked: revoked
         )
+    }
+
+    func beginProofSnapshotCapture() -> BridgeTelemetrySessionProofCaptureID {
+        nextProofCaptureID += 1
+        let captureID = BridgeTelemetrySessionProofCaptureID(rawValue: nextProofCaptureID)
+        let currentSnapshot = snapshot
+        proofSnapshotsByCapture[captureID] = [currentSnapshot.acceptedBatchSequence: currentSnapshot]
+        return captureID
+    }
+
+    func takeProofSnapshot(
+        for captureID: BridgeTelemetrySessionProofCaptureID,
+        acceptedBatchSequence: Int
+    ) -> BridgeTelemetrySessionSnapshot? {
+        proofSnapshotsByCapture.removeValue(forKey: captureID)?[acceptedBatchSequence]
+    }
+
+    func cancelProofSnapshotCapture(_ captureID: BridgeTelemetrySessionProofCaptureID) {
+        proofSnapshotsByCapture.removeValue(forKey: captureID)
     }
 
     func authorizes(_ presentedCapability: String) -> Bool {
@@ -338,6 +364,7 @@ actor BridgeTelemetrySession {
             acceptedLossCount: projection.acceptedLossCount
         )
         nextExpectedBatchSequence += 1
+        captureProofSnapshotAtCurrentSequence()
 
         guard projection.nativeRequiredLossCount > 0 || projection.nativeOptionalLossCount > 0 else {
             return .response(.accepted(acceptedResponse))
@@ -355,6 +382,17 @@ actor BridgeTelemetrySession {
                 )
             )
         )
+    }
+
+    private func captureProofSnapshotAtCurrentSequence() {
+        guard !proofSnapshotsByCapture.isEmpty else { return }
+        let currentSnapshot = snapshot
+        let captureIDs = Array(proofSnapshotsByCapture.keys)
+        for captureID in captureIDs {
+            guard var snapshots = proofSnapshotsByCapture[captureID] else { continue }
+            snapshots[currentSnapshot.acceptedBatchSequence] = currentSnapshot
+            proofSnapshotsByCapture[captureID] = snapshots
+        }
     }
 
     private func admitRetry(

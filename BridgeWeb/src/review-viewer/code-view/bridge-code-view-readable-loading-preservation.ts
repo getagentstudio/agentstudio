@@ -41,10 +41,13 @@ function isReadableBridgeCodeViewItem(item: CodeViewItem | undefined): item is B
 	if (!isBridgeCodeViewItem(item)) {
 		return false;
 	}
-	return (
-		item.bridgeMetadata.contentState === 'hydrated' ||
-		item.bridgeMetadata.contentState === 'windowed'
-	);
+	return isReadableBridgeCodeViewContentState(item.bridgeMetadata.contentState);
+}
+
+export function isReadableBridgeCodeViewContentState(
+	contentState: string | null | undefined,
+): contentState is 'hydrated' | 'windowed' {
+	return contentState === 'hydrated' || contentState === 'windowed';
 }
 
 function isBridgeCodeViewItem(item: CodeViewItem | undefined): item is BridgeCodeViewItem {

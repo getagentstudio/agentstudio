@@ -17,8 +17,33 @@ enum IPCDescriptorRemoteFailureDecoder {
             ),
             correction: schemaCorrection(from: error.data),
             requiredScope: missingGrantScope(from: error),
-            agentRefusal: agentRefusal(from: error)
+            agentRefusal: agentRefusal(from: error),
+            commandCorrection: commandCorrection(from: error)
         )
+    }
+
+    private static func commandCorrection(from error: JSONRPCErrorPayload) -> IPCCommandErrorCorrection? {
+        guard case .object(let fields) = error.data else { return nil }
+        if error.code == -32_602, fields["reason"] == .string("invalidArguments"),
+            Set(fields.keys) == ["reason", "fieldPath", "expected"],
+            case .string(let fieldPath) = fields["fieldPath"], fieldPath.hasPrefix("$.arguments"),
+            case .string(let expected) = fields["expected"]
+        {
+            return .invalidArguments(fieldPath: fieldPath, expected: expected)
+        }
+        if error.code == -32_003, fields["reason"] == .string("unknownCommand"),
+            Set(fields.keys) == ["reason", "commandId", "closestMatches"],
+            case .string(let commandId) = fields["commandId"],
+            case .array(let values) = fields["closestMatches"], values.count <= 5
+        {
+            let matches = values.compactMap { value -> String? in
+                guard case .string(let name) = value else { return nil }
+                return name
+            }
+            guard matches.count == values.count else { return nil }
+            return .unknownCommand(commandId: commandId, closestMatches: matches)
+        }
+        return nil
     }
 
     /// Accepts exactly the app's agent refusal shape: its own code, the

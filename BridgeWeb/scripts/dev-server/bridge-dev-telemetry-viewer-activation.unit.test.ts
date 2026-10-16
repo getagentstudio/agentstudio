@@ -33,9 +33,11 @@ describe('Bridge dev viewer activation telemetry', () => {
 		});
 		recordBridgeCommWorkerSessionTelemetrySample({
 			snapshot: {
+				failureReason: null,
 				latestFileModeDispatchDisposition: 'posted',
 				latestFileSelectDispatchDisposition: 'queued_not_ready',
 				latestReviewSelectDispatchDisposition: 'dropped_detached',
+				lastReplacementReason: null,
 				nativeBootstrapInstallCount: 1,
 				queuedCommandCount: 2,
 				replacementRequestCount: 0,

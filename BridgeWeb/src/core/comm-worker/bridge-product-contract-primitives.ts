@@ -106,11 +106,12 @@ export const bridgeProductSurfaceSchema = z.enum(['review', 'file']);
 export const bridgeProductSha256Schema = z.string().regex(/^[0-9a-f]{64}$/u);
 
 export const bridgeProductResetReasonSchema = z.enum([
-	'interest_mismatch',
 	'producer_overflow',
 	'sequence_gap',
 	'stale_source',
 	'snapshot_required',
+	// Native ended the subscription when its surface floor passed the admitted epoch.
+	'epoch_retired',
 ]);
 
 export const bridgeProductRequestErrorCodeSchema = z.enum([
@@ -120,9 +121,13 @@ export const bridgeProductRequestErrorCodeSchema = z.enum([
 	'sequence_conflict',
 	'resync_required',
 	'stale_source',
+	'superseded',
+	'result_capacity_exhausted',
+	'mutation_watch_capacity_exhausted',
 	'payload_too_large',
 	'unsupported_call',
 	'unsupported_subscription',
+	'unknown_subscription',
 	'unsupported_content',
 	'internal',
 ]);

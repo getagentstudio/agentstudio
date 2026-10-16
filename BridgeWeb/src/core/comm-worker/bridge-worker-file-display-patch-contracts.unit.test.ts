@@ -139,7 +139,7 @@ describe('Bridge worker File display patch contract', () => {
 	test('rejects missing or cross-wired File surfaces and unknown patch variants', () => {
 		const event = makeFileDisplayPatchEvent();
 		const { fileClass: _fileClass, ...rowWithoutFileClass } = fileTreeRow;
-		for (const invalidEvent of [
+		for (const [index, invalidEvent] of [
 			{ ...event, surface: undefined },
 			{ ...event, surface: 'review' },
 			{ ...event, kind: 'slicePatch' },
@@ -171,7 +171,7 @@ describe('Bridge worker File display patch contract', () => {
 						slice: 'fileTree',
 						operation: 'batch',
 						payload: {
-							operations: [{ operation: 'upsert', row: { ...fileTreeRow, fileClass: 'binary' } }],
+							operations: [{ operation: 'upsert', row: { ...fileTreeRow, fileClass: 'alien' } }],
 						},
 					},
 				],
@@ -210,8 +210,11 @@ describe('Bridge worker File display patch contract', () => {
 					},
 				],
 			},
-		]) {
-			expect(bridgeWorkerFileDisplayPatchEventSchema.safeParse(invalidEvent).success).toBe(false);
+		].entries()) {
+			expect(
+				bridgeWorkerFileDisplayPatchEventSchema.safeParse(invalidEvent).success,
+				`invalid case ${index}`,
+			).toBe(false);
 		}
 	});
 

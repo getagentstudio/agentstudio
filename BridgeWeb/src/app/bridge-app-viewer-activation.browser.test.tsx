@@ -11,11 +11,8 @@ import {
 	BRIDGE_WORKER_WIRE_VERSION,
 	type BridgeWorkerServerToMainMessage,
 } from '../core/comm-worker/bridge-worker-contracts.js';
-import {
-	actWait,
-	installBridgeReadyHandshake,
-	pollWithinActUntilEqual,
-} from './bridge-app-browser-test-actions.js';
+import { actWait, installBridgeReadyHandshake } from './bridge-app-browser-test-actions.js';
+import { observeBridgeAppDomUntilEqual } from './bridge-app-dom-observation.browser.test-support.js';
 import { makeNativeSurfaceSelectionRequest } from './bridge-app-pane-runtime-control-test-support.js';
 import { BridgeAppProtocolRouter } from './bridge-app-protocol-router.js';
 
@@ -82,7 +79,10 @@ describe('BridgeApp viewer activation ingress', () => {
 			await Promise.resolve();
 		});
 		expect(
-			await pollWithinActUntilEqual(() => appRoot.getAttribute('data-bridge-viewer-mode'), 'file'),
+			await observeBridgeAppDomUntilEqual(
+				() => appRoot.getAttribute('data-bridge-viewer-mode'),
+				'file',
+			),
 		).toBe('file');
 
 		// Assert
@@ -112,7 +112,10 @@ describe('BridgeApp viewer activation ingress', () => {
 			await Promise.resolve();
 		});
 		expect(
-			await pollWithinActUntilEqual(() => appRoot.getAttribute('data-bridge-viewer-mode'), 'file'),
+			await observeBridgeAppDomUntilEqual(
+				() => appRoot.getAttribute('data-bridge-viewer-mode'),
+				'file',
+			),
 		).toBe('file');
 
 		// Assert
@@ -158,6 +161,7 @@ function makePaneRuntimeFixture(): {
 			},
 			dispose: (): void => {},
 			installNativeBootstrap: (): void => {},
+			handleNativeBootstrapFailure: (): void => {},
 			setNativeBootstrapRequester: (): void => {},
 		}),
 	});

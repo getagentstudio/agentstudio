@@ -18,7 +18,7 @@ struct CommandSpecContractTests {
     func everyShortcutMapsToACommandDefinitionThatDeclaresThatShortcut() {
         for shortcut in AppShortcut.allCases {
             let command = shortcut.command
-            let definition = AppCommandDispatcher.shared.definition(for: command)
+            let definition = command.definition
 
             if shortcut == .showInboxNotifications || shortcut == .showPaneInboxNotifications {
                 #expect(definition.shortcut == nil)
@@ -123,11 +123,12 @@ struct CommandSpecContractTests {
             satisfiedRequirements: Set(CommandRequirement.allCases)
         )
 
+        let dispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         let items = CommandBarDataSource.items(
             scope: .commands,
             store: store,
             repoCache: RepoCacheAtom(),
-            dispatcher: AppCommandDispatcher.shared,
+            dispatcher: dispatcher,
             focusedPane: focusedPane,
             commandContext: commandContext
         )
@@ -135,7 +136,7 @@ struct CommandSpecContractTests {
             uniqueKeysWithValues: items.compactMap { item in
                 item.command.map { ($0, item) }
             })
-        let expectedDefinitions = AppCommandDispatcher.shared.definitions.values.filter {
+        let expectedDefinitions = dispatcher.definitions.values.filter {
             $0.shouldPresent(
                 AppCommandPresentationQuery(
                     surface: .commandBar,

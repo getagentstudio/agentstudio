@@ -17,7 +17,7 @@ struct InFlightDefaultStartPointQuery {
 
 struct InFlightBranchListingQuery {
     let rootSessionGeneration: Int
-    let token: UUID
+    let openingToken: UUID
     let task: Task<Void, Never>
 }
 
@@ -25,8 +25,9 @@ extension CommandBarPanelController {
     func requestCreationQueriesIfNeeded(for level: CommandBarLevel) {
         switch level.creationQuery {
         case .branchListing(let repository):
+            state.invalidateBranchListing(forRepositoryId: repository.id)
             requestDefaultStartPointIfNeeded(for: repository)
-            requestBranchListingIfNeeded(for: repository)
+            requestBranchListingIfNeeded(for: repository, openingToken: UUIDv7.generate())
             requestForkEligibilityIfNeeded(for: repository)
         case .worktreeEligibility(let repository, let worktree):
             requestForkEligibilityIfNeeded(for: repository, worktrees: [worktree])
@@ -74,54 +75,35 @@ extension CommandBarPanelController {
         )
     }
 
-    private func requestBranchListingIfNeeded(for repository: Repo) {
+    private func requestBranchListingIfNeeded(for repository: Repo, openingToken: UUID) {
         let generation = state.rootSessionGeneration
-        let enrichmentRevision = repoCache.cacheRevision
-        if let recordedRevision = state.branchListingRevisionByRepositoryId[repository.id],
-            recordedRevision != enrichmentRevision
-        {
-            state.invalidateBranchListing(forRepositoryId: repository.id)
-        }
-        guard let branchListing,
-            state.branchNamesByRepositoryId[repository.id] == nil,
-            !state.branchListingQueryFailures.contains(repository.id),
-            branchListingQueriesByRepositoryId[repository.id]?.rootSessionGeneration != generation
-        else { return }
-        let token = UUIDv7.generate()
+        guard let branchListing else { return }
         let task = Task { @MainActor [weak self] in
             do {
                 let branchNames = try await branchListing.branchNames(
                     forRepositoryId: repository.id,
                     repositoryPath: repository.repoPath,
-                    enrichmentRevision: enrichmentRevision)
-                guard let self, self.state.rootSessionGeneration == generation else { return }
-                if self.branchListingQueriesByRepositoryId[repository.id]?.token == token {
-                    self.branchListingQueriesByRepositoryId.removeValue(forKey: repository.id)
-                }
-                guard self.repoCache.cacheRevision == enrichmentRevision else {
-                    self.requestBranchListingIfNeeded(for: repository)
-                    return
-                }
-                self.state.recordBranchNames(
-                    branchNames, forRepositoryId: repository.id, enrichmentRevision: enrichmentRevision)
+                    openingToken: openingToken)
+                guard let self,
+                    self.state.rootSessionGeneration == generation,
+                    self.branchListingQueriesByRepositoryId[repository.id]?.openingToken == openingToken
+                else { return }
+                self.branchListingQueriesByRepositoryId.removeValue(forKey: repository.id)
+                self.state.recordBranchNames(branchNames, forRepositoryId: repository.id)
                 self.refreshCreationLevel(for: repository)
             } catch {
-                guard let self, self.state.rootSessionGeneration == generation else { return }
-                if self.branchListingQueriesByRepositoryId[repository.id]?.token == token {
-                    self.branchListingQueriesByRepositoryId.removeValue(forKey: repository.id)
-                }
-                guard self.repoCache.cacheRevision == enrichmentRevision else {
-                    self.requestBranchListingIfNeeded(for: repository)
-                    return
-                }
-                self.state.recordBranchListingQueryFailure(
-                    forRepositoryId: repository.id, enrichmentRevision: enrichmentRevision)
+                guard let self,
+                    self.state.rootSessionGeneration == generation,
+                    self.branchListingQueriesByRepositoryId[repository.id]?.openingToken == openingToken
+                else { return }
+                self.branchListingQueriesByRepositoryId.removeValue(forKey: repository.id)
+                self.state.recordBranchListingQueryFailure(forRepositoryId: repository.id)
                 self.refreshCreationLevel(for: repository)
             }
         }
         branchListingQueriesByRepositoryId[repository.id] = InFlightBranchListingQuery(
             rootSessionGeneration: generation,
-            token: token,
+            openingToken: openingToken,
             task: task
         )
     }

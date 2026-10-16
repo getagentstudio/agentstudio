@@ -1,6 +1,6 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioTestHarness
-import CryptoKit
 import Foundation
 import Testing
 
@@ -94,6 +94,12 @@ struct BridgePaneProductContentActivityAdmissionTests {
     @MainActor
     func hidingDuringFileStreamingSuppressesRemainingFrames() async throws {
         // Arrange
+        let retirements = FactRecorder<BridgeProductProducerLease, BridgeProductProducerRetirementBarrier>(
+            vocabulary: .init(
+                describeScope: { $0.id.uuidString }, describeFact: { _ in "File read retirement started" },
+                isClosing: { _, _ in true }
+            )
+        )
         let sourceBytes = Data(
             repeating: 0x61,
             count: BridgeProductWireContract.maximumContentDataPayloadBytes * 2 + 1
@@ -105,7 +111,8 @@ struct BridgePaneProductContentActivityAdmissionTests {
         let context = try await makeActivityContentContext(
             request: request,
             initialActivity: .foreground,
-            fileBytes: sourceBytes
+            fileBytes: sourceBytes,
+            retirementRecorder: retirements
         )
         let decoder = try BridgeProductContentFrameDecoder()
         let accepted = try await requiredActivityContentFrame(context)
@@ -125,15 +132,23 @@ struct BridgePaneProductContentActivityAdmissionTests {
         // A larger wire envelope must not silently increase ordinary File read/cancellation quanta.
         #expect(firstDataFrame.payload.count == 128 * 1024)
         #expect(await context.fileReaderHarness.openCount == 1)
-        #expect(await context.fileReaderHarness.readCount == 1)
+        #expect(await context.fileReaderHarness.readCount >= 1)
+        #expect(await context.fileReaderHarness.readCount <= AppPolicies.Bridge.productViewCreditParts)
         #expect(await context.fileReaderHarness.closeCount == 0)
+        // Physical consumption already cleared this receipt; zero cannot attest logical retirement.
+        #expect((await context.harness.session.producerSnapshot()).inFlightFrameReceiptCount == 0)
 
         // Act
         context.activityCoordinator.applyActivity(.loadedHidden)
-        let retiredDeliverySnapshot = await waitForActivityContentState(context) { snapshot in
-            snapshot.inFlightFrameReceiptCount == 0
-        }
-        #expect(retiredDeliverySnapshot.inFlightFrameReceiptCount == 0)
+        let retirement = try await retirements.expectNext(
+            in: context.lease, where: { _ in true }, "hidden File read retirement"
+        )
+        #expect(await retirement.wait())
+        #expect(
+            !(await context.harness.session.hasContentAdmission(
+                contentRequestId: request.admission.contentRequestId, leaseId: request.admission.leaseId
+            ))
+        )
         #expect(
             !(await context.harness.session.acknowledgeContentFrameObservation(
                 try activityContentFrameAcknowledgement(
@@ -147,7 +162,7 @@ struct BridgePaneProductContentActivityAdmissionTests {
 
         // Assert
         let hiddenSnapshot = await context.harness.session.producerSnapshot()
-        #expect(await context.fileReaderHarness.readCount == 1)
+        #expect(await context.fileReaderHarness.readCount <= AppPolicies.Bridge.productViewCreditParts)
         #expect(await context.fileReaderHarness.closeCount == 1)
         #expect(hiddenSnapshot.queuedFrameCount == 0)
         #expect(hiddenSnapshot.activeProducerTaskCount == 0)
@@ -158,7 +173,10 @@ struct BridgePaneProductContentActivityAdmissionTests {
     @MainActor
     func hidingRetiresQueuedUnobservedFileData() async throws {
         // Arrange
-        let sourceBytes = Data("queued-before-hide".utf8)
+        let sourceBytes = Data(
+            repeating: 0x71,
+            count: AppPolicies.Bridge.productViewCreditBytes * 2
+        )
         let request = try activityFileContentRequest(
             content: sourceBytes,
             identifier: "activity-queued-before-hide"
@@ -181,12 +199,12 @@ struct BridgePaneProductContentActivityAdmissionTests {
             )
         )
         let queuedSnapshot = await waitForActivityContentState(context) { snapshot in
-            snapshot.queuedFrameCount == 1
-                && snapshot.pendingProducerObservationPacingWaiterCount == 1
+            snapshot.queuedFrameCount >= 1
         }
-        #expect(queuedSnapshot.queuedFrameCount == 1)
+        #expect(queuedSnapshot.queuedFrameCount >= 1)
         #expect(queuedSnapshot.inFlightFrameReceiptCount == 0)
-        #expect(await context.fileReaderHarness.readCount == 1)
+        #expect(await context.fileReaderHarness.readCount >= 1)
+        #expect(await context.fileReaderHarness.readCount <= AppPolicies.Bridge.productViewCreditParts)
         #expect(await context.fileReaderHarness.closeCount == 0)
 
         // Act
@@ -198,7 +216,6 @@ struct BridgePaneProductContentActivityAdmissionTests {
         // Assert
         #expect(hiddenSnapshot.activeProducerTaskCount == 0)
         #expect(hiddenSnapshot.queuedFrameCount == 0)
-        #expect(hiddenSnapshot.pendingProducerObservationPacingWaiterCount == 0)
         #expect(await context.fileReaderHarness.closeCount == 1)
         if hiddenSnapshot.activeProducerTaskCount == 0 {
             let hiddenPull = await context.harness.session.pullProducerFrame(
@@ -280,7 +297,7 @@ struct BridgePaneProductContentActivityAdmissionTests {
         try await finishActivityContentContext(context)
     }
 
-    @Test("File byte-count overflow resets the stream and closes its reader once")
+    @Test("File byte-count overflow ends the content read and closes its reader once")
     @MainActor
     func fileByteCountOverflowClosesReaderOnce() async throws {
         // Arrange
@@ -309,29 +326,25 @@ struct BridgePaneProductContentActivityAdmissionTests {
         )
 
         // Act
-        let resetDelivery = try await requiredActivityContentFrame(context)
-        let resetFrame = try #require(try decoder.append(resetDelivery.frame.data).first)
-        #expect(
-            await context.harness.session.acknowledgeContentFrameObservation(
-                try activityContentFrameAcknowledgement(
-                    for: request.admission,
-                    contentSequence: resetDelivery.frame.sequence
-                ),
-                productAdmission: context.harness.productAdmission.context
-            )
-        )
+        let terminalDelivery = try await requiredActivityContentFrame(context)
+        let terminalFrame = try #require(try decoder.append(terminalDelivery.frame.data).first)
         let finishedSnapshot = await waitForActivityContentState(context) { snapshot in
             snapshot.activeProducerTaskCount == 0
         }
 
         // Assert
-        guard case .reset(let resetHeader) = resetFrame.header else {
-            Issue.record("Expected File byte-count overflow to emit a reset terminal")
+        guard case .error(let errorHeader) = terminalFrame.header else {
+            Issue.record("Expected File byte-count overflow to end the content read with a typed error")
             try await finishActivityContentContext(context)
             return
         }
-        #expect(resetHeader.reason == .staleSource)
+        #expect(errorHeader.code == .superseded)
+        #expect(errorHeader.retryable)
         #expect(finishedSnapshot.activeProducerTaskCount == 0)
+        #expect(
+            finishedSnapshot.queuedFrameCount == 0,
+            "No content frame may be delivered after the terminal superseded error"
+        )
         #expect(await context.fileReaderHarness.readCount == 1)
         #expect(await context.fileReaderHarness.closeCount == 1)
         try await finishActivityContentContext(context)
@@ -441,15 +454,6 @@ struct BridgePaneProductContentActivityAdmissionTests {
         )
         let endDelivery = try await requiredActivityContentFrame(context)
         let endFrame = try #require(try decoder.append(endDelivery.frame.data).first)
-        #expect(
-            await context.harness.session.acknowledgeContentFrameObservation(
-                try activityContentFrameAcknowledgement(
-                    for: request.admission,
-                    contentSequence: endDelivery.frame.sequence
-                ),
-                productAdmission: context.harness.productAdmission.context
-            )
-        )
         await waitForActivityContentProducerToFinish(context)
 
         // Assert
@@ -508,15 +512,6 @@ struct BridgePaneProductContentActivityAdmissionTests {
         )
         let endDelivery = try await requiredActivityContentFrame(context)
         let endFrame = try #require(try decoder.append(endDelivery.frame.data).first)
-        #expect(
-            await context.harness.session.acknowledgeContentFrameObservation(
-                try activityContentFrameAcknowledgement(
-                    for: request.admission,
-                    contentSequence: endDelivery.frame.sequence
-                ),
-                productAdmission: context.harness.productAdmission.context
-            )
-        )
         await waitForActivityContentProducerToFinish(context)
 
         // Assert
@@ -555,7 +550,8 @@ private func makeActivityContentContext(
     suspendReviewBody: Bool = false,
     invalidateActivityOnFileReaderClose: Bool = false,
     fileEndOfSourceGate: HeldStep<Void>? = nil,
-    producerEntryGate: HeldStep<Void>? = nil
+    producerEntryGate: HeldStep<Void>? = nil,
+    retirementRecorder: FactRecorder<BridgeProductProducerLease, BridgeProductProducerRetirementBarrier>? = nil
 ) async throws -> ActivityContentContext {
     let activityCoordinator = BridgePaneRefreshAdmissionCoordinator(
         initialActivity: initialActivity
@@ -593,6 +589,11 @@ private func makeActivityContentContext(
     ) { lease in
         try? await producerEntryGate?.arrive(())
         await contentProducerOperation(lease)
+        if let retirementRecorder,
+            let barrier = await harness.session.producerRetirementStateByLease[lease]?.barrier
+        {
+            retirementRecorder.append(scope: lease, fact: barrier)
+        }
     }
     return ActivityContentContext(
         activityCoordinator: activityCoordinator,
@@ -606,6 +607,12 @@ private func makeActivityContentContext(
 }
 
 private actor ActivityFileMetadataSource: BridgePaneProductFileMetadataProducing {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private let expectedFileRequest: BridgeProductFileContentRequest?
     private(set) var authoritativePathCallCount = 0
     private(set) var readPlanCallCount = 0
@@ -626,14 +633,16 @@ private actor ActivityFileMetadataSource: BridgePaneProductFileMetadataProducing
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId _: String) {}
@@ -824,6 +833,11 @@ private func requiredActivityContentFrame(
     else {
         throw ActivityContentAdmissionTestError.expectedProducerFrame
     }
+    #expect(
+        await context.harness.session.acknowledgeProducerFrameConsumed(
+            delivery.receipt,
+            productAdmission: context.harness.productAdmission.context
+        ))
     return delivery
 }
 
@@ -870,11 +884,10 @@ private func activityContentFrameAcknowledgement(
     let data = try JSONSerialization.data(
         withJSONObject: [
             "contentRequestId": admission.contentRequestId,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": contentSequence,
+            "kind": "content.acknowledge",
             "leaseId": admission.leaseId,
             "paneSessionId": admission.paneSessionId,
-            "streamKind": "content",
             "wireVersion": admission.wireVersion,
             "workerInstanceId": admission.workerInstanceId,
         ],
@@ -884,113 +897,4 @@ private func activityContentFrameAcknowledgement(
         BridgeProductContentFrameAcknowledgement.self,
         from: data
     )
-}
-
-private func activityFileContentRequest(
-    content: Data,
-    identifier: String
-) throws -> BridgeProductContentRequest {
-    let sha256 = activitySHA256(content)
-    let object: [String: Any] = [
-        "contentKind": "file.content",
-        "contentRequestId": "content-request-\(identifier)",
-        "descriptor": [
-            "contentKind": "file.content",
-            "declaredByteLength": content.count,
-            "descriptorId": "file-descriptor-\(identifier)",
-            "encoding": "utf-8",
-            "expectedSha256": sha256,
-            "fileId": "file-\(identifier)",
-            "maximumBytes": content.count,
-            "source": [
-                "repoId": "00000000-0000-4000-8000-000000000001",
-                "rootRevisionToken": NSNull(),
-                "sourceCursor": "source-cursor-\(identifier)",
-                "sourceId": "source-\(identifier)",
-                "subscriptionGeneration": 1,
-                "worktreeId": "00000000-0000-4000-8000-000000000002",
-            ],
-            "window": [
-                "kind": "prefix",
-                "maximumBytes": content.count,
-                "maximumLines": BridgeProductWireContract.maximumContentLines,
-                "startByte": 0,
-            ],
-        ],
-        "kind": "content.open",
-        "leaseId": "lease-\(identifier)",
-        "operationCorrelationId": NSNull(),
-        "paneSessionId": "pane-session-1",
-        "wireVersion": BridgeProductWireContract.version,
-        "workerDerivationEpoch": 1,
-        "workerInstanceId": "worker-instance-1",
-    ]
-    return try BridgeProductStrictJSON.decode(
-        BridgeProductContentRequest.self,
-        from: JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-    )
-}
-
-private func activityReviewContentRequest(
-    content: Data,
-    identifier: String
-) throws -> BridgeProductReviewContentRequest {
-    let sha256 = activitySHA256(content)
-    let object: [String: Any] = [
-        "contentKind": "review.content",
-        "contentRequestId": "content-request-\(identifier)",
-        "descriptor": [
-            "contentDigest": [
-                "algorithm": "sha256",
-                "authority": "authoritative",
-                "value": sha256,
-            ],
-            "contentKind": "review.content",
-            "declaredByteLength": content.count,
-            "descriptorId": "review-descriptor-\(identifier)",
-            "encoding": "utf-8",
-            "endpointId": "review-endpoint-\(identifier)",
-            "expectedSha256": sha256,
-            "handleId": "review-handle-\(identifier)",
-            "isBinary": false,
-            "itemId": "review-item-\(identifier)",
-            "language": "swift",
-            "maximumBytes": content.count,
-            "mimeType": "text/plain",
-            "packageId": "review-package-\(identifier)",
-            "reviewGeneration": 1,
-            "role": "head",
-            "sourceIdentity": "review-query-\(identifier)",
-            "wholeByteLength": content.count,
-            "window": [
-                "kind": "byteRange",
-                "maximumBytes": content.count,
-                "startByte": 0,
-            ],
-        ],
-        "kind": "content.open",
-        "leaseId": "lease-\(identifier)",
-        "operationCorrelationId": NSNull(),
-        "paneSessionId": "pane-session-1",
-        "wireVersion": BridgeProductWireContract.version,
-        "workerDerivationEpoch": 1,
-        "workerInstanceId": "worker-instance-1",
-    ]
-    let request = try BridgeProductStrictJSON.decode(
-        BridgeProductContentRequest.self,
-        from: JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-    )
-    guard case .reviewContent(let reviewRequest) = request else {
-        throw ActivityContentAdmissionTestError.expectedReviewRequest
-    }
-    return reviewRequest
-}
-
-private func activitySHA256(_ data: Data) -> String {
-    SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-}
-
-private enum ActivityContentAdmissionTestError: Error {
-    case expectedProducerFrame
-    case expectedReviewRequest
 }

@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'vitest';
 
+import { stampBridgeRenderDispositionSettlementEvidence } from './bridge-main-render-fulfillment-coordinator.js';
 import {
 	bindPublicationItemAsFinal,
 	type BridgeMainRenderedItemReadback,
@@ -12,7 +13,34 @@ import {
 } from './bridge-main-render-fulfillment-coordinator.test-support.js';
 import type { BridgeWorkerRenderSourceCorrelation } from './bridge-worker-pierre-render-job.js';
 
+function settlementEvidenceElement(
+	attributes: Map<string, string>,
+): Pick<Element, 'getAttribute' | 'setAttribute'> {
+	return {
+		getAttribute: (name: string): string | null => attributes.get(name) ?? null,
+		setAttribute: (name: string, value: string): void => {
+			attributes.set(name, value);
+		},
+	};
+}
+
 describe('Bridge main render fulfillment coordinator paint evidence', () => {
+	test('stamps settlement only on painted elements for the exact publication', () => {
+		const painted = new Map([['data-bridge-painted-publication-id', 'publication-a']]);
+		const other = new Map([['data-bridge-painted-publication-id', 'publication-b']]);
+		stampBridgeRenderDispositionSettlementEvidence({
+			elements: [settlementEvidenceElement(painted), settlementEvidenceElement(other)],
+			outcome: 'settled-failed',
+			publicationId: 'publication-a',
+		});
+
+		expect(painted.get('data-bridge-render-disposition-settled-publication-id')).toBe(
+			'publication-a',
+		);
+		expect(painted.get('data-bridge-render-disposition-settled-outcome')).toBe('settled-failed');
+		expect(other.has('data-bridge-render-disposition-settled-publication-id')).toBe(false);
+	});
+
 	test('defers correlated readable-paint evidence without duplicating the terminal disposition', () => {
 		// Arrange
 		const harness = createCoordinatorHarness(110);
@@ -166,6 +194,20 @@ describe('Bridge main render fulfillment coordinator paint evidence', () => {
 		);
 		expect(decodedPaintedSourceCorrelations).toEqual([expectedPaintedSourceCorrelation]);
 		expect(paintedPublicationId).toBe(publication.renderReceiptIdentity.publicationId);
+		stampBridgeRenderDispositionSettlementEvidence({
+			elements: [settlementEvidenceElement(renderedElementAttributes)],
+			outcome: 'settled-ok',
+			publicationId: publication.renderReceiptIdentity.publicationId,
+		});
+		harness.coordinator.observePostRender({
+			...readback,
+			contextItem: publicationItem,
+			itemId: publication.job.itemId,
+			phase: 'update',
+		});
+		expect(renderedElementAttributes.get('data-bridge-render-disposition-settled-outcome')).toBe(
+			'settled-ok',
+		);
 		expect(
 			Array.isArray(decodedPaintedSourceCorrelations) &&
 				decodedPaintedSourceCorrelations.every(

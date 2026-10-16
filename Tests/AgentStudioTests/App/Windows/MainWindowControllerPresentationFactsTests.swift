@@ -162,6 +162,8 @@ private func withPresentationFactsWindowHarness<T>(
         viewRegistry: viewRegistry,
         runtime: SessionRuntime(atom: atoms.core.sessionRuntime, store: store),
         surfaceManager: PresentationFactsWindowSurfaceManager(),
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
         runtimeRegistry: RuntimeRegistry(),
         windowLifecycleStore: atoms.core.windowLifecycle,
         appLifecycleStore: appLifecycleStore,
@@ -180,6 +182,7 @@ private func withPresentationFactsWindowHarness<T>(
             store,
             atoms.core.repoCache
         )
+        let commandDispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
         let windowController = MainWindowController(
             workspaceWindowId: windowId,
             store: store,
@@ -189,6 +192,12 @@ private func withPresentationFactsWindowHarness<T>(
                 store: store
             ),
             runtimeCommandDispatcher: coordinator,
+            commandDispatcher: commandDispatcher,
+            resolveCommandCapabilities: {
+                commandDispatcher.repoExplorerCommandPresentationSnapshot(
+                    requests: $0, generation: $1)
+            },
+            executionOwnerIdentities: commandDispatcher.executionOwnerIdentities, synchronizeRuntimeFocus: { _ in },
             applicationLifecycleMonitor: applicationLifecycleMonitor,
             appLifecycleStore: appLifecycleStore,
             tabBarAdapter: tabBarAdapter,

@@ -6,10 +6,8 @@ import Testing
 @testable import AgentStudioCore
 
 @MainActor
-func makeCoreTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(
-        resourceRootURL: testAgentStudioResourceRootURL(from: testFilePath)
-    )
+func makeCoreTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 @Suite(.serialized)

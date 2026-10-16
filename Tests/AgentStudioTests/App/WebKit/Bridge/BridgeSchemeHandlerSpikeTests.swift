@@ -57,9 +57,8 @@ extension WebKitSerializedTests {
         /// Verify that a custom `agentstudio://` scheme handler registered on
         /// WebPage.Configuration can serve an HTML page. The page URL, title,
         /// and loading state are checked after load completes.
-        @Test
+        @Test(.enabled(if: ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"))
         func test_customSchemeHandler_servesHTMLPage_andTitleIsReadable() async throws {
-            guard isWebKitSpikeModeEnabled() else { return }
             // Arrange — build configuration with custom scheme handler
             let page = try makePageWithSpikeHandler()
 
@@ -94,8 +93,5 @@ extension WebKitSerializedTests {
             await WebPageEventWaits.waitForTitle(page, equals: expectedTitle)
         }
 
-        private func isWebKitSpikeModeEnabled() -> Bool {
-            ProcessInfo.processInfo.environment["AGENT_STUDIO_WEBKIT_SPIKE_MODE"] == "on"
-        }
     }
 }

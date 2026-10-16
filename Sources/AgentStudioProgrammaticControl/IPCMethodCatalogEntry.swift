@@ -19,11 +19,18 @@ package struct IPCMethodExampleDocument: Codable, Equatable, Sendable {
         self.parameters = try JSONDecoder().decode(IPCSchemaValue.self, from: parameters)
         self.result = try JSONDecoder().decode(IPCSchemaValue.self, from: result)
     }
+
+    package func encodedParameters() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(parameters)
+    }
 }
 
 package struct IPCMethodCatalogEntry: Codable, Equatable, Sendable {
     package let name: String
     package let description: String
+    package let callIntent: IPCCallIntent
     package let parameterSchema: IPCJSONSchema
     package let resultSchema: IPCJSONSchema
     package let examples: [IPCMethodExampleDocument]
@@ -138,6 +145,8 @@ extension IPCMethodCatalogEntry {
             .init(name: "name", description: "Open method name", schema: .string(allowedValues: [methodName])),
             .init(
                 name: "description", description: "Agent-facing method description", schema: .string(minimumLength: 1)),
+            .init(
+                name: "callIntent", description: "Effect or disclosure intent", schema: try IPCCallIntent.ipcSchema()),
             .init(name: "parameterSchema", description: "Complete parameter JSON Schema", schema: .schemaDocument),
             .init(name: "resultSchema", description: "Complete result JSON Schema", schema: .schemaDocument),
             .init(
@@ -233,20 +242,10 @@ extension IPCCommandRelationship: IPCSchemaProviding {
 
 extension IPCMethodOfflineEligibility: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
-        .oneOf([
-            .object(fields: [
-                .init(
-                    name: "kind", description: "No offline collection",
-                    schema: .string(allowedValues: ["never"]))
-            ]),
-            .object(fields: [
-                .init(
-                    name: "kind", description: "Selected model-call variants may collect offline",
-                    schema: .string(allowedValues: ["modelCallVariants"])),
-                .init(
-                    name: "variants", description: "Offline-eligible model-call variants",
-                    schema: .array(items: try IPCModelCallVariant.ipcSchema(), minimumCount: 1)),
-            ]),
+        .object(fields: [
+            .init(
+                name: "kind", description: "Only the notice shape may queue; asks never queue",
+                schema: .string(allowedValues: ["never", "noticeOnly"]))
         ])
     }
 }

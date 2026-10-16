@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState, type ReactElement } from 'rea
 import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeActiveViewerSource } from '../core/comm-worker/bridge-product-control-contracts.js';
 import type { BridgeProductNavigationCommand } from '../core/comm-worker/bridge-product-session-contracts.js';
+import type { BridgePaneFailedStartFact } from '../core/models/bridge-pane-failed-start.js';
 import {
 	BridgeFileViewerApp,
 	type BridgeFileViewerAppProps,
@@ -22,10 +23,13 @@ import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-tel
 import { recordBridgeFrameJankTelemetrySample } from '../foundation/telemetry/bridge-viewer-telemetry-adapter.js';
 import { WorktreeAnnotationSurfaceProvider } from '../worktree-annotations/worktree-annotation-surface-provider.js';
 import type { BridgeAppNavigationSource } from './bridge-app-navigation-admission.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import type { BridgeMermaidRenderer } from './markdown/bridge-mermaid-renderer.js';
 import type { BridgeMarkdownRenderWorkerClient } from './markdown/worker/bridge-markdown-render-worker-client.js';
 
 export interface BridgeFileViewerModeProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly paneFailedStart?: BridgePaneFailedStartFact | null;
 	readonly controlTarget: EventTarget;
 	readonly codeViewWorkerFactory?: () => Worker;
 	readonly codeViewWorkerPoolEnabled?: boolean;
@@ -124,6 +128,8 @@ export function BridgeFileViewerMode(props: BridgeFileViewerModeProps): ReactEle
 					)
 				) : (
 					<BridgeFileViewerApp
+						paneReloadPort={props.paneReloadPort}
+						paneFailedStart={props.paneFailedStart ?? null}
 						{...props.fileViewerProps}
 						{...(props.codeViewWorkerFactory === undefined
 							? {}

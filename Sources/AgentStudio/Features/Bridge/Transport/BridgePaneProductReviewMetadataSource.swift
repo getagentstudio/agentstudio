@@ -35,23 +35,12 @@ enum BridgePaneProductReviewMetadataPublicationOutcome: Equatable, Sendable {
     case deferred(retained: Int)
 }
 
-typealias BridgePaneProductReviewMetadataEventSink =
-    @Sendable (
-        BridgeProductSealedMetadataApplicationEvent<BridgeProductReviewMetadataEvent>,
-        BridgeProductAdmissionContext
-    ) async throws ->
-    BridgeProductProducerEnqueueResult
-
 protocol BridgePaneProductReviewMetadataProducing: Sendable {
+    func applyViewDemand(_ request: BridgePaneProductReviewViewDemandRequest) async throws
+        -> BridgePaneProductReviewViewCapture?
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission: BridgeProductAdmissionContext
     ) async throws
     func reserve(
         package: BridgeReviewPackage,
@@ -66,19 +55,33 @@ protocol BridgePaneProductReviewMetadataProducing: Sendable {
     func cancel(subscriptionId: String) async
 }
 
+struct BridgePaneProductReviewViewCapture: Sendable {
+    let handle: String
+    let scopeRevision: Int
+    let publicationId: UUID
+    let snapshot: BridgeProductReviewKeyedSnapshot
+}
+
+struct BridgePaneProductReviewViewDemandRequest: Sendable {
+    let subscriptionId: String
+    let handle: String
+    let scopeRevision: Int
+    let admissionSequence: Int
+    let demand: BridgeProductReviewMetadataInterestState
+    let expectedPublicationId: UUID
+    let productAdmission: BridgeProductAdmissionContext
+}
+
+extension BridgePaneProductReviewMetadataProducing {
+    func applyViewDemand(_: BridgePaneProductReviewViewDemandRequest) async throws
+        -> BridgePaneProductReviewViewCapture?
+    { nil }
+}
+
 actor BridgeUnavailablePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProducing {
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {
-        throw BridgePaneProductReviewMetadataSourceError.unavailablePackage
-    }
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {
         throw BridgePaneProductReviewMetadataSourceError.unavailablePackage
     }
@@ -104,12 +107,11 @@ actor BridgeUnavailablePaneProductReviewMetadataSource: BridgePaneProductReviewM
 
 actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProducing {
     fileprivate struct DeliveredPublication: Sendable {
-        let comparisonPresentationRevision: Int
+        let classifiedRefreshImpact: BridgeReviewRefreshImpact?
         let package: BridgeReviewPackage
         let publicationId: UUID
-        let classifiedRefreshImpact: BridgeReviewRefreshImpact?
         let reviewComparison: BridgePaneReviewComparisonPresentation?
-        let operationCorrelationID: String?
+        let viewRevision: Int
     }
 
     private enum EmissionOutcome {
@@ -120,20 +122,83 @@ actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProd
     private struct SubscriptionContext: Sendable {
         let contextId: UUID
         var deliveredPublication: DeliveredPublication?
+        var appliedViewDemand: AppliedViewDemand?
         var subscription: BridgeProductSubscriptionSnapshot
-        var emit: BridgePaneProductReviewMetadataEventSink
+    }
+
+    private struct AppliedViewDemand: Equatable, Sendable {
+        let demand: BridgeProductReviewMetadataInterestState
+        let handle: String
+        let scopeRevision: Int
+        let admissionSequence: Int
     }
 
     private var deliveryRevision = 0
     private var contextBySubscriptionId: [String: SubscriptionContext] = [:]
 
+    func applyViewDemand(_ request: BridgePaneProductReviewViewDemandRequest) async throws
+        -> BridgePaneProductReviewViewCapture?
+    {
+        guard request.productAdmission.withValidAdmission({ true }) == true,
+            var context = contextBySubscriptionId[request.subscriptionId],
+            context.subscription.subscriptionKind == .reviewMetadata,
+            request.scopeRevision >= 0
+        else { return nil }
+        let appliedDemand = AppliedViewDemand(
+            demand: request.demand,
+            handle: request.handle,
+            scopeRevision: request.scopeRevision,
+            admissionSequence: request.admissionSequence
+        )
+        if let currentDemand = context.appliedViewDemand {
+            guard request.admissionSequence >= currentDemand.admissionSequence else { return nil }
+            if request.admissionSequence == currentDemand.admissionSequence {
+                guard currentDemand == appliedDemand else { return nil }
+            } else if currentDemand.handle == request.handle {
+                guard request.scopeRevision > currentDemand.scopeRevision else { return nil }
+            }
+        }
+        context.appliedViewDemand = appliedDemand
+        contextBySubscriptionId[request.subscriptionId] = context
+        guard let delivered = context.deliveredPublication,
+            delivered.publicationId == request.expectedPublicationId
+        else { return nil }
+        let orderedItemIds = BridgePaneProductReviewMetadataSource.orderedItemIds(in: delivered.package)
+        let revisionsForPackage = Dictionary(uniqueKeysWithValues: orderedItemIds.map { ($0, delivered.viewRevision) })
+        let items = try BridgeProductReviewBatchItemProjection.initialItems(
+            in: delivered.package,
+            revisionByItemId: revisionsForPackage
+        )
+        let publication = try BridgeProductReviewBatchPublicationProjection.record(
+            from: .init(
+                classifiedRefreshImpact: delivered.classifiedRefreshImpact,
+                publicationId: delivered.publicationId,
+                revision: delivered.viewRevision,
+                desiredComparison: delivered.reviewComparison,
+                desiredStatus: .ready,
+                displayedPackage: delivered.package,
+                displayedPublicationId: delivered.publicationId,
+                displayedComparison: delivered.reviewComparison
+            )
+        )
+        let snapshot = BridgeProductReviewKeyedSnapshot(
+            targetRevision: delivered.viewRevision,
+            publication: publication,
+            items: items
+        )
+        return BridgePaneProductReviewViewCapture(
+            handle: request.handle,
+            scopeRevision: request.scopeRevision,
+            publicationId: delivered.publicationId,
+            snapshot: snapshot
+        )
+    }
+
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission: BridgeProductAdmissionContext
     ) async throws {
-        guard subscription.subscriptionKind == .reviewMetadata,
-            subscription.interestState.reviewMetadataState != nil
+        guard subscription.subscriptionKind == .reviewMetadata
         else {
             throw BridgePaneProductReviewMetadataSourceError.unavailablePackage
         }
@@ -141,33 +206,8 @@ actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProd
             contextBySubscriptionId[subscription.subscriptionId] = SubscriptionContext(
                 contextId: UUID(),
                 deliveredPublication: nil,
-                subscription: subscription,
-                emit: emit
-            )
-        }
-    }
-
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {
-        guard let activeContext = contextBySubscriptionId[subscription.subscriptionId] else {
-            throw BridgePaneProductReviewMetadataSourceError.unknownSubscription
-        }
-        guard subscription.subscriptionKind == .reviewMetadata,
-            subscription.interestState.reviewMetadataState != nil,
-            subscription.interestRevision >= activeContext.subscription.interestRevision
-        else {
-            throw BridgePaneProductReviewMetadataSourceError.unavailablePackage
-        }
-        _ = productAdmission.withValidAdmission {
-            contextBySubscriptionId[subscription.subscriptionId] = SubscriptionContext(
-                // Interest changes do not replace the subscription or retire its in-flight publication.
-                contextId: activeContext.contextId,
-                deliveredPublication: activeContext.deliveredPublication,
-                subscription: subscription,
-                emit: emit
+                appliedViewDemand: nil,
+                subscription: subscription
             )
         }
     }
@@ -224,16 +264,14 @@ actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProd
         for subscriptionId in subscriptionIds {
             try Task.checkCancellation()
             guard let context = contextBySubscriptionId[subscriptionId] else { continue }
-            switch try await emitAndCommitIfCurrent(
+            switch installIfCurrent(
                 DeliveredPublication(
-                    comparisonPresentationRevision: publication.comparisonPresentationRevision,
+                    classifiedRefreshImpact: publication.classifiedRefreshImpact,
                     package: package,
                     publicationId: reservation.publicationId,
-                    classifiedRefreshImpact: publication.classifiedRefreshImpact,
                     reviewComparison: publication.reviewComparison,
-                    operationCorrelationID: publication.operationCorrelationID
+                    viewRevision: publishingDeliveryRevision
                 ),
-                projectionPlan: reservation.projectionPlan,
                 context: context,
                 deliveryRevision: publishingDeliveryRevision,
                 productAdmission: productAdmission
@@ -267,38 +305,13 @@ actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProd
         contextBySubscriptionId.removeValue(forKey: subscriptionId)
     }
 
-    private func emitAndCommitIfCurrent(
+    private func installIfCurrent(
         _ publication: DeliveredPublication,
-        projectionPlan: BridgeReviewMetadataPublicationProjectionPlan,
         context: SubscriptionContext,
         deliveryRevision publishingDeliveryRevision: Int,
         productAdmission: BridgeProductAdmissionContext
-    ) async throws -> EmissionOutcome {
-        let events = try Self.events(
-            from: context.deliveredPublication,
-            to: publication,
-            projectionPlan: projectionPlan
-        )
-        var finalFrameSequence: Int?
-        for sealedEvent in events {
-            try Task.checkCancellation()
-            guard
-                (productAdmission.withValidAdmission {
-                    guard
-                        let currentContext = contextBySubscriptionId[context.subscription.subscriptionId],
-                        currentContext.contextId == context.contextId,
-                        deliveryRevision == publishingDeliveryRevision
-                    else { return false }
-                    return true
-                }) == true
-            else { return .superseded }
-            let enqueueResult = try await context.emit(sealedEvent, productAdmission)
-            guard case .enqueued(let frame) = enqueueResult else {
-                throw BridgePaneProductReviewMetadataSourceError.unavailablePackage
-            }
-            finalFrameSequence = frame.sequence
-        }
-        return productAdmission.withValidAdmission {
+    ) -> EmissionOutcome {
+        productAdmission.withValidAdmission {
             guard var currentContext = contextBySubscriptionId[context.subscription.subscriptionId],
                 currentContext.contextId == context.contextId,
                 deliveryRevision == publishingDeliveryRevision
@@ -306,205 +319,10 @@ actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProd
             currentContext.deliveredPublication = publication
             contextBySubscriptionId[context.subscription.subscriptionId] = currentContext
             return .published(
-                eventCount: events.count,
-                finalFrameSequence: finalFrameSequence
+                eventCount: 0,
+                finalFrameSequence: nil
             )
         } ?? .superseded
-    }
-
-    private static func sourceAcceptedEvent(
-        for publication: DeliveredPublication
-    ) throws -> BridgeProductReviewMetadataEvent {
-        .sourceAccepted(
-            .init(
-                identity: try identity(for: publication)
-            )
-        )
-    }
-
-    private static func events(
-        from currentPublication: DeliveredPublication?,
-        to nextPublication: DeliveredPublication,
-        projectionPlan: BridgeReviewMetadataPublicationProjectionPlan
-    ) throws -> [BridgeProductSealedMetadataApplicationEvent<BridgeProductReviewMetadataEvent>] {
-        let events: [BridgeProductReviewMetadataEvent]
-        guard let currentPublication else {
-            events =
-                [try sourceAcceptedEvent(for: nextPublication)]
-                + (try projectionPlan.events(binding: binding(for: nextPublication)))
-            return try sealedEvents(events)
-        }
-        guard
-            currentPublication.publicationId != nextPublication.publicationId
-                || currentPublication.package != nextPublication.package
-        else { return [] }
-        let currentPackage = currentPublication.package
-        let nextPackage = nextPublication.package
-        if let classifiedRefreshImpact = nextPublication.classifiedRefreshImpact,
-            canApplyDelta(from: currentPackage, to: nextPackage),
-            let sealedDelta = try sealedDeltaEvent(
-                from: currentPublication,
-                to: nextPublication,
-                refreshImpact: classifiedRefreshImpact
-            )
-        {
-            return [sealedDelta]
-        }
-        let identity = try identity(for: nextPublication)
-        events =
-            [
-                .reset(
-                    .init(
-                        identity: identity,
-                        comparisonOrigin: nextPackage.comparisonOrigin,
-                        refreshImpact: nextPublication.classifiedRefreshImpact,
-                        reason: .sourceChanged,
-                        reviewedSubjectLabel: nextPackage.reviewedSubjectLabel
-                    )
-                ),
-                try sourceAcceptedEvent(for: nextPublication),
-            ] + (try projectionPlan.events(binding: binding(for: nextPublication)))
-        return try sealedEvents(events)
-    }
-
-    private static func binding(
-        for publication: DeliveredPublication
-    ) throws -> BridgeReviewMetadataPublicationBinding {
-        BridgeReviewMetadataPublicationBinding(
-            identity: try identity(for: publication),
-            presentationRevision: publication.comparisonPresentationRevision,
-            reviewComparison: publication.reviewComparison
-        )
-    }
-
-    private static func sealedEvents(
-        _ events: [BridgeProductReviewMetadataEvent]
-    ) throws -> [BridgeProductSealedMetadataApplicationEvent<BridgeProductReviewMetadataEvent>] {
-        let sealedEvents = try events.map(sealBridgeReviewMetadataEvent)
-        guard
-            sealedEvents.allSatisfy({
-                $0.encodedApplicationByteCount
-                    <= BridgeReviewMetadataPublicationProjectionPlan.maximumEncodedEventBytes
-            })
-        else {
-            throw BridgePaneProductReviewMetadataSourceError.metadataEventExceedsByteLimit
-        }
-        return sealedEvents
-    }
-
-    fileprivate static func identity(
-        for publication: DeliveredPublication
-    ) throws -> BridgeProductReviewMetadataIdentity {
-        let package = publication.package
-        return try BridgeProductReviewMetadataIdentity(
-            generation: package.reviewGeneration.rawValue,
-            packageId: package.packageId,
-            publicationId: publication.publicationId,
-            revision: package.revision,
-            sourceIdentity: package.query.queryId,
-            operationCorrelationID: publication.operationCorrelationID
-        )
-    }
-
-    private static func sealedDeltaEvent(
-        from currentPublication: DeliveredPublication,
-        to nextPublication: DeliveredPublication,
-        refreshImpact: BridgeReviewRefreshImpact
-    ) throws -> BridgeProductSealedMetadataApplicationEvent<BridgeProductReviewMetadataEvent>? {
-        let currentPackage = currentPublication.package
-        let nextPackage = nextPublication.package
-        guard nextPackage.revision > currentPackage.revision else { return nil }
-        let currentItems = currentPackage.itemsById
-        let nextItems = nextPackage.itemsById
-        let currentOrder = orderedItemIds(in: currentPackage)
-        let nextOrder = orderedItemIds(in: nextPackage)
-        let currentIds = Set(currentItems.keys)
-        let nextIds = Set(nextItems.keys)
-        let addedIds = nextOrder.filter { !currentIds.contains($0) }
-        let removedIds = currentOrder.filter { !nextIds.contains($0) }
-        let updatedIds = nextOrder.filter { itemId in
-            guard let currentItem = currentItems[itemId], let nextItem = nextItems[itemId] else { return false }
-            return currentItem != nextItem
-        }
-        let changedIds = addedIds + updatedIds
-        let changedItems = changedIds.compactMap { nextItems[$0] }
-        var operations: [BridgeProductReviewMetadataOperation] = try changedItems.map {
-            .upsertItem(try productItem($0, loadedBy: .delta, lane: .active))
-        }
-        if !removedIds.isEmpty { operations.append(.removeItems(removedIds)) }
-        if currentOrder != nextOrder { operations.append(.replaceItemOrder(nextOrder)) }
-
-        let currentTreeRows = try productTreeRows(for: currentOrder.compactMap { currentItems[$0] }, loadedBy: .delta)
-        let nextTreeRows = try productTreeRows(for: nextOrder.compactMap { nextItems[$0] }, loadedBy: .delta)
-        if let treeSplice = treeSplice(from: currentTreeRows, to: nextTreeRows) {
-            operations.append(treeSplice)
-        }
-        let extentFacts = changedItems.flatMap(authoritativeProductExtentFacts)
-        if !extentFacts.isEmpty { operations.append(.upsertExtentFacts(extentFacts)) }
-
-        let previousDescriptorIds = (removedIds + updatedIds).flatMap { itemId in
-            currentItems[itemId]?.contentRoles.allHandles.map(\.handleId) ?? []
-        }
-        let replacementDescriptorIds = updatedIds.flatMap { itemId in
-            nextItems[itemId]?.contentRoles.allHandles.map(\.handleId) ?? []
-        }
-        let invalidatedDescriptorIds = Set(previousDescriptorIds + replacementDescriptorIds).sorted()
-        if !invalidatedDescriptorIds.isEmpty {
-            operations.append(.invalidateContentSources(invalidatedDescriptorIds))
-        }
-        let contentSources = try changedItems.flatMap { try productContentSources(for: $0, package: nextPackage) }
-        guard isContractBoundedDelta(operations: operations, contentSources: contentSources) else { return nil }
-        let event = try BridgeProductReviewDeltaEvent(
-            identity: identity(for: nextPublication),
-            contentSources: contentSources,
-            fromRevision: currentPackage.revision,
-            operations: operations,
-            presentationRevision: nextPublication.comparisonPresentationRevision,
-            refreshImpact: refreshImpact,
-            reviewComparison: nextPublication.reviewComparison,
-            summary: try productSummary(nextPackage.summary),
-            toRevision: nextPackage.revision
-        )
-        let sealedEvent = try sealBridgeReviewMetadataEvent(.delta(event))
-        guard
-            sealedEvent.encodedApplicationByteCount
-                <= BridgeReviewMetadataPublicationProjectionPlan.maximumEncodedEventBytes
-        else { return nil }
-        return sealedEvent
-    }
-
-    private static func isContractBoundedDelta(
-        operations: [BridgeProductReviewMetadataOperation],
-        contentSources: [BridgeProductReviewContentSourceDescriptor]
-    ) -> Bool {
-        let maximumCount = BridgeProductReviewMetadataLimits.maximumWindowEntryCount
-        guard operations.count <= maximumCount, contentSources.count <= maximumCount else { return false }
-        return operations.allSatisfy { operation in
-            switch operation {
-            case .upsertItem:
-                true
-            case .removeItems(let itemIds), .replaceItemOrder(let itemIds):
-                itemIds.count <= maximumCount
-            case .spliceTreeRows(_, let deleteCount, let rows):
-                deleteCount <= maximumCount && rows.count <= maximumCount
-            case .upsertExtentFacts(let facts):
-                facts.count <= maximumCount
-            case .invalidateContentSources(let descriptorIds):
-                descriptorIds.count <= maximumCount
-            }
-        }
-    }
-
-    private static func canApplyDelta(
-        from currentPackage: BridgeReviewPackage,
-        to nextPackage: BridgeReviewPackage
-    ) -> Bool {
-        nextPackage.revision > currentPackage.revision
-            && currentPackage.query == nextPackage.query
-            && currentPackage.baseEndpoint == nextPackage.baseEndpoint
-            && currentPackage.headEndpoint == nextPackage.headEndpoint
-            && currentPackage.comparisonOrigin == nextPackage.comparisonOrigin
-            && currentPackage.reviewedSubjectLabel == nextPackage.reviewedSubjectLabel
     }
 
     static func orderedItemIds(in package: BridgeReviewPackage) -> [String] {
@@ -513,30 +331,4 @@ actor BridgePaneProductReviewMetadataSource: BridgePaneProductReviewMetadataProd
         itemIds.append(contentsOf: package.itemsById.keys.sorted().filter { seen.insert($0).inserted })
         return itemIds
     }
-
-    private static func treeSplice(
-        from currentRows: [BridgeProductReviewTreeRowValue],
-        to nextRows: [BridgeProductReviewTreeRowValue]
-    ) -> BridgeProductReviewMetadataOperation? {
-        guard currentRows != nextRows else { return nil }
-        var prefixCount = 0
-        while prefixCount < min(currentRows.count, nextRows.count),
-            currentRows[prefixCount] == nextRows[prefixCount]
-        {
-            prefixCount += 1
-        }
-        var suffixCount = 0
-        while suffixCount < currentRows.count - prefixCount,
-            suffixCount < nextRows.count - prefixCount,
-            currentRows[currentRows.count - suffixCount - 1] == nextRows[nextRows.count - suffixCount - 1]
-        {
-            suffixCount += 1
-        }
-        return .spliceTreeRows(
-            startIndex: prefixCount,
-            deleteCount: currentRows.count - prefixCount - suffixCount,
-            rows: Array(nextRows[prefixCount..<(nextRows.count - suffixCount)])
-        )
-    }
-
 }

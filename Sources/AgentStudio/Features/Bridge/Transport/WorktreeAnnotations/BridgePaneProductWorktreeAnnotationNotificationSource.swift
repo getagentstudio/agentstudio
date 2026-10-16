@@ -1,305 +1,460 @@
 import AgentStudioInfrastructure
 import Foundation
 
-struct BridgePaneAnnotationNotificationDelivery: Sendable {
-    typealias Enqueue =
-        @Sendable (BridgeProductWorktreeAnnotationEvent, String) async throws ->
-        BridgeProductProducerEnqueueResult
-    typealias MakeProspectiveMetadataFrame =
-        @Sendable (BridgeProductWorktreeAnnotationEvent, String) throws -> BridgeProductMetadataFrame
-    typealias WaitUntilObserved = @Sendable (Int) async -> Bool
+private enum BridgePaneCommentBatchNotification: Sendable {
+    case invalidation(Set<WorktreeAnnotationCatalogRange>)
+    case resnapshot
+    case unavailable
 
-    let enqueue: Enqueue
-    let makeProspectiveMetadataFrame: MakeProspectiveMetadataFrame
-    let waitUntilObserved: WaitUntilObserved
+    func merging(displaced: Self) -> Self {
+        switch (self, displaced) {
+        case (.unavailable, _), (_, .unavailable): .unavailable
+        case (.resnapshot, _), (_, .resnapshot): .resnapshot
+        case (.invalidation(let newest), .invalidation(let older)):
+            .invalidation(newest.union(older))
+        }
+    }
+}
+
+enum BridgePaneAnnotationProducerObservation: Sendable {
+    case opened(handle: String, producerID: UUID)
+    case waitingForRetirement(handle: String, producerID: UUID, predecessorID: UUID)
+    case publisherInstalled(handle: String, producerID: UUID)
+    case sealed(handle: String, producerID: UUID, batch: BridgeProductCommentCatalogBatch)
+    case finished(
+        handle: String,
+        producerID: UUID,
+        reason: BridgePaneAnnotationProducerFinishReason
+    )
+}
+
+enum BridgePaneAnnotationProducerFinishReason: Sendable, CustomStringConvertible {
+    case completed
+    case failed(BridgePaneAnnotationProducerFailure)
+    case cancelled
+
+    var description: String {
+        switch self {
+        case .completed: "completed"
+        case .failed(let failure): "failed(\(failure))"
+        case .cancelled: "cancelled"
+        }
+    }
+}
+
+struct BridgePaneAnnotationProducerFailure: Sendable, CustomStringConvertible {
+    let typeName: String
+    let message: String
+
+    init(_ error: any Error) {
+        typeName = String(reflecting: type(of: error))
+        message = String(describing: error)
+    }
+
+    var description: String { "\(typeName): \(message)" }
 }
 
 actor BridgePaneAnnotationNotificationSource {
-    private struct DeliveryLifecycleContext {
-        let deliveryAttempt: Int
-        let deliveryStartWasRecorded: Bool
-        let operationCorrelationID: String
-        let sourceGeneration: Int
-        let surface: BridgeProductSurface
+    private struct BatchNotificationOwner {
+        let producerID: UUID
+        let continuation: AsyncStream<BridgePaneCommentBatchNotification>.Continuation
+    }
+
+    private struct BatchPublisherOwner {
+        let producerID: UUID
+        let publisher: BridgeProductCommentCatalogPublisher
+    }
+
+    private struct AdmittedBatchScope: Sendable {
+        let revision: Int
     }
 
     private let service: WorktreeAnnotationServiceActor?
     private let worktreeID: String
-    private let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
+    private var batchNotificationByHandle: [String: BatchNotificationOwner] = [:]
+    private var batchPublisherByHandle: [String: BatchPublisherOwner] = [:]
+    private var pendingProducerIDByHandle: [String: UUID] = [:]
+    private var publisherRetirementWaitersByHandle: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var catalogContinuityByHandle: [String: BridgeProductCommentCatalogPublisherContinuity] = [:]
+    private var admittedBatchScopeByHandle: [String: AdmittedBatchScope] = [:]
+    private var firstScopeWaiterByHandle: [String: AsyncStream<Void>.Continuation] = [:]
+    private var firstScopeWaiterObserversByHandle: [String: [CheckedContinuation<Void, Never>]] = [:]
+    private var retiredBatchHandles: Set<String> = []
+    private var pendingResnapshotHandles: Set<String> = []
+    private var producerObservationContinuations:
+        [UUID: AsyncStream<BridgePaneAnnotationProducerObservation>.Continuation] = [:]
 
     static let unavailable = BridgePaneAnnotationNotificationSource(
         service: nil,
-        worktreeID: "",
-        lifecycleTraceRecorder: nil
+        worktreeID: ""
     )
 
     init(
         service: WorktreeAnnotationServiceActor?,
-        worktreeID: String,
-        lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil
+        worktreeID: String
     ) {
         self.service = service
         self.worktreeID = worktreeID
-        self.lifecycleTraceRecorder = lifecycleTraceRecorder
     }
 
-    func open(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        surface: BridgeProductSurface,
-        delivery: BridgePaneAnnotationNotificationDelivery
-    ) async throws {
-        guard let service else { throw WorktreeAnnotationServiceError.unavailable }
-        let observer = await service.registerChangeObserver(worktreeID: worktreeID)
-        do {
-            let bootstrapContext = DeliveryLifecycleContext(
-                deliveryAttempt: 0,
-                deliveryStartWasRecorded: false,
-                operationCorrelationID: BridgeOperationCorrelation.mintScrubbedID(),
-                sourceGeneration: 0,
-                surface: surface
-            )
-            var publishedApplicationSourceGeneration = try await publishCurrentCatalog(
-                context: bootstrapContext,
-                delivery: delivery,
-                service: service
-            )
+    func admittedWorktreeID() -> String? {
+        service == nil ? nil : worktreeID
+    }
 
-            for await change in observer.stream {
-                try Task.checkCancellation()
-                guard change.worktreeID == worktreeID else {
-                    throw WorktreeAnnotationServiceError.unavailable
-                }
-                guard change.applicationSourceGeneration > publishedApplicationSourceGeneration else {
-                    continue
-                }
-                let context = DeliveryLifecycleContext(
-                    deliveryAttempt: change.deliveryAttempt,
-                    deliveryStartWasRecorded: true,
-                    operationCorrelationID: change.operationCorrelationID,
-                    sourceGeneration: change.applicationSourceGeneration,
-                    surface: surface
-                )
-                switch change.disposition {
-                case .catalog:
-                    publishedApplicationSourceGeneration = try await publishCurrentCatalog(
-                        context: context,
-                        delivery: delivery,
-                        service: service
-                    )
-                case .control(let reason):
-                    let event = BridgeProductWorktreeAnnotationEvent.controlChanged(
-                        .init(
-                            authority: try eventAuthority(
-                                applicationSourceGeneration: change.applicationSourceGeneration
-                            ),
-                            reason: controlChangedReason(reason)
-                        )
-                    )
-                    try await deliver(context: context) {
-                        _ = try Self.requireEnqueued(
-                            try await delivery.enqueue(event, change.operationCorrelationID)
-                        )
+    /// Mirrors one accepted E4 scope. The view handle remains the lifetime;
+    /// the subject set is the interest captured by N10 behind the W4 barrier.
+    func acceptBatchScope(
+        handle: String,
+        worktreeID scopedWorktreeID: String,
+        scopeRevision: Int
+    ) async throws {
+        guard service != nil, scopedWorktreeID == worktreeID, !handle.isEmpty, scopeRevision > 0,
+            !retiredBatchHandles.contains(handle)
+        else {
+            throw WorktreeAnnotationServiceError.unavailable
+        }
+        if let current = admittedBatchScopeByHandle[handle], scopeRevision <= current.revision {
+            return
+        }
+        admittedBatchScopeByHandle[handle] = .init(revision: scopeRevision)
+        firstScopeWaiterByHandle[handle]?.yield(())
+        if let owner = batchPublisherByHandle[handle] {
+            _ = await owner.publisher.acceptScope(revision: scopeRevision)
+        }
+    }
+
+    func releaseProducerBatchScope(handle: String, producerID: UUID) async {
+        if let owner = batchNotificationByHandle[handle], owner.producerID == producerID {
+            batchNotificationByHandle.removeValue(forKey: handle)?.continuation.finish()
+        }
+        guard let owner = batchPublisherByHandle[handle], owner.producerID == producerID else { return }
+        await retireBatchPublisher(owner, handle: handle)
+    }
+
+    func retireBatchView(handle: String) async {
+        retiredBatchHandles.insert(handle)
+        catalogContinuityByHandle.removeValue(forKey: handle)
+        admittedBatchScopeByHandle.removeValue(forKey: handle)
+        pendingResnapshotHandles.remove(handle)
+        pendingProducerIDByHandle.removeValue(forKey: handle)
+        firstScopeWaiterByHandle.removeValue(forKey: handle)?.finish()
+        for observer in firstScopeWaiterObserversByHandle.removeValue(forKey: handle) ?? [] {
+            observer.resume()
+        }
+        batchNotificationByHandle.removeValue(forKey: handle)?.continuation.finish()
+        if let owner = batchPublisherByHandle[handle] {
+            await retireBatchPublisher(owner, handle: handle)
+        }
+    }
+
+    /// Observation seam for callers that need to know E3 is waiting on E4.
+    func waitUntilFirstBatchScopeIsNeeded(handle: String) async {
+        if firstScopeWaiterByHandle[handle] != nil || retiredBatchHandles.contains(handle) { return }
+        await withCheckedContinuation { continuation in
+            firstScopeWaiterObserversByHandle[handle, default: []].append(continuation)
+        }
+    }
+
+    func requestBatchResnapshot(handle: String) {
+        guard admittedBatchScopeByHandle[handle] != nil else { return }
+        guard let owner = batchNotificationByHandle[handle] else {
+            pendingResnapshotHandles.insert(handle)
+            return
+        }
+        enqueueBatchNotification(.resnapshot, into: owner.continuation)
+    }
+
+    /// Observation seam for tests that must pair source overlap with native sealing.
+    func observeProducerEvents() -> (id: UUID, events: AsyncStream<BridgePaneAnnotationProducerObservation>) {
+        let observerID = UUIDv7.generate()
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: BridgePaneAnnotationProducerObservation.self,
+            bufferingPolicy: .bufferingOldest(32)
+        )
+        producerObservationContinuations[observerID] = continuation
+        continuation.onTermination = { [weak self] _ in
+            guard let self else { return }
+            Task { await self.removeProducerObservation(observerID) }
+        }
+        return (observerID, stream)
+    }
+
+    func stopObservingProducerEvents(id observerID: UUID) {
+        producerObservationContinuations.removeValue(forKey: observerID)?.finish()
+    }
+
+    func recordSealedCommentCatalogBatch(
+        handle: String,
+        producerID: UUID,
+        batch: BridgeProductCommentCatalogBatch
+    ) async {
+        guard batch.handle == handle, let owner = batchPublisherByHandle[handle],
+            owner.producerID == producerID,
+            await owner.publisher.recordSealedBatch(batch)
+        else { return }
+        publishProducerObservation(.sealed(handle: handle, producerID: producerID, batch: batch))
+    }
+
+    /// N10 observes invalidations before its first current-row capture. Each
+    /// complete range read installs through one publisher before the next read.
+    func openBatch(
+        handle: String,
+        producerID: UUID,
+        snapshotRequired: @escaping @Sendable () async -> Bool,
+        deliver:
+            @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws ->
+            BridgeProductViewEmissionOutcome
+    ) async throws {
+        guard let service else {
+            throw WorktreeAnnotationServiceError.unavailable
+        }
+        guard !retiredBatchHandles.contains(handle) else {
+            throw WorktreeAnnotationServiceError.staleSourceEpoch
+        }
+        pendingProducerIDByHandle[handle] = producerID
+        publishProducerObservation(.opened(handle: handle, producerID: producerID))
+        var finishReason: BridgePaneAnnotationProducerFinishReason = .completed
+        defer {
+            if pendingProducerIDByHandle[handle] == producerID {
+                pendingProducerIDByHandle.removeValue(forKey: handle)
+            }
+            publishProducerObservation(
+                .finished(handle: handle, producerID: producerID, reason: finishReason)
+            )
+        }
+        do {
+            _ = try await waitForFirstAdmittedBatchScope(handle: handle)
+            try await waitForCurrentPublisherRetirement(handle: handle, producerID: producerID)
+            try Task.checkCancellation()
+            guard !retiredBatchHandles.contains(handle), pendingProducerIDByHandle[handle] == producerID else {
+                throw WorktreeAnnotationServiceError.staleSourceEpoch
+            }
+            let capturedWorktreeID = worktreeID
+            let observer = await service.registerCatalogInvalidationObserver(worktreeID: capturedWorktreeID)
+            if Task.isCancelled || retiredBatchHandles.contains(handle)
+                || pendingProducerIDByHandle[handle] != producerID
+            {
+                await service.removeCatalogInvalidationObserver(token: observer.token)
+                if Task.isCancelled { throw CancellationError() }
+                throw WorktreeAnnotationServiceError.staleSourceEpoch
+            }
+            guard let admittedScope = admittedBatchScopeByHandle[handle] else {
+                await service.removeCatalogInvalidationObserver(token: observer.token)
+                throw WorktreeAnnotationServiceError.staleSourceEpoch
+            }
+            let (notifications, notificationContinuation) = AsyncStream.makeStream(
+                of: BridgePaneCommentBatchNotification.self,
+                bufferingPolicy: .bufferingNewest(1)
+            )
+            batchNotificationByHandle[handle] = .init(
+                producerID: producerID,
+                continuation: notificationContinuation
+            )
+            if pendingResnapshotHandles.remove(handle) != nil {
+                enqueueBatchNotification(.resnapshot, into: notificationContinuation)
+            }
+            let forwarder = Task {
+                for await invalidation in observer.stream {
+                    guard invalidation.worktreeID == capturedWorktreeID else {
+                        enqueueBatchNotification(.unavailable, into: notificationContinuation)
+                        break
                     }
-                    publishedApplicationSourceGeneration = change.applicationSourceGeneration
-                case .content:
-                    let orderedSessionRevisions = change.sessionSemanticRevisionByID.sorted {
-                        $0.key.rawValue.uuidString < $1.key.rawValue.uuidString
-                    }
-                    guard !orderedSessionRevisions.isEmpty else {
-                        throw WorktreeAnnotationServiceError.unavailable
-                    }
-                    try await deliver(context: context) {
-                        for (sessionID, semanticRevision) in orderedSessionRevisions {
-                            let event = BridgeProductWorktreeAnnotationEvent.sessionChanged(
-                                try .init(
-                                    authority: eventAuthority(
-                                        applicationSourceGeneration: change.applicationSourceGeneration
-                                    ),
-                                    sessionID: sessionID,
-                                    semanticRevision: semanticRevision
-                                )
-                            )
-                            _ = try Self.requireEnqueued(
-                                try await delivery.enqueue(event, change.operationCorrelationID)
-                            )
-                        }
-                    }
-                    publishedApplicationSourceGeneration = change.applicationSourceGeneration
+                    enqueueBatchNotification(.invalidation(invalidation.ranges), into: notificationContinuation)
                 }
             }
-            await service.removeChangeObserver(token: observer.token)
-        } catch {
-            await service.removeChangeObserver(token: observer.token)
-            throw error
-        }
-    }
-
-    func update(subscription _: BridgeProductSubscriptionSnapshot) throws {}
-
-    func cancel(subscriptionID _: String) async {}
-
-    func closeAndDrain() async {}
-
-    private func publishCurrentCatalog(
-        context: DeliveryLifecycleContext,
-        delivery: BridgePaneAnnotationNotificationDelivery,
-        service: WorktreeAnnotationServiceActor
-    ) async throws -> Int {
-        let capture = try await captureCurrentCatalog(service: service)
-        let publicationContext = DeliveryLifecycleContext(
-            deliveryAttempt: context.deliveryAttempt,
-            deliveryStartWasRecorded: context.deliveryStartWasRecorded,
-            operationCorrelationID: context.operationCorrelationID,
-            sourceGeneration: capture.applicationSourceGeneration,
-            surface: context.surface
-        )
-        let authority = try eventAuthority(
-            applicationSourceGeneration: capture.applicationSourceGeneration
-        )
-        let entries = try Self.catalogEntries(from: capture.repositoryCapture)
-        let transferID = UUIDv7.generate().uuidString.lowercased()
-        try await deliver(context: publicationContext) {
-            _ = try await BridgeProductMetadataCatalogWriter<WorktreeAnnotationCatalogEntry>().write(
-                entries: entries,
-                catalogRevision: capture.applicationSourceGeneration,
-                transferID: transferID,
-                makeProspectiveMetadataFrame: { transfer in
-                    try delivery.makeProspectiveMetadataFrame(
-                        .catalog(try .init(authority: authority, transfer: transfer)),
-                        context.operationCorrelationID
+            let publisher = BridgeProductCommentCatalogPublisher(
+                handle: handle,
+                scopeRevision: admittedScope.revision,
+                continuity: catalogContinuityByHandle[handle] ?? .init(),
+                readCurrent: { range in
+                    try await service.captureCurrentCatalogRange(
+                        worktreeID: capturedWorktreeID,
+                        range: range
                     )
-                },
-                enqueue: { transfer in
-                    try await delivery.enqueue(
-                        .catalog(try .init(authority: authority, transfer: transfer)),
-                        context.operationCorrelationID
-                    )
-                },
-                waitUntilObserved: delivery.waitUntilObserved
+                }
             )
-        }
-        return capture.applicationSourceGeneration
-    }
-
-    private func captureCurrentCatalog(
-        service: WorktreeAnnotationServiceActor
-    ) async throws -> WorktreeAnnotationServiceCatalogCapture {
-        while true {
+            batchPublisherByHandle[handle] = .init(producerID: producerID, publisher: publisher)
+            publishProducerObservation(.publisherInstalled(handle: handle, producerID: producerID))
+            pendingProducerIDByHandle.removeValue(forKey: handle)
             do {
-                return try await service.captureCatalog(worktreeID: worktreeID)
-            } catch WorktreeAnnotationServiceError.staleSourceEpoch {
-                try Task.checkCancellation()
-            }
-        }
-    }
-
-    private func eventAuthority(
-        applicationSourceGeneration: Int
-    ) throws -> BridgeProductWorktreeAnnotationEvent.Authority {
-        try .init(
-            worktreeID: worktreeID,
-            applicationSourceGeneration: applicationSourceGeneration
-        )
-    }
-
-    private static func catalogEntries(
-        from capture: WorktreeAnnotationCatalogCapture
-    ) throws -> [WorktreeAnnotationCatalogEntry] {
-        var entries: [WorktreeAnnotationCatalogEntry] = []
-        entries.reserveCapacity(capture.sessions.count + capture.threads.count + capture.messages.count)
-        entries.append(
-            contentsOf: try capture.sessions.map {
-                .session(try .init(sessionID: $0.sessionID, semanticRevision: $0.semanticRevision))
-            }
-        )
-        entries.append(
-            contentsOf: try capture.threads.map {
-                .thread(
-                    try .init(
-                        threadID: $0.threadID,
-                        sessionID: $0.sessionID,
-                        scope: $0.scope,
-                        createdOrdinal: $0.createdOrdinal
-                    )
+                try await deliverSnapshotAndInvalidationBatches(
+                    notifications,
+                    publisher: publisher,
+                    snapshotRequired: snapshotRequired,
+                    deliver: deliver
                 )
+                finishBatchNotification(handle: handle, producerID: producerID)
+                await service.removeCatalogInvalidationObserver(token: observer.token)
+                forwarder.cancel()
+                await forwarder.value
+                await retireBatchPublisher(.init(producerID: producerID, publisher: publisher), handle: handle)
+            } catch {
+                finishBatchNotification(handle: handle, producerID: producerID)
+                await service.removeCatalogInvalidationObserver(token: observer.token)
+                forwarder.cancel()
+                await forwarder.value
+                await retireBatchPublisher(.init(producerID: producerID, publisher: publisher), handle: handle)
+                throw error
             }
-        )
-        entries.append(
-            contentsOf: try capture.messages.map {
-                .message(
-                    try .init(
-                        messageID: $0.messageID,
-                        threadID: $0.threadID,
-                        ordinal: $0.ordinal
-                    )
-                )
-            }
-        )
-        return entries
-    }
-
-    private func controlChangedReason(
-        _ reason: WorktreeAnnotationControlChangeReason
-    ) -> BridgeProductWorktreeAnnotationEvent.ControlChangedReason {
-        switch reason {
-        case .discovery: .discovery
-        case .recovery: .recovery
-        }
-    }
-
-    private static func requireEnqueued(
-        _ result: BridgeProductProducerEnqueueResult
-    ) throws -> BridgeProductQueuedProducerFrame {
-        switch result {
-        case .enqueued(let frame):
-            frame
-        case .queueReset:
-            throw BridgeProductMetadataCatalogWriterError.frameQueueReset
-        case .rejected(let rejection):
-            throw BridgeProductMetadataCatalogWriterError.frameRejected(rejection)
-        }
-    }
-
-    private func deliver(
-        context: DeliveryLifecycleContext,
-        operation: () async throws -> Void
-    ) async throws {
-        if !context.deliveryStartWasRecorded {
-            await lifecycleTraceRecorder?.record(
-                .init(
-                    operationCorrelationID: context.operationCorrelationID,
-                    result: .started,
-                    sourceGeneration: context.sourceGeneration,
-                    stageAttempt: context.deliveryAttempt,
-                    stage: .notificationDeliveryStarted,
-                    surface: context.surface
-                )
-            )
-        }
-        do {
-            try await operation()
-            await lifecycleTraceRecorder?.record(
-                .init(
-                    operationCorrelationID: context.operationCorrelationID,
-                    result: .success,
-                    sourceGeneration: context.sourceGeneration,
-                    stageAttempt: context.deliveryAttempt,
-                    stage: .notificationDeliveryTerminal,
-                    surface: context.surface
-                )
-            )
         } catch {
-            await lifecycleTraceRecorder?.record(
-                .init(
-                    operationCorrelationID: context.operationCorrelationID,
-                    result: .failure,
-                    sourceGeneration: context.sourceGeneration,
-                    stageAttempt: context.deliveryAttempt,
-                    stage: .notificationDeliveryTerminal,
-                    surface: context.surface
-                )
-            )
+            finishReason =
+                Task.isCancelled || error is CancellationError
+                ? .cancelled
+                : .failed(BridgePaneAnnotationProducerFailure(error))
             throw error
+        }
+        if Task.isCancelled { finishReason = .cancelled }
+    }
+
+    private func deliverSnapshotAndInvalidationBatches(
+        _ notifications: AsyncStream<BridgePaneCommentBatchNotification>,
+        publisher: BridgeProductCommentCatalogPublisher,
+        snapshotRequired: @Sendable () async -> Bool,
+        deliver:
+            @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws ->
+            BridgeProductViewEmissionOutcome
+    ) async throws {
+        if let snapshot = try await publisher.captureSnapshot() {
+            try await deliverCurrentBatch(snapshot, mode: .snapshot, publisher: publisher, deliver: deliver)
+        }
+        for await notification in notifications {
+            try Task.checkCancellation()
+            switch notification {
+            case .resnapshot:
+                guard let snapshot = try await publisher.captureSnapshot() else { continue }
+                try await deliverCurrentBatch(snapshot, mode: .snapshot, publisher: publisher, deliver: deliver)
+            case .invalidation(let ranges):
+                for range in ranges { await publisher.invalidate(range) }
+                while await publisher.pendingDirtyRangeCount() > 0 {
+                    if await snapshotRequired() {
+                        guard let snapshot = try await publisher.captureSnapshot() else {
+                            throw WorktreeAnnotationServiceError.staleSourceEpoch
+                        }
+                        try await deliverCurrentBatch(snapshot, mode: .snapshot, publisher: publisher, deliver: deliver)
+                        continue
+                    }
+                    guard let batch = try await publisher.captureDirty() else {
+                        throw WorktreeAnnotationServiceError.staleSourceEpoch
+                    }
+                    try await deliverCurrentBatch(batch, mode: .change, publisher: publisher, deliver: deliver)
+                }
+            case .unavailable:
+                throw WorktreeAnnotationServiceError.unavailable
+            }
+        }
+    }
+
+    private func deliverCurrentBatch(
+        _ capturedBatch: BridgeProductCommentCatalogBatch,
+        mode capturedMode: BridgeProductBatchMode,
+        publisher: BridgeProductCommentCatalogPublisher,
+        deliver:
+            @Sendable (BridgeProductCommentCatalogBatch, BridgeProductBatchMode) async throws ->
+            BridgeProductViewEmissionOutcome
+    ) async throws {
+        var batch = capturedBatch
+        var mode = capturedMode
+        while true {
+            try Task.checkCancellation()
+            switch try await deliver(batch, mode) {
+            case .completed: return
+            case .retired: throw WorktreeAnnotationServiceError.staleSourceEpoch
+            case .resnapshotRequired:
+                guard let snapshot = try await publisher.captureSnapshot() else {
+                    throw WorktreeAnnotationServiceError.staleSourceEpoch
+                }
+                batch = snapshot
+                mode = .snapshot
+            }
+        }
+    }
+
+    private func retireBatchPublisher(
+        _ owner: BatchPublisherOwner,
+        handle: String
+    ) async {
+        let continuity = await owner.publisher.retireAndCaptureContinuity()
+        guard let currentOwner = batchPublisherByHandle[handle],
+            currentOwner.producerID == owner.producerID,
+            currentOwner.publisher === owner.publisher
+        else { return }
+        batchPublisherByHandle.removeValue(forKey: handle)
+        if !retiredBatchHandles.contains(handle) {
+            catalogContinuityByHandle[handle] = continuity
+        }
+        for waiter in publisherRetirementWaitersByHandle.removeValue(forKey: handle) ?? [] {
+            waiter.resume()
+        }
+    }
+
+    private func waitForCurrentPublisherRetirement(handle: String, producerID: UUID) async throws {
+        guard let predecessor = batchPublisherByHandle[handle] else { return }
+        publishProducerObservation(
+            .waitingForRetirement(
+                handle: handle,
+                producerID: producerID,
+                predecessorID: predecessor.producerID
+            )
+        )
+        await withCheckedContinuation { continuation in
+            publisherRetirementWaitersByHandle[handle, default: []].append(continuation)
+        }
+        try Task.checkCancellation()
+        guard !retiredBatchHandles.contains(handle) else {
+            throw WorktreeAnnotationServiceError.staleSourceEpoch
+        }
+    }
+
+    private func finishBatchNotification(handle: String, producerID: UUID) {
+        guard let owner = batchNotificationByHandle[handle], owner.producerID == producerID else { return }
+        batchNotificationByHandle.removeValue(forKey: handle)?.continuation.finish()
+    }
+
+    private func publishProducerObservation(_ observation: BridgePaneAnnotationProducerObservation) {
+        for continuation in producerObservationContinuations.values {
+            _ = continuation.yield(observation)
+        }
+    }
+
+    private func removeProducerObservation(_ observerID: UUID) {
+        producerObservationContinuations.removeValue(forKey: observerID)
+    }
+
+    private func waitForFirstAdmittedBatchScope(handle: String) async throws -> AdmittedBatchScope {
+        try Task.checkCancellation()
+        guard !retiredBatchHandles.contains(handle) else {
+            throw WorktreeAnnotationServiceError.staleSourceEpoch
+        }
+        if let admittedScope = admittedBatchScopeByHandle[handle] { return admittedScope }
+        guard firstScopeWaiterByHandle[handle] == nil else {
+            throw WorktreeAnnotationServiceError.staleSourceEpoch
+        }
+        let (stream, continuation) = AsyncStream.makeStream(
+            of: Void.self,
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        firstScopeWaiterByHandle[handle] = continuation
+        for observer in firstScopeWaiterObserversByHandle.removeValue(forKey: handle) ?? [] {
+            observer.resume()
+        }
+        defer {
+            firstScopeWaiterByHandle.removeValue(forKey: handle)
+            continuation.finish()
+        }
+        var iterator = stream.makeAsyncIterator()
+        while await iterator.next() != nil {
+            try Task.checkCancellation()
+            if let admittedScope = admittedBatchScopeByHandle[handle] { return admittedScope }
+        }
+        throw CancellationError()
+    }
+
+    private func enqueueBatchNotification(
+        _ notification: BridgePaneCommentBatchNotification,
+        into continuation: AsyncStream<BridgePaneCommentBatchNotification>.Continuation
+    ) {
+        if case .dropped(let displaced) = continuation.yield(notification) {
+            _ = continuation.yield(notification.merging(displaced: displaced))
         }
     }
 }

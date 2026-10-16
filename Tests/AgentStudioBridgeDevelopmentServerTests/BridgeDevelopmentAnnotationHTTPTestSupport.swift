@@ -31,7 +31,9 @@ struct HTTPDevelopmentProductRuntime {
 
 @MainActor
 struct HTTPAnnotationAuthoringContext {
+    let commentSubscription: BridgeProductSubscriptionOpenAcceptedResponse
     let descriptor: BridgeProductFileContentDescriptor
+    let fileBatchPartCount: Int
     let fileSourceGeneration: Int
     let metadataStream: HTTPMetadataStreamHandle
 }
@@ -66,6 +68,9 @@ func makeHTTPDevelopmentProductRuntime(
             worktreeAnnotationStore: composition.worktreeAnnotationStore,
             worktreeAnnotationOutputCoordinator:
                 composition.worktreeAnnotationOutputCoordinator,
+            // HTTP routing tests exercise control and persistence, not elapsed
+            // operation deadlines. Deadline tests advance their own clock.
+            operationDeadlineClock: TestPushClock(),
             contributionTargetCommit: { target in
                 composition.applyContributionTarget(target)
             }
@@ -77,7 +82,8 @@ func makeHTTPDevelopmentProductRuntime(
 func prepareHTTPAnnotationAuthoring(
     client: some TestClientProtocol,
     runtime: HTTPDevelopmentProductRuntime,
-    connection: HTTPProductConnection
+    connection: HTTPProductConnection,
+    minimumFileBatchPartCount: Int = 0
 ) async throws -> HTTPAnnotationAuthoringContext {
     let metadataStream = try await startHTTPMetadataStream(
         host: runtime.host,
@@ -95,12 +101,10 @@ func prepareHTTPAnnotationAuthoring(
     let fileSource = try await queryHTTPFileSource(
         client: client,
         connection: connection,
-        requestSequence: 2
     )
-    let fileMetadataSubscription = try await openHTTPSubscription(
+    _ = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 3,
         subscription: [
             "source": try jsonObject(fileSource),
             "subscriptionKind": "file.metadata",
@@ -113,43 +117,20 @@ func prepareHTTPAnnotationAuthoring(
         recorder: metadataStream.recorder,
         subscriptionID: "file-metadata-annotation-authoring"
     )
-    let acceptedFileSource: BridgeProductFileSourceIdentity =
-        try await waitForAcknowledgedMetadataFrame(
-            client: client,
-            connection: connection,
-            recorder: metadataStream.recorder
-        ) { frame in
-            guard case .subscriptionData(let dataFrame) = frame,
-                let fileEvent = dataFrame.data.fileMetadataEvent,
-                case .sourceAccepted(let event) = fileEvent
-            else { return nil }
-            return event.source
-        }
-    try await demandHTTPFileMetadataPath(
-        "tracked.txt",
+    try await acceptHTTPFileViewScope(
+        path: "tracked.txt",
         client: client,
         connection: connection,
-        openResponse: fileMetadataSubscription,
-        requestSequence: 4,
         subscriptionID: "file-metadata-annotation-authoring"
     )
-    let descriptor: BridgeProductFileContentDescriptor =
-        try await waitForAcknowledgedMetadataFrame(
-            client: client,
-            connection: connection,
-            recorder: metadataStream.recorder
-        ) { frame in
-            guard case .subscriptionData(let dataFrame) = frame,
-                let fileEvent = dataFrame.data.fileMetadataEvent,
-                case .descriptorReady(let event) = fileEvent,
-                case .available(let descriptor) = event.payload.availability
-            else { return nil }
-            return descriptor
-        }
-    _ = try await openHTTPSubscription(
+    let fileObservation = try await waitForHTTPFileContentDescriptor(
+        path: "tracked.txt", client: client, connection: connection,
+        recorder: metadataStream.recorder,
+        minimumPartCount: minimumFileBatchPartCount
+    )
+    let commentOpen = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 5,
         subscription: ["subscriptionKind": "file.annotations"],
         subscriptionID: "file-annotations-authoring"
     )
@@ -159,62 +140,101 @@ func prepareHTTPAnnotationAuthoring(
         recorder: metadataStream.recorder,
         subscriptionID: "file-annotations-authoring"
     )
+    try await acceptHTTPCommentViewScope(
+        client: client,
+        connection: connection,
+        openResponse: commentOpen,
+    )
     _ = try await waitForHTTPAnnotationCatalogCommit(
         client: client,
         connection: connection,
         recorder: metadataStream.recorder
     )
     return .init(
-        descriptor: descriptor,
-        fileSourceGeneration: acceptedFileSource.subscriptionGeneration,
+        commentSubscription: commentOpen,
+        descriptor: fileObservation.descriptor,
+        fileBatchPartCount: fileObservation.partCount,
+        fileSourceGeneration: fileObservation.descriptor.source.subscriptionGeneration,
         metadataStream: metadataStream
     )
 }
 
-private func demandHTTPFileMetadataPath(
-    _ path: String,
+func acceptHTTPFileViewScope(
+    path: String?,
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
-    openResponse: BridgeProductSubscriptionOpenAcceptedResponse,
-    requestSequence: Int,
     subscriptionID: String
 ) async throws {
-    let targetInterestState = BridgeProductSubscriptionInterestState.fileMetadata(
-        interests: [try .init(lane: .foreground, paths: [path])],
-        pathScope: []
-    )
+    let interests: [[String: Any]] = path.map { [["lane": "foreground", "paths": [$0]]] } ?? []
     let response = try await executeHTTPControl(
         client: client,
         connection: connection,
-        object: httpSurfaceControlIdentity(
+        object: httpControlIdentity(
             connection: connection,
-            kind: "subscription.updateBatch",
-            requestID: "subscription-update-\(subscriptionID)",
-            requestSequence: requestSequence
+            kind: "subscription.setScope",
+            requestID: "file-scope-\(subscriptionID)",
         ).merging([
-            "baseInterestRevision": openResponse.interestRevision,
-            "baseInterestSha256": openResponse.interestSha256,
-            "batchCount": 1,
-            "batchIndex": 0,
-            "delta": [
-                "add": [["lane": "foreground", "path": path]],
-                "addPathScope": [],
-                "removePathScope": [],
-                "removePaths": [],
-                "subscriptionKind": "file.metadata",
+            "domain": "default",
+            "handle": "file-view-\(subscriptionID)",
+            "incarnation": "file-incarnation-\(subscriptionID)",
+            "scopeRevision": 1,
+            "scope": [
+                "kind": "file",
+                "changeFilter": ["kind": "none"],
+                "interests": interests,
+                "pathScope": [],
             ],
             "subscriptionId": subscriptionID,
             "subscriptionKind": "file.metadata",
-            "targetInterestRevision": openResponse.interestRevision + 1,
-            "targetInterestSha256": try targetInterestState.sha256Hex(),
-            "totalDeltaItemCount": 1,
-            "updateId": "file-interest-\(subscriptionID)",
         ]) { _, newValue in newValue }
     )
-    guard case .subscriptionUpdateBatchAccepted(let accepted) = response,
-        accepted.disposition == .committed
+    guard case .viewAccepted(let accepted) = response,
+        accepted.kind == .scope
     else {
-        throw HTTPAnnotationIntegrationError.unexpectedControlResponse
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "acceptHTTPFileViewScope",
+            receivedKind: String(reflecting: response)
+        )
+    }
+}
+
+func acceptHTTPCommentViewScope(
+    client: some TestClientProtocol,
+    connection: HTTPProductConnection,
+    openResponse: BridgeProductSubscriptionOpenAcceptedResponse,
+    scopeRevision: Int = 1,
+    sessionIDs: [UUID] = []
+) async throws {
+    let worktreeID = try #require(openResponse.worktreeId)
+    let response = try await executeHTTPControl(
+        client: client,
+        connection: connection,
+        object: httpControlIdentity(
+            connection: connection,
+            kind: "subscription.setScope",
+            requestID: "comment-scope-\(openResponse.subscriptionId)-\(scopeRevision)",
+        ).merging([
+            "domain": "default",
+            "handle": "comment-view-\(openResponse.subscriptionId)",
+            "incarnation": "comment-incarnation-\(openResponse.subscriptionId)",
+            "scopeRevision": scopeRevision,
+            "scope": [
+                "kind": "comment",
+                "sessionIds": sessionIDs.map { $0.uuidString.lowercased() },
+                "worktreeId": worktreeID,
+            ],
+            "subscriptionId": openResponse.subscriptionId,
+            "subscriptionKind": "file.annotations",
+        ]) { _, newValue in newValue }
+    )
+    guard case .viewAccepted(let accepted) = response,
+        accepted.kind == .scope,
+        accepted.subscriptionId == openResponse.subscriptionId
+    else {
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "acceptHTTPCommentViewScope",
+            receivedKind: String(reflecting: response)
+        )
     }
 }
 
@@ -232,7 +252,8 @@ func capturedErrorDescription(
 @MainActor
 func prepareHTTPAnnotationLocatedRestore(
     client: some TestClientProtocol,
-    runtime: HTTPDevelopmentProductRuntime
+    runtime: HTTPDevelopmentProductRuntime,
+    sessionID: UUID
 ) async throws -> HTTPAnnotationLocatedRestoreContext {
     let connection = try await openHTTPProductConnection(client: client)
     let metadataStream = try await startHTTPMetadataStream(
@@ -251,12 +272,10 @@ func prepareHTTPAnnotationLocatedRestore(
     let fileSource = try await queryHTTPFileSource(
         client: client,
         connection: connection,
-        requestSequence: 2
     )
     _ = try await openHTTPSubscription(
         client: client,
         connection: connection,
-        requestSequence: 3,
         subscription: [
             "source": try jsonObject(fileSource),
             "subscriptionKind": "file.metadata",
@@ -269,22 +288,18 @@ func prepareHTTPAnnotationLocatedRestore(
         recorder: metadataStream.recorder,
         subscriptionID: "file-metadata-located-restore"
     )
-    let acceptedFileSource: BridgeProductFileSourceIdentity =
-        try await waitForAcknowledgedMetadataFrame(
-            client: client,
-            connection: connection,
-            recorder: metadataStream.recorder
-        ) { frame in
-            guard case .subscriptionData(let dataFrame) = frame,
-                let fileEvent = dataFrame.data.fileMetadataEvent,
-                case .sourceAccepted(let event) = fileEvent
-            else { return nil }
-            return event.source
-        }
-    _ = try await openHTTPSubscription(
+    try await acceptHTTPFileViewScope(
+        path: nil,
         client: client,
         connection: connection,
-        requestSequence: 4,
+        subscriptionID: "file-metadata-located-restore"
+    )
+    let acceptedFileSource = try await waitForHTTPFileSourceIdentity(
+        client: client, connection: connection, recorder: metadataStream.recorder
+    )
+    let commentOpen = try await openHTTPSubscription(
+        client: client,
+        connection: connection,
         subscription: ["subscriptionKind": "file.annotations"],
         subscriptionID: "file-annotations-located-restore"
     )
@@ -293,6 +308,12 @@ func prepareHTTPAnnotationLocatedRestore(
         connection: connection,
         recorder: metadataStream.recorder,
         subscriptionID: "file-annotations-located-restore"
+    )
+    try await acceptHTTPCommentViewScope(
+        client: client,
+        connection: connection,
+        openResponse: commentOpen,
+        sessionIDs: [sessionID]
     )
     _ = try await waitForHTTPAnnotationCatalogCommit(
         client: client,
@@ -309,6 +330,7 @@ func prepareHTTPAnnotationLocatedRestore(
 struct HTTPProductConnection: Sendable {
     let bootstrap: BridgeProductSessionBootstrap
     let capability: String
+    let controlSequence = HTTPProductControlSequence()
 }
 
 struct HTTPMetadataStreamHandle {
@@ -319,9 +341,18 @@ struct HTTPMetadataStreamHandle {
 enum HTTPAnnotationIntegrationError: Error {
     case annotationCommandFailed
     case invalidJSONObject
+    case invalidDirectControl
+    case invalidOperationAdmission
+    case invalidOperationResult
+    case invalidCompletedControl
+    case incompleteFileBatch
+    case invalidFileBatchRecord
+    case controlRouteFailed
+    case operationResultRouteFailed
+    case metadataDrainFailed(String)
     case metadataStreamEnded
     case unexpectedAnnotationCommandResponse(String)
-    case unexpectedControlResponse
+    case unexpectedControlResponse(callSite: String, receivedKind: String)
     case unexpectedHTTPResponse(context: String, status: Int, contentType: String?, body: String)
 }
 
@@ -377,7 +408,7 @@ func startHTTPMetadataStream(
     let recorder = try HTTPMetadataFrameRecorder()
     let responseBody = response.body
     let drain = Task {
-        try await responseBody.write(recorder)
+        try await responseBody.write(ForwardingResponseBodyWriter(sink: recorder))
     }
     return .init(recorder: recorder, drain: drain)
 }
@@ -387,14 +418,14 @@ func shutdownHTTPHostAndDrainMetadataStream(
     host: BridgeDevelopmentProductHost,
     drain: Task<Void, any Error>
 ) async throws {
-    async let shutdown: Void = host.shutdown()
+    async let shutdown: Void = { _ = await host.shutdown() }()
     do {
         try await drain.value
     } catch is CancellationError {
         // Host shutdown cancels the active scheme response after closing its producer.
     } catch {
         await shutdown
-        throw error
+        throw HTTPAnnotationIntegrationError.metadataDrainFailed(String(describing: error))
     }
     await shutdown
 }
@@ -403,7 +434,7 @@ func openHTTPProductConnection(
     client: some TestClientProtocol,
     bootstrapRequestBody: ByteBuffer = ByteBuffer(
         string:
-            #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-file-view","commandKind":"activateContext","surface":"file"},"reason":"initial","tabId":"owner-tab-1"}"#
     )
 ) async throws -> HTTPProductConnection {
     let bootstrapResponse = try await client.execute(
@@ -426,11 +457,13 @@ func openHTTPProductConnection(
             connection: connection,
             kind: "workerSession.open",
             requestID: "worker-session-open",
-            requestSequence: 1
         ).merging(["request": NSNull()]) { _, newValue in newValue }
     )
     guard case .workerSessionAccepted = response else {
-        throw HTTPAnnotationIntegrationError.unexpectedControlResponse
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "openHTTPProductConnection",
+            receivedKind: response.kind
+        )
     }
     return connection
 }
@@ -438,7 +471,6 @@ func openHTTPProductConnection(
 func queryHTTPFileSource(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
-    requestSequence: Int
 ) async throws -> BridgeProductFileSourceSpec {
     let response = try await executeHTTPControl(
         client: client,
@@ -447,7 +479,6 @@ func queryHTTPFileSource(
             connection: connection,
             kind: "product.call",
             requestID: "file-source-current",
-            requestSequence: requestSequence
         ).merging([
             "call": [
                 "method": "file.source.current",
@@ -458,7 +489,10 @@ func queryHTTPFileSource(
     guard case .callCompleted(let completed) = response,
         case .fileSourceCurrent(.available(let source)) = completed.call
     else {
-        throw HTTPAnnotationIntegrationError.unexpectedControlResponse
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "queryHTTPFileSource",
+            receivedKind: String(reflecting: response)
+        )
     }
     return source
 }
@@ -466,7 +500,6 @@ func queryHTTPFileSource(
 func openHTTPSubscription(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
-    requestSequence: Int,
     subscription: [String: Any],
     subscriptionID: String
 ) async throws -> BridgeProductSubscriptionOpenAcceptedResponse {
@@ -477,7 +510,6 @@ func openHTTPSubscription(
             connection: connection,
             kind: "subscription.open",
             requestID: "subscription-open-\(subscriptionID)",
-            requestSequence: requestSequence
         ).merging([
             "subscription": subscription,
             "subscriptionId": subscriptionID,
@@ -486,7 +518,10 @@ func openHTTPSubscription(
     guard case .subscriptionOpenAccepted(let accepted) = response,
         accepted.subscriptionId == subscriptionID
     else {
-        throw HTTPAnnotationIntegrationError.unexpectedControlResponse
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "openHTTPSubscription",
+            receivedKind: String(reflecting: response)
+        )
     }
     return accepted
 }
@@ -496,7 +531,6 @@ func executeHTTPAnnotationCommand(
     connection: HTTPProductConnection,
     operation: [String: Any],
     requestID: String,
-    requestSequence: Int
 ) async throws -> BridgeProductWorktreeAnnotationCommandOutcomeDTO {
     let response = try await executeHTTPControl(
         client: client,
@@ -505,7 +539,6 @@ func executeHTTPAnnotationCommand(
             connection: connection,
             kind: "product.call",
             requestID: requestID,
-            requestSequence: requestSequence
         ).merging([
             "call": [
                 "method": "file.annotations.command",
@@ -523,25 +556,33 @@ func executeHTTPAnnotationCommand(
     return outcome
 }
 
-private func executeHTTPControl(
+func executeHTTPControl(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
     object: [String: Any]
 ) async throws -> BridgeProductControlResponse {
+    guard object["requestSequence"] == nil else { throw HTTPAnnotationIntegrationError.invalidJSONObject }
+    var object = object
+    object["requestSequence"] = await connection.controlSequence.takeNextRequestSequence()
     let capabilityHeader = try #require(
         HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
     )
-    let response = try await client.execute(
-        uri: "/__bridge-product/command",
-        method: .post,
-        headers: [
-            .contentType: "application/json",
-            capabilityHeader: connection.capability,
-        ],
-        body: ByteBuffer(
-            data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+    let response: TestResponse
+    do {
+        response = try await client.execute(
+            uri: "/__bridge-product/command",
+            method: .post,
+            headers: [
+                .contentType: "application/json",
+                capabilityHeader: connection.capability,
+            ],
+            body: ByteBuffer(
+                data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
+            )
         )
-    )
+    } catch {
+        throw HTTPAnnotationIntegrationError.controlRouteFailed
+    }
     guard response.status == .ok,
         response.headers[.contentType] == "application/json"
     else {
@@ -553,23 +594,101 @@ private func executeHTTPControl(
             ) ?? "<invalid UTF-8 request>"
         )
     }
-    return try BridgeProductStrictJSON.decode(
-        BridgeProductControlResponse.self,
-        from: Data(response.body.readableBytesView)
-    )
+    if object["kind"] as? String == "subscription.cancel" {
+        do {
+            return try BridgeProductStrictJSON.decode(
+                BridgeProductControlResponse.self,
+                from: Data(response.body.readableBytesView)
+            )
+        } catch {
+            throw HTTPAnnotationIntegrationError.invalidDirectControl
+        }
+    }
+    let admission: BridgeProductOperationAdmittedResponse
+    do {
+        admission = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationAdmittedResponse.self,
+            from: Data(response.body.readableBytesView)
+        )
+    } catch {
+        throw HTTPAnnotationIntegrationError.invalidOperationAdmission
+    }
+    let resultReply: TestResponse
+    do {
+        resultReply = try await client.execute(
+            uri: "/__bridge-product/command",
+            method: .post,
+            headers: [
+                .contentType: "application/json",
+                capabilityHeader: connection.capability,
+            ],
+            body: ByteBuffer(
+                data: try JSONSerialization.data(
+                    withJSONObject: [
+                        "kind": "operation.result",
+                        "operationId": admission.operationId,
+                        "paneSessionId": connection.bootstrap.paneSessionId,
+                        "wireVersion": BridgeProductWireContract.version,
+                        "workerInstanceId": connection.bootstrap.workerInstanceId,
+                    ],
+                    options: [.sortedKeys]
+                )
+            )
+        )
+    } catch {
+        throw HTTPAnnotationIntegrationError.operationResultRouteFailed
+    }
+    guard resultReply.status == .ok else {
+        throw unexpectedHTTPAnnotationResponse(resultReply, context: "operation.result")
+    }
+    let result: BridgeProductOperationResultResponse
+    do {
+        result = try BridgeProductStrictJSON.decode(
+            BridgeProductOperationResultResponse.self,
+            from: Data(resultReply.body.readableBytesView)
+        )
+    } catch {
+        throw HTTPAnnotationIntegrationError.invalidOperationResult
+    }
+    return try requireCompletedHTTPControl(
+        admission: admission, result: result,
+        requestContext: "\(object["kind"] ?? "unknown") \(object["requestId"] ?? "unknown")")
+}
+
+private func requireCompletedHTTPControl(
+    admission: BridgeProductOperationAdmittedResponse,
+    result: BridgeProductOperationResultResponse,
+    requestContext: String
+) throws -> BridgeProductControlResponse {
+    guard result.operationId == admission.operationId,
+        result.outcome == .succeeded,
+        let resultValue = result.result
+    else {
+        throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
+            callSite: "executeHTTPControl.operationResult \(requestContext)",
+            receivedKind:
+                "operation.result outcome=\(result.outcome) failure=\(String(describing: result.failureCode)) hasResult=\(result.result != nil)"
+        )
+    }
+    do {
+        return try BridgeProductStrictJSON.decode(
+            BridgeProductControlResponse.self,
+            from: JSONEncoder().encode(resultValue)
+        )
+    } catch {
+        throw HTTPAnnotationIntegrationError.invalidCompletedControl
+    }
 }
 
 private func httpControlIdentity(
     connection: HTTPProductConnection,
     kind: String,
     requestID: String,
-    requestSequence: Int
 ) -> [String: Any] {
     [
         "kind": kind,
         "paneSessionId": connection.bootstrap.paneSessionId,
         "requestId": requestID,
-        "requestSequence": requestSequence,
         "wireVersion": BridgeProductWireContract.version,
         "workerInstanceId": connection.bootstrap.workerInstanceId,
     ]
@@ -579,13 +698,11 @@ private func httpSurfaceControlIdentity(
     connection: HTTPProductConnection,
     kind: String,
     requestID: String,
-    requestSequence: Int
 ) -> [String: Any] {
     httpControlIdentity(
         connection: connection,
         kind: kind,
         requestID: requestID,
-        requestSequence: requestSequence
     ).merging(["workerDerivationEpoch": 0]) { _, newValue in newValue }
 }
 
@@ -617,45 +734,6 @@ func waitForAcknowledgedSubscription(
     }
 }
 
-func waitForHTTPAnnotationCatalogCommit(
-    client: some TestClientProtocol,
-    connection: HTTPProductConnection,
-    recorder: HTTPMetadataFrameRecorder
-) async throws -> BridgeProductWorktreeAnnotationEvent.Catalog {
-    try await waitForAcknowledgedMetadataFrame(
-        client: client,
-        connection: connection,
-        recorder: recorder
-    ) { frame in
-        guard case .subscriptionData(let dataFrame) = frame,
-            let event = dataFrame.data.fileAnnotationsEvent,
-            case .catalog(let catalog) = event,
-            case .commit = catalog.transfer
-        else { return nil }
-        return catalog
-    }
-}
-
-func waitForHTTPAnnotationSessionChange(
-    client: some TestClientProtocol,
-    connection: HTTPProductConnection,
-    recorder: HTTPMetadataFrameRecorder,
-    expectedSessionID: UUID
-) async throws -> BridgeProductWorktreeAnnotationEvent.SessionChanged {
-    try await waitForAcknowledgedMetadataFrame(
-        client: client,
-        connection: connection,
-        recorder: recorder
-    ) { frame in
-        guard case .subscriptionData(let dataFrame) = frame,
-            let event = dataFrame.data.fileAnnotationsEvent,
-            case .sessionChanged(let sessionChanged) = event,
-            sessionChanged.sessionID.rawValue == expectedSessionID
-        else { return nil }
-        return sessionChanged
-    }
-}
-
 func waitForAcknowledgedMetadataFrame<MatchedValue: Sendable>(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
@@ -675,63 +753,17 @@ func waitForAcknowledgedMetadataFrame<MatchedValue: Sendable>(
     }
 }
 
-private func acknowledgeHTTPMetadataFrame(
+func acknowledgeHTTPMetadataFrame(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
     frame: BridgeProductMetadataFrame
 ) async throws {
-    let identity = metadataFrameIdentity(frame)
-    let capabilityHeader = try #require(
-        HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
-    )
-    let acknowledgement = try JSONSerialization.data(
-        withJSONObject: [
-            "kind": "stream.frameObserved",
-            "metadataStreamId": identity.metadataStreamId,
-            "paneSessionId": identity.paneSessionId,
-            "streamKind": "metadata",
-            "streamSequence": identity.streamSequence,
-            "wireVersion": identity.wireVersion,
-            "workerInstanceId": identity.workerInstanceId,
-        ],
-        options: [.sortedKeys]
-    )
-    let response = try await client.execute(
-        uri: "/__bridge-product/command",
-        method: .post,
-        headers: [
-            .contentType: "application/json",
-            capabilityHeader: connection.capability,
-        ],
-        body: ByteBuffer(data: acknowledgement)
-    )
-    guard response.status == .noContent else {
-        throw unexpectedHTTPAnnotationResponse(
-            response,
-            context: "metadata stream frame acknowledgement sequence \(identity.streamSequence)"
-        )
+    if case .batch(.part(let part)) = frame {
+        try await acknowledgeHTTPViewPart(client: client, connection: connection, part: part)
     }
 }
 
-private func metadataFrameIdentity(
-    _ frame: BridgeProductMetadataFrame
-) -> BridgeProductMetadataFrameIdentity {
-    switch frame {
-    case .metadataStreamAccepted(let value): value.frameIdentity
-    case .panePresentation(let value): value.frameIdentity
-    case .paneSurfaceSelectionRequested(let value): value.frameIdentity
-    case .subscriptionAccepted(let value): value.frameIdentity
-    case .subscriptionInterestsCommitted(let value): value.identity.frameIdentity
-    case .subscriptionData(let value): value.frameIdentity
-    case .subscriptionReset(let value): value.identity.frameIdentity
-    case .subscriptionEnd(let value): value.identity.frameIdentity
-    case .subscriptionCancelled(let value): value.identity.frameIdentity
-    case .contentCancelled(let value): value.frameIdentity
-    case .metadataStreamError(let value): value.frameIdentity
-    }
-}
-
-actor HTTPMetadataFrameRecorder: ResponseBodyWriter {
+actor HTTPMetadataFrameRecorder: RecordingResponseBodySink {
     private let decoder: BridgeProductMetadataFrameDecoder
     private var frames: [BridgeProductMetadataFrame] = []
     private var nextReadIndex = 0

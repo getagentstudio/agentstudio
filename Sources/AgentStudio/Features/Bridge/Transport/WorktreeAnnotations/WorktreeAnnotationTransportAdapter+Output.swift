@@ -11,21 +11,13 @@ extension WorktreeAnnotationTransportAdapter {
             throw WorktreeAnnotationTransportAdapterError.outputUnavailable
         }
         let sessionID = WorktreeAnnotationSessionID(rawValue: body.sessionId)
-        let sessionDetail = try await store.outputSessionDetail(
-            sessionID: sessionID,
-            expectedSessionRevision: body.expectedSessionRevision,
-            expectedProjectionRevision: body.displayedProjectionRevision
-        )
-        guard
-            try await sourceResolver.currentSourceGeneration(
-                surface,
-                reviewPublicationIdentity,
-                productAdmission
-            )
-                == body.sourceGeneration
-        else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
+        let sessionDetail: WorktreeAnnotationSessionDetail
+        do {
+            sessionDetail = try await store.outputSessionDetail(sessionID: sessionID)
+        } catch WorktreeAnnotationRepositoryError.notFound {
+            throw WorktreeAnnotationRepositoryError.conflict(currentRevision: 0)
         }
+        let selectedMessages = try await Self.selectOutputMessages(body.messages, from: sessionDetail)
         let sourceSnapshot = WorktreeAnnotationServiceActor.sourceRefreshSnapshot(
             from: sessionDetail
         )
@@ -45,37 +37,11 @@ extension WorktreeAnnotationTransportAdapter {
                 material: sourceCapture.material
             )
         )
-        guard
-            try await sourceResolver.currentSourceGeneration(
-                surface,
-                reviewPublicationIdentity,
-                productAdmission
-            )
-                == body.sourceGeneration
-        else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
         let outputKind: WorktreeAnnotationOutputKind =
             switch body.outputKind {
             case .clipboardMarkdown: .clipboardMarkdown
             case .jsonFile: .jsonFile
             }
-        let scopeEligibleThreads = sessionDetail.threads.filter { threadDetail in
-            switch body.scope {
-            case .pending: threadDetail.thread.resolution == .open
-            case .all: true
-            }
-        }
-        let selectedMessages = scopeEligibleThreads.flatMap(\.messages).filter { message in
-            guard message.savedBody != nil, message.savedRevision != nil, message.draft == nil else {
-                return false
-            }
-            switch body.scope {
-            case .pending: return message.authorKind == .human && !message.handled
-            case .all: return true
-            }
-        }
-        guard !selectedMessages.isEmpty else { throw WorktreeAnnotationRepositoryError.emptySelection }
         let comparisonLabel =
             try outputLabels.comparisonLabel
             ?? WorktreeAnnotationComparisonLabelProjector.project(
@@ -84,30 +50,50 @@ extension WorktreeAnnotationTransportAdapter {
         let result = try await outputCoordinator.executeNew(
             .init(
                 outputKind: outputKind,
+                destination: body.destination,
                 sessionDetail: sessionDetail,
-                selectedMessages: try selectedMessages.map { message in
-                    guard let savedRevision = message.savedRevision else {
-                        throw WorktreeAnnotationRepositoryError.invalidState
-                    }
-                    return .init(messageID: message.id, expectedSavedRevision: savedRevision)
-                },
+                selectedMessages: selectedMessages,
                 placementsByThreadID: sourceEvaluation.placements,
                 sessionLabel: outputLabels.sessionLabel,
                 worktreeLabel: outputLabels.worktreeLabel,
-                comparisonLabel: comparisonLabel,
-                expectedSessionRevision: body.expectedSessionRevision,
-                expectedProjectionRevision: body.displayedProjectionRevision
-            )
+                comparisonLabel: comparisonLabel
+            ),
+            productAdmission: productAdmission
         )
         return result.commandOutcome
     }
 
+    @concurrent nonisolated private static func selectOutputMessages(
+        _ requestedMessages: [BridgeProductWorktreeAnnotationOperation.OutputMessage],
+        from sessionDetail: WorktreeAnnotationSessionDetail
+    ) async throws -> [WorktreeAnnotationSQLiteRepository.OutputMessageSelection] {
+        let messagesByID = Dictionary(
+            uniqueKeysWithValues: sessionDetail.threads.flatMap(\.messages).map { ($0.id.rawValue, $0) }
+        )
+        return try requestedMessages.map { requestedMessage in
+            guard let message = messagesByID[requestedMessage.messageId],
+                message.savedRevision == requestedMessage.savedRevision,
+                message.savedBody != nil, message.draft == nil
+            else {
+                throw WorktreeAnnotationRepositoryError.conflict(
+                    currentRevision: messagesByID[requestedMessage.messageId]?.semanticRevision ?? 0
+                )
+            }
+            return WorktreeAnnotationSQLiteRepository.OutputMessageSelection(
+                messageID: message.id,
+                expectedSavedRevision: requestedMessage.savedRevision
+            )
+        }
+    }
+
     func executeOutputRepeat(
-        attemptID: WorktreeAnnotationOutputAttemptID
+        attemptID: WorktreeAnnotationOutputAttemptID,
+        productAdmission: BridgeProductAdmissionContext
     ) async throws -> WorktreeAnnotationOutputCommandOutcome {
         guard let outputCoordinator else {
             throw WorktreeAnnotationTransportAdapterError.outputUnavailable
         }
-        return try await outputCoordinator.executeRepeat(sourceAttemptID: attemptID).commandOutcome
+        return try await outputCoordinator.executeRepeat(sourceAttemptID: attemptID, productAdmission: productAdmission)
+            .commandOutcome
     }
 }

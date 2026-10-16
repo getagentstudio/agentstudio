@@ -32,6 +32,7 @@ enum GhosttyActionTag: Sendable, CaseIterable {
     case presentTerminal
     case sizeLimit
     case resetWindowSize
+    case resizeWindow
     case initialSize
     case cellSize
     case scrollbar
@@ -115,6 +116,7 @@ enum GhosttyActionTag: Sendable, CaseIterable {
         case .presentTerminal: return UInt32(GHOSTTY_ACTION_PRESENT_TERMINAL.rawValue)
         case .sizeLimit: return UInt32(GHOSTTY_ACTION_SIZE_LIMIT.rawValue)
         case .resetWindowSize: return UInt32(GHOSTTY_ACTION_RESET_WINDOW_SIZE.rawValue)
+        case .resizeWindow: return UInt32(GHOSTTY_ACTION_RESIZE_WINDOW.rawValue)
         case .initialSize: return UInt32(GHOSTTY_ACTION_INITIAL_SIZE.rawValue)
         case .cellSize: return UInt32(GHOSTTY_ACTION_CELL_SIZE.rawValue)
         case .scrollbar: return UInt32(GHOSTTY_ACTION_SCROLLBAR.rawValue)

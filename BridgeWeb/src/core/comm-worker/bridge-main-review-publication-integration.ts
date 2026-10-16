@@ -1,3 +1,9 @@
+import {
+	recordBridgeReviewCandidateSourceDiagnostic,
+	recordBridgeReviewDisplayPatchDiagnostic,
+	type BridgeReviewDisplayPatchDiagnostic,
+} from '../../foundation/diagnostics/bridge-review-selection-diagnostic.js';
+import type { BridgeWorkerRuntimeRecoverySource } from '../../foundation/diagnostics/bridge-worker-replacement-reason.js';
 import type { BridgeTelemetryRecorder } from '../../foundation/telemetry/bridge-telemetry-recorder.js';
 import { prepareBridgeMainPierreItemForPresentation } from './bridge-main-pierre-item-adapter.js';
 import type { BridgeMainRenderFulfillmentCoordinator } from './bridge-main-render-fulfillment-coordinator.js';
@@ -21,7 +27,7 @@ import type { BridgeWorkerRpcCommandInput } from './bridge-worker-rpc-client.js'
 import type { BridgeWorkerRpcLifecycleSnapshot } from './bridge-worker-rpc-lifecycle-store.js';
 
 export interface BridgeMainReviewPublicationClient {
-	readonly requestWorkerReplacement: () => void;
+	readonly requestWorkerReplacement: (source: BridgeWorkerRuntimeRecoverySource) => void;
 	readonly lifecycle: {
 		readonly getSnapshot: () => BridgeWorkerRpcLifecycleSnapshot;
 		readonly subscribe: (listener: () => void) => () => void;
@@ -77,6 +83,7 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 		| 'acceptPublication'
 		| 'bindPublicationItem'
 		| 'isBoundFinalItem'
+		| 'holdPublication'
 		| 'markPublicationQueued'
 		| 'rejectPublication'
 	>;
@@ -296,6 +303,11 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 		) {
 			rejectDeferredCandidatePierre();
 		}
+		if (presentation.candidate?.role === 'updateReady') {
+			for (const publication of deferredCandidatePierreByItemId.values()) {
+				props.renderFulfillmentCoordinator.holdPublication(publication.message);
+			}
+		}
 		flushPromotedCandidatePierre();
 		prunePublicationEpochs();
 	};
@@ -305,6 +317,16 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 		route: PublicationRoute,
 	): void => {
 		if (route.kind === 'candidate') {
+			const displaced = deferredCandidatePierreByItemId.get(message.job.itemId);
+			if (
+				displaced?.message.renderReceiptIdentity.attemptId ===
+					message.renderReceiptIdentity.attemptId &&
+				JSON.stringify(displaced.message.renderReceiptIdentity) ===
+					JSON.stringify(message.renderReceiptIdentity)
+			)
+				return;
+			if (displaced !== undefined)
+				props.renderFulfillmentCoordinator.rejectPublication(displaced.message, 'stale_submission');
 			const preparedItem = prepareBridgeMainPierreItemForPresentation({
 				currentItem: undefined,
 				presentationItem: message.job.payload.item,
@@ -332,6 +354,9 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				publicationItem: message.job.payload.item,
 				residency: preparedItem.residency,
 			});
+			if (props.store.getReviewRefreshPresentation().candidate?.role === 'updateReady') {
+				props.renderFulfillmentCoordinator.holdPublication(message);
+			}
 			return;
 		}
 		if (!props.store.reviewCatalogContainsItem(message.job.itemId)) {
@@ -402,21 +427,52 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				}
 				case 'reviewDisplayPatch': {
 					const publicationIdentity = message.reviewPublicationIdentity;
-					if (publicationIdentity === null) props.store.applyReviewDisplayPatchEvent(message);
-					else {
+					const sourceStatus =
+						message.patches.find((patch) => patch.slice === 'reviewSource')?.payload.status ?? null;
+					const recordDisplayPatch = (
+						stage: Pick<BridgeReviewDisplayPatchDiagnostic, 'stageOutcome' | 'reason'>,
+					): void => {
+						recordBridgeReviewDisplayPatchDiagnostic({
+							publicationId: publicationIdentity?.publicationId ?? null,
+							sourceStatus,
+							targetCandidatePublicationId:
+								props.store.getReviewRefreshPresentation().candidate?.identity.publicationId ??
+								null,
+							...stage,
+						});
+						recordBridgeReviewCandidateSourceDiagnostic(
+							props.store.getReviewCandidateSourceDiagnostic(),
+						);
+					};
+					if (publicationIdentity === null) {
+						props.store.applyReviewDisplayPatchEvent(message);
+						recordDisplayPatch({ stageOutcome: 'unscoped', reason: 'unscopedPublication' });
+					} else {
 						const identity = mainReviewPublicationIdentity(publicationIdentity);
 						const activeIdentity = props.store.getReviewRefreshPresentation().activeIdentity;
 						if (activeIdentity !== null && identitiesAreExact(activeIdentity, identity)) {
 							props.store.applyReviewDisplayPatchEvent(message);
+							recordDisplayPatch({ stageOutcome: 'active', reason: 'activePublication' });
 							const activeEpoch = publicationEpochById.get(identity.publicationId);
 							if (activeEpoch === undefined || message.epoch > activeEpoch) {
 								publicationEpochById.set(identity.publicationId, message.epoch);
 							}
 							return true;
 						}
+						const candidateIdentity =
+							props.store.getReviewRefreshPresentation().candidate?.identity;
 						if (!props.store.stageReviewCandidateDisplayEvent({ event: message, identity })) {
+							recordDisplayPatch({
+								stageOutcome: 'refused',
+								reason:
+									candidateIdentity === undefined ||
+									!identitiesAreExact(candidateIdentity, identity)
+										? 'candidateIdentityMismatch'
+										: 'staleDisplayEvent',
+							});
 							return true;
 						}
+						recordDisplayPatch({ stageOutcome: 'accepted', reason: 'stagedCandidate' });
 						const previousCandidate = deferredCandidateIdentity;
 						publicationEpochById.set(identity.publicationId, message.epoch);
 						if (previousCandidate !== null && !identitiesAreExact(previousCandidate, identity)) {
@@ -493,6 +549,7 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				case 'filePierreRenderJob':
 				case 'fileRenderPatch':
 				case 'health':
+				case 'viewRecoveryStatus':
 				case 'nativeSurfaceSelectionRequest':
 				case 'reviewComparisonTargetsQuery':
 				case 'slicePatch':
@@ -513,6 +570,7 @@ export function createBridgeMainReviewPublicationIntegration(props: {
 				props.store.subscribeReviewRefreshPresentation(handlePresentationChanged);
 			unsubscribeWorkerReplacement = props.store.subscribeWorkerReplacement((): void => {
 				publicationEpochById.clear();
+				rejectDeferredCandidatePierre();
 				installationGate.prepareForWorkerReplacement();
 			});
 		},

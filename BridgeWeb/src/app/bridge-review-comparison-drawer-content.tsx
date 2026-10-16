@@ -33,18 +33,11 @@ export interface BridgeReviewComparisonDisplayedContribution {
 	readonly origin: ContributionOrigin;
 }
 
-export type BridgeReviewComparisonStatePresentation =
-	| {
-			readonly description: string | null;
-			readonly heading: string;
-			readonly kind: 'message';
-	  }
-	| {
-			readonly description: string;
-			readonly heading: string;
-			readonly kind: 'retry';
-			readonly retryTarget: BridgeReviewComparisonTarget;
-	  };
+export interface BridgeReviewComparisonStatePresentation {
+	readonly description: string | null;
+	readonly heading: string;
+	readonly kind: 'message';
+}
 
 export interface BridgeReviewComparisonDrawerContentProps {
 	readonly activeTarget: BridgeReviewComparisonTarget | null;
@@ -57,7 +50,6 @@ export interface BridgeReviewComparisonDrawerContentProps {
 	readonly onApplyCommitOID: (event: FormEvent<HTMLFormElement>) => void;
 	readonly onComparisonBasisChange: (basis: BridgeReviewComparisonBranchBasis) => void;
 	readonly onQueryTargets: () => void;
-	readonly onRetryTarget: (target: BridgeReviewComparisonTarget) => void;
 	readonly onSelectTarget: (target: BridgeReviewComparisonTarget) => void;
 	readonly onSelectionModeChange: (mode: 'branch' | 'commit') => void;
 	readonly onCommitOIDChange: (commitOID: string) => void;
@@ -104,10 +96,7 @@ export function BridgeReviewComparisonDrawerContent(
 								/>
 							)}
 							{props.statePresentation === null ? null : (
-								<ComparisonAttemptState
-									onRetry={props.onRetryTarget}
-									presentation={props.statePresentation}
-								/>
+								<ComparisonAttemptState presentation={props.statePresentation} />
 							)}
 						</div>
 					</>
@@ -279,33 +268,13 @@ function ComparisonCurrentState(props: {
 }
 
 function ComparisonAttemptState(props: {
-	readonly onRetry: (target: BridgeReviewComparisonTarget) => void;
 	readonly presentation: BridgeReviewComparisonStatePresentation;
 }): ReactElement {
-	if (props.presentation.kind === 'message') {
-		return (
-			<ComparisonAttemptMessage
-				description={props.presentation.description}
-				heading={props.presentation.heading}
-			/>
-		);
-	}
-	const retryTarget = props.presentation.retryTarget;
 	return (
 		<ComparisonAttemptMessage
 			description={props.presentation.description}
 			heading={props.presentation.heading}
-		>
-			<Button
-				className="mt-2"
-				onClick={(): void => props.onRetry(retryTarget)}
-				size="sm"
-				type="button"
-				variant="outline"
-			>
-				Retry
-			</Button>
-		</ComparisonAttemptMessage>
+		/>
 	);
 }
 

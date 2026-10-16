@@ -15,7 +15,7 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-26
+    runs-on: xcode-27
     timeout-minutes: 45
     env:
       SWIFT_BUILD_DIR: .build-ci
@@ -30,7 +30,7 @@ jobs:
         id: select-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.6"
+          xcode-version: "27.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v3
@@ -241,8 +241,11 @@ jobs:
           # in the app bundle; it's only needed at build time for SwiftPM.
 
           # SwiftPM resource bundle — Bundle.appResources looks in Contents/Resources/
-          RESOURCE_BUNDLE="$(find .build-ci -path '*/release/AgentStudio_AgentStudio.bundle' -type d | head -1)"
-          if [ -n "$RESOURCE_BUNDLE" ]; then
+          # Xcode 27's build system makes .build-ci/release a symlink into
+          # out/Products/Release, which `find` does not descend without -L, so
+          # read the bundle through the same direct path as the binaries above.
+          RESOURCE_BUNDLE=".build-ci/release/AgentStudio_AgentStudio.bundle"
+          if [ -d "$RESOURCE_BUNDLE" ]; then
             cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
           else
             echo "::error::SwiftPM resource bundle not found"

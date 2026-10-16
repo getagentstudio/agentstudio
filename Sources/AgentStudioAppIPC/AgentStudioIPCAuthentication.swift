@@ -106,7 +106,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
 
     private let lock = NSLock()
     private let credentialResolver: any AgentStudioIPCCredentialResolving
-    private let canonicalPaneMembership: @MainActor @Sendable (UUID, UUID) -> Bool
+    private let canonicalPaneMembership: @Sendable (UUID, UUID) -> Bool
     package let grantLedger: GrantLedger
     private var lifetimeEpoch: UInt64 = 0
     private var invalidationSequence: UInt64 = 0
@@ -115,6 +115,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
     private var activeLeases: [LeaseKey: Set<UUID>] = [:]
     private var issuedPaneCredentialsByRecordID: [UUID: AgentStudioIPCIssuedPaneCredential] = [:]
     private var issuedPaneCredentialRecordIDByVerifier: [Data: UUID] = [:]
+    private var issuedPaneCredentialSink: (@Sendable (AgentStudioIPCIssuedPaneCredential) -> Void)?
     private var durableIssuedPaneCredentialIDs: Set<UUID> = []
     private var finalRevokedPaneIDs: Set<UUID> = []
     private var installedDebugCredential: InstalledDebugCredential?
@@ -123,7 +124,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
     package init(
         runtimeId: UUID,
         credentialResolver: any AgentStudioIPCCredentialResolving,
-        canonicalPaneMembership: @escaping @MainActor @Sendable (UUID, UUID) -> Bool,
+        canonicalPaneMembership: @escaping @Sendable (UUID, UUID) -> Bool,
         grantLedger: GrantLedger = GrantLedger()
     ) {
         self.runtimeId = runtimeId
@@ -145,7 +146,8 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             credentialRecordID: credentialRecordID,
             verifierSHA256: verifierSHA256
         )
-        try lock.withLock {
+        let issuanceSink = try lock.withLock {
+            () throws -> (@Sendable (AgentStudioIPCIssuedPaneCredential) -> Void)? in
             guard !isShutdown else {
                 throw AgentStudioIPCIssuedCredentialRegistrationError.registryShutdown
             }
@@ -156,7 +158,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
                 guard existing == credential else {
                     throw AgentStudioIPCIssuedCredentialRegistrationError.conflictingRecordIdentity
                 }
-                return
+                return nil
             }
             if let existingRecordID = issuedPaneCredentialRecordIDByVerifier[verifierSHA256],
                 existingRecordID != credentialRecordID
@@ -165,6 +167,19 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             }
             issuedPaneCredentialsByRecordID[credentialRecordID] = credential
             issuedPaneCredentialRecordIDByVerifier[verifierSHA256] = credentialRecordID
+            return issuedPaneCredentialSink
+        }
+        issuanceSink?(credential)
+    }
+
+    /// Installed before the IPC readiness snapshot so earlier admissions are
+    /// covered by that snapshot and later admissions enqueue without storage waits.
+    package func installIssuedPaneCredentialSink(
+        _ sink: @escaping @Sendable (AgentStudioIPCIssuedPaneCredential) -> Void
+    ) {
+        lock.withLock {
+            precondition(issuedPaneCredentialSink == nil, "pane credential issuance sink is installed once")
+            issuedPaneCredentialSink = sink
         }
     }
 
@@ -231,6 +246,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             () -> (
                 [AgentStudioIPCIssuedPaneCredential], Set<UUID>
             ) in
+            guard !isShutdown else { return ([], []) }
             isShutdown = true
             lifetimeEpoch &+= 1
             let principalIDs = Set(activeLeases.values.joined())
@@ -381,7 +397,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
             guard
                 let paneUUID = UUID(uuidString: paneID),
                 let workspaceID,
-                await canonicalPaneMembership(paneUUID, workspaceID)
+                canonicalPaneMembership(paneUUID, workspaceID)
             else { return false }
         }
         guard let namespace = namespace(for: context.principal) else { return false }
@@ -434,7 +450,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
                 return nil
             }
             return .pane(paneID: paneUUID, workspaceID: workspaceID)
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             return .diagnostic(runtimeID: runtimeId)
         }
     }
@@ -445,7 +461,7 @@ public final class AgentStudioIPCPrincipalRegistry: @unchecked Sendable {
     ) async throws -> AgentStudioIPCAuthenticatedContext {
         switch resolution {
         case .pane(let paneID, let workspaceID, let credentialRecordID, .registered):
-            guard await canonicalPaneMembership(paneID, workspaceID) else {
+            guard canonicalPaneMembership(paneID, workspaceID) else {
                 throw AgentStudioIPCAuthenticationError(reason: .unauthenticated)
             }
             return AgentStudioIPCAuthenticatedContext(

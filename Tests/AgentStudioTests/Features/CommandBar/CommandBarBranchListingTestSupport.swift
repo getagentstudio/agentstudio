@@ -17,7 +17,7 @@ actor StubWorktreeBranchListing: WorktreeBranchListing {
     func branchNames(
         forRepositoryId repositoryId: UUID,
         repositoryPath _: URL,
-        enrichmentRevision _: Int
+        openingToken _: UUID
     ) throws -> [String] {
         requestedRepositoryIds.append(repositoryId)
         return try result.get()
@@ -32,7 +32,7 @@ actor SequencedBranchListing: WorktreeBranchListing {
     func branchNames(
         forRepositoryId _: UUID,
         repositoryPath _: URL,
-        enrichmentRevision _: Int
+        openingToken _: UUID
     ) async -> [String] {
         let index = queryCount
         queryCount += 1

@@ -10,31 +10,6 @@ import Testing
 @testable import AgentStudioTerminal
 @testable import AgentStudioTestSupport
 
-/// SR4, SR5; Program Design item 4 ("Staggered starts"): point 2's
-/// task-ownership wiring for `beginObservingColdStart`
-/// (`WorkspaceSurfaceCoordinator+TerminalContentMounting.swift`). Proves the
-/// coordinator owns each cold pane's startup-window observation task --
-/// cancellable on retirement, self-removing on completion -- and that every
-/// pane's `ColdStartOutcome` reaches a test through the typed-fact sink
-/// (`docs/specs/2026-09-28-typed-fact-test-harness`) rather than idling.
-///
-/// Real discovery/handoff timing against a real zmx daemon and a real
-/// process is proven separately in the E2E lane; this suite settles
-/// observation immediately with a scripted syscalls failure at Stage 1,
-/// exactly like `ColdStartObserverTests.registrationFailureSettlesUnobservable`
-/// -- fully deterministic, no filesystem or process dependency.
-///
-/// Calls `beginObservingColdStart` directly rather than through
-/// `mountPreparedTerminalContent`: the shared `TerminalRestoreCapturingSurfaceManager`
-/// used by the sibling restore-integration suite always fails surface
-/// creation ("capture only"), so a cold pane's mount never reaches
-/// `.mounted(...)` there and `beginObservingColdStart` is never called. This
-/// suite isolates the observation-wiring proof from surface-creation success,
-/// which belongs to the E2E lane instead.
-/// `.serialized`: tests here touch `Ghostty.ActionRouter`'s process-global
-/// MainActor bindings (the cold-start exit-bridge registry, the terminal
-/// activity input sink used by `retirePanesPermanently`), matching this
-/// repo's rule for suites sharing process-global MainActor state.
 @MainActor
 @Suite("WorkspaceSurfaceCoordinator cold start observation", .serialized)
 struct ColdStartObservationWiringTests {
@@ -89,7 +64,9 @@ struct ColdStartObservationWiringTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: TerminalRestoreCapturingSurfaceManager(),
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
@@ -183,7 +160,7 @@ struct ColdStartObservationWiringTests {
         // `beginObservingColdStart`, which is what makes
         // `retirePanesPermanently`'s `cancelPendingColdStart` call resolve
         // this observer's continuation instead of no-op'ing.
-        Ghostty.ActionRouter.registerColdStartAttachExitObserver(paneID: paneID, observer: observer)
+        coordinator.coldStartAttachExitBinding.register(paneID: paneID, observer: observer)
 
         // Act
         coordinator.beginObservingColdStart(

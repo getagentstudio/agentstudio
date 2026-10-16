@@ -10,19 +10,9 @@ import Testing
 @testable import AgentStudioCore
 @testable import AgentStudioTestSupport
 
-/// Codex hook payloads driven through the real projection, the real socket, the
-/// real admission registry and the real Sessions reduction.
-///
-/// The projection is the only place that decides what a Codex event means, and
-/// the shipped provider profile is the only thing that lets it in. Proving them
-/// apart proves nothing: a profile that omits a capability silently drops the
-/// evidence, and the pane row just stays wrong.
-///
-/// One substitution: the harness authenticates with a diagnostic credential
-/// rather than a pane token, so it addresses the pane by its canonical handle
-/// where a real hook sends `self`.
+/// Codex hooks use the real projection, pane credential, socket and SQLite owner.
 @MainActor
-@Suite("App IPC Codex hook vertical", .serialized, SessionsVerticalHarnessTrait(providerProfiles: .shipped))
+@Suite("App IPC Codex hook vertical", .serialized, SessionsVerticalHarnessTrait())
 struct AgentStudioIPCCodexHookVerticalTests {
     @Test("a Codex session start, prompt and permission request reach the query as needs-you")
     func codexHooksDriveThePaneToNeedsYou() async throws {
@@ -39,7 +29,7 @@ struct AgentStudioIPCCodexHookVerticalTests {
         #expect(bind.disposition == .admitted)
         let bound = try await harness.sessionQuery(paneId: harness.boundPaneId)
         #expect(bound.sourceHealth == .live)
-        #expect(bound.state == .unknown)
+        #expect(bound.session?.status == .unknown)
 
         // Act — the user's prompt starts a turn.
         let turnStart = try await harness.sessionEvent(
@@ -49,39 +39,33 @@ struct AgentStudioIPCCodexHookVerticalTests {
         // Assert
         #expect(turnStart.disposition == .admitted)
         let running = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(running.state == .running)
-        #expect(running.origin == .reported)
+        #expect(running.session?.status == .working(state: .active))
+        #expect(running.sourceHealth == .live)
 
         // Act — Codex asks the user to approve a tool call.
         let permissionParams = try CodexHookVerticalFixtures.params(
             event: .permissionRequest, paneId: harness.boundPaneId, identity: identity)
         let permission = try await harness.sessionEvent(params: permissionParams)
 
-        // Assert — the derived request identity is what the query reports back.
+        // Assert — the qualified permission opens one approval prompt.
         #expect(permission.disposition == .admitted)
         let waiting = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(waiting.state == .needsYou)
-        #expect(waiting.needsYou?.requestId == permissionParams.event.requestId)
+        #expect(waiting.session?.status == .needsYou(reason: .approval))
+        #expect(waiting.session?.providerPrompts.count == 1)
 
         // Act — the session ends.
         let ended = try await harness.sessionEvent(
             params: try CodexHookVerticalFixtures.params(
                 event: .sessionEnd, paneId: harness.boundPaneId, identity: identity))
 
-        // Assert — the source generation is retired, not merely recorded
-        // against. `AgentStudioIPCSessionsAdapter` maps a session end to
-        // `SessionsMutation.sourceEnded` using the binding's own source
-        // generation, so the pane reports a source that has ended rather than
-        // one that is still live with nothing arriving on it.
+        // Assert — SessionEnd is a stored fact and ends its session.
         #expect(ended.disposition == .admitted)
         #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .ended)
     }
 
-    /// Ending a pane that was never bound is not a caller error — there is no
-    /// source generation to retire — so it is refused rather than rejected as a
-    /// missing binding, and nothing is submitted.
-    @Test("a session end on an unbound pane is refused without ending anything")
-    func sessionEndOnUnboundPaneIsRefused() async throws {
+    /// Rev34 records a first End by binding and immediately ending its own source.
+    @Test("a first Codex session end binds and ends an unbound pane")
+    func firstSessionEndBindsAndEndsPane() async throws {
         // Arrange
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let identity = CodexHookScenarioIdentity()
@@ -92,8 +76,8 @@ struct AgentStudioIPCCodexHookVerticalTests {
                 event: .sessionEnd, paneId: harness.sparePaneId, identity: identity))
 
         // Assert
-        #expect(refused.disposition == .unqualified)
-        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .unbound)
+        #expect(refused.disposition == .admitted)
+        #expect(try await harness.sessionQuery(paneId: harness.sparePaneId).sourceHealth == .ended)
     }
 
     @Test("a Codex turn that finishes without a permission request reaches the query as done")
@@ -116,9 +100,9 @@ struct AgentStudioIPCCodexHookVerticalTests {
         // Assert
         #expect(stop.disposition == .admitted)
         let finished = try await harness.sessionQuery(paneId: harness.boundPaneId)
-        #expect(finished.state == .done)
-        #expect(finished.origin == .reported)
-        #expect(finished.needsYou == nil)
+        #expect(finished.session?.status == .idle(state: .done))
+        #expect(finished.sourceHealth == .live)
+        #expect(finished.session?.providerPrompts.isEmpty == true)
     }
 
     @Test("a tool event and a subagent event are admitted against the shipped profile")
@@ -143,10 +127,8 @@ struct AgentStudioIPCCodexHookVerticalTests {
         #expect(subagent.disposition == .admitted)
     }
 
-    /// The version in the profile is exact on purpose. A Codex that reported a
-    /// different one would be a provider whose payload shape nobody verified.
-    @Test("a Codex version the profile does not name is refused")
-    func unqualifiedCodexVersionIsRefused() async throws {
+    @Test("a Codex version label does not gate a pane-authenticated session start")
+    func arbitraryCodexVersionIsAdmitted() async throws {
         // Arrange
         let harness = try await #require(SessionsVerticalHarnessContext.current).freshPanePair()
         let identity = CodexHookScenarioIdentity()
@@ -154,11 +136,13 @@ struct AgentStudioIPCCodexHookVerticalTests {
             event: .sessionStart, paneId: harness.boundPaneId, reportedVersion: "0.153.0", identity: identity)
 
         // Act
-        let refused = try await harness.sessionEvent(params: params)
+        let admitted = try await harness.sessionEvent(params: params)
 
         // Assert
-        #expect(refused.disposition == .unknownCapability)
-        #expect(try await harness.sessionQuery(paneId: harness.boundPaneId).sourceHealth == .unbound)
+        #expect(admitted.disposition == .admitted)
+        let query = try await harness.sessionQuery(paneId: harness.boundPaneId)
+        #expect(query.sourceHealth == .live)
+        #expect(query.session?.conversationId == params.event.conversationId)
     }
 }
 
@@ -184,7 +168,9 @@ enum CodexHookVerticalFixtures {
             agentId: event == .subagentStart || event == .subagentStop ? "agent_4d71" : nil,
             codexVersion: reportedVersion
         )
-        guard let projected = CodexHookProjection.project(eventName: event, payload: payload) else {
+        guard
+            let projected = CodexHookProjection.project(eventName: event, payload: payload)
+        else {
             throw FixtureError.notProjected(event)
         }
         return IPCSessionEventParams(

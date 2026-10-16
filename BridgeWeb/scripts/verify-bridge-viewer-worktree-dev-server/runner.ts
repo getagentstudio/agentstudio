@@ -1,5 +1,5 @@
-import { chromium } from 'playwright';
-
+import { bridgeViewerFileCategoryOptions } from '../../src/app/bridge-viewer-file-class-options.tsx';
+import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import {
 	reviewInteractionPerformanceSatisfied,
 	reviewStartupLoadTimingSatisfied,
@@ -100,6 +100,7 @@ import {
 	fetchPerformanceWorktreeFileDescriptors,
 	fetchWorktreeFileContent,
 	fetchWorktreeSurface,
+	makeWorktreeProductDataClient,
 	readBrowserProof,
 	resolveTargetDescriptor,
 	restoreWorktreeFileModifiedFixture,
@@ -129,12 +130,14 @@ export type WorktreeDevServerStartupSurfaceResult =
 			readonly surface: 'review';
 	  });
 
-export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> {
-	const browser = await chromium.launch({ headless: true });
-	installVerifierBrowser(browser);
+export async function runBridgeViewerWorktreeDevServerVerifier(
+	launch: BridgeWebTestLaunch,
+): Promise<void> {
+	const browser = await launch.launchBrowser({ headless: true });
+	installVerifierBrowser(browser, launch.startJourneyHangBound(), launch);
 	try {
 		if (performanceOnlyMode) {
-			const result = await verifyWorktreeDevServerPerformanceOnly();
+			const result = await verifyWorktreeDevServerPerformanceOnly(launch);
 			const proofArtifactPath = await writeWorktreeDevServerPerformanceProofArtifact(result);
 			console.log(
 				JSON.stringify(
@@ -166,19 +169,16 @@ export async function runBridgeViewerWorktreeDevServerVerifier(): Promise<void> 
 		}
 	} finally {
 		clearVerifierBrowser();
-		try {
-			await closeAllWorktreeFileSurfaces();
-		} finally {
-			await browser.close();
-		}
+		await closeAllWorktreeFileSurfaces();
 	}
 }
 
 export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 	surface: 'file' | 'review',
+	launch: BridgeWebTestLaunch,
 ): Promise<WorktreeDevServerStartupSurfaceResult> {
-	const browser = await chromium.launch({ headless: true });
-	installVerifierBrowser(browser);
+	const browser = await launch.launchBrowser({ headless: true });
+	installVerifierBrowser(browser, launch.startJourneyHangBound(), launch);
 	try {
 		const page = await makeVerificationPage();
 		if (surface === 'file') {
@@ -203,42 +203,54 @@ export async function runBridgeViewerWorktreeDevServerStartupSurfaceVerifier(
 		};
 	} finally {
 		clearVerifierBrowser();
-		try {
-			await closeAllWorktreeFileSurfaces();
-		} finally {
-			await browser.close();
-		}
+		await closeAllWorktreeFileSurfaces();
 	}
 }
 
 export async function runBridgeViewerWorktreeDevServerCompleteJourneyLaunch(props: {
+	readonly launch: BridgeWebTestLaunch;
 	readonly attemptCount: number;
 	readonly launchId: string;
 	readonly sourceHead: string;
 }): Promise<Awaited<ReturnType<typeof collectBridgeDevelopmentCompleteJourneyLaunch>>> {
-	const browser = await chromium.launch({ headless: true });
-	installVerifierBrowser(browser);
+	const browser = await props.launch.launchBrowser({ headless: true });
+	installVerifierBrowser(browser, props.launch.startJourneyHangBound(), props.launch);
 	try {
-		return await collectBridgeDevelopmentCompleteJourneyLaunch(props);
+		return await collectBridgeDevelopmentCompleteJourneyLaunch(props, {
+			ownerSignal: props.launch.signal,
+			observeStep: <TValue>(name: string, promise: Promise<TValue>): Promise<TValue> =>
+				props.launch.observeStep(name, promise).value(),
+			renewLaunchHangBound: (): void => props.launch.renewJourneyHangBound(),
+		});
 	} finally {
 		clearVerifierBrowser();
-		try {
-			await closeAllWorktreeFileSurfaces();
-		} finally {
-			await browser.close();
-		}
+		await closeAllWorktreeFileSurfaces();
 	}
 }
 
-export async function verifyWorktreeDevServerPerformanceOnly(): Promise<WorktreeDevServerPerformanceOnlyResult> {
+export async function verifyWorktreeDevServerPerformanceOnly(
+	launch: BridgeWebTestLaunch,
+): Promise<WorktreeDevServerPerformanceOnlyResult> {
 	const page = await makeVerificationPage();
-	const surface = await fetchWorktreeSurface();
-	const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
+	const { surface, descriptors } = await launch.readProductData(
+		makeWorktreeProductDataClient,
+		async (client) => {
+			const surface = await fetchWorktreeSurface(client);
+			const descriptors = await fetchPerformanceWorktreeFileDescriptors(surface);
+			return { surface, descriptors };
+		},
+	);
 	const startupLoadTiming = await collectWorktreeStartupLoadTimingProof({
 		page,
 	});
+	const resetFilterOption = bridgeViewerFileCategoryOptions.find(
+		(option) => option.value === 'all',
+	);
+	if (resetFilterOption === undefined)
+		throw new Error('Product File category reset option is missing.');
 	await resetWorktreeFileTreeForPerformanceSamples({
 		page,
+		resetFilterLabel: resetFilterOption.label,
 		totalMetadataTreeRowCount: worktreeFileTreeRows(surface.frames).length,
 	});
 	const interactionPerformanceProof = await collectWorktreeInteractionPerformanceProof({
@@ -541,8 +553,14 @@ export async function verifyWorktreeDevServer(): Promise<WorktreeDevServerVerifi
 		const performanceSurface = await fetchWorktreeSurface();
 		const performanceDescriptors =
 			await fetchPerformanceWorktreeFileDescriptors(performanceSurface);
+		const resetFilterOption = bridgeViewerFileCategoryOptions.find(
+			(option) => option.value === 'all',
+		);
+		if (resetFilterOption === undefined)
+			throw new Error('Product File category reset option is missing.');
 		await resetWorktreeFileTreeForPerformanceSamples({
 			page,
+			resetFilterLabel: resetFilterOption.label,
 			totalMetadataTreeRowCount: worktreeFileTreeRows(performanceSurface.frames).length,
 		});
 		const interactionPerformanceProof = await collectWorktreeInteractionPerformanceProof({

@@ -1,6 +1,7 @@
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
+import Testing
 import WebKit
 
 @testable import AgentStudioBridge
@@ -38,6 +39,53 @@ func collectBridgeProductSchemeReply(
     return .init(body: body, events: events, response: response)
 }
 
+/// Control admission and the committed control result are separate replies.
+/// Read the latter through the real scheme adapter, as the page does.
+func readAdmittedBridgeProductControlResponse(
+    _ dispatchResult: BridgeProductSchemeControlDispatchResult,
+    installation: BridgeProductSessionInstallation,
+    capabilityHeader: String
+) async throws -> BridgeProductControlResponse {
+    guard case .response(let admissionBytes) = dispatchResult else {
+        throw BridgeProductSchemeResultTestError.expectedAdmission
+    }
+    let admission = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationAdmittedResponse.self,
+        from: admissionBytes
+    )
+    await installation.session.waitForOperationExecution(operationId: admission.operationId)
+    let resultRequestBody = try JSONSerialization.data(withJSONObject: [
+        "kind": "operation.result",
+        "operationId": admission.operationId,
+        "paneSessionId": admission.correlation.paneSessionId,
+        "wireVersion": BridgeProductWireContract.version,
+        "workerInstanceId": admission.correlation.workerInstanceId,
+    ])
+    let resultReply = try await collectBridgeProductSchemeReply(
+        adapter: installation.productAdapter,
+        request: bridgeProductSchemeRequest(
+            route: BridgeProductWireContract.commandRoute,
+            capability: capabilityHeader,
+            body: resultRequestBody
+        )
+    )
+    #expect(resultReply.response?.statusCode == 200)
+    let result = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationResultResponse.self,
+        from: resultReply.body
+    )
+    #expect(result.operationId == admission.operationId)
+    #expect(result.outcome == .succeeded)
+    return try BridgeProductStrictJSON.decode(
+        BridgeProductControlResponse.self,
+        from: JSONEncoder().encode(try #require(result.result))
+    )
+}
+
+private enum BridgeProductSchemeResultTestError: Error {
+    case expectedAdmission
+}
+
 func bridgeProductSchemeReply(
     adapter: BridgeProductSchemeAdapter,
     request: URLRequest
@@ -58,7 +106,7 @@ func bridgeProductSchemeReplyWithRoutingTask(
     let (stream, replyContinuation) =
         AsyncThrowingStream<URLSchemeTaskResult, any Error>.makeStream()
     let routingTask = Task {
-        guard let productAdmission = adapter.productAdmissionGate.acquire() else {
+        guard let productAdmission = adapter.acquireAdmission() else {
             replyContinuation.finish(
                 throwing: BridgeProductSchemeAdapterTestSupportError.admissionClosed
             )

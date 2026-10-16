@@ -56,6 +56,28 @@ export function sendBridgeCommWorkerActionWithTimeout<TResult>(props: {
 	});
 }
 
+/**
+ * A deadline that reports without abandoning the action. Timing out cannot cancel a
+ * native effect already dispatched, so the returned promise still settles with the
+ * action's real outcome; `onDeadlineExceeded` fires once if the deadline passes first.
+ */
+export function sendBridgeCommWorkerActionWithOutcomeDeadline<TResult>(props: {
+	readonly onDeadlineExceeded: () => void;
+	readonly send: () => Promise<TResult>;
+	readonly timeoutMilliseconds: number;
+}): Promise<TResult> {
+	let didSettle = false;
+	const timeoutId = globalThis.setTimeout((): void => {
+		if (!didSettle) props.onDeadlineExceeded();
+	}, props.timeoutMilliseconds);
+	return Promise.resolve()
+		.then(props.send)
+		.finally((): void => {
+			didSettle = true;
+			globalThis.clearTimeout(timeoutId);
+		});
+}
+
 export function bridgeProductMetadataStreamHealthDiagnostic(
 	transport: BridgeProductTransportSession,
 ): BridgeWorkerHealthEvent['diagnostic'] | undefined {

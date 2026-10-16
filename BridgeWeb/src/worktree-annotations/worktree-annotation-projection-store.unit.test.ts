@@ -167,6 +167,54 @@ describe('WorktreeAnnotationProjectionStore read convergence', () => {
 		);
 	});
 
+	test('complete content at a newer session revision supersedes a contradicted message receipt', () => {
+		// Arrange: this pane committed the message; another actor later removed it.
+		const store = readyStore();
+		store.recordCommandOutcome(
+			committedMessageOutcome({
+				message: annotationMessageEntry({ body: 'Committed here', messageRevision: 3 }),
+			}),
+		);
+
+		// Act
+		applyProjection(store, projectionWithNoMessages(5));
+
+		// Assert: server authority wins without latching Updates unavailable.
+		expect(store.getSnapshot().readStatus).toEqual({ kind: 'ready' });
+		expect(store.getSnapshot().commandConfirmedThreads).toEqual([]);
+		expect(store.getSnapshot().unreconciledCommandReceiptSessionIds).toEqual([]);
+	});
+
+	test('does not retain a late message receipt already superseded by newer complete content', () => {
+		// Arrange
+		const store = readyStore();
+		applyProjection(store, projectionWithNoMessages(5));
+
+		// Act
+		store.recordCommandOutcome(
+			committedMessageOutcome({ message: annotationMessageEntry({ messageRevision: 3 }) }),
+		);
+
+		// Assert
+		expect(store.getSnapshot().readStatus).toEqual({ kind: 'ready' });
+		expect(store.getSnapshot().commandConfirmedThreads).toEqual([]);
+	});
+
+	test('complete content at a newer session revision supersedes a contradicted removal receipt', () => {
+		// Arrange: this pane removed the message; newer server content still holds it.
+		const store = readyStore();
+		store.recordCommandOutcome(committedRemovalOutcome({ threadRevision: null }));
+		const restoredMessage = annotationMessageEntry({ body: 'Restored', messageRevision: 3 });
+
+		// Act
+		applyProjection(store, projectionWithMessage(restoredMessage, 5));
+
+		// Assert
+		expect(store.getSnapshot().readStatus).toEqual({ kind: 'ready' });
+		expect(store.getSnapshot().unreconciledCommandReceiptSessionIds).toEqual([]);
+		expect(store.getSnapshot().threads[0]?.messages[0]?.savedBody).toBe('Restored');
+	});
+
 	test('suppresses a removed message from stale projections until an absent current projection reconciles', () => {
 		const store = readyStore();
 		applyProjection(
@@ -581,7 +629,6 @@ describe('WorktreeAnnotationProjectionStore read convergence', () => {
 		} satisfies BridgeCommWorkerAnnotationCatalog;
 		const messages = bridgeCommWorkerAnnotationCatalogStagingEvents({
 			catalog,
-			operationCorrelationId: 'a'.repeat(64),
 			surface: 'file',
 		});
 		let publicationCount = 0;
@@ -643,7 +690,6 @@ function catalogStaging(
 		authority: { subscriptionId, workerDerivationEpoch, worktreeId: 'worktree-1' },
 		direction: 'serverWorkerToMain',
 		kind: 'annotationCatalogStaging',
-		operationCorrelationId: 'a'.repeat(64),
 		surface: 'fileView',
 		transfer,
 		transferDescriptors: [],

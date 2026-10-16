@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import validProductSessionCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
+import { BridgeProductBatchFrameRouter } from './bridge-product-batch-frame-router.js';
 import { BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES } from './bridge-product-contract-primitives.js';
 import { encodeBridgeProductMetadataFrame } from './bridge-product-metadata-frame-codec.js';
 import {
@@ -24,10 +25,66 @@ const primaryMetadataStreamRequest = requiredMetadataStreamRequest(0);
 const primaryMetadataFrames = validMetadataFrames.filter(
 	(frame): boolean => frame.metadataStreamId === primaryMetadataStreamRequest.metadataStreamId,
 );
+const primaryNonterminalFrames = primaryMetadataFrames.filter(
+	(frame): boolean => frame.kind !== 'metadataStream.error',
+);
 
 describe('Bridge product metadata stream decoder', () => {
+	test('ignores a keepalive while W4 holds a staged batch, then installs the complete batch', () => {
+		const acceptedFrame = requiredPrimaryFrame(0);
+		const decoder = createMetadataStreamDecoder();
+		const installedBatchIds: string[] = [];
+		const router = new BridgeProductBatchFrameRouter({
+			deadlineClock: { schedule: () => (): void => {} },
+			progressDeadlineMilliseconds: 5_000,
+		});
+		router.setSinks({
+			install: (installation): void => {
+				installedBatchIds.push(installation.begin.batchId);
+			},
+			receipt: (): void => {},
+			resnapshot: (): void => {
+				throw new Error('Expected the staged batch to remain valid.');
+			},
+			resnapshotLatest: (): void => {},
+		});
+		const batchFrames = validProductSessionCorpus.transportV2.batchFrames
+			.slice(0, 5)
+			.map((frame, index) =>
+				bridgeProductMetadataFrameSchema.parse({ ...frame, streamSequence: index + 1 }),
+			);
+		const route = (frame: BridgeProductMetadataFrame): void => {
+			for (const decoded of decoder.push(encodeBridgeProductMetadataFrame(frame))) {
+				if (
+					decoded.kind === 'subscription.batchBegin' ||
+					decoded.kind === 'subscription.batchPart' ||
+					decoded.kind === 'subscription.batchComplete'
+				)
+					router.accept(decoded);
+			}
+		};
+		const firstBatchFrame = batchFrames[0];
+		if (firstBatchFrame === undefined) throw new Error('Expected the Review batch begin fixture.');
+		const keepalive = bridgeProductMetadataFrameSchema.parse({
+			kind: 'stream.keepalive',
+			metadataStreamId: acceptedFrame.metadataStreamId,
+			paneSessionId: acceptedFrame.paneSessionId,
+			streamSequence: firstBatchFrame.streamSequence,
+			wireVersion: acceptedFrame.wireVersion,
+			workerInstanceId: acceptedFrame.workerInstanceId,
+		});
+
+		route(acceptedFrame);
+		route(firstBatchFrame);
+		expect(decoder.push(encodeBridgeProductMetadataFrame(keepalive))).toEqual([]);
+		expect(installedBatchIds).toEqual([]);
+		expect(decoder.diagnostics.expectedNextStreamSequence).toBe(2);
+		for (const frame of batchFrames.slice(1)) route(frame);
+		expect(installedBatchIds).toEqual(['review-batch-1']);
+	});
+
 	test('decodes one-byte and 4 KiB fragmentation without retaining unbounded residue', () => {
-		const frames = primaryMetadataFrames.slice(0, 13);
+		const frames = primaryNonterminalFrames;
 		const encodedStream = concatenateBytes(...frames.map(encodeBridgeProductMetadataFrame));
 
 		for (const fragmentByteLength of [1, 4 * 1024]) {
@@ -42,7 +99,7 @@ describe('Bridge product metadata stream decoder', () => {
 
 			expect(decodedFrames).toEqual(frames);
 			expect(decoder.diagnostics).toMatchObject({
-				expectedNextStreamSequence: 13,
+				expectedNextStreamSequence: frames.length,
 				retainedByteCount: 0,
 				state: 'finished',
 			});
@@ -105,7 +162,7 @@ describe('Bridge product metadata stream decoder', () => {
 	test('rejects a pane-wide stream sequence gap and duplicate', () => {
 		const acceptedFrame = requiredPrimaryFrame(0);
 		const reviewAcceptedFrame = requiredPrimaryFrame(1);
-		const fileAcceptedFrame = requiredPrimaryFrame(4);
+		const fileAcceptedFrame = requiredPrimaryFrame(2);
 		const gapFrame = bridgeProductMetadataFrameSchema.parse({
 			...reviewAcceptedFrame,
 			streamSequence: 2,
@@ -132,7 +189,7 @@ describe('Bridge product metadata stream decoder', () => {
 	});
 
 	test('keeps mixed Review and File frames in one contiguous physical order', () => {
-		const frames = primaryMetadataFrames.slice(0, 13);
+		const frames = primaryNonterminalFrames;
 		const decoder = createMetadataStreamDecoder();
 
 		const decodedFrames = decoder.push(
@@ -141,9 +198,9 @@ describe('Bridge product metadata stream decoder', () => {
 		decoder.finish();
 
 		expect(decodedFrames).toEqual(frames);
-		expect(decodedFrames.map((frame) => frame.streamSequence)).toEqual([
-			0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
-		]);
+		expect(decodedFrames.map((frame) => frame.streamSequence)).toEqual(
+			frames.map((_, index) => index),
+		);
 		expect(
 			decodedFrames
 				.filter((frame) => 'subscriptionKind' in frame)
@@ -165,7 +222,9 @@ describe('Bridge product metadata stream decoder', () => {
 			resumedAcceptedFrame,
 		]);
 		decoder.finish();
-		expect(decoder.diagnostics.expectedNextStreamSequence).toBe(8);
+		expect(decoder.diagnostics.expectedNextStreamSequence).toBe(
+			resumedAcceptedFrame.streamSequence + 1,
+		);
 	});
 
 	test('requires stream acceptance as the first frame and rejects a second acceptance', () => {
@@ -194,12 +253,17 @@ describe('Bridge product metadata stream decoder', () => {
 
 	test('treats metadataStream.error as terminal and rejects all post-terminal bytes', () => {
 		const acceptedFrame = requiredPrimaryFrame(0);
+		const primaryErrorFrame = primaryMetadataFrames.find(
+			(frame) => frame.kind === 'metadataStream.error',
+		);
+		if (primaryErrorFrame === undefined)
+			throw new Error('Terminal metadata frame fixture missing.');
 		const streamErrorFrame = bridgeProductMetadataFrameSchema.parse({
-			...requiredPrimaryFrame(13),
+			...primaryErrorFrame,
 			streamSequence: 1,
 		});
 		const postTerminalFrame = bridgeProductMetadataFrameSchema.parse({
-			...requiredPrimaryFrame(10),
+			...requiredPrimaryFrame(1),
 			streamSequence: 2,
 		});
 		const acceptedAndTerminal = concatenateBytes(

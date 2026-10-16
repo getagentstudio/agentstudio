@@ -1,7 +1,8 @@
 /* oxlint-disable unicorn/consistent-function-scoping -- Playwright page callbacks must carry their own DOM helpers. */
 
-import { chromium, type Page } from 'playwright';
+import type { Page } from 'playwright';
 
+import { BridgeWebTestLaunch } from './dev-server/bridge-web-test-launch.ts';
 import { createBridgeViewerDevServerPageHarness } from './verify-bridge-viewer-dev-server/page-harness.ts';
 import type {
 	BridgeViewerBrowserFixtureClass,
@@ -51,7 +52,7 @@ const {
 
 const markdownDevServerUrl = devServerUrlWithScenario(devServerUrl, 'markdown');
 
-const browser = await chromium.launch({ headless: true });
+const browser = await BridgeWebTestLaunch.startBrowser({ headless: true });
 
 try {
 	const directMarkdownSelection = await verifyDirectMarkdownInitialSelection();

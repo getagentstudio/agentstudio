@@ -20,6 +20,52 @@ struct BridgeProductSessionContractTests {
         #expect(BridgeProductWireContract.maximumContentDataPayloadBytes == 256 * 1024 - 42)
     }
 
+    @Test("Comment open reply carries native worktree identity and metadata replies omit it")
+    func commentOpenReplyRequiresOnlyCommentWorktreeId() throws {
+        var commentObject = bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
+        commentObject["subscription"] = ["subscriptionKind": "file.annotations"]
+        let commentRequest = try BridgeProductStrictJSON.decode(
+            BridgeProductControlRequest.self,
+            from: JSONSerialization.data(withJSONObject: commentObject, options: [.sortedKeys])
+        )
+        let commentAccepted = try BridgeProductControlResponse.subscriptionOpenAccepted(
+            correlating: commentRequest,
+            worktreeId: "worktree-1"
+        )
+        let commentReplyObject = try encodedJSONObject(commentAccepted)
+        #expect(commentReplyObject["worktreeId"] as? String == "worktree-1")
+        #expect(!decodingFails(BridgeProductControlResponse.self, object: commentReplyObject))
+        var missingWorktree = commentReplyObject
+        missingWorktree.removeValue(forKey: "worktreeId")
+        #expect(decodingFails(BridgeProductControlResponse.self, object: missingWorktree))
+        #expect(throws: (any Error).self) {
+            _ = try BridgeProductControlResponse.subscriptionOpenAccepted(
+                correlating: commentRequest,
+                worktreeId: nil
+            )
+        }
+
+        let fileObject = bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 3, epoch: 1)
+        let fileRequest = try BridgeProductStrictJSON.decode(
+            BridgeProductControlRequest.self,
+            from: JSONSerialization.data(withJSONObject: fileObject, options: [.sortedKeys])
+        )
+        let fileAccepted = try BridgeProductControlResponse.subscriptionOpenAccepted(
+            correlating: fileRequest,
+            worktreeId: nil
+        )
+        #expect(try encodedJSONObject(fileAccepted)["worktreeId"] == nil)
+        var unexpectedWorktree = try encodedJSONObject(fileAccepted)
+        unexpectedWorktree["worktreeId"] = "worktree-1"
+        #expect(decodingFails(BridgeProductControlResponse.self, object: unexpectedWorktree))
+        #expect(throws: (any Error).self) {
+            _ = try BridgeProductControlResponse.subscriptionOpenAccepted(
+                correlating: fileRequest,
+                worktreeId: "worktree-1"
+            )
+        }
+    }
+
     @Test("shared product-session corpus decodes and round-trips every v2 union")
     func sharedProductSessionCorpusDecodesAndRoundTripsEveryV2Union() throws {
         let corpus = try fixtureJSONObject(
@@ -61,7 +107,6 @@ struct BridgeProductSessionContractTests {
                 "workerSession.open",
                 "product.call",
                 "subscription.open",
-                "subscription.updateBatch",
                 "subscription.cancel",
                 "workerSession.resync",
             ])
@@ -70,7 +115,6 @@ struct BridgeProductSessionContractTests {
                 "workerSession.accepted",
                 "call.completed",
                 "subscription.openAccepted",
-                "subscription.updateBatchAccepted",
                 "subscription.cancelAccepted",
                 "resync.accepted",
                 "request.error",
@@ -80,9 +124,6 @@ struct BridgeProductSessionContractTests {
                 "metadataStream.accepted",
                 "pane.presentation",
                 "subscription.accepted",
-                "subscription.interestsCommitted",
-                "subscription.data",
-                "subscription.reset",
                 "subscription.end",
                 "subscription.cancelled",
                 "content.cancelled",
@@ -109,6 +150,16 @@ struct BridgeProductSessionContractTests {
                 "content.reset",
             ])
         #expect(bootstrap.paneSessionId == "pane-session-1")
+        #expect(bootstrap.policy.viewBatchProgressDeadlineMilliseconds == 5000)
+        #expect(
+            bootstrap.policy.contentAcknowledgementDeadlineMilliseconds
+                == BridgeProductBootstrapPolicy.productContract.contentAcknowledgementDeadlineMilliseconds
+        )
+        #expect(bootstrap.policy.streamKeepaliveIntervalMilliseconds == 350)
+        #expect(
+            BridgeProductBootstrapPolicy.productContract.viewBatchProgressDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.productViewBatchProgressDeadline.components.seconds * 1000)
+        )
 
         for capabilityCase in try fixtureArray(named: "capabilityHeaderCases", in: corpus) {
             let byteValues = try #require(capabilityCase["bytes"] as? [Int])
@@ -162,7 +213,6 @@ struct BridgeProductSessionContractTests {
         let surfaceRequestKinds = [
             "product.call",
             "subscription.open",
-            "subscription.updateBatch",
             "subscription.cancel",
         ]
 
@@ -323,8 +373,6 @@ struct BridgeProductSessionContractTests {
         var file = reviewSubscription
         file["subscriptionId"] = "file-subscription-1"
         file["subscriptionKind"] = "file.metadata"
-        file["interestSha256"] =
-            "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b"
         file["workerDerivationEpoch"] = 73
         resync["activeSubscriptions"] = [review, file]
 
@@ -401,152 +449,63 @@ struct BridgeProductSessionContractTests {
         #expect(decodingFails(BridgeProductMetadataStreamRequest.self, object: metadataStreamRequest))
     }
 
-    @Test("shared interest-state vectors have byte-for-byte and SHA-256 parity")
-    func sharedInterestStateVectorsHaveByteAndDigestParity() throws {
-        let corpus = try fixtureJSONObject(
-            relativePath: "Tests/BridgeContractFixtures/valid/bridge-product-session-corpus.json"
-        )
-        let vectors = try fixtureArray(named: "interestStateVectors", in: corpus)
-
-        for vector in vectors {
-            let stateObject = try #require(vector["state"] as? [String: Any])
-            let stateData = try JSONSerialization.data(withJSONObject: stateObject, options: [.sortedKeys])
-            let state = try JSONDecoder().decode(BridgeProductSubscriptionInterestState.self, from: stateData)
-            let expectedBytes = try decodedBase64(named: "encodedBase64", in: vector)
-            let expectedSha256 = try #require(vector["sha256"] as? String)
-
-            #expect(try state.encodedData() == expectedBytes)
-            #expect(try state.sha256Hex() == expectedSha256)
+    @Test("E4 scope JSON rejects lone surrogates and accepts a valid scalar pair")
+    func viewScopeJSONRequiresUnicodeScalarValues() throws {
+        let invalid = [
+            #"{"kind":"file","changeFilter":{"kind":"none"},"interests":[],"pathScope":["\uD800"]}"#,
+            #"{"kind":"file","changeFilter":{"kind":"none"},"interests":[],"pathScope":["\uDBFF"]}"#,
+            #"{"kind":"file","changeFilter":{"kind":"none"},"interests":[],"pathScope":["\uDFFF"]}"#,
+        ]
+        for value in invalid {
+            #expect(decodingFails(BridgeProductJSONValue.self, data: Data(value.utf8)))
         }
+        let valid = #"{"kind":"file","changeFilter":{"kind":"none"},"interests":[],"pathScope":["\uD83D\uDE80"]}"#
+        let scope = try JSONDecoder().decode(BridgeProductJSONValue.self, from: Data(valid.utf8))
+        try BridgeProductViewScopeContract.validate(scope, codingPath: [])
     }
 
-    @Test("interest-state JSON rejects lone surrogates and accepts valid scalar pairs")
-    func interestStateJSONRequiresUnicodeScalarValues() throws {
-        let firstLoneSurrogate =
-            #"{"interests":[{"lane":"foreground","paths":["\uD800"]}],"pathScope":[],"subscriptionKind":"file.metadata"}"#
-        let secondLoneSurrogate =
-            #"{"interests":[{"lane":"foreground","paths":["\uDBFF"]}],"pathScope":[],"subscriptionKind":"file.metadata"}"#
-        let loneTrailingSurrogate =
-            #"{"interests":[{"lane":"foreground","paths":["\uDFFF"]}],"pathScope":[],"subscriptionKind":"file.metadata"}"#
-        let validScalarPair =
-            #"{"interests":[{"lane":"foreground","paths":["\uD83D\uDE80"]}],"pathScope":[],"subscriptionKind":"file.metadata"}"#
-
-        #expect(
-            decodingFails(
-                BridgeProductSubscriptionInterestState.self,
-                data: Data(firstLoneSurrogate.utf8)
-            )
-        )
-        #expect(
-            decodingFails(
-                BridgeProductSubscriptionInterestState.self,
-                data: Data(secondLoneSurrogate.utf8)
-            )
-        )
-        #expect(
-            decodingFails(
-                BridgeProductSubscriptionInterestState.self,
-                data: Data(loneTrailingSurrogate.utf8)
-            )
-        )
-        _ = try JSONDecoder().decode(
-            BridgeProductSubscriptionInterestState.self,
-            from: Data(validScalarPair.utf8)
-        )
-    }
-
-    @Test("interest state and deltas compare path members by exact UTF-8 identity")
-    func interestStateAndDeltasUseExactUTF8PathIdentity() throws {
+    @Test("E4 File and Review scope members retain exact UTF-8 identities")
+    func viewScopeUsesExactUTF8MemberIdentity() throws {
         let composedPath = "src/\u{00e9}.swift"
         let decomposedPath = "src/e\u{0301}.swift"
-        let interestStateJSON =
-            #"{"interests":[{"lane":"foreground","paths":["src/\u00e9.swift","src/e\u0301.swift"]}],"pathScope":["scope/\u00e9","scope/e\u0301"],"subscriptionKind":"file.metadata"}"#
-        let deltaJSON =
-            #"{"add":[{"lane":"foreground","path":"src/\u00e9.swift"}],"addPathScope":["scope/\u00e9"],"removePathScope":["scope/e\u0301"],"removePaths":["src/e\u0301.swift"],"subscriptionKind":"file.metadata"}"#
-
         #expect(composedPath == decomposedPath)
         #expect(Data(composedPath.utf8) != Data(decomposedPath.utf8))
-        let interestState = try JSONDecoder().decode(
-            BridgeProductSubscriptionInterestState.self,
-            from: Data(interestStateJSON.utf8)
-        )
-        _ = try interestState.encodedData()
-        _ = try JSONDecoder().decode(
-            BridgeProductFileMetadataInterestDelta.self,
-            from: Data(deltaJSON.utf8)
-        )
-    }
-
-    @Test("review interest state and deltas compare item IDs by exact UTF-8 identity")
-    func reviewInterestStateAndDeltasUseExactUTF8ItemIdentity() throws {
-        let composedItemId = "review-\u{00e9}"
-        let decomposedItemId = "review-e\u{0301}"
-        let interestStateJSON =
-            #"{"interests":[{"itemIds":["review-\u00e9","review-e\u0301"],"lane":"foreground"}],"subscriptionKind":"review.metadata"}"#
-        let deltaJSON =
-            #"{"add":[{"itemId":"review-\u00e9","lane":"foreground"}],"removeItemIds":["review-e\u0301"],"subscriptionKind":"review.metadata"}"#
-
-        #expect(composedItemId == decomposedItemId)
-        #expect(Data(composedItemId.utf8) != Data(decomposedItemId.utf8))
-        let interestState = try JSONDecoder().decode(
-            BridgeProductSubscriptionInterestState.self,
-            from: Data(interestStateJSON.utf8)
-        )
-        _ = try interestState.encodedData()
-        _ = try JSONDecoder().decode(
-            BridgeProductReviewMetadataInterestDelta.self,
-            from: Data(deltaJSON.utf8)
-        )
+        let fileScope = BridgeProductJSONValue.object([
+            "kind": .string("file"),
+            "changeFilter": .object(["kind": .string("none")]),
+            "interests": .array([]),
+            "pathScope": .array([.string(composedPath), .string(decomposedPath)]),
+        ])
+        try BridgeProductViewScopeContract.validate(fileScope, codingPath: [])
+        let reviewScope = BridgeProductJSONValue.object([
+            "kind": .string("review"),
+            "interests": .array([
+                .object([
+                    "itemIds": .array([.string("review-\u{00e9}"), .string("review-e\u{0301}")]),
+                    "lane": .string("foreground"),
+                ])
+            ]),
+        ])
+        try BridgeProductViewScopeContract.validate(reviewScope, codingPath: [])
     }
 
 }
 
 extension BridgeProductSessionContractTests {
-    @Test("canonical interest state accepts exactly 128 KiB and rejects the next byte")
-    func canonicalInterestStateHasExactAggregateByteCeiling() throws {
-        let maximumState = try decodeBoundaryFileInterestState(finalPathByteLength: 17)
-
-        #expect(BridgeProductWireContract.maximumSubscriptionInterestStateBytes == 128 * 1024)
-        #expect(
-            maximumState.canonicalEncodingPreflight()
-                == .accepted(canonicalByteCount: 128 * 1024, visitedTextValueCount: 33)
-        )
-        #expect(try maximumState.encodedData().count == 128 * 1024)
-        #expect(throws: (any Error).self) {
-            _ = try decodeBoundaryFileInterestState(finalPathByteLength: 18)
+    @Test("E4 scope rejects more than 64 interest groups")
+    func viewScopeHasBoundedInterestGroups() throws {
+        let groups = (0..<65).map { index in
+            BridgeProductJSONValue.object([
+                "itemIds": .array([.string("review-item-\(index)")]),
+                "lane": .string("foreground"),
+            ])
         }
-    }
-
-    @Test("interest-state preflight stops before retaining the theoretical 82,010,010 bytes")
-    func maximumFileInterestStatePreflightStopsAtTheByteCeiling() throws {
-        let maximumLengthPath = String(repeating: "x", count: 4096)
-        let maximumCountPaths = Array(repeating: maximumLengthPath, count: 10_000)
-        let interest = try BridgeProductFileMetadataInterestStateGroup(
-            lane: .foreground,
-            paths: maximumCountPaths
-        )
-        let state = BridgeProductSubscriptionInterestState.fileMetadata(
-            interests: [interest],
-            pathScope: maximumCountPaths
-        )
-        let theoreticalCanonicalByteCount =
-            10 + 10_000 * (5 + maximumLengthPath.utf8.count)
-            + 10_000 * (4 + maximumLengthPath.utf8.count)
-
-        #expect(theoreticalCanonicalByteCount == 82_010_010)
-        #expect(
-            state.canonicalEncodingPreflight()
-                == .exceedsMaximum(
-                    canonicalByteCountLowerBound: 131_242,
-                    maximumCanonicalByteCount: 128 * 1024,
-                    visitedTextValueCount: 32
-                )
-        )
+        let scope = BridgeProductJSONValue.object([
+            "kind": .string("review"),
+            "interests": .array(groups),
+        ])
         #expect(throws: (any Error).self) {
-            try state.validateForCanonicalEncoding()
-        }
-        #expect(throws: (any Error).self) {
-            try state.encodedData()
+            try BridgeProductViewScopeContract.validate(scope, codingPath: [])
         }
     }
 
@@ -691,7 +650,7 @@ extension BridgeProductSessionContractTests {
         #expect(decodingFails(BridgeProductContentRequest.self, object: invalidUUIDContentRequest))
     }
 
-    @Test("product-session bootstrap rejects capability, surface, and route fields")
+    @Test("product-session bootstrap rejects capability, surface, route, and missing deadline fields")
     func productSessionBootstrapRejectsMainOwnedOrSecretFields() throws {
         let corpus = try fixtureJSONObject(
             relativePath: "Tests/BridgeContractFixtures/valid/bridge-product-session-corpus.json"
@@ -711,6 +670,12 @@ extension BridgeProductSessionContractTests {
             "command": ["method": "POST", "url": "agentstudio://rpc/command"]
         ]
         #expect(decodingFails(BridgeProductSessionBootstrap.self, object: routeBootstrap))
+
+        var missingDeadlineBootstrap = bootstrap
+        var policy = try #require(missingDeadlineBootstrap["policy"] as? [String: Any])
+        policy.removeValue(forKey: "viewBatchProgressDeadlineMilliseconds")
+        missingDeadlineBootstrap["policy"] = policy
+        #expect(decodingFails(BridgeProductSessionBootstrap.self, object: missingDeadlineBootstrap))
     }
 
     @Test("control response factories preserve correlation and typed subscription acknowledgement")
@@ -726,7 +691,6 @@ extension BridgeProductSessionContractTests {
         let workerOpen = try #require(requests.first { $0.kind == "workerSession.open" })
         let productCall = try #require(requests.first { $0.kind == "product.call" })
         let subscriptionOpen = try #require(requests.first { $0.kind == "subscription.open" })
-        let subscriptionUpdateBatch = try #require(requests.first { $0.kind == "subscription.updateBatch" })
         let subscriptionCancel = try #require(requests.first { $0.kind == "subscription.cancel" })
         let resync = try #require(requests.first { $0.kind == "workerSession.resync" })
 
@@ -746,11 +710,7 @@ extension BridgeProductSessionContractTests {
         let subscriptionResponses = [
             try BridgeProductControlResponse.subscriptionOpenAccepted(
                 correlating: subscriptionOpen,
-                interestSha256: "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6"
-            ),
-            try BridgeProductControlResponse.subscriptionUpdateBatchAccepted(
-                correlating: subscriptionUpdateBatch,
-                disposition: .committed
+                worktreeId: nil
             ),
             try BridgeProductControlResponse.subscriptionCancelAccepted(correlating: subscriptionCancel),
         ]
@@ -759,13 +719,12 @@ extension BridgeProductSessionContractTests {
             subscriptionObjects.map { $0["kind"] as? String }
                 == [
                     "subscription.openAccepted",
-                    "subscription.updateBatchAccepted",
                     "subscription.cancelAccepted",
                 ]
         )
         #expect(
             subscriptionObjects.map { $0["subscriptionKind"] as? String }
-                == ["review.metadata", "review.metadata", "file.metadata"]
+                == ["review.metadata", "file.metadata"]
         )
 
         let resyncResponse = try BridgeProductControlResponse.resyncAccepted(
@@ -886,7 +845,7 @@ extension BridgeProductSessionContractTests {
                 let subscriptionKind = subscription["subscriptionKind"] as? String
             else { return nil }
             return expectedSurface(forSubscriptionKind: subscriptionKind)
-        case "subscription.updateBatch", "subscription.cancel":
+        case "subscription.cancel":
             guard let subscriptionKind = object["subscriptionKind"] as? String else {
                 return nil
             }
@@ -945,26 +904,6 @@ extension BridgeProductSessionContractTests {
     private func decodedBase64(named name: String, in object: [String: Any]) throws -> Data {
         let value = try #require(object[name] as? String)
         return try #require(Data(base64Encoded: value))
-    }
-
-    private func decodeBoundaryFileInterestState(
-        finalPathByteLength: Int
-    ) throws -> BridgeProductSubscriptionInterestState {
-        let paths =
-            (0..<32).map { makeFixedLengthASCIIPath(index: $0, byteLength: 4090) }
-            + [makeFixedLengthASCIIPath(index: 32, byteLength: finalPathByteLength)]
-        let object: [String: Any] = [
-            "interests": [["lane": "foreground", "paths": paths]],
-            "pathScope": [],
-            "subscriptionKind": "file.metadata",
-        ]
-        let data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        return try JSONDecoder().decode(BridgeProductSubscriptionInterestState.self, from: data)
-    }
-
-    private func makeFixedLengthASCIIPath(index: Int, byteLength: Int) -> String {
-        let prefix = String(format: "%05d:", index)
-        return prefix + String(repeating: "x", count: byteLength - prefix.utf8.count)
     }
 
     private func encodedJSONObject<CodableValue: Codable>(

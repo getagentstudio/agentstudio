@@ -1,3 +1,5 @@
+import AgentStudioInfrastructure
+import Darwin
 import Foundation
 import os
 
@@ -20,6 +22,13 @@ package struct FilesystemPathFilter: Sendable {
     package static let empty = Self(ignoredRules: [])
 
     private let ignoredRules: [GitIgnoreRule]
+    private let generationID = UUIDv7.generate()
+
+    /// Caller-owned scratch state for one ingress batch, never shared by filter values.
+    struct DirectoryIgnoreCache: Sendable {
+        fileprivate var filterGenerationID: UUID?
+        fileprivate var ignoredByDirectoryPrefix: [[UInt8]: Bool] = [:]
+    }
 
     package var estimatedRetainedByteCount: Int {
         ignoredRules.reduce(32) { partialResult, rule in
@@ -58,6 +67,14 @@ package struct FilesystemPathFilter: Sendable {
     }
 
     package func classify(relativePath: String) -> FilesystemPathDisposition {
+        var ancestorCache = DirectoryIgnoreCache()
+        return classify(relativePath: relativePath, ancestorCache: &ancestorCache)
+    }
+
+    func classify(
+        relativePath: String,
+        ancestorCache: inout DirectoryIgnoreCache
+    ) -> FilesystemPathDisposition {
         if Self.isAgentStudioPrivateStagingRefPath(relativePath) {
             return .ignoredByPolicy
         }
@@ -67,26 +84,55 @@ package struct FilesystemPathFilter: Sendable {
         if Self.isOriginConfigPath(relativePath: relativePath) {
             return .projected
         }
+        let isOwnGitPath = Self.normalized(relativePath: relativePath).split(separator: "/").first == ".git"
+        // The owning repository's Git directory stays observable even under broad
+        // ignore rules. Nested repositories inherit their owning root's ignore policy.
+        if !isOwnGitPath, isIgnored(relativePath: relativePath, ancestorCache: &ancestorCache) {
+            return .ignoredByPolicy
+        }
         if Self.isGitObjectDatabase(relativePath: relativePath) {
             return .gitObjectDatabase
         }
         if Self.isGitInternal(relativePath: relativePath) {
             return .gitInternal
         }
-        if isIgnored(relativePath: relativePath) {
-            return .ignoredByPolicy
-        }
         return .projected
     }
 
     package func isIgnored(relativePath: String) -> Bool {
+        var ancestorCache = DirectoryIgnoreCache()
+        return isIgnored(relativePath: relativePath, ancestorCache: &ancestorCache)
+    }
+
+    func isIgnored(relativePath: String, ancestorCache: inout DirectoryIgnoreCache) -> Bool {
+        // A reload or root replacement can occur while ingress suspends. Decisions
+        // from another immutable filter generation must not survive that boundary.
+        if ancestorCache.filterGenerationID != generationID {
+            ancestorCache = DirectoryIgnoreCache(filterGenerationID: generationID)
+        }
         let normalizedPath = Self.normalized(relativePath: relativePath)
-        guard !normalizedPath.isEmpty, normalizedPath != "." else { return false }
+        guard !ignoredRules.isEmpty, !normalizedPath.isEmpty, normalizedPath != "." else { return false }
 
         let pathComponents = normalizedPath.split(separator: "/")
         for componentCount in 1...pathComponents.count {
             let candidatePath = pathComponents.prefix(componentCount).joined(separator: "/")
-            if rulesIgnoreExactPath(candidatePath) {
+            let isIgnored: Bool
+            if componentCount < pathComponents.count {
+                // Only proper ancestors are known to be directories. The leaf
+                // keeps the existing path-only rule evaluation on every call.
+                // String equality merges Unicode spellings that the regex matcher
+                // distinguishes, so memo identity must preserve the input bytes.
+                let prefixBytes = Array(candidatePath.utf8)
+                if let cachedDecision = ancestorCache.ignoredByDirectoryPrefix[prefixBytes] {
+                    isIgnored = cachedDecision
+                } else {
+                    isIgnored = rulesIgnoreExactPath(candidatePath)
+                    ancestorCache.ignoredByDirectoryPrefix[prefixBytes] = isIgnored
+                }
+            } else {
+                isIgnored = rulesIgnoreExactPath(candidatePath)
+            }
+            if isIgnored {
                 // Git cannot re-include a descendant while an ancestor directory
                 // remains excluded, so an ignored prefix is terminal for this path.
                 return true
@@ -135,11 +181,15 @@ package struct FilesystemPathFilter: Sendable {
     }
 
     package static func isAgentStudioPrivateStagingRefPath(_ path: String) -> Bool {
+        // Normalization cannot introduce these bytes; every admitted form already contains them.
+        guard containsUTF8Substring("refs/agentstudio/staged", in: path) else {
+            return false
+        }
         let normalizedPath = normalized(relativePath: path)
         return normalizedPath == "refs/agentstudio/staged"
             || normalizedPath.hasPrefix("refs/agentstudio/staged/")
             || normalizedPath.hasSuffix("/refs/agentstudio/staged")
-            || normalizedPath.contains("/refs/agentstudio/staged/")
+            || containsUTF8Substring("/refs/agentstudio/staged/", in: normalizedPath)
     }
 
     private static func normalized(relativePath: String) -> String {
@@ -186,6 +236,32 @@ package struct FilesystemPathFilter: Sendable {
     }
 }
 
+private func containsUTF8Substring(_ substring: StaticString, in path: String) -> Bool {
+    substring.withUTF8Buffer { needle in
+        guard !needle.isEmpty else { return true }
+        if let found = path.utf8.withContiguousStorageIfAvailable({ bytes in
+            guard bytes.count >= needle.count, let pathStart = bytes.baseAddress, let needleStart = needle.baseAddress
+            else { return false }
+            return memmem(pathStart, bytes.count, needleStart, needle.count) != nil
+        }) {
+            return found
+        }
+
+        // Foreign NSString storage can lack a contiguous UTF-8 buffer.
+        let bytes = path.utf8
+        for start in bytes.indices {
+            var position = start
+            var matchedBytes = 0
+            while position != bytes.endIndex, bytes[position] == needle[matchedBytes] {
+                matchedBytes += 1
+                if matchedBytes == needle.count { return true }
+                position = bytes.index(after: position)
+            }
+        }
+        return false
+    }
+}
+
 package enum RepositoryLocalActivityPathClassifier {
     package static func qualifiesWorktreePath(
         relativePath: String,
@@ -213,8 +289,8 @@ package enum RepositoryLocalActivityPathClassifier {
         if leaf == "HEAD" || leaf == "index" || leaf == "FETCH_HEAD" || leaf == "packed-refs" {
             return true
         }
-        return normalizedPath.contains("/refs/heads/")
-            || normalizedPath.contains("/refs/remotes/")
+        return containsUTF8Substring("/refs/heads/", in: normalizedPath)
+            || containsUTF8Substring("/refs/remotes/", in: normalizedPath)
             || normalizedPath.hasPrefix("refs/heads/")
             || normalizedPath.hasPrefix("refs/remotes/")
     }

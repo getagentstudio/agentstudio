@@ -6,6 +6,35 @@ import Testing
 
 @Suite("Bridge product metadata lifecycle trace recorder")
 struct BridgeProductMetadataLifecycleTraceRecorderTests {
+    @Test("no-source pane presentation projects allowlisted vocabulary without a Review generation")
+    func noSourcePresentationTelemetryHasNoGeneration() async throws {
+        let sink = BridgeProductMetadataLifecycleTraceSink()
+        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
+        let event = BridgePanePresentationTraceEvent(
+            snapshot: BridgePaneProductPresentationSnapshot(
+                nativeActivity: .foreground,
+                presentationRevision: 1,
+                refreshingLanes: [],
+                reviewComparison: BridgePaneReviewComparisonPresentation(
+                    activeTarget: nil, attempt: .noSource, displayedSnapshot: .absent)
+            ),
+            stage: .enqueued,
+            result: .success,
+            resultReason: .noReason,
+            hasActiveStream: true,
+            traceContext: nil
+        )
+        await recorder.record(event)
+        let sample = try #require(await sink.recordedSamples().only)
+        #expect(event.comparisonAttempt == .noSource)
+        #expect(event.reviewGeneration == nil)
+        #expect(sample.stringAttributes["agentstudio.bridge.comparison.attempt.status"] == "no_source")
+        #expect(sample.numericAttributes["agentstudio.bridge.review.generation"] == nil)
+        #expect(
+            BridgeTelemetryWireSchema.allowedStringValues(for: "agentstudio.bridge.comparison.attempt.status")?
+                .contains("no_source") == true)
+    }
+
     @Test("Review refresh lifecycle exports only controlled classification aggregates")
     func reviewRefreshLifecycleExportsControlledClassificationAggregates() async throws {
         // Arrange
@@ -147,82 +176,6 @@ struct BridgeProductMetadataLifecycleTraceRecorderTests {
         #expect(sample.numericAttributes["agentstudio.bridge.stage.attempt"] == 0)
     }
 
-    @Test("File window enqueue maps to the typed native telemetry vocabulary")
-    func fileWindowEnqueueMapsToTypedTelemetryVocabulary() async throws {
-        // Arrange
-        let sink = BridgeProductMetadataLifecycleTraceSink()
-        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
-        let traceContext = try BridgeTraceContext(
-            traceId: "11111111111111111111111111111111",
-            spanId: "2222222222222222",
-            parentSpanId: nil,
-            sampled: true
-        )
-
-        // Act
-        await recorder.record(
-            .init(
-                stage: .windowEnqueued,
-                subscriptionKind: .fileMetadata,
-                result: .queued,
-                traceContext: traceContext,
-                sourceGeneration: 7,
-                rowCount: 256,
-                isFinalWindow: false
-            )
-        )
-
-        // Assert
-        let sample = try #require(await sink.recordedSamples().only)
-        #expect(sample.scope == .swift)
-        #expect(sample.name == "performance.bridge.swift.metadata_bootstrap_lifecycle")
-        #expect(sample.traceContext == traceContext)
-        #expect(
-            sample.stringAttributes == [
-                "agentstudio.bridge.phase": "metadata_window_enqueued",
-                "agentstudio.bridge.plane": "data",
-                "agentstudio.bridge.priority": "hot",
-                "agentstudio.bridge.protocol": "worktree-file",
-                "agentstudio.bridge.result": "queued",
-                "agentstudio.bridge.slice": "tree_prepare_input",
-                "agentstudio.bridge.transport": "swift",
-                "agentstudio.bridge.viewer": "file",
-            ]
-        )
-        #expect(sample.numericAttributes["agentstudio.bridge.source.generation"] == 7)
-        #expect(sample.numericAttributes["agentstudio.bridge.worktree_file.tree.window.row.count"] == 256)
-        #expect(
-            sample.booleanAttributes["agentstudio.bridge.worktree_file.tree.window.is_final"] == false
-        )
-    }
-
-    @Test("Review lifecycle stages cannot inherit File-only window fields")
-    func reviewLifecycleStageOmitsFileWindowFields() async throws {
-        // Arrange
-        let sink = BridgeProductMetadataLifecycleTraceSink()
-        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
-
-        // Act
-        await recorder.record(
-            .init(
-                stage: .sourceAcceptedEnqueued,
-                subscriptionKind: .reviewMetadata,
-                result: .queued,
-                traceContext: nil,
-                sourceGeneration: 9
-            )
-        )
-
-        // Assert
-        let sample = try #require(await sink.recordedSamples().only)
-        #expect(sample.stringAttributes["agentstudio.bridge.protocol"] == "review")
-        #expect(sample.stringAttributes["agentstudio.bridge.viewer"] == "review")
-        #expect(sample.stringAttributes["agentstudio.bridge.slice"] == "review_metadata")
-        #expect(sample.numericAttributes["agentstudio.bridge.source.generation"] == 9)
-        #expect(sample.numericAttributes["agentstudio.bridge.worktree_file.tree.window.row.count"] == nil)
-        #expect(sample.booleanAttributes.isEmpty)
-    }
-
     @Test("Review publication started and completed events preserve typed receipt accounting")
     func reviewPublicationLifecyclePreservesReceiptAccounting() async throws {
         // Arrange
@@ -361,6 +314,44 @@ struct BridgeProductMetadataLifecycleTraceRecorderTests {
             #expect(sample.stringAttributes["agentstudio.bridge.result"] == "failure")
             #expect(sample.stringAttributes["agentstudio.bridge.result_reason"] == expected.1)
             #expect(sample.stringAttributes["agentstudio.bridge.protocol"] == "review")
+        }
+    }
+
+    @Test("File root access causes remain distinct in native producer telemetry")
+    func fileRootAccessFailuresKeepNativeTelemetryCause() async throws {
+        let sink = BridgeProductMetadataLifecycleTraceSink()
+        let recorder = BridgeProductMetadataLifecycleTraceRecorder(recorder: sink)
+        let rootCases:
+            [(
+                BridgeWorktreeFileRootAccessError,
+                BridgeProductMetadataProducerFailureReason,
+                String
+            )] = [
+                (.missingRoot, .missingRoot, "file_root_missing"),
+                (.unreadable, .unreadableRoot, "file_root_unreadable"),
+                (.refused, .accessRefused, "file_root_access_refused"),
+            ]
+
+        for (rootError, expectedReason, _) in rootCases {
+            let failureReason = BridgePaneProductMetadataCoordinator.producerFailureReason(for: rootError)
+            #expect(failureReason == expectedReason)
+            await recorder.record(
+                .init(
+                    stage: .producerFailed,
+                    subscriptionKind: .fileMetadata,
+                    result: .failure,
+                    failureReason: failureReason,
+                    traceContext: nil
+                )
+            )
+        }
+
+        let samples = await sink.recordedSamples()
+        #expect(samples.count == rootCases.count)
+        for (sample, rootCase) in zip(samples, rootCases) {
+            #expect(sample.name == "performance.bridge.swift.metadata_bootstrap_lifecycle")
+            #expect(sample.stringAttributes["agentstudio.bridge.result_reason"] == rootCase.2)
+            #expect(sample.stringAttributes["agentstudio.bridge.protocol"] == "worktree-file")
         }
     }
 

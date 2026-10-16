@@ -42,7 +42,11 @@ struct WatchedFolderTopologyAdmissionTests {
             case .metadataOnly: (known, UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemModified))
             case .outsideRoot: (root.deletingLastPathComponent().appending(path: "outside"), changedDirectory)
             case .ordinaryFile: (root.appending(path: "notes.txt"), UInt32(kFSEventStreamEventFlagItemCreated))
-            case .gitMarker: (known.appending(path: ".git/HEAD"), UInt32(kFSEventStreamEventFlagItemModified))
+            case .gitMarker:
+                (
+                    known.appending(path: ".git/HEAD"),
+                    UInt32(kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemRenamed)
+                )
             }
         let batch = FSEventBatch(
             worktreeId: UUIDv7.generate(), paths: [event.0.path],
@@ -52,6 +56,233 @@ struct WatchedFolderTopologyAdmissionTests {
             WatchedFolderTopologyAdmission.shouldScan(
                 batch, root: descriptor, knownGroups: [.init(clonePath: known, linkedWorktreePaths: [])])
                 == scenario.shouldScan)
+    }
+
+    private static let routinePaths = [
+        "index", "ORIG_HEAD", "FETCH_HEAD", "MERGE_HEAD", "CHERRY_PICK_HEAD",
+        "REVERT_HEAD", "REBASE_HEAD", "AUTO_MERGE", "BISECT_LOG", "COMMIT_EDITMSG", "packed-refs",
+        "index.lock", "config.lock", "objects/ab/cd", "refs/heads/main", "logs/HEAD",
+        "modules/sub/index", "rebase-merge/head-name", "rebase-apply/next", "sequencer/todo",
+    ]
+
+    @Test(
+        "routine Git content is rejected in main and linked administrative directories",
+        arguments: routinePaths.flatMap { [".git/" + $0, ".git/worktrees/feature/" + $0] })
+    func routineGitContentDoesNotAdmitScan(relativePath: String) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: relativePath).path
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [.init(path: path, eventID: 1, flags: UInt32(kFSEventStreamEventFlagItemModified))])
+
+        // Act / Assert
+        #expect(
+            !WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            !WatchedFolderTopologyAdmission.shouldScan(
+                batch, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+    }
+
+    @Test(
+        "discovery metadata and unknown Git paths admit by default",
+        arguments: [
+            ".git", ".git/config", ".git/commondir", ".git/gitdir", ".git/locked",
+            ".git/shallow", ".git/info/grafts", ".git/info/unknown", ".git/future-discovery-input",
+            ".git/worktrees", ".git/worktrees/new", ".git/worktrees/new/gitdir",
+            ".git/worktrees/new/commondir", ".git/worktrees/new/locked",
+            ".git/worktrees/new/shallow", ".git/worktrees/new/info/grafts",
+            ".git/worktrees/new/future-discovery-input",
+        ])
+    func discoveryAndUnknownGitPathsAdmitScan(relativePath: String) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: relativePath).path
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [.init(path: path, eventID: 1, flags: UInt32(kFSEventStreamEventFlagItemCreated))])
+
+        // Act / Assert
+        #expect(WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                batch, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+    }
+
+    @Test(
+        "HEAD content changes remain discovery inputs in main and linked administrative directories",
+        arguments: [".git/HEAD", ".git/worktrees/new/HEAD"])
+    func headContentChangesAdmitScan(relativePath: String) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: relativePath).path
+
+        // Act / Assert
+        for flags in [
+            UInt32(kFSEventStreamEventFlagItemModified), UInt32(kFSEventStreamEventFlagItemRenamed),
+            UInt32(kFSEventStreamEventFlagItemRemoved),
+        ] {
+            let batch = FSEventBatch(
+                worktreeId: UUIDv7.generate(), paths: [path],
+                observations: [.init(path: path, eventID: 1, flags: flags)])
+            #expect(
+                WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+            #expect(
+                WatchedFolderTopologyAdmission.shouldScan(
+                    batch, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+        }
+        let pathsOnly = FSEventBatch(worktreeId: UUIDv7.generate(), paths: [path])
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(pathsOnly, root: fixture.descriptor, knownGroups: fixture.groups))
+    }
+
+    @Test(
+        "structural Git directories admit removal, rename and unknown observations while rejecting routine updates",
+        arguments: ["objects", "refs"].flatMap { [".git/" + $0, ".git/worktrees/new/" + $0] })
+    func structuralGitEntriesPreserveValidityRecovery(relativePath: String) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: relativePath).path
+        let removed = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [.init(path: path, eventID: 1, flags: UInt32(kFSEventStreamEventFlagItemRemoved))])
+        let routine = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [
+                .init(
+                    path: path, eventID: 2,
+                    flags: UInt32(kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsDir))
+            ])
+        let renamed = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [
+                .init(
+                    path: path, eventID: 3,
+                    flags: UInt32(kFSEventStreamEventFlagItemRenamed | kFSEventStreamEventFlagItemIsDir))
+            ])
+        let unknown = FSEventBatch(worktreeId: UUIDv7.generate(), paths: [path])
+
+        // Act / Assert
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(removed, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(unknown, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            !WatchedFolderTopologyAdmission.shouldScan(routine, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(renamed, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                renamed, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+    }
+
+    @Test(
+        "own Git marker creation and removal admit membership recovery",
+        arguments: [UInt32(kFSEventStreamEventFlagItemCreated), UInt32(kFSEventStreamEventFlagItemRemoved)])
+    func ownGitMarkerChangesAdmitMembershipRecovery(flags: UInt32) throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let path = fixture.checkout.appending(path: ".git").path
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [path],
+            observations: [.init(path: path, eventID: 1, flags: flags | UInt32(kFSEventStreamEventFlagItemIsDir))])
+
+        // Act / Assert
+        #expect(WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                batch, root: fixture.descriptor, knownGroups: [], heldCheckoutPaths: [fixture.checkout.path]))
+    }
+
+    @Test("nested Git churn stays rejected through the private path alias")
+    func nestedGitChurnRejectsCanonicalAndLexicalAliases() throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let nestedPaths = [
+            fixture.checkout.appending(path: ".build-agent-1/checkouts/dep/.git/index").path,
+            fixture.checkout.appending(path: ".build-agent-1/checkouts/dep/.git/config").path,
+            fixture.checkout.appending(path: "vendor/repo/.git/commondir").path,
+        ]
+        let paths = nestedPaths + nestedPaths.map { "/private" + $0 }
+        let batch = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: paths,
+            observations: paths.map { .init(path: $0, eventID: 1, flags: UInt32(kFSEventStreamEventFlagItemModified)) })
+
+        // Act / Assert
+        #expect(
+            !WatchedFolderTopologyAdmission.shouldScan(batch, root: fixture.descriptor, knownGroups: fixture.groups))
+    }
+
+    @Test("Git paths outside known checkouts and loss evidence remain conservative")
+    func unknownCheckoutsAndCoverageLossAdmitScan() throws {
+        // Arrange
+        let fixture = try makeGitAdmissionFixture()
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let newRepoPath = fixture.root.appending(path: "newrepo/.git/HEAD").path
+        let nestedPath = fixture.checkout.appending(path: ".build-agent-1/checkouts/dep/.git/index").path
+        let newRepo = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [newRepoPath],
+            observations: [.init(path: newRepoPath, eventID: 1, flags: UInt32(kFSEventStreamEventFlagItemModified))])
+        let fullRefresh = FSEventBatch(worktreeId: UUIDv7.generate(), paths: [nestedPath], requiresFullGitRefresh: true)
+        let coverageLoss = FSEventBatch(
+            worktreeId: UUIDv7.generate(), paths: [nestedPath],
+            observations: [.init(path: nestedPath, eventID: 2, flags: UInt32(kFSEventStreamEventFlagMustScanSubDirs))])
+
+        // Act / Assert
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(newRepo, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                fullRefresh, root: fixture.descriptor, knownGroups: fixture.groups))
+        #expect(
+            WatchedFolderTopologyAdmission.shouldScan(
+                coverageLoss, root: fixture.descriptor, knownGroups: fixture.groups))
+    }
+
+    private struct GitAdmissionFixture {
+        let root: URL
+        let checkout: URL
+        let descriptor: RegisteredRootDescriptor
+        let groups: [RepoScanner.RepoScanGroup]
+    }
+
+    @Test("a filesystem-root checkout preserves its own Git path components")
+    func filesystemRootCheckoutPreservesGitAdmission() throws {
+        // Arrange
+        let checkout = URL(fileURLWithPath: "/")
+        let registration = FSEventRegistrationToken(
+            sourceID: .init(kind: .watchedParentMembership, rootID: UUIDv7.generate()),
+            registrationGeneration: 1, rootGeneration: 1)
+        let descriptor = try FilesystemSourceConfiguration.registerRoot(
+            from: .hostAuthorized(
+                .init(registration: registration, authorizedBoundary: checkout, registeredRoot: checkout)))
+        let groups = [RepoScanner.RepoScanGroup(clonePath: checkout, linkedWorktreePaths: [])]
+        let config = FSEventBatch(worktreeId: UUIDv7.generate(), paths: ["/.git/config"])
+        let index = FSEventBatch(worktreeId: UUIDv7.generate(), paths: ["/.git/index"])
+
+        // Act / Assert
+        #expect(WatchedFolderTopologyAdmission.shouldScan(config, root: descriptor, knownGroups: groups))
+        #expect(!WatchedFolderTopologyAdmission.shouldScan(index, root: descriptor, knownGroups: groups))
+    }
+
+    private func makeGitAdmissionFixture() throws -> GitAdmissionFixture {
+        let root = URL(fileURLWithPath: "/tmp/git-topology-admission-\(UUIDv7.generate())")
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let registration = FSEventRegistrationToken(
+            sourceID: .init(kind: .watchedParentMembership, rootID: UUIDv7.generate()),
+            registrationGeneration: 1, rootGeneration: 1)
+        let descriptor = try FilesystemSourceConfiguration.registerRoot(
+            from: .hostAuthorized(.init(registration: registration, authorizedBoundary: root, registeredRoot: root)))
+        let checkout = root.appending(path: "known")
+        return GitAdmissionFixture(
+            root: root, checkout: checkout, descriptor: descriptor,
+            groups: [.init(clonePath: checkout, linkedWorktreePaths: [])])
     }
 
     @Test("directory creation inside a held destination admits no scan; Git topology paths still admit")
@@ -107,5 +338,69 @@ struct WatchedFolderTopologyAdmissionTests {
         #expect(recoveries.first?.requiresWatchedFolderScan == true)
         #expect((recoveries.first?.paths == nil) == (pathLimit == 1))
         #expect(buffer.consumeOverflowRecoveries().isEmpty)
+    }
+
+    @Test("scoped overflow preserves path observations and coarse overflow drops them", arguments: [1, 4])
+    func overflowRetainsBoundedPathObservations(pathLimit: Int) throws {
+        // Arrange
+        let buffer = DarwinFSEventIngressBuffer(capacity: 1, maximumRetainedOverflowPathsPerRegistration: pathLimit)
+        defer { buffer.finish() }
+        let callbackID = UUIDv7.generate()
+        let paths = ["/watched/repo/.git/HEAD", "/watched/new-directory"]
+        let observations = [
+            FSEventObservation(path: paths[0], eventID: 2, flags: UInt32(kFSEventStreamEventFlagItemRenamed)),
+            FSEventObservation(
+                path: paths[1], eventID: 3,
+                flags: UInt32(kFSEventStreamEventFlagItemIsDir | kFSEventStreamEventFlagItemCreated)),
+        ]
+        buffer.yield(.init(worktreeId: callbackID, paths: ["/watched/retained.txt"]))
+
+        // Act
+        buffer.yield(.init(worktreeId: callbackID, paths: paths, observations: observations))
+        let recovery = try #require(buffer.consumeOverflowRecoveries().first)
+
+        // Assert
+        #expect(recovery.requiresWatchedFolderScan)
+        if pathLimit == 1 {
+            #expect(recovery.paths == nil)
+            #expect(recovery.observations.isEmpty)
+        } else {
+            #expect(recovery.paths == Set(paths))
+            #expect(Set(recovery.observations.map(\.path)) == Set(paths))
+            for expected in observations {
+                #expect(recovery.observations.contains(expected))
+            }
+        }
+    }
+
+    @Test("repeated overflow observations merge flags while retaining one bounded entry per path")
+    func overflowObservationMergeRetainsRemovalEvidence() throws {
+        // Arrange
+        let buffer = DarwinFSEventIngressBuffer(capacity: 1, maximumRetainedOverflowPathsPerRegistration: 1)
+        defer { buffer.finish() }
+        let callbackID = UUIDv7.generate()
+        let path = "/watched/repo/.git/HEAD"
+        buffer.yield(.init(worktreeId: callbackID, paths: ["/watched/retained.txt"]))
+
+        // Act
+        for (eventID, flags) in [
+            (UInt64(2), UInt32(kFSEventStreamEventFlagItemRemoved)),
+            (UInt64(3), UInt32(kFSEventStreamEventFlagItemRenamed)),
+        ] {
+            buffer.yield(
+                .init(
+                    worktreeId: callbackID, paths: [path],
+                    observations: [.init(path: path, eventID: eventID, flags: flags)]))
+        }
+        let recovery = try #require(buffer.consumeOverflowRecoveries().first)
+
+        // Assert
+        #expect(recovery.paths == [path])
+        #expect(
+            recovery.observations == [
+                .init(
+                    path: path, eventID: 3,
+                    flags: UInt32(kFSEventStreamEventFlagItemRemoved | kFSEventStreamEventFlagItemRenamed))
+            ])
     }
 }

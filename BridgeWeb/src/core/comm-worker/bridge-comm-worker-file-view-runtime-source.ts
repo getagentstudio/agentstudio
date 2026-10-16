@@ -1,7 +1,7 @@
 import type {
 	BridgeCommWorkerFileViewContentRequest,
 	BridgeCommWorkerFileViewRuntimeMutation,
-} from './bridge-comm-worker-file-metadata-projection.js';
+} from './bridge-comm-worker-file-view-runtime-mutation.js';
 import type { BridgeCommWorkerRow } from './bridge-comm-worker-store.js';
 import type { BridgeWorkerFileViewContentMetadata } from './bridge-worker-contracts.js';
 

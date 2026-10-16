@@ -15,6 +15,7 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
     private let comparisonFailureByBaseProviderIdentity: [String: BridgeProviderFailure]
     private let contentLoadGate: HeldStep<Void>?
     private var comparisonGate: BridgeComparisonGate?
+    private var comparisonStep: HeldStep<Void>?
     private let checksCancellationAfterGate: Bool
     private var contentRequests: [BridgeContentLoadRequest] = []
     private var comparisonRequests: [BridgeEndpointComparisonRequest] = []
@@ -42,6 +43,7 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
         comparisonFailureByBaseProviderIdentity: [String: BridgeProviderFailure] = [:],
         contentLoadGate: HeldStep<Void>? = nil,
         comparisonGate: BridgeComparisonGate? = nil,
+        comparisonStep: HeldStep<Void>? = nil,
         checksCancellationAfterGate: Bool = false
     ) {
         self.repositoryDefaultTarget = repositoryDefaultTarget
@@ -55,6 +57,7 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
         self.comparisonFailureByBaseProviderIdentity = comparisonFailureByBaseProviderIdentity
         self.contentLoadGate = contentLoadGate
         self.comparisonGate = comparisonGate
+        self.comparisonStep = comparisonStep
         self.checksCancellationAfterGate = checksCancellationAfterGate
     }
 
@@ -115,6 +118,7 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
         }
         let resolvedComparison = comparison
         await comparisonGate?.waitUntilReleased()
+        try? await comparisonStep?.arrive(())
         return BridgeEndpointComparison(
             baseEndpoint: endpoint(
                 request.baseEndpoint,
@@ -197,6 +201,10 @@ actor BridgeReviewSourceProviderFake: BridgeReviewSourceProvider {
 
     func setComparisonGate(_ comparisonGate: BridgeComparisonGate?) {
         self.comparisonGate = comparisonGate
+    }
+
+    func setComparisonStep(_ comparisonStep: HeldStep<Void>?) {
+        self.comparisonStep = comparisonStep
     }
 
     func recordedTreeReadRequestsCount() -> Int {

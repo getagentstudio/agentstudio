@@ -6,6 +6,81 @@ import AgentStudioTestSupport
 import Foundation
 import Testing
 
+#if canImport(Darwin)
+    import Darwin
+#endif
+
+struct HalfCloseTestSocket: Sendable {
+    let connection: UnixSocketConnection
+    let finishSending: @Sendable () throws -> Void
+}
+
+/// Retains the real client descriptor only to exercise SHUT_WR. Transport
+/// framing and reads still use the ordinary UnixSocketConnection path.
+func connectHalfCloseTestSocket(socketPath: String, receiveBufferBytes: Int32? = nil) async throws
+    -> HalfCloseTestSocket
+{
+    try await withoutBlockingCooperativePool {
+        #if canImport(Darwin)
+            let descriptor = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
+            guard descriptor >= 0 else {
+                throw UnixSocketTransportError(reason: .socketCreationFailed, errnoCode: errno)
+            }
+            do {
+                if var receiveBufferBytes {
+                    guard
+                        Darwin.setsockopt(
+                            descriptor, SOL_SOCKET, SO_RCVBUF, &receiveBufferBytes,
+                            socklen_t(MemoryLayout<Int32>.size)
+                        ) == 0
+                    else {
+                        throw UnixSocketTransportError(reason: .socketCreationFailed, errnoCode: errno)
+                    }
+                }
+                var address = sockaddr_un()
+                address.sun_family = sa_family_t(AF_UNIX)
+                let pathBytes = socketPath.utf8CString.map { UInt8(bitPattern: $0) }
+                guard pathBytes.count <= MemoryLayout.size(ofValue: address.sun_path) else {
+                    throw UnixSocketTransportError(reason: .pathTooLong)
+                }
+                withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: pathBytes) }
+                let length = socklen_t(MemoryLayout<sa_family_t>.size + pathBytes.count)
+                let connected = withUnsafePointer(to: &address) { pointer in
+                    pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) {
+                        Darwin.connect(descriptor, $0, length)
+                    }
+                }
+                guard connected == 0 else { throw UnixSocketTransportError(reason: .connectFailed, errnoCode: errno) }
+                let connection = UnixSocketConnection(fileDescriptor: descriptor)
+                return HalfCloseTestSocket(
+                    connection: connection,
+                    finishSending: {
+                        guard Darwin.shutdown(descriptor, SHUT_WR) == 0 else {
+                            throw UnixSocketTransportError(reason: .closeFailed, errnoCode: errno)
+                        }
+                    }
+                )
+            } catch {
+                _ = Darwin.close(descriptor)
+                throw error
+            }
+        #else
+            throw UnixSocketTransportError(reason: .unsupportedPlatform)
+        #endif
+    }
+}
+
+func receiveBytesThroughEOF(connection: UnixSocketConnection) async throws -> Data {
+    try await withoutBlockingCooperativePool {
+        var received = Data()
+        while true {
+            let bytes = try connection.receive(maxBytes: 4096)
+            guard !bytes.isEmpty else { return received }
+            received.append(bytes)
+        }
+    }
+}
+
 enum TestSocketIOOperation: Sendable {
     case send
     case receive
@@ -47,21 +122,23 @@ func connectWithoutBlockingCooperativePool(socketPath: String) async throws -> U
 func sendRequestWithoutBlockingCooperativePool(
     connection: UnixSocketConnection,
     request: JSONRPCClientRequest,
-    observeIO: TestSocketIOObserver? = nil
+    observeIO: TestSocketIOObserver? = nil,
+    maxFrameBytes: Int = 65_536
 ) async throws {
     try await withoutBlockingCooperativePool {
-        try sendRequest(connection: connection, request: request, observeIO: observeIO)
+        try sendRequest(connection: connection, request: request, observeIO: observeIO, maxFrameBytes: maxFrameBytes)
     }
 }
 
 func sendRequest(
     connection: UnixSocketConnection,
     request: JSONRPCClientRequest,
-    observeIO: TestSocketIOObserver? = nil
+    observeIO: TestSocketIOObserver? = nil,
+    maxFrameBytes: Int = 65_536
 ) throws {
     let frameData = try NDJSONFrameEncoder.encode(
         JSONRPCCodec.encodeRequest(request),
-        maxFrameBytes: 65_536
+        maxFrameBytes: maxFrameBytes
     )
     withUnsafeCurrentTask { observeIO?(.send, $0 != nil) }
     try connection.send(frameData)
@@ -236,4 +313,18 @@ func receiveListenerHandlerRequest(
             return try JSONRPCCodec.decodeRequest(frame)
         }
     }
+}
+
+/// Direct registration tests inspect the same result the production writer frames.
+func decodeJSONValue<T: Decodable>(_ type: T.Type, from result: AppIPCInvocationResult) throws -> T {
+    try JSONDecoder().decode(type, from: encodedAppIPCInvocationResult(result))
+}
+
+func encodedAppIPCInvocationResult(_ result: AppIPCInvocationResult) throws -> Data {
+    let bytes: Data
+    switch result {
+    case .value(let value): bytes = try JSONEncoder().encode(value)
+    case .encoded(let encoded): bytes = encoded
+    }
+    return bytes
 }

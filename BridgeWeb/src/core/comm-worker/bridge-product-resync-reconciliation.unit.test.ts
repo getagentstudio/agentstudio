@@ -9,16 +9,12 @@ import {
 } from './bridge-product-session-contracts.js';
 
 const reviewSubscription = {
-	interestRevision: 4,
-	interestSha256: 'a'.repeat(64),
 	subscriptionId: 'review-subscription-1',
 	subscriptionKind: 'review.metadata',
 	workerDerivationEpoch: 7,
 } as const;
 
 const fileSubscription = {
-	interestRevision: 2,
-	interestSha256: 'b'.repeat(64),
 	subscriptionId: 'file-subscription-1',
 	subscriptionKind: 'file.metadata',
 	workerDerivationEpoch: 3,
@@ -50,13 +46,11 @@ function makeResyncResponse(): BridgeProductControlResponse {
 				...reviewSubscription,
 			},
 			{
-				disposition: 'reset',
-				interestRevision: 3,
-				interestSha256: 'c'.repeat(64),
-				reason: 'interest_mismatch',
+				disposition: 'reopenRequired',
+				reason: 'snapshot_required',
+				requiredWorkerDerivationEpoch: fileSubscription.workerDerivationEpoch,
 				subscriptionId: fileSubscription.subscriptionId,
 				subscriptionKind: fileSubscription.subscriptionKind,
-				workerDerivationEpoch: fileSubscription.workerDerivationEpoch,
 			},
 		],
 		requestId: 'resync-request-1',

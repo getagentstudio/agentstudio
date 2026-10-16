@@ -1,13 +1,12 @@
 import AgentStudioBridge
 import AppKit
+import Darwin
 import Foundation
-import UniformTypeIdentifiers
 
 @MainActor
 protocol WorktreeAnnotationPasteboardWriting: AnyObject {
     @discardableResult
     func clearContents() -> Int
-
     @discardableResult
     func setData(_ data: Data?, forType dataType: NSPasteboard.PasteboardType) -> Bool
 }
@@ -15,68 +14,90 @@ protocol WorktreeAnnotationPasteboardWriting: AnyObject {
 extension NSPasteboard: WorktreeAnnotationPasteboardWriting {}
 
 @MainActor
-protocol WorktreeAnnotationJSONDestinationPanel: AnyObject {
-    var allowedContentTypes: [UTType] { get set }
-    var nameFieldStringValue: String { get set }
-    var canCreateDirectories: Bool { get set }
-    var isExtensionHidden: Bool { get set }
+protocol WorktreeAnnotationJSONFolderPanel: AnyObject {
+    var canChooseDirectories: Bool { get set }
+    var canChooseFiles: Bool { get set }
+    var allowsMultipleSelection: Bool { get set }
     var url: URL? { get }
-
-    func runModal() throws -> NSApplication.ModalResponse
+    func begin(completionHandler: @escaping (NSApplication.ModalResponse) -> Void)
+    func cancel(_ sender: Any?)
 }
 
-extension NSSavePanel: WorktreeAnnotationJSONDestinationPanel {}
+extension NSOpenPanel: WorktreeAnnotationJSONFolderPanel {}
 
-/// App-owned implementation of the Bridge output-effect boundary.
-///
-/// Bridge supplies already validated exact bytes and a persisted destination.
-/// This owner performs only AppKit selection/clipboard work and the atomic file
-/// replacement; it never inspects or rebuilds annotation meaning.
+@MainActor
+protocol WorktreeAnnotationOutputFolderPreference: AnyObject {
+    var folderURL: URL { get set }
+}
+
+/// Interim application-lifetime preference until the owner decides its persistence boundary.
+@MainActor
+final class InMemoryWorktreeAnnotationOutputFolderPreference: WorktreeAnnotationOutputFolderPreference {
+    var folderURL: URL
+
+    init(folderURL: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]) {
+        self.folderURL = folderURL
+    }
+}
+
+/// App-owned clipboard, folder selection, and file writer for Bridge output.
 @MainActor
 final class WorktreeAnnotationOutputEffects: WorktreeAnnotationOutputEffect {
-    typealias SavePanelFactory = @MainActor () throws -> any WorktreeAnnotationJSONDestinationPanel
-    typealias JSONDataWriter = @Sendable (Data, URL) async throws -> Void
+    typealias FolderPanelFactory = @MainActor () throws -> any WorktreeAnnotationJSONFolderPanel
+    typealias JSONDataWriter = @Sendable (Data, URL, String?) async throws -> URL
 
     private let pasteboard: any WorktreeAnnotationPasteboardWriting
-    private let makeSavePanel: SavePanelFactory
+    private let makeFolderPanel: FolderPanelFactory
+    private let folderPreference: any WorktreeAnnotationOutputFolderPreference
     private let writeJSONData: JSONDataWriter
+    private let didAdmitJSONWrite: @Sendable () -> Void
 
     init(
         pasteboard: any WorktreeAnnotationPasteboardWriting = NSPasteboard.general,
-        makeSavePanel: @escaping SavePanelFactory = { NSSavePanel() },
-        writeJSONData: @escaping JSONDataWriter = WorktreeAnnotationOutputEffects.atomicJSONDataWriter
+        makeFolderPanel: @escaping FolderPanelFactory = { NSOpenPanel() },
+        folderPreference: any WorktreeAnnotationOutputFolderPreference =
+            InMemoryWorktreeAnnotationOutputFolderPreference(),
+        writeJSONData: @escaping JSONDataWriter = WorktreeAnnotationOutputEffects.writeJSONData,
+        didAdmitJSONWrite: @escaping @Sendable () -> Void = {}
     ) {
         self.pasteboard = pasteboard
-        self.makeSavePanel = makeSavePanel
+        self.makeFolderPanel = makeFolderPanel
+        self.folderPreference = folderPreference
         self.writeJSONData = writeJSONData
+        self.didAdmitJSONWrite = didAdmitJSONWrite
     }
 
-    func chooseJSONDestination(
-        suggestedFilename: String
-    ) async -> WorktreeAnnotationOutputDestinationOutcome {
-        guard !suggestedFilename.isEmpty else {
-            return .failed("The suggested JSON export filename was empty.")
-        }
-        do {
-            let panel = try makeSavePanel()
-            panel.allowedContentTypes = [.json]
-            panel.nameFieldStringValue = suggestedFilename
-            panel.canCreateDirectories = true
-            panel.isExtensionHidden = false
+    func rememberedJSONFolder() -> String {
+        folderPreference.folderURL.path
+    }
 
-            let response = try panel.runModal()
-            if response == .cancel {
-                return .cancelled
+    func revealJSONFile(path: String, productAdmission: BridgeProductAdmissionContext) -> Bool {
+        guard FileManager.default.fileExists(atPath: path) else { return false }
+        return productAdmission.withValidAdmission {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
+            return true
+        } ?? false
+    }
+
+    func chooseJSONDestination(productAdmission: BridgeProductAdmissionContext) async
+        -> WorktreeAnnotationOutputDestinationOutcome
+    {
+        do {
+            let panel = try makeFolderPanel()
+            panel.canChooseDirectories = true
+            panel.canChooseFiles = false
+            panel.allowsMultipleSelection = false
+            let panelWait = WorktreeAnnotationFolderPanelWait(
+                panel: panel, preference: folderPreference, productAdmission: productAdmission)
+            panelWait.observeClose()
+            let outcome = await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in panelWait.install(continuation) }
+            } onCancel: {
+                panelWait.latchCancellation()
             }
-            guard response == .OK else {
-                return .failed("The JSON export panel returned an unexpected response.")
-            }
-            guard let selectedURL = panel.url else {
-                return .failed("The JSON export panel did not return a destination.")
-            }
-            return .selected(path: selectedURL.path)
+            return outcome
         } catch {
-            return .failed("The JSON export destination could not be selected: \(error.localizedDescription)")
+            return .failed("The JSON export folder could not be selected: \(error.localizedDescription)")
         }
     }
 
@@ -85,32 +106,119 @@ final class WorktreeAnnotationOutputEffects: WorktreeAnnotationOutputEffect {
     ) async -> WorktreeAnnotationOutputEffectOutcome {
         switch request.outputKind {
         case .clipboardMarkdown:
-            pasteboard.clearContents()
-            guard pasteboard.setData(request.exactBytes, forType: .string) else {
-                return .failed("The system pasteboard did not confirm the Markdown write.")
-            }
-            return .succeeded
+            return request.productAdmission.withValidAdmission {
+                guard !Task.isCancelled else { return WorktreeAnnotationOutputEffectOutcome.cancelled }
+                pasteboard.clearContents()
+                guard pasteboard.setData(request.exactBytes, forType: .string) else {
+                    return .failed("The system pasteboard did not confirm the Markdown write.")
+                }
+                return .succeeded(destinationPath: nil)
+            } ?? .cancelled
         case .jsonFile:
             guard let destinationPath = request.destinationPath, !destinationPath.isEmpty else {
-                return .failed("The prepared JSON output has no selected destination.")
+                return .failed("The prepared JSON output has no destination.")
+            }
+            // Logical write admission competes atomically with both fences; I/O is App-owned afterward.
+            guard request.productAdmission.withValidAdmission({ !Task.isCancelled }) == true else { return .cancelled }
+            didAdmitJSONWrite()
+            let writer = writeJSONData
+            let exactBytes = request.exactBytes
+            let filename = request.suggestedFilename
+            let destinationURL = URL(fileURLWithPath: destinationPath)
+            // swiftlint:disable:next no_task_detached
+            let applicationWrite = Task.detached(priority: .userInitiated) {
+                try await writer(exactBytes, destinationURL, filename)
             }
             do {
-                try await writeJSONData(
-                    request.exactBytes,
-                    URL(fileURLWithPath: destinationPath)
-                )
-                return .succeeded
+                let writtenURL = try await applicationWrite.value
+                return .succeeded(destinationPath: writtenURL.path)
+            } catch let error as WorktreeAnnotationJSONWriteError {
+                switch error {
+                case .missingFolder:
+                    return .fileFailure(code: .missingFolder, message: error.localizedDescription)
+                case .permissionDenied:
+                    return .fileFailure(code: .permissionDenied, message: error.localizedDescription)
+                case .tooManyCollisions:
+                    return .failed(error.localizedDescription)
+                }
             } catch {
                 return .failed("The JSON export could not be written: \(error.localizedDescription)")
             }
         }
     }
 
-    private static func atomicJSONDataWriter(_ data: Data, _ destination: URL) async throws {
-        // Atomic file I/O must not block the MainActor UI owner.
-        // swiftlint:disable:next no_task_detached
-        try await Task.detached(priority: .userInitiated) {
+    @concurrent nonisolated private static func writeJSONData(
+        _ data: Data,
+        _ destination: URL,
+        _ suggestedFilename: String?
+    ) async throws -> URL {
+        guard let suggestedFilename else {
             try data.write(to: destination, options: .atomic)
-        }.value
+            return destination
+        }
+        let folder = destination.deletingLastPathComponent()
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: folder.path, isDirectory: &isDirectory),
+            isDirectory.boolValue
+        else {
+            throw WorktreeAnnotationJSONWriteError.missingFolder
+        }
+        let stem = URL(fileURLWithPath: suggestedFilename).deletingPathExtension().lastPathComponent
+        for collisionIndex in 0..<1000 {
+            let filename =
+                collisionIndex == 0
+                ? suggestedFilename
+                : "\(stem)-\(collisionIndex + 1).json"
+            let candidate = folder.appendingPathComponent(filename)
+            let descriptor = Darwin.open(candidate.path, O_WRONLY | O_CREAT | O_EXCL, 0o600)
+            if descriptor < 0 {
+                if errno == EEXIST { continue }
+                if errno == ENOENT { throw WorktreeAnnotationJSONWriteError.missingFolder }
+                if errno == EACCES || errno == EPERM || errno == EROFS {
+                    throw WorktreeAnnotationJSONWriteError.permissionDenied
+                }
+                throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            }
+            var descriptorOpen = true
+            do {
+                try data.withUnsafeBytes { bytes in
+                    guard let base = bytes.baseAddress else { return }
+                    var written = 0
+                    while written < bytes.count {
+                        let count = Darwin.write(descriptor, base.advanced(by: written), bytes.count - written)
+                        if count < 0 && errno == EINTR { continue }
+                        if count <= 0 {
+                            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                        }
+                        written += count
+                    }
+                }
+                let closeResult = Darwin.close(descriptor)
+                descriptorOpen = false
+                guard closeResult == 0 else {
+                    throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                }
+                return candidate
+            } catch {
+                if descriptorOpen { _ = Darwin.close(descriptor) }
+                _ = Darwin.unlink(candidate.path)
+                throw error
+            }
+        }
+        throw WorktreeAnnotationJSONWriteError.tooManyCollisions
+    }
+}
+
+private enum WorktreeAnnotationJSONWriteError: LocalizedError {
+    case missingFolder
+    case permissionDenied
+    case tooManyCollisions
+
+    var errorDescription: String? {
+        switch self {
+        case .missingFolder: "The export folder no longer exists. Choose a folder and try again."
+        case .permissionDenied: "Permission to write in the export folder was denied. Choose a folder and try again."
+        case .tooManyCollisions: "The export folder contains too many files with this name."
+        }
     }
 }

@@ -96,7 +96,9 @@ struct BridgeProductFileSourceCurrentTests {
     func providerDerivesAvailableSourceFromAuthorityWithoutOpening() async throws {
         // Arrange
         let rootURL = FileManager.default.temporaryDirectory
-            .appending(path: "bridge-product-current-source-\(UUID().uuidString)")
+            .appending(path: "bridge-product-current-source-\(UUIDv7.generate().uuidString)")
+        try FileManager.default.createDirectory(at: rootURL, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootURL) }
         let worktree = Worktree(
             id: productFileSourceCurrentWorktreeId,
             repoId: productFileSourceCurrentRepoId,

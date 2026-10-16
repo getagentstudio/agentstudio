@@ -9,9 +9,22 @@ export type BridgeFileViewerSelectedCodeViewItem = BridgeWorkerCodeViewFileItem;
 export function bridgeFileViewerCodeViewItemsForPanelState(props: {
 	readonly openFileState: BridgeFileViewerCodePanelState;
 	readonly selectedCodeViewItem: BridgeFileViewerSelectedCodeViewItem | null;
+	readonly lastCompleteCodeViewItem?: BridgeFileViewerSelectedCodeViewItem | null;
 }): readonly (BridgeFileViewerSelectedCodeViewItem & CodeViewFileItem)[] {
 	if (props.selectedCodeViewItem !== null && isExactPierreFileItem(props.selectedCodeViewItem)) {
 		return [props.selectedCodeViewItem];
+	}
+	const retainedItem = props.lastCompleteCodeViewItem;
+	const demandedFile = props.openFileState;
+	if (
+		props.selectedCodeViewItem === null &&
+		(demandedFile.status === 'loading' || demandedFile.status === 'stale') &&
+		retainedItem != null &&
+		retainedItem.bridgeMetadata.itemId === demandedFile.fileId &&
+		retainedItem.bridgeMetadata.displayPath === demandedFile.path &&
+		isExactPierreFileItem(retainedItem)
+	) {
+		return [retainedItem];
 	}
 	return [];
 }

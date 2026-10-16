@@ -1,3 +1,4 @@
+import { bridgeRenderDispositionAdmissionPolicy } from '../demand/bridge-content-demand-policy.js';
 import { readBridgeCommWorkerAbsoluteNowMilliseconds } from './bridge-comm-worker-clock.js';
 import type { BridgeProductSurface } from './bridge-product-contract-primitives.js';
 import type { BridgeWorkerPierreRenderJob } from './bridge-worker-pierre-render-job.js';
@@ -8,6 +9,7 @@ import {
 	type BridgeWorkerRenderDispositionReceipt,
 	type BridgeWorkerRenderFulfillmentState,
 	type BridgeWorkerRenderReceiptIdentity,
+	type BridgeWorkerPaintReleasedReceipt,
 } from './bridge-worker-render-fulfillment.js';
 
 export interface BridgeWorkerRenderFulfillmentRegistryContext {
@@ -71,6 +73,13 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 	readonly #fulfillmentByItemId = new Map<string, BridgeWorkerRenderFulfillmentState>();
 	readonly #sourceChurnDispositionByItemId = new Map<string, 'retain' | 'retire'>();
 	readonly #sourceRevalidationItemIds = new Set<string>();
+	readonly #visibleItemIds = new Set<string>();
+	readonly #visibleQueuedLeaseByItemId = new Map<
+		string,
+		{ readonly attemptId: string; readonly expiresAtMilliseconds: number }
+	>();
+	readonly #deliveryProbeCountByItemId = new Map<string, number>();
+	readonly #exhaustedItemIds = new Set<string>();
 	readonly #now: () => number;
 	readonly #receiptLeaseDurationMilliseconds: number;
 	readonly #retryBackoffMilliseconds: number;
@@ -96,6 +105,12 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 		const windowKey = bridgeWorkerRenderWindowKeyForJob(props.job);
 		const operationCorrelationId = props.operationCorrelationId ?? null;
 		let existingState = this.#fulfillmentByItemId.get(props.job.itemId) ?? null;
+		if (existingState !== null && existingState.identity.windowKey !== windowKey) {
+			this.#deliveryProbeCountByItemId.delete(props.job.itemId);
+			this.#exhaustedItemIds.delete(props.job.itemId);
+			this.#visibleQueuedLeaseByItemId.delete(props.job.itemId);
+			this.#sourceChurnDispositionByItemId.delete(props.job.itemId);
+		}
 		if (
 			existingState !== null &&
 			existingState.identity.windowKey === windowKey &&
@@ -188,6 +203,15 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 		if (nextState === currentState) {
 			return Object.freeze({ state: currentState, status: 'duplicate' });
 		}
+		if (receipt.disposition === 'queued' && this.#visibleItemIds.has(receipt.itemId)) {
+			this.#armVisibleQueuedLease(nextState);
+		} else if (receipt.disposition !== 'queued') {
+			this.#visibleQueuedLeaseByItemId.delete(receipt.itemId);
+			if (receipt.disposition === 'painted') {
+				this.#deliveryProbeCountByItemId.delete(receipt.itemId);
+				this.#exhaustedItemIds.delete(receipt.itemId);
+			}
+		}
 		const sourceChurnDisposition = this.#sourceChurnDispositionByItemId.get(receipt.itemId);
 		this.#sourceChurnDispositionByItemId.delete(receipt.itemId);
 		if (sourceChurnDisposition === 'retire') {
@@ -199,18 +223,124 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 		return Object.freeze({ state: nextState, status: 'accepted' });
 	}
 
+	applyPaintRelease(
+		receipt: BridgeWorkerPaintReleasedReceipt,
+	): ApplyBridgeWorkerRenderDispositionResult {
+		const currentState = this.#fulfillmentByItemId.get(receipt.itemId) ?? null;
+		if (currentState === null) {
+			return Object.freeze({ reason: 'stale_submission', state: null, status: 'rejected' });
+		}
+		if (
+			currentState.submissionId !== receipt.submissionId ||
+			currentState.publicationId !== receipt.publicationId ||
+			currentState.workerDerivationEpoch !== receipt.workerDerivationEpoch ||
+			(currentState.activeAttempt !== null &&
+				currentState.activeAttempt.attemptId !== receipt.attemptId)
+		) {
+			return Object.freeze({ reason: 'stale_submission', state: currentState, status: 'rejected' });
+		}
+		if (currentState.stage !== 'painted') {
+			return Object.freeze({ reason: 'already_terminal', state: currentState, status: 'rejected' });
+		}
+		if (currentState.paintedResidency?.attemptId !== receipt.attemptId) {
+			return Object.freeze({ reason: 'stale_submission', state: currentState, status: 'rejected' });
+		}
+		let nextState: BridgeWorkerRenderFulfillmentState;
+		try {
+			nextState = reduceBridgeWorkerRenderFulfillment(currentState, receipt);
+		} catch (error) {
+			if (!isBridgeWorkerRenderReceiptRejectionError(error)) throw error;
+			return Object.freeze({ reason: 'stale_submission', state: currentState, status: 'rejected' });
+		}
+		this.#sourceRevalidationItemIds.delete(receipt.itemId);
+		this.#fulfillmentByItemId.set(receipt.itemId, nextState);
+		return Object.freeze({ state: nextState, status: 'accepted' });
+	}
+
+	updateVisibleItemIds(itemIds: readonly string[]): void {
+		this.#visibleItemIds.clear();
+		for (const itemId of itemIds) this.#visibleItemIds.add(itemId);
+		for (const itemId of this.#visibleQueuedLeaseByItemId.keys()) {
+			if (!this.#visibleItemIds.has(itemId)) this.#visibleQueuedLeaseByItemId.delete(itemId);
+		}
+		for (const itemId of this.#visibleItemIds) {
+			const state = this.#fulfillmentByItemId.get(itemId);
+			if (state?.stage === 'queued' && !this.#visibleQueuedLeaseByItemId.has(itemId)) {
+				this.#armVisibleQueuedLease(state);
+			}
+		}
+	}
+
+	expireVisibleQueuedLeases(atMilliseconds: number = this.#now()): {
+		readonly exhaustedItemIds: readonly string[];
+		readonly retryableItemIds: readonly string[];
+	} {
+		const exhaustedItemIds: string[] = [];
+		const retryableItemIds: string[] = [];
+		for (const [itemId, lease] of this.#visibleQueuedLeaseByItemId) {
+			if (atMilliseconds < lease.expiresAtMilliseconds) continue;
+			this.#visibleQueuedLeaseByItemId.delete(itemId);
+			const state = this.#fulfillmentByItemId.get(itemId);
+			if (state?.stage !== 'queued' || state.activeAttempt?.attemptId !== lease.attemptId) {
+				continue;
+			}
+			if (
+				(this.#deliveryProbeCountByItemId.get(itemId) ?? 0) >=
+				bridgeRenderDispositionAdmissionPolicy.maximumUnknownDeliveryProbeCount
+			) {
+				this.#exhaustPublication(state, atMilliseconds);
+				exhaustedItemIds.push(itemId);
+				continue;
+			}
+			this.#deliveryProbeCountByItemId.set(
+				itemId,
+				(this.#deliveryProbeCountByItemId.get(itemId) ?? 0) + 1,
+			);
+			this.#fulfillmentByItemId.set(
+				itemId,
+				reduceBridgeWorkerRenderFulfillment(state, {
+					...activeBridgeWorkerRenderReceiptIdentity(state),
+					atMilliseconds,
+					kind: 'receiptLease.expired',
+					retryAtMilliseconds: atMilliseconds + this.#retryBackoffMilliseconds,
+				}),
+			);
+			retryableItemIds.push(itemId);
+		}
+		return { exhaustedItemIds, retryableItemIds };
+	}
+
 	expireReceiptLeases(atMilliseconds: number = this.#now()): readonly string[] {
 		const expiredItemIds: string[] = [];
 		for (const [itemId, currentState] of this.#fulfillmentByItemId) {
 			const activeAttempt = currentState.activeAttempt;
 			if (
-				this.#sourceChurnDispositionByItemId.has(itemId) ||
 				activeAttempt === null ||
 				activeAttempt.highestDisposition !== null ||
 				atMilliseconds < activeAttempt.receiptLeaseExpiresAtMilliseconds
 			) {
 				continue;
 			}
+			const sourceChurnDisposition = this.#sourceChurnDispositionByItemId.get(itemId);
+			this.#sourceChurnDispositionByItemId.delete(itemId);
+			if (sourceChurnDisposition === 'retire') {
+				this.#sourceRevalidationItemIds.delete(itemId);
+				this.#fulfillmentByItemId.delete(itemId);
+				expiredItemIds.push(itemId);
+				continue;
+			}
+			if (
+				(this.#deliveryProbeCountByItemId.get(itemId) ?? 0) >=
+				bridgeRenderDispositionAdmissionPolicy.maximumUnknownDeliveryProbeCount
+			) {
+				this.#exhaustPublication(currentState, atMilliseconds);
+				expiredItemIds.push(itemId);
+				continue;
+			}
+			this.#deliveryProbeCountByItemId.set(
+				itemId,
+				(this.#deliveryProbeCountByItemId.get(itemId) ?? 0) + 1,
+			);
 			const nextState = reduceBridgeWorkerRenderFulfillment(currentState, {
 				...activeBridgeWorkerRenderReceiptIdentity(currentState),
 				atMilliseconds,
@@ -237,6 +367,8 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 	requeuePublicationsForSourceChurn(atMilliseconds: number = this.#now()): readonly string[] {
 		const requeuedItemIds: string[] = [];
 		for (const [itemId, currentState] of this.#fulfillmentByItemId) {
+			this.#visibleQueuedLeaseByItemId.delete(itemId);
+			if (currentState.stage === 'held' || currentState.stage === 'failed') continue;
 			if (currentState.stage === 'painted') {
 				this.#sourceChurnDispositionByItemId.delete(itemId);
 				const desiredState = reduceBridgeWorkerRenderFulfillment(currentState, {
@@ -280,6 +412,9 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 
 	retireRemovedItemsForSourceChurn(itemIds: readonly string[]): void {
 		for (const itemId of itemIds) {
+			this.#visibleQueuedLeaseByItemId.delete(itemId);
+			this.#deliveryProbeCountByItemId.delete(itemId);
+			this.#exhaustedItemIds.delete(itemId);
 			const currentState = this.#fulfillmentByItemId.get(itemId);
 			if (currentState?.activeAttempt?.highestDisposition === null) {
 				this.#sourceChurnDispositionByItemId.set(itemId, 'retire');
@@ -294,11 +429,8 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 	nextLifecycleWakeAtMilliseconds(): number | null {
 		let nextWakeAtMilliseconds: number | null = null;
 		for (const currentState of this.#fulfillmentByItemId.values()) {
-			const candidateWakeAtMilliseconds = this.#sourceChurnDispositionByItemId.has(
-				currentState.itemId,
-			)
-				? null
-				: currentState.stage === 'retry_wait'
+			const candidateWakeAtMilliseconds =
+				currentState.stage === 'retry_wait'
 					? currentState.retryAtMilliseconds
 					: currentState.activeAttempt?.highestDisposition === null
 						? currentState.activeAttempt.receiptLeaseExpiresAtMilliseconds
@@ -311,6 +443,11 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 				nextWakeAtMilliseconds = candidateWakeAtMilliseconds;
 			}
 		}
+		for (const lease of this.#visibleQueuedLeaseByItemId.values()) {
+			if (nextWakeAtMilliseconds === null || lease.expiresAtMilliseconds < nextWakeAtMilliseconds) {
+				nextWakeAtMilliseconds = lease.expiresAtMilliseconds;
+			}
+		}
 		return nextWakeAtMilliseconds;
 	}
 
@@ -318,10 +455,54 @@ export class BridgeWorkerRenderFulfillmentRegistry {
 		return this.#fulfillmentByItemId.get(itemId) ?? null;
 	}
 
+	retryExhaustedPublications(): readonly string[] {
+		const itemIds = [...this.#exhaustedItemIds];
+		for (const itemId of itemIds) {
+			this.#fulfillmentByItemId.delete(itemId);
+			this.#sourceChurnDispositionByItemId.delete(itemId);
+			this.#sourceRevalidationItemIds.delete(itemId);
+			this.#visibleQueuedLeaseByItemId.delete(itemId);
+			this.#deliveryProbeCountByItemId.delete(itemId);
+		}
+		this.#exhaustedItemIds.clear();
+		return itemIds;
+	}
+
 	resetPublications(): void {
 		this.#fulfillmentByItemId.clear();
 		this.#sourceChurnDispositionByItemId.clear();
 		this.#sourceRevalidationItemIds.clear();
+		this.#visibleQueuedLeaseByItemId.clear();
+		this.#deliveryProbeCountByItemId.clear();
+		this.#exhaustedItemIds.clear();
+	}
+
+	#exhaustPublication(state: BridgeWorkerRenderFulfillmentState, atMilliseconds: number): void {
+		const retryState = reduceBridgeWorkerRenderFulfillment(state, {
+			...activeBridgeWorkerRenderReceiptIdentity(state),
+			atMilliseconds,
+			kind: 'receiptLease.expired',
+			retryAtMilliseconds: atMilliseconds,
+		});
+		this.#fulfillmentByItemId.set(
+			state.itemId,
+			reduceBridgeWorkerRenderFulfillment(retryState, { kind: 'delivery.exhausted' }),
+		);
+		this.#exhaustedItemIds.add(state.itemId);
+	}
+
+	#armVisibleQueuedLease(state: BridgeWorkerRenderFulfillmentState): void {
+		if (
+			state.stage !== 'queued' ||
+			state.activeAttempt === null ||
+			this.#exhaustedItemIds.has(state.itemId)
+		) {
+			return;
+		}
+		this.#visibleQueuedLeaseByItemId.set(state.itemId, {
+			attemptId: state.activeAttempt.attemptId,
+			expiresAtMilliseconds: this.#now() + this.#receiptLeaseDurationMilliseconds,
+		});
 	}
 
 	#releaseRetryIfReady(

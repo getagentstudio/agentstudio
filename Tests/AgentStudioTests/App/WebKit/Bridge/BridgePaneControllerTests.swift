@@ -229,6 +229,7 @@ extension WebKitSerializedTests {
                 reviewSourceProvider: provider
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+            try await showReviewInNativeFixture(controller)
             let commandId = UUID()
             let artifact = DiffArtifact(
                 diffId: UUIDv7.generate(),

@@ -3,6 +3,7 @@ import Testing
 
 @testable import AgentStudioSharedComponents
 
+@MainActor
 @Suite(.serialized)
 struct SelectablePopoverKeyboardRouterTests {
     private let items = [

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
 import type { BridgeTelemetrySample } from '../../foundation/telemetry/bridge-telemetry-event.js';
+import { encodeBridgeWorkerViewRecoveryRetryCommand } from './bridge-comm-worker-protocol.js';
 import { makeReviewPublication } from './bridge-main-render-fulfillment-coordinator.test-support.js';
 import type { BridgePaneCommWorkerDispatcher } from './bridge-pane-comm-worker-session.js';
 import { createBridgePaneRuntime, type BridgePaneSessionPort } from './bridge-pane-runtime.js';
@@ -191,18 +192,24 @@ describe('Bridge pane runtime render disposition admission', () => {
 		runtime.dispose();
 	});
 
-	test('requests one pane worker replacement after the recovery probe times out', () => {
+	test('keeps the worker and fails only the Review view after its disposition probe times out', () => {
 		// Arrange
 		vi.useFakeTimers();
 		const dispatchedMessages: BridgeWorkerMainToServerMessage[] = [];
 		const requestWorkerReplacement = vi.fn();
+		let publishWorkerMessages:
+			| ((messages: readonly BridgeWorkerServerToMainMessage[]) => void)
+			| undefined;
 		const session: BridgePaneSessionPort = {
-			createDispatcher: (): BridgePaneCommWorkerDispatcher => ({
-				dispatch: (message): void => {
-					dispatchedMessages.push(message);
-				},
-				dispose: vi.fn(),
-			}),
+			createDispatcher: (props): BridgePaneCommWorkerDispatcher => {
+				publishWorkerMessages = props.publishWorkerMessages;
+				return {
+					dispatch: (message): void => {
+						dispatchedMessages.push(message);
+					},
+					dispose: vi.fn(),
+				};
+			},
 			dispose: vi.fn(),
 			installNativeBootstrap: vi.fn(),
 			requestWorkerReplacement,
@@ -210,6 +217,16 @@ describe('Bridge pane runtime render disposition admission', () => {
 		const runtime = createBridgePaneRuntime({
 			sessionFactory: (): BridgePaneSessionPort => session,
 		});
+		publishWorkerMessages?.([
+			{
+				direction: 'serverWorkerToMain',
+				kind: 'viewRecoveryStatus',
+				status: 'ready',
+				transferDescriptors: [],
+				view: { kind: 'review.metadata', subscriptionId: 'review-1' },
+				wireVersion: 1,
+			},
+		]);
 		const coordinator = runtime.surfaceClient('review').renderFulfillmentCoordinator;
 		for (let index = 1; index <= 2; index += 1) {
 			const publication = makeReviewPublication({
@@ -235,7 +252,32 @@ describe('Bridge pane runtime render disposition admission', () => {
 			expect(
 				dispatchedMessages.filter((message) => message.command === 'renderDisposition'),
 			).toHaveLength(2);
-			expect(requestWorkerReplacement).toHaveBeenCalledOnce();
+			expect(requestWorkerReplacement).not.toHaveBeenCalled();
+			expect(
+				runtime.surfaceClient('review').renderStore.getViewRecoveryStatus('review.metadata')
+					?.status,
+			).toBe('failedRetryable');
+			runtime.surfaceClient('review').send(
+				encodeBridgeWorkerViewRecoveryRetryCommand({
+					epoch: 2,
+					requestId: 'retry-review-render-probe',
+					view: { kind: 'review.metadata', subscriptionId: 'review-1' },
+				}),
+			);
+			const retryPublication = makeReviewPublication({
+				itemId: 'review-probe-retry-item',
+				publicationSequence: 3,
+			});
+			coordinator.acceptPublication(retryPublication);
+			coordinator.markPublicationQueued(retryPublication);
+			coordinator.bindPublicationItem({
+				finalItem: retryPublication.job.payload.item,
+				publicationItem: retryPublication.job.payload.item,
+				residency: 'replaced',
+			});
+			expect(
+				dispatchedMessages.filter((message) => message.command === 'renderDisposition'),
+			).toHaveLength(3);
 		} finally {
 			runtime.dispose();
 			vi.useRealTimers();

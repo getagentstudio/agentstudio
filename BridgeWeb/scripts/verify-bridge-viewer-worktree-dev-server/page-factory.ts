@@ -1,20 +1,32 @@
 import type { Page } from 'playwright';
 
 import type { ReviewMetadataBeforeContentProof } from '../verify-bridge-viewer-worktree-review-proof.ts';
-import { requireVerifierBrowser } from './browser-session.ts';
+import { observeVerifierStartupStep, requireVerifierBrowser } from './browser-session.ts';
 import type {
 	WorktreeBridgeTelemetrySampleProof,
 	WorktreeVerifierBrowserHelpers,
 } from './types.ts';
 
-export async function makeVerificationPage(): Promise<Page> {
-	const page = await requireVerifierBrowser().newPage({
-		deviceScaleFactor: 1,
-		viewport: {
-			width: 1728,
-			height: 980,
-		},
-	});
+export async function makeVerificationPage(
+	props: { readonly signal?: AbortSignal } = {},
+): Promise<Page> {
+	props.signal?.throwIfAborted();
+	const pagePromise = observeVerifierStartupStep(
+		'verifier page acquisition',
+		requireVerifierBrowser().newPage({
+			deviceScaleFactor: 1,
+			viewport: {
+				width: 1728,
+				height: 980,
+			},
+		}),
+	).value();
+	const page =
+		props.signal === undefined
+			? await pagePromise
+			: await raceVerifierPageAcquisition(pagePromise, props.signal);
+	page.setDefaultTimeout(0);
+	page.setDefaultNavigationTimeout(0);
 	const observedTelemetryBatchKeys = new Set<string>();
 	page.on('request', (request): void => {
 		if (request.method() !== 'POST') {
@@ -180,6 +192,33 @@ export async function makeVerificationPage(): Promise<Page> {
 		});
 	});
 	return page;
+}
+
+async function raceVerifierPageAcquisition(
+	pagePromise: Promise<Page>,
+	signal: AbortSignal,
+): Promise<Page> {
+	let rejectOnAbort: (() => void) | null = null;
+	const abortPromise = new Promise<never>((_resolve, reject): void => {
+		rejectOnAbort = (): void =>
+			reject(signal.reason ?? new Error('Verifier page acquisition aborted.'));
+		if (signal.aborted) {
+			rejectOnAbort();
+			return;
+		}
+		signal.addEventListener('abort', rejectOnAbort, { once: true });
+	});
+	try {
+		return await Promise.race([pagePromise, abortPromise]);
+	} catch (error: unknown) {
+		void pagePromise.then(
+			(page): Promise<void> => page.close().catch((): void => undefined),
+			(): void => undefined,
+		);
+		throw error;
+	} finally {
+		if (rejectOnAbort !== null) signal.removeEventListener('abort', rejectOnAbort);
+	}
 }
 
 function decodeTelemetryWorkerPost(value: unknown): {

@@ -212,11 +212,11 @@ struct AppIPCErrorCorrectionTests {
             #expect(
                 correction == [
                     "reason": .string("unknownCommand"),
-                    "fieldPath": .string("$.commandId"),
-                    "catalogMethod": .string("command.list"),
+                    "commandId": .string(unknownId),
+                    "closestMatches": .array([.string(scenario.commandId.rawValue)]),
                 ])
             let encodedUnknown = try encodedError(unknown)
-            #expect(!encodedUnknown.contains(unknownId))
+            #expect(encodedUnknown.contains(unknownId))
 
             let knownUnavailable = try await sendCommand(
                 fixture: scenario.fixture,

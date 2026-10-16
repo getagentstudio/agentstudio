@@ -170,7 +170,7 @@ endpoint or recorded-process evidence described in [Session Lifecycle](session_l
 
 ## Embedded Ghostty Host Composition
 
-`Ghostty.shared` remains the subsystem entrypoint. The local `Ghostty.App` type is now a thin composition root that wires four focused host-side responsibilities:
+AppDelegate selects and retains one `Ghostty.App` at startup. Consumers receive explicit engine availability or terminal lookup operations. The local `Ghostty.App` type wires four focused host-side responsibilities:
 
 - `Ghostty.AppHandle` owns `ghostty_app_t` and config lifetime.
 - `Ghostty.CallbackRouter` owns the C callback table (`wakeup_cb`, `action_cb`, clipboard callbacks, `close_surface_cb`) and reconstructs Swift objects from userdata.
@@ -262,7 +262,7 @@ UI consumers (search by CWD, breadcrumbs, grouping)
 ### Public Read API
 
 ```swift
-SurfaceManager.shared.workingDirectory(for: surfaceId) -> URL?
+surfaceManager.workingDirectory(for: surfaceId) -> URL?
 ```
 
 ---

@@ -11,7 +11,6 @@ struct FullDiskAccessHealthCheckTests {
     func deniedProtectedDataDoesNotCreateRetiredInboxNotification() {
         let appDelegate = makeAppDelegate()
         let result = FullDiskAccessHealthCheckResult(
-            documents: Self.outcome(.granted),
             protectedData: Self.outcome(.deniedEPERM)
         )
 
@@ -21,10 +20,9 @@ struct FullDiskAccessHealthCheckTests {
     }
 
     @Test
-    func documentsDenialWithProtectedDataGrantDoesNotAppendWarning() {
+    func protectedDataGrantDoesNotAppendWarning() {
         let appDelegate = makeAppDelegate()
         let result = FullDiskAccessHealthCheckResult(
-            documents: Self.outcome(.deniedEACCES),
             protectedData: Self.outcome(.granted)
         )
 
@@ -41,7 +39,6 @@ struct FullDiskAccessHealthCheckTests {
 
         appDelegate.applyFullDiskAccessHealthCheckResult(
             FullDiskAccessHealthCheckResult(
-                documents: Self.outcome(.granted),
                 protectedData: Self.outcome(.granted)
             ))
 
@@ -52,12 +49,10 @@ struct FullDiskAccessHealthCheckTests {
     func helperUsesInjectedProbe() {
         let result = FullDiskAccessHealthCheck.evaluate {
             FullDiskAccessHealthCheckResult(
-                documents: Self.outcome(.deniedEACCES),
                 protectedData: Self.outcome(.deniedEPERM)
             )
         }
 
-        #expect(result.documents.result == .deniedEACCES)
         #expect(result.protectedData.result == .deniedEPERM)
         #expect(result.isHealthy == false)
     }

@@ -91,7 +91,7 @@ struct SwiftLaneRollingDispatcherTests {
             BUILD_PATH=.build-coverage-probe
             TIMEOUT_SECONDS=60
             swift_package_sandbox_arguments() { :; }
-            swift_testing_bundle_path() { printf '/fixture/TestBundle.xctest\n'; }
+            swift_test_bundle_for_suite() { printf '/fixture/TestBundle.xctest\n'; }
             swift_testing_helper_path() { printf '/fixture/swiftpm-testing-helper\n'; }
             swift_testing_framework_path() { printf '/fixture/frameworks\n'; }
             run_swift_with_timeout() { printf 'ARG:%s\n' "$@"; }

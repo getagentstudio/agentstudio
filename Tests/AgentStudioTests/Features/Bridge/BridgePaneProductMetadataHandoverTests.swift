@@ -75,7 +75,8 @@ struct BridgePaneProductMetadataHandoverTests {
         let adapter = BridgeProductSchemeAdapter(
             session: context.harness.session,
             provider: context.provider,
-            productAdmissionGate: context.harness.productAdmission.gate
+            productAdmissionGate: context.harness.productAdmission.gate,
+            installationAdmissionGate: BridgeProductAdmissionGate()
         )
         let request = try bridgeProductMetadataStreamRequest(
             metadataStreamId: "metadata-half-open-replacement",

@@ -225,6 +225,7 @@ while IFS='=' read -r key raw_value; do
     JOURNEY_ROOT) journey_root="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_DATA_ROOT) journey_data_root="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_OBSERVABILITY_STATE_FILE) observability_state_file="$value" ;;
+    AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW) ipc_debug_escrow_path="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_ROOT) fixture_root="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_IDENTITY) fixture_identity="$value" ;;
     AGENTSTUDIO_BRIDGE_JOURNEY_FIXTURE_BASE_SHA) fixture_base_sha="$value" ;;
@@ -686,9 +687,15 @@ AGENTSTUDIO_OBSERVABILITY_STATE_FILE="$observability_state_file" \
   /bin/bash "$PROJECT_ROOT/scripts/verify-bridge-product-paint-correlation.sh"
 
 ipc_metadata="$state_data_dir/ipc/runtime.json"
-ipc_token="$state_data_dir/ipc/debug-token"
-if [ ! -f "$ipc_metadata" ] || [ ! -f "$ipc_token" ]; then
-  echo "Bridge packaged journey requires fresh one-shot authenticated IPC escrow" >&2
+case "${ipc_debug_escrow_path:-}" in
+  /*) ;;
+  *)
+    echo "Bridge packaged journey receipt requires an absolute AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW path" >&2
+    exit 1
+    ;;
+esac
+if [ ! -f "$ipc_metadata" ] || [ ! -s "$ipc_debug_escrow_path" ]; then
+  echo "Bridge packaged journey requires authenticated IPC escrow: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$ipc_debug_escrow_path" >&2
   exit 1
 fi
 
@@ -697,7 +704,7 @@ AGENTSTUDIO_BRIDGE_JOURNEY_PROOF_TOKEN="$state_proof_token" \
 AGENTSTUDIO_BRIDGE_JOURNEY_APP="$state_app" \
 /usr/bin/python3 - \
   "$ipc_metadata" \
-  "$ipc_token" \
+  "$ipc_debug_escrow_path" \
   "$fixture_root" \
   "$expected_file_count" \
   "$expected_review_diff_count" \
@@ -718,8 +725,9 @@ import socket
 import subprocess
 import sys
 import time
+import uuid
 
-metadata_path, token_path, fixture_root = sys.argv[1:4]
+metadata_path, escrow_path, fixture_root = sys.argv[1:4]
 expected_file_count = int(sys.argv[4])
 expected_review_diff_count = int(sys.argv[5])
 sentinel_paths = sys.argv[6:9]
@@ -743,10 +751,14 @@ with open(metadata_path, "r", encoding="utf-8") as file:
 socket_path = metadata.get("socketPath")
 if not isinstance(socket_path, str) or not socket_path:
     fail("Bridge packaged journey IPC metadata has no socketPath")
-with open(token_path, "r", encoding="utf-8") as file:
-    token = file.read().strip()
-if not token:
-    fail("Bridge packaged journey IPC token is empty")
+with open(escrow_path, "r", encoding="utf-8") as file:
+    escrow = json.load(file)
+token = escrow.get("token")
+if not isinstance(token, str) or not token:
+    fail("Bridge packaged journey AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW has no token")
+if (escrow.get("socketPath") != socket_path or not escrow.get("runtimeId")
+        or escrow.get("runtimeId") != metadata.get("runtimeId")):
+    fail("Bridge packaged journey AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW does not match IPC metadata")
 
 
 class Session:
@@ -923,7 +935,8 @@ def focus_foreground_pane(handle, label):
     activation = subprocess.run(["/usr/bin/open", "-a", candidate_app], check=False)
     if activation.returncode != 0:
         fail(f"{label} could not reactivate the packaged candidate")
-    session.request("pane.focus", {"handle": handle})
+    # ipc-catalog-15211f2b3.json: pane.focus requires a correlation UUID.
+    session.request("pane.focus", {"handle": handle, "correlationId": str(uuid.uuid4())})
     return wait_for(
         label,
         lambda: session.request("bridge.diff.renderState", {"handle": handle}),
@@ -935,8 +948,16 @@ def focus_foreground_pane(handle, label):
 
 try:
     login = session.request("auth.login", {"token": token})
-    if login.get("authenticated") is not True or os.path.exists(token_path):
-        fail("Bridge packaged journey IPC escrow was not authenticated and consumed exactly once")
+    # IPC v2 escrow is reusable until shutdown (IPC escrow and startup diagnostics).
+    if login.get("authenticated") is not True or not os.path.isfile(escrow_path):
+        fail("Bridge packaged journey IPC escrow was not authenticated or disappeared")
+    replay_session = Session(socket_path)
+    try:
+        replay_login = replay_session.request("auth.login", {"token": token})
+        if replay_login.get("authenticated") is not True:
+            fail("Bridge packaged journey IPC escrow replay did not authenticate")
+    finally:
+        replay_session.close()
 
     session.request("system.identify", {})
     capabilities = session.request("system.capabilities", {})
@@ -994,12 +1015,24 @@ try:
     )
     if file_pane is None:
         fail("Bridge packaged journey startup File pane is missing")
-    file_handle = f"pane:{file_pane['id']}"
+    # IPCTargetSelector.swift:19-21 uses bare UUIDs for canonical selectors.
+    file_handle = file_pane["id"]
 
-    review_open = session.request("bridge.diff.load", {"worktreeId": worktree_id})
+    # ipc-catalog-15211f2b3.json: bridge.diff.load requires a correlation UUID.
+    review_open = session.request("bridge.diff.load", {"worktreeId": worktree_id, "correlationId": str(uuid.uuid4())})
+    # AgentStudioIPCBridgeAdapter.swift:37/48 returns a canonical handle and paneId; verify their identity.
     review_handle = review_open.get("handle")
-    if not isinstance(review_handle, str) or review_handle == file_handle:
-        fail("Bridge packaged journey did not create two independent panes")
+    review_pane_id = review_open.get("paneId")
+    if (
+        not isinstance(review_handle, str)
+        or not isinstance(review_pane_id, str)
+        or review_handle != review_pane_id
+        or review_handle == file_handle
+    ):
+        fail(
+            "Bridge packaged journey Review pane identity mismatch: "
+            f"handle={review_handle!r} paneId={review_pane_id!r} fileHandle={file_handle!r}"
+        )
     focus_foreground_pane(review_handle, "Review pane foreground")
 
     source_hash_by_path = {}
@@ -1059,7 +1092,8 @@ try:
         == expected_review_diff_count,
     )
 
-    session.request("bridge.diff.refresh", {"handle": review_handle})
+    # ipc-catalog-15211f2b3.json: bridge.diff.refresh requires a correlation UUID.
+    session.request("bridge.diff.refresh", {"handle": review_handle, "correlationId": str(uuid.uuid4())})
 
     package = wait_for(
         "refreshed Review package",
@@ -1108,7 +1142,6 @@ try:
         ),
         attempts=1800,
     )
-    review_pane_id = review_handle.removeprefix("pane:")
     wait_for(
         "persisted symbolic comparison target selected through the UI",
         lambda: persisted_comparison_target(review_pane_id),
@@ -1138,12 +1171,14 @@ try:
     require_one_row_geometry(comparison_render)
 
     invalid_regex_query = "["
+    # ipc-catalog-15211f2b3.json: bridge.fileTree.search requires a correlation UUID.
     invalid_search = session.request(
         "bridge.fileTree.search",
         {
             "handle": review_handle,
             "searchText": invalid_regex_query,
             "searchMode": {"kind": "regex"},
+            "correlationId": str(uuid.uuid4()),
         },
     )
     require_control(invalid_search, "bridge.fileTree.search")
@@ -1151,12 +1186,14 @@ try:
         fail("Review invalid-regex Search receipt did not echo the entered candidate")
 
     maximum_search_text = "x" * 4096
+    # ipc-catalog-15211f2b3.json: bridge.fileTree.search requires a correlation UUID.
     maximum_search = session.request(
         "bridge.fileTree.search",
         {
             "handle": review_handle,
             "searchText": maximum_search_text,
             "searchMode": {"kind": "text"},
+            "correlationId": str(uuid.uuid4()),
         },
     )
     require_control(maximum_search, "bridge.fileTree.search")
@@ -1164,20 +1201,29 @@ try:
         fail("Review maximum-length Search receipt did not echo the admitted candidate")
 
     oversized_search_text = "x" * 4097
+    # ipc-catalog-15211f2b3.json: bridge.fileTree.search requires a correlation UUID.
     oversized_error = session.request_error(
         "bridge.fileTree.search",
         {
             "handle": review_handle,
             "searchText": oversized_search_text,
             "searchMode": {"kind": "text"},
+            "correlationId": str(uuid.uuid4()),
         },
     )
-    if oversized_error.get("code") != -32602:
-        fail("Review oversized Search was not rejected as invalid params")
+    # IPCJSONSchema+Strings.swift:37 and AgentStudioAppIPCRequestError.swift:86 identify the length rejection.
+    if (oversized_error.get("code") != -32602
+            or oversized_error.get("message") != "invalid params"
+            or oversized_error.get("data") != {
+                "reason": "outOfBounds", "fieldPath": "$.searchText",
+                "expected": "the declared string length bounds",
+            }):
+        fail("Review oversized Search was not rejected for the declared searchText length bound")
 
+    # ipc-catalog-15211f2b3.json: bridge.fileTree.search requires a correlation UUID.
     cleared_search = session.request(
         "bridge.fileTree.search",
-        {"handle": review_handle, "searchText": "", "searchMode": {"kind": "text"}},
+        {"handle": review_handle, "searchText": "", "searchMode": {"kind": "text"}, "correlationId": str(uuid.uuid4())},
     )
     require_control(cleared_search, "bridge.fileTree.search")
     if cleared_search.get("treeSearchText") != "":
@@ -1187,13 +1233,15 @@ try:
         item = items_by_path[relative_path]
         item_id = item.get("itemId")
         query = os.path.basename(relative_path)
+        # ipc-catalog-15211f2b3.json: bridge.fileTree.search requires a correlation UUID.
         search = session.request(
             "bridge.fileTree.search",
-            {"handle": review_handle, "searchText": query, "searchMode": {"kind": "text"}},
+            {"handle": review_handle, "searchText": query, "searchMode": {"kind": "text"}, "correlationId": str(uuid.uuid4())},
         )
         require_control(search, "bridge.fileTree.search")
         if search.get("treeSearchText") != query:
             fail(f"Review {position} search receipt is stale: {search}")
+        # ipc-catalog-15211f2b3.json: bridge.fileTree.setFilter requires a correlation UUID.
         filter_result = session.request(
             "bridge.fileTree.setFilter",
             {
@@ -1205,28 +1253,34 @@ try:
                     "showBinary": True,
                     "showLarge": True,
                 },
+                "correlationId": str(uuid.uuid4()),
             },
         )
         require_filter_control(filter_result, "review")
+        # ipc-catalog-15211f2b3.json: bridge.fileTree.revealPath requires a correlation UUID.
         reveal = session.request(
-            "bridge.fileTree.revealPath", {"handle": review_handle, "path": relative_path}
+            "bridge.fileTree.revealPath", {"handle": review_handle, "path": relative_path, "correlationId": str(uuid.uuid4())}
         )
         require_control(reveal, "bridge.fileTree.revealPath", item_id=item_id, path=relative_path)
+        # ipc-catalog-15211f2b3.json: bridge.diff.selectFile requires a correlation UUID.
         selected = session.request(
-            "bridge.diff.selectFile", {"handle": review_handle, "itemId": item_id}
+            "bridge.diff.selectFile", {"handle": review_handle, "itemId": item_id, "correlationId": str(uuid.uuid4())}
         )
         if selected.get("selected") is not True or selected.get("itemId") != item_id:
             fail(f"Review {position} select failed: {selected}")
+        # ipc-catalog-15211f2b3.json: bridge.diff.scrollToFile requires a correlation UUID.
         scroll = session.request(
-            "bridge.diff.scrollToFile", {"handle": review_handle, "itemId": item_id}
+            "bridge.diff.scrollToFile", {"handle": review_handle, "itemId": item_id, "correlationId": str(uuid.uuid4())}
         )
         require_control(scroll, "bridge.diff.scrollToFile", item_id=item_id)
+        # ipc-catalog-15211f2b3.json: bridge.diff.collapseFile requires a correlation UUID.
         collapsed = session.request(
-            "bridge.diff.collapseFile", {"handle": review_handle, "itemId": item_id}
+            "bridge.diff.collapseFile", {"handle": review_handle, "itemId": item_id, "correlationId": str(uuid.uuid4())}
         )
         require_control(collapsed, "bridge.diff.collapseFile", item_id=item_id)
+        # ipc-catalog-15211f2b3.json: bridge.diff.expandFile requires a correlation UUID.
         expanded = session.request(
-            "bridge.diff.expandFile", {"handle": review_handle, "itemId": item_id}
+            "bridge.diff.expandFile", {"handle": review_handle, "itemId": item_id, "correlationId": str(uuid.uuid4())}
         )
         require_control(expanded, "bridge.diff.expandFile", item_id=item_id)
 
@@ -1267,6 +1321,7 @@ try:
         >= expected_file_count,
     )
 
+    # ipc-catalog-15211f2b3.json: bridge.fileTree.setFilter requires a correlation UUID.
     file_filter_result = session.request(
         "bridge.fileTree.setFilter",
         {
@@ -1275,13 +1330,15 @@ try:
                 "surface": "files",
                 "categoryFilter": "all",
             },
+            "correlationId": str(uuid.uuid4()),
         },
     )
     require_filter_control(file_filter_result, "files")
 
     def reveal_final_file():
+        # ipc-catalog-15211f2b3.json: bridge.fileTree.revealPath requires a correlation UUID.
         return session.request(
-            "bridge.fileTree.revealPath", {"handle": file_handle, "path": sentinel_paths[-1]}
+            "bridge.fileTree.revealPath", {"handle": file_handle, "path": sentinel_paths[-1], "correlationId": str(uuid.uuid4())}
         )
 
     final_reveal = wait_for(
@@ -1290,12 +1347,14 @@ try:
         lambda value: value.get("status") == "accepted" and value.get("path") == sentinel_paths[-1],
     )
     require_control(final_reveal, "bridge.fileTree.revealPath", path=sentinel_paths[-1])
+    # ipc-catalog-15211f2b3.json: bridge.fileTree.search requires a correlation UUID.
     final_search = session.request(
         "bridge.fileTree.search",
         {
             "handle": file_handle,
             "searchText": os.path.basename(sentinel_paths[-1]),
             "searchMode": {"kind": "text"},
+            "correlationId": str(uuid.uuid4()),
         },
     )
     require_control(final_search, "bridge.fileTree.search")
@@ -1322,11 +1381,13 @@ try:
         snapshot = session.request("bridge.telemetry.snapshot", {"handle": handle})
         if snapshot.get("kind") != "report":
             fail(f"Bridge telemetry snapshot unavailable for {handle}: {snapshot}")
-        flushed = session.request("bridge.telemetry.flush", {"handle": handle})
+        # ipc-catalog-15211f2b3.json: bridge.telemetry.flush requires a correlation UUID.
+        flushed = session.request("bridge.telemetry.flush", {"handle": handle, "correlationId": str(uuid.uuid4())})
         if flushed.get("kind") != "report" or flushed.get("drained") is not True:
             fail(f"Bridge telemetry did not drain/reopen for {handle}: {flushed}")
 
-    session.request("pane.close", {"handle": review_handle})
+    # ipc-catalog-15211f2b3.json: pane.close requires a correlation UUID.
+    session.request("pane.close", {"handle": review_handle, "correlationId": str(uuid.uuid4())})
     marker = os.environ.get("AGENTSTUDIO_BRIDGE_JOURNEY_MARKER", "")
     proof_token = os.environ.get("AGENTSTUDIO_BRIDGE_JOURNEY_PROOF_TOKEN", "")
     if not marker or not proof_token:

@@ -10,16 +10,14 @@ import {
 	type BridgeCommWorkerSelectedFileViewContentReadyPreparationRequest,
 } from './bridge-comm-worker-command-handler.js';
 import type { BridgeCommWorkerPort } from './bridge-comm-worker-entry.js';
-import {
-	abortAllBridgeCommWorkerFileContentPreparations,
-	abortBridgeCommWorkerFileContentPreparation,
-} from './bridge-comm-worker-file-content-cancellation.js';
+import { ensureBridgeCommWorkerFileMetadataInBackground } from './bridge-comm-worker-file-background-warmup.js';
+import { createBridgeCommWorkerFileContentCancellation } from './bridge-comm-worker-file-content-cancellation.js';
 import { BridgeCommWorkerFileDisplayEventAuthority } from './bridge-comm-worker-file-display-event-authority.js';
-import { BridgeCommWorkerFileMetadataProjection } from './bridge-comm-worker-file-metadata-projection.js';
 import {
 	applyBridgeCommWorkerFileQueryUpdateCommand,
 	BridgeCommWorkerFileQueryProjection,
 } from './bridge-comm-worker-file-query-projection.js';
+import { settleBridgeCommWorkerExhaustedFileRender } from './bridge-comm-worker-file-render-fulfillment-lifecycle.js';
 import { enqueueSelectedBridgeWorkerFileViewContentReadyPreparation } from './bridge-comm-worker-file-view-preparation.js';
 import { createEmptyBridgeCommWorkerFileViewRuntimeSource } from './bridge-comm-worker-file-view-runtime-source.js';
 import { createBridgeCommWorkerInstalledReviewSource } from './bridge-comm-worker-installed-review-source.js';
@@ -31,6 +29,7 @@ import {
 import { BridgeCommWorkerPanePresentationAuthority } from './bridge-comm-worker-pane-presentation.js';
 import { applyBridgeCommWorkerPostResponseOwnerEffects } from './bridge-comm-worker-post-response-owner-effects.js';
 import { drainBridgeCommWorkerPreparations } from './bridge-comm-worker-preparation-drain.js';
+import { installBridgeCommWorkerProductBatchRuntime } from './bridge-comm-worker-product-batch-runtime-install.js';
 import { callCurrentFileSourceWithTelemetry } from './bridge-comm-worker-product-control-runtime.js';
 import { BridgeCommWorkerProductController } from './bridge-comm-worker-product-controller.js';
 import {
@@ -38,17 +37,11 @@ import {
 	type BridgeCommWorkerRenderFulfillmentSurface,
 } from './bridge-comm-worker-render-fulfillment-lifecycle-driver.js';
 import {
-	buildBridgeCommWorkerReviewCandidateReadyPublication,
-	buildBridgeCommWorkerReviewCandidateFailedPublication,
-	buildBridgeCommWorkerReviewCandidateStartedPublication,
-} from './bridge-comm-worker-review-candidate-ready.js';
-import {
 	bridgeWorkerComparisonTargetsContentOpen,
 	createBridgeWorkerComparisonTargetsQueryRunner,
 	settleBridgeWorkerComparisonTargetsControlRequest,
 } from './bridge-comm-worker-review-comparison-target-query.js';
 import { createBridgeCommWorkerReviewDemandScheduling } from './bridge-comm-worker-review-demand-scheduling.js';
-import { BridgeCommWorkerReviewMetadataApplicator } from './bridge-comm-worker-review-metadata-applicator.js';
 import {
 	BridgeCommWorkerReviewDisplayLifecyclePublisher,
 	BridgeCommWorkerReviewOperationLifecycleTelemetry,
@@ -61,7 +54,9 @@ import {
 } from './bridge-comm-worker-runtime-command-routing.js';
 import {
 	publishBridgeCommWorkerPostCommitFailureBestEffort,
-	rejectUninstalledBridgeFileContentOpen,
+	resolveBridgeCommWorkerFileContentOpen,
+	resolveBridgeCommWorkerPreparationPump,
+	resolveBridgeCommWorkerReviewContentOpen,
 	rejectUninstalledBridgeProductControl,
 	scheduleDefaultBridgeRenderFulfillmentWake,
 } from './bridge-comm-worker-runtime-defaults.js';
@@ -93,15 +88,15 @@ import {
 	recordBridgeCommWorkerPanePresentationTelemetry,
 	recordBridgeCommWorkerTaskTelemetry,
 } from './bridge-comm-worker-telemetry.js';
+import { retryBridgeCommWorkerViewDependencies } from './bridge-comm-worker-view-recovery-retry.js';
+import { bridgeProductStreamHealthEvent } from './bridge-product-stream-health-event.js';
 import { recordBridgeWorkerOutstandingPublicationTelemetry } from './bridge-render-disposition-telemetry.js';
-import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
 import {
 	isBridgeWorkerFileViewContentMetadata,
 	bridgeWorkerMainToServerMessageSchema,
 	bridgeWorkerAnnotationProjectionConvergenceEventSchema,
+	type BridgeWorkerServerToMainMessage,
 } from './bridge-worker-contracts.js';
-import type { BridgeWorkerFileViewContentOpen } from './bridge-worker-file-view-content-fetch.js';
-import type { BridgeWorkerReviewContentOpen } from './bridge-worker-review-content-fetch.js';
 
 export type {
 	BridgeCommWorkerPreparationDrain,
@@ -113,30 +108,15 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	props: RegisterBridgeCommWorkerRuntimePortProtocolProps,
 ): void {
 	const createSequence = props.createSequence ?? createBridgeWorkerRuntimeSequenceCounter();
-	const pump =
-		props.pump ??
-		createWorkerContentPreparationPump({
-			maxSliceMs: props.maxPreparationSliceMs ?? 8,
-			...(props.now === undefined ? {} : { now: props.now }),
-			...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
-		});
+	const pump = resolveBridgeCommWorkerPreparationPump(props);
 	const schedulePreparationDrain =
 		props.schedulePreparationDrain ?? scheduleDefaultBridgeCommWorkerPreparationDrain;
 	const scheduleRenderFulfillmentWake =
 		props.scheduleRenderFulfillmentWake ?? scheduleDefaultBridgeRenderFulfillmentWake;
 	let sendProductControl = props.sendProductControl ?? rejectUninstalledBridgeProductControl;
 	const productTransport = props.productTransport;
-	const openFileViewContent: BridgeWorkerFileViewContentOpen =
-		props.openFileViewContent ??
-		(productTransport === undefined
-			? rejectUninstalledBridgeFileContentOpen
-			: (descriptor, abortSignal, operationCorrelationId) =>
-					productTransport.openContent(descriptor, abortSignal, operationCorrelationId));
-	const openReviewContent: BridgeWorkerReviewContentOpen | undefined =
-		props.openReviewContent ??
-		(productTransport === undefined
-			? undefined
-			: (descriptor, abortSignal) => productTransport.openContent(descriptor, abortSignal));
+	const openFileViewContent = resolveBridgeCommWorkerFileContentOpen(props);
+	const openReviewContent = resolveBridgeCommWorkerReviewContentOpen(props);
 	const openComparisonTargetsContent = bridgeWorkerComparisonTargetsContentOpen(productTransport);
 	const productControlTimeoutMilliseconds = props.productControlTimeoutMilliseconds ?? 5000;
 	const preparationCompletions: Promise<void>[] = [];
@@ -166,12 +146,9 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	});
 	let fileViewRuntimeSource: BridgeCommWorkerFileViewRuntimeSource =
 		createEmptyBridgeCommWorkerFileViewRuntimeSource();
-	const fileContentAbortControllersByItemId = new Map<string, AbortController>();
-	const fileContentPreparationGenerationByItemId = new Map<string, number>();
-	const fileContentCancellation = {
-		abortControllersByItemId: fileContentAbortControllersByItemId,
-		generationByItemId: fileContentPreparationGenerationByItemId,
-	};
+	const fileContentCancellation = createBridgeCommWorkerFileContentCancellation();
+	const fileContentAbortControllersByItemId = fileContentCancellation.abortControllersByItemId;
+	const fileContentPreparationGenerationByItemId = fileContentCancellation.generationByItemId;
 	let latestSelectedFilePreparationRequest: BridgeCommWorkerSelectedFileViewContentReadyPreparationRequest | null =
 		null;
 	const runtimeTelemetryClient = props.telemetryClient;
@@ -200,14 +177,11 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	};
 	const retriedSelectedFilePreparationRequests =
 		new WeakSet<BridgeCommWorkerSelectedFileViewContentReadyPreparationRequest>();
-	const abortFileContentPreparation = (itemId: string): void =>
-		abortBridgeCommWorkerFileContentPreparation({ ...fileContentCancellation, itemId });
-	const abortAllFileContentPreparations = (): void =>
-		abortAllBridgeCommWorkerFileContentPreparations(fileContentCancellation);
+	const abortFileContentPreparation = fileContentCancellation.abort;
+	const abortAllFileContentPreparations = fileContentCancellation.abortAll;
 	let activeFileWorkerDerivationEpoch: number | null = null;
 	let hasAcceptedFileSource = false;
 	let activeReviewWorkerDerivationEpoch: number | null = null;
-	let reviewMetadataApplicator: BridgeCommWorkerReviewMetadataApplicator | null = null;
 	const reviewOperationLifecycleTelemetry = new BridgeCommWorkerReviewOperationLifecycleTelemetry(
 		props.telemetryClient,
 	);
@@ -217,13 +191,15 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 		activeFileWorkerDerivationEpoch: () => activeFileWorkerDerivationEpoch,
 		activeReviewWorkerDerivationEpoch: () => activeReviewWorkerDerivationEpoch,
 		activeViewerMode: () => activeViewerMode,
+		currentReviewWorkerDerivationEpoch: () =>
+			productTransport?.workerDerivationEpoch('review') ?? null,
+		readReviewDisplayPublisher: () => reviewDisplayLifecyclePublisher,
 		createSequence,
 		publish: (message): void => port.postMessage(message),
 		telemetryClient: props.telemetryClient,
 	});
-	const publishUpdatingChrome = (): void => {
+	const publishUpdatingChrome = (): void =>
 		reviewRenderPublicationAuthority.publishUpdatingChrome(panePresentationAuthority.snapshot);
-	};
 	const fileDisplayEventAuthority = new BridgeCommWorkerFileDisplayEventAuthority({
 		createSequence,
 	});
@@ -267,20 +243,18 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 		null;
 	let currentFileMetadataSelectedPath: string | null | undefined;
 	let productController: BridgeCommWorkerProductController | null = null;
+	let productBatchApplication: ReturnType<
+		typeof installBridgeCommWorkerProductBatchRuntime
+	> | null = null;
 	let currentFileSourceWarmupKey: string | null = null;
 	let releasedReviewWarmupKey: string | null = null;
 	let reviewWarmupInFlightKey: string | null = null;
-	const startFileMetadataInBackground = (): void => {
-		void productController?.ensureFileSource().catch((): void => {
-			port.postMessage(
-				buildBridgeWorkerFileMetadataFailureHealthEvent(
-					productTransport === undefined
-						? undefined
-						: bridgeProductMetadataStreamHealthDiagnostic(productTransport),
-				),
-			);
+	const startFileMetadataInBackground = (): void =>
+		ensureBridgeCommWorkerFileMetadataInBackground({
+			controller: productController,
+			productTransport,
+			publish: (message): void => port.postMessage(message),
 		});
-	};
 	const requestReviewBackgroundWarmup = (warmupKey: string): void => {
 		const controller = productController;
 		if (
@@ -362,7 +336,6 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 		usesProductTransport: productTransport !== undefined,
 		workSignal: (): AbortSignal => panePresentationAuthority.workSignal,
 	});
-
 	const publishReviewMetadataPostCommitFailure = (): void =>
 		publishBridgeCommWorkerPostCommitFailureBestEffort((): void => {
 			port.postMessage(buildBridgeWorkerRuntimeDegradedHealthEvent());
@@ -405,8 +378,10 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 		if (sourceBoundOperation.generation !== selectedOperation.generation) {
 			abortAllFileContentPreparations();
 		}
-		const metadata = selectedState.contentMetadataByItemId.get(request.itemId) ?? null;
 		const contentRequest = fileViewRuntimeSource.contentRequestsByItemId?.get(request.itemId);
+		if (fileContentCancellation.retainOrSupersede(request.itemId, contentRequest, request.epoch))
+			return;
+		const metadata = selectedState.contentMetadataByItemId.get(request.itemId) ?? null;
 		if (!isBridgeWorkerFileViewContentMetadata(metadata) || contentRequest === undefined) return;
 		selectedFileLifecycleTelemetry.descriptorReady(sourceBoundOperation);
 		selectedFileContentOperationController.advance(
@@ -450,10 +425,21 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			workerDerivationEpoch,
 		});
 		if (ticket.enqueued) {
+			const cancellationCompletion = fileContentCancellation.trackSettlement({
+				request: contentRequest,
+				abortController,
+				completion: ticket.completion,
+				demandEpoch: request.epoch,
+				itemId: request.itemId,
+				onSupersessionSettled: (): void => {
+					resumeLatestSelectedFileViewContentReadyPreparation();
+					requestPreparationDrain();
+				},
+			});
 			const trackedCompletion = trackSelectedFilePreparationCompletion({
 				abortController,
 				abortControllerByItemId: fileContentAbortControllersByItemId,
-				completion: ticket.completion,
+				completion: cancellationCompletion,
 				isPaneWorkAdmitted: (): boolean => panePresentationAuthority.admitsWork,
 				isRequestLatest: (): boolean => latestSelectedFilePreparationRequest === request,
 				onClearLatest: (): void => {
@@ -489,9 +475,26 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			: { renderFulfillmentContext: props.renderFulfillmentContext }),
 		...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
 		onReviewMetadataPostCommitFailure: publishReviewMetadataPostCommitFailure,
+		onReviewVisibleRenderExhausted: (): void =>
+			productController?.failCurrentMetadataRender('review'),
+		onFileVisibleRenderExhausted: (itemIds, store): void => {
+			if (
+				settleBridgeCommWorkerExhaustedFileRender({
+					controller: selectedFileContentOperationController,
+					createSequence,
+					itemIds,
+					port,
+					store,
+					telemetry: selectedFileLifecycleTelemetry,
+				})
+			)
+				selectedFileContentOperationStore = null;
+			productController?.failCurrentMetadataRender('file');
+		},
 		scheduleSelectedReviewContentReadyPreparation:
 			reviewDemandScheduling.scheduleSelectedContentReadyPreparation,
 		scheduleReviewMetadataReset: reviewDemandScheduling.scheduleMetadataReset,
+		releaseExpiredReviewPublication: reviewDemandScheduling.releaseExpiredPublication,
 		scheduleSelectedFileViewContentReadyPreparation,
 		scheduleDemandExecution: (request): void => {
 			shouldRequestDrainAfterMessage =
@@ -541,7 +544,116 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 		retryAnnotationProjection: (surface): void => {
 			productController?.retryAnnotationProjection(surface);
 		},
+		retryView: (view): void => {
+			const viewRetry = productTransport?.retryView?.(view.subscriptionId) ?? Promise.resolve();
+			void Promise.all([
+				viewRetry,
+				retryBridgeCommWorkerViewDependencies(productController, view.kind),
+			]).catch((): void => {
+				port.postMessage({
+					direction: 'serverWorkerToMain',
+					kind: 'viewRecoveryStatus',
+					status: 'failedRetryable',
+					transferDescriptors: [],
+					view,
+					wireVersion: 1,
+				});
+				port.postMessage(buildBridgeWorkerRuntimeDegradedHealthEvent());
+			});
+		},
 	});
+	if (productTransport !== undefined) {
+		productBatchApplication = installBridgeCommWorkerProductBatchRuntime({
+			applyCommentCatalog: (catalog, surface): void => {
+				productController?.acceptInstalledCommentCatalog(catalog, surface);
+			},
+			applyFileRuntimeMutation: (epoch, mutation) =>
+				handler.applyFileViewRuntimeMutation({ epoch, mutation }),
+			prepareReviewRuntimeApplication: (application) => {
+				let messages: readonly BridgeWorkerServerToMainMessage[] = [];
+				const transaction = reviewOperationLifecycleTelemetry.wrapApplication(application, () =>
+					(() => {
+						const prepared = handler.prepareReviewMetadataApplication(application);
+						messages = prepared.messages;
+						return prepared;
+					})(),
+				);
+				return {
+					commit: transaction.commit,
+					messages,
+					rollback: transaction.rollback,
+					runPostCommitEffects: transaction.runPostCommitEffects,
+				};
+			},
+			beforeApplyFile: (view): void => {
+				// Source mutation can schedule selected content before didInstallFile runs.
+				activeFileWorkerDerivationEpoch = productTransport.workerDerivationEpoch('file');
+				const source = view.memberStatus.source;
+				const warmupKey = `${source.sourceId}:${source.subscriptionGeneration.toString()}`;
+				if (currentFileSourceWarmupKey !== warmupKey) {
+					const replacesAcceptedSource = hasAcceptedFileSource;
+					currentFileSourceWarmupKey = warmupKey;
+					abortAllFileContentPreparations();
+					if (replacesAcceptedSource) {
+						cancelSelectedFileContentOperation();
+						selectedFileContentOperationStore = null;
+					}
+				}
+				const mutation = view.runtimeMutation;
+				if (mutation?.kind === 'delta') {
+					for (const itemId of mutation.contentRequestRemovals) {
+						abortFileContentPreparation(itemId);
+					}
+					for (const request of mutation.contentRequestUpserts) {
+						abortFileContentPreparation(request.itemId);
+					}
+				}
+			},
+			didInstallFile: (view, begin, certified): void => {
+				const workerDerivationEpoch = productTransport.workerDerivationEpoch('file');
+				productController?.acceptInstalledFileBatch({
+					certified,
+					source: view.memberStatus.source,
+					subscriptionId: begin.subscriptionId,
+					workerDerivationEpoch,
+				});
+				productController?.refreshInstalledFileAnnotationPlacement();
+				hasAcceptedFileSource = true;
+				publishUpdatingChrome();
+				if (
+					currentFileSourceWarmupKey !== null &&
+					(view.contentRequests.some(
+						(request) => request.path === currentFileMetadataSelectedPath,
+					) ||
+						view.displayTreeRows.length === 0)
+				) {
+					requestReviewBackgroundWarmup(currentFileSourceWarmupKey);
+				}
+				if (view.runtimeMutation?.kind === 'reset') {
+					resumeLatestSelectedFileViewContentReadyPreparation();
+				}
+				if (pump.getPendingWorkIds().length > 0) requestPreparationDrain();
+			},
+			didInstallReview: (_presentation, begin): void => {
+				activeReviewWorkerDerivationEpoch = productTransport.workerDerivationEpoch('review');
+				reviewDemandScheduling.updateWorkerDerivationEpoch(activeReviewWorkerDerivationEpoch);
+				productController?.acceptInstalledReviewBatch({
+					subscriptionId: begin.subscriptionId,
+					workerDerivationEpoch: activeReviewWorkerDerivationEpoch,
+				});
+				startFileMetadataInBackground();
+			},
+			fileDisplayAuthority: fileDisplayEventAuthority,
+			fileQueryProjection,
+			createSequence,
+			productTransport,
+			publishMessage: (message): void => port.postMessage(message),
+			publishReviewDisplay: publishReviewDisplayPatches,
+			reportResnapshotFailure: (): void =>
+				port.postMessage(buildBridgeWorkerRuntimeDegradedHealthEvent()),
+			reportReviewPostCommitFailure: publishReviewMetadataPostCommitFailure,
+		});
+	}
 	const renderFulfillmentLifecycleDriver = new BridgeCommWorkerRenderFulfillmentLifecycleDriver({
 		advanceBySurface: {
 			file: handler.advanceFileRenderFulfillmentLifecycle,
@@ -556,6 +668,9 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 	advanceRenderFulfillmentLifecycle = (surface): void =>
 		renderFulfillmentLifecycleDriver.advance(surface);
 	if (productTransport !== undefined) {
+		productTransport.setMetadataStreamHealthSink?.((observation): void => {
+			port.postMessage(bridgeProductStreamHealthEvent(observation));
+		});
 		productTransport.setPaneSurfaceSelectionFrameSink?.((frame): void => {
 			port.postMessage(bridgeWorkerNativeSurfaceSelectionRequestFromMetadataFrame(frame));
 		});
@@ -613,50 +728,6 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 			}
 			publishUpdatingChrome();
 		});
-		const fileMetadataProjection = new BridgeCommWorkerFileMetadataProjection();
-		const activeReviewMetadataApplicator = new BridgeCommWorkerReviewMetadataApplicator({
-			applyRuntimeSource: (application) =>
-				reviewOperationLifecycleTelemetry.wrapApplication(application, () => {
-					const transaction = handler.prepareReviewMetadataApplication(application);
-					return {
-						commit: transaction.commit,
-						rollback: transaction.rollback,
-						runPostCommitEffects: (): void => {
-							transaction.runPostCommitEffects();
-							for (const message of transaction.messages) {
-								try {
-									port.postMessage(message);
-								} catch {
-									publishReviewMetadataPostCommitFailure();
-								}
-							}
-							try {
-								if (pump.getPendingWorkIds().length > 0) requestPreparationDrain();
-							} catch {
-								publishReviewMetadataPostCommitFailure();
-							}
-						},
-					};
-				}),
-			currentWorkerDerivationEpoch: () => productTransport.workerDerivationEpoch('review'),
-			publishCandidateReady: (publication): void => {
-				port.postMessage(
-					buildBridgeCommWorkerReviewCandidateReadyPublication(publication, createSequence),
-				);
-			},
-			publishCandidateFailed: (publication): void => {
-				port.postMessage(
-					buildBridgeCommWorkerReviewCandidateFailedPublication(publication, createSequence),
-				);
-			},
-			publishCandidateStarted: (publication): void => {
-				port.postMessage(
-					buildBridgeCommWorkerReviewCandidateStartedPublication(publication, createSequence),
-				);
-			},
-			publishDisplayPatches: publishReviewDisplayPatches,
-		});
-		reviewMetadataApplicator = activeReviewMetadataApplicator;
 		const installedProductController = new BridgeCommWorkerProductController({
 			...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
 			callCurrentFileSource: () =>
@@ -671,7 +742,10 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				admittedViewerMode = mode;
 			},
 			onAnnotationCatalog: (publication): void => {
-				for (const message of bridgeCommWorkerAnnotationCatalogStagingEvents(publication)) {
+				for (const message of bridgeCommWorkerAnnotationCatalogStagingEvents({
+					catalog: publication.catalog,
+					surface: publication.surface,
+				})) {
 					port.postMessage(message);
 				}
 			},
@@ -690,61 +764,15 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				port.postMessage(buildBridgeWorkerFileMetadataInterestFailureHealthEvent());
 			},
 			onFileSourceUnavailable: (): void => {
+				const displayProjection = fileQueryProjection.applyDisplayPatches([
+					{ operation: 'upsert', payload: { state: 'noSource' }, slice: 'fileStatus' },
+				]);
+				for (const message of fileDisplayEventAuthority.publish({
+					epoch: productTransport.workerDerivationEpoch('file'),
+					patches: displayProjection.patches,
+				}))
+					port.postMessage(message);
 				requestReviewBackgroundWarmup('file-source-unavailable');
-			},
-			onFileMetadataEvent: (event, workerDerivationEpoch): void => {
-				activeFileWorkerDerivationEpoch = workerDerivationEpoch;
-				publishUpdatingChrome();
-				const projection = fileMetadataProjection.apply(event);
-				if (event.eventKind === 'file.sourceAccepted') {
-					currentFileSourceWarmupKey = `${event.source.sourceId}:${event.source.subscriptionGeneration.toString()}`;
-					const replacesAcceptedSource = hasAcceptedFileSource;
-					hasAcceptedFileSource = true;
-					abortAllFileContentPreparations();
-					if (replacesAcceptedSource) {
-						cancelSelectedFileContentOperation();
-						selectedFileContentOperationStore = null;
-					}
-				} else if (event.eventKind === 'file.invalidated') {
-					if (event.fileId === null) {
-						abortAllFileContentPreparations();
-					} else {
-						abortFileContentPreparation(event.fileId);
-					}
-				} else if (
-					event.eventKind === 'file.descriptorReady' &&
-					projection.runtimeMutation !== null
-				) {
-					abortFileContentPreparation(event.fileId);
-				}
-				const displayProjection = fileQueryProjection.applyDisplayPatches(projection.patches);
-				if (displayProjection.patches.length > 0) {
-					for (const message of fileDisplayEventAuthority.publish({
-						epoch: workerDerivationEpoch,
-						patches: displayProjection.patches,
-					})) {
-						port.postMessage(message);
-					}
-				}
-				if (projection.runtimeMutation !== null) {
-					const messages = handler.applyFileViewRuntimeMutation({
-						epoch: workerDerivationEpoch,
-						mutation: projection.runtimeMutation,
-					});
-					for (const message of messages) port.postMessage(message);
-				}
-				if (
-					currentFileSourceWarmupKey !== null &&
-					((event.eventKind === 'file.descriptorReady' &&
-						projection.runtimeMutation !== null &&
-						event.path === currentFileMetadataSelectedPath) ||
-						(event.eventKind === 'file.treeWindow' &&
-							event.finalWindow &&
-							event.totalRowCount === 0))
-				) {
-					requestReviewBackgroundWarmup(currentFileSourceWarmupKey);
-				}
-				if (pump.getPendingWorkIds().length > 0) requestPreparationDrain();
 			},
 			onFileMetadataFailure: (_error, workerDerivationEpoch): void => {
 				activeFileWorkerDerivationEpoch = null;
@@ -756,7 +784,7 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				latestSelectedFilePreparationRequest = null;
 				// A failed delivery retires preparation authority, not the last complete display.
 				const displayProjection = fileQueryProjection.applyDisplayPatches([
-					{ operation: 'upsert', payload: { state: 'stale' }, slice: 'fileStatus' },
+					{ operation: 'upsert', payload: { state: 'failed' }, slice: 'fileStatus' },
 				]);
 				for (const message of fileDisplayEventAuthority.publish({
 					epoch: workerDerivationEpoch,
@@ -773,22 +801,11 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 					),
 				);
 			},
-			onReviewMetadataEvent: (event, workerDerivationEpoch) => {
-				const receipt = activeReviewMetadataApplicator.apply(event, workerDerivationEpoch);
-				reviewRenderPublicationAuthority.recordReviewPublicationIdentity(
-					activeReviewMetadataApplicator.admittedPublicationIdentity(),
-				);
-				publishUpdatingChrome();
-				if (receipt !== null && receipt !== undefined) {
-					startFileMetadataInBackground();
-				}
-				return receipt;
-			},
 			onReviewMetadataFailure: (_error, workerDerivationEpoch): void => {
 				installedReviewSource.handleMetadataFailure(_error);
 				publishUpdatingChrome();
 				const failureDisposition =
-					activeReviewMetadataApplicator.handleMetadataFailure(workerDerivationEpoch);
+					productBatchApplication?.handleMetadataFailure(workerDerivationEpoch) ?? 'noActive';
 				if (failureDisposition === 'noActive') {
 					publishReviewDisplayPatches({
 						patches: [
@@ -842,6 +859,9 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				: null;
 		const messages =
 			renderDispositionApplication?.messages ?? handler.handleMessage(parsedMessage.data);
+		if (parsedMessage.data.command === 'viewport' && parsedMessage.data.surface === 'review') {
+			advanceRenderFulfillmentLifecycle('review');
+		}
 		if (parsedMessage.data.command === 'reviewPublicationInstalled') {
 			installedReviewSource.recordInstallation(parsedMessage.data);
 		}
@@ -925,12 +945,16 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 				if (transfer === undefined) port.postMessage(message);
 				else port.postMessage(message, [...transfer]);
 			},
+			publishSessionSuspect: (message): void => port.postMessage(message),
 			productControlTimeoutMilliseconds,
 			productController,
 			productTransport,
 			publishReviewMetadataInterests: reviewDemandScheduling.publishCurrentMetadataInterests,
-			reviewMetadataApplicator,
+			reviewSuccessorSettlementOwner: productBatchApplication,
 			sendProductControl,
+			...(props.renderFulfillmentContext === undefined
+				? {}
+				: { sessionIdentity: props.renderFulfillmentContext }),
 			setActiveComparisonTargetsRequestId: (requestId): void => {
 				activeComparisonTargetsProductControlRequestId = requestId;
 			},
@@ -955,6 +979,8 @@ export function registerBridgeCommWorkerRuntimePortProtocol(
 					}
 				},
 				releaseReviewPosition: reviewDemandScheduling.applyPublishedDisposition,
+				readmitReviewPaintRelease: (receipt): void =>
+					reviewDemandScheduling.readmitPaintRelease(receipt.itemId),
 				receiptResults: renderDispositionApplication.receiptResults,
 				settleFileDisposition: (receipt) =>
 					settleAcceptedSelectedFileRenderDisposition({

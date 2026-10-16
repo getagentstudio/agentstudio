@@ -2,19 +2,43 @@ import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
-struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
-    let code: Int
-    let message: String
-    let data: JSONValue?
+package struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
+    package let code: Int
+    package let message: String
+    package let data: JSONValue?
 
-    init(code: Int, message: String, data: JSONValue? = nil) {
+    package init(code: Int, message: String, data: JSONValue? = nil) {
         self.code = code
         self.message = message
         self.data = data
     }
 
+    package static func invalidCommandArguments(_ correction: IPCSchemaValidationError) -> Self {
+        .init(
+            code: -32_602, message: "invalid arguments",
+            data: .object([
+                "reason": .string("invalidArguments"), "fieldPath": .string(correction.fieldPath),
+                "expected": .string(correction.expected),
+            ]))
+    }
+
+    package static func unknownCommand(commandId: String, closestMatches: [String]) -> Self {
+        .init(
+            code: -32_003, message: "unsupported capability",
+            data: .object([
+                "reason": .string("unknownCommand"), "commandId": .string(commandId),
+                "closestMatches": .array(closestMatches.prefix(5).map(JSONValue.string)),
+            ]))
+    }
+
     static let unauthenticated = Self(code: -32_001, message: "unauthenticated")
-    static let unauthorized = Self(code: -32_002, message: "unauthorized")
+    static let unauthorized = Self(
+        code: -32_002, message: "unauthorized", data: .object(["reason": .string("unauthorized")])
+    )
+    static let connectionBusy = Self(
+        code: -32_005, message: "unavailable",
+        data: .object(["reason": .string("connectionBusy")])
+    )
     static let methodNotFound = Self(
         code: -32_601,
         message: "method not found",
@@ -29,10 +53,16 @@ struct AgentStudioAppIPCRequestError: Error, Equatable, Sendable {
 }
 
 extension AgentStudioAppIPCRequestError {
-    init(_ error: Error) {
+    package init(_ error: Error) {
         switch error {
+        case let requestError as Self:
+            self = requestError
         case let authorizationError as AuthorizationError:
             self.init(authorizationError)
+        case let refusal as AppIPCPaneClaimError:
+            self.init(
+                code: -32_001, message: "unauthenticated",
+                data: .object(["reason": .string(refusal.reason.rawValue)]))
         case let queryError as AppIPCQueryError:
             self.init(queryError.reason)
         case let layoutError as AppIPCLayoutError:
@@ -45,6 +75,10 @@ extension AgentStudioAppIPCRequestError {
             self.init(bridgeError.reason)
         case let sessionsError as AppIPCSessionsError:
             self.init(sessionsError.reason)
+        case let paneContextError as AppIPCPaneContextError:
+            self.init(paneContextError)
+        case is IPCPaneNumericEncodingError:
+            self = Self(code: -32_603, message: "internal error", data: .object(["reason": .string("internalError")]))
         case let uiPresentationError as AppIPCUIPresentationError:
             self.init(uiPresentationError.reason)
         case let authError as AgentStudioIPCAuthenticationError:
@@ -74,6 +108,31 @@ extension AgentStudioAppIPCRequestError {
         default:
             self = Self(code: -32_603, message: "internal error")
         }
+    }
+
+    private init(_ error: AppIPCPaneContextError) {
+        var details: [String: JSONValue] = ["reason": .string(error.reason.rawValue)]
+        if let field = error.field { details["field"] = .string(field) }
+        if let staleness = error.staleness {
+            do {
+                details["staleness"] = try JSONRPCCodec.encodeJSONValue(staleness)
+            } catch {
+                self = Self(
+                    code: -32_603, message: "internal error", data: .object(["reason": .string("internalError")]))
+                return
+            }
+        }
+        let code: Int
+        switch error.reason {
+        case .invalidField: code = -32_602
+        case .tooLarge: code = -32_008
+        case .notOwnPane: code = -32_002
+        case .unavailable: code = -32_005
+        case .paneGone, .sourceNotInView: code = -32_004
+        case .internalError: code = -32_603
+        case .bindingRequired, .conflict, .notSender, .noticeAlreadyRead, .stale: code = -32_007
+        }
+        self.init(code: code, message: error.reason.rawValue, data: .object(details))
     }
 
     /// A frame this process composed itself overflowed the outbound bound.
@@ -218,6 +277,10 @@ extension AgentStudioAppIPCRequestError {
                 ]))
         case .ingestionUnavailable:
             self = Self(code: -32_005, message: "sessions ingestion unavailable")
+        case .queueFull:
+            self = Self(
+                code: -32_005, message: "sessions queue full",
+                data: .object(["reason": .string(IPCAgentConnectionRefusalReason.queueFull.rawValue)]))
         case .validationRejected:
             self = Self(code: -32_007, message: "validation rejected")
         }

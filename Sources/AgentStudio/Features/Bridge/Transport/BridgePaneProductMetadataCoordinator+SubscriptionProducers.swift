@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 
 private struct BridgeWorktreeAnnotationSubscriptionOpenRequest {
@@ -8,22 +9,13 @@ private struct BridgeWorktreeAnnotationSubscriptionOpenRequest {
     let surface: BridgeProductSurface
 }
 
-struct BridgeWorktreeAnnotationEnqueueRequest: Sendable {
-    let event: BridgeProductWorktreeAnnotationEvent
-    let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
-    let operationCorrelationID: String
-    let productAdmission: BridgeProductAdmissionContext
-    let session: BridgeProductSession
-    let subscriptionID: String
-    let subscriptionKind: BridgeProductSubscriptionKind
-}
-
-private struct BridgeReviewMetadataDeliveryContext {
-    let activeStream: BridgePaneProductMetadataCoordinator.ActiveStream
-    let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
-    let productAdmission: BridgeProductAdmissionContext
+private struct BridgeFileSurfaceAttemptBootstrapContext: Sendable {
+    let attempt: BridgeFileSurfaceReconciler.Attempt
     let subscription: BridgeProductSubscriptionSnapshot
-    let traceContext: BridgeTraceContext?
+    let activeStream: BridgePaneProductMetadataCoordinator.ActiveStream
+    let productAdmission: BridgeProductAdmissionContext
+    let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+    let fileOutcomeAdmission: BridgePaneRefreshWorkAdmission
 }
 
 struct BridgePaneProductMetadataNativeAdapter: Sendable {
@@ -44,20 +36,14 @@ struct BridgePaneProductMetadataNativeAdapter: Sendable {
         ) async -> Void
 
     let open: Operation
-    let update: Operation
     let cancel: Cancellation
-    let interestBootstrapAdmission: BridgeMetadataInterestBootstrapAdmission
 
     init(
         open: @escaping Operation,
-        update: @escaping Operation,
-        cancel: @escaping Cancellation,
-        interestBootstrapAdmission: BridgeMetadataInterestBootstrapAdmission = .afterBootstrap
+        cancel: @escaping Cancellation
     ) {
         self.open = open
-        self.update = update
         self.cancel = cancel
-        self.interestBootstrapAdmission = interestBootstrapAdmission
     }
 }
 
@@ -133,93 +119,237 @@ extension BridgePaneProductMetadataCoordinator {
         _ subscription: BridgeProductSubscriptionSnapshot,
         activeStream: ActiveStream,
         productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
-    ) {
+        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
+        fileSurfaceAttempt suppliedFileSurfaceAttempt: BridgeFileSurfaceReconciler.Attempt? = nil
+    ) async {
+        let fileOutcomeAdmission: BridgePaneRefreshWorkAdmission?
+        if subscription.subscriptionKind == .fileMetadata {
+            guard let admission = acquireFileOutcomeOrDefer(subscription) else { return }
+            fileOutcomeAdmission = admission
+        } else {
+            fileOutcomeAdmission = nil
+        }
+        var fileSurfaceAttempt = suppliedFileSurfaceAttempt
+        if subscription.subscriptionKind == .fileMetadata, fileSurfaceAttempt == nil,
+            let inputBasis = await fileSurfaceInputBasis(
+                for: subscription,
+                activeStream: activeStream
+            )
+        {
+            let action: BridgeFileSurfaceReconciler.Action
+            if await fileSurfaceReconciler.currentInputBasis == inputBasis {
+                action = await fileSurfaceReconciler.beginAttempt(inputBasis: inputBasis)
+            } else {
+                action = await fileSurfaceReconciler.inputsChanged(to: inputBasis)
+            }
+            switch action {
+            case .start(let attempt), .restart(_, let attempt):
+                fileSurfaceAttempt = attempt
+            case .completed, .rest, .failed:
+                return
+            }
+        }
+        let selectedFileSurfaceAttempt = fileSurfaceAttempt
+        let fileSurfaceAttemptContext = makeFileSurfaceAttemptContext(
+            attempt: selectedFileSurfaceAttempt, subscription: subscription, activeStream: activeStream,
+            productAdmission: productAdmission,
+            workAdmissions: (foregroundWorkAdmission, fileOutcomeAdmission)
+        )
+        let executionContext = BridgePaneProductMetadataProducerExecutionContext(
+            foregroundWorkAdmission: foregroundWorkAdmission, metadataLease: activeStream.lease,
+            productAdmission: productAdmission, session: activeStream.session,
+            fileSurfaceAttempt: selectedFileSurfaceAttempt)
         openedSourceSubscriptionIds.remove(subscription.subscriptionId)
+        // A competing demand attempt can defer this start. Consume the pending
+        // reopen only when this actor actually registers its bootstrap task.
+        if subscription.subscriptionKind == .fileMetadata {
+            deferredOpenSubscriptionIds.remove(subscription.subscriptionId)
+        }
         producerTaskLifecycle.startBootstrapTask(
             subscriptionId: subscription.subscriptionId,
             subscriptionKind: subscription.subscriptionKind,
-            executionContext: .init(
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                productAdmission: productAdmission,
-                session: activeStream.session
-            ),
-            taskFinished: { [weak self] subscriptionId, taskId, completion in
-                await self?.bootstrapProducerTaskFinished(
+            executionContext: executionContext,
+            taskFinished: { [weak self] subscriptionId, taskId, completion, error in
+                guard let self else { return }
+                await self.bootstrapProducerTaskFinished(
                     subscriptionId: subscriptionId,
                     taskId: taskId,
-                    completion: completion
+                    completion: completion,
+                    error: error,
+                    fileSurfaceAttemptContext: fileSurfaceAttemptContext
                 )
             },
             operation: { traceContext in
-                guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-                    throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-                }
-                let application = try self.nativeApplicationRegistry.application(
-                    for: subscription.subscriptionKind
-                )
-                try await application.adapter.open(
-                    self,
-                    subscription,
-                    activeStream,
-                    productAdmission,
-                    foregroundWorkAdmission,
-                    traceContext,
-                    application.registration.surface
-                )
-                guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-                    throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-                }
-                await self.recordSourceOpened(
+                try await self.openSubscriptionAndApplyRetainedDemand(
+                    subscription, activeStream: activeStream, executionContext: executionContext,
+                    traceContext: traceContext)
+            }
+        )
+    }
+
+    private func openSubscriptionAndApplyRetainedDemand(
+        _ subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream,
+        executionContext: BridgePaneProductMetadataProducerExecutionContext,
+        traceContext: BridgeTraceContext?
+    ) async throws {
+        let productAdmission = executionContext.productAdmission
+        let foregroundWorkAdmission = executionContext.foregroundWorkAdmission
+        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
+            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
+        }
+        let application = try self.nativeApplicationRegistry.application(
+            for: subscription.subscriptionKind
+        )
+        try await application.adapter.open(
+            self,
+            subscription,
+            activeStream,
+            productAdmission,
+            foregroundWorkAdmission,
+            traceContext,
+            application.registration.surface
+        )
+        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
+            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
+        }
+        await self.recordSourceOpened(
+            subscriptionId: subscription.subscriptionId,
+            activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission
+        )
+        if subscription.subscriptionKind == .fileMetadata {
+            if let scope = await activeStream.session.acceptedViewScope(
+                subscriptionId: subscription.subscriptionId
+            ) {
+                await self.applyAcceptedFileViewDemand(
                     subscriptionId: subscription.subscriptionId,
-                    activeStream: activeStream,
-                    productAdmission: productAdmission,
-                    foregroundWorkAdmission: foregroundWorkAdmission
+                    expectedHandle: scope.handle,
+                    expectedRevision: scope.revision,
+                    forceRecapture: true,
+                    productAdmission: productAdmission
                 )
             }
+        } else if subscription.subscriptionKind == .reviewMetadata {
+            _ = try await self.publishReviewViewSnapshot(
+                subscriptionId: subscription.subscriptionId,
+                productAdmission: productAdmission
+            )
+        }
+    }
+
+    func fileSurfaceInputBasis(
+        for subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream
+    ) async -> BridgeFileSurfaceInputBasis? {
+        guard let source = subscription.subscription.fileMetadataSource else { return nil }
+        let acceptedScope = await activeStream.session.acceptedViewScope(
+            subscriptionId: subscription.subscriptionId
+        )
+        return .admitted(source: source, scope: acceptedScope?.scope)
+    }
+
+    func retryFailedFileSurface(productAdmission: BridgeProductAdmissionContext) async {
+        guard let activeStream,
+            activeStream.productAdmission.matches(productAdmission),
+            productAdmission.withValidAdmission({ true }) == true,
+            let subscriptionId = subscriptionKindById.keys.sorted().first(where: {
+                subscriptionKindById[$0] == .fileMetadata
+            }),
+            let subscription = await activeStream.session.subscriptionSnapshot(
+                subscriptionId: subscriptionId
+            ),
+            let foregroundWorkAdmission = refreshWorkAdmissionSource.acquire()
+        else { return }
+        guard case .start(let attempt) = await fileSurfaceReconciler.retry() else { return }
+        await startSubscriptionOpen(
+            subscription,
+            activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission,
+            fileSurfaceAttempt: attempt
         )
     }
 
     private func openWorktreeAnnotationSubscription(
         _ request: BridgeWorktreeAnnotationSubscriptionOpenRequest
     ) async throws {
-        try await annotationSource.open(
-            subscription: request.subscription,
-            surface: request.surface,
-            delivery: .init(
-                enqueue: { event, operationCorrelationID in
-                    guard request.foregroundWorkAdmission.withValidAdmission({ true }) == true else {
+        let producerID = UUIDv7.generate()
+        guard let worktreeID = await annotationSource.admittedWorktreeID(),
+            let view = await request.activeStream.session.awaitAcceptedViewScope(
+                subscriptionId: request.subscription.subscriptionId
+            ),
+            case .object(let scopeMembers) = view.scope,
+            case .string(worktreeID)? = scopeMembers["worktreeId"],
+            case .array? = scopeMembers["sessionIds"]
+        else { throw WorktreeAnnotationServiceError.unavailable }
+        try await annotationSource.acceptBatchScope(
+            handle: view.handle,
+            worktreeID: worktreeID,
+            scopeRevision: view.revision
+        )
+        let session = request.activeStream.session
+        let subscriptionID = request.subscription.subscriptionId
+        let productAdmission = request.productAdmission
+        let foregroundWorkAdmission = request.foregroundWorkAdmission
+        do {
+            try await annotationSource.openBatch(
+                handle: view.handle, producerID: producerID,
+                snapshotRequired: { await session.viewSnapshotRequired(subscriptionId: subscriptionID) },
+                deliver: { catalogBatch, mode in
+                    guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
                         throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
                     }
-                    return try await Self.enqueueAnnotationEvent(
-                        .init(
-                            event: event,
-                            foregroundWorkAdmission: request.foregroundWorkAdmission,
-                            operationCorrelationID: operationCorrelationID,
-                            productAdmission: request.productAdmission,
-                            session: request.activeStream.session,
-                            subscriptionID: request.subscription.subscriptionId,
-                            subscriptionKind: request.subscription.subscriptionKind
-                        )
+                    let sealOutcome = try await session.sealCommentCatalogBatch(
+                        subscriptionId: subscriptionID,
+                        catalogBatch: catalogBatch,
+                        mode: mode,
+                        productAdmission: productAdmission
                     )
-                },
-                makeProspectiveMetadataFrame: { event, operationCorrelationID in
-                    try Self.makeProspectiveMetadataFrame(
-                        event: event,
-                        operationCorrelationID: operationCorrelationID,
-                        stream: request.activeStream.correlation,
-                        subscription: request.subscription
+                    guard sealOutcome == .completed else { return sealOutcome }
+                    await annotationSource.recordSealedCommentCatalogBatch(
+                        handle: view.handle,
+                        producerID: producerID,
+                        batch: catalogBatch
                     )
-                },
-                waitUntilObserved: { sequence in
-                    await request.activeStream.session.waitUntilProducerFrameSequenceObserved(
-                        for: request.activeStream.lease,
-                        sequence: sequence,
-                        productAdmission: request.productAdmission,
-                        foregroundWorkAdmission: request.foregroundWorkAdmission
-                    )
-                }
-            )
+                    switch await session.awaitViewEmissionCompletion(for: view.viewDomain, handle: view.handle) {
+                    case .completed, .resnapshotRequired:
+                        return .completed
+                    case .retired:
+                        throw WorktreeAnnotationServiceError.staleSourceEpoch
+                    }
+                })
+        } catch {
+            await annotationSource.releaseProducerBatchScope(handle: view.handle, producerID: producerID)
+            throw error
+        }
+        await annotationSource.releaseProducerBatchScope(handle: view.handle, producerID: producerID)
+    }
+
+    private func acquireFileOutcomeOrDefer(
+        _ subscription: BridgeProductSubscriptionSnapshot
+    ) -> BridgePaneRefreshWorkAdmission? {
+        guard let admission = refreshWorkAdmissionSource.acquireFileSurfaceOutcome() else {
+            openedSourceSubscriptionIds.remove(subscription.subscriptionId)
+            deferredOpenSubscriptionIds.insert(subscription.subscriptionId)
+            return nil
+        }
+        return admission
+    }
+
+    private func makeFileSurfaceAttemptContext(
+        attempt: BridgeFileSurfaceReconciler.Attempt?,
+        subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream,
+        productAdmission: BridgeProductAdmissionContext,
+        workAdmissions: (foreground: BridgePaneRefreshWorkAdmission, outcome: BridgePaneRefreshWorkAdmission?)
+    ) -> BridgeFileSurfaceAttemptBootstrapContext? {
+        guard let attempt, let outcomeAdmission = workAdmissions.outcome else { return nil }
+        return .init(
+            attempt: attempt, subscription: subscription, activeStream: activeStream,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: workAdmissions.foreground, fileOutcomeAdmission: outcomeAdmission
         )
     }
 
@@ -234,70 +364,31 @@ extension BridgePaneProductMetadataCoordinator {
             subscription: subscription,
             productAdmission: productAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission
-        ) { event in
-            try await self.enqueueFileMetadataEvent(
-                event,
-                subscription: subscription,
-                activeStream: activeStream,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                traceContext: traceContext
-            )
-        }
-    }
-
-    private func updateFileMetadataSubscription(
-        _ subscription: BridgeProductSubscriptionSnapshot,
-        activeStream: ActiveStream,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        traceContext: BridgeTraceContext?
-    ) async throws {
-        try await fileMetadataSource.update(
-            subscription: subscription,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission
-        ) { event in
-            try await self.enqueueFileMetadataEvent(
-                event,
-                subscription: subscription,
-                activeStream: activeStream,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                traceContext: traceContext
-            )
-        }
-    }
-
-    private func enqueueFileMetadataEvent(
-        _ event: BridgeProductFileMetadataEvent,
-        subscription: BridgeProductSubscriptionSnapshot,
-        activeStream: ActiveStream,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        traceContext: BridgeTraceContext?
-    ) async throws {
-        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-        }
-        try await Self.enqueue(
-            event: event,
-            subscriptionId: subscription.subscriptionId,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            session: activeStream.session
-        )
-        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-        }
-        await recordEnqueued(event, traceContext: traceContext)
-        if case .sourceAccepted = event {
-            await recordSourceOpened(
+        ) { fact in
+            _ = try await self.publishFileViewCapture(
                 subscriptionId: subscription.subscriptionId,
-                activeStream: activeStream,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
+                productAdmission: productAdmission
             )
+            // Source acceptance precedes enumeration and open completion. Its
+            // recovery capture must not hold source opening behind the receiver.
+            if case .sourceAccepted = fact { return }
+            guard
+                let view = await activeStream.session.acceptedViewScope(
+                    subscriptionId: subscription.subscriptionId),
+                let demand = try? BridgeProductViewScopeContract.fileDemand(from: view.scope),
+                let capture = await self.fileMetadataSource.captureKeyedSnapshot(
+                    subscriptionId: subscription.subscriptionId,
+                    demand: .init(
+                        admissionSequence: view.admissionSequence, handle: view.handle,
+                        scopeRevision: view.revision, state: demand),
+                    productAdmission: productAdmission), capture.isEnumerationComplete
+            else { return }
+            switch await activeStream.session.awaitViewEmissionCompletion(for: view.viewDomain, handle: view.handle) {
+            case .completed:
+                return
+            case .resnapshotRequired, .retired:
+                throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
+            }
         }
     }
 
@@ -311,19 +402,7 @@ extension BridgePaneProductMetadataCoordinator {
         try await reviewMetadataSource.open(
             subscription: subscription,
             productAdmission: productAdmission
-        ) { event, emittedAdmission in
-            try await self.enqueueReviewMetadataEvent(
-                event,
-                emittedAdmission: emittedAdmission,
-                context: .init(
-                    activeStream: activeStream,
-                    foregroundWorkAdmission: foregroundWorkAdmission,
-                    productAdmission: productAdmission,
-                    subscription: subscription,
-                    traceContext: traceContext
-                )
-            )
-        }
+        )
         await replayCommittedReviewPublicationIfPresent(
             productAdmission: productAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission,
@@ -331,174 +410,145 @@ extension BridgePaneProductMetadataCoordinator {
         )
     }
 
-    private func updateReviewMetadataSubscription(
-        _ subscription: BridgeProductSubscriptionSnapshot,
-        activeStream: ActiveStream,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        traceContext: BridgeTraceContext?
-    ) async throws {
-        try await reviewMetadataSource.update(
-            subscription: subscription,
-            productAdmission: productAdmission
-        ) { event, emittedAdmission in
-            try await self.enqueueReviewMetadataEvent(
-                event,
-                emittedAdmission: emittedAdmission,
-                context: .init(
-                    activeStream: activeStream,
-                    foregroundWorkAdmission: foregroundWorkAdmission,
-                    productAdmission: productAdmission,
-                    subscription: subscription,
-                    traceContext: traceContext
-                )
-            )
-        }
-    }
-
-    private func enqueueReviewMetadataEvent(
-        _ sealedEvent: BridgeProductSealedMetadataApplicationEvent<BridgeProductReviewMetadataEvent>,
-        emittedAdmission: BridgeProductAdmissionContext,
-        context: BridgeReviewMetadataDeliveryContext
-    ) async throws -> BridgeProductProducerEnqueueResult {
-        let event = sealedEvent.event
-        guard context.foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-        }
-        guard emittedAdmission.matches(context.productAdmission),
-            await isReviewPublicationCurrent(event.publicationId, emittedAdmission)
-        else {
-            throw CancellationError()
-        }
-        let result = try await Self.enqueue(
-            sealedEvent: sealedEvent,
-            subscriptionId: context.subscription.subscriptionId,
-            productAdmission: emittedAdmission,
-            foregroundWorkAdmission: context.foregroundWorkAdmission,
-            session: context.activeStream.session
-        )
-        guard context.foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-        }
-        await recordEnqueued(event, traceContext: context.traceContext)
-        if case .enqueued(let frame) = result {
-            // A Review publication can exceed the shared queue; pace its windows at the consumer.
-            guard
-                await context.activeStream.session.waitUntilProducerFrameSequenceObserved(
-                    for: context.activeStream.lease,
-                    sequence: frame.sequence,
-                    productAdmission: emittedAdmission,
-                    foregroundWorkAdmission: context.foregroundWorkAdmission
-                )
-            else {
-                throw CancellationError()
-            }
-        }
-        guard context.foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-            throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-        }
-        guard activeStream?.lease == context.activeStream.lease,
-            emittedAdmission.matches(context.productAdmission),
-            await isReviewPublicationCurrent(event.publicationId, emittedAdmission)
-        else {
-            throw CancellationError()
-        }
-        return result
-    }
-
-    func startSubscriptionUpdate(
-        _ subscription: BridgeProductSubscriptionSnapshot,
-        activeStream: ActiveStream,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
-    ) {
-        let bootstrapAdmission =
-            (try? nativeApplicationRegistry.application(for: subscription.subscriptionKind))?
-            .adapter.interestBootstrapAdmission ?? .afterBootstrap
-        producerTaskLifecycle.startInterestTask(
-            subscriptionId: subscription.subscriptionId,
-            subscriptionKind: subscription.subscriptionKind,
-            bootstrapAdmission: bootstrapAdmission,
-            executionContext: .init(
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                productAdmission: productAdmission,
-                session: activeStream.session
-            ),
-            taskFinished: { [weak self] subscriptionId, taskId, completion in
-                await self?.interestProducerTaskFinished(
-                    subscriptionId: subscriptionId,
-                    taskId: taskId,
-                    completion: completion
-                )
-            },
-            operation: { traceContext in
-                guard foregroundWorkAdmission.withValidAdmission({ true }) == true else {
-                    throw BridgePaneProductMetadataCoordinatorError.foregroundWorkInvalidated
-                }
-                let application = try self.nativeApplicationRegistry.application(
-                    for: subscription.subscriptionKind
-                )
-                try await application.adapter.update(
-                    self,
-                    subscription,
-                    activeStream,
-                    productAdmission,
-                    foregroundWorkAdmission,
-                    traceContext,
-                    application.registration.surface
-                )
-            }
-        )
-    }
-
     private func bootstrapProducerTaskFinished(
         subscriptionId: String,
         taskId: UUID,
-        completion: BridgePaneProductMetadataProducerCompletion
+        completion: BridgePaneProductMetadataProducerCompletion,
+        error: (any Error)?,
+        fileSurfaceAttemptContext: BridgeFileSurfaceAttemptBootstrapContext?
     ) async {
         let completedCurrentTask = producerTaskLifecycle.bootstrapTaskFinished(
             subscriptionId: subscriptionId,
             taskId: taskId
         )
-        guard completedCurrentTask else { return }
+        guard completedCurrentTask else {
+            if let fileSurfaceAttemptContext {
+                _ = await fileSurfaceReconciler.builderCancelled(fileSurfaceAttemptContext.attempt)
+                await fileSurfaceReconciler.retirementCompleted(fileSurfaceAttemptContext.attempt)
+            }
+            return
+        }
         if completion == .interrupted, subscriptionKindById[subscriptionId] != nil {
             // Acceptance permits concurrent interests, but an interrupted bootstrap
             // may have released its source. Resume must establish that source again.
             openedSourceSubscriptionIds.remove(subscriptionId)
-            deferredUpdateSubscriptionIds.remove(subscriptionId)
             deferredOpenSubscriptionIds.insert(subscriptionId)
+        }
+        if let fileSurfaceAttemptContext {
+            let fileSurfaceAttempt = fileSurfaceAttemptContext.attempt
+            if completion == .interrupted {
+                let isAutomaticRestartEligible =
+                    activeStream?.lease
+                    == fileSurfaceAttemptContext.activeStream.lease
+                    && fileSurfaceAttemptContext.productAdmission.withValidAdmission({ true }) == true
+                    && fileSurfaceAttemptContext.foregroundWorkAdmission.withValidAdmission({ true }) == true
+                let interruptionAction = await fileSurfaceReconciler.builderCancelled(
+                    fileSurfaceAttempt,
+                    phase: .delivery,
+                    isAutomaticRestartEligible: isAutomaticRestartEligible
+                )
+                await fileSurfaceReconciler.retirementCompleted(fileSurfaceAttempt)
+                await handleFileSurfaceAction(
+                    interruptionAction,
+                    subscription: fileSurfaceAttemptContext.subscription,
+                    activeStream: fileSurfaceAttemptContext.activeStream,
+                    productAdmission: fileSurfaceAttemptContext.productAdmission,
+                    foregroundWorkAdmission: fileSurfaceAttemptContext.foregroundWorkAdmission,
+                    fileOutcomeAdmission: fileSurfaceAttemptContext.fileOutcomeAdmission
+                )
+            } else {
+                let action: BridgeFileSurfaceReconciler.Action
+                if let error {
+                    let newerInputBasis: BridgeFileSurfaceInputBasis?
+                    if (error as? BridgeWorktreeProductConstructionError) == .invalidated {
+                        let currentInputBasis = await fileSurfaceReconciler.currentInputBasis
+                        newerInputBasis =
+                            await fileSurfaceInputBasis(
+                                for: fileSurfaceAttemptContext.subscription,
+                                activeStream: fileSurfaceAttemptContext.activeStream
+                            ) ?? currentInputBasis
+                    } else {
+                        newerInputBasis = nil
+                    }
+                    action = await fileSurfaceReconciler.builderFailed(
+                        fileSurfaceAttempt,
+                        error: error,
+                        phase: .build,
+                        newerInputBasis: newerInputBasis
+                    )
+                } else {
+                    action = await fileSurfaceReconciler.builderFinished(
+                        fileSurfaceAttempt,
+                        outcome: .built
+                    )
+                }
+                await handleFileSurfaceAction(
+                    action,
+                    subscription: fileSurfaceAttemptContext.subscription,
+                    activeStream: fileSurfaceAttemptContext.activeStream,
+                    productAdmission: fileSurfaceAttemptContext.productAdmission,
+                    foregroundWorkAdmission: fileSurfaceAttemptContext.foregroundWorkAdmission,
+                    fileOutcomeAdmission: fileSurfaceAttemptContext.fileOutcomeAdmission,
+                    retiringAttemptFinished: true
+                )
+            }
+        }
+        if completion == .interrupted,
+            let fileSurfaceAttemptContext,
+            activeStream?.lease == fileSurfaceAttemptContext.activeStream.lease,
+            fileSurfaceAttemptContext.productAdmission.withValidAdmission({ true }) == true
+        {
+            await resumeForegroundWork()
         }
         if completion == .resetEnqueued {
             await retireSubscriptionAfterReset(subscriptionId: subscriptionId)
         }
     }
 
-    private func interestProducerTaskFinished(
-        subscriptionId: String,
-        taskId: UUID,
-        completion: BridgePaneProductMetadataProducerCompletion
+    func handleFileSurfaceAction(
+        _ action: BridgeFileSurfaceReconciler.Action,
+        subscription: BridgeProductSubscriptionSnapshot,
+        activeStream: ActiveStream,
+        productAdmission: BridgeProductAdmissionContext,
+        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
+        fileOutcomeAdmission: BridgePaneRefreshWorkAdmission,
+        retiringAttemptFinished: Bool = false
     ) async {
-        let completedCurrentTask = producerTaskLifecycle.interestTaskFinished(
-            subscriptionId: subscriptionId,
-            taskId: taskId
-        )
-        if completedCurrentTask && completion == .resetEnqueued {
-            await retireSubscriptionAfterReset(subscriptionId: subscriptionId)
+        switch action {
+        case .completed(let attempt):
+            await recordCurrentFileRefreshFailure(
+                .init(
+                    failure: nil, attempt: attempt, fileAuthorityAdmission: fileOutcomeAdmission,
+                    currency: fileSurfaceReconciler.outcomeCurrency
+                ))
+        case .failed(let failure, let attempt):
+            await recordCurrentFileRefreshFailure(
+                .init(
+                    failure: failure.refreshFailure, attempt: attempt,
+                    fileAuthorityAdmission: fileOutcomeAdmission, currency: fileSurfaceReconciler.outcomeCurrency
+                ))
+        case .start(let attempt):
+            await startSubscriptionOpen(
+                subscription,
+                activeStream: activeStream,
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission,
+                fileSurfaceAttempt: attempt
+            )
+        case .restart(let retiring, let starting):
+            if retiringAttemptFinished {
+                await fileSurfaceReconciler.retirementCompleted(retiring)
+            }
+            await startSubscriptionOpen(
+                subscription,
+                activeStream: activeStream,
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission,
+                fileSurfaceAttempt: starting
+            )
+        case .rest:
+            break
         }
-    }
-
-    private func recordEnqueued(
-        _ event: BridgeProductFileMetadataEvent,
-        traceContext: BridgeTraceContext?
-    ) async {
-        await producerTaskLifecycle.recordEnqueued(event, traceContext: traceContext)
-    }
-
-    private func recordEnqueued(
-        _ event: BridgeProductReviewMetadataEvent,
-        traceContext: BridgeTraceContext?
-    ) async {
-        await producerTaskLifecycle.recordEnqueued(event, traceContext: traceContext)
     }
 
     private func recordSourceOpened(
@@ -514,18 +564,6 @@ extension BridgePaneProductMetadataCoordinator {
         else { return }
         openedSourceSubscriptionIds.insert(subscriptionId)
         deferredOpenSubscriptionIds.remove(subscriptionId)
-        guard deferredUpdateSubscriptionIds.remove(subscriptionId) != nil,
-            let subscription = await activeStream.session.subscriptionSnapshot(
-                subscriptionId: subscriptionId
-            )
-        else { return }
-        producerTaskLifecycle.cancelInterestTasks(subscriptionId: subscriptionId)
-        startSubscriptionUpdate(
-            subscription,
-            activeStream: activeStream,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission
-        )
     }
 
     func cancelRegisteredSource(
@@ -548,13 +586,7 @@ extension BridgePaneProductMetadataCoordinator {
                 )
             )
         },
-        update: { coordinator, subscription, _, _, _, _, _ in
-            try await coordinator.annotationSource.update(subscription: subscription)
-        },
-        cancel: { coordinator, subscriptionId in
-            await coordinator.annotationSource.cancel(subscriptionID: subscriptionId)
-        },
-        interestBootstrapAdmission: .afterBootstrap
+        cancel: { _, _ in }
     )
 
     static let fileMetadataNativeAdapter = BridgePaneProductMetadataNativeAdapter(
@@ -567,19 +599,9 @@ extension BridgePaneProductMetadataCoordinator {
                 traceContext: traceContext
             )
         },
-        update: { coordinator, subscription, activeStream, productAdmission, foregroundAdmission, traceContext, _ in
-            try await coordinator.updateFileMetadataSubscription(
-                subscription,
-                activeStream: activeStream,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundAdmission,
-                traceContext: traceContext
-            )
-        },
         cancel: { coordinator, subscriptionId in
             await coordinator.fileMetadataSource.cancel(subscriptionId: subscriptionId)
-        },
-        interestBootstrapAdmission: .afterSourceAcceptance
+        }
     )
 
     static let reviewMetadataNativeAdapter = BridgePaneProductMetadataNativeAdapter(
@@ -592,18 +614,8 @@ extension BridgePaneProductMetadataCoordinator {
                 traceContext: traceContext
             )
         },
-        update: { coordinator, subscription, activeStream, productAdmission, foregroundAdmission, traceContext, _ in
-            try await coordinator.updateReviewMetadataSubscription(
-                subscription,
-                activeStream: activeStream,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundAdmission,
-                traceContext: traceContext
-            )
-        },
         cancel: { coordinator, subscriptionId in
             await coordinator.reviewMetadataSource.cancel(subscriptionId: subscriptionId)
-        },
-        interestBootstrapAdmission: .afterBootstrap
+        }
     )
 }

@@ -1,4 +1,3 @@
-import { RefreshCwIcon } from 'lucide-react';
 import {
 	lazy,
 	Suspense,
@@ -17,7 +16,6 @@ import { resolveBridgeFileMarkdownIntent } from '../app/markdown/bridge-file-mar
 import { useBridgeMarkdownPresentation } from '../app/markdown/use-bridge-markdown-presentation.js';
 import { useBridgeMarkdownSelectionRetirement } from '../app/markdown/use-bridge-markdown-selection-retirement.js';
 import { useBridgeViewerToolbarShortcuts } from '../app/use-bridge-viewer-toolbar-shortcuts.js';
-import { Button } from '../components/ui/button.js';
 import { bridgeWorkerFileQueryKey } from '../core/comm-worker/bridge-worker-file-query-contracts.js';
 import { recordBridgeFileSelectionCommitTelemetrySample } from '../foundation/telemetry/bridge-viewer-activation-telemetry.js';
 import { recordBridgeViewerFileOpenReadyTelemetrySample } from '../foundation/telemetry/bridge-viewer-telemetry-adapter.js';
@@ -137,19 +135,6 @@ export function BridgeFileViewerAppImplementation(
 	const renderSnapshotController = useBridgeFileViewerRenderSnapshotController({ selection });
 	const contentHeaderControls = (
 		<>
-			{isActive &&
-			renderSnapshotController.panelChromeSlice.fileRefreshFailure !== undefined &&
-			renderSnapshotController.panelChromeSlice.fileRefreshFailure !== null ? (
-				<Button
-					onClick={renderSnapshotController.retryUnavailableFileRefresh}
-					size="xs"
-					type="button"
-					variant="outline"
-				>
-					<RefreshCwIcon aria-hidden="true" data-icon="inline-start" />
-					Retry
-				</Button>
-			) : null}
 			<WorktreeAnnotationShareHeaderControl />
 			{isActive ? (
 				<BridgeViewerViewSettingsMenu
@@ -508,6 +493,20 @@ export function BridgeFileViewerAppImplementation(
 			}
 		>
 			<FileViewerShell
+				paneReloadPort={props.paneReloadPort}
+				railVisible={props.railVisible}
+				onRetryFileRead={(): void => {
+					if (selection !== null)
+						renderSnapshotController.dispatchSelectedFileViewContentRequest({
+							fileId: selection.fileId,
+							selectedSource: 'user',
+						});
+				}}
+				paneFailedStart={props.paneFailedStart ?? null}
+				recoveryFailed={
+					renderSnapshotController.fileViewRecoveryStatus?.status === 'failedRetryable'
+				}
+				onRetryFile={renderSnapshotController.retryUnavailableFileRefresh}
 				codeViewOptions={codeViewOptions}
 				completeFileQueryTransaction={renderSnapshotController.completeFileQueryTransaction}
 				contentHeaderTitle={contentHeaderTitle}

@@ -58,6 +58,16 @@ struct RuleParityTests {
         #expect(try lintFixtureCorpus("Good").allSatisfy { $0.ruleID != ruleID })
     }
 
+    @Test("composition-root construction fixtures reject escaped identities and preserve admitted homes")
+    func compositionRootConstructionFixturesEnforceConstructionBoundary() throws {
+        let ruleID = "agentstudio_composition_root_construction"
+        let failures = try lintFixtureCorpus("Bad").filter { $0.ruleID == ruleID }
+
+        #expect(failures.count == 7)
+        #expect(failures.allSatisfy { $0.severity == .error })
+        #expect(try lintFixtureCorpus("Good").allSatisfy { $0.ruleID != ruleID })
+    }
+
     @Test("good fixture corpus stays clean")
     func goodFixtureCorpusStaysClean() throws {
         let diagnostics = try lintFixtureCorpus("Good")

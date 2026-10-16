@@ -1,6 +1,11 @@
 import { FileTree } from '@pierre/trees/react';
 import type { ReactElement, ReactNode, Ref } from 'react';
 
+import type { BridgeRegionPresentationState } from '../app/bridge-region-presentation-state.js';
+import {
+	BridgeRegionPresentation,
+	BridgeRegionUpdatingIndicator,
+} from '../app/bridge-region-presentation.js';
 import { BridgeViewerRailToolbar } from '../app/bridge-viewer-rail-toolbar.js';
 import { BridgeViewerRightRailShell } from '../app/bridge-viewer-right-rail-shell.js';
 import { BridgeViewerSearchControl } from '../app/bridge-viewer-search-control.js';
@@ -12,7 +17,6 @@ import { bridgeViewerTreeStyle } from '../app/bridge-viewer-tree-theme.js';
 import type { BridgeMainFileTreePatchStream } from '../core/comm-worker/bridge-main-file-display-patch-applier.js';
 import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import type { BridgeTraceContext } from '../foundation/telemetry/bridge-trace-context.js';
-import { WorktreeAnnotationRecoveryWarning } from '../worktree-annotations/worktree-annotation-recovery-warning.js';
 import type {
 	BridgeFileViewerFilterMode,
 	BridgeFileViewerSearchMode,
@@ -27,6 +31,8 @@ import { BridgeFileViewerFacetMenu } from './bridge-file-viewer-facet-menu.js';
 import { useBridgeFileViewerPierreTreeRuntime } from './bridge-file-viewer-pierre-tree-runtime.js';
 
 export interface BridgeFileViewerTreePanelProps {
+	readonly failureSummary?: ReactNode;
+	readonly presentationState?: BridgeRegionPresentationState;
 	readonly completeFileQueryTransaction: (transactionId: string) => boolean;
 	readonly filterMode: BridgeFileViewerFilterMode;
 	readonly fileTreePatchStream: BridgeMainFileTreePatchStream;
@@ -92,18 +98,26 @@ export function BridgeFileViewerTreePanel(props: BridgeFileViewerTreePanelProps)
 		props.searchError === null
 			? `${props.projectedTreeRowCount}/${props.totalTreeRowCount}`
 			: 'Invalid regex';
-	const sourceLabel = props.source?.sourceId ?? 'Source pending';
+	const sourceLabel = props.source?.sourceId ?? '';
 
 	return (
 		<>
 			{BridgeViewerRightRailShell({
 				ariaLabel: 'Files',
 				body: (
-					<FileTree
-						className="h-full min-h-full"
-						model={treeRuntime.model}
-						style={bridgeViewerTreeStyle}
-					/>
+					<BridgeRegionPresentation
+						keepContentMounted
+						region="file-tree"
+						shape="tree"
+						state={props.presentationState ?? { kind: 'content' }}
+						emptyCopy={{ noSelection: 'Select a worktree', certified: 'No files' }}
+					>
+						<FileTree
+							className="h-full min-h-full"
+							model={treeRuntime.model}
+							style={bridgeViewerTreeStyle}
+						/>
+					</BridgeRegionPresentation>
 				),
 				bodyClassName: 'h-full min-h-0 overflow-hidden',
 				bodyDataAttributes: {
@@ -123,6 +137,9 @@ export function BridgeFileViewerTreePanel(props: BridgeFileViewerTreePanelProps)
 					leading: (
 						<>
 							{props.viewerContextSwitcher}
+							<BridgeRegionUpdatingIndicator
+								state={props.presentationState ?? { kind: 'content' }}
+							/>
 							<span
 								aria-live="polite"
 								className="sr-only"
@@ -165,7 +182,7 @@ export function BridgeFileViewerTreePanel(props: BridgeFileViewerTreePanelProps)
 				}),
 				toolbarBelow: (
 					<>
-						<WorktreeAnnotationRecoveryWarning />
+						{props.failureSummary}
 						{shouldShowSearchInput ? (
 							<BridgeViewerSearchField
 								clearButtonTestId="worktree-file-search-clear"

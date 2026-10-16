@@ -24,6 +24,8 @@ permissions:
 jobs:
   code-quality:
     name: Code quality
+    needs: changes
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-24.04
     container: swift@sha256:8de8ea332a61e961ead4ef41029c2552b18e1a70dd5942d25ecf7d8de2eec5b5
     defaults:
@@ -85,11 +87,25 @@ jobs:
         run: |
           export DEBIAN_FRONTEND=noninteractive
           apt-get update
-          apt-get install -y --no-install-recommends gh jq perl curl lsof
+          apt-get install -y --no-install-recommends gh jq perl curl lsof python3
           perl -MJSON::PP -MTime::HiRes -e 1
 
       - name: Trust checkout for Git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Check changed documentation links
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          mkdir -p tmp/ci-docs
+          : > tmp/ci-docs/changed-paths
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+            git diff --name-only -z --no-renames "$merge_base" "$HEAD_SHA" -- > tmp/ci-docs/changed-paths
+          fi
+          python3 scripts/check-changed-doc-links.py --changed-files tmp/ci-docs/changed-paths
 
       - name: Setup mise
         uses: jdx/mise-action@v3
@@ -100,16 +116,34 @@ jobs:
           # Nothing is installed through mise in this job, so there is nothing to cache.
           cache: false
 
+      - name: Restore lint tools cache
+        id: lint-tools-cache-restore
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-ci/lint-tools
+          key: lint-tools-linux-${{ runner.arch }}-image-8de8ea332a61-${{ hashFiles('scripts/install-ci-lint-tools.sh') }}
+
       - name: Install lint tools
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: bash scripts/install-ci-lint-tools.sh
 
       - name: Verify lint tools on PATH
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: |
           swift-format --version
           swiftlint version
 
+      - name: Save lint tools cache
+        if: ${{ success() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.lint-tools-cache-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .build-ci/lint-tools
+          key: ${{ steps.lint-tools-cache-restore.outputs.cache-primary-key }}
+
       - name: Restore architecture lint build cache
         id: architecture-cache-restore
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         uses: actions/cache/restore@v4
         with:
           path: .build-ci/architecture-lint
@@ -118,71 +152,58 @@ jobs:
             architecture-lint-linux-${{ runner.arch }}-swift-6.3.3-image-8de8ea332a61-
 
       - name: AgentStudio architecture lint tool tests
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: mise run test:architecture
 
       - name: Save architecture lint build cache
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true'
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.architecture-cache-restore.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v4
         with:
           path: .build-ci/architecture-lint
           key: ${{ steps.architecture-cache-restore.outputs.cache-primary-key }}
 
       - name: Lint
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: mise run lint:portable
 
       - name: Debt ledger ratchet
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         env:
           BASE_REF: ${{ github.event.pull_request.base.ref || 'main' }}
         run: /bin/bash Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh "origin/${BASE_REF}"
 
-  marketing-site-validation:
-    name: Marketing site validation
+  changes:
+    name: Changed-file classification
     runs-on: ubuntu-24.04
-
+    outputs:
+      scope: ${{ steps.classify.outputs.scope }}
     steps:
       - *first-attempt-gate
 
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          lfs: true
+          fetch-depth: 0
           persist-credentials: false
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 11.14.0
-
-      - name: Setup Node for marketing site
-        uses: actions/setup-node@v4
-        with:
-          node-version: "26.5.0"
-          cache: pnpm
-          cache-dependency-path: web/pnpm-lock.yaml
-
-      - name: Install Google Chrome
+      - name: Classify changed files
+        id: classify
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          npx --yes playwright@1.61.0 install --with-deps chrome
-          chrome_binary="$(command -v google-chrome || command -v google-chrome-stable)"
-          test -x "$chrome_binary"
-          echo "CHROME_BIN=$chrome_binary" >> "$GITHUB_ENV"
-
-      - name: Install marketing site dependencies
-        run: pnpm --dir web install --frozen-lockfile
-
-      - name: Run marketing site checks
-        run: pnpm --dir web run check
-
-      - name: Build marketing site and Cloudflare package
-        run: |
-          pnpm --dir web run build
-          pnpm --dir web exec cf build
-          pnpm --dir web run verify:cloudflare-discovery
+          set -euo pipefail
+          mkdir -p tmp/ci-docs
+          python3 scripts/ci-change-scope.py classify \
+            --event "$EVENT_NAME" --base "$BASE_SHA" --head "$HEAD_SHA" \
+            --receipt tmp/ci-docs/changes.json --github-output "$GITHUB_OUTPUT"
 
   bridge-web:
     name: BridgeWeb
-    if: github.event_name != 'push'
-    runs-on: macos-26
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'push' && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
+    runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
       SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats
@@ -200,7 +221,7 @@ jobs:
         id: select-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.6"
+          xcode-version: "27.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v3
@@ -400,6 +421,9 @@ jobs:
 
       - name: Upload BridgeWeb Swift cache receipt
         if: always()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: bridge-swift-cache-${{ github.run_id }}
@@ -420,7 +444,9 @@ jobs:
 
   swift-test-suite:
     name: Swift test suite
-    runs-on: macos-26
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
+    runs-on: xcode-27
     permissions:
       contents: read
       issues: read
@@ -448,7 +474,7 @@ jobs:
         id: select-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.6"
+          xcode-version: "27.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v3
@@ -693,6 +719,9 @@ jobs:
 
       - name: Upload test results
         if: always()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: test-results
@@ -701,6 +730,9 @@ jobs:
 
       - name: Upload crash reports
         if: failure()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: swift-crash-reports-${{ github.run_id }}
@@ -734,6 +766,9 @@ jobs:
 
       - name: Upload CI timing ledger
         if: always()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: ci-timing-${{ github.run_id }}-swift
@@ -747,6 +782,9 @@ jobs:
 
       - name: Upload wedged-lane event-stream ledgers
         if: failure()
+        # Evidence upload only: a transport failure must not turn a passing
+        # verdict red. The failed step stays visible as a warning.
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: swift-lane-event-streams-${{ github.run_id }}
@@ -765,7 +803,7 @@ jobs:
 
   prune-swift-build-cache:
     name: Prune Swift build cache
-    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
+    if: always() && github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.swift-test-suite.result != 'skipped' && (needs.swift-test-suite.outputs.swift_cache_disposition == 'saved' || needs.swift-test-suite.outputs.swift_cache_disposition == 'skipped-budget')
     needs: swift-test-suite
     runs-on: ubuntu-24.04
     permissions:

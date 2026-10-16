@@ -148,6 +148,9 @@ extension IPCPaneSummary: IPCSchemaProviding {
             .optional("worktreeId", description: "Associated worktree UUID", schema: IPCSchemaScalars.uuid),
             .init(name: "isActive", description: "Whether this pane is active", schema: .boolean),
             .init(name: "isDrawerChild", description: "Whether this pane is hosted in a drawer", schema: .boolean),
+            .optional(
+                "activity", description: "Latest admitted activity, null for a fresh pane",
+                schema: try IPCPaneActivity.ipcSchema()),
         ])
     }
 }

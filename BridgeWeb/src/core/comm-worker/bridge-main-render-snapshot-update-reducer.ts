@@ -4,6 +4,7 @@ import type {
 	BridgeMainSelectionSlice,
 	BridgeMainViewportSlice,
 } from './bridge-main-render-snapshot-store.js';
+import { bridgeMainPanelChromeSliceSchema } from './bridge-main-review-comparison-presentation.js';
 import type { MutableBridgeMainRenderSnapshot } from './bridge-main-review-display-state.js';
 import type {
 	BridgeWorkerContentAvailabilityPatchPayload,
@@ -107,7 +108,8 @@ export function reduceBridgeMainRenderSnapshotUpdate(
 				break;
 			}
 			case 'panelChrome':
-				panelChromeSlice = patch.operation === 'upsert' ? patch.payload : {};
+				panelChromeSlice =
+					patch.operation === 'upsert' ? bridgeMainPanelChromeSliceSchema.parse(patch.payload) : {};
 				break;
 			default:
 				assertNeverBridgeWorkerSlicePatch(patch);

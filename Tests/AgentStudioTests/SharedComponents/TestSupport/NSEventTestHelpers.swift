@@ -1,5 +1,6 @@
 import AppKit
 
+@MainActor
 func makeKeyEvent(
     type: NSEvent.EventType = .keyDown,
     modifierFlags: NSEvent.ModifierFlags = [],

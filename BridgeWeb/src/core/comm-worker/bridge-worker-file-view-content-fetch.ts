@@ -1,4 +1,4 @@
-import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	bridgeProductFileContentDescriptorSchema,
 	type BridgeProductFileContentDescriptor,

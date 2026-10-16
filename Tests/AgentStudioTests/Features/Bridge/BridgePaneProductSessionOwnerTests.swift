@@ -8,7 +8,7 @@ import Testing
 
 @Suite("Bridge pane product session owner")
 struct BridgePaneProductSessionOwnerTests {
-    @Test("successful retirement reports the exact retired worker")
+    @Test("successful retirement reports the exact worker after local release")
     func successfulRetirementReportsExactWorker() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
@@ -26,9 +26,13 @@ struct BridgePaneProductSessionOwnerTests {
 
         // Act
         let result = await owner.retire(reason: .pageReload)
+        let didRelease = await owner.waitForRetirement(
+            of: installation.bootstrap.workerInstanceId
+        )
 
         // Assert
         #expect(result == .retired)
+        #expect(didRelease)
         #expect(await retiredWorkers.values == [installation.bootstrap.workerInstanceId])
     }
 
@@ -58,8 +62,8 @@ struct BridgePaneProductSessionOwnerTests {
         #expect(await owner.schemeRouter.activeInstallation == nil)
     }
 
-    @Test("replacement exposes no candidate before old revocation succeeds")
-    func replacementWaitsForOldRevocationBarrier() async throws {
+    @Test("replacement serves the candidate before old revocation finishes")
+    func replacementDoesNotWaitForOldRevocationBarrier() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
         let owner = try BridgePaneProductSessionOwner(
@@ -86,14 +90,10 @@ struct BridgePaneProductSessionOwnerTests {
             )
         }
         _ = await provider.waitForLifecycleAcknowledgement(count: 1)
+        let activationResult = await replacementTask.value
 
         // Assert
-        #expect(await owner.activeInstallation == nil)
-        #expect(await owner.schemeRouter.activeInstallation == nil)
-        #expect(!(await provider.lifecycleAcknowledgementsWereReleased))
-
-        await provider.releaseLifecycleAcknowledgements(result: true)
-        #expect(await replacementTask.value == .activated)
+        #expect(activationResult == .activated)
         #expect(
             await owner.activeInstallation?.bootstrap.workerInstanceId
                 == candidate.bootstrap.workerInstanceId
@@ -102,13 +102,19 @@ struct BridgePaneProductSessionOwnerTests {
             await owner.schemeRouter.activeInstallation?.bootstrap.workerInstanceId
                 == candidate.bootstrap.workerInstanceId
         )
+        #expect(!(await provider.lifecycleAcknowledgementsWereReleased))
+        #expect(!(await oldInstallation.session.producerSnapshot()).hasZeroResidue)
+        try await openBridgePaneProductSession(candidate)
+
+        await provider.releaseLifecycleAcknowledgements(result: true)
+        #expect(await owner.waitForRetirement(of: oldInstallation.bootstrap.workerInstanceId))
         #expect((await oldInstallation.session.producerSnapshot()).hasZeroResidue)
         #expect(await provider.comparisonTargetReservationInvalidationCount == 1)
         _ = try? await oldReply.value
     }
 
-    @Test("failed revocation leaves router empty and exact retry may activate candidate")
-    func failedRevocationBlocksCandidateUntilRetrySucceeds() async throws {
+    @Test("failed old revocation stays visible and retryable while the candidate serves")
+    func failedRevocationDoesNotBlockCandidate() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
         let owner = try BridgePaneProductSessionOwner(
@@ -132,23 +138,34 @@ struct BridgePaneProductSessionOwnerTests {
             candidate,
             productAdmission: productAdmission
         )
+        _ = await provider.waitForLifecycleAcknowledgement(count: 1)
+        let didReleaseInitially = await owner.waitForRetirement(
+            of: oldInstallation.bootstrap.workerInstanceId
+        )
         let firstAcknowledgements = await provider.lifecycleAcknowledgements
 
         // Assert
-        #expect(firstResult == .revocationFailed)
-        #expect(await owner.activeInstallation == nil)
-        #expect(await owner.schemeRouter.activeInstallation == nil)
+        #expect(firstResult == .activated)
+        #expect(!didReleaseInitially)
+        #expect(
+            await owner.activeInstallation?.bootstrap.workerInstanceId
+                == candidate.bootstrap.workerInstanceId
+        )
+        #expect(
+            await owner.schemeRouter.activeInstallation?.bootstrap.workerInstanceId
+                == candidate.bootstrap.workerInstanceId
+        )
+        #expect((await owner.snapshot()).retiringInstallationCount == 1)
         #expect(!(await oldInstallation.session.producerSnapshot()).hasZeroResidue)
         let firstAcknowledgement = try #require(firstAcknowledgements.first)
 
         await provider.succeedLifecycleAcknowledgements()
-        let retryResult = await owner.activatePreparedCandidate(
-            candidate,
-            productAdmission: productAdmission
+        let retryResult = await owner.retryRetirement(
+            of: oldInstallation.bootstrap.workerInstanceId
         )
         let allAcknowledgements = await provider.lifecycleAcknowledgements
 
-        #expect(retryResult == .activated)
+        #expect(retryResult)
         #expect(allAcknowledgements.count >= 2)
         #expect(allAcknowledgements[0] == firstAcknowledgement)
         #expect(allAcknowledgements[1] == firstAcknowledgement)
@@ -160,7 +177,7 @@ struct BridgePaneProductSessionOwnerTests {
         _ = try? await oldReply.value
     }
 
-    @Test("concurrent replacements preserve invocation order behind one revocation barrier")
+    @Test("concurrent replacements preserve invocation order without waiting for old release")
     func concurrentReplacementsPreserveInvocationOrder() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
@@ -195,18 +212,19 @@ struct BridgePaneProductSessionOwnerTests {
                 productAdmission: productAdmission
             )
         }
-        let secondPublishedBeforeFirstRevocation = await waitForActiveWorkerInstance(
-            secondCandidate.bootstrap.workerInstanceId,
-            in: owner
-        )
-        await provider.releaseLifecycleAcknowledgements(result: true)
         let firstResult = await firstReplacementTask.value
         let secondResult = await secondReplacementTask.value
+        let secondPublishedBeforeFirstRevocation =
+            await owner.activeInstallation?.bootstrap.workerInstanceId
+            == secondCandidate.bootstrap.workerInstanceId
 
         // Assert
-        #expect(!secondPublishedBeforeFirstRevocation)
+        #expect(secondPublishedBeforeFirstRevocation)
         #expect(firstResult == .activated)
         #expect(secondResult == .activated)
+        #expect(!(await provider.lifecycleAcknowledgementsWereReleased))
+        await provider.releaseLifecycleAcknowledgements(result: true)
+        #expect(await owner.waitForRetirement(of: oldInstallation.bootstrap.workerInstanceId))
         #expect(
             await owner.activeInstallation?.bootstrap.workerInstanceId
                 == secondCandidate.bootstrap.workerInstanceId
@@ -219,8 +237,8 @@ struct BridgePaneProductSessionOwnerTests {
         _ = try? await oldReply.value
     }
 
-    @Test("replacement waits for page reload retirement before publishing the candidate")
-    func replacementWaitsForPageReloadRetirement() async throws {
+    @Test("replacement follows a page reload fence before old retirement finishes")
+    func replacementAfterPageReloadDoesNotWaitForRelease() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
         let owner = try BridgePaneProductSessionOwner(
@@ -252,18 +270,19 @@ struct BridgePaneProductSessionOwnerTests {
                 productAdmission: paneAdmission
             )
         }
-        let candidatePublishedBeforeRetirement = await waitForActiveWorkerInstance(
-            replacementCandidate.bootstrap.workerInstanceId,
-            in: owner
-        )
-        await provider.releaseLifecycleAcknowledgements(result: true)
         let retirementResult = await retirementTask.value
         let replacementResult = await replacementTask.value
+        let candidatePublishedBeforeRetirement =
+            await owner.activeInstallation?.bootstrap.workerInstanceId
+            == replacementCandidate.bootstrap.workerInstanceId
 
         // Assert
-        #expect(!candidatePublishedBeforeRetirement)
+        #expect(candidatePublishedBeforeRetirement)
         #expect(retirementResult == .retired)
         #expect(replacementResult == .activated)
+        #expect(!(await provider.lifecycleAcknowledgementsWereReleased))
+        await provider.releaseLifecycleAcknowledgements(result: true)
+        #expect(await owner.waitForRetirement(of: oldInstallation.bootstrap.workerInstanceId))
         #expect(
             await owner.activeInstallation?.bootstrap.workerInstanceId
                 == replacementCandidate.bootstrap.workerInstanceId
@@ -282,7 +301,8 @@ struct BridgePaneProductSessionOwnerTests {
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let oldInstallation = try await installFirstCandidate(in: owner)
         try await openBridgePaneProductSession(oldInstallation)
@@ -324,14 +344,19 @@ struct BridgePaneProductSessionOwnerTests {
     @Test("tracked pane disposal drains scheme tasks producers leases and acknowledgements")
     func trackedDisposalReachesZeroResidue() async throws {
         // Arrange
-        let provider = BridgePaneProductSessionProviderGate()
-        let owner = try BridgePaneProductSessionOwner(
-            paneSessionId: bridgeProductTestPaneSessionId,
-            provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
-        )
-        let installation = try await installFirstCandidate(in: owner)
+        let fixture = try makeBridgePaneProductSessionOwnerFrameWaiterFixture()
+        let provider = fixture.provider
+        let owner = fixture.owner
+        let installation = fixture.installation
         try await openBridgePaneProductSession(installation)
+        let metadataFirstDataReceipt = HeldStep<Void>(
+            "metadata delivery reaches its collector",
+            cancellation: .holdThroughCancellation
+        )
+        let contentFirstDataReceipt = HeldStep<Void>(
+            "content delivery reaches its collector",
+            cancellation: .holdThroughCancellation
+        )
         let schemeRouter = await owner.schemeRouter
         let handler = BridgeSchemeHandler(
             paneId: UUID(),
@@ -341,18 +366,33 @@ struct BridgePaneProductSessionOwnerTests {
         let metadataReply = try await startBridgePaneProductMetadataReply(
             installation: installation,
             provider: provider,
-            handler: handler
+            handler: handler,
+            firstDataReceipt: metadataFirstDataReceipt
         )
         let contentReply = try await startContentReply(
             installation: installation,
             provider: provider,
             identitySuffix: "pane-disposal",
-            handler: handler
+            handler: handler,
+            firstDataReceipt: contentFirstDataReceipt
         )
+        _ = try await metadataFirstDataReceipt.firstArrival()
+        _ = try await contentFirstDataReceipt.firstArrival()
+        let firstRegisteredLease = try await fixture.firstFrameWaiterRegistration.firstArrival()
+        let secondRegisteredLease = try await fixture.secondFrameWaiterRegistration.firstArrival()
+        #expect(firstRegisteredLease != secondRegisteredLease)
         let liveSnapshot = await owner.snapshot()
 
         // Act
-        let retirement = await owner.retire(reason: .paneDisposal)
+        let retirementTask = Task {
+            await owner.retire(reason: .paneDisposal)
+        }
+        _ = await provider.waitForLifecycleAcknowledgement(count: 1)
+        metadataFirstDataReceipt.release()
+        contentFirstDataReceipt.release()
+        fixture.firstFrameWaiterRegistration.release()
+        fixture.secondFrameWaiterRegistration.release()
+        let retirement = await retirementTask.value
         _ = try? await metadataReply.value
         _ = try? await contentReply.value
         let finalSnapshot = await owner.snapshot()
@@ -362,6 +402,7 @@ struct BridgePaneProductSessionOwnerTests {
         #expect(liveSnapshot.activeProducerCount == 2)
         #expect(liveSnapshot.activeProducerTaskCount == 2)
         #expect(liveSnapshot.activeContentLeaseCount == 1)
+        #expect(liveSnapshot.pendingFrameWaiterCount == 2)
         let liveDeliveryResidueCount =
             liveSnapshot.queuedFrameCount
             + liveSnapshot.pendingFrameWaiterCount
@@ -390,14 +431,15 @@ struct BridgePaneProductSessionOwnerTests {
         #expect(finalSnapshot.hasZeroResidue)
     }
 
-    @Test("control-only product work has scheme and transport residue without producers")
-    func controlOnlyWorkTracksSchemeTaskAndTransportClaim() async throws {
+    @Test("control-only work remains visible as an execution after its admission claim ends")
+    func controlOnlyWorkTracksOperationWithoutProducers() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
         let owner = try BridgePaneProductSessionOwner(
             paneSessionId: bridgeProductTestPaneSessionId,
             provider: provider,
-            productAdmissionGate: BridgeProductAdmissionGate()
+            productAdmissionGate: BridgeProductAdmissionGate(),
+            retirementClock: TestPushClock()
         )
         let installation = try await installFirstCandidate(in: owner)
         try await openBridgePaneProductSession(installation)
@@ -425,7 +467,7 @@ struct BridgePaneProductSessionOwnerTests {
         let retirementTask = Task {
             await owner.retire(reason: .paneDisposal)
         }
-        await waitUntilProductRouterIsFenced(schemeRouter)
+        await schemeRouter.waitUntilCleared()
         let retiringSnapshot = await owner.snapshot()
         let retiredCapability = try BridgeProductCapabilityHeaderEncoding.encode(
             installation.capabilityBytes
@@ -437,13 +479,12 @@ struct BridgePaneProductSessionOwnerTests {
         )
 
         // Assert
-        #expect(liveSnapshot.activeSchemeTaskCount == 1)
-        #expect(liveSnapshot.activeTransportLeaseCount == 1)
+        #expect(liveSnapshot.activeOperationExecutionCount == 1)
         #expect(liveSnapshot.activeProducerCount == 0)
         #expect(liveSnapshot.activeProducerTaskCount == 0)
         #expect(liveSnapshot.activeContentLeaseCount == 0)
-        #expect(retiringSnapshot.activeSchemeTaskCount == 1)
-        #expect(retiringSnapshot.activeTransportLeaseCount == 1)
+        #expect(retiringSnapshot.activeOperationExecutionCount == 1)
+        #expect(retiringSnapshot.retiringInstallationCount == 1)
         #expect(!retiringSnapshot.hasZeroResidue)
         if case .conflict = postFenceAdmission {
             // Expected: authenticated pane identity remains distinguishable after clear.
@@ -457,7 +498,7 @@ struct BridgePaneProductSessionOwnerTests {
         #expect(await owner.snapshot() == .empty)
     }
 
-    @Test("failed retirement keeps exact lifecycle acknowledgement and visible residue")
+    @Test("failed background retirement keeps exact acknowledgement and visible residue")
     func failedRetirementPreservesVisibleResidueForExactRetry() async throws {
         // Arrange
         let provider = BridgePaneProductSessionProviderGate()
@@ -483,19 +524,26 @@ struct BridgePaneProductSessionOwnerTests {
         let retiringSnapshot = await owner.snapshot()
         await provider.releaseLifecycleAcknowledgements(result: false)
         let firstResult = await firstRetirementTask.value
+        let didReleaseInitially = await owner.waitForRetirement(
+            of: installation.bootstrap.workerInstanceId
+        )
         let failedSnapshot = await owner.snapshot()
 
         // Assert
         #expect(!retiringSnapshot.hasZeroResidue)
         #expect(retiringSnapshot.pendingLifecycleAcknowledgementCount == 1)
-        #expect(firstResult == .revocationFailed)
+        #expect(firstResult == .retired)
+        #expect(!didReleaseInitially)
         #expect(!failedSnapshot.hasZeroResidue)
         #expect(failedSnapshot.pendingLifecycleAcknowledgementCount == 1)
+        #expect(failedSnapshot.retiringInstallationCount == 1)
 
         await provider.succeedLifecycleAcknowledgements()
-        let retryResult = await owner.retire(reason: .pageReload)
+        let retryResult = await owner.retryRetirement(
+            of: installation.bootstrap.workerInstanceId
+        )
         let acknowledgements = await provider.lifecycleAcknowledgements
-        #expect(retryResult == .retired)
+        #expect(retryResult)
         #expect(acknowledgements.count >= 2)
         #expect(acknowledgements[0] == firstAcknowledgement)
         #expect(acknowledgements[1] == firstAcknowledgement)
@@ -519,6 +567,12 @@ struct BridgePaneProductSessionOwnerTests {
             ),
             encoding: .utf8
         )
+        let bootstrapCompositionSource = try String(
+            contentsOf: projectRoot.appending(
+                path: "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+BootstrapComposition.swift"
+            ),
+            encoding: .utf8
+        )
         let schemeHandlerSource = try String(
             contentsOf: projectRoot.appending(
                 path: "Sources/AgentStudio/Features/Bridge/Transport/BridgeSchemeHandler.swift"
@@ -529,12 +583,13 @@ struct BridgePaneProductSessionOwnerTests {
         // Act / Assert
         #expect(bootstrapSource.contains("BridgePaneProductSessionOwner"))
         #expect(bootstrapModelsSource.contains("BridgeProductSchemeSessionRouter"))
-        #expect(bootstrapSource.contains("productSessionRouter: input.productSessionRouter"))
+        #expect(bootstrapCompositionSource.contains("productSessionRouter: input.productSessionRouter"))
         #expect(schemeHandlerSource.contains("BridgeProductSchemeSessionRouter"))
         #expect(schemeHandlerSource.contains("BridgeProductWireContract.commandRoute"))
         #expect(schemeHandlerSource.contains("BridgeProductWireContract.streamRoute"))
         #expect(schemeHandlerSource.contains("BridgeProductWireContract.contentRoute"))
         #expect(!bootstrapSource.contains("rpcDispatcher: input.rpcDispatcher"))
+        #expect(!bootstrapCompositionSource.contains("rpcDispatcher: input.rpcDispatcher"))
         #expect(!schemeHandlerSource.contains("case rpcCommand"))
     }
 }
@@ -547,7 +602,7 @@ private actor RetiredWorkerRecorder {
     }
 }
 
-private func installFirstCandidate(
+func installFirstCandidate(
     in owner: BridgePaneProductSessionOwner
 ) async throws -> BridgeProductSessionInstallation {
     let productAdmission = try #require(owner.productAdmissionGate.acquire())
@@ -561,235 +616,17 @@ private func installFirstCandidate(
     return candidate
 }
 
-private func waitForActiveWorkerInstance(
-    _ workerInstanceId: String,
-    in owner: BridgePaneProductSessionOwner
-) async -> Bool {
-    for _ in 0..<512 {
-        if await owner.activeInstallation?.bootstrap.workerInstanceId == workerInstanceId {
-            return true
-        }
-        await Task.yield()
-    }
-    return false
-}
-
-func openBridgePaneProductSession(
-    _ installation: BridgeProductSessionInstallation
-) async throws {
-    let requestBody = try JSONSerialization.data(
-        withJSONObject: [
-            "kind": "workerSession.open",
-            "paneSessionId": installation.bootstrap.paneSessionId,
-            "request": NSNull(),
-            "requestId": "request-open-pane-owner",
-            "requestSequence": 1,
-            "wireVersion": BridgeProductWireContract.version,
-            "workerInstanceId": installation.bootstrap.workerInstanceId,
-        ],
-        options: [.sortedKeys]
-    )
-    let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
-        installation.capabilityBytes
-    )
-    let observation = try await collectBridgeProductSchemeReply(
-        adapter: installation.productAdapter,
-        request: bridgeProductSchemeRequest(
-            route: BridgeProductWireContract.commandRoute,
-            capability: capabilityHeader,
-            body: requestBody
-        )
-    )
-    #expect(observation.response?.statusCode == 200)
-}
-
-func startBridgePaneProductMetadataReply(
-    installation: BridgeProductSessionInstallation,
-    provider: BridgePaneProductSessionProviderGate,
-    handler: BridgeSchemeHandler? = nil
-) async throws -> Task<BridgeProductSchemeReplyObservation, any Error> {
-    let body = try JSONSerialization.data(
-        withJSONObject: [
-            "kind": "metadataStream.open",
-            "metadataStreamId": "metadata-pane-owner",
-            "paneSessionId": installation.bootstrap.paneSessionId,
-            "resumeFromStreamSequence": NSNull(),
-            "wireVersion": BridgeProductWireContract.version,
-            "workerInstanceId": installation.bootstrap.workerInstanceId,
-        ],
-        options: [.sortedKeys]
-    )
-    let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
-        installation.capabilityBytes
-    )
-    let replyTask = Task {
-        try await collectPaneOwnerProductReply(
-            handler: handler,
-            adapter: installation.productAdapter,
-            request: bridgeProductSchemeRequest(
-                route: BridgeProductWireContract.streamRoute,
-                capability: capabilityHeader,
-                body: body
-            )
-        )
-    }
-    try await provider.waitUntilMetadataProducerStarted()
-    return replyTask
-}
-
-func startContentReply(
-    installation: BridgeProductSessionInstallation,
-    provider: BridgePaneProductSessionProviderGate,
-    identitySuffix: String,
-    handler: BridgeSchemeHandler? = nil
-) async throws -> Task<BridgeProductSchemeReplyObservation, any Error> {
-    let request = try paneOwnerContentRequest(
-        installation: installation,
-        identitySuffix: identitySuffix
-    )
-    let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
-        installation.capabilityBytes
-    )
-    let replyTask = Task {
-        try await collectPaneOwnerProductReply(
-            handler: handler,
-            adapter: installation.productAdapter,
-            request: bridgeProductSchemeRequest(
-                route: BridgeProductWireContract.contentRoute,
-                capability: capabilityHeader,
-                body: try JSONEncoder().encode(request)
-            )
-        )
-    }
-    try await provider.waitUntilContentProducerStarted()
-    return replyTask
-}
-
-private func collectPaneOwnerProductReply(
-    handler: BridgeSchemeHandler?,
-    adapter: BridgeProductSchemeAdapter,
-    request: URLRequest
-) async throws -> BridgeProductSchemeReplyObservation {
-    if let handler {
-        return try await collectBridgeSchemeHandlerProductReply(
-            handler: handler,
-            request: request
-        )
-    }
-    return try await collectBridgeProductSchemeReply(
-        adapter: adapter,
-        request: request
-    )
-}
-
-private func paneOwnerProductCallSchemeRequest(
-    installation: BridgeProductSessionInstallation,
-    identitySuffix: String
-) throws -> URLRequest {
-    let body = try JSONSerialization.data(
-        withJSONObject: [
-            "call": [
-                "method": "review.markFileViewed",
-                "request": ["itemId": "item-\(identitySuffix)"],
-            ],
-            "kind": "product.call",
-            "paneSessionId": installation.bootstrap.paneSessionId,
-            "requestId": "product-call-\(identitySuffix)",
-            "requestSequence": 2,
-            "wireVersion": BridgeProductWireContract.version,
-            "workerDerivationEpoch": 1,
-            "workerInstanceId": installation.bootstrap.workerInstanceId,
-        ],
-        options: [.sortedKeys]
-    )
-    return bridgeProductSchemeRequest(
-        route: BridgeProductWireContract.commandRoute,
-        capability: try BridgeProductCapabilityHeaderEncoding.encode(
-            installation.capabilityBytes
-        ),
-        body: body
-    )
-}
-
-private func collectBridgeSchemeHandlerProductReply(
-    handler: BridgeSchemeHandler,
-    request: URLRequest
-) async throws -> BridgeProductSchemeReplyObservation {
-    var body = Data()
-    var events: [BridgeProductSchemeReplyObservation.Event] = []
-    var response: HTTPURLResponse?
-    for try await result in handler.reply(for: request) {
-        switch result {
-        case .response(let emittedResponse):
-            events.append(.response)
-            response = emittedResponse as? HTTPURLResponse
-        case .data(let chunk):
-            events.append(.data)
-            body.append(chunk)
-        @unknown default:
-            Issue.record("Unexpected URL scheme task result")
-        }
-    }
-    return .init(body: body, events: events, response: response)
-}
-
-private func waitUntilProductRouterIsFenced(
-    _ router: BridgeProductSchemeSessionRouter
-) async {
-    for _ in 0..<512 {
-        if await router.activeInstallation == nil { return }
-        await Task.yield()
-    }
-    Issue.record("Product router did not fence active admission")
-}
-
-private func paneOwnerContentRequest(
-    installation: BridgeProductSessionInstallation,
-    identitySuffix: String
-) throws -> BridgeProductContentRequest {
-    let requestJSON = """
-        {
-          "kind": "content.open",
-          "wireVersion": 2,
-          "paneSessionId": "\(installation.bootstrap.paneSessionId)",
-          "workerDerivationEpoch": 1,
-          "workerInstanceId": "\(installation.bootstrap.workerInstanceId)",
-          "contentRequestId": "content-request-\(identitySuffix)",
-          "leaseId": "lease-\(identitySuffix)",
-          "operationCorrelationId": null,
-          "contentKind": "file.content",
-          "descriptor": {
-            "contentKind": "file.content",
-            "declaredByteLength": 3,
-            "descriptorId": "file-descriptor-\(identitySuffix)",
-            "encoding": "utf-8",
-            "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-            "fileId": "file-\(identitySuffix)",
-            "maximumBytes": 3,
-            "source": {
-              "repoId": "00000000-0000-4000-8000-000000000001",
-              "rootRevisionToken": null,
-              "sourceCursor": "source-cursor-\(identitySuffix)",
-              "sourceId": "source-\(identitySuffix)",
-              "subscriptionGeneration": 11,
-              "worktreeId": "00000000-0000-4000-8000-000000000002"
-            },
-            "window": {
-              "kind": "prefix",
-              "maximumBytes": 3,
-              "maximumLines": 10000,
-              "startByte": 0
-            }
-          }
-        }
-        """
-    return try BridgeProductStrictJSON.decode(
-        BridgeProductContentRequest.self,
-        from: Data(requestJSON.utf8)
-    )
-}
-
 actor BridgePaneProductSessionProviderGate: BridgeProductSchemeProvider {
+    private let workerRevocation: HeldStep<String>?
+
+    init(workerRevocation: HeldStep<String>? = nil) {
+        self.workerRevocation = workerRevocation
+    }
+
+    func revokeWorkerIdentity(_ workerInstanceId: String) async {
+        try? await workerRevocation?.arrive(workerInstanceId)
+    }
+
     private enum AcknowledgementMode {
         case fail
         case failOnceThenHold
@@ -835,7 +672,8 @@ actor BridgePaneProductSessionProviderGate: BridgeProductSchemeProvider {
                     correlating: request,
                     result: .reviewMarkFileViewed
                 )
-            case .subscriptionOpen, .subscriptionUpdateBatch, .subscriptionCancel,
+            case .subscriptionOpen, .subscriptionCancel,
+                .viewScope, .viewResnapshot,
                 .workerSessionResync:
                 preconditionFailure("Unexpected pane-owner control request")
             }

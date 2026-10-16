@@ -1,4 +1,23 @@
 import { act } from 'react';
+import { afterEach, beforeEach } from 'vitest';
+
+import { bridgePageConfigurationSchema } from '../bridge/bridge-page-configuration.js';
+import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
+import pageConfigurationFixture from '../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
+
+const pageConfiguration = bridgePageConfigurationSchema.parse(pageConfigurationFixture);
+const activeHandshakes = new Set<() => void>();
+let currentTestSignal: AbortSignal | undefined;
+
+beforeEach((context): void => {
+	currentTestSignal = context.signal;
+});
+
+afterEach((): void => {
+	for (const dispose of activeHandshakes) dispose();
+	activeHandshakes.clear();
+	currentTestSignal = undefined;
+});
 
 export async function pollWithinAct<TValue>(props: {
 	readonly getValue: () => TValue;
@@ -56,16 +75,19 @@ export interface InstalledBridgeReadyHandshake {
 }
 
 export interface InstalledControlledBridgeReadyHandshake extends InstalledBridgeReadyHandshake {
-	readonly acknowledgeReady: () => void;
-	readonly readyRequestId: () => string | null;
+	readonly acknowledgeReady: (requestId: string) => void;
+	readonly waitForReadyRequest: () => Promise<string>;
 }
 
 function dispatchBridgeHandshakeWithoutTelemetryConfig(): void {
-	document.dispatchEvent(new CustomEvent('__bridge_handshake'));
+	document.dispatchEvent(new CustomEvent('__bridge_handshake', { detail: { pageConfiguration } }));
 }
 
 export function installControlledBridgeReadyHandshake(): InstalledControlledBridgeReadyHandshake {
-	let readyRequestId: string | null = null;
+	const ownerSignal = currentTestSignal;
+	const readyRequests = new BridgeProductTestFactRecorder<string>();
+	const readyRequestIds = new Set<string>();
+	let isDisposed = false;
 	const handleBridgeReady = (event: Event): void => {
 		if (!('detail' in event)) return;
 		const detail = event.detail;
@@ -77,16 +99,33 @@ export function installControlledBridgeReadyHandshake(): InstalledControlledBrid
 		) {
 			return;
 		}
-		readyRequestId = detail.requestId;
+		if (!isDisposed) {
+			readyRequestIds.add(detail.requestId);
+			readyRequests.record(detail.requestId);
+		}
 	};
 	document.addEventListener(
 		'__bridge_handshake_request',
 		dispatchBridgeHandshakeWithoutTelemetryConfig,
 	);
 	document.addEventListener('__bridge_ready', handleBridgeReady);
+	const dispose = (): void => {
+		if (isDisposed) return;
+		isDisposed = true;
+		document.removeEventListener(
+			'__bridge_handshake_request',
+			dispatchBridgeHandshakeWithoutTelemetryConfig,
+		);
+		document.removeEventListener('__bridge_ready', handleBridgeReady);
+		readyRequests.close(new Error('Controlled Bridge ready handshake closed.'));
+		ownerSignal?.removeEventListener('abort', dispose);
+		activeHandshakes.delete(dispose);
+	};
+	activeHandshakes.add(dispose);
+	ownerSignal?.addEventListener('abort', dispose, { once: true });
 	return {
-		acknowledgeReady: (): void => {
-			if (readyRequestId === null) {
+		acknowledgeReady: (readyRequestId): void => {
+			if (isDisposed || !readyRequestIds.has(readyRequestId)) {
 				throw new Error('Expected a pending Bridge ready request.');
 			}
 			document.dispatchEvent(
@@ -95,14 +134,8 @@ export function installControlledBridgeReadyHandshake(): InstalledControlledBrid
 				}),
 			);
 		},
-		dispose: (): void => {
-			document.removeEventListener(
-				'__bridge_handshake_request',
-				dispatchBridgeHandshakeWithoutTelemetryConfig,
-			);
-			document.removeEventListener('__bridge_ready', handleBridgeReady);
-		},
-		readyRequestId: (): string | null => readyRequestId,
+		dispose,
+		waitForReadyRequest: (): Promise<string> => readyRequests.waitFor(),
 	};
 }
 
@@ -112,10 +145,11 @@ export function installBridgeReadyHandshake(
 		readonly telemetryConfig?: unknown;
 	} = {},
 ): InstalledBridgeReadyHandshake {
+	const ownerSignal = currentTestSignal;
 	const handleBridgeHandshakeRequest = (): void => {
 		document.dispatchEvent(
 			new CustomEvent('__bridge_handshake', {
-				detail: { telemetryConfig: props.telemetryConfig },
+				detail: { pageConfiguration, telemetryConfig: props.telemetryConfig },
 			}),
 		);
 	};
@@ -145,10 +179,15 @@ export function installBridgeReadyHandshake(
 	};
 	document.addEventListener('__bridge_handshake_request', handleBridgeHandshakeRequest);
 	document.addEventListener('__bridge_ready', handleBridgeReady);
+	const dispose = (): void => {
+		document.removeEventListener('__bridge_handshake_request', handleBridgeHandshakeRequest);
+		document.removeEventListener('__bridge_ready', handleBridgeReady);
+		activeHandshakes.delete(dispose);
+		ownerSignal?.removeEventListener('abort', dispose);
+	};
+	activeHandshakes.add(dispose);
+	ownerSignal?.addEventListener('abort', dispose, { once: true });
 	return {
-		dispose: (): void => {
-			document.removeEventListener('__bridge_handshake_request', handleBridgeHandshakeRequest);
-			document.removeEventListener('__bridge_ready', handleBridgeReady);
-		},
+		dispose,
 	};
 }

@@ -1,14 +1,15 @@
-import { mkdir, rmdir, unlink, utimes, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rmdir, unlink, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 
+import { createBridgeProductDeferred } from '../src/core/comm-worker/bridge-product-async-queue.js';
 import { withBridgeWebAppBuildLock } from './build-app-assets-lock.ts';
 
 const buildLockParentDirectoryPath = new URL('../../tmp/bridge-web-assets/', import.meta.url);
 const buildLockDirectoryPath = join(buildLockParentDirectoryPath.pathname, 'build-app-assets.lock');
 const buildLockOwnerFilePath = join(buildLockDirectoryPath, 'owner.json');
-const staleLockTimestamp = new Date(Date.now() - 121_000);
+const staleLockTimestamp = new Date(Date.now() - 120_001);
 
 describe('BridgeWeb app asset build lock', () => {
 	beforeEach(async () => {
@@ -16,6 +17,7 @@ describe('BridgeWeb app asset build lock', () => {
 	});
 
 	afterEach(async () => {
+		vi.useRealTimers();
 		await removeTestLockDirectory();
 	});
 
@@ -34,29 +36,70 @@ describe('BridgeWeb app asset build lock', () => {
 	});
 
 	test('recovers a stale ownerless lock directory', async () => {
+		expect(Date.now() - staleLockTimestamp.getTime()).toBeGreaterThan(120_000);
 		await mkdir(buildLockDirectoryPath, { recursive: true });
 		await utimes(buildLockDirectoryPath, staleLockTimestamp, staleLockTimestamp);
 
 		await expectBuildLockRecovery();
 	});
+
+	test('reports the production lock deadline before the runner bound for a live owner', async (): Promise<void> => {
+		await mkdir(buildLockDirectoryPath, { recursive: true });
+		await writeFile(
+			buildLockOwnerFilePath,
+			JSON.stringify({
+				pid: process.pid,
+				acquiredAtMilliseconds: Date.now(),
+				token: 'live-test-owner',
+			}),
+		);
+		const startedAt = Date.now();
+		const clock = vi
+			.spyOn(Date, 'now')
+			.mockReturnValueOnce(startedAt)
+			.mockReturnValue(startedAt + 120_001);
+		try {
+			await expect(withBridgeWebAppBuildLock(async (): Promise<void> => {})).rejects.toThrow(
+				'Timed out waiting for BridgeWeb app asset build lock:',
+			);
+		} finally {
+			clock.mockRestore();
+		}
+	});
+
+	test('harness guard follows a held critical section through release instead of a timer', async () => {
+		vi.useFakeTimers();
+		const criticalSectionEntered = createBridgeProductDeferred<void>();
+		const releaseCriticalSection = createBridgeProductDeferred<void>();
+		const recoveryOutcome = expectBuildLockRecovery(async (): Promise<void> => {
+			criticalSectionEntered.resolve();
+			await releaseCriticalSection.promise;
+		}).then(
+			(): null => null,
+			(error: unknown): unknown => error,
+		);
+		try {
+			await criticalSectionEntered.promise;
+			// Drive the former oracle's timer while the lock owner is explicitly held.
+			await vi.advanceTimersByTimeAsync(1_000);
+		} finally {
+			releaseCriticalSection.resolve();
+		}
+		expect(await recoveryOutcome).toBeNull();
+	});
 });
 
-async function expectBuildLockRecovery(): Promise<void> {
+async function expectBuildLockRecovery(
+	runCriticalSection: () => Promise<void> = async (): Promise<void> => {},
+): Promise<void> {
 	let didEnterCriticalSection = false;
 	const buildLockPromise = withBridgeWebAppBuildLock(async (): Promise<void> => {
 		didEnterCriticalSection = true;
+		await runCriticalSection();
 	});
-	const recoveryResultPromise = Promise.race([
-		buildLockPromise.then((): boolean => true),
-		new Promise<boolean>((resolve): void => {
-			setTimeout((): void => {
-				resolve(false);
-			}, 1_000);
-		}),
-	]);
-
-	await expect(recoveryResultPromise).resolves.toBe(true);
+	await buildLockPromise;
 	expect(didEnterCriticalSection).toBe(true);
+	await expect(readFile(buildLockOwnerFilePath)).rejects.toMatchObject({ code: 'ENOENT' });
 }
 
 async function removeTestLockDirectory(): Promise<void> {

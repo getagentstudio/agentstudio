@@ -1,0 +1,64 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="860" viewBox="0 0 1120 860">
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#52657c" stroke-width="1.4"/></marker></defs>
+<rect width="1120" height="860" fill="#fff"/>
+<text x="32" y="39" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#243449">What changes in the current architecture</text>
+<text x="32" y="69" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Keep the viewer and per-worktree Git engine. Move navigation ownership outside the replaceable viewer.</text>
+<text x="32" y="115" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#243449">CURRENT: one captured source constructs both sides</text>
+<rect x="32" y="142" width="290" height="106" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="48" y="170" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">App: terminal association</text>
+<text x="48" y="197" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Resolved known worktree</text>
+<text x="48" y="221" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Zoom companion reconciliation</text>
+<rect x="405" y="142" width="295" height="106" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="421" y="170" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Core: BridgePaneState</text>
+<text x="421" y="197" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">One workspace root</text>
+<text x="421" y="221" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">One Review baseline</text>
+<rect x="784" y="142" width="296" height="106" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="800" y="170" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Bridge: controller</text>
+<text x="800" y="197" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">File + Review dependencies</text>
+<text x="800" y="221" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Built from the captured source</text>
+<polyline points="322,193 405,193" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<polyline points="700,193 784,193" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="32" y="284" font-family="Arial, sans-serif" font-size="17" font-weight="700" fill="#243449">Changed: CWD injects/protects a member; it does not change displayed selections.</text>
+<text x="32" y="340" font-family="Arial, sans-serif" font-size="19" font-weight="700" fill="#243449">PROPOSED: one saved navigation record, two explicit source inputs</text>
+<rect x="32" y="376" width="290" height="126" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="48" y="404" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">App: navigation handler</text>
+<text x="48" y="431" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Command dispatch / exact admission</text>
+<text x="48" y="455" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Sequences draft flush and activation</text>
+<text x="48" y="479" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Publishes validated transitions</text>
+<rect x="405" y="376" width="295" height="126" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="421" y="404" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Core: navigation atom — new</text>
+<text x="421" y="431" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Opened files + known members</text>
+<text x="421" y="455" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Files selection + Review selection</text>
+<text x="421" y="479" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Per-worktree comparison choices</text>
+<rect x="784" y="376" width="296" height="126" rx="8" fill="#f3f9f6" stroke="#26735e" stroke-width="1.5"/>
+<text x="800" y="404" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#26735e">Existing workspace save</text>
+<text x="800" y="431" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Extended save capture and hydration</text>
+<text x="800" y="455" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">New local navigation row</text>
+<text x="800" y="479" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">No new store or database</text>
+<polyline points="322,428 405,428" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="333" y="415" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">publish</text>
+<polyline points="700,428 784,428" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="722" y="415" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">save</text>
+<rect x="405" y="567" width="295" height="93" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="421" y="595" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">File input</text>
+<text x="421" y="622" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Collection adapter: all member trees</text>
+<text x="421" y="646" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">+ exact opened loose documents</text>
+<rect x="784" y="567" width="296" height="93" rx="8" fill="#f3f9f6" stroke="#26735e" stroke-width="1.5"/>
+<text x="800" y="595" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#26735e">Review input</text>
+<text x="800" y="622" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">One member worktree + comparison</text>
+<text x="800" y="646" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">OR unavailable</text>
+<polyline points="552,502 552,567" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<polyline points="650,502 650,538 930,538 930,567" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<rect x="405" y="718" width="675" height="107" rx="8" fill="#f4f8fd" stroke="#2465a4" stroke-width="1.5"/>
+<text x="421" y="746" font-family="Arial, sans-serif" font-size="18" font-weight="700" fill="#2465a4">Bridge: one active native controller / WebView</text>
+<text x="421" y="773" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Membership updates reuse Files; Review binding changes may recreate the controller.</text>
+<text x="421" y="797" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Reuse file reader, Git calculation, annotation editing and teardown fences.</text>
+<polyline points="552,660 552,718" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<polyline points="930,660 930,718" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="32" y="585" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#243449">App owns composition.</text>
+<text x="32" y="614" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Core owns saved values.</text>
+<text x="32" y="643" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Bridge owns source / rendering.</text>
+<text x="32" y="741" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#243449">New exact-file authority</text>
+<text x="32" y="770" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">admits individual locations;</text>
+<text x="32" y="799" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">it never grants folder traversal.</text>
+</svg>

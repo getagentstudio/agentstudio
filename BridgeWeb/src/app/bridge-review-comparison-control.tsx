@@ -11,10 +11,11 @@ import {
 
 import { Button, buttonVariants } from '../components/ui/button.js';
 import { Drawer, DrawerTrigger } from '../components/ui/drawer.js';
-import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
+import type { BridgeMainPanelChromeSlice } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import type { BridgeWorkerReviewComparisonUpdateCommand } from '../core/comm-worker/bridge-worker-contracts.js';
 import type { BridgeReviewPackage } from '../foundation/review-package/bridge-review-package.js';
 import type { BridgeReviewComparisonTargetsQueryState } from './bridge-app-review-render-snapshot-controller.js';
+import type { BridgeRegionSurfaceStatus } from './bridge-region-presentation-state.js';
 import type { BridgeReviewComparisonBranchBasis } from './bridge-review-comparison-branch-selector.js';
 import {
 	BridgeReviewComparisonDrawerContent,
@@ -26,6 +27,7 @@ import {
 	bridgeReviewComparisonTargetLabel,
 	type BridgeReviewComparisonTarget,
 } from './bridge-review-comparison-target.js';
+import { bridgeReviewRegionDisplaySpec } from './bridge-review-region-display-spec.js';
 import { BridgeViewerContextPanel } from './bridge-viewer-context-panel.js';
 
 export interface BridgeReviewComparisonFinalFocusContext {
@@ -34,7 +36,8 @@ export interface BridgeReviewComparisonFinalFocusContext {
 }
 
 export interface BridgeReviewComparisonControlProps {
-	readonly comparisonPresentation: BridgeWorkerPanelChromePatchPayload['reviewComparison'];
+	readonly regionSurfaceStatus?: BridgeRegionSurfaceStatus;
+	readonly comparisonPresentation: BridgeMainPanelChromeSlice['reviewComparison'];
 	readonly displayedReviewPackage: BridgeReviewPackage | null;
 	readonly disabled?: boolean;
 	readonly isActive?: boolean;
@@ -133,7 +136,11 @@ export function BridgeReviewComparisonControl(
 		locallyPendingTarget === null
 			? closedComparisonLabel(props)
 			: `Compare to: ${comparisonTargetLabel(locallyPendingTarget)} · Updating`;
-	const presentsUpdatingChrome = isUpdating || label.endsWith(' · Updating');
+	const isHeld =
+		props.regionSurfaceStatus?.kind === 'updating' &&
+		props.regionSurfaceStatus.rest === 'held' &&
+		!isLocallyPending;
+	const presentsUpdatingChrome = !isHeld && (isUpdating || label.endsWith(' · Updating'));
 	const visibleLabel = presentsUpdatingChrome
 		? installedComparisonVisibleLabel(props)
 		: closedComparisonVisibleLabel(props);
@@ -242,10 +249,6 @@ export function BridgeReviewComparisonControl(
 					onCommitOIDChange={setCommitOID}
 					onComparisonBasisChange={setComparisonBasis}
 					onQueryTargets={onQueryTargets}
-					onRetryTarget={(target): void => {
-						applyComparisonTarget(target);
-						cancelTargetQueryAndClose();
-					}}
 					onSelectTarget={(target): void => {
 						applyComparisonTarget(target);
 						cancelTargetQueryAndClose();
@@ -333,6 +336,8 @@ function comparisonStatePresentation(
 		return null;
 	}
 	switch (comparisonPresentation.attempt.status) {
+		case 'noSource':
+			return null;
 		case 'selectionRequired':
 			return {
 				description: 'Select a branch or Git reference before reviewing changes.',
@@ -349,28 +354,8 @@ function comparisonStatePresentation(
 					};
 		case 'settled':
 			return null;
-		case 'unavailable': {
-			const unavailableDescription =
-				displayedContribution?.heading === 'Previous comparison'
-					? 'The selected target could not be refreshed. The previous comparison remains visible.'
-					: 'The selected target could not be compared.';
-			if (
-				comparisonPresentation.attempt.retryable &&
-				comparisonPresentation.activeTarget !== null
-			) {
-				return {
-					description: unavailableDescription,
-					heading: 'Comparison unavailable',
-					kind: 'retry',
-					retryTarget: comparisonPresentation.activeTarget,
-				};
-			}
-			return {
-				description: unavailableDescription,
-				heading: 'Comparison unavailable',
-				kind: 'message',
-			};
-		}
+		case 'unavailable':
+			return null;
 	}
 	return unreachableComparisonValue(comparisonPresentation.attempt);
 }
@@ -381,6 +366,13 @@ function closedComparisonLabel(props: BridgeReviewComparisonControlProps): strin
 		return narrowComparisonLabel;
 	}
 	const displayedContribution = displayedContributionForComparison(props);
+	if (
+		props.regionSurfaceStatus?.kind === 'updating' &&
+		props.regionSurfaceStatus.rest === 'held' &&
+		displayedContribution !== null
+	) {
+		return `Compare to: ${comparisonTargetLabel(displayedContribution.origin.symbolicTarget)}`;
+	}
 	if (displayedContribution?.heading === 'Previous comparison') {
 		const displayedTargetLabel = comparisonTargetLabel(displayedContribution.origin.symbolicTarget);
 		const attemptStatus = props.comparisonPresentation?.attempt.status;
@@ -392,9 +384,7 @@ function closedComparisonLabel(props: BridgeReviewComparisonControlProps): strin
 		return attemptStatus === 'pending' ||
 			(attemptStatus === 'settled' && isDisplayedPackageAwaitingPresentationDelivery(props))
 			? `Compare to: ${requestedTargetLabel} · Updating`
-			: attemptStatus === 'unavailable'
-				? `Compare to: ${requestedTargetLabel} · Unavailable`
-				: `Compare to: ${displayedTargetLabel} · Stale`;
+			: `Compare to: ${displayedTargetLabel} · ${bridgeReviewRegionDisplaySpec.staleComparison}`;
 	}
 	const activeTarget = props.comparisonPresentation?.activeTarget;
 	if (activeTarget === undefined || activeTarget === null) {

@@ -1,7 +1,7 @@
 import { act } from 'react';
 import { describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
-import { userEvent } from 'vitest/browser';
+import { page, userEvent } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import './bridge-app.css';
@@ -9,7 +9,6 @@ import {
 	buildBridgeWorkerReviewCandidateFailedEvent,
 	buildBridgeWorkerReviewCandidateReadyEvent,
 } from '../core/comm-worker/bridge-comm-worker-protocol.js';
-import type { BridgeWorkerServerToMainMessage } from '../core/comm-worker/bridge-worker-contracts.js';
 import {
 	bridgeWorkerReviewPublicationIdentity,
 	bridgeWorkerReviewSourceContext,
@@ -17,25 +16,21 @@ import {
 import { createBridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import {
 	ReviewDirectDisplayProbe,
+	ReviewRecoveryRetryProbe,
 	hierarchicalReviewDisplayEvent,
 	makeReviewSurfaceHarness,
 	requireHTMLElement,
 	reviewDisplayEvent,
+	reviewDisplayEventWithContribution,
+	reviewComparisonPanelChromeEvent,
+	reviewComparisonPanelChromeEventForHarness,
+	reviewComparisonLoadingPanelChromeEventForHarness,
 	settleRenderedReviewFrame,
 } from './bridge-app-review-render-snapshot-controller.browser-harness.test-support.js';
 import { BridgeReviewViewerMode } from './bridge-app-review-viewer-mode.js';
 import { performComparisonAction } from './bridge-review-comparison-control.browser.test-support.js';
-import type { BridgeReviewComparisonTarget } from './bridge-review-comparison-target.js';
 
 const bridgeReviewNavigationCommandIsAlwaysEligible = (): boolean => true;
-
-const TEST_REVIEW_PUBLICATION_IDENTITY = {
-	packageId: 'test-review-package',
-	publicationId: '00000000-0000-7000-8000-000000000001',
-	reviewGeneration: 1,
-	revision: 1,
-	sourceIdentity: 'test-review-source',
-} as const;
 
 describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 	test('publishes real keyed Review facts and a later metadata window without a package adapter', async () => {
@@ -81,6 +76,68 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 		await expect
 			.element(rendered.getByTestId('review-direct-display-probe'))
 			.toHaveAttribute('data-review-later-row-path', 'Sources/Later.swift');
+	});
+
+	test('shows one Review metadata Retry and keeps the last good row while retrying both jobs', async () => {
+		const harness = makeReviewSurfaceHarness();
+		const target = {
+			basis: 'commonCommit',
+			branchName: 'master',
+			kind: 'localDefaultBranch',
+		} as const;
+		const lastGoodReviewPath = 'Sources/LastGood.swift';
+		harness.reviewClient.renderStore.applyReviewDisplayPatchEvent(
+			reviewDisplayEvent({
+				itemId: 'last-good-review-item',
+				path: lastGoodReviewPath,
+				projectionRevision: 1,
+				sequence: 1,
+				startIndex: 0,
+			}),
+		);
+		const panelChromePatch = reviewComparisonPanelChromeEvent().patches[0];
+		if (panelChromePatch?.slice !== 'panelChrome' || panelChromePatch.operation !== 'upsert') {
+			throw new Error('Expected the Review comparison panel chrome patch.');
+		}
+		harness.reviewClient.renderStore.applyWorkerPatch(panelChromePatch);
+		harness.reviewClient.renderStore.applyViewRecoveryStatusEvent({
+			wireVersion: 1,
+			direction: 'serverWorkerToMain',
+			transferDescriptors: [],
+			kind: 'viewRecoveryStatus',
+			view: { kind: 'review.metadata', subscriptionId: 'review-view-retry-1' },
+			status: 'failedRetryable',
+		});
+
+		const rendered = await render(
+			<ReviewRecoveryRetryProbe comparisonTarget={target} reviewClient={harness.reviewClient} />,
+		);
+
+		await expect
+			.element(rendered.getByText("Review couldn't update. Showing the last version."))
+			.toBeVisible();
+		await expect.element(rendered.getByText(lastGoodReviewPath, { exact: true })).toBeVisible();
+		expect(document.querySelectorAll('button[aria-label="Retry"]')).toHaveLength(1);
+		const retryButton = rendered.getByRole('button', { name: 'Retry' }).element();
+		expect(retryButton.tagName).toBe('BUTTON');
+		expect(retryButton.getAttribute('type')).toBe('button');
+		await act(async (): Promise<void> => {
+			await rendered.getByRole('button', { name: 'Retry' }).click();
+		});
+		await expect.element(rendered.getByText(lastGoodReviewPath, { exact: true })).toBeVisible();
+		expect(harness.sentCommands.slice(-2).map((command) => command.command)).toEqual([
+			'viewRecoveryRetry',
+			'reviewComparisonUpdate',
+		]);
+		expect(harness.sentCommands.at(-2)).toMatchObject({
+			command: 'viewRecoveryRetry',
+			view: { kind: 'review.metadata', subscriptionId: 'review-view-retry-1' },
+		});
+		expect(harness.sentCommands.at(-1)).toMatchObject({
+			command: 'reviewComparisonUpdate',
+			target,
+		});
+		await page.screenshot({ path: '../../../tmp/bridgeweb-review-view-retry.png' });
 	});
 
 	test('emits one initial Review intake-ready command and does not duplicate it on rerender', async () => {
@@ -399,16 +456,18 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 	test('keeps active Review interactive while same-source comparison remains loading', async () => {
 		const harness = makeReviewSurfaceHarness();
 		const rendered = await render(
-			<BridgeReviewViewerMode
-				codeViewWorkerPoolEnabled={false}
-				isActive
-				isNavigationCommandStillEligible={bridgeReviewNavigationCommandIsAlwaysEligible}
-				onActiveSourceChange={vi.fn()}
-				onNavigationSourceChange={vi.fn()}
-				reviewClient={harness.reviewClient}
-				telemetryRecorderRef={{ current: createBridgeTelemetryRecorder(null) }}
-				viewerContextSwitcher={<div />}
-			/>,
+			<div className="h-[600px] w-full">
+				<BridgeReviewViewerMode
+					codeViewWorkerPoolEnabled={false}
+					isActive
+					isNavigationCommandStillEligible={bridgeReviewNavigationCommandIsAlwaysEligible}
+					onActiveSourceChange={vi.fn()}
+					onNavigationSourceChange={vi.fn()}
+					reviewClient={harness.reviewClient}
+					telemetryRecorderRef={{ current: createBridgeTelemetryRecorder(null) }}
+					viewerContextSwitcher={<div />}
+				/>
+			</div>,
 		);
 		await act(async (): Promise<void> => {
 			harness.publish(
@@ -461,6 +520,52 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
 			.toHaveTextContent('Update ready');
 		expect(canvas.hasAttribute('inert')).toBe(false);
+		await act(async (): Promise<void> => {
+			harness.reviewClient.renderStore.applyWorkerPatch({
+				slice: 'panelChrome',
+				operation: 'upsert',
+				payload: {
+					reviewComparison: {
+						activeTarget: {
+							basis: 'commonCommit',
+							branchName: 'master',
+							kind: 'localDefaultBranch',
+						},
+						attempt: { reviewGeneration: 1, status: 'settled' },
+						displayedSnapshot: {
+							packageId: 'review-browser-harness-package',
+							reviewGeneration: 1,
+							revision: 2,
+							status: 'current',
+						},
+						repositoryDefaultTarget: null,
+					},
+				},
+			});
+		});
+		expect(rendered.getByTestId('bridge-review-comparison-pending-icon').query()).toBeNull();
+		expect(
+			document
+				.querySelector('[data-bridge-region="review-content"]')
+				?.getAttribute('data-presentation-state'),
+		).toBe('loading');
+		expect(
+			document.querySelectorAll('[data-bridge-region="review-content"] [data-slot="skeleton"]'),
+		).toHaveLength(6);
+		await act(async (): Promise<void> => {
+			expect(
+				Object.keys(harness.reviewClient.renderStore.getSnapshot().codeViewItemsById),
+			).toHaveLength(0);
+			expect(
+				[...document.querySelectorAll('diffs-container')].flatMap((container) => [
+					...(container.shadowRoot?.querySelectorAll('[data-line][data-line-index]') ?? []),
+				]),
+			).toHaveLength(0);
+			expect(
+				rendered.getByTestId('bridge-review-sidebar').element().getBoundingClientRect().height,
+			).toBe(600);
+			await page.screenshot({ path: '../../../tmp/g1-review-held-single-indicator.png' });
+		});
 		expect(tree.hasAttribute('inert')).toBe(false);
 		expect(getComputedStyle(canvas).pointerEvents).not.toBe('none');
 		expect(getComputedStyle(tree).pointerEvents).not.toBe('none');
@@ -518,8 +623,8 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 		expect(getComputedStyle(canvas).opacity).toBe('1');
 		expect(getComputedStyle(tree).opacity).toBe('1');
 		await expect
-			.element(rendered.getByTestId('bridge-review-comparison-loading-status'))
-			.toHaveTextContent('Loading comparison with feature/new-target');
+			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
+			.toHaveTextContent('Updating…');
 		expect(rendered.getByTestId('bridge-review-comparison-status-banner').query()).toBeNull();
 	});
 
@@ -652,8 +757,8 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 			await Promise.resolve();
 		});
 		await expect
-			.element(rendered.getByTestId('bridge-review-refresh-header-group'))
-			.toHaveTextContent('Update unavailable');
+			.element(rendered.getByRole('alert'))
+			.toHaveTextContent("Review couldn't update. Showing the last version.");
 		await act(async (): Promise<void> => {
 			await rendered.getByRole('button', { name: 'Retry' }).click();
 			await Promise.resolve();
@@ -726,7 +831,9 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 				viewerContextSwitcher={<div />}
 			/>,
 		);
-		await expect.element(rendered.getByTestId('bridge-review-empty-shell')).toBeVisible();
+		await expect
+			.element(rendered.getByTestId('bridge-review-metadata-loading-shell'))
+			.toBeVisible();
 
 		// Act
 		await act(async (): Promise<void> => {
@@ -805,121 +912,3 @@ describe('useBridgeReviewRenderSnapshotController Browser Mode', () => {
 		).toHaveLength(0);
 	});
 });
-
-function reviewComparisonPanelChromeEvent(): Extract<
-	BridgeWorkerServerToMainMessage,
-	{ readonly kind: 'reviewRenderPatch' }
-> {
-	return {
-		direction: 'serverWorkerToMain',
-		kind: 'reviewRenderPatch',
-		reviewPublicationIdentity: TEST_REVIEW_PUBLICATION_IDENTITY,
-		patches: [
-			{
-				operation: 'upsert',
-				payload: {
-					reviewComparison: {
-						activeTarget: {
-							basis: 'commonCommit',
-							branchName: 'master',
-							kind: 'localDefaultBranch',
-						},
-						attempt: { reviewGeneration: 1, status: 'settled' },
-						displayedSnapshot: { status: 'none' },
-						repositoryDefaultTarget: null,
-					},
-				},
-				slice: 'panelChrome',
-			},
-		],
-		publicationSequence: 1,
-		surface: 'review',
-		transferDescriptors: [],
-		wireVersion: 1,
-		workerDerivationEpoch: 1,
-	};
-}
-
-function reviewDisplayEventWithContribution(
-	props: Parameters<typeof reviewDisplayEvent>[0],
-): ReturnType<typeof reviewDisplayEvent> {
-	const event = reviewDisplayEvent(props);
-	return {
-		...event,
-		// oxlint-disable-next-line no-map-spread -- The strict immutable fixture preserves every non-source patch while replacing one nested source payload.
-		patches: event.patches.map((patch) =>
-			patch.slice !== 'reviewSource' || patch.operation !== 'upsert'
-				? patch
-				: {
-						...patch,
-						payload: {
-							...patch.payload,
-							comparisonOrigin: {
-								baseOID: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
-								baseRole: 'commonCommit',
-								comparedRole: 'capturedWorkingTree',
-								kind: 'contribution',
-								resolvedTargetOID: 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm',
-								reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
-								symbolicTarget: {
-									basis: 'commonCommit',
-									branchName: 'master',
-									kind: 'localDefaultBranch',
-								},
-							},
-						},
-					},
-		),
-	};
-}
-
-function reviewComparisonPanelChromeEventForHarness(): ReturnType<
-	typeof reviewComparisonPanelChromeEvent
-> {
-	return {
-		...reviewComparisonPanelChromeEvent(),
-		reviewPublicationIdentity: {
-			packageId: 'review-browser-harness-package',
-			publicationId: '00000000-0000-7000-8000-000000000001',
-			reviewGeneration: 1,
-			revision: 1,
-			sourceIdentity: 'review-browser-harness-source',
-		},
-	};
-}
-
-function reviewComparisonLoadingPanelChromeEventForHarness(
-	props: {
-		readonly activeTarget?: BridgeReviewComparisonTarget;
-	} = {},
-): ReturnType<typeof reviewComparisonPanelChromeEvent> {
-	const event = reviewComparisonPanelChromeEventForHarness();
-	return {
-		...event,
-		// oxlint-disable-next-line no-map-spread -- The strict immutable fixture preserves every non-panel patch while replacing one nested panel payload.
-		patches: event.patches.map((patch) =>
-			patch.slice !== 'panelChrome' || patch.operation !== 'upsert'
-				? patch
-				: {
-						...patch,
-						payload: {
-							reviewComparison: {
-								activeTarget: props.activeTarget ?? {
-									basis: 'commonCommit',
-									branchName: 'master',
-									kind: 'localDefaultBranch',
-								},
-								attempt: { reviewGeneration: 2, status: 'pending' },
-								displayedSnapshot: {
-									packageId: 'review-browser-harness-package',
-									reviewGeneration: 1,
-									revision: 1,
-									status: 'current',
-								},
-								repositoryDefaultTarget: null,
-							},
-						},
-					},
-		),
-	};
-}

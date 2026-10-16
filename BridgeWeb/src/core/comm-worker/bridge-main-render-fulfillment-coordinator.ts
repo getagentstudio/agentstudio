@@ -5,6 +5,8 @@ import type {
 } from './bridge-worker-contracts.js';
 import {
 	bridgeWorkerRenderDispositionReceiptSchema,
+	bridgeWorkerPaintReleasedSchema,
+	type BridgeWorkerPaintReleasedReceipt,
 	type BridgeWorkerRenderDispositionReceipt,
 	type BridgeWorkerRenderReceiptIdentity,
 	type BridgeWorkerRenderRejectionReason,
@@ -40,6 +42,7 @@ interface BridgeMainRetainedPaintedEvidence {
 export interface BridgeMainRenderedItemReadback {
 	readonly element: {
 		readonly isConnected: boolean;
+		readonly getAttribute: (qualifiedName: string) => string | null;
 		readonly removeAttribute: (qualifiedName: string) => void;
 		readonly setAttribute: (qualifiedName: string, value: string) => void;
 	};
@@ -64,8 +67,10 @@ export interface BridgeMainRenderFulfillmentCoordinator {
 	readonly dispose: () => void;
 	readonly isBoundFinalItem: (item: BridgeMainRenderPublicationItem) => boolean;
 	readonly readBoundFinalItem: (itemId: string) => BridgeMainRenderPublicationItem | undefined;
+	readonly holdPublication: (publication: BridgeMainRenderPublication) => void;
 	readonly markPublicationQueued: (publication: BridgeMainRenderPublication) => void;
 	readonly retireWorkerInstance: () => void;
+	readonly releasePaintedCopy: (itemId: string) => boolean;
 	readonly observePostRender: (
 		props: BridgeMainRenderReadback & {
 			readonly contextItem: BridgeMainRenderPublicationItem;
@@ -90,6 +95,7 @@ export interface CreateBridgeMainRenderFulfillmentCoordinatorProps {
 	readonly nowMilliseconds?: () => number;
 	readonly requestAnimationFrame?: (callback: FrameRequestCallback) => number;
 	readonly sendDisposition: (receipt: BridgeWorkerRenderDispositionReceipt) => void;
+	readonly sendPaintRelease?: (receipt: BridgeWorkerPaintReleasedReceipt) => void;
 }
 
 interface BridgeMainPendingRenderPublication {
@@ -105,7 +111,7 @@ interface BridgeMainPendingRenderPublication {
 	postRenderObserved: boolean;
 	queuedSubmissionObserved: boolean;
 	residency: BridgeMainPierreItemResidency;
-	stage: 'accepted' | 'queued' | 'applied';
+	stage: 'accepted' | 'held' | 'queued' | 'applied';
 }
 
 export function createBridgeMainRenderFulfillmentCoordinator(
@@ -130,6 +136,7 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 		number
 	>();
 	const terminalPublicationIdentityKeys = new Set<string>();
+	const paintedReceiptByLogicalItemId = new Map<string, BridgeWorkerRenderReceiptIdentity>();
 	let isDisposed = false;
 
 	const scheduleRetainedPaintValidation = (
@@ -164,7 +171,7 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 
 	const sendPositiveDisposition = (
 		entry: BridgeMainPendingRenderPublication,
-		disposition: 'queued' | 'applied' | 'painted',
+		disposition: 'held' | 'queued' | 'applied' | 'painted',
 	): void => {
 		props.sendDisposition(
 			bridgeWorkerRenderDispositionReceiptSchema.parse({
@@ -248,6 +255,10 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 				return;
 			}
 			sendPositiveDisposition(entry, 'painted');
+			paintedReceiptByLogicalItemId.set(
+				entry.logicalItemId,
+				entry.publication.renderReceiptIdentity,
+			);
 			pendingByPierreItemId.delete(entry.pierreItemId);
 			pendingByPublicationItem.delete(entry.publicationItem);
 			terminalPublicationIdentityKeys.add(entry.identityKey);
@@ -268,7 +279,7 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 		if (renderedItem === null) return;
 		if (renderedItem.readableContentMatchesItem) entry.postRenderObserved = true;
 		clearPaintedSourceCorrelation(renderedItem);
-		if (entry.stage === 'accepted') return;
+		if (entry.stage === 'accepted' || entry.stage === 'held') return;
 		if (entry.residency !== 'reusedPainted' && !entry.postRenderObserved) return;
 		if (entry.stage === 'queued') {
 			sendPositiveDisposition(entry, 'applied');
@@ -284,42 +295,64 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 		reconcileEntry(entry, entry.latestPostRenderReadback);
 	};
 
+	const acceptPublication = (
+		publication: BridgeMainRenderPublication,
+		resumeHeld: boolean = true,
+	): BridgeMainRenderPublicationAdmission => {
+		if (isDisposed) {
+			throw new Error('Bridge main render fulfillment coordinator is disposed.');
+		}
+		assertBridgeMainRenderPublicationIdentity(publication);
+		const identityKey = bridgeMainRenderReceiptIdentityKey(publication.renderReceiptIdentity);
+		if (terminalPublicationIdentityKeys.has(identityKey)) return 'duplicate';
+		const logicalItemId = publication.job.itemId;
+		const pierreItemId = publication.job.payload.item.id;
+		const existingEntry =
+			pendingByPierreItemId.get(pierreItemId) ??
+			findPendingPublicationByLogicalItemId(pendingByPierreItemId, logicalItemId);
+		if (existingEntry?.identityKey === identityKey) {
+			if (resumeHeld && existingEntry.stage === 'held') {
+				existingEntry.stage = 'accepted';
+				return 'accepted';
+			}
+			return 'duplicate';
+		}
+		if (existingEntry !== undefined) {
+			closePendingPublication(existingEntry, 'superseded', 'stale_submission');
+		}
+		const entry: BridgeMainPendingRenderPublication = {
+			animationFrameHandle: null,
+			finalItemBound: false,
+			identityKey,
+			item: publication.job.payload.item,
+			latestPostRenderReadback: null,
+			logicalItemId,
+			pierreItemId,
+			postRenderObserved: false,
+			publication,
+			publicationItem: publication.job.payload.item,
+			queuedSubmissionObserved: false,
+			residency: 'replaced',
+			stage: 'accepted',
+		};
+		retainedPaintedEvidenceByFinalItem.delete(entry.publicationItem);
+		pendingByPierreItemId.set(pierreItemId, entry);
+		pendingByPublicationItem.set(entry.publicationItem, entry);
+		return 'accepted';
+	};
 	return {
-		acceptPublication: (publication): BridgeMainRenderPublicationAdmission => {
-			if (isDisposed) {
-				throw new Error('Bridge main render fulfillment coordinator is disposed.');
-			}
-			assertBridgeMainRenderPublicationIdentity(publication);
-			const identityKey = bridgeMainRenderReceiptIdentityKey(publication.renderReceiptIdentity);
-			if (terminalPublicationIdentityKeys.has(identityKey)) return 'duplicate';
-			const logicalItemId = publication.job.itemId;
-			const pierreItemId = publication.job.payload.item.id;
-			const existingEntry =
-				pendingByPierreItemId.get(pierreItemId) ??
-				findPendingPublicationByLogicalItemId(pendingByPierreItemId, logicalItemId);
-			if (existingEntry?.identityKey === identityKey) return 'duplicate';
-			if (existingEntry !== undefined) {
-				closePendingPublication(existingEntry, 'superseded', 'stale_submission');
-			}
-			const entry: BridgeMainPendingRenderPublication = {
-				animationFrameHandle: null,
-				finalItemBound: false,
-				identityKey,
-				item: publication.job.payload.item,
-				latestPostRenderReadback: null,
-				logicalItemId,
-				pierreItemId,
-				postRenderObserved: false,
-				publication,
-				publicationItem: publication.job.payload.item,
-				queuedSubmissionObserved: false,
-				residency: 'replaced',
-				stage: 'accepted',
-			};
-			retainedPaintedEvidenceByFinalItem.delete(entry.publicationItem);
-			pendingByPierreItemId.set(pierreItemId, entry);
-			pendingByPublicationItem.set(entry.publicationItem, entry);
-			return 'accepted';
+		acceptPublication,
+		holdPublication: (publication): void => {
+			acceptPublication(publication, false);
+			const entry = pendingByPierreItemId.get(publication.job.payload.item.id);
+			if (
+				entry?.identityKey !==
+					bridgeMainRenderReceiptIdentityKey(publication.renderReceiptIdentity) ||
+				entry.stage !== 'accepted'
+			)
+				return;
+			sendPositiveDisposition(entry, 'held');
+			entry.stage = 'held';
 		},
 		bindPublicationItem: (bindProps): void => {
 			if (isDisposed) return;
@@ -356,6 +389,7 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 			}
 			retainedPaintValidationFramesByFinalItem.clear();
 			retainedPaintedEvidenceByFinalItem = new WeakMap();
+			paintedReceiptByLogicalItemId.clear();
 			terminalPublicationIdentityKeys.clear();
 		},
 		isBoundFinalItem: (item): boolean => {
@@ -396,7 +430,25 @@ export function createBridgeMainRenderFulfillmentCoordinator(
 			}
 			retainedPaintValidationFramesByFinalItem.clear();
 			retainedPaintedEvidenceByFinalItem = new WeakMap();
+			paintedReceiptByLogicalItemId.clear();
 			terminalPublicationIdentityKeys.clear();
+		},
+		releasePaintedCopy: (itemId): boolean => {
+			if (isDisposed) return false;
+			const identity = paintedReceiptByLogicalItemId.get(itemId);
+			if (identity === undefined) return false;
+			paintedReceiptByLogicalItemId.delete(itemId);
+			if (props.sendPaintRelease === undefined) {
+				throw new Error('Bridge painted-copy release requires a receipt admission owner.');
+			}
+			props.sendPaintRelease(
+				bridgeWorkerPaintReleasedSchema.parse({
+					...identity,
+					kind: 'paint.released',
+					receivedAtMilliseconds: nowMilliseconds(),
+				}),
+			);
+			return true;
 		},
 		observePostRender: (observeProps): void => {
 			if (isDisposed || observeProps.phase === 'unmount') return;
@@ -478,7 +530,27 @@ function matchingRenderedItemForExactItem(
 }
 
 const BRIDGE_PAINTED_SOURCE_CORRELATIONS_ATTRIBUTE = 'data-bridge-painted-source-correlations';
-const BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE = 'data-bridge-painted-publication-id';
+export const BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE = 'data-bridge-painted-publication-id';
+const BRIDGE_RENDER_DISPOSITION_SETTLED_PUBLICATION_ID_ATTRIBUTE =
+	'data-bridge-render-disposition-settled-publication-id';
+const BRIDGE_RENDER_DISPOSITION_SETTLED_OUTCOME_ATTRIBUTE =
+	'data-bridge-render-disposition-settled-outcome';
+
+export function stampBridgeRenderDispositionSettlementEvidence(props: {
+	readonly elements: Iterable<Pick<Element, 'getAttribute' | 'setAttribute'>>;
+	readonly outcome: 'settled-ok' | 'settled-failed';
+	readonly publicationId: string;
+}): void {
+	for (const element of props.elements) {
+		if (element.getAttribute(BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE) !== props.publicationId)
+			continue;
+		element.setAttribute(
+			BRIDGE_RENDER_DISPOSITION_SETTLED_PUBLICATION_ID_ATTRIBUTE,
+			props.publicationId,
+		);
+		element.setAttribute(BRIDGE_RENDER_DISPOSITION_SETTLED_OUTCOME_ATTRIBUTE, props.outcome);
+	}
+}
 
 function retainAndStampPaintedSourceCorrelation(
 	entry: BridgeMainPendingRenderPublication,
@@ -537,6 +609,10 @@ function clearPaintedSourceCorrelation(renderedItem: BridgeMainRenderedItemReadb
 	try {
 		renderedItem.element.removeAttribute(BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE);
 		renderedItem.element.removeAttribute(BRIDGE_PAINTED_SOURCE_CORRELATIONS_ATTRIBUTE);
+		renderedItem.element.removeAttribute(
+			BRIDGE_RENDER_DISPOSITION_SETTLED_PUBLICATION_ID_ATTRIBUTE,
+		);
+		renderedItem.element.removeAttribute(BRIDGE_RENDER_DISPOSITION_SETTLED_OUTCOME_ATTRIBUTE);
 	} catch {
 		// Packaged proof metadata is diagnostic-only and cannot gate product fulfillment.
 	}
@@ -547,7 +623,12 @@ function stampRetainedPaintedEvidence(
 	evidence: BridgeMainRetainedPaintedEvidence,
 ): void {
 	try {
-		clearPaintedSourceCorrelation(renderedItem);
+		if (
+			renderedItem.element.getAttribute(BRIDGE_PAINTED_PUBLICATION_ID_ATTRIBUTE) !==
+			evidence.publicationId
+		) {
+			clearPaintedSourceCorrelation(renderedItem);
+		}
 		renderedItem.element.setAttribute(
 			BRIDGE_PAINTED_SOURCE_CORRELATIONS_ATTRIBUTE,
 			evidence.encodedSourceCorrelations,

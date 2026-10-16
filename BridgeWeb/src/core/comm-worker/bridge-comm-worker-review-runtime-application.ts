@@ -6,6 +6,12 @@ import type {
 } from './bridge-comm-worker-store.js';
 import type { BridgeWorkerServerToMainMessage } from './bridge-worker-contracts.js';
 
+export interface BridgeCommWorkerReviewRuntimeApplicationTransaction {
+	readonly commit: () => void;
+	readonly rollback: () => void;
+	readonly runPostCommitEffects: () => void;
+}
+
 export interface BridgeCommWorkerReviewMetadataApplication {
 	readonly affectedItemIds: readonly string[];
 	readonly affectedRowIds: readonly string[];

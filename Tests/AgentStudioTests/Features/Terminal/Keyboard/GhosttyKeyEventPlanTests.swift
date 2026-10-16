@@ -8,7 +8,8 @@ import Testing
 /// The key input each AppKit event sends to Ghostty. Plans preserve original
 /// modifiers and carry translated text and composing state; modifier events
 /// follow upstream Ghostty's `flagsChanged`.
-@Suite
+@MainActor
+@Suite(.serialized)
 struct GhosttyKeyEventPlanTests {
     struct KeyboardLayoutChangeCase: CustomTestStringConvertible, Sendable {
         let name: String
@@ -35,7 +36,7 @@ struct GhosttyKeyEventPlanTests {
         var testDescription: String { name }
     }
 
-    static let keyboardLayoutChangeCases: [KeyboardLayoutChangeCase] = [
+    nonisolated static let keyboardLayoutChangeCases: [KeyboardLayoutChangeCase] = [
         .init(
             name: "unchanged layout without marked text",
             hasMarkedTextBefore: false,
@@ -73,7 +74,7 @@ struct GhosttyKeyEventPlanTests {
         ),
     ]
 
-    static let composingSuppressionCases: [ComposingSuppressionCase] = [
+    nonisolated static let composingSuppressionCases: [ComposingSuppressionCase] = [
         .init(name: "control character while composing", text: "\u{8}", composing: true, shouldSuppress: true),
         .init(name: "unit separator while composing", text: "\u{1F}", composing: true, shouldSuppress: true),
         .init(name: "control character outside composition", text: "\u{8}", composing: false, shouldSuppress: false),
@@ -85,7 +86,7 @@ struct GhosttyKeyEventPlanTests {
         .init(name: "delete character while composing", text: "\u{7F}", composing: true, shouldSuppress: false),
     ]
 
-    static let committedPreeditReplayCases: [CommittedPreeditReplayCase] = [
+    nonisolated static let committedPreeditReplayCases: [CommittedPreeditReplayCase] = [
         .init(name: "down arrow", keyCode: 0x7D, modifiers: [], shouldReplay: true),
         .init(name: "right arrow", keyCode: 0x7C, modifiers: [], shouldReplay: true),
         .init(name: "up arrow", keyCode: 0x7E, modifiers: [], shouldReplay: true),
@@ -106,7 +107,7 @@ struct GhosttyKeyEventPlanTests {
         var testDescription: String { name }
     }
 
-    static let modifierCases: [ModifierCase] = [
+    nonisolated static let modifierCases: [ModifierCase] = [
         .init(name: "left shift down", keyCode: 0x38, flags: shift | leftShift, action: GHOSTTY_ACTION_PRESS),
         .init(name: "left shift up", keyCode: 0x38, flags: 0, action: GHOSTTY_ACTION_RELEASE),
         .init(name: "right shift down", keyCode: 0x3C, flags: shift | rightShift, action: GHOSTTY_ACTION_PRESS),
@@ -264,7 +265,7 @@ struct GhosttyKeyEventPlanTests {
         var testDescription: String { name }
     }
 
-    static let keyDownCases: [KeyDownCase] = [
+    nonisolated static let keyDownCases: [KeyDownCase] = [
         .init(
             name: "a", characters: "a", flags: [], keyCode: 0, text: "a",
             mods: GHOSTTY_MODS_NONE.rawValue, consumedMods: GHOSTTY_MODS_NONE.rawValue),
@@ -376,19 +377,19 @@ struct GhosttyKeyEventPlanTests {
 
     // MARK: - Events
 
-    private static let shift = CGEventFlags.maskShift.rawValue
-    private static let control = CGEventFlags.maskControl.rawValue
-    private static let option = CGEventFlags.maskAlternate.rawValue
-    private static let command = CGEventFlags.maskCommand.rawValue
-    private static let capsLock = CGEventFlags.maskAlphaShift.rawValue
-    private static let leftShift = UInt64(NX_DEVICELSHIFTKEYMASK)
-    private static let rightShift = UInt64(NX_DEVICERSHIFTKEYMASK)
-    private static let leftControl = UInt64(NX_DEVICELCTLKEYMASK)
-    private static let rightControl = UInt64(NX_DEVICERCTLKEYMASK)
-    private static let leftOption = UInt64(NX_DEVICELALTKEYMASK)
-    private static let rightOption = UInt64(NX_DEVICERALTKEYMASK)
-    private static let leftCommand = UInt64(NX_DEVICELCMDKEYMASK)
-    private static let rightCommand = UInt64(NX_DEVICERCMDKEYMASK)
+    nonisolated private static let shift = CGEventFlags.maskShift.rawValue
+    nonisolated private static let control = CGEventFlags.maskControl.rawValue
+    nonisolated private static let option = CGEventFlags.maskAlternate.rawValue
+    nonisolated private static let command = CGEventFlags.maskCommand.rawValue
+    nonisolated private static let capsLock = CGEventFlags.maskAlphaShift.rawValue
+    nonisolated private static let leftShift = UInt64(NX_DEVICELSHIFTKEYMASK)
+    nonisolated private static let rightShift = UInt64(NX_DEVICERSHIFTKEYMASK)
+    nonisolated private static let leftControl = UInt64(NX_DEVICELCTLKEYMASK)
+    nonisolated private static let rightControl = UInt64(NX_DEVICERCTLKEYMASK)
+    nonisolated private static let leftOption = UInt64(NX_DEVICELALTKEYMASK)
+    nonisolated private static let rightOption = UInt64(NX_DEVICERALTKEYMASK)
+    nonisolated private static let leftCommand = UInt64(NX_DEVICELCMDKEYMASK)
+    nonisolated private static let rightCommand = UInt64(NX_DEVICERCMDKEYMASK)
 
     /// A real `.flagsChanged` event: reading `characters` from it raises.
     private static func modifierEvent(keyCode: CGKeyCode, flags: UInt64) throws -> NSEvent {

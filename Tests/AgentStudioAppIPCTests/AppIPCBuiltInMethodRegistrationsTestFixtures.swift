@@ -32,7 +32,6 @@ struct BuiltInMethodRegistrationsFixture {
         get throws {
             try IPCBuiltInMethodCatalog(
                 inputs: IPCBuiltInMethodCatalogInputs(
-                    terminalWaitMaximumSeconds: 10,
                     relationships: IPCBuiltInMethodRelationshipInputs(
                         paneFocus: .noInteractiveIdentity,
                         paneClose: .noInteractiveIdentity,
@@ -65,7 +64,9 @@ struct BuiltInMethodRegistrationsFixture {
         bridgePort: (any AppIPCBridgePort)? = nil,
         uiPresentationPort: (any AppIPCUIPresentationPort)? = nil,
         sessionsPort: (any AppIPCSessionsPort)? = nil,
-        eventBroker: IPCEventBroker = IPCEventBroker()
+        eventBroker: IPCEventBroker = IPCEventBroker(),
+        paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
+        paneContextPort: any AppIPCPaneContextPort = UnavailableAppIPCPaneContextPort()
     ) throws -> [AnyAppIPCMethodRegistration] {
         try AppIPCBuiltInMethodRegistrations.make(
             inputs: AppIPCBuiltInRegistrationInputs(
@@ -87,7 +88,8 @@ struct BuiltInMethodRegistrationsFixture {
                     sessionsPort: sessionsPort ?? RecordingSessionsPort(),
                     permissionApprovalPort: FakePermissionApprovalPort(),
                     ownPaneScopePort: StaticOwnPaneScopePort(),
-                    agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry()
+                    agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry(),
+                    paneContextPort: paneContextPort, paneClaimAdmission: paneClaimAdmission
                 ),
                 eventBroker: eventBroker
             )
@@ -103,7 +105,8 @@ struct BuiltInMethodRegistrationsFixture {
         authenticationStatus: @escaping @Sendable () -> IPCAuthStatusResult = {
             .unauthenticated
         },
-        subscriber: any IPCEventSubscriber = BuiltInRecordingEventSubscriber()
+        subscriber: any IPCEventSubscriber = BuiltInRecordingEventSubscriber(),
+        paneClaimAdmission: AppIPCPaneClaimAdmission? = nil
     ) -> AppIPCConnectionContext {
         AppIPCConnectionContext(
             contextId: connectionId,
@@ -116,7 +119,7 @@ struct BuiltInMethodRegistrationsFixture {
             },
             authenticate: authenticate,
             authenticationStatus: authenticationStatus,
-            eventSubscriber: subscriber
+            eventSubscriber: subscriber, paneClaimAdmission: paneClaimAdmission, runtimeId: runtimeId
         )
     }
 
@@ -126,7 +129,7 @@ struct BuiltInMethodRegistrationsFixture {
         switch principal.kind {
         case .spawnedPaneAgent:
             return .pane(recordID: UUIDv7.generate())
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             return .diagnostic(generationID: UUIDv7.generate())
         }
     }

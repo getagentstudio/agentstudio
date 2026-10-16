@@ -30,6 +30,24 @@ enum GitDemandTier: String, CaseIterable, Sendable {
 /// never removed here until a slot is granted: demotion changes eligibility and
 /// cadence, not whether the refresh survives.
 extension GitWorkingDirectoryProjector {
+    /// One immutable key per candidate. The comparator never reads projector state.
+    struct PendingAdmissionCandidate: Comparable, Sendable {
+        let worktreeId: UUID
+        let tier: GitDemandTier
+        let isExplicit: Bool
+        let priority: Int
+        let timestamp: ContinuousClock.Instant
+        let batchSeq: UInt64
+        let uuidString: String
+
+        static func < (lhs: Self, rhs: Self) -> Bool {
+            if lhs.priority != rhs.priority { return lhs.priority < rhs.priority }
+            if lhs.timestamp != rhs.timestamp { return lhs.timestamp < rhs.timestamp }
+            if lhs.batchSeq != rhs.batchSeq { return lhs.batchSeq < rhs.batchSeq }
+            return lhs.uuidString < rhs.uuidString
+        }
+    }
+
     func grantDemandEligibility(worktreeId: UUID) {
         tierEligibleWorktreeIds.insert(worktreeId)
     }
@@ -40,14 +58,8 @@ extension GitWorkingDirectoryProjector {
         let availableSlots = refreshPolicy.maxConcurrentStatusComputes - worktreeTasks.count
         guard availableSlots > 0 else { return }
 
-        let eligibleWorktreeIds = pendingByWorktreeId.keys.filter { worktreeId in
-            worktreeTasks[worktreeId] == nil
-                && !suppressedWorktreeIds.contains(worktreeId)
-                && !quarantinedWorktreeIds.contains(worktreeId)
-                && !capacityRetryWorktreeIds.contains(worktreeId)
-                && isDemandEligible(worktreeId: worktreeId)
-        }
-        guard !eligibleWorktreeIds.isEmpty else { return }
+        let candidates = pendingAdmissionCandidates()
+        guard !candidates.isEmpty else { return }
 
         var admittedWorktreeIds: [UUID] = []
         let runningDemandTiers = worktreeTasks.keys.map { worktreeId in
@@ -70,15 +82,16 @@ extension GitWorkingDirectoryProjector {
         var scheduledGovernorWake = false
         var nextGovernorDeadline = nextAutomaticStartAt
 
-        for worktreeId in eligibleWorktreeIds.sorted(by: sortPendingWorktreeByPriority) {
+        for candidate in candidates.sorted() {
             guard admittedWorktreeIds.count < availableSlots else { break }
-            if explicitRefreshWorktreeIds.contains(worktreeId) {
+            let worktreeId = candidate.worktreeId
+            if candidate.isExplicit {
                 guard admitPendingWorktreeAfterPathCheck(worktreeId: worktreeId) else { continue }
                 admittedWorktreeIds.append(worktreeId)
                 continue
             }
 
-            let tier = pendingAdmissionDemandTier(for: worktreeId)
+            let tier = candidate.tier
             let runningTierCount = runningCountByTier[tier, default: 0]
             guard runningTierCount < tier.maximumConcurrent(in: refreshPolicy) else { continue }
             if tier != .activePane {
@@ -153,7 +166,8 @@ extension GitWorkingDirectoryProjector {
         explicitRefreshWorktreeIds.remove(worktreeId)
         tierEligibleWorktreeIds.remove(worktreeId)
         if let changeset = pendingByWorktreeId[worktreeId] {
-            closeIntakeFactOnce(worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetAccepted)
+            closeIntakeFactOnce(
+                worktreeId: worktreeId, batchSeq: changeset.batchSeq, fact: .changesetAccepted)
         }
         if let requestSequence = refreshAttribution.requestSequenceByWorktreeId[worktreeId] {
             admitRefreshFact(worktreeId: worktreeId, requestSequence: requestSequence)
@@ -161,30 +175,32 @@ extension GitWorkingDirectoryProjector {
         startDrainTask(worktreeId: worktreeId)
     }
 
-    private func sortPendingWorktreeByPriority(_ lhs: UUID, _ rhs: UUID) -> Bool {
-        let lhsPriority = priorityKey(for: lhs)
-        let rhsPriority = priorityKey(for: rhs)
-        if lhsPriority != rhsPriority {
-            return lhsPriority < rhsPriority
-        }
-        guard let lhsChangeset = pendingByWorktreeId[lhs] else { return false }
-        guard let rhsChangeset = pendingByWorktreeId[rhs] else { return true }
-        if lhsChangeset.timestamp != rhsChangeset.timestamp {
-            return lhsChangeset.timestamp < rhsChangeset.timestamp
-        }
-        if lhsChangeset.batchSeq != rhsChangeset.batchSeq {
-            return lhsChangeset.batchSeq < rhsChangeset.batchSeq
-        }
-        return lhs.uuidString < rhs.uuidString
-    }
-
-    private func priorityKey(for worktreeId: UUID) -> Int {
-        if explicitRefreshWorktreeIds.contains(worktreeId) { return -1 }
-        switch pendingAdmissionDemandTier(for: worktreeId) {
-        case .activePane: return 0
-        case .visibleSidebar: return 1
-        case .openPane: return 2
-        case .background: return 3
+    func pendingAdmissionCandidates() -> [PendingAdmissionCandidate] {
+        pendingByWorktreeId.compactMap { worktreeId, changeset in
+            guard worktreeTasks[worktreeId] == nil,
+                !suppressedWorktreeIds.contains(worktreeId),
+                !quarantinedWorktreeIds.contains(worktreeId),
+                !capacityRetryWorktreeIds.contains(worktreeId),
+                isDemandEligible(worktreeId: worktreeId)
+            else { return nil }
+            let tier = pendingAdmissionDemandTier(for: worktreeId)
+            let isExplicit = explicitRefreshWorktreeIds.contains(worktreeId)
+            let tierPriority: Int =
+                switch tier {
+                case .activePane: 0
+                case .visibleSidebar: 1
+                case .openPane: 2
+                case .background: 3
+                }
+            return PendingAdmissionCandidate(
+                worktreeId: worktreeId,
+                tier: tier,
+                isExplicit: isExplicit,
+                priority: isExplicit ? -1 : tierPriority,
+                timestamp: changeset.timestamp,
+                batchSeq: changeset.batchSeq,
+                uuidString: worktreeId.uuidString
+            )
         }
     }
 

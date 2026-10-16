@@ -10,13 +10,14 @@ struct CITopologyWorkflowTests {
         let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
         #expect(workflow.contains("  schedule:\n    - cron: \"0 9 * * *\""))
         #expect(workflow.contains("  workflow_dispatch:"))
-        #expect(workflow.components(separatedBy: "runs-on: macos-26").count == 3)
+        #expect(workflow.components(separatedBy: "runs-on: xcode-27").count == 3)
         let bridgeHeader = try topologyBlock(startingWith: "  bridge-web:\n", endingBefore: "    steps:", in: bridgeJob)
         let swiftHeader = try topologyBlock(
             startingWith: "  swift-test-suite:\n", endingBefore: "    steps:", in: swiftJob)
-        #expect(bridgeHeader.contains("    if: github.event_name != 'push'\n"))
-        #expect(!swiftHeader.contains("\n    if:"))
-        #expect(!swiftHeader.contains("\n    needs:"))
+        #expect(bridgeHeader.contains("github.event_name != 'push'"))
+        #expect(swiftHeader.contains("needs.changes.result != 'success'"))
+        #expect(swiftHeader.contains("needs.changes.outputs.scope != 'docs'"))
+        #expect(swiftHeader.contains("\n    needs: changes"))
         #expect(!swiftJob.contains("needs.bridge-web"))
         for stepName in ["Compute Swift cache compatibility prefix", "Inventory Swift build inputs before prebuild"] {
             let step = try topologyBlock(
@@ -29,7 +30,7 @@ struct CITopologyWorkflowTests {
                 eventName == "push" ? ["swift-test-suite"] : ["bridge-web", "swift-test-suite"]
             let selectedJobs = Set(
                 macOSJobs.compactMap { jobName, jobHeader -> String? in
-                    if jobHeader.contains("    if: github.event_name != 'push'\n"), eventName == "push" { return nil }
+                    if jobHeader.contains("github.event_name != 'push'"), eventName == "push" { return nil }
                     return jobName
                 })
             #expect(selectedJobs == activeJobs, "\(eventName) macOS topology changed")
@@ -56,6 +57,53 @@ struct CITopologyWorkflowTests {
         #expect(benchmarkTriggers.contains("  workflow_dispatch:"))
     }
 
+    @Test("post-merge benchmarks restore the main Swift seed without publishing a benchmark cache")
+    func benchmarkUsesMainSwiftSeedWithoutSaving() throws {
+        let benchmarkWorkflow = try String(contentsOfFile: ".github/workflows/benchmarks.yml", encoding: .utf8)
+        let benchmarkJob = try topologyJob(named: "benchmarks", in: benchmarkWorkflow)
+        #expect(!benchmarkJob.contains("actions: read"))
+        #expect(!benchmarkJob.contains("actions: write"))
+        #expect(benchmarkJob.contains("SWIFT_BUILD_DIR: .build-ci"))
+        #expect(
+            benchmarkJob.contains(
+                "SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats"
+            )
+        )
+        #expect(benchmarkJob.contains("run: mise run test:swift:large"))
+        #expect(!benchmarkJob.contains("benchmark-swift-build-ci-"))
+        #expect(!benchmarkJob.contains("actions/cache/save"))
+
+        let prefix = try topologyBlock(
+            startingWith: "      - name: Compute Swift cache compatibility prefix\n",
+            endingBefore: "\n      - ", in: benchmarkJob)
+        #expect(prefix.contains("scripts/ci-swift-build-inputs.sh fingerprint"))
+
+        let restore = try topologyBlock(
+            startingWith: "      - name: Restore Swift build seed\n",
+            endingBefore: "\n      - ", in: benchmarkJob)
+        #expect(restore.contains("uses: actions/cache/restore@v4"))
+        #expect(restore.contains("steps.swift-cache-prefix.outputs.prefix"))
+        #expect(restore.contains("restore-keys: |"))
+        #expect(!restore.contains("github.event_name == 'pull_request'"))
+
+        let verify = try topologyBlock(
+            startingWith: "      - name: Verify and restamp PR Swift seed\n",
+            endingBefore: "\n      - ", in: benchmarkJob)
+        #expect(verify.contains("scripts/ci-swift-build-inputs.sh verify"))
+        #expect(verify.contains("scripts/ci-swift-build-inputs.sh restamp"))
+        #expect(verify.contains(".build-ci/ci-swift-build-seed.json"))
+        #expect(verify.contains("swift-inputs-before.json"))
+
+        // The inventory must see the same packaged BridgeWeb resources main seeded, or the seed is rejected.
+        let inventory = try #require(benchmarkJob.range(of: "name: Inventory Swift build inputs before prebuild"))
+        let verifyStep = try #require(benchmarkJob.range(of: "name: Verify and restamp PR Swift seed"))
+        for setupName in ["BridgeWeb packaged build", "Copy XCFramework", "Setup dev resources"] {
+            let setup = try #require(benchmarkJob.range(of: "name: \(setupName)"))
+            #expect(setup.lowerBound < inventory.lowerBound)
+        }
+        #expect(inventory.lowerBound < verifyStep.lowerBound)
+    }
+
     @Test("BridgeWeb consumes the shared verified seed after setup without publishing")
     func bridgeWebUsesSharedSwiftSeed() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
@@ -80,7 +128,7 @@ struct CITopologyWorkflowTests {
         }
         #expect(!bridgeJob.contains("actions/cache/save"))
         #expect(!bridgeJob.contains("actions: write"))
-        #expect(!bridgeJob.contains("needs:"))
+        #expect(bridgeJob.contains("needs: changes"))
         let restore = try topologyBlock(
             startingWith: "      - name: Restore Swift build seed\n", endingBefore: "\n      - ", in: bridgeJob)
         #expect(restore.contains("if: github.event_name == 'pull_request'"))
@@ -146,18 +194,28 @@ struct CITopologyWorkflowTests {
         #expect(inputScript.contains("swift-build-v1-"))
         #expect(workflow.contains("steps.swift-cache-prefix.outputs.prefix"))
     }
-    @Test("CI jobs start independently without cross-job dependencies")
-    func ciJobsStartIndependentlyWithoutCrossJobDependencies() throws {
+    @Test("scoped CI jobs keep fail-closed classification guards")
+    func ciJobsDependOnlyOnClassification() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
+        #expect(!workflow.contains("marketing-site-validation"))
 
         for jobName in [
             "code-quality",
-            "marketing-site-validation",
             "bridge-web",
             "swift-test-suite",
         ] {
             let job = try topologyJob(named: jobName, in: workflow)
-            #expect(!job.contains("\n    needs:"))
+            #expect(job.contains("\n    needs: changes"))
+            let header = job.components(separatedBy: "    steps:").first ?? ""
+            #expect(header.contains("!cancelled()"))
+            if jobName == "code-quality" {
+                #expect(header.contains("if: ${{ !cancelled() }}"))
+                #expect(job.contains("name: Check changed documentation links"))
+                #expect(job.contains("needs.changes.outputs.scope != 'docs'"))
+            } else {
+                #expect(header.contains("needs.changes.result != 'success'"))
+                #expect(header.contains("needs.changes.outputs.scope != 'docs'"))
+            }
         }
     }
 
@@ -208,7 +266,6 @@ struct CITopologyWorkflowTests {
     func portableCIJobsRetainTheirContracts() throws {
         let workflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         let qualityJob = try topologyJob(named: "code-quality", in: workflow)
-        let marketingJob = try topologyJob(named: "marketing-site-validation", in: workflow)
         let bridgeWebJob = try topologyJob(named: "bridge-web", in: workflow)
         let swiftJob = try topologyJob(named: "swift-test-suite", in: workflow)
         let lintInstaller = try String(
@@ -224,12 +281,11 @@ struct CITopologyWorkflowTests {
         #expect(qualityJob.contains("name: Trust checkout for Git"))
         #expect(qualityJob.contains("name: Verify lint tools on PATH"))
         #expect(qualityJob.contains("shell: bash"))
-        #expect(marketingJob.contains("runs-on: ubuntu-24.04"))
-        #expect(bridgeWebJob.contains("runs-on: macos-26"))
+        #expect(bridgeWebJob.contains("runs-on: xcode-27"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: Install BridgeWeb dependencies"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: BridgeWeb packaged build"))
         #expect(bridgeWebJob.contains("      - parallel:\n          - name: Copy XCFramework"))
-        #expect(swiftJob.contains("runs-on: macos-26"))
+        #expect(swiftJob.contains("runs-on: xcode-27"))
         #expect(qualityJob.contains("run: mise run lint:portable"))
         #expect(qualityJob.contains("run: mise run test:architecture"))
         // Lint installs only its pinned tools; a blanket `mise install` pulled zig from a rate-limited mirror.
@@ -238,16 +294,21 @@ struct CITopologyWorkflowTests {
         #expect(qualityJob.contains("check-ledger-ratchet.sh"))
         #expect(qualityJob.contains("architecture-lint-linux-${{ runner.arch }}-swift-6.3.3-"))
         #expect(qualityJob.contains("github.ref == 'refs/heads/main'"))
-        #expect(marketingJob.contains("lfs: true"))
-        #expect(marketingJob.contains("playwright@1.61.0 install --with-deps chrome"))
-        #expect(marketingJob.contains("CHROME_BIN=$chrome_binary"))
-        #expect(marketingJob.contains("pnpm --dir web run check"))
-        #expect(marketingJob.contains("pnpm --dir web run build"))
         #expect(swiftJob.contains("run: mise run lint:release-scripts"))
         // The Swift job runs no swift-format, so it must not pay to build it.
         #expect(!swiftJob.contains("install-ci-lint-tools.sh"))
         #expect(qualityJob.contains("bash scripts/install-ci-lint-tools.sh"))
         #expect(swiftJob.contains("test \"$(swiftlint version)\" = \"0.65.1\""))
+        // The swift-format source build is cached per container image and installer revision;
+        // only main saves the entry, and a miss proves the copied binary runs without its build tree.
+        #expect(
+            qualityJob.contains(
+                "key: lint-tools-linux-${{ runner.arch }}-image-8de8ea332a61-${{ hashFiles('scripts/install-ci-lint-tools.sh') }}"
+            ))
+        #expect(qualityJob.contains("name: Save lint tools cache"))
+        #expect(qualityJob.contains("steps.lint-tools-cache-restore.outputs.cache-hit != 'true'"))
+        #expect(lintInstaller.contains("if [[ -x \"$format_cached_binary\" ]]; then"))
+        #expect(lintInstaller.contains("rm -rf \"$format_source\" \"$format_build\""))
         #expect(lintInstaller.contains("--branch 603.0.0"))
         #expect(lintInstaller.contains("supports only the Linux code-quality job"))
         #expect(lintInstaller.contains("swiftlint_linux_${swiftlint_arch}.zip"))

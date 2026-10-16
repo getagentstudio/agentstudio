@@ -1,13 +1,38 @@
-import type { Browser } from 'playwright';
+import type { Browser, BrowserContext } from 'playwright';
+
+import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
+import type { HandledLaunchPromise } from '../dev-server/handled-launch-promise.ts';
 
 let verifierBrowser: Browser | null = null;
+let verifierJourneySignal: AbortSignal | undefined;
+let verifierLaunch: BridgeWebTestLaunch | null = null;
 
-export function installVerifierBrowser(browser: Browser): void {
+export function installVerifierBrowser(
+	browser: Browser,
+	signal: AbortSignal,
+	launch: BridgeWebTestLaunch,
+): void {
 	verifierBrowser = browser;
+	browser.on('context', (context: BrowserContext): void => {
+		context.setDefaultTimeout(0);
+		context.setDefaultNavigationTimeout(0);
+	});
+	verifierJourneySignal = signal;
+	verifierLaunch = launch;
 }
 
 export function clearVerifierBrowser(): void {
 	verifierBrowser = null;
+	verifierJourneySignal = undefined;
+	verifierLaunch = null;
+}
+
+export function observeVerifierStartupStep<TValue>(
+	name: string,
+	promise: Promise<TValue>,
+): HandledLaunchPromise<TValue> {
+	if (verifierLaunch === null) throw new Error('Expected the verifier launch owner.');
+	return verifierLaunch.observeStep(name, promise);
 }
 
 export function requireVerifierBrowser(): Browser {
@@ -15,4 +40,8 @@ export function requireVerifierBrowser(): Browser {
 		throw new Error('Expected BridgeViewer worktree dev-server verifier browser to be installed');
 	}
 	return verifierBrowser;
+}
+
+export function currentVerifierJourneySignal(): AbortSignal | undefined {
+	return verifierJourneySignal;
 }

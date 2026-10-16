@@ -1,10 +1,10 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
 import {
 	encodeBridgeWorkerReviewComparisonTargetsQueryCancelCommand,
 	encodeBridgeWorkerReviewComparisonTargetsQueryCommand,
 } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import {
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
@@ -39,42 +39,6 @@ describe('Bridge comm worker comparison-target query runtime', () => {
 				status: 'failed',
 			}),
 		);
-	});
-
-	test('settles a timed-out comparison-target query as failed', async () => {
-		vi.useFakeTimers();
-		try {
-			// Arrange
-			const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
-			registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
-				bridgeDemandRank: { lane: 'selected', priority: 0 },
-				budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
-				productControlTimeoutMilliseconds: 25,
-				sendProductControl: async (): Promise<never> => new Promise((): void => {}),
-			});
-
-			// Act
-			dispatch.message(
-				encodeBridgeWorkerReviewComparisonTargetsQueryCommand({
-					epoch: 1,
-					requestId: 'request-comparison-targets-timeout',
-				}),
-			);
-			await flushBridgeWorkerRuntimeContinuations();
-			await vi.advanceTimersByTimeAsync(25);
-			await flushBridgeWorkerRuntimeContinuations();
-
-			// Assert
-			expect(postedMessages.map(({ message }) => message)).toContainEqual(
-				expect.objectContaining({
-					kind: 'reviewComparisonTargetsQuery',
-					requestId: 'request-comparison-targets-timeout',
-					status: 'failed',
-				}),
-			);
-		} finally {
-			vi.useRealTimers();
-		}
 	});
 
 	test('cancels an active comparison-target query without publishing its late result', async () => {

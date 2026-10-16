@@ -3,9 +3,10 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactEle
 import type { BridgePaneSurfaceClient } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeActiveViewerSource } from '../core/comm-worker/bridge-product-control-contracts.js';
 import type { BridgeProductNavigationCommand } from '../core/comm-worker/bridge-product-session-contracts.js';
+import type { BridgePaneFailedStartFact } from '../core/models/bridge-pane-failed-start.js';
+import { bridgeReviewRegionSurfaceStatus } from '../features/review/bridge-review-region-presentation.js';
 import { startBridgeFrameJankProbe } from '../foundation/diagnostics/bridge-frame-jank-probe.js';
 import { startBridgeFrameLivenessProbe } from '../foundation/diagnostics/bridge-frame-liveness-probe.js';
-import type { BridgeFileChangeKind } from '../foundation/review-package/bridge-review-package.js';
 import type { BridgeTelemetryRecorder } from '../foundation/telemetry/bridge-telemetry-recorder.js';
 import {
 	recordBridgeFrameJankTelemetrySample,
@@ -39,16 +40,16 @@ import {
 } from './bridge-app-navigation-admission.js';
 import { useBridgeReviewNavigationController } from './bridge-app-review-navigation-controller.js';
 import { bridgeReviewPresentationSnapshotForDisplay } from './bridge-app-review-presentation-adapter.js';
+import { bridgeReviewRegionShellPresentation } from './bridge-app-review-region-shell-presentation.js';
 import {
 	createBridgeReviewWorkerPierreCourier,
 	type BridgeReviewRenderSnapshotController,
 	useBridgeReviewRenderSnapshotController,
 } from './bridge-app-review-render-snapshot-controller.js';
 import { useBridgeReviewSelectionController } from './bridge-app-review-selection-controller.js';
-import {
-	BridgeReviewViewerShellBoundary,
-	type BridgeReviewViewerPresentationState,
-} from './bridge-app-review-viewer-shell-boundary.js';
+import { BridgeReviewViewerShellBoundary } from './bridge-app-review-viewer-shell-boundary.js';
+import { bridgePaneFailedStartSurfaceStatus } from './bridge-pane-failed-start-presentation.js';
+import type { BridgePaneReloadPort } from './bridge-pane-reload-port.js';
 import {
 	bridgeReviewComparisonPackageMatch,
 	bridgeReviewComparisonPaneIsLoading,
@@ -57,13 +58,12 @@ import {
 import { BridgeReviewHeaderPanels } from './bridge-review-header-panels.js';
 import {
 	BridgeReviewRefreshHeaderGroup,
-	bridgeReviewRefreshHeaderPresentation,
+	bridgeReviewRegionRefreshHeaderPresentation,
 } from './bridge-review-refresh-header-chrome.js';
 import {
 	createBridgeViewerSearchState,
 	transitionBridgeViewerSearchState,
 	type BridgeViewerSearchAction,
-	type BridgeViewerSearchError,
 	type BridgeViewerSearchRejectionReason,
 } from './bridge-viewer-search-state.js';
 import { BridgeViewerViewSettingsMenu } from './bridge-viewer-view-settings-menu.js';
@@ -73,6 +73,9 @@ import { useBridgeReviewControlEventListeners } from './use-bridge-review-contro
 import { useBridgeViewerToolbarShortcuts } from './use-bridge-viewer-toolbar-shortcuts.js';
 
 export interface BridgeReviewViewerModeProps {
+	readonly paneReloadPort?: BridgePaneReloadPort | undefined;
+	readonly railVisible?: boolean | undefined;
+	readonly paneFailedStart?: BridgePaneFailedStartFact | null;
 	readonly activationCause?: 'context_switcher' | 'native_request' | 'review_file_corner';
 	readonly activationSequence?: number;
 	readonly activationStartedAtPerfNow?: number;
@@ -236,6 +239,7 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 	const [treeSelectionRevealRequest, setTreeSelectionRevealRequest] =
 		useState<BridgeReviewTreeSelectionRevealRequest | null>(null);
 	const treeSelectionRevealRevisionRef = useRef(0);
+	const notifyNavigationUserSelectionRef = useRef<(() => void) | null>(null);
 	const codeViewControlHandleRef = useRef<BridgeCodeViewControlHandle | null>(null);
 	const controlProbeSequenceRef = useRef(0);
 	const isActiveRef = useRef(isActive);
@@ -405,22 +409,45 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 	]);
 	const comparisonIsLoading = bridgeReviewComparisonPaneIsLoading(comparisonPaneState);
 	const refreshRetryTarget = panelChromeSlice.reviewComparison?.activeTarget ?? null;
-	const refreshHeaderPresentation = bridgeReviewRefreshHeaderPresentation({
-		attentionItemIds: semanticAttentionItemIds,
-		canRetry: refreshRetryTarget !== null,
-		refreshPresentation: reviewRefreshPresentation,
+	const installationRetry = reviewRefreshPresentation.failure?.kind === 'installation';
+	const regionSurfaceStatus =
+		bridgePaneFailedStartSurfaceStatus(props.paneFailedStart) ??
+		bridgeReviewRegionSurfaceStatus({
+			comparisonPaneState: rawComparisonPaneState,
+			recoveryStatus: controller.viewRecoveryStatus,
+			refreshPresentation: reviewRefreshPresentation,
+			isActive,
+		});
+	const refreshHeaderPresentation = bridgeReviewRegionRefreshHeaderPresentation({
+		surface: regionSurfaceStatus,
+		isActive,
 	});
+	const onRetryRegion = (): void => {
+		if (installationRetry || controller.viewRecoveryStatus?.status === 'failedRetryable') {
+			controller.retryFailedMetadataView(refreshRetryTarget);
+			if (
+				installationRetry &&
+				(rawComparisonPaneState.kind === 'failedInitial' ||
+					rawComparisonPaneState.kind === 'failedPrevious') &&
+				rawComparisonPaneState.retryTarget !== null
+			)
+				controller.updateReviewComparisonTarget(rawComparisonPaneState.retryTarget);
+		} else if (refreshRetryTarget !== null)
+			controller.updateReviewComparisonTarget(refreshRetryTarget);
+	};
 	const contentHeaderControls = (
 		<>
 			<BridgeReviewRefreshHeaderGroup
 				onApplyNow={(): void => void controller.applyReviewRefreshNow()}
 				onRetry={(): void => {
-					if (refreshRetryTarget !== null)
+					if (installationRetry) controller.retryFailedMetadataView(refreshRetryTarget);
+					else if (refreshRetryTarget !== null)
 						controller.updateReviewComparisonTarget(refreshRetryTarget);
 				}}
 				presentation={refreshHeaderPresentation}
 			/>
 			<BridgeReviewHeaderPanels
+				regionSurfaceStatus={regionSurfaceStatus}
 				comparisonPresentation={panelChromeSlice.reviewComparison}
 				displayedReviewPackage={presentationSnapshot?.reviewPackage ?? null}
 				disabled={comparisonIsLoading}
@@ -473,7 +500,11 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 				annotationNavigation.request.requestId !== annotationRequestId
 			)
 				annotationNavigation.finish(annotationNavigation.request.requestId);
-			return commitReviewSelection(itemId, selectedSource);
+			const accepted = commitReviewSelection(itemId, selectedSource);
+			if (accepted && selectedSource !== 'programmatic') {
+				notifyNavigationUserSelectionRef.current?.();
+			}
+			return accepted;
 		},
 		[annotationNavigation, commitReviewSelection],
 	);
@@ -600,7 +631,7 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 		showBinary,
 		showLarge,
 	});
-	useBridgeReviewNavigationController({
+	const navigationController = useBridgeReviewNavigationController({
 		catalogRevision: catalogSnapshot.revision,
 		clearReviewSelection,
 		getReviewItem: displayStore.getReviewItemSnapshot,
@@ -614,7 +645,15 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 			annotationNavigation?.request != null ? false : selectReviewItem(itemId, selectedSource),
 		selectReviewItem: selectReviewItemAndRevealTree,
 	});
-	const presentationState = reviewPresentationState({
+	notifyNavigationUserSelectionRef.current = navigationController.notifyUserSelection;
+	const presentationState = bridgeReviewRegionShellPresentation({
+		paneReloadPort: props.paneReloadPort,
+		railVisible: props.railVisible,
+		onRetryRead: (): void => {
+			if (selectedItemId !== null) controller.emitSelectedReviewItemIntent(selectedItemId, 'user');
+		},
+		regionSurfaceStatus,
+		onRetryRegion,
 		annotationReveal,
 		onAnnotationRevealComplete: annotationNavigation?.finish,
 		activationCause,
@@ -640,7 +679,6 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 		presentationSnapshot,
 		renderFulfillmentCoordinator: reviewClient.renderFulfillmentCoordinator,
 		reviewSourceSlice,
-		reviewRefreshStatusText: null,
 		selectedCodeViewItem,
 		selectedContentAvailability,
 		selectedItemId,
@@ -670,6 +708,11 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 	});
 	return (
 		<BridgeReviewViewerShellBoundary
+			paneReloadPort={props.paneReloadPort}
+			railVisible={props.railVisible}
+			regionSurfaceStatus={regionSurfaceStatus}
+			recoveryStatus={controller.viewRecoveryStatus}
+			onRetryMetadata={onRetryRegion}
 			comparisonPaneState={comparisonPaneState}
 			isActive={isActive}
 			onRetryComparison={controller.updateReviewComparisonTarget}
@@ -682,9 +725,10 @@ function BridgeReviewViewerModeContent(props: BridgeReviewViewerModeProps): Reac
 
 function bridgeReviewComparisonAttemptTelemetryStatus(
 	presentation: BridgeReviewRenderSnapshotController['panelChromeSlice']['reviewComparison'],
-): 'absent' | 'pending' | 'selection_required' | 'settled' | 'unavailable' {
+): 'absent' | 'no_source' | 'pending' | 'selection_required' | 'settled' | 'unavailable' {
 	const status = presentation?.attempt.status;
 	if (status === undefined) return 'absent';
+	if (status === 'noSource') return 'no_source';
 	return status === 'selectionRequired' ? 'selection_required' : status;
 }
 
@@ -721,168 +765,4 @@ export function reviewComparisonPaneStateForRefreshPresentation(props: {
 	return sameSourceCandidate || sameSourceFailure
 		? { kind: 'settled' }
 		: props.rawComparisonPaneState;
-}
-
-function reviewPresentationState(props: {
-	readonly annotationReveal: BridgeCodeViewAnnotationReveal | null;
-	readonly onAnnotationRevealComplete: ((requestId: number) => void) | undefined;
-	readonly activationCause: BridgeReviewViewerModeProps['activationCause'];
-	readonly activationSequence: number | undefined;
-	readonly activationStartedAtPerfNow: number | undefined;
-	readonly comparisonPaneState: ReturnType<typeof bridgeReviewComparisonPaneState>;
-	readonly onRetryComparison: BridgeReviewRenderSnapshotController['updateReviewComparisonTarget'];
-	readonly onAnnotationAttentionItemIdsChange: (itemIds: readonly string[]) => void;
-	readonly onAnnotationEditorAttentionItemIdsChange: (itemIds: readonly string[]) => void;
-	readonly onReadingPositionItemIdChange: (itemId: string | null) => void;
-	readonly codeViewOptions: ReturnType<typeof deriveBridgeReviewCodeViewOptions>;
-	readonly codeViewWorkerFactory: (() => Worker) | undefined;
-	readonly codeViewWorkerPoolEnabled: boolean | undefined;
-	readonly panelChromeSlice: BridgeReviewRenderSnapshotController['panelChromeSlice'];
-	readonly projectionMode: BridgeReviewProjectionMode;
-	readonly codeViewControlHandleRef: { current: BridgeCodeViewControlHandle | null };
-	readonly facetMenuOpen: boolean;
-	readonly categoryFilter: BridgeReviewFilterCandidate['categoryFilter'];
-	readonly gitStatusFilter: BridgeFileChangeKind | 'all';
-	readonly showBinary: boolean;
-	readonly showLarge: boolean;
-	readonly presentationPositionKey: string;
-	readonly presentationSnapshot: ReturnType<typeof bridgeReviewPresentationSnapshotForDisplay>;
-	readonly renderFulfillmentCoordinator: BridgePaneSurfaceClient['renderFulfillmentCoordinator'];
-	readonly reviewSourceSlice: BridgeReviewRenderSnapshotController['reviewSourceSlice'];
-	readonly reviewRefreshStatusText: string | null;
-	readonly selectedCodeViewItem: BridgeReviewRenderSnapshotController['selectedCodeViewItem'];
-	readonly selectedContentAvailability: BridgeReviewRenderSnapshotController['selectedContentAvailability'];
-	readonly selectedItemId: string | null;
-	readonly selectedReviewItem: BridgeReviewRenderSnapshotController['selectedReviewItem'];
-	readonly selectReviewItem: (itemId: string) => boolean;
-	readonly setReviewCodeViewVisibleItemIds: (itemIds: readonly string[]) => void;
-	readonly setReviewViewportItemIds: (itemIds: readonly string[]) => void;
-	readonly telemetryRecorder: BridgeTelemetryRecorder;
-	readonly treeAcceptedSearchMode: BridgeReviewSearchMode;
-	readonly treeAcceptedSearchText: string;
-	readonly treeSearchError: BridgeViewerSearchError | null;
-	readonly treeSearchMode: BridgeReviewSearchMode;
-	readonly treeSearchOpen: boolean;
-	readonly treeSearchText: string;
-	readonly treeSearchStatusMessage: string | null;
-	readonly treeSelectionRevealRequest: BridgeReviewTreeSelectionRevealRequest | null;
-	readonly visibleCodeViewItems: BridgeReviewRenderSnapshotController['visibleCodeViewItems'];
-	readonly onTreeSearchClear: () => void;
-	readonly onTreeSearchClose: () => void;
-	readonly onTreeSearchModeChange: (mode: BridgeReviewSearchMode) => void;
-	readonly onTreeSearchToggle: () => void;
-	readonly onTreeSearchTextChange: (searchText: string) => void;
-	readonly onFacetMenuOpenChange: (isOpen: boolean) => void;
-	readonly onFilterChange: (filter: BridgeReviewFilterCandidate) => void;
-	readonly onHoveredItemIdChange: (itemId: string | null) => void;
-	readonly onOpenFile?: (path: string) => void;
-}): BridgeReviewViewerPresentationState {
-	if (props.reviewSourceSlice === null) return { status: 'empty' };
-	if (props.reviewSourceSlice.status === 'failed') {
-		return { error: 'Review metadata is unavailable', status: 'metadataFailed' };
-	}
-	if (props.reviewSourceSlice.status === 'loading') return { status: 'metadataLoading' };
-	if (props.presentationSnapshot === null) return { status: 'projectionPending' };
-	const selectedUnavailablePath = reviewSelectedUnavailablePath(props);
-	const selectedContentIsLoading =
-		props.selectedItemId !== null &&
-		props.selectedCodeViewItem === null &&
-		selectedUnavailablePath === null;
-	return {
-		presentationKey: props.presentationSnapshot.presentationKey,
-		shellProps: {
-			annotationReveal: props.annotationReveal,
-			...(props.onAnnotationRevealComplete === undefined
-				? {}
-				: { onAnnotationRevealComplete: props.onAnnotationRevealComplete }),
-			...(props.activationCause === undefined ? {} : { activationCause: props.activationCause }),
-			...(props.activationSequence === undefined
-				? {}
-				: { activationSequence: props.activationSequence }),
-			...(props.activationStartedAtPerfNow === undefined
-				? {}
-				: { activationStartedAtPerfNow: props.activationStartedAtPerfNow }),
-			comparisonPaneState: props.comparisonPaneState,
-			codeViewOptions: props.codeViewOptions,
-			facetMenuOpen: props.facetMenuOpen,
-			categoryFilter: props.categoryFilter,
-			gitStatusFilter: props.gitStatusFilter,
-			showBinary: props.showBinary,
-			showLarge: props.showLarge,
-			onCodeViewControlHandleChange: (handle): void => {
-				props.codeViewControlHandleRef.current = handle;
-			},
-			onFilterChange: props.onFilterChange,
-			onFacetMenuOpenChange: props.onFacetMenuOpenChange,
-			onHoveredItemIdChange: props.onHoveredItemIdChange,
-			...(props.onOpenFile === undefined ? {} : { onOpenFile: props.onOpenFile }),
-			onRetryComparison: props.onRetryComparison,
-			onAnnotationAttentionItemIdsChange: props.onAnnotationAttentionItemIdsChange,
-			onAnnotationEditorAttentionItemIdsChange: props.onAnnotationEditorAttentionItemIdsChange,
-			onReadingPositionItemIdChange: props.onReadingPositionItemIdChange,
-			panelChromeSlice: props.panelChromeSlice,
-			projectionMode: props.projectionMode,
-			presentationPositionKey: props.presentationPositionKey,
-			presentationRegistry: props.presentationSnapshot.presentationRegistry,
-			renderFulfillmentCoordinator: props.renderFulfillmentCoordinator,
-			onCodeViewVisibleItemIdsChange: props.setReviewCodeViewVisibleItemIds,
-			onTreeSearchModeChange: props.onTreeSearchModeChange,
-			onTreeSearchClear: props.onTreeSearchClear,
-			onTreeSearchClose: props.onTreeSearchClose,
-			onTreeSearchToggle: props.onTreeSearchToggle,
-			onTreeSearchTextChange: props.onTreeSearchTextChange,
-			onSelectItem: (itemId): void => {
-				props.selectReviewItem(itemId);
-			},
-			onTreeVisibleItemIdsChange: props.setReviewViewportItemIds,
-			projection: props.presentationSnapshot.projection,
-			reviewPackage: props.presentationSnapshot.reviewPackage,
-			reviewRefreshStatusText: props.reviewRefreshStatusText,
-			reviewTreeRows: props.presentationSnapshot.reviewTreeRows,
-			selectedCanvasLoadingReason: selectedContentIsLoading ? 'content' : null,
-			selectedCodeViewItem: props.selectedCodeViewItem,
-			selectedContentLoadingItemId: selectedContentIsLoading ? props.selectedItemId : null,
-			selectedContentUnavailablePath: selectedUnavailablePath,
-			selectedItemId: props.selectedItemId,
-			telemetryRecorder: props.telemetryRecorder,
-			treeSearchMode: props.treeSearchMode,
-			treeSearchOpen: props.treeSearchOpen,
-			treeSearchText: props.treeSearchText,
-			treeSearchStatusMessage: props.treeSearchStatusMessage,
-			treeAcceptedSearchMode: props.treeAcceptedSearchMode,
-			treeAcceptedSearchText: props.treeAcceptedSearchText,
-			treeSearchError: props.treeSearchError,
-			treeSelectionRevealRequest: props.treeSelectionRevealRequest,
-			visibleCodeViewItems: props.visibleCodeViewItems,
-			...(props.codeViewWorkerFactory === undefined
-				? {}
-				: { codeViewWorkerFactory: props.codeViewWorkerFactory }),
-			...(props.codeViewWorkerPoolEnabled === undefined
-				? {}
-				: { codeViewWorkerPoolEnabled: props.codeViewWorkerPoolEnabled }),
-		},
-		status: 'ready',
-	};
-}
-
-function reviewSelectedUnavailablePath(
-	props: Pick<
-		Parameters<typeof reviewPresentationState>[0],
-		'presentationSnapshot' | 'selectedContentAvailability' | 'selectedItemId' | 'selectedReviewItem'
-	>,
-): string | null {
-	if (
-		props.selectedItemId === null ||
-		props.presentationSnapshot === null ||
-		props.selectedContentAvailability === null ||
-		!['failed', 'unavailable'].includes(props.selectedContentAvailability.state)
-	) {
-		return null;
-	}
-	return (
-		props.selectedReviewItem?.metadata.headPath ??
-		props.selectedReviewItem?.metadata.basePath ??
-		props.presentationSnapshot.projection.primaryDisplayPathByItemId[props.selectedItemId] ??
-		props.selectedItemId
-	);
 }

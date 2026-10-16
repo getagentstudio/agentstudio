@@ -3,19 +3,67 @@ import { describe, expect, test, vi } from 'vitest';
 import { render } from 'vitest-browser-react';
 import { page } from 'vitest/browser';
 
+import {
+	observeBridgeTransitionDOMFact,
+	runBridgeTransitionFramesInAct,
+	finishBridgeTransitionAnimations,
+} from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
+import { BridgePaneFailureSummarySlot } from '../app/bridge-pane-failure-summary-slot.js';
 import {
 	annotationSessionId,
 	annotationSessionSummary,
 	RecordingAnnotationBrowserSurface,
 } from './worktree-annotation-browser-test-support.js';
 import { WorktreeAnnotationOutputHistoryControl } from './worktree-annotation-output-history-control.js';
-import { WorktreeAnnotationRecoveryWarning } from './worktree-annotation-recovery-warning.js';
+import { WorktreeAnnotationRecoveryNotice } from './worktree-annotation-recovery-notice.js';
 import type { WorktreeAnnotationOutputHistorySummary } from './worktree-annotation-surface-client.js';
-import { WorktreeAnnotationSurfaceProvider } from './worktree-annotation-surface-provider.js';
+import {
+	useWorktreeAnnotationProjection,
+	WorktreeAnnotationSurfaceProvider,
+} from './worktree-annotation-surface-provider.js';
 
 describe('worktree annotation recovery and rail history controls', () => {
+	test('shows one Comments Retry for a failed annotation view and keeps the last good projection', async () => {
+		const surface = new RecordingAnnotationBrowserSurface('fileView');
+		surface.client.renderStore.applyViewRecoveryStatusEvent({
+			wireVersion: 1,
+			direction: 'serverWorkerToMain',
+			transferDescriptors: [],
+			kind: 'viewRecoveryStatus',
+			view: { kind: 'file.annotations', subscriptionId: 'file-comments-retry-1' },
+			status: 'failedRetryable',
+		});
+		const rendered = await render(<RecoveryAndHistoryFixture surface={surface} />);
+		await act(async (): Promise<void> => {
+			surface.publishProjectionState({
+				expectedThreadCount: 0,
+				revision: 1,
+				sessions: [annotationSessionSummary({ revision: 1, sessionId: annotationSessionId })],
+			});
+			await Promise.resolve();
+		});
+
+		await expect.element(rendered.getByText("Comments couldn't load.")).toBeVisible();
+		await expect
+			.element(rendered.getByText(`Last good comments: ${annotationSessionId}`))
+			.toBeVisible();
+		expect(document.querySelectorAll('button[aria-label="Retry"]')).toHaveLength(1);
+		await act(async (): Promise<void> => {
+			await rendered.getByRole('button', { name: 'Retry' }).click();
+		});
+		await expect
+			.element(rendered.getByText(`Last good comments: ${annotationSessionId}`))
+			.toBeVisible();
+		expect(surface.sentRecoveryCommands.map((command) => command.command)).toEqual([
+			'viewRecoveryRetry',
+			'annotationProjectionRetry',
+		]);
+		await page.screenshot({ path: '../../../tmp/bridgeweb-comments-view-retry.png' });
+	});
+
 	test('shows a compact recovered-degraded warning and acknowledges through the strict operation', async () => {
 		const surface = new RecordingAnnotationBrowserSurface('fileView');
 		const rendered = await render(<RecoveryAndHistoryFixture surface={surface} />);
@@ -154,13 +202,9 @@ describe('worktree annotation recovery and rail history controls', () => {
 				getComputedStyle(rendered.getByRole('button', { name: 'History (1)' }).element()).fontSize,
 			).toBe('13px');
 			await expect.element(rendered.getByRole('heading', { name: 'History (1)' })).toBeVisible();
-			await act(async (): Promise<void> => {
-				clickHtmlButton(rendered.getByRole('button', { name: 'History (1)' }).element());
-				await Promise.resolve();
-			});
-			const historyPanel = document.querySelector<HTMLElement>('[data-slot="collapsible-content"]');
-			if (historyPanel === null) throw new Error('Expected the expanded History panel.');
-			await settleCollapsibleMotion(historyPanel);
+			await expandHistoryAndWaitForPanelCompletion(
+				rendered.getByRole('button', { name: 'History (1)' }).element(),
+			);
 			await expect.element(rendered.getByText('Clipboard Markdown', { exact: true })).toBeVisible();
 			expect(document.body.textContent).not.toContain('Inspect or repeat exact durable output.');
 			const historySection = document.querySelector<HTMLElement>('[aria-label="Output history"]');
@@ -253,11 +297,19 @@ function RecoveryAndHistoryFixture(props: {
 	return (
 		<div style={{ width: props.width ?? 180 }}>
 			<WorktreeAnnotationSurfaceProvider surfaceClient={props.surface.client}>
-				<WorktreeAnnotationRecoveryWarning />
+				<LastGoodCommentsProbe />
+				<BridgePaneFailureSummarySlot entries={[]} />
+				<WorktreeAnnotationRecoveryNotice />
 				<WorktreeAnnotationOutputHistoryControl />
 			</WorktreeAnnotationSurfaceProvider>
 		</div>
 	);
+}
+
+function LastGoodCommentsProbe(): ReactElement {
+	const projection = useWorktreeAnnotationProjection();
+	const sessionId = projection.sessions[0]?.sessionId ?? 'none';
+	return <output data-testid="last-good-comments">{`Last good comments: ${sessionId}`}</output>;
 }
 
 async function settleInteraction(): Promise<void> {
@@ -271,31 +323,53 @@ function clickHtmlButton(element: HTMLElement | SVGElement): void {
 	element.click();
 }
 
-async function settleCollapsibleMotion(panel: HTMLElement): Promise<void> {
-	await settleBrowserCondition(
-		(): boolean => !panel.hasAttribute('data-starting-style'),
-		'Expected History expansion motion to settle.',
-	);
-	await act(async (): Promise<void> => {
-		await Promise.all(
-			panel.getAnimations({ subtree: true }).map((animation) => animation.finished),
-		);
-		await Promise.resolve();
-	});
-}
-
-async function settleBrowserCondition(
-	predicate: () => boolean,
-	failureMessage: string,
-	remainingFrames = 10,
+async function expandHistoryAndWaitForPanelCompletion(
+	button: HTMLElement | SVGElement,
 ): Promise<void> {
-	if (predicate()) return;
-	if (remainingFrames <= 0) throw new Error(failureMessage);
-	await act(async (): Promise<void> => {
-		await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
-		await Promise.resolve();
+	await runBridgeTransitionFramesInAct(async (): Promise<void> => {
+		const panelObservation: { current: HTMLElement | null } = { current: null };
+		const rootCommitted = observeBridgeTransitionDOMFact({
+			label: 'History root expansion committed for this panel',
+			isCommitted: (): boolean => {
+				panelObservation.current ??= document.querySelector<HTMLElement>(
+					'[data-slot="collapsible-content"]',
+				);
+				const panel = panelObservation.current;
+				return (
+					panel?.isConnected === true &&
+					panel.hasAttribute('data-open') &&
+					!panel.hasAttribute('data-starting-style')
+				);
+			},
+		});
+		try {
+			await act(async (): Promise<void> => {
+				clickHtmlButton(button);
+			});
+			await rootCommitted.promise;
+			const expandedPanel = panelObservation.current;
+			if (expandedPanel === null) throw new Error('Expected the expanded History panel.');
+			const dimensionsCommitted = observeBridgeTransitionDOMFact({
+				label: 'History expanded panel dimension reset committed',
+				isCommitted: (): boolean =>
+					expandedPanel.isConnected &&
+					expandedPanel.hasAttribute('data-open') &&
+					!expandedPanel.hasAttribute('data-starting-style') &&
+					expandedPanel.style.getPropertyValue('--collapsible-panel-height') === 'auto' &&
+					expandedPanel.style.getPropertyValue('--collapsible-panel-width') === 'auto',
+			});
+			try {
+				await act(async (): Promise<void> => {
+					await finishBridgeTransitionAnimations(expandedPanel);
+					await dimensionsCommitted.promise;
+				});
+			} finally {
+				dimensionsCommitted.close();
+			}
+		} finally {
+			rootCommitted.close();
+		}
 	});
-	await settleBrowserCondition(predicate, failureMessage, remainingFrames - 1);
 }
 
 function outputHistorySummary(

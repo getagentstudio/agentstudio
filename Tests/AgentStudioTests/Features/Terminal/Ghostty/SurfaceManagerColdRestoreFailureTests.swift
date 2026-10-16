@@ -20,10 +20,10 @@ struct SurfaceManagerColdRestoreFailureTests {
     @Test("reportColdRestoreFailure marks the pane's attached surface unhealthy with the specific reason")
     func marksTheAttachedSurfaceUnhealthy() throws {
         // Arrange
-        let manager = SurfaceManager(maxCreationRetries: 0, healthCheckInterval: 3600)
+        let manager = makeTerminalFixtureSurfaceManager()
         let paneID = UUIDv7.generate()
         let surfaceView = Ghostty.SurfaceView(
-            managedSurfaceID: UUIDv7.generate(), appCommandDispatcher: ColdRestoreFailureNoOpAppCommandDispatcher())
+            managedSurfaceID: UUIDv7.generate(), appCommandDispatcher: TerminalFixtureCommandDispatcher())
         let managed = try manager.acceptCreatedSurface(
             surfaceView, metadata: SurfaceMetadata(paneId: paneID)
         ).get()
@@ -41,7 +41,7 @@ struct SurfaceManagerColdRestoreFailureTests {
     @Test("reportColdRestoreFailure for a paneID with no attached surface is a safe no-op")
     func noAttachedSurfaceIsANoOp() {
         // Arrange
-        let manager = SurfaceManager(maxCreationRetries: 0, healthCheckInterval: 3600)
+        let manager = makeTerminalFixtureSurfaceManager()
         let unattachedPaneID = UUIDv7.generate()
 
         // Act / Assert: doesn't crash, and no surface silently gains health.
@@ -51,14 +51,4 @@ struct SurfaceManagerColdRestoreFailureTests {
         )
         #expect(manager.activeSurfaceIds.isEmpty)
     }
-}
-
-@MainActor
-private final class ColdRestoreFailureNoOpAppCommandDispatcher: AppCommandDispatching {
-    func dispatch(_: AppCommand) -> Bool { false }
-    func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
-    func canDispatch(_: AppCommand) -> Bool { false }
-    func canDispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) -> Bool { false }
-    func bridgePaneCommandTarget(worktreeId _: UUID) -> BridgePaneCommandTarget? { nil }
-    func dispatchMovePaneToTab(sourcePaneId _: UUID, sourceTabId _: UUID?, targetTabId _: UUID) {}
 }

@@ -11,7 +11,7 @@ import Foundation
 /// rather than silently admitting unverified capabilities.
 package enum ClaudeCodeProviderIdentity {
     package static let identifier = "claude-code"
-    package static let supportedExactVersion = "2.1.274"
+    package static let supportedExactVersion = "2.1.286"
 
     /// Claude Code's command-line client. The verified capture shows the
     /// projected hook events firing identically for an attended session and a
@@ -25,8 +25,14 @@ package enum ClaudeCodeProviderIdentity {
         .sessionEnd,
         .turnStart,
         .turnDone,
+        .turnFailed,
         .permission,
         .toolActivity,
         .subagentActivity,
+        .question,
+        .elicitation,
+        .elicitationResult,
+        .toolCompleted,
+        .toolFailed,
     ]
 }

@@ -74,11 +74,11 @@ struct BridgeProductQueuedProducerFrame: Equatable, Sendable {
     let sequence: Int
     let terminal: Bool
     let requiredOpening: Bool
+    let batchComplete: Bool
 }
 
 struct BridgeProductProducerFrameReceipt: Hashable, Sendable {
     let producerLease: BridgeProductProducerLease
-    let requiresWorkerObservation: Bool
     let sequence: Int
     let nonce: UUID
 }
@@ -140,7 +140,6 @@ struct BridgeProductProducerRegistrySnapshot: Equatable, Sendable {
     let queuedFrameCount: Int
     let queuedByteCount: Int
     let pendingFrameWaiterCount: Int
-    let pendingProducerObservationPacingWaiterCount: Int
     let inFlightFrameReceiptCount: Int
     let pendingLifecycleAcknowledgementCount: Int
     let nextMetadataStreamSequence: Int
@@ -155,7 +154,6 @@ struct BridgeProductProducerRegistrySnapshot: Equatable, Sendable {
             && queuedFrameCount == 0
             && queuedByteCount == 0
             && pendingFrameWaiterCount == 0
-            && pendingProducerObservationPacingWaiterCount == 0
             && inFlightFrameReceiptCount == 0
             && pendingLifecycleAcknowledgementCount == 0
             && sessionContentAdmissionCount == 0
@@ -174,7 +172,6 @@ struct BridgeProductProducerRegistrySnapshot: Equatable, Sendable {
             queuedFrameCount: queuedFrameCount,
             queuedByteCount: queuedByteCount,
             pendingFrameWaiterCount: pendingFrameWaiterCount,
-            pendingProducerObservationPacingWaiterCount: pendingProducerObservationPacingWaiterCount,
             inFlightFrameReceiptCount: inFlightFrameReceiptCount,
             pendingLifecycleAcknowledgementCount: pendingLifecycleAcknowledgementCount,
             nextMetadataStreamSequence: nextMetadataStreamSequence,
@@ -189,11 +186,11 @@ extension BridgeProductMetadataFrame {
     var producerFrameIdentity: BridgeProductMetadataFrameIdentity {
         switch self {
         case .metadataStreamAccepted(let frame): frame.frameIdentity
+        case .streamKeepalive(let frame): frame.frameIdentity
         case .panePresentation(let frame): frame.frameIdentity
         case .paneSurfaceSelectionRequested(let frame): frame.frameIdentity
         case .subscriptionAccepted(let frame): frame.frameIdentity
-        case .subscriptionInterestsCommitted(let frame): frame.identity.frameIdentity
-        case .subscriptionData(let frame): frame.frameIdentity
+        case .batch(let frame): frame.identity.frame
         case .subscriptionReset(let frame): frame.identity.frameIdentity
         case .subscriptionEnd(let frame): frame.identity.frameIdentity
         case .subscriptionCancelled(let frame): frame.identity.frameIdentity

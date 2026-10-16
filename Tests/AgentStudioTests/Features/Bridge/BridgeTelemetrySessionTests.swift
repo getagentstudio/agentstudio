@@ -210,6 +210,134 @@ struct BridgeTelemetrySessionTests {
         #expect(!snapshot.proofEligible)
     }
 
+    @Test("drain proof remains eligible when the next native batch precedes capture")
+    func drainProofRemainsEligibleWhenNextNativeBatchPrecedesCapture() async throws {
+        // Arrange
+        let installation = try Self.installation()
+        let proofCapture = await installation.session.beginProofSnapshotCapture()
+        let firstBody = try Self.encodedBatch(
+            telemetrySessionId: installation.bootstrap.telemetrySessionId,
+            batchSequence: 1,
+            samples: [Self.diagnosticStampedSample]
+        )
+        let nextBody = try Self.encodedBatch(
+            telemetrySessionId: installation.bootstrap.telemetrySessionId,
+            batchSequence: 2,
+            samples: [Self.diagnosticStampedSample]
+        )
+        let sealedDrain = BridgeTelemetrySidecarDrainResult(
+            type: .drained,
+            proofEligible: true,
+            settlementDisposition: .reopened,
+            requiredLossCount: 0,
+            optionalLossCount: 0,
+            sequenceGapCount: 0,
+            producerHighWatermarks: ["main": 1],
+            acceptedBatchSequence: 1
+        )
+
+        // Act
+        _ = await installation.session.admit(
+            presentedCapability: installation.bootstrap.telemetryCapability,
+            encodedBody: firstBody
+        )
+        _ = await installation.session.admit(
+            presentedCapability: installation.bootstrap.telemetryCapability,
+            encodedBody: nextBody
+        )
+        let nativeAtCapture = await installation.session.snapshot
+        guard
+            let nativeAtBoundary = await installation.session.takeProofSnapshot(
+                for: proofCapture,
+                acceptedBatchSequence: 1
+            )
+        else {
+            Issue.record("Expected the captured native snapshot for the sealed batch.")
+            return
+        }
+        let report = BridgeTelemetryProofReport.drain(
+            telemetrySessionId: installation.bootstrap.telemetrySessionId,
+            sidecar: sealedDrain,
+            expectedSettlementDisposition: .reopened,
+            native: nativeAtBoundary
+        )
+
+        // Assert
+        #expect(nativeAtCapture.acceptedBatchSequence == 2)
+        #expect(nativeAtBoundary.acceptedBatchSequence == 1)
+        #expect(report.proofEligible)
+        #expect(report.acceptedBatchSequence == 1)
+    }
+
+    @Test("required loss in the sealed batch remains proof-ineligible after a later batch")
+    func requiredLossInSealedBatchRemainsIneligibleAfterLaterBatch() async throws {
+        // Arrange
+        let installation = try Self.installation()
+        let proofCapture = await installation.session.beginProofSnapshotCapture()
+        let lossyBody = try Self.encodedBatch(
+            telemetrySessionId: installation.bootstrap.telemetrySessionId,
+            batchSequence: 1,
+            lossSummaries: [
+                BridgeTelemetryStampedLossSummary(
+                    producerId: .main,
+                    lostSequenceStart: 1,
+                    lostSequenceEnd: 1,
+                    requiredCount: 1,
+                    optionalCount: 0,
+                    reason: .creditExhausted
+                )
+            ]
+        )
+        let nextBody = try Self.encodedBatch(
+            telemetrySessionId: installation.bootstrap.telemetrySessionId,
+            batchSequence: 2,
+            samples: [Self.diagnosticStampedSample]
+        )
+        let sealedDrain = BridgeTelemetrySidecarDrainResult(
+            type: .drained,
+            proofEligible: false,
+            settlementDisposition: .reopened,
+            requiredLossCount: 1,
+            optionalLossCount: 0,
+            sequenceGapCount: 0,
+            producerHighWatermarks: ["main": 1],
+            acceptedBatchSequence: 1
+        )
+
+        // Act
+        _ = await installation.session.admit(
+            presentedCapability: installation.bootstrap.telemetryCapability,
+            encodedBody: lossyBody
+        )
+        _ = await installation.session.admit(
+            presentedCapability: installation.bootstrap.telemetryCapability,
+            encodedBody: nextBody
+        )
+        let nativeAtCapture = await installation.session.snapshot
+        guard
+            let nativeAtBoundary = await installation.session.takeProofSnapshot(
+                for: proofCapture,
+                acceptedBatchSequence: 1
+            )
+        else {
+            Issue.record("Expected the captured native snapshot for the lossy sealed batch.")
+            return
+        }
+        let report = BridgeTelemetryProofReport.drain(
+            telemetrySessionId: installation.bootstrap.telemetrySessionId,
+            sidecar: sealedDrain,
+            expectedSettlementDisposition: .reopened,
+            native: nativeAtBoundary
+        )
+
+        // Assert
+        #expect(nativeAtCapture.acceptedBatchSequence == 2)
+        #expect(nativeAtBoundary.acceptedBatchSequence == 1)
+        #expect(nativeAtBoundary.requiredLossCount == 1)
+        #expect(report.requiredLossCount == 1)
+        #expect(!report.proofEligible)
+    }
+
     @Test("replacement revokes the old capability and creates a new session")
     func replacementRevokesOldCapabilityAndCreatesNewSession() async throws {
         // Arrange

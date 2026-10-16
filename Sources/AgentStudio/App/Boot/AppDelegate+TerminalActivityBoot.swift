@@ -4,36 +4,37 @@ import Foundation
 
 extension AppDelegate {
     func bootStartTerminalActivityRouter(bus: EventBus<RuntimeEnvelope>) {
-        let paneActivityClock = PaneActivityClock { [weak self] batch in
-            self?.atomStore.core.paneActivityTime.apply(batch)
-        }
+        let datastore = workspaceSQLiteDatastore
+        let paneActivityClock = PaneActivityClock(
+            sink: makePaneActivitySink { commit in
+                guard let datastore else { return }
+                try await datastore.commitPaneActivity(commit)
+            }
+        )
         self.paneActivityClock = paneActivityClock
         workspaceSurfaceCoordinator?.paneActivityClock = paneActivityClock
         Task { await paneActivityClock.start() }
-        Ghostty.ActionRouter.bindAttachClientExitedHandler { [weak self] paneID in
-            self?.workspaceSurfaceCoordinator?.receivePostAttachChildExited(paneID: paneID)
-        }
+        let surfaceManager = terminalLookupForBoot()
         terminalActivityRouter = TerminalActivityRouter(
             bus: bus,
             activityAtom: atomStore.terminalActivity,
+            callbackHandlingAccess: { @MainActor [weak self] in self?.callbackHandlingForBoot() },
             attendedPane: atomStore.core.attendedPane,
             traceRuntime: traceRuntime,
             startupTraceRecorder: startupTraceRecorder,
-            // A6 (advisor review 2026-10-01; PD rev 21 item 5, Lead
-            // decision: push, not pull): the existing `.firstRender`
-            // outcome arm's own new callback -- composed here since the
-            // coordinator has no reference to this router or its
-            // privately-owned projector. No new actor hop: both are
-            // `@MainActor`.
             onFirstRender: { [weak self] paneID in
                 self?.workspaceSurfaceCoordinator?.receivePostAttachFirstRender(paneID: paneID)
             },
+            surfaceIDForPaneID: { [weak surfaceManager] in surfaceManager?.surfaceId(forPaneId: $0) },
             isPaneCurrentlyAttended: { [weak self] paneId in
                 self?.isPaneCurrentlyAttendedForTerminalActivity(paneId) ?? false
             },
             isPaneAgentClassified: { [weak self] paneId, paneKind in
                 if paneKind == .agent { return true }
                 return self?.store.paneAtom.pane(paneId)?.metadata.contentType == .agent
+            },
+            lastOutputLineReader: { [weak surfaceManager] surfaceID in
+                surfaceManager?.readViewportTrailingText(forSurfaceID: surfaceID) ?? .surfaceStale
             },
             recordSettledActivityStatus: { [weak self] paneId, lastOutputLine in
                 self?.atomStore.core.paneActivityStatus.recordSettledActivity(
@@ -51,8 +52,26 @@ extension AppDelegate {
                 performanceTraceRecorder?.recordTerminalActivityCloseRead(duration)
             }
         )
+        workspaceSurfaceCoordinator?.terminalActivityRouter = terminalActivityRouter
+        workspaceSurfaceCoordinator?.coldStartAttachExitBinding.bindAttachClientExitedHandler { [weak self] paneID in
+            self?.workspaceSurfaceCoordinator?.receivePostAttachChildExited(paneID: paneID)
+        }
         Task { @MainActor [weak self] in
             await self?.terminalActivityRouter.start()
+        }
+    }
+
+    func makePaneActivitySink(
+        commit: @escaping @Sendable (PaneActivityCommit) async throws -> Void
+    ) -> @MainActor @Sendable ([PaneActivityTimeMutation]) async -> Void {
+        { [weak self] batch in
+            guard let self else { return }
+            atomStore.core.paneActivityTime.apply(batch)
+            do {
+                try await commit(PaneActivityCommit(mutations: batch))
+            } catch {
+                appLogger.warning("Pane activity save failed: \(String(describing: error), privacy: .private)")
+            }
         }
     }
 

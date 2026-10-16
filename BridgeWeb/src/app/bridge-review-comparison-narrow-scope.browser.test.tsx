@@ -3,7 +3,7 @@ import { render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production CSS.
 import './bridge-app.css';
-import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
+import type { BridgeMainPanelChromeSlice } from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
 import type { BridgeReviewPackage } from '../foundation/review-package/bridge-review-package.js';
 import { BridgeReviewComparisonControlTestHost as BridgeReviewComparisonControl } from './bridge-review-comparison-control.browser.test-support.js';
@@ -75,7 +75,7 @@ describe('BridgeReviewComparisonControl narrow comparison scope', () => {
 
 function currentPresentationForPackage(
 	reviewPackage: BridgeReviewPackage,
-): NonNullable<BridgeWorkerPanelChromePatchPayload['reviewComparison']> {
+): NonNullable<BridgeMainPanelChromeSlice['reviewComparison']> {
 	return {
 		activeTarget: { basis: 'commonCommit', branchName: 'master', kind: 'localDefaultBranch' },
 		attempt: { reviewGeneration: 1, status: 'settled' },

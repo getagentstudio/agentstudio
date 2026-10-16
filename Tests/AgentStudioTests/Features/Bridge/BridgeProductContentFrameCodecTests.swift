@@ -889,9 +889,10 @@ extension BridgeProductContentFrameCodecTests {
             )
         }
 
-        #expect(encodedData[13] == 1)
+        let encodedBytes = encodedData.data
+        #expect(encodedBytes[13] == 1)
         #expect(
-            encodedData[14..<46]
+            encodedBytes[14..<46]
                 == operationCorrelationEnvelope(operationCorrelationID).dropFirst()
         )
     }

@@ -91,9 +91,9 @@ struct WorktreeAnnotationOutputSelectionTests {
         )
     }
 
-    @Test("Resolve invalidates an older displayed Pending revision before any output effect")
-    func resolveRejectsOlderDisplayedPendingRevisionWithoutEffect() async throws {
-        let outputEffect = TransportTestOutputEffect(outcome: .succeeded)
+    @Test("Resolve preserves the explicitly listed Pending batch")
+    func resolvePreservesListedPendingBatch() async throws {
+        let outputEffect = TransportTestOutputEffect(outcome: .succeeded(destinationPath: nil))
         let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let savedRoot = try await createSavedOutputRoot(
@@ -104,9 +104,6 @@ struct WorktreeAnnotationOutputSelectionTests {
         let displayedProjection = try await harness.store.captureProjection(
             worktreeID: "worktree-1",
             demandedSessionIDs: [savedRoot.sessionID]
-        )
-        let displayedSessionRevision = try #require(
-            displayedProjection.repositorySnapshot.details.first?.session.semanticRevision
         )
         let displayedThreadRevision = try #require(
             displayedProjection.repositorySnapshot.details.first?.threads.first?.thread.semanticRevision
@@ -125,12 +122,10 @@ struct WorktreeAnnotationOutputSelectionTests {
             try decodeAnnotationCommand(
                 """
                 { "operation": {
-                  "displayedProjectionRevision": \(displayedProjection.revision),
-                  "expectedSessionRevision": \(displayedSessionRevision),
+                  "messages": \(try outputSelectionJSON([savedRoot.message])),
                   "kind": "output.scope.commit", "outputKind": "clipboardMarkdown",
                   "scope": "pending",
-                  "sessionId": "\(savedRoot.sessionID.rawValue.uuidString.lowercased())",
-                  "sourceGeneration": 7
+                  "sessionId": "\(savedRoot.sessionID.rawValue.uuidString.lowercased())"
                 } }
                 """
             ),
@@ -139,15 +134,66 @@ struct WorktreeAnnotationOutputSelectionTests {
             productAdmission: harness.productAdmission
         )
 
-        #expect(outcome.status == .failed(.conflict))
-        #expect(await outputEffect.requests.isEmpty)
+        guard case .output(.succeeded(let summary)) = outcome.status else {
+            Issue.record("Expected exact listed output after resolve, got \(outcome.status)")
+            return
+        }
+        #expect(summary.messageCount == 1)
+        #expect(await outputEffect.requests.count == 1)
         let persisted = try await persistedDetail(sessionID: savedRoot.sessionID, harness: harness)
         #expect(persisted.threads.first?.thread.resolution == .resolved)
-        #expect(persisted.threads.first?.messages.first?.handled == false)
+        #expect(persisted.threads.first?.messages.first?.handled == true)
+    }
+
+    @Test("Reveal refuses unknown attempts and files that no longer exist")
+    func revealIsBoundToARecordedFile() async throws {
+        let outputEffect = TransportTestOutputEffect(
+            outcome: .succeeded(destinationPath: nil),
+            revealSucceeds: false
+        )
+        let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let savedRoot = try await createSavedOutputRoot(
+            body: "Export for reveal", editToken: "reveal-output", harness: harness
+        )
+        let unknownID = UUIDv7.generate().uuidString.lowercased()
+        let unknown = await harness.adapter.apply(
+            try decodeAnnotationCommand(
+                "{ \"operation\": { \"attemptId\": \"\(unknownID)\", \"kind\": \"output.reveal\" } }"
+            ),
+            surface: .file,
+            correlation: try makeAnnotationCorrelation(requestID: "unknown-reveal"),
+            productAdmission: harness.productAdmission
+        )
+        #expect(unknown.status == .failed(.notFound))
+
+        try await executeOutputScope(
+            harness: harness,
+            scope: .all,
+            sessionID: savedRoot.sessionID,
+            requestID: "export-for-reveal"
+        )
+        let recordedOutput = try #require(
+            try await harness.store.fetchOutputHistory(sessionID: savedRoot.sessionID, limit: 1).first
+        )
+        let missingFile = await harness.adapter.apply(
+            try decodeAnnotationCommand(
+                """
+                { "operation": {
+                  "attemptId": "\(recordedOutput.attemptID.rawValue.uuidString.lowercased())",
+                  "kind": "output.reveal"
+                } }
+                """
+            ),
+            surface: .file,
+            correlation: try makeAnnotationCorrelation(requestID: "missing-file-reveal"),
+            productAdmission: harness.productAdmission
+        )
+        #expect(missingFile.status == .failed(.outputFileMissing))
     }
 }
 
-private struct SavedOutputRoot {
+struct SavedOutputRoot {
     let sessionID: WorktreeAnnotationSessionID
     let threadID: WorktreeAnnotationThreadID
     let message: WorktreeAnnotationMessage
@@ -244,7 +290,7 @@ private func prepareMixedOutputSelectionFixture(
 }
 
 @MainActor
-private func createSavedOutputRoot(
+func createSavedOutputRoot(
     sessionID: WorktreeAnnotationSessionID? = nil,
     body: String,
     editToken: String,

@@ -21,6 +21,8 @@ final class BridgeDevelopmentServerCoreComposition {
     let worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor
     let worktreeAnnotationStore: WorktreeAnnotationServiceActor
 
+    package let paneContextMembershipDirectory: PaneContextMembershipDirectory
+
     private let atoms: CoreAtoms
     private let repositoryTopologyStore: RepositoryTopologyStore
     private let workspaceStore: WorkspaceStore
@@ -35,6 +37,7 @@ final class BridgeDevelopmentServerCoreComposition {
         worktreeAnnotationStore: WorktreeAnnotationServiceActor
     ) {
         self.atoms = atoms
+        self.paneContextMembershipDirectory = atoms.workspacePaneGraph.paneContextMembershipDirectory
         self.productSource = productSource
         self.repositoryTopologyStore = repositoryTopologyStore
         self.workspaceStore = workspaceStore

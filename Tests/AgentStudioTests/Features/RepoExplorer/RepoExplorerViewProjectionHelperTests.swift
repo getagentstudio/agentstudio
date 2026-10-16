@@ -23,10 +23,8 @@ final class RepoProjectionInvalidationRecorder: @unchecked Sendable {
 }
 
 @MainActor
-func makeRepoExplorerTestOcticonLoader(from testFilePath: String = #filePath) -> OcticonLoader {
-    OcticonLoader(
-        resourceRootURL: testAgentStudioResourceRootURL(from: testFilePath)
-    )
+func makeRepoExplorerTestOcticonLoader() -> OcticonLoader {
+    OcticonLoader(resourceBundle: testSourceCatalogOcticonBundle())
 }
 
 @MainActor
@@ -65,6 +63,9 @@ private final class BridgeAttendanceSnapshotReadRecorder {
 
 @MainActor
 private final class PaneFocusRecordingDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     private(set) var command: AppCommand?
     private(set) var target: UUID?
     private(set) var targetType: SearchItemType?

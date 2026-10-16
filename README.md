@@ -1,6 +1,6 @@
 # Agent Studio
 
-![Agent Studio running coding agents in parallel terminal panes with repository and worktree navigation](web/images/agent-studio-parallel-agent-terminals.png)
+![Agent Studio running coding agents in parallel terminal panes with repository and worktree navigation](docs/images/agent-studio-parallel-agent-terminals.png)
 
 An opinionated native macOS workspace for running dozens of coding agents across repositories and worktrees. Stay oriented while they work without losing context.
 
@@ -29,7 +29,7 @@ It is not a terminal with a few agent features added. It is a workspace for keep
 
 Give each worktree, agent session, or task a main pane. Its **drawer** holds the terminals and tools you choose to associate with that work.
 
-![Agent Studio terminal panes with an expanded multi-tool drawer beneath them](web/images/agent-studio-pane-drawers.png)
+![Agent Studio terminal panes with an expanded multi-tool drawer beneath them](docs/images/agent-studio-pane-drawers.png)
 
 The relationship stays simple:
 
@@ -64,7 +64,7 @@ Persistent terminal sessions are the default. zmx keeps their processes alive wh
 The command bar is one keyboard interaction model for the workspace. Press Cmd+P for Quick Find, then use `#` for repositories and worktrees, `$` for panes and tabs, and `>` for commands. Recents and open-pane counts help you resume work without remembering where it lives.
 
 <p align="center">
-  <img src="web/images/agent-studio-repository-command-bar.png" alt="Repository-scoped command bar showing worktrees and open panes" width="640">
+  <img src="docs/images/agent-studio-repository-command-bar.png" alt="Repository-scoped command bar showing worktrees and open panes" width="640">
 </p>
 
 ### Review changes in a diff viewer built to stay fast
@@ -73,7 +73,7 @@ Agent Studio presents every changed file as one continuous, read-only diff with 
 
 It does not render the whole change at once: metadata streams separately, visible files hydrate from viewport demand, and a worker prepares bounded render windows before budgeted main-thread updates. Scroll through large reviews without leaving the workspace. Editing stays in your editor.
 
-![Agent Studio's file tree and continuous diff viewer beside an agent terminal](web/images/agent-studio-file-diff-review.png)
+![Agent Studio's file tree and continuous diff viewer beside an agent terminal](docs/images/agent-studio-file-diff-review.png)
 
 ## What works today
 

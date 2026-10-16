@@ -50,7 +50,9 @@ extension BridgeSchemeHandler {
                 return
             }
             guard let url = request.url else {
-                continuation.finish(throwing: BridgeSchemeError.invalidRequest("Missing URL"))
+                // WKURLSchemeTask always has a URL. Without one there is no
+                // legal response target, and WebKit must not see a generic error.
+                continuation.finish(throwing: CancellationError())
                 return
             }
             guard
@@ -69,7 +71,11 @@ extension BridgeSchemeHandler {
                 bridgeProductSchemeTaskLogger.error(
                     "Product scheme task rejected without active session route=\(route, privacy: .public)"
                 )
-                continuation.finish(throwing: BridgeSchemeError.invalidRoute("product-session-unavailable"))
+                emitProductAdmissionResponse(
+                    statusCode: 503,
+                    url: url,
+                    continuation: continuation
+                )
                 return
             }
             let transportAdmission = await productSessionRouter.claimActiveAdapter(
@@ -104,9 +110,8 @@ extension BridgeSchemeHandler {
                 await transportClaim.finish()
                 return
             }
-            await transportClaim.adapter.route(
+            await transportClaim.route(
                 request,
-                productAdmission: transportClaim.productAdmission,
                 continuation: continuation
             )
             bridgeProductSchemeTaskLogger.debug(

@@ -44,6 +44,43 @@ function viewedItem(index: number): {
 }
 
 describe('Bridge product call contracts', () => {
+	test('round-trips exact output batches and rejects empty, duplicate and coarse-fenced bodies', () => {
+		const messageId = '00000000-0000-7000-8000-000000000011';
+		const operation = {
+			kind: 'output.scope.commit',
+			messages: [{ messageId, savedRevision: 4 }],
+			outputKind: 'clipboardMarkdown',
+			scope: 'pending',
+			sessionId: '00000000-0000-7000-8000-000000000012',
+		} as const;
+		const request = {
+			method: 'review.annotations.command',
+			request: { operation, reviewPublicationIdentity },
+		};
+		expect(bridgeProductCallRequestSchema.parse(JSON.parse(JSON.stringify(request)))).toEqual(
+			request,
+		);
+		for (const invalidOperation of [
+			{ ...operation, messages: [] },
+			{ ...operation, messages: [operation.messages[0], operation.messages[0]] },
+			{ ...operation, messages: [operation.messages[0], { messageId, savedRevision: 5 }] },
+			{ ...operation, messages: [{ messageId, savedRevision: -1 }] },
+			{ ...operation, messages: [{ messageId, savedRevision: 0 }] },
+			{ ...operation, messages: [{ messageId, savedRevision: 4, unexpected: true }] },
+			{ ...operation, displayedProjectionRevision: 9 },
+			{ ...operation, expectedSessionRevision: 4 },
+			{ ...operation, sourceGeneration: 7 },
+			{ ...operation, unexpected: true },
+		]) {
+			expect(
+				bridgeProductCallRequestSchema.safeParse({
+					...request,
+					request: { operation: invalidOperation, reviewPublicationIdentity },
+				}).success,
+			).toBe(false);
+		}
+	});
+
 	test('returns current source authority instead of a generic stale projection error', () => {
 		for (const method of [
 			'file.annotations.projection.query',
@@ -324,13 +361,21 @@ describe('Bridge product call contracts', () => {
 			},
 			{ kind: 'source.refresh', sessionId, sourceEpoch: 5 },
 			{
-				displayedProjectionRevision: 9,
-				expectedSessionRevision: 4,
+				destination: 'remembered',
 				kind: 'output.scope.commit',
+				messages: [{ messageId, savedRevision: 4 }],
+				outputKind: 'jsonFile',
+				scope: 'pending',
+				sessionId,
+			},
+			{ kind: 'output.preference.changeFolder' },
+			{ attemptId, kind: 'output.reveal' },
+			{
+				kind: 'output.scope.commit',
+				messages: [{ messageId, savedRevision: 4 }],
 				outputKind: 'clipboardMarkdown',
 				scope: 'pending',
 				sessionId,
-				sourceGeneration: 7,
 			},
 			{ attemptId, expectedSessionRevision: 4, kind: 'output.handled.clear' },
 			{ kind: 'output.history', sessionId },
@@ -350,6 +395,21 @@ describe('Bridge product call contracts', () => {
 		for (const operation of [
 			{ attemptId, kind: 'output.inspect' },
 			{
+				kind: 'output.scope.commit',
+				messages: [{ messageId, savedRevision: 4 }],
+				outputKind: 'jsonFile',
+				scope: 'pending',
+				sessionId,
+			},
+			{
+				destination: 'remembered',
+				kind: 'output.scope.commit',
+				messages: [{ messageId, savedRevision: 4 }],
+				outputKind: 'clipboardMarkdown',
+				scope: 'pending',
+				sessionId,
+			},
+			{
 				kind: 'output.selection.begin',
 				outputKind: 'clipboardMarkdown',
 				selectionMode: 'explicit',
@@ -365,8 +425,6 @@ describe('Bridge product call contracts', () => {
 				sessionId,
 			},
 			{
-				displayedProjectionRevision: 9,
-				expectedSessionRevision: 4,
 				kind: 'output.scope.commit',
 				outputKind: 'clipboardMarkdown',
 				scope: 'pending',

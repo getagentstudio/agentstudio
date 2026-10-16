@@ -106,6 +106,7 @@ export const emptyWorktreeAnnotationProjectionSnapshot: WorktreeAnnotationProjec
 };
 
 export class WorktreeAnnotationProjectionStore {
+	#catalogInstallationFailed = false;
 	#catalogProjection: WorktreeAnnotationCatalogProjection = { kind: 'unknown' };
 	readonly #catalogStaging = new WorktreeAnnotationCatalogStaging();
 	readonly #completeContentRevisionBySessionId = new Map<string, number>();
@@ -271,7 +272,21 @@ export class WorktreeAnnotationProjectionStore {
 			this.#publish({ ...this.#snapshot, readStatus: { kind: 'refreshing' } });
 		}
 		const result = this.#catalogStaging.accept(event);
+		if (
+			this.#catalogInstallationFailed &&
+			authorityReplaced &&
+			event.transfer.kind === 'catalog.begin' &&
+			result.status === 'accepted'
+		) {
+			this.#catalogInstallationFailed = false;
+			this.markRefreshing();
+		}
+		if (result.status === 'rejected' && catalogRejectionMakesReadUnavailable(result.reason)) {
+			this.#catalogInstallationFailed = true;
+			this.markUnavailable(false);
+		}
 		if (result.status !== 'completed') return result;
+		this.#catalogInstallationFailed = false;
 		for (const sessionId of this.#completeContentRevisionBySessionId.keys()) {
 			if (!result.catalog.sessionsById.has(sessionId)) {
 				this.#completeContentRevisionBySessionId.delete(sessionId);
@@ -294,11 +309,16 @@ export class WorktreeAnnotationProjectionStore {
 	}
 
 	prepareForWorkerReplacement(): void {
+		const catalogInstallationFailed = this.#catalogInstallationFailed;
+		this.#catalogInstallationFailed = false;
 		this.#catalogStaging.retireExpectedAuthority();
 		this.#completeContentRevisionBySessionId.clear();
 		this.#pendingReviewAnnotationApplication = null;
-		if (this.#catalogProjection.kind !== 'current') return;
-		this.#catalogProjection = { ...this.#catalogProjection, kind: 'stale' };
+		if (this.#catalogProjection.kind === 'current') {
+			this.#catalogProjection = { ...this.#catalogProjection, kind: 'stale' };
+		} else if (!catalogInstallationFailed) {
+			return;
+		}
 		this.#publish({
 			...this.#snapshot,
 			readStatus: { kind: 'refreshing' },
@@ -307,7 +327,7 @@ export class WorktreeAnnotationProjectionStore {
 	}
 
 	markRefreshing(): void {
-		if (this.#snapshot.readStatus.kind === 'refreshing') return;
+		if (this.#catalogInstallationFailed || this.#snapshot.readStatus.kind === 'refreshing') return;
 		this.#publish({ ...this.#snapshot, readStatus: { kind: 'refreshing' } });
 	}
 
@@ -328,15 +348,16 @@ export class WorktreeAnnotationProjectionStore {
 	}
 
 	markUnavailable(retryable: boolean): void {
+		const effectiveRetryable = retryable && !this.#catalogInstallationFailed;
 		if (
 			this.#snapshot.readStatus.kind === 'unavailable' &&
-			this.#snapshot.readStatus.retryable === retryable
+			this.#snapshot.readStatus.retryable === effectiveRetryable
 		) {
 			return;
 		}
 		this.#publish({
 			...this.#snapshot,
-			readStatus: { kind: 'unavailable', retryable },
+			readStatus: { kind: 'unavailable', retryable: effectiveRetryable },
 		});
 	}
 
@@ -448,10 +469,44 @@ export class WorktreeAnnotationProjectionStore {
 		this.#snapshot = {
 			...snapshot,
 			presentationRevision: this.#snapshot.presentationRevision + 1,
+			// Query convergence cannot replay a rejected catalog installation.
+			readStatus: this.#catalogInstallationFailed
+				? { kind: 'unavailable', retryable: false }
+				: snapshot.readStatus,
 			reviewAnnotationApplication: this.#pendingReviewAnnotationApplication,
 		};
 		for (const listener of this.#listeners) listener();
 	}
+}
+
+function catalogRejectionMakesReadUnavailable(
+	reason: Extract<
+		BridgeCommWorkerAnnotationCatalogApplicatorResult,
+		{ readonly status: 'rejected' }
+	>['reason'],
+): boolean {
+	switch (reason) {
+		case 'unexpected_authority':
+		case 'revision_not_newer':
+		case 'noncurrent_transfer':
+			return false;
+		case 'candidate_capacity_exceeded':
+		case 'commit_count_mismatch':
+		case 'entry_count_exceeded':
+		case 'malformed_transfer':
+		case 'window_ordinal_mismatch':
+		case 'duplicate_message_id':
+		case 'duplicate_message_ordinal':
+		case 'duplicate_session_id':
+		case 'duplicate_thread_id':
+		case 'duplicate_thread_ordinal':
+		case 'generation_mismatch':
+		case 'unknown_session':
+		case 'unknown_thread':
+			return true;
+	}
+	const unhandledReason: never = reason;
+	throw new Error(`Unhandled annotation catalog rejection: ${JSON.stringify(unhandledReason)}`);
 }
 
 function commandConfirmedThreads(
@@ -542,12 +597,18 @@ function reconcileCommandConfirmedReceipts(props: {
 			props.commandConfirmedMessagesById.delete(messageId);
 			continue;
 		}
+		if (sessionRevision > receipt.message.sessionRevision) {
+			// Complete content at a newer session revision already includes this commit
+			// and whatever changed it since, possibly from another surface or pane.
+			props.commandConfirmedMessagesById.delete(messageId);
+			continue;
+		}
 		result = 'contradictory';
 	}
 	for (const [messageId, removal] of props.commandConfirmedRemovalsByMessageId) {
 		const sessionRevision = props.completeContentRevisionBySessionId.get(removal.sessionId);
 		if (sessionRevision === undefined || sessionRevision < removal.sessionRevision) continue;
-		if (!projectedMessageById.has(messageId)) {
+		if (!projectedMessageById.has(messageId) || sessionRevision > removal.sessionRevision) {
 			props.commandConfirmedRemovalsByMessageId.delete(messageId);
 			continue;
 		}

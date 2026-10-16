@@ -1,0 +1,6 @@
+Use case: ui-mockup
+Asset type: high fidelity Bridge Review concept image
+Input images: Image 1 is the current Review screenshot and the primary layout/style reference. Image 2 is the current File screenshot and supplies the visible TypeScript code style only.
+Primary request: Preserve the current Agent Studio dark Review view: top Review header with the HEAD comparison target control, wide readable diff pane, and narrow changed-file tree on the right. Show a TypeScript file diff with readable code using the code styling from Image 2. In the existing compact header refresh area, add a status pill with the exact text "Update unavailable" and an adjacent button with the exact text "Retry". Add a small muted header marker with the exact text "Showing last update · stale". Keep all diff content fully readable, without grey overlay. Show one inline comment thread in the diff, still interactive, with an enabled composer whose placeholder reads exactly "Reply…".
+Constraints: Maintain the original dark palette, typography, density, proportions, icon style, file tree and navigation. Change only the specified degraded status and comment state. Every quoted label must be spelled exactly, legibly, once. No extra controls, panels or navigation.
+Avoid: error modals, toasts, banners across the whole view, spinners over content, empty states.

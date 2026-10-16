@@ -1,6 +1,7 @@
 import AppKit
 
 /// Creates a synthetic keyboard event for testing
+@MainActor
 func makeKeyEvent(
     type: NSEvent.EventType = .keyDown,
     modifierFlags: NSEvent.ModifierFlags = [],

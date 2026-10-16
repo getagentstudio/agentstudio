@@ -332,6 +332,79 @@ describe('Worker content preparation pump', () => {
 		});
 	});
 
+	test('records one content preparation task after three slices with first queue wait', () => {
+		let clockMs = 0;
+		let sliceCount = 0;
+		const telemetrySamples: BridgeTelemetrySample[] = [];
+		const pump = createWorkerContentPreparationPump({
+			maxSliceMs: 4,
+			now: () => clockMs,
+			telemetryClient: {
+				record: (sample): void => {
+					telemetrySamples.push(sample);
+				},
+			},
+		});
+		pump.enqueue({
+			id: 'three-slice-review',
+			rank: 'visible',
+			telemetry: { workKind: 'review_content_ready' },
+			runSlice: () => {
+				sliceCount += 1;
+				clockMs += 2;
+				return { complete: sliceCount === 3 };
+			},
+		});
+		clockMs = 5;
+		expect(pump.runUntilBudget()).toEqual({ completedIds: [], yielded: true });
+		expect(telemetrySamples).toEqual([]);
+		expect(pump.runUntilBudget()).toEqual({ completedIds: ['three-slice-review'], yielded: false });
+		expect(telemetrySamples).toHaveLength(1);
+		expect(telemetrySamples[0]).toMatchObject({
+			durationMilliseconds: 6,
+			stringAttributes: {
+				'agentstudio.bridge.result': 'success',
+				'agentstudio.bridge.worker.task_kind': 'content_preparation',
+			},
+			numericAttributes: {
+				'agentstudio.bridge.worker.handler_duration_ms': 6,
+				'agentstudio.bridge.worker.queue_wait_ms': 5,
+			},
+		});
+	});
+
+	test('records one cancelled content preparation task after its partial slice', () => {
+		let clockMs = 0;
+		const telemetrySamples: BridgeTelemetrySample[] = [];
+		const pump = createWorkerContentPreparationPump({
+			maxSliceMs: 2,
+			now: () => clockMs,
+			telemetryClient: {
+				record: (sample): void => {
+					telemetrySamples.push(sample);
+				},
+			},
+		});
+		pump.enqueue({
+			id: 'cancelled-review',
+			rank: 'visible',
+			runSlice: () => {
+				clockMs += 2;
+				return { complete: false };
+			},
+		});
+		expect(pump.runUntilBudget()).toEqual({ completedIds: [], yielded: true });
+		pump.cancel('cancelled-review');
+		expect(telemetrySamples).toHaveLength(1);
+		expect(telemetrySamples[0]).toMatchObject({
+			durationMilliseconds: 2,
+			stringAttributes: {
+				'agentstudio.bridge.result': 'cancelled',
+				'agentstudio.bridge.worker.task_kind': 'content_preparation',
+			},
+		});
+	});
+
 	test('re-stamps queue wait when lower-priority work promotes to selected', () => {
 		let clockMs = 0;
 		const telemetrySamples: BridgeTelemetrySample[] = [];

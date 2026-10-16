@@ -52,14 +52,10 @@ private struct BridgeProductResyncSubscriptionIdentity: Codable, Equatable, Send
 struct BridgeProductResyncRetainedOutcome: Codable, Equatable, Sendable {
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case disposition
-        case interestRevision
-        case interestSha256
         case workerDerivationEpoch
     }
 
     private let identity: BridgeProductResyncSubscriptionIdentity
-    let interestRevision: Int
-    let interestSha256: String
     let workerDerivationEpoch: Int
 
     var subscriptionId: String { identity.subscriptionId }
@@ -68,17 +64,13 @@ struct BridgeProductResyncRetainedOutcome: Codable, Equatable, Sendable {
     init(
         subscriptionId: String,
         subscriptionKind: BridgeProductSubscriptionKind,
-        workerDerivationEpoch: Int,
-        interestRevision: Int,
-        interestSha256: String
+        workerDerivationEpoch: Int
     ) throws {
         self.identity = try .init(
             subscriptionId: subscriptionId,
             subscriptionKind: subscriptionKind
         )
         self.workerDerivationEpoch = workerDerivationEpoch
-        self.interestRevision = interestRevision
-        self.interestSha256 = interestSha256
         try validate(codingPath: [])
     }
 
@@ -98,8 +90,6 @@ struct BridgeProductResyncRetainedOutcome: Codable, Equatable, Sendable {
             )
         }
         self.identity = try BridgeProductResyncSubscriptionIdentity(from: decoder)
-        self.interestRevision = try container.decode(Int.self, forKey: .interestRevision)
-        self.interestSha256 = try container.decode(String.self, forKey: .interestSha256)
         self.workerDerivationEpoch = try container.decode(Int.self, forKey: .workerDerivationEpoch)
         try validate(codingPath: decoder.codingPath)
     }
@@ -108,103 +98,10 @@ struct BridgeProductResyncRetainedOutcome: Codable, Equatable, Sendable {
         try identity.encode(to: encoder)
         var container = encoder.container(keyedBy: CodingKeys.self)
         try container.encode("retained", forKey: .disposition)
-        try container.encode(interestRevision, forKey: .interestRevision)
-        try container.encode(interestSha256, forKey: .interestSha256)
         try container.encode(workerDerivationEpoch, forKey: .workerDerivationEpoch)
     }
 
     private func validate(codingPath: [any CodingKey]) throws {
-        try BridgeProductContractDecoding.validateNonnegative(
-            interestRevision,
-            name: "interestRevision",
-            codingPath: codingPath
-        )
-        try BridgeProductContractDecoding.validateSHA256(interestSha256, codingPath: codingPath)
-        try BridgeProductContractDecoding.validateNonnegative(
-            workerDerivationEpoch,
-            name: "workerDerivationEpoch",
-            codingPath: codingPath
-        )
-    }
-}
-
-struct BridgeProductResyncResetOutcome: Codable, Equatable, Sendable {
-    private enum CodingKeys: String, CodingKey, CaseIterable {
-        case disposition
-        case interestRevision
-        case interestSha256
-        case reason
-        case workerDerivationEpoch
-    }
-
-    private let identity: BridgeProductResyncSubscriptionIdentity
-    let interestRevision: Int
-    let interestSha256: String
-    let reason: BridgeProductResetReason
-    let workerDerivationEpoch: Int
-
-    var subscriptionId: String { identity.subscriptionId }
-    var subscriptionKind: BridgeProductSubscriptionKind { identity.subscriptionKind }
-
-    init(
-        subscriptionId: String,
-        subscriptionKind: BridgeProductSubscriptionKind,
-        workerDerivationEpoch: Int,
-        interestRevision: Int,
-        interestSha256: String,
-        reason: BridgeProductResetReason
-    ) throws {
-        self.identity = try .init(
-            subscriptionId: subscriptionId,
-            subscriptionKind: subscriptionKind
-        )
-        self.workerDerivationEpoch = workerDerivationEpoch
-        self.interestRevision = interestRevision
-        self.interestSha256 = interestSha256
-        self.reason = reason
-        try validate(codingPath: [])
-    }
-
-    init(from decoder: Decoder) throws {
-        try BridgeProductContractDecoding.rejectUnknownKeys(
-            from: decoder,
-            allowedKeys: BridgeProductResyncSubscriptionIdentity.codingKeyNames.union(
-                CodingKeys.allCases.map(\.rawValue)
-            ),
-            contract: "reset Bridge product resync outcome"
-        )
-        let container = try decoder.container(keyedBy: CodingKeys.self)
-        guard try container.decode(String.self, forKey: .disposition) == "reset" else {
-            throw BridgeProductContractDecoding.invalidValue(
-                "Invalid reset Bridge product resync disposition",
-                codingPath: decoder.codingPath
-            )
-        }
-        self.identity = try BridgeProductResyncSubscriptionIdentity(from: decoder)
-        self.interestRevision = try container.decode(Int.self, forKey: .interestRevision)
-        self.interestSha256 = try container.decode(String.self, forKey: .interestSha256)
-        self.reason = try container.decode(BridgeProductResetReason.self, forKey: .reason)
-        self.workerDerivationEpoch = try container.decode(Int.self, forKey: .workerDerivationEpoch)
-        try validate(codingPath: decoder.codingPath)
-    }
-
-    func encode(to encoder: Encoder) throws {
-        try identity.encode(to: encoder)
-        var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode("reset", forKey: .disposition)
-        try container.encode(interestRevision, forKey: .interestRevision)
-        try container.encode(interestSha256, forKey: .interestSha256)
-        try container.encode(reason, forKey: .reason)
-        try container.encode(workerDerivationEpoch, forKey: .workerDerivationEpoch)
-    }
-
-    private func validate(codingPath: [any CodingKey]) throws {
-        try BridgeProductContractDecoding.validatePositive(
-            interestRevision,
-            name: "interestRevision",
-            codingPath: codingPath
-        )
-        try BridgeProductContractDecoding.validateSHA256(interestSha256, codingPath: codingPath)
         try BridgeProductContractDecoding.validateNonnegative(
             workerDerivationEpoch,
             name: "workerDerivationEpoch",
@@ -358,7 +255,6 @@ struct BridgeProductResyncReopenRequiredOutcome: Codable, Equatable, Sendable {
 
 enum BridgeProductResyncReconciliationOutcome: Codable, Equatable, Sendable {
     case retained(BridgeProductResyncRetainedOutcome)
-    case reset(BridgeProductResyncResetOutcome)
     case cancelled(BridgeProductResyncCancelledOutcome)
     case reopenRequired(BridgeProductResyncReopenRequiredOutcome)
 
@@ -369,7 +265,6 @@ enum BridgeProductResyncReconciliationOutcome: Codable, Equatable, Sendable {
     var dispositionName: String {
         switch self {
         case .retained: "retained"
-        case .reset: "reset"
         case .cancelled: "cancelled"
         case .reopenRequired: "reopenRequired"
         }
@@ -378,7 +273,6 @@ enum BridgeProductResyncReconciliationOutcome: Codable, Equatable, Sendable {
     var subscriptionId: String {
         switch self {
         case .retained(let outcome): outcome.subscriptionId
-        case .reset(let outcome): outcome.subscriptionId
         case .cancelled(let outcome): outcome.subscriptionId
         case .reopenRequired(let outcome): outcome.subscriptionId
         }
@@ -387,7 +281,6 @@ enum BridgeProductResyncReconciliationOutcome: Codable, Equatable, Sendable {
     var subscriptionKind: BridgeProductSubscriptionKind {
         switch self {
         case .retained(let outcome): outcome.subscriptionKind
-        case .reset(let outcome): outcome.subscriptionKind
         case .cancelled(let outcome): outcome.subscriptionKind
         case .reopenRequired(let outcome): outcome.subscriptionKind
         }
@@ -397,7 +290,6 @@ enum BridgeProductResyncReconciliationOutcome: Codable, Equatable, Sendable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(String.self, forKey: .disposition) {
         case "retained": self = .retained(try .init(from: decoder))
-        case "reset": self = .reset(try .init(from: decoder))
         case "cancelled": self = .cancelled(try .init(from: decoder))
         case "reopenRequired": self = .reopenRequired(try .init(from: decoder))
         default:
@@ -411,7 +303,6 @@ enum BridgeProductResyncReconciliationOutcome: Codable, Equatable, Sendable {
     func encode(to encoder: Encoder) throws {
         switch self {
         case .retained(let outcome): try outcome.encode(to: encoder)
-        case .reset(let outcome): try outcome.encode(to: encoder)
         case .cancelled(let outcome): try outcome.encode(to: encoder)
         case .reopenRequired(let outcome): try outcome.encode(to: encoder)
         }

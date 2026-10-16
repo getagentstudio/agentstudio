@@ -15,14 +15,21 @@ const reviewNavigationCommandIsAlwaysEligible = (): boolean => true;
 
 export function ReviewNavigationControllerProbe(props: {
 	readonly events: string[];
+	readonly initialNavigationCommand?: BridgeReviewTargetNavigationCommand;
 	readonly isNavigationCommandStillEligible?: () => boolean;
+	readonly initialTargetPending?: boolean;
+	readonly initialSelectedItemId?: string;
 }): ReactElement {
 	const [catalogRevision, setCatalogRevision] = useState(1);
 	const [navigationCommand, setNavigationCommand] = useState<BridgeReviewTargetNavigationCommand>(
-		() => reviewNavigationCommand('command-two', 'item-two'),
+		() => props.initialNavigationCommand ?? reviewNavigationCommand('command-two', 'item-two'),
 	);
-	const [selectedItemId, setSelectedItemId] = useState<string | null>(null);
-	const [orderedItemIds, setOrderedItemIds] = useState<readonly string[]>(['item-one', 'item-two']);
+	const [selectedItemId, setSelectedItemId] = useState<string | null>(
+		props.initialSelectedItemId ?? null,
+	);
+	const [orderedItemIds, setOrderedItemIds] = useState<readonly string[]>(
+		props.initialTargetPending === true ? ['item-two'] : ['item-one', 'item-two'],
+	);
 	const clearReviewSelection = useCallback((): void => {
 		props.events.push('clear');
 		setSelectedItemId(null);
@@ -55,9 +62,70 @@ export function ReviewNavigationControllerProbe(props: {
 		selectInitialReviewItem: selectReviewItem,
 		selectReviewItem,
 	};
-	useBridgeReviewNavigationController(navigationControllerProps);
+	const navigationController = useBridgeReviewNavigationController(navigationControllerProps);
 	return (
 		<>
+			<button
+				onClick={(): void => {
+					navigationController.notifyUserSelection();
+					setSelectedItemId('item-two');
+				}}
+				type="button"
+			>
+				Select item-two as user
+			</button>
+			<button
+				onClick={(): void =>
+					setNavigationCommand((command) => ({
+						...command,
+						bindingRevision: command.bindingRevision + 1,
+					}))
+				}
+				type="button"
+			>
+				Replay binding
+			</button>
+			<button
+				onClick={(): void =>
+					setNavigationCommand((command) => ({
+						...command,
+						source: {
+							...command.source,
+							generation: command.source.generation + 1,
+							metadataSourceId: 'review-successor',
+							packageId: 'review-successor-package',
+						},
+					}))
+				}
+				type="button"
+			>
+				Replay source
+			</button>
+			<button
+				onClick={(): void =>
+					setNavigationCommand((command) => ({
+						...reviewNavigationCommand('command-new', 'item-one'),
+						bindingRevision: command.bindingRevision + 1,
+					}))
+				}
+				type="button"
+			>
+				Navigate with new command
+			</button>
+			<button
+				onClick={(): void =>
+					setNavigationCommand((command) => ({
+						...reviewNavigationCommand('command-one', 'item-one'),
+						bindingRevision: command.bindingRevision + 1,
+					}))
+				}
+				type="button"
+			>
+				Replay earlier command
+			</button>
+			<button onClick={(): void => setOrderedItemIds(['item-one', 'item-two'])} type="button">
+				Reveal pending target
+			</button>
 			<button onClick={(): void => setCatalogRevision((revision) => revision + 1)} type="button">
 				Advance Review catalog revision
 			</button>

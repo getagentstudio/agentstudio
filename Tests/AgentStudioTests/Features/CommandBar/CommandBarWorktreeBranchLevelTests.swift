@@ -10,6 +10,63 @@ import Testing
 @MainActor
 @Suite("Command Bar worktree branch level", .serialized)
 struct CommandBarWorktreeBranchLevelTests {
+    @Test("reopening From a branch requests a new listing in the same command-bar session")
+    func reopensBranchListingForANewLevelVisit() async throws {
+        try await withAsyncTestCoreAtoms { coreAtoms in
+            let store = WorkspaceStore(
+                identityAtom: coreAtoms.workspaceIdentity,
+                repositoryTopologyAtom: coreAtoms.workspaceRepositoryTopology)
+            let repositoryPath = URL(filePath: "/tmp/branch-opening-\(UUIDv7.generate().uuidString)/repo")
+            let repository = store.addRepo(at: repositoryPath)
+            let currentRepository = try #require(store.repositoryTopologyAtom.repo(repository.id))
+            let repoCache = RepoCacheAtom()
+            let listing = SequencedBranchListing()
+            let defaultStartPoint = WorktreeDefaultStartPoint.resolved(
+                displayRef: "main", startPoint: "refs/heads/main")
+            let controller = CommandBarPanelController(
+                store: store,
+                octiconLoader: makeCommandBarTestOcticonLoader(),
+                repoCache: repoCache,
+                dispatcher: FakeAppCommandDispatcher(),
+                quickOpenDirectoryHandler: { _, _ in },
+                commandBarSurface: CommandBarSurfaceAtom(),
+                recentsDefaults: CommandBarRecentsDefaultsFixture().makeDefaults(),
+                branchListing: listing)
+            controller.state.show(prefix: ">")
+            controller.state.recordDefaultStartPoint(defaultStartPoint, forRepositoryId: repository.id)
+
+            let branchLevel = CommandBarDataSource.worktreeCreationMenuLevel(
+                repository: currentRepository,
+                store: store,
+                repoCache: repoCache,
+                defaultStartPoint: defaultStartPoint)
+            controller.state.pushLevel(branchLevel)
+            controller.requestCreationQueriesIfNeeded(for: branchLevel)
+            #expect(await listing.awaitQueries(count: 1) == 1)
+            let firstOpeningTask = try #require(controller.branchListingQueriesByRepositoryId[repository.id]?.task)
+            await listing.answer(at: 0, with: ["branch-before-reopen"])
+            await firstOpeningTask.value
+
+            let rootSessionGeneration = controller.state.rootSessionGeneration
+            let firstOpeningLevel = try #require(controller.state.currentLevel)
+            #expect(controller.state.branchNamesByRepositoryId[repository.id] == ["branch-before-reopen"])
+
+            controller.state.popLevel()
+            controller.state.pushLevel(firstOpeningLevel)
+            controller.requestCreationQueriesIfNeeded(for: firstOpeningLevel)
+            let secondOpeningTask = controller.branchListingQueriesByRepositoryId[repository.id]?.task
+            #expect(secondOpeningTask != nil)
+            if let secondOpeningTask {
+                #expect(await listing.awaitQueries(count: 2) == 2)
+                await listing.answer(at: 1, with: ["branch-after-reopen"])
+                await secondOpeningTask.value
+            }
+
+            #expect(controller.state.rootSessionGeneration == rootSessionGeneration)
+            #expect(controller.state.branchNamesByRepositoryId[repository.id] == ["branch-after-reopen"])
+        }
+    }
+
     @Test("a branch listing arriving after typing refreshes real search results")
     func lateBranchListingRefreshesSearch() async throws {
         try await withAsyncTestCoreAtoms { coreAtoms in

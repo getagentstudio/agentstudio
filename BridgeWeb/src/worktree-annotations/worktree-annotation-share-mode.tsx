@@ -1,4 +1,4 @@
-import { Copy, FileJson2, List, ListFilter, MessagesSquareIcon, X } from 'lucide-react';
+import { List, ListFilter, MessagesSquareIcon, X } from 'lucide-react';
 import type { MouseEvent, ReactElement, ReactNode, Ref } from 'react';
 
 import { Alert, AlertDescription } from '@/components/ui/alert.js';
@@ -10,11 +10,18 @@ import {
 	DrawerTitle,
 	DrawerTrigger,
 } from '@/components/ui/drawer.js';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu.js';
 import { Field } from '@/components/ui/field.js';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.js';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip.js';
 
 import { BridgeViewerButton, BridgeViewerIcon } from '../app/bridge-viewer-button.js';
+import { worktreeAnnotationActionSpec } from './worktree-annotation-action-spec.js';
 export type WorktreeAnnotationShareScope = 'pending' | 'all';
 export type WorktreeAnnotationShareMembership =
 	| { readonly kind: 'unknown' }
@@ -55,8 +62,10 @@ export function WorktreeAnnotationShareTrigger(props: {
 }
 
 export function WorktreeAnnotationShareModeRow(props: {
+	readonly regionIndicator?: ReactNode;
 	readonly children?: ReactNode | undefined;
 	readonly error: string | null;
+	readonly errorCanChooseFolder?: boolean | undefined;
 	readonly history: ReactNode;
 	readonly isOutputPending: boolean;
 	readonly isOutputReady?: boolean | undefined;
@@ -64,6 +73,10 @@ export function WorktreeAnnotationShareModeRow(props: {
 	readonly onCopy: (scope: WorktreeAnnotationShareScope) => void;
 	readonly onDone: () => void;
 	readonly onExport: (scope: WorktreeAnnotationShareScope) => void;
+	readonly onExportTo?: ((scope: WorktreeAnnotationShareScope) => void) | undefined;
+	readonly onChangeFolder?: (() => void) | undefined;
+	readonly onReveal?: (() => void) | undefined;
+	readonly savedFilename?: string | null | undefined;
 	readonly onScopeChange: (scope: WorktreeAnnotationShareScope) => void;
 	readonly scope: WorktreeAnnotationShareScope;
 }): ReactElement {
@@ -82,6 +95,20 @@ export function WorktreeAnnotationShareModeRow(props: {
 		props.membership.kind === 'unknown' ? 'unknown' : String(props.membership.pendingCount);
 	const allCountLabel =
 		props.membership.kind === 'unknown' ? 'unknown' : String(props.membership.allCount);
+	const copySpec = worktreeAnnotationActionSpec('copyAnnotations');
+	const exportSpec = worktreeAnnotationActionSpec('exportJSON');
+	const exportToSpec = worktreeAnnotationActionSpec('exportJSONToFolder');
+	const changeFolderSpec = worktreeAnnotationActionSpec('changeExportFolder');
+	const chooseFolderSpec = worktreeAnnotationActionSpec('chooseExportFolder');
+	const revealSpec = worktreeAnnotationActionSpec('revealExport');
+	const optionsSpec = worktreeAnnotationActionSpec('exportOptions');
+	const CopyIcon = copySpec.icon;
+	const ExportIcon = exportSpec.icon;
+	const ExportToIcon = exportToSpec.icon;
+	const ChangeFolderIcon = changeFolderSpec.icon;
+	const ChooseFolderIcon = chooseFolderSpec.icon;
+	const RevealIcon = revealSpec.icon;
+	const OptionsIcon = optionsSpec.icon;
 	return (
 		<section
 			aria-label="Annotations"
@@ -91,6 +118,7 @@ export function WorktreeAnnotationShareModeRow(props: {
 			<DrawerHeader>
 				<div className="flex items-center justify-between gap-2">
 					<DrawerTitle>Annotations</DrawerTitle>
+					{props.regionIndicator}
 					<WorktreeAnnotationShareActionButton
 						ariaLabel="Close Annotations"
 						size="icon-sm"
@@ -140,30 +168,77 @@ export function WorktreeAnnotationShareModeRow(props: {
 				{props.error === null ? null : (
 					<Alert className="mt-4" variant="destructive">
 						<AlertDescription>{props.error}</AlertDescription>
+						{props.errorCanChooseFolder && props.onChangeFolder ? (
+							<Button onClick={props.onChangeFolder} size="sm" type="button" variant="outline">
+								<ChooseFolderIcon aria-hidden="true" />
+								{chooseFolderSpec.accessibleName}
+							</Button>
+						) : null}
 					</Alert>
 				)}
+				{props.savedFilename ? (
+					<div className="flex items-center gap-2" role="status">
+						<span>Saved to {props.savedFilename}</span>
+						{props.onReveal ? (
+							<Button onClick={props.onReveal} size="sm" type="button" variant="outline">
+								<RevealIcon aria-hidden="true" />
+								{revealSpec.accessibleName}
+							</Button>
+						) : null}
+						{props.onChangeFolder ? (
+							<Button onClick={props.onChangeFolder} size="sm" type="button" variant="outline">
+								<ChangeFolderIcon aria-hidden="true" />
+								{changeFolderSpec.accessibleName}
+							</Button>
+						) : null}
+					</div>
+				) : null}
 				{props.children}
 				{props.history}
 			</DrawerBody>
 			<DrawerFooter>
 				<WorktreeAnnotationDrawerActionButton
-					ariaLabel="Copy Markdown"
+					ariaLabel={copySpec.accessibleName}
 					disabled={outputDisabled}
 					onClick={() => props.onCopy(props.scope)}
-					tooltip={`Copy ${props.scope} comments as Markdown`}
+					tooltip={copySpec.tooltip}
 				>
-					<Copy aria-hidden="true" data-icon="inline-start" />
+					<CopyIcon aria-hidden="true" data-icon="inline-start" />
 					{props.isOutputPending ? 'Working…' : 'Copy'}
 				</WorktreeAnnotationDrawerActionButton>
 				<WorktreeAnnotationDrawerActionButton
-					ariaLabel="Export JSON"
+					ariaLabel={exportSpec.accessibleName}
 					disabled={outputDisabled}
 					onClick={() => props.onExport(props.scope)}
-					tooltip={`Export ${props.scope} comments as JSON`}
+					tooltip={exportSpec.tooltip}
 				>
-					<FileJson2 aria-hidden="true" data-icon="inline-start" />
+					<ExportIcon aria-hidden="true" data-icon="inline-start" />
 					Export
 				</WorktreeAnnotationDrawerActionButton>
+				{props.onExportTo && props.onChangeFolder ? (
+					<DropdownMenu>
+						<DropdownMenuTrigger
+							aria-label={optionsSpec.accessibleName}
+							disabled={props.isOutputPending}
+							render={<Button size="icon-sm" type="button" variant="outline" />}
+						>
+							<OptionsIcon aria-hidden="true" />
+						</DropdownMenuTrigger>
+						<DropdownMenuContent align="end">
+							<DropdownMenuItem
+								disabled={outputDisabled}
+								onClick={() => props.onExportTo?.(props.scope)}
+							>
+								<ExportToIcon aria-hidden="true" />
+								{exportToSpec.accessibleName}
+							</DropdownMenuItem>
+							<DropdownMenuItem onClick={props.onChangeFolder}>
+								<ChangeFolderIcon aria-hidden="true" />
+								{changeFolderSpec.accessibleName}
+							</DropdownMenuItem>
+						</DropdownMenuContent>
+					</DropdownMenu>
+				) : null}
 			</DrawerFooter>
 		</section>
 	);

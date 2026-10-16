@@ -27,12 +27,13 @@ struct BridgePaneProductFileBootstrapSuspensionTests {
         let snapshotBuilderGate = FileBootstrapSnapshotBuilderGate(
             lifecycleRecorder: lifecycleRecorder
         )
-        let (sourceAcceptedEvents, sourceAcceptedContinuation) = AsyncStream<Void>.makeStream(
-            bufferingPolicy: .bufferingNewest(2))
+        let (sourceAcceptedEvents, sourceAcceptedContinuation) = AsyncStream<BridgeProductFileSourceIdentity>
+            .makeStream(
+                bufferingPolicy: .bufferingNewest(2))
         defer { sourceAcceptedContinuation.finish() }
         var sourceAcceptedIterator = sourceAcceptedEvents.makeAsyncIterator()
         let fileMetadataSource = fixture.makeSource(
-            sourceAcceptedObserver: { _ in _ = sourceAcceptedContinuation.yield() },
+            sourceAcceptedObserver: { source in _ = sourceAcceptedContinuation.yield(source) },
             sharedSnapshotBuilder: { request, preparation, publisher in
                 try await snapshotBuilderGate.build(
                     request: request,
@@ -55,7 +56,7 @@ struct BridgePaneProductFileBootstrapSuspensionTests {
             lifecycleTraceRecorder: lifecycleRecorder
         )
         do {
-            let initialSource = try await admitFileBootstrapSubscription(
+            try await admitFileBootstrapSubscription(
                 FileBootstrapSubscriptionAdmissionProps(
                     coordinator: coordinator,
                     fixture: fixture,
@@ -64,7 +65,7 @@ struct BridgePaneProductFileBootstrapSuspensionTests {
                     pump: pump
                 )
             )
-            _ = await sourceAcceptedIterator.next()
+            let initialSource = try #require(await sourceAcceptedIterator.next())
             await snapshotBuilderGate.waitUntilStarted(invocation: 1)
 
             // Act
@@ -91,7 +92,8 @@ struct BridgePaneProductFileBootstrapSuspensionTests {
                 await lifecycleRecorder.waitForResumeDispatch() == .sourceReopen,
                 "Foreground return must reopen an accepted File source whose initial enumeration was cancelled"
             )
-            let resumedTree = try await pullResumedFileTree(from: pump)
+            let resumedSource = try #require(await sourceAcceptedIterator.next())
+            let resumedTree = try await pullResumedFileTree(from: pump, source: resumedSource)
             await lifecycleRecorder.waitForFileProducerFinished(count: 2)
 
             // Assert
@@ -99,18 +101,11 @@ struct BridgePaneProductFileBootstrapSuspensionTests {
                 resumedTree.source.subscriptionGeneration
                     > initialSource.subscriptionGeneration
             )
-            #expect(resumedTree.finalWindow.finalWindow)
-            #expect(resumedTree.finalWindow.totalRowCount == 3)
-            #expect(resumedTree.rows.contains { $0.path == fixture.demandedPath })
-            #expect(
-                await fileMetadataSource.diagnosticSnapshot()
-                    == .init(
-                        descriptorCount: 0,
-                        inFlightDescriptorCount: 0,
-                        manifestRowCount: 3,
-                        subscriptionCount: 1
-                    )
-            )
+            #expect(resumedTree.begin.partCount == resumedTree.rows.count + 1)
+            #expect(resumedTree.complete.identity.batchId == resumedTree.begin.identity.batchId)
+            #expect(resumedTree.rows.count == 3)
+            #expect(resumedTree.rows.contains { $0.displayKey == fixture.demandedPath })
+            await expectResumedFileSourceRetained(fileMetadataSource)
         } catch {
             await snapshotBuilderGate.release(invocation: 1)
             await coordinator.uninstall(lease: lease)
@@ -173,7 +168,7 @@ struct BridgePaneProductFileBootstrapSuspensionTests {
         )
         do {
             // Act
-            _ = try await admitFileBootstrapSubscription(
+            try await admitFileBootstrapSubscription(
                 FileBootstrapSubscriptionAdmissionProps(
                     coordinator: coordinator,
                     fixture: fixture,
@@ -224,7 +219,7 @@ private struct FileBootstrapSubscriptionAdmissionProps {
 
 private func admitFileBootstrapSubscription(
     _ props: FileBootstrapSubscriptionAdmissionProps
-) async throws -> BridgeProductFileSourceIdentity {
+) async throws {
     await props.coordinator.install(
         request: try coordinatorMetadataStreamRequest(),
         lease: props.lease,
@@ -235,15 +230,12 @@ private func admitFileBootstrapSubscription(
     let controlToken = try #require(
         controlExecutionToken(try await props.harness.begin(openRequest))
     )
-    #expect(await props.harness.session.claimControlProviderDispatch(token: controlToken))
+    #expect(await props.harness.session.admitControlProviderExecution(token: controlToken))
     let openResponse = try BridgeProductControlResponse.subscriptionOpenAccepted(
         correlating: openRequest,
-        interestSha256: BridgeProductSubscriptionInterestState.fileMetadata(
-            interests: [],
-            pathScope: []
-        ).sha256Hex()
+        worktreeId: nil
     )
-    let openEffect = try await props.harness.session.completeControl(
+    let openEffect = try await props.harness.session.completeAdmittedControl(
         token: controlToken,
         exactResponseBytes: try JSONEncoder().encode(openResponse)
     )
@@ -252,17 +244,18 @@ private func admitFileBootstrapSubscription(
         openEffect,
         productAdmission: props.harness.productAdmission.context
     )
-    let initialSourceFrame = try await pullMetadataFrame(from: props.pump)
     await props.harness.session.settleControlProviderDispatch(token: controlToken)
-    guard case .subscriptionAccepted = acceptedFrame,
-        case .subscriptionData(let initialSourceData) = initialSourceFrame,
-        let initialFileEvent = initialSourceData.data.fileMetadataEvent,
-        case .sourceAccepted(let initialSourceAccepted) = initialFileEvent
-    else {
-        Issue.record("Expected File subscription acceptance followed by source acceptance")
+    guard case .subscriptionAccepted = acceptedFrame else {
+        Issue.record("Expected File subscription acceptance")
         throw FileBootstrapSuspensionTestError.expectedSourceAcceptance
     }
-    return initialSourceAccepted.source
+    let scopeRequest = try fileBootstrapViewScopeRequest()
+    #expect(
+        await props.coordinator.acceptViewScope(
+            scopeRequest,
+            productAdmission: props.harness.productAdmission.context
+        ) == nil
+    )
 }
 
 enum FileBootstrapSuspensionOrdering: CaseIterable, CustomTestStringConvertible, Sendable {
@@ -281,8 +274,9 @@ enum FileBootstrapSuspensionOrdering: CaseIterable, CustomTestStringConvertible,
 
 private struct ResumedFileTree {
     let source: BridgeProductFileSourceIdentity
-    let finalWindow: BridgeProductFileTreeWindowEvent
-    let rows: [BridgeProductFileTreeRow]
+    let begin: BridgeProductBatchBeginFrame
+    let complete: BridgeProductBatchCompleteFrame
+    let rows: [BridgeProductFileBatchRow]
 }
 
 private actor FileBootstrapSnapshotBuilderGate {
@@ -402,8 +396,7 @@ private actor FileBootstrapLifecycleRecorder: BridgeProductMetadataLifecycleTrac
                 $0.count <= fileBootstrapFinishedCount
             }
             for waiter in readyWaiters { waiter.continuation.resume() }
-        case .producerCancelled, .producerFailed, .sourceAcceptedEnqueued, .subscriptionResetEnqueued,
-            .windowEnqueued:
+        case .producerCancelled, .producerFailed, .subscriptionResetEnqueued:
             break
         }
     }
@@ -470,34 +463,76 @@ private func fileBootstrapSubscriptionOpenRequest(
     ])
 }
 
+private func fileBootstrapViewScopeRequest() throws -> BridgeProductViewScopeRequest {
+    try BridgeProductStrictJSON.decode(
+        BridgeProductViewScopeRequest.self,
+        from: Data(
+            """
+            {"kind":"subscription.setScope","wireVersion":2,"paneSessionId":"pane-session-1",\
+            "workerInstanceId":"worker-instance-1","requestId":"file-bootstrap-scope-3",\
+            "requestSequence":3,"subscriptionId":"file-subscription-1",\
+            "subscriptionKind":"file.metadata","domain":"default",\
+            "handle":"file-bootstrap-handle-1","incarnation":"file-bootstrap-incarnation-1",\
+            "scopeRevision":1,"scope":{"kind":"file","changeFilter":{"kind":"none"},\
+            "interests":[],"pathScope":[]}}
+            """.utf8
+        )
+    )
+}
+
 private func pullResumedFileTree(
-    from pump: BridgeProductSchemeFramePump
+    from pump: BridgeProductSchemeFramePump,
+    source expectedSource: BridgeProductFileSourceIdentity
 ) async throws -> ResumedFileTree {
+    var begin: BridgeProductBatchBeginFrame?
     var resumedSource: BridgeProductFileSourceIdentity?
-    var rows: [BridgeProductFileTreeRow] = []
+    var rows: [BridgeProductFileBatchRow] = []
     while true {
         let frame = try await pullMetadataFrame(from: pump)
-        guard case .subscriptionData(let data) = frame,
-            let event = data.data.fileMetadataEvent
-        else { continue }
-        switch event {
-        case .sourceAccepted(let accepted):
-            resumedSource = accepted.source
-        case .treeWindow(let window):
-            rows.append(contentsOf: window.rows)
-            if window.finalWindow {
+        guard case .batch(let batch) = frame else { continue }
+        switch batch {
+        case .begin(let receivedBegin):
+            begin = receivedBegin
+            resumedSource = nil
+            rows.removeAll(keepingCapacity: true)
+        case .part(let receivedPart):
+            guard case .put(let key, _, let value) = receivedPart.part else { continue }
+            let encodedValue = try JSONEncoder().encode(value)
+            if key == BridgeProductFileMemberStatusRecord.recordKey {
+                resumedSource = try JSONDecoder().decode(
+                    BridgeProductFileMemberStatusRecord.self,
+                    from: encodedValue
+                ).source
+            } else {
+                rows.append(try JSONDecoder().decode(BridgeProductFileBatchRow.self, from: encodedValue))
+            }
+        case .complete(let complete):
+            if let begin, begin.identity.batchId == complete.identity.batchId,
+                begin.mode == .snapshot, resumedSource == expectedSource
+            {
                 return ResumedFileTree(
                     source: try #require(resumedSource),
-                    finalWindow: window,
+                    begin: begin,
+                    complete: complete,
                     rows: rows
                 )
             }
-        case .descriptorReady, .invalidated, .statusPatch, .treeDelta:
-            continue
         }
     }
 }
 
 private enum FileBootstrapSuspensionTestError: Error {
     case expectedSourceAcceptance
+}
+
+private func expectResumedFileSourceRetained(_ source: BridgePaneProductFileMetadataSource) async {
+    #expect(
+        await source.diagnosticSnapshot()
+            == .init(
+                descriptorCount: 0,
+                inFlightDescriptorCount: 0,
+                manifestRowCount: 3,
+                subscriptionCount: 1
+            )
+    )
 }

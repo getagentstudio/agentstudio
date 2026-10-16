@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
 import type { BridgeWorkerCodeViewFileItem } from '../core/comm-worker/bridge-worker-pierre-render-job.js';
+import { bridgeFileContentPresentation } from './bridge-file-region-presentation.js';
 import { bridgeFileViewerCodeViewItemsForPanelState } from './bridge-file-viewer-code-view-items.js';
 import type { BridgeFileViewerDisplayItem } from './bridge-file-viewer-display-model.js';
 
@@ -43,6 +44,42 @@ const pierreItem: BridgeWorkerCodeViewFileItem = {
 };
 
 describe('Bridge File viewer CodeView items', () => {
+	test('a same-identity re-open retains the last complete item and projects Updating', () => {
+		const openFileState = {
+			displayItem,
+			fileId: 'file-1',
+			path: 'Sources/File.swift',
+			status: 'loading',
+		} as const;
+		const items = bridgeFileViewerCodeViewItemsForPanelState({
+			openFileState,
+			selectedCodeViewItem: null,
+			lastCompleteCodeViewItem: pierreItem,
+		});
+		expect(items).toHaveLength(1);
+		expect(items[0]).toBe(pierreItem);
+		expect(
+			bridgeFileContentPresentation({
+				openFileState,
+				displayedFileId: items[0]?.bridgeMetadata.itemId ?? null,
+				surface: { kind: 'current' },
+			}),
+		).toEqual({ kind: 'updating', rest: null });
+	});
+
+	test.each([
+		{ fileId: 'file-2', path: 'Sources/Other.swift' },
+		{ fileId: 'file-1', path: 'Sources/Renamed.swift' },
+	])('a different demanded identity never relabels retained bytes ($path)', ({ fileId, path }) => {
+		expect(
+			bridgeFileViewerCodeViewItemsForPanelState({
+				openFileState: { displayItem: null, fileId, path, status: 'loading' },
+				selectedCodeViewItem: null,
+				lastCompleteCodeViewItem: pierreItem,
+			}),
+		).toEqual([]);
+	});
+
 	test('renders the released Pierre item as the only ready body source', () => {
 		const items = bridgeFileViewerCodeViewItemsForPanelState({
 			openFileState: {

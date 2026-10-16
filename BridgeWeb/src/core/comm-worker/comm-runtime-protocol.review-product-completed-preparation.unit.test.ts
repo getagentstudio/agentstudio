@@ -5,16 +5,17 @@ import {
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import type { BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
-import { reviewSnapshotWithContentEvent } from './bridge-comm-worker-runtime-protocol.review-product-fixtures.test-support.js';
 import {
 	makeReviewPanePresentationFrame,
 	requirePanePresentationSink,
 } from './bridge-comm-worker-runtime-protocol.review-product-pane-presentation.test-support.js';
 import { drainBridgeCommWorkerPreparationUntilIdle } from './bridge-comm-worker-runtime-protocol.review-product-preparation.test-support.js';
 import {
-	makeReviewMetadataDataFrame,
+	createReviewBatchSinkCapture,
+	makeIdleReviewMetadataSubscription,
+	makeReviewTestBatch,
 	makeReviewProductTransport,
 	type ReviewMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
@@ -23,26 +24,24 @@ import {
 	flushBridgeWorkerRuntimeContinuations,
 	makeImmediateReviewContentStream,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
-import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
 import type { BridgeProductPanePresentationFrame } from './bridge-product-transport.js';
-
-type ReviewMetadataDataFrame = ReturnType<typeof makeReviewMetadataDataFrame>;
 
 describe('Bridge comm worker completed Review preparation lifecycle', () => {
 	test('does not replay completed Review preparation or reset when native foreground returns to File', async () => {
-		const events = new BridgeProductBoundedAsyncQueue<ReviewMetadataDataFrame>(64);
+		const reviewBatches = createReviewBatchSinkCapture();
 		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
 		const openedDescriptorIds: string[] = [];
 		let panePresentationSink: ((frame: BridgeProductPanePresentationFrame) => void) | null = null;
-		const reviewSubscription: ReviewMetadataSubscription = {
-			cancel: async (): Promise<void> => {},
-			events,
-			subscriptionId: 'review-subscription-completed-foreground-return',
-			subscriptionKind: 'review.metadata',
-			update: async (): Promise<void> => {},
-		};
+		const reviewSubscription: ReviewMetadataSubscription = makeIdleReviewMetadataSubscription(
+			'review-subscription-completed-foreground-return',
+		);
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
 			openReviewContent: (descriptor) => {
@@ -50,6 +49,7 @@ describe('Bridge comm worker completed Review preparation lifecycle', () => {
 				return makeImmediateReviewContentStream(descriptor, 'hello world\n');
 			},
 			productTransport: makeReviewProductTransport({
+				onBatchFrameSinks: reviewBatches.onBatchFrameSinks,
 				onPanePresentationSink: (sink): void => {
 					panePresentationSink = sink;
 				},
@@ -74,7 +74,13 @@ describe('Bridge comm worker completed Review preparation lifecycle', () => {
 			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		events.push(makeReviewMetadataDataFrame(reviewSnapshotWithContentEvent));
+		await reviewBatches.install(
+			makeReviewTestBatch({
+				snapshotCause: 'open',
+				subscriptionId: reviewSubscription.subscriptionId,
+				withContent: true,
+			}),
+		);
 		await flushBridgeWorkerRuntimeContinuations();
 		await drainBridgeCommWorkerPreparationUntilIdle(
 			scheduledDrains,

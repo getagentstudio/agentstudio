@@ -3,12 +3,17 @@ import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AppKit
 
 struct AppDelegateMainWindowCreationDependencies {
     let store: WorkspaceStore
     let repoCache: RepoCacheAtom
     let octiconLoader: OcticonLoader
+    let commandDispatcher: any AppCommandDispatching
+    let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
+    let synchronizeRuntimeFocus: @MainActor (UUID?) -> Void
     let executor: WorkspaceActionExecutor
     let workspaceSurfaceCoordinator: WorkspaceSurfaceCoordinator
     let applicationLifecycleMonitor: ApplicationLifecycleMonitor
@@ -19,6 +24,8 @@ struct AppDelegateMainWindowCreationDependencies {
     let repoExplorerSidebarPrefs: RepoExplorerSidebarPrefsAtom
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder
     let closeTransitionCoordinator: PaneCloseTransitionCoordinator
+    var paneContextReaders: PaneContextUIReaders?
+    var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
 }
 
 @MainActor
@@ -73,6 +80,12 @@ extension AppDelegate {
             store: store,
             repoCache: atomStore.core.repoCache,
             octiconLoader: octiconLoader,
+            commandDispatcher: commandDispatcherForBoot(),
+            resolveCommandCapabilities: commandDispatcherForBoot().repoExplorerCommandPresentationSnapshot,
+            executionOwnerIdentities: commandDispatcherForBoot().executionOwnerIdentities,
+            synchronizeRuntimeFocus: { [weak surfaceManager = terminalLookupForBoot()] in
+                surfaceManager?.syncFocus(activeSurfaceId: $0)
+            },
             executor: executor,
             workspaceSurfaceCoordinator: workspaceSurfaceCoordinator,
             applicationLifecycleMonitor: applicationLifecycleMonitor,
@@ -82,8 +95,18 @@ extension AppDelegate {
             editorChooser: atomStore.editorChooser,
             repoExplorerSidebarPrefs: atomStore.repoExplorerSidebarPrefs,
             performanceTraceRecorder: performanceTraceRecorder,
-            closeTransitionCoordinator: closeTransitionCoordinator
+            closeTransitionCoordinator: closeTransitionCoordinator,
+            paneContextReaders: makePaneContextUIReaders(),
+            sessionsPaneViewedMailbox: atomStore.sessionsPaneViewedMailbox
         )
+    }
+
+    func makePaneContextUIReaders() -> PaneContextUIReaders {
+        let atomStore = atomStore!
+        return PaneContextUIReaders(
+            sessionStatus: atomStore.sessionStatus, presentation: atomStore.paneContextPresentation,
+            pane: { atomStore.core.workspacePane.pane($0.uuid) },
+            serviceProvider: { [weak self] in self?.appIPCPaneContextUIAdapter })
     }
 
     func makeMainWindowController(dependencies: AppDelegateMainWindowCreationDependencies) -> MainWindowController {
@@ -98,14 +121,20 @@ extension AppDelegate {
             workspaceWindowId: workspaceWindowId,
             store: dependencies.store,
             octiconLoader: dependencies.octiconLoader,
+            paneContextReaders: dependencies.paneContextReaders,
             workspaceActionExecutor: dependencies.executor,
             runtimeCommandDispatcher: dependencies.workspaceSurfaceCoordinator,
+            commandDispatcher: dependencies.commandDispatcher,
+            resolveCommandCapabilities: dependencies.resolveCommandCapabilities,
+            executionOwnerIdentities: dependencies.executionOwnerIdentities,
+            synchronizeRuntimeFocus: dependencies.synchronizeRuntimeFocus,
             applicationLifecycleMonitor: dependencies.applicationLifecycleMonitor,
             appLifecycleStore: dependencies.appLifecycleStore,
             tabBarAdapter: tabBarAdapter,
             viewRegistry: dependencies.viewRegistry,
             bridgePaneAttendance: dependencies.bridgePaneAttendance,
             editorChooser: dependencies.editorChooser,
+            sessionsPaneViewedMailbox: dependencies.sessionsPaneViewedMailbox,
             repoExplorerSidebarPrefs: dependencies.repoExplorerSidebarPrefs,
             bridgeAttendanceSnapshot: { paneId in
                 dependencies.bridgePaneAttendance.ordinal(for: paneId)

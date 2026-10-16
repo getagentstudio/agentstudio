@@ -5,8 +5,63 @@ import Testing
 
 @Suite("Swift lane invocation receipts")
 struct SwiftLaneInvocationReceiptTests {
+    @Test("wrapper verdict comes from a failing event issue even when the child exits zero")
+    func wrapperFailsOnRecordedEventIssueAfterZeroExit() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try fixture.copyCommittedEventFixture()
+
+        let result = try await fixture.runCommittedEventFixture(as: "swift test", exitStatus: 0)
+
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(
+            result.output.contains(
+                "failing_test=AgentStudioTests.Xcode27EventStreamEvidenceScratchTests/recordsFailure()"))
+    }
+
+    @Test("wrapper preserves a passing status for known issues and warnings")
+    func wrapperPassesKnownIssueAndWarningStream() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try fixture.writeEvents([
+            ["kind": "event", "payload": ["kind": "runStarted"]],
+            testDefinition("Fixture.Suite/known()"),
+            event("testStarted", "Fixture.Suite/known()", 100),
+            [
+                "kind": "event",
+                "payload": [
+                    "kind": "issueRecorded", "testID": "Fixture.Suite/known()",
+                    "issue": ["isFailure": false, "isKnown": true, "severity": "error"],
+                ],
+            ],
+            event("testEnded", "Fixture.Suite/known()", 101),
+            ["kind": "event", "payload": ["kind": "runEnded"]],
+        ])
+
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 1, exitStatus: 0)
+
+        #expect(result.output.contains("STATUS=0"), Comment(rawValue: result.output))
+        #expect(result.output.contains("stream=complete"), Comment(rawValue: result.output))
+        #expect(!result.output.contains("failing_test="), Comment(rawValue: result.output))
+    }
+
+    @Test("wrapper reports an incomplete multi-bundle stream as a failure")
+    func wrapperFailsIncompleteMultiBundleStream() async throws {
+        let fixture = try InvocationReceiptFixture()
+        defer { fixture.remove() }
+        try fixture.writeEvents([
+            ["kind": "event", "payload": ["kind": "runStarted"]],
+            ["kind": "event", "payload": ["kind": "runEnded"]],
+        ])
+
+        let result = try await fixture.runEventFixture(as: "swift test", expectedRuns: 19, exitStatus: 0)
+
+        #expect(result.output.contains("STATUS=1"), Comment(rawValue: result.output))
+        #expect(result.output.contains("reason=event_stream_incomplete"), Comment(rawValue: result.output))
+    }
+
     @Test(
-        "missing receipt support is visible and never changes command status",
+        "missing observation support stays fail-open for non-test commands",
         arguments: ["swift-test-invocation-receipts.sh", "swift-test-invocation-receipts.pl"], [0, 7])
     func missingReceiptSupportIsFailOpen(missingHelper: String, status: Int) async throws {
         let fixture = try InvocationReceiptFixture()
@@ -14,11 +69,11 @@ struct SwiftLaneInvocationReceiptTests {
         let helper = try fixture.copyRunnerSupport(omitting: missingHelper)
         let result = try await fixture.run("/bin/bash -c 'exit \(status)'", helper: helper)
 
-        #expect(result.output.contains("STATUS=\(status)"), Comment(rawValue: result.output))
         #expect(result.record["command_status"] as? Int == status)
-        #expect(result.output.contains("invocation_observation=unavailable"))
-        #expect(result.output.contains("receipt support could not be loaded"))
-        #expect(!result.output.contains("command not found"))
+        #expect(result.output.contains("STATUS=\(status)"), Comment(rawValue: result.output))
+        #expect(result.output.contains("invocation_observation=unavailable"), Comment(rawValue: result.output))
+        #expect(result.output.contains("receipt support could not be loaded"), Comment(rawValue: result.output))
+        #expect(!result.output.contains("command not found"), Comment(rawValue: result.output))
     }
 
     @Test("every command gets resource fields with honest coverage")
@@ -248,13 +303,13 @@ struct SwiftLaneResourceWrapperTests {
         defer { fixture.remove() }
         let timer = try fixture.makeTimer()
         let release = fixture.root.appending(path: "release.fifo")
-        let arm = fixture.root.appending(path: "armed")
         let result = try await fixture.run(
-            "/usr/bin/perl -e '\u{0024}SIG{TERM}=q{IGNORE}; open(my \u{0024}armed,q{>},shift) or die \u{0024}!; "
-                + "close(\u{0024}armed); print qq{PARKED\\n}; open(my \u{0024}release,q{<},shift) or die \u{0024}!; <\u{0024}release>;' "
-                + "'\(arm.path)' '\(release.path)'",
-            setup: "SWIFT_TEST_RESOURCE_TIMER='\(timer.path)'; LANE_WATCHDOG_ARM_PATH='\(arm.path)'; "
-                + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ")
+            "/usr/bin/perl -e '\u{0024}|=1; \u{0024}SIG{TERM}=q{IGNORE}; print qq{PARKED\\n}; "
+                + "print qq{\(laneWatchdogArmLine)\\n}; open(my \u{0024}release,q{<},shift) or die \u{0024}!; <\u{0024}release>;' "
+                + "'\(release.path)'",
+            setup: "SWIFT_TEST_RESOURCE_TIMER='\(timer.path)'; "
+                + "mkfifo '\(release.path)'; swift_test_watchdog_timeout_status() { return 1; }; ",
+            innerWatchdog: .armedByFixture)
         #expect(result.output.contains("STATUS=124"))
         #expect(result.record["timed_out"] as? Bool == true)
         let timerPID = try String(contentsOf: fixture.root.appending(path: "timer.pid"), encoding: .utf8)
@@ -266,7 +321,7 @@ struct SwiftLaneResourceWrapperTests {
     }
 }
 
-private struct InvocationReceiptFixture {
+struct InvocationReceiptFixture {
     let root: URL
     var events: URL { root.appending(path: "fixture.events") }
     var held: URL { root.appending(path: "fixture.held") }
@@ -315,6 +370,11 @@ private struct InvocationReceiptFixture {
         try (records.joined(separator: "\n") + "\n").write(to: held, atomically: true, encoding: .utf8)
     }
 
+    func copyCommittedEventFixture() throws {
+        let fixtureURL = URL(fileURLWithPath: "Tests/AgentStudioTests/Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl")
+        try FileManager.default.copyItem(at: fixtureURL, to: events)
+    }
+
     func runFixtureStreams() async throws -> (output: String, record: [String: Any]) {
         // The same append/flush boundaries as a real test process; the synthetic
         // stream uses its own CLOCK_UPTIME_RAW fixture epoch, no real-time wait.
@@ -323,17 +383,36 @@ private struct InvocationReceiptFixture {
                 + "'\(events.path)' '\(held.path)'", eventStream: true)
     }
 
-    func run(_ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil) async throws -> (
+    func runCommittedEventFixture(as kind: String, exitStatus: Int) async throws -> (
         output: String, record: [String: Any]
     ) {
+        try await runEventFixture(as: kind, expectedRuns: 19, exitStatus: exitStatus)
+    }
+
+    func runEventFixture(as kind: String, expectedRuns: Int, exitStatus: Int, setup: String = "") async throws -> (
+        output: String, record: [String: Any]
+    ) {
+        try await run(
+            "/bin/bash -c 'cp \"$1\" \"${@: -1}\"; exit \(exitStatus)' fixture '\(events.path)' \(kind)",
+            eventStream: true,
+            setup:
+                "BUILD_PATH='\(root.path)'; printf 'bundle_count=\(expectedRuns)\\n' > \"$BUILD_PATH/agentstudio-test-build-receipt\"; "
+                + setup
+        )
+    }
+
+    /// Runs `command` under the real lane runner, with the lane launchers' inner
+    /// watchdog default; a timeout proof passes `.armed` or `.armedByFixture`.
+    func run(
+        _ command: String, eventStream: Bool = false, setup: String = "", helper: URL? = nil,
+        innerWatchdog: LaneFixtureInnerWatchdog = .unarmed
+    ) async throws -> (output: String, record: [String: Any]) {
         let result = try await runCommandToExit(
             command: "/bin/bash",
             arguments: [
                 "-c",
-                "LOG_PREFIX=f2; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
-                    + (helper == nil
-                        ? ""
-                        : "unset SWIFT_TEST_OUTPUT_RELAY_LOCK_PATH SWIFT_TEST_OUTPUT_RELAY_SCRIPT_PATH; ")
+                innerWatchdog.shellPreamble
+                    + "LOG_PREFIX=f2; BUILD_PATH='\(root.path)/build'; export LANE_EVENT_STREAM_DIR='\(root.path)/evidence'; "
                     + "source '\(helper?.path ?? "scripts/swift-test-helpers.sh")'; "
                     + (eventStream ? "swift_test_command_accepts_event_stream() { return 0; }; " : "")
                     + setup

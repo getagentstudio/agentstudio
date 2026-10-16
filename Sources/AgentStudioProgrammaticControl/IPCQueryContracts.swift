@@ -201,6 +201,7 @@ public struct IPCPaneSummary: Codable, Equatable, Sendable {
     public let worktreeId: UUID?
     public let isActive: Bool
     public let isDrawerChild: Bool
+    public let activity: IPCPaneActivity?
 
     public init(
         id: UUID,
@@ -211,7 +212,8 @@ public struct IPCPaneSummary: Codable, Equatable, Sendable {
         repoId: UUID?,
         worktreeId: UUID?,
         isActive: Bool,
-        isDrawerChild: Bool
+        isDrawerChild: Bool,
+        activity: IPCPaneActivity? = nil
     ) {
         self.id = id
         self.ordinal = ordinal
@@ -222,6 +224,29 @@ public struct IPCPaneSummary: Codable, Equatable, Sendable {
         self.worktreeId = worktreeId
         self.isActive = isActive
         self.isDrawerChild = isDrawerChild
+        self.activity = activity
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, ordinal, contentKind, residency, tabId, repoId, worktreeId, isActive, isDrawerChild, activity
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(ordinal, forKey: .ordinal)
+        try container.encode(contentKind, forKey: .contentKind)
+        try container.encode(residency, forKey: .residency)
+        try container.encodeIfPresent(tabId, forKey: .tabId)
+        try container.encodeIfPresent(repoId, forKey: .repoId)
+        try container.encodeIfPresent(worktreeId, forKey: .worktreeId)
+        try container.encode(isActive, forKey: .isActive)
+        try container.encode(isDrawerChild, forKey: .isDrawerChild)
+        if let activity {
+            try container.encode(activity, forKey: .activity)
+        } else {
+            try container.encodeNil(forKey: .activity)
+        }
     }
 }
 

@@ -78,7 +78,7 @@ struct WorkspaceSurfacePostAttachRealMountTests {
             let surfaceID = UUIDv7.generate()
             let surface = Ghostty.SurfaceView(
                 managedSurfaceID: surfaceID,
-                appCommandDispatcher: RealMountNoOpAppCommandDispatcher()
+                appCommandDispatcher: AppTerminalFixtureCommandDispatcher()
             )
             surfacesByID[surfaceID] = surface
             return .success(ManagedSurface(id: surfaceID, surface: surface, metadata: metadata))
@@ -158,7 +158,9 @@ struct WorkspaceSurfacePostAttachRealMountTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: SucceedingRealMountSurfaceManager(),
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
@@ -225,17 +227,4 @@ struct WorkspaceSurfacePostAttachRealMountTests {
 
 private enum RealMountFirstRenderTestFailure: Error {
     case mountDidNotSucceed
-}
-
-/// No-op dispatcher used only to satisfy `Ghostty.SurfaceView`'s bare test
-/// initializer, matching every other test file in this directory that needs
-/// one (each declares its own file-local copy rather than sharing one).
-@MainActor
-private final class RealMountNoOpAppCommandDispatcher: AppCommandDispatching {
-    func dispatch(_: AppCommand) -> Bool { false }
-    func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
-    func canDispatch(_: AppCommand) -> Bool { false }
-    func canDispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) -> Bool { false }
-    func bridgePaneCommandTarget(worktreeId _: UUID) -> BridgePaneCommandTarget? { nil }
-    func dispatchMovePaneToTab(sourcePaneId _: UUID, sourceTabId _: UUID?, targetTabId _: UUID) {}
 }

@@ -3,6 +3,28 @@ import Testing
 
 @testable import AgentStudioBridge
 
+func bridgeProductOpeningContentAcknowledgement(
+    for request: BridgeProductContentRequest
+) throws -> BridgeProductContentFrameAcknowledgement {
+    let admission = request.admission
+    let body = try JSONSerialization.data(
+        withJSONObject: [
+            "contentRequestId": admission.contentRequestId,
+            "receivedThroughContentSequence": 0,
+            "kind": "content.acknowledge",
+            "leaseId": admission.leaseId,
+            "paneSessionId": admission.paneSessionId,
+            "wireVersion": admission.wireVersion,
+            "workerInstanceId": admission.workerInstanceId,
+        ],
+        options: [.sortedKeys]
+    )
+    return try BridgeProductStrictJSON.decode(
+        BridgeProductContentFrameAcknowledgement.self,
+        from: body
+    )
+}
+
 actor BridgeProductProducerRegistryTestHarness {
     private var registry: BridgeProductProducerRegistry
     private var zeroResidueWaiters: [CheckedContinuation<Bool, Never>] = []
@@ -194,7 +216,7 @@ struct BridgeProductSessionProducerHarness {
         )
         let token = try bridgeProductExecutionToken(admission)
         let response = try BridgeProductControlResponse.workerSessionAccepted(correlating: request)
-        _ = try await session.completeControl(
+        _ = try await session.completeAdmittedControl(
             token: token,
             exactResponseBytes: try JSONEncoder().encode(response)
         )
@@ -261,10 +283,6 @@ func bridgeProductMetadataProgressFrame(
     identitySuffix: String
 ) throws -> BridgeProductProducerFrame {
     let subscription = try BridgeProductSubscriptionFrameCorrelation(
-        cursor: nil,
-        interestRevision: 0,
-        interestSha256: String(repeating: "a", count: 64),
-        sourceGeneration: 1,
         subscriptionId: "subscription-\(identitySuffix)",
         subscriptionKind: .fileMetadata,
         workerDerivationEpoch: 1

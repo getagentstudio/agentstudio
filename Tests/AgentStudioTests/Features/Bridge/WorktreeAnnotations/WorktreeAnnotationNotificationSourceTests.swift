@@ -1,3 +1,5 @@
+import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -5,451 +7,470 @@ import Testing
 
 @Suite("Worktree annotation notification source")
 struct WorktreeAnnotationNotificationSourceTests {
-    @Test("bootstrap emits an empty catalog and awaits observation of every phase")
-    func bootstrapEmitsEmptyCatalogAndAwaitsEveryPhaseObservation() async throws {
-        let harness = try makeNotificationSourceHarness(automaticallyObserve: false)
-        let openTask = Task {
-            try await harness.source.open(
-                subscription: harness.subscription,
-                surface: .file,
-                delivery: makeNotificationDelivery(
-                    recorder: harness.recorder,
-                    subscription: harness.subscription
-                )
-            )
-        }
-
-        guard await harness.recorder.waitUntil(.eventCount(1)) else {
-            openTask.cancel()
-            return
-        }
-        let begin = try #require(await harness.recorder.events.first)
-        guard case .catalog(let beginEvent) = begin.event,
-            case .begin(let beginTransfer) = beginEvent.transfer
-        else {
-            Issue.record("Expected empty catalog begin")
-            openTask.cancel()
-            return
-        }
-        #expect(beginEvent.authority.worktreeID == "worktree-1")
-        #expect(beginEvent.authority.applicationSourceGeneration == 0)
-        #expect(beginTransfer.expectedEntryCount == 0)
-        guard
-            await harness.recorder.waitUntil(
-                .pendingObservationSequences([begin.sequence])
-            )
-        else {
-            openTask.cancel()
-            return
-        }
-        #expect(await harness.recorder.pendingObservationSequences == [begin.sequence])
-        #expect(await harness.recorder.eventCount == 1)
-
-        await harness.recorder.acknowledge(sequence: begin.sequence)
-        guard await harness.recorder.waitUntil(.eventCount(2)) else {
-            openTask.cancel()
-            return
-        }
-        let commit = try #require(await harness.recorder.events.last)
-        guard case .catalog(let commitEvent) = commit.event,
-            case .commit(let commitTransfer) = commitEvent.transfer
-        else {
-            Issue.record("Expected empty catalog commit")
-            openTask.cancel()
-            return
-        }
-        #expect(commitEvent.authority == beginEvent.authority)
-        #expect(commitTransfer.windowCount == 0)
-        #expect(commitTransfer.entryCount == 0)
-        #expect(commit.operationCorrelationID == begin.operationCorrelationID)
-        #expect(commit.operationCorrelationID.count == 64)
-        guard
-            await harness.recorder.waitUntil(
-                .pendingObservationSequences([commit.sequence])
-            )
-        else {
-            openTask.cancel()
-            return
-        }
-        #expect(await harness.recorder.pendingObservationSequences == [commit.sequence])
-
-        await harness.recorder.acknowledge(sequence: commit.sequence)
-        #expect(await harness.service.changeObserverCount() == 1)
-        #expect(await harness.recorder.observedSequences == [begin.sequence, commit.sequence])
-        openTask.cancel()
-        _ = try? await openTask.value
-        #expect(await harness.service.changeObserverCount() == 0)
-    }
-
-    @Test("topology mutation replaces the catalog")
-    func topologyMutationReplacesCatalog() async throws {
+    @Test("E3 Comment opening waits for accepted E4 scope before the first capture")
+    func batchOpeningWaitsForFirstAcceptedScope() async throws {
         let harness = try makeNotificationSourceHarness()
-        let openTask = Task {
-            try await harness.source.open(
-                subscription: harness.subscription,
-                surface: .file,
-                delivery: makeNotificationDelivery(
-                    recorder: harness.recorder,
-                    subscription: harness.subscription
-                )
-            )
-        }
-        guard await harness.recorder.waitUntil(.eventCount(2)) else {
-            openTask.cancel()
-            return
-        }
-
-        _ = try await harness.service.createRootDraft(makeCreateRootDraftProps())
-        guard await harness.recorder.waitUntil(.eventCount(5)) else {
-            openTask.cancel()
-            return
-        }
-
-        let replacement = Array(await harness.recorder.events.suffix(3))
-        let replacementCatalogs = try replacement.map { recorded in
-            guard case .catalog(let event) = recorded.event else {
-                throw NotificationSourceTestFailure.unexpectedEvent
-            }
-            return event
-        }
-        #expect(replacementCatalogs.map(\.authority.applicationSourceGeneration) == [1, 1, 1])
-        #expect(
-            replacement.map(\.operationCorrelationID)
-                .allSatisfy { $0 == replacement[0].operationCorrelationID }
+        let handle = "comment-view-awaiting-scope"
+        let producerID = UUIDv7.generate()
+        let (batches, continuation) = AsyncStream.makeStream(
+            of: RecordedCommentBatchDelivery.self,
+            bufferingPolicy: .bufferingOldest(1)
         )
-        guard case .begin(let begin) = replacementCatalogs[0].transfer,
-            case .window(let window) = replacementCatalogs[1].transfer,
-            case .commit(let commit) = replacementCatalogs[2].transfer
-        else {
-            Issue.record("Expected begin, window, commit replacement")
-            openTask.cancel()
-            return
+        let openTask = Task {
+            defer { continuation.finish() }
+            try await harness.source.openBatch(
+                handle: handle, producerID: producerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
-        #expect(begin.expectedEntryCount == 3)
-        #expect(window.windowOrdinal == 0)
-        #expect(window.entries.count == 3)
-        #expect(commit.windowCount == 1)
-        #expect(commit.entryCount == 3)
+        await harness.source.waitUntilFirstBatchScopeIsNeeded(handle: handle)
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
 
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        var iterator = batches.makeAsyncIterator()
+        let initial = try #require(await iterator.next())
+        #expect(initial.mode == .snapshot)
+        #expect(initial.batch.scopeRevision == 1)
+        #expect(initial.batch.puts.isEmpty)
         openTask.cancel()
         _ = try? await openTask.value
-        #expect(await harness.service.changeObserverCount() == 0)
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
     }
 
-    @Test("rich content mutation emits session-changed without a catalog")
-    func contentMutationEmitsSessionChangedWithoutCatalog() async throws {
+    @Test("retiring a Comment handle releases E3 waiting on first E4 scope")
+    func retiringHandleReleasesFirstScopeWaiter() async throws {
         let harness = try makeNotificationSourceHarness()
+        let handle = "comment-view-retired-before-scope"
+        let producerID = UUIDv7.generate()
         let openTask = Task {
-            try await harness.source.open(
-                subscription: harness.subscription,
-                surface: .file,
-                delivery: makeNotificationDelivery(
-                    recorder: harness.recorder,
-                    subscription: harness.subscription
-                )
+            try await harness.source.openBatch(
+                handle: handle, producerID: producerID, snapshotRequired: { false },
+                deliver: { _, _ in
+                    Issue.record("A retired Comment handle must not capture a catalog")
+                    return .completed
+                })
+        }
+        await harness.source.waitUntilFirstBatchScopeIsNeeded(handle: handle)
+        await harness.source.retireBatchView(handle: handle)
+        await #expect(throws: CancellationError.self) {
+            try await openTask.value
+        }
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
+    }
+
+    @Test("cancelling E3 releases its first-scope waiter")
+    func cancelledOpeningReleasesFirstScopeWaiter() async throws {
+        let harness = try makeNotificationSourceHarness()
+        let handle = "comment-view-cancelled-before-scope"
+        let producerID = UUIDv7.generate()
+        let openTask = Task {
+            try await harness.source.openBatch(
+                handle: handle, producerID: producerID, snapshotRequired: { false },
+                deliver: { _, _ in
+                    Issue.record("A cancelled Comment opening must not capture a catalog")
+                    return .completed
+                })
+        }
+        await harness.source.waitUntilFirstBatchScopeIsNeeded(handle: handle)
+        openTask.cancel()
+        await #expect(throws: CancellationError.self) {
+            try await openTask.value
+        }
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
+    }
+
+    @Test("a retained Comment view accepts its scope after producer restart")
+    func retainedViewAcceptsScopeAfterProducerRestart() async throws {
+        let harness = try makeNotificationSourceHarness()
+        let handle = "retained-comment-view"
+        let firstProducerID = UUIDv7.generate()
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        let (batches, continuation) = AsyncStream.makeStream(
+            of: RecordedCommentBatchDelivery.self,
+            bufferingPolicy: .bufferingOldest(2)
+        )
+        let firstProducer = Task {
+            try await harness.source.openBatch(
+                handle: handle, producerID: firstProducerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
+        }
+        var iterator = batches.makeAsyncIterator()
+        #expect(try #require(await iterator.next()).mode == .snapshot)
+
+        firstProducer.cancel()
+        _ = try? await firstProducer.value
+        await harness.source.releaseProducerBatchScope(handle: handle, producerID: firstProducerID)
+
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        let successorProducerID = UUIDv7.generate()
+        let successor = Task {
+            try await harness.source.openBatch(
+                handle: handle, producerID: successorProducerID, snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
+        }
+        #expect(try #require(await iterator.next()).mode == .snapshot)
+        successor.cancel()
+        _ = try? await successor.value
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
+    }
+
+    @Test("an ended Comment view rejects late scope admission")
+    func endedViewRejectsLateScopeAdmission() async throws {
+        let harness = try makeNotificationSourceHarness()
+        let handle = "ended-comment-view"
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        await harness.source.retireBatchView(handle: handle)
+        await #expect(throws: WorktreeAnnotationServiceError.unavailable) {
+            try await harness.source.acceptBatchScope(
+                handle: handle,
+                worktreeID: "worktree-1",
+                scopeRevision: 2
             )
         }
-        guard await harness.recorder.waitUntil(.eventCount(2)) else {
-            openTask.cancel()
-            return
-        }
+    }
 
-        let draftDetail = try await harness.service.createRootDraft(makeCreateRootDraftProps())
-        guard await harness.recorder.waitUntil(.eventCount(5)) else {
-            openTask.cancel()
+    @Test("batch source observes committed ranges after its initial current-row snapshot")
+    func batchSourceObservesCommittedRanges() async throws {
+        let harness = try makeNotificationSourceHarness()
+        let draft = try await harness.service.createRootDraft(makeCreateRootDraftProps())
+        try await harness.source.acceptBatchScope(
+            handle: "comment-view-1",
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        let (batches, continuation) = AsyncStream.makeStream(
+            of: RecordedCommentBatchDelivery.self,
+            bufferingPolicy: .bufferingOldest(2)
+        )
+        let openTask = Task {
+            defer { continuation.finish() }
+            try await harness.source.openBatch(
+                handle: "comment-view-1", producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
+        }
+        var iterator = batches.makeAsyncIterator()
+        guard let initial = await iterator.next() else {
+            try await openTask.value
+            Issue.record("The initial comment batch did not arrive")
             return
         }
-        let draftMessage = try #require(draftDetail.threads.first?.messages.first)
-        let savedDetail = try await harness.service.saveDraft(
+        #expect(initial.mode == .snapshot)
+        #expect(initial.batch.baseRevision == 0)
+        #expect(initial.batch.targetRevision == 1)
+        #expect(initial.batch.puts.count == 3)
+        #expect(initial.batch.deletes.isEmpty)
+
+        let message = try #require(draft.threads.first?.messages.first)
+        _ = try await harness.service.saveDraft(
             .init(
-                sessionID: draftDetail.session.id,
-                messageID: draftMessage.id,
+                sessionID: draft.session.id,
+                messageID: message.id,
                 editToken: "editor-1",
-                expectedMessageRevision: draftMessage.semanticRevision,
-                expectedDraftRevision: try #require(draftMessage.draft?.draftRevision),
+                expectedMessageRevision: message.semanticRevision,
+                expectedDraftRevision: try #require(message.draft?.draftRevision),
                 now: Date(timeIntervalSince1970: 3)
             )
         )
-        guard await harness.recorder.waitUntil(.eventCount(6)) else {
-            openTask.cancel()
-            return
-        }
+        let committed = try #require(await iterator.next())
+        #expect(committed.mode == .change)
+        #expect(committed.batch.baseRevision == 1)
+        #expect(committed.batch.targetRevision == 2)
+        #expect(committed.batch.puts.count == 3)
+        #expect(committed.batch.deletes.isEmpty)
 
-        let recorded = try #require(await harness.recorder.events.last)
-        guard case .sessionChanged(let event) = recorded.event else {
-            Issue.record("Expected session-changed after content-only mutation")
-            openTask.cancel()
-            return
-        }
-        #expect(event.authority.worktreeID == "worktree-1")
-        #expect(event.authority.applicationSourceGeneration == 2)
-        #expect(event.sessionID == savedDetail.session.id)
-        #expect(event.semanticRevision == savedDetail.session.semanticRevision)
-        #expect(recorded.operationCorrelationID.count == 64)
-        #expect(await harness.recorder.eventCount == 6)
+        await harness.source.requestBatchResnapshot(handle: "comment-view-1")
+        let replacement = try #require(await iterator.next())
+        #expect(replacement.mode == .snapshot)
+        #expect(replacement.batch.baseRevision == 2)
+        #expect(replacement.batch.targetRevision == 3)
+        #expect(replacement.batch.puts.count == 3)
 
         openTask.cancel()
         _ = try? await openTask.value
-        #expect(await harness.service.changeObserverCount() == 0)
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
     }
 
-    @Test("recovery control mutation emits one control-changed event")
-    func recoveryControlMutationEmitsOneControlChangedEvent() async throws {
+    @Test("same-handle Comment demand changes keep catalog membership")
+    func sameHandleDemandChangeKeepsCatalogMembership() async throws {
         let harness = try makeNotificationSourceHarness()
-        let openTask = Task {
-            try await harness.source.open(
-                subscription: harness.subscription,
-                surface: .file,
-                delivery: makeNotificationDelivery(
-                    recorder: harness.recorder,
-                    subscription: harness.subscription
-                )
-            )
-        }
-        guard await harness.recorder.waitUntil(.eventCount(2)) else {
-            openTask.cancel()
-            return
-        }
-
-        let operationCorrelationID = String(repeating: "c", count: 64)
-        await harness.service.applyCommittedChange(
-            .control(
-                worktreeIDs: ["worktree-1"],
-                reason: .recovery,
-                sessionChanges: []
-            ),
-            operationCorrelationID: operationCorrelationID
+        let draft = try await harness.service.createRootDraft(makeCreateRootDraftProps())
+        let handle = "comment-view-changing-subjects"
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
         )
-        guard await harness.recorder.waitUntil(.eventCount(3)) else {
-            openTask.cancel()
-            return
+        let (batches, continuation) = AsyncStream.makeStream(
+            of: RecordedCommentBatchDelivery.self,
+            bufferingPolicy: .bufferingOldest(2)
+        )
+        let openTask = Task {
+            defer { continuation.finish() }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
         }
+        var iterator = batches.makeAsyncIterator()
+        let initial = try #require(await iterator.next())
+        #expect(initial.mode == .snapshot)
+        #expect(initial.batch.scopeRevision == 1)
+        #expect(initial.batch.puts.count == 3)
 
-        let recorded = try #require(await harness.recorder.events.last)
-        guard case .controlChanged(let event) = recorded.event else {
-            Issue.record("Expected control-changed after recovery mutation")
-            openTask.cancel()
-            return
-        }
-        #expect(event.authority.worktreeID == "worktree-1")
-        #expect(event.authority.applicationSourceGeneration == 1)
-        #expect(event.reason == .recovery)
-        #expect(recorded.operationCorrelationID == operationCorrelationID)
-        #expect(await harness.recorder.eventCount == 3)
-
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 2
+        )
+        let message = try #require(draft.threads.first?.messages.first)
+        _ = try await harness.service.saveDraft(
+            .init(
+                sessionID: draft.session.id,
+                messageID: message.id,
+                editToken: "editor-1",
+                expectedMessageRevision: message.semanticRevision,
+                expectedDraftRevision: try #require(message.draft?.draftRevision),
+                now: Date(timeIntervalSince1970: 3)
+            )
+        )
+        let committed = try #require(await iterator.next())
+        #expect(committed.mode == .change)
+        #expect(committed.batch.handle == handle)
+        #expect(committed.batch.scopeRevision == 2)
+        #expect(committed.batch.baseRevision == 1)
+        #expect(committed.batch.puts.count == 3)
+        #expect(committed.batch.deletes.isEmpty)
         openTask.cancel()
         _ = try? await openTask.value
-        #expect(await harness.service.changeObserverCount() == 0)
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
     }
 
-    @Test("delivery failure terminates the supervised source and removes its observer")
-    func deliveryFailureTerminatesSourceAndRemovesObserver() async throws {
-        let harness = try makeNotificationSourceHarness(failingSequence: 3)
+    @Test("a resnapshot requested during held delivery recaptures current admitted rows")
+    func heldDeliveryResnapshotRecapturesCurrentRows() async throws {
+        let harness = try makeNotificationSourceHarness()
+        let draft = try await harness.service.createRootDraft(makeCreateRootDraftProps())
+        let handle = "comment-view-lost-ack"
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        let initialDelivery = HeldStep<Void>("commentInitialDelivery")
+        let (batches, continuation) = AsyncStream.makeStream(
+            of: RecordedCommentBatchDelivery.self,
+            bufferingPolicy: .bufferingOldest(2)
+        )
         let openTask = Task {
-            try await harness.source.open(
-                subscription: harness.subscription,
-                surface: .file,
-                delivery: makeNotificationDelivery(
-                    recorder: harness.recorder,
-                    subscription: harness.subscription
-                )
-            )
+            defer { continuation.finish() }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    if batch.baseRevision == 0 { try await initialDelivery.arrive(()) }
+                    return .completed
+                })
         }
-        guard await harness.recorder.waitUntil(.eventCount(2)) else {
-            openTask.cancel()
-            return
-        }
+        var iterator = batches.makeAsyncIterator()
+        let initial = try #require(await iterator.next())
+        #expect(initial.mode == .snapshot)
+        _ = try await initialDelivery.firstArrival()
 
+        let message = try #require(draft.threads.first?.messages.first)
+        _ = try await harness.service.saveDraft(
+            .init(
+                sessionID: draft.session.id,
+                messageID: message.id,
+                editToken: "editor-1",
+                expectedMessageRevision: message.semanticRevision,
+                expectedDraftRevision: try #require(message.draft?.draftRevision),
+                now: Date(timeIntervalSince1970: 3)
+            )
+        )
+        await harness.source.requestBatchResnapshot(handle: handle)
+        initialDelivery.release()
+
+        let recaptured = try #require(await iterator.next())
+        #expect(recaptured.mode == .snapshot)
+        #expect(recaptured.batch.baseRevision == 1)
+        #expect(recaptured.batch.targetRevision == 2)
+        let currentRows = try await harness.service.captureCurrentCatalogRange(
+            worktreeID: "worktree-1",
+            range: .worktree
+        )
+        let recapturedRows = Dictionary(
+            uniqueKeysWithValues: recaptured.batch.puts.map { record in
+                (WorktreeAnnotationCatalogKey(entry: record.entry), record.entry)
+            }
+        )
+        #expect(recapturedRows == currentRows)
+        openTask.cancel()
+        _ = try? await openTask.value
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
+    }
+
+    @Test("recovery control invalidation recaptures one current Comment range")
+    func recoveryControlRecapturesCurrentRange() async throws {
+        let harness = try makeNotificationSourceHarness()
         _ = try await harness.service.createRootDraft(makeCreateRootDraftProps())
+        let handle = "comment-view-recovery-control"
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        let (deliveries, continuation) = AsyncStream.makeStream(
+            of: RecordedCommentBatchDelivery.self,
+            bufferingPolicy: .bufferingOldest(2)
+        )
+        let openTask = Task {
+            defer { continuation.finish() }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, mode in
+                    continuation.yield(.init(batch: batch, mode: mode))
+                    return .completed
+                })
+        }
+        var iterator = deliveries.makeAsyncIterator()
+        let initial = try #require(await iterator.next())
+        #expect(initial.mode == .snapshot)
+
+        let recoveryChange: WorktreeAnnotationCommittedChange = .control(
+            worktreeIDs: ["worktree-1"], reason: .recovery, sessionChanges: []
+        )
+        await harness.service.emitCommittedCatalogInvalidation(recoveryChange)
+        await harness.service.applyCommittedChange(
+            recoveryChange,
+            operationCorrelationID: String(repeating: "c", count: 64)
+        )
+        let recovered = try #require(await iterator.next())
+        #expect(recovered.mode == .change)
+        #expect(recovered.batch.baseRevision == initial.batch.targetRevision)
+        #expect(recovered.batch.targetRevision == initial.batch.targetRevision + 1)
+        let currentRows = try await harness.service.captureCurrentCatalogRange(
+            worktreeID: "worktree-1",
+            range: .worktree
+        )
+        #expect(
+            Set(recovered.batch.puts.map(\.recordKey))
+                == Set(currentRows.keys.map(\.recordKey))
+        )
+        openTask.cancel()
+        _ = try? await openTask.value
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
+    }
+
+    @Test("failed Comment batch delivery terminates the source and removes its observer")
+    func batchDeliveryFailureRemovesObserver() async throws {
+        let harness = try makeNotificationSourceHarness()
+        let draft = try await harness.service.createRootDraft(makeCreateRootDraftProps())
+        let handle = "comment-view-failed-delivery"
+        try await harness.source.acceptBatchScope(
+            handle: handle,
+            worktreeID: "worktree-1",
+            scopeRevision: 1
+        )
+        let (initialDeliveries, continuation) = AsyncStream.makeStream(
+            of: BridgeProductCommentCatalogBatch.self,
+            bufferingPolicy: .bufferingOldest(1)
+        )
+        let openTask = Task {
+            defer { continuation.finish() }
+            try await harness.source.openBatch(
+                handle: handle, producerID: UUIDv7.generate(), snapshotRequired: { false },
+                deliver: { batch, _ in
+                    if batch.baseRevision > 0 { throw NotificationDeliveryFailure.injected }
+                    continuation.yield(batch)
+                    return .completed
+                })
+        }
+        var iterator = initialDeliveries.makeAsyncIterator()
+        _ = try #require(await iterator.next())
+        let message = try #require(draft.threads.first?.messages.first)
+        _ = try await harness.service.saveDraft(
+            .init(
+                sessionID: draft.session.id,
+                messageID: message.id,
+                editToken: "editor-1",
+                expectedMessageRevision: message.semanticRevision,
+                expectedDraftRevision: try #require(message.draft?.draftRevision),
+                now: Date(timeIntervalSince1970: 3)
+            )
+        )
         await #expect(throws: NotificationDeliveryFailure.injected) {
             try await openTask.value
         }
-        #expect(await harness.service.changeObserverCount() == 0)
+        continuation.finish()
+        #expect(await harness.service.catalogInvalidationObserverCount() == 0)
     }
 }
 
-private struct NotificationSourceHarness {
-    let recorder: NotificationDeliveryRecorder
+struct NotificationSourceHarness {
     let service: WorktreeAnnotationServiceActor
     let source: BridgePaneAnnotationNotificationSource
-    let subscription: BridgeProductSubscriptionSnapshot
 }
 
-private func makeNotificationSourceHarness(
-    automaticallyObserve: Bool = true,
-    failingSequence: Int? = nil
-) throws -> NotificationSourceHarness {
+func makeNotificationSourceHarness() throws -> NotificationSourceHarness {
     let repository = try makeAnnotationRepository()
     let service = WorktreeAnnotationServiceActor(
         repositoryAccess: RepositoryBackedWorktreeAnnotationAccess(repository: repository)
     )
-    let interestState = BridgeProductSubscriptionInterestState.fileAnnotations
-    let subscription = BridgeProductSubscriptionSnapshot(
-        subscription: .fileAnnotations,
-        subscriptionId: "pane-a",
-        subscriptionKind: .fileAnnotations,
-        workerDerivationEpoch: 0,
-        interestRevision: 0,
-        interestSha256: try interestState.sha256Hex(),
-        interestState: interestState,
-        hasStagedUpdate: false
-    )
     return .init(
-        recorder: NotificationDeliveryRecorder(
-            automaticallyObserve: automaticallyObserve,
-            failingSequence: failingSequence
-        ),
         service: service,
         source: BridgePaneAnnotationNotificationSource(
             service: service,
             worktreeID: "worktree-1"
-        ),
-        subscription: subscription
+        )
     )
 }
 
-private func makeNotificationDelivery(
-    recorder: NotificationDeliveryRecorder,
-    subscription: BridgeProductSubscriptionSnapshot
-) -> BridgePaneAnnotationNotificationDelivery {
-    .init(
-        enqueue: { event, operationCorrelationID in
-            try await recorder.enqueue(event, operationCorrelationID: operationCorrelationID)
-        },
-        makeProspectiveMetadataFrame: { event, operationCorrelationID in
-            try BridgePaneProductMetadataCoordinator.makeProspectiveMetadataFrame(
-                event: event,
-                operationCorrelationID: operationCorrelationID,
-                stream: .init(
-                    metadataStreamId: "metadata-stream-a",
-                    paneSessionId: "pane-session-a",
-                    wireVersion: BridgeProductWireContract.version,
-                    workerInstanceId: "worker-a"
-                ),
-                subscription: subscription
-            )
-        },
-        waitUntilObserved: { sequence in
-            await recorder.waitUntilObserved(sequence)
-        }
-    )
-}
+struct RecordedCommentBatchDelivery: Sendable {
+    let batch: BridgeProductCommentCatalogBatch
+    let mode: BridgeProductBatchMode
+    let producerID: UUID?
 
-private enum NotificationDeliveryStateExpectation: Hashable, Sendable {
-    case eventCount(Int)
-    case pendingObservationSequences([Int])
-}
-
-private struct NotificationDeliveryStateWaiter {
-    let expectation: NotificationDeliveryStateExpectation
-    let continuation: CheckedContinuation<Bool, Never>
-}
-
-private actor NotificationDeliveryRecorder {
-    struct RecordedEvent: Sendable {
-        let event: BridgeProductWorktreeAnnotationEvent
-        let operationCorrelationID: String
-        let sequence: Int
-    }
-
-    private let automaticallyObserve: Bool
-    private let failingSequence: Int?
-    private var nextSequence = 1
-    private var observationWaiterBySequence: [Int: CheckedContinuation<Bool, Never>] = [:]
-    private var notificationStateWaiters: [NotificationDeliveryStateWaiter] = []
-    private(set) var events: [RecordedEvent] = []
-    private(set) var observedSequences: [Int] = []
-
-    init(automaticallyObserve: Bool, failingSequence: Int?) {
-        self.automaticallyObserve = automaticallyObserve
-        self.failingSequence = failingSequence
-    }
-
-    var eventCount: Int { events.count }
-
-    var pendingObservationSequences: [Int] {
-        observationWaiterBySequence.keys.sorted()
-    }
-
-    func waitUntil(_ expectation: NotificationDeliveryStateExpectation) async -> Bool {
-        if isSatisfied(expectation) { return true }
-        return await withCheckedContinuation { continuation in
-            notificationStateWaiters.append(
-                .init(expectation: expectation, continuation: continuation)
-            )
-        }
-    }
-
-    func enqueue(
-        _ event: BridgeProductWorktreeAnnotationEvent,
-        operationCorrelationID: String
-    ) throws -> BridgeProductProducerEnqueueResult {
-        let sequence = nextSequence
-        if sequence == failingSequence {
-            throw NotificationDeliveryFailure.injected
-        }
-        nextSequence += 1
-        events.append(
-            .init(
-                event: event,
-                operationCorrelationID: operationCorrelationID,
-                sequence: sequence
-            )
-        )
-        resumeSatisfiedNotificationStateWaiters()
-        return .enqueued(
-            .init(
-                data: Data([UInt8(sequence)]),
-                sequence: sequence,
-                terminal: false,
-                requiredOpening: false
-            )
-        )
-    }
-
-    func waitUntilObserved(_ sequence: Int) async -> Bool {
-        if automaticallyObserve {
-            observedSequences.append(sequence)
-            return true
-        }
-        return await withCheckedContinuation { continuation in
-            observationWaiterBySequence[sequence] = continuation
-            resumeSatisfiedNotificationStateWaiters()
-        }
-    }
-
-    func acknowledge(sequence: Int) {
-        observedSequences.append(sequence)
-        observationWaiterBySequence.removeValue(forKey: sequence)?.resume(returning: true)
-        resumeSatisfiedNotificationStateWaiters()
-    }
-
-    private func isSatisfied(_ expectation: NotificationDeliveryStateExpectation) -> Bool {
-        switch expectation {
-        case .eventCount(let expectedCount):
-            events.count == expectedCount
-        case .pendingObservationSequences(let expectedSequences):
-            observationWaiterBySequence.keys.sorted() == expectedSequences
-        }
-    }
-
-    private func resumeSatisfiedNotificationStateWaiters() {
-        var pendingWaiters: [NotificationDeliveryStateWaiter] = []
-        for waiter in notificationStateWaiters {
-            if isSatisfied(waiter.expectation) {
-                waiter.continuation.resume(returning: true)
-            } else {
-                pendingWaiters.append(waiter)
-            }
-        }
-        notificationStateWaiters = pendingWaiters
+    init(batch: BridgeProductCommentCatalogBatch, mode: BridgeProductBatchMode, producerID: UUID? = nil) {
+        self.batch = batch
+        self.mode = mode
+        self.producerID = producerID
     }
 }
 
 private enum NotificationDeliveryFailure: Error {
     case injected
-}
-
-private enum NotificationSourceTestFailure: Error {
-    case unexpectedEvent
 }

@@ -604,7 +604,7 @@ struct RepoScannerSessionTests {
         )
     }
 
-    private func oneItemQuantumBudget() throws -> RepoScannerQuantumBudget {
+    func oneItemQuantumBudget() throws -> RepoScannerQuantumBudget {
         try RepoScannerQuantumBudget(
             maximumEnumeratedItems: 1,
             maximumPathBytes: 1_048_576,
@@ -614,7 +614,7 @@ struct RepoScannerSessionTests {
         )
     }
 
-    private func finish(
+    func finish(
         session: RepoScannerSessionPort,
         outcomesByCanonicalPath: [String: GitRepositoryDiscoveryOutcome],
         suspendedUsages: inout [RepoScannerQuantumUsage]
@@ -692,13 +692,13 @@ struct RepoScannerSessionTests {
     }
 }
 
-private struct ScannerSessionFixture {
+struct ScannerSessionFixture {
     let root: URL
     let candidatePaths: [URL]
 
     init(candidateNames: [String]) throws {
         let fixtureRoot = FileManager.default.temporaryDirectory
-            .appending(path: "repo-scanner-session-\(UUID().uuidString)")
+            .appending(path: "repo-scanner-session-\(UUIDv7.generate().uuidString)")
         root = fixtureRoot
         candidatePaths = candidateNames.map { fixtureRoot.appending(path: $0) }
         try FileManager.default.createDirectory(at: fixtureRoot, withIntermediateDirectories: true)

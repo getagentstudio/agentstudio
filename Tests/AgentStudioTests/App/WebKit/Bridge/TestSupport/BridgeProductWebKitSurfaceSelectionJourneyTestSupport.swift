@@ -64,6 +64,7 @@ enum BridgeProductWebKitSurfaceJourneyTestSupport {
             controller
         ) { hostedController in
             hostedController.loadApp()
+            await WebPageEventWaits.waitForNavigationToFinish(hostedController.page)
             try await establishHostIdentity(hostedController.page)
             let initialReviewState = try await requireReadyReview(hostedController)
             let initialNative = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(
@@ -197,48 +198,40 @@ enum BridgeProductWebKitSurfaceJourneyTestSupport {
             throw JourneyError.conditionFailed("native \(surface) request was not admitted")
         }
 
-        var acceptedRequest: BridgePaneSurfaceSelectionRequest?
-        let accepted = await BridgeProductWebKitCarrierTestSupport.waitUntil(
-            timeout: .seconds(15)
-        ) {
-            let snapshot = controller.surfaceSelectionAuthority.diagnosticSnapshot
-            guard let lastAcceptedRequest = snapshot.lastAcceptedRequest else { return false }
-            acceptedRequest = lastAcceptedRequest
-            return snapshot.currentRequest == nil
-                && lastAcceptedRequest.surface == surface
-                && lastAcceptedRequest.bindingRevision > previousRevision
-        }
-        guard accepted, let acceptedRequest else {
-            let snapshot = controller.surfaceSelectionAuthority.diagnosticSnapshot
-            throw JourneyError.conditionFailed(
-                "native \(surface) request did not receive its exact worker receipt; snapshot=\(snapshot)"
-            )
-        }
+        let acceptedRequest: BridgePaneSurfaceSelectionRequest =
+            try await BridgePaneControllerEventWaits.waitForValue {
+                let snapshot = controller.surfaceSelectionAuthority.diagnosticSnapshot
+                guard let lastAcceptedRequest = snapshot.lastAcceptedRequest,
+                    snapshot.currentRequest == nil,
+                    lastAcceptedRequest.surface == surface,
+                    lastAcceptedRequest.bindingRevision > previousRevision
+                else { return nil }
+                return lastAcceptedRequest
+            }
         try await requireActiveMode(surface, page: controller.page)
         return BridgeProductWebKitSurfaceSelectionReceipt(acceptedRequest)
     }
 
     private static func establishHostIdentity(_ page: WebPage) async throws {
-        let established = await BridgeProductWebKitCarrierTestSupport.waitUntil(
-            timeout: .seconds(15)
-        ) {
-            do {
-                return try await page.callJavaScript(
-                    """
-                    const fileHost = document.querySelector('[data-testid="bridge-viewer-mode-host-file"]');
-                    const reviewHost = document.querySelector('[data-testid="bridge-viewer-mode-host-review"]');
-                    if (!(fileHost instanceof HTMLElement) || !(reviewHost instanceof HTMLElement)) {
-                      return false;
-                    }
-                    globalThis.__bridgeHostedSurfaceSelectionHosts = { fileHost, reviewHost };
-                    return true;
-                    """
-                ) as? Bool ?? false
-            } catch {
-                return false
-            }
-        }
-        guard established else {
+        try await WebPageEventWaits.waitForDocumentSelector(
+            page,
+            "[data-testid=\"bridge-viewer-mode-host-file\"]"
+        )
+        try await WebPageEventWaits.waitForDocumentSelector(
+            page,
+            "[data-testid=\"bridge-viewer-mode-host-review\"]"
+        )
+        let established =
+            try await page.callJavaScript(
+                """
+                const fileHost = document.querySelector('[data-testid="bridge-viewer-mode-host-file"]');
+                const reviewHost = document.querySelector('[data-testid="bridge-viewer-mode-host-review"]');
+                if (!(fileHost instanceof HTMLElement) || !(reviewHost instanceof HTMLElement)) return false;
+                globalThis.__bridgeHostedSurfaceSelectionHosts = { fileHost, reviewHost };
+                return true;
+                """
+            ) as? Bool
+        guard established == true else {
             throw JourneyError.conditionFailed("retained File and Review hosts were not mounted")
         }
     }
@@ -258,21 +251,20 @@ enum BridgeProductWebKitSurfaceJourneyTestSupport {
     private static func requireReadyReview(
         _ controller: BridgePaneController
     ) async throws -> BridgeProductWebKitSurfaceSelectionState {
-        var observed: BridgeProductWebKitSurfaceSelectionState?
-        let ready = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(25)) {
-            let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
-            guard native.lifecycle == "active", let snapshot = try? await state(controller.page)
-            else { return false }
-            observed = snapshot
-            return snapshot.activeMode == "review"
-                && snapshot.reviewContentState == "ready"
-                && snapshot.reviewSelectedItemId?.isEmpty == false
-                && snapshot.reviewSelectedPath?.isEmpty == false
-                && snapshot.fileHostRetained
-                && snapshot.reviewHostRetained
-        }
-        guard ready, let observed else {
-            throw JourneyError.conditionFailed("real-git Review did not become ready")
+        let observed = try await awaitState(
+            controller.page,
+            where: """
+                return state.activeMode === 'review'
+                  && state.reviewContentState === 'ready'
+                  && Boolean(state.reviewSelectedItemId)
+                  && Boolean(state.reviewSelectedPath)
+                  && state.fileHostRetained
+                  && state.reviewHostRetained;
+                """
+        )
+        let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
+        guard native.lifecycle == "active" else {
+            throw JourneyError.conditionFailed("real-git Review native session was not active")
         }
         return observed
     }
@@ -280,28 +272,19 @@ enum BridgeProductWebKitSurfaceJourneyTestSupport {
     private static func requireReadyFile(
         _ page: WebPage
     ) async throws -> BridgeProductWebKitSurfaceSelectionState {
-        var observed: BridgeProductWebKitSurfaceSelectionState?
-        let ready = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(15)) {
-            guard let snapshot = try? await state(page) else { return false }
-            observed = snapshot
-            guard let projectedRowCount = snapshot.fileProjectedRowCount,
-                let totalRowCount = snapshot.fileTotalRowCount
-            else { return false }
-            return snapshot.activeMode == "file"
-                && snapshot.fileDisplayStatus == "ready"
-                && snapshot.fileDisplaySourceId?.isEmpty == false
-                && snapshot.fileDisplayItemCount ?? 0 > 0
-                && projectedRowCount > 0
-                && projectedRowCount == totalRowCount
-                && snapshot.fileHostRetained
-                && snapshot.reviewHostRetained
-        }
-        guard ready, let observed else {
-            throw JourneyError.conditionFailed(
-                "File display snapshot did not become complete; lastObserved=\(String(describing: observed))"
-            )
-        }
-        return observed
+        try await awaitState(
+            page,
+            where: """
+                return state.activeMode === 'file'
+                  && state.fileDisplayStatus === 'ready'
+                  && Boolean(state.fileDisplaySourceId)
+                  && state.fileDisplayItemCount > 0
+                  && state.fileProjectedRowCount > 0
+                  && state.fileProjectedRowCount === state.fileTotalRowCount
+                  && state.fileHostRetained
+                  && state.reviewHostRetained;
+                """
+        )
     }
 
     /// Asserts, with one read, that Review state survived the surface switches.

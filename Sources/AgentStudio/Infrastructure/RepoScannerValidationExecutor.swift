@@ -394,6 +394,10 @@ package actor RepoScannerValidationExecutor {
         }
     }
 
+    package func waitUntilPhysicalJobSlotAvailable() async {
+        await waitUntilPhysicalJobCount(max(0, budget.maximumPhysicalJobs - 1))
+    }
+
     func snapshot() -> RepoDiscoveryValidationExecutorSnapshot {
         RepoDiscoveryValidationExecutorSnapshot(
             physicalJobCount: physicalJobs.count,

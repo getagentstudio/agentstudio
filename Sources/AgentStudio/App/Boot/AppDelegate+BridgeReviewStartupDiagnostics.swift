@@ -62,29 +62,11 @@ extension AppDelegate {
             recordBridgeReviewObservabilitySmokePhase("bridge_view_mounted", action: action)
 
             if realWorktreeId == nil {
-                let commandId = UUIDv7.generate()
-                recordBridgeReviewObservabilitySmokePhase("load_diff_started", action: action)
-                let result = await bridgeView.controller.handleDiffCommand(
-                    .loadDiff(
-                        DiffArtifact(
-                            diffId: BridgeObservabilitySmokeReviewSourceProvider.diffId,
-                            worktreeId: BridgeObservabilitySmokeReviewSourceProvider.worktreeId,
-                            patchData: Data()
-                        )
-                    ),
-                    commandId: commandId,
-                    correlationId: nil
+                await recordBridgeReviewNoSourceStartupDiagnostic(
+                    controller: bridgeView.controller,
+                    action: action
                 )
-                recordBridgeReviewObservabilitySmokePhase("load_diff_finished", action: action)
-                if case .failure = result, bridgeView.controller.paneState.diff.status == .error {
-                    let renderProof = BridgeReviewObservabilitySmokeRenderProof.unavailable()
-                    recordBridgeReviewObservabilitySmokeDiagnosticResult(
-                        action: action,
-                        outcome: "blocked",
-                        renderProof: renderProof
-                    )
-                    return
-                }
+                return
             }
 
             recordBridgeReviewObservabilitySmokePhase("render_proof_started", action: action)
@@ -109,6 +91,51 @@ extension AppDelegate {
                 renderProof: renderProof
             )
         }
+
+        private func recordBridgeReviewNoSourceStartupDiagnostic(
+            controller: BridgePaneController,
+            action: AgentStudioStartupDiagnosticAction
+        ) async {
+            let observation: BridgeReviewNoSourceStartupRenderProof
+            do {
+                let result = try await controller.page.callJavaScript(Self.bridgeReviewNoSourceRenderStateJavaScript)
+                guard let json = result as? String, let data = json.data(using: .utf8) else {
+                    recordStartupDiagnosticBlocked(action: action, reason: "no_source_projection_unavailable")
+                    return
+                }
+                observation = try JSONDecoder().decode(BridgeReviewNoSourceStartupRenderProof.self, from: data)
+            } catch {
+                recordStartupDiagnosticBlocked(action: action, reason: "no_source_projection_unavailable")
+                return
+            }
+            let outcome = observation.succeeded ? "succeeded" : "blocked"
+            let attributes = startupDiagnosticTraceAttributes(for: action).merging(
+                observation.attributes
+            ) { _, observed in observed }
+            startupTraceRecorder.recordAppStartup(
+                "app.startup_diagnostic_action.command_exercised",
+                phase: "startup_diagnostic_action",
+                outcome: outcome,
+                attributes: attributes
+            )
+            startupTraceRecorder.recordAppStartup(
+                "app.startup_diagnostic_action.\(observation.succeeded ? "completed" : "blocked")",
+                phase: "startup_diagnostic_action",
+                outcome: outcome,
+                attributes: attributes
+            )
+        }
+
+        static let bridgeReviewNoSourceRenderStateJavaScript = """
+            const content = document.querySelector('[data-bridge-region="review-content"]');
+            const tree = document.querySelector('[data-bridge-region="review-tree"]');
+            return JSON.stringify({
+              contentState: content?.getAttribute('data-presentation-state') ?? null,
+              contentReason: content?.getAttribute('data-empty-reason') ?? null,
+              treeState: tree?.getAttribute('data-presentation-state') ?? null,
+              treeReason: tree?.getAttribute('data-empty-reason') ?? null
+            });
+            """
 
         private func recordStartupDiagnosticSkipped(
             action: AgentStudioStartupDiagnosticAction,
@@ -273,3 +300,27 @@ extension AppDelegate {
 
     #endif
 }
+
+#if DEBUG
+    struct BridgeReviewNoSourceStartupRenderProof: Decodable {
+        let contentState: String?
+        let contentReason: String?
+        let treeState: String?
+        let treeReason: String?
+
+        var succeeded: Bool {
+            contentState == "empty" && contentReason == "noSource"
+                && treeState == "empty" && treeReason == "noSource"
+        }
+
+        var attributes: [String: AgentStudioTraceValue] {
+            [
+                "agentstudio.startup_diagnostic.review_content.state": .string(contentState ?? "missing"),
+                "agentstudio.startup_diagnostic.review_content.empty_reason": .string(contentReason ?? "missing"),
+                "agentstudio.startup_diagnostic.review_tree.state": .string(treeState ?? "missing"),
+                "agentstudio.startup_diagnostic.review_tree.empty_reason": .string(treeReason ?? "missing"),
+                "agentstudio.startup_diagnostic.render_proof.succeeded": .bool(succeeded),
+            ]
+        }
+    }
+#endif

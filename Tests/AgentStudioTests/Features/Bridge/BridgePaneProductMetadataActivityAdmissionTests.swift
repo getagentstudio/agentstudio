@@ -27,51 +27,23 @@ struct BridgePaneProductMetadataActivityAdmissionTests {
             ),
             subscriptionId: "review-subscription-1"
         )
-        let fileUpdate = try activityUpdatedFileSubscription(fileOpen)
-        let reviewUpdate = try activityUpdatedReviewSubscription(reviewOpen)
-
         // Act
         await applyActivityMetadataEffect(
-            .subscriptionInterestsCommitted(
-                barrier: activityCommitBarrier(
-                    for: fileUpdate,
-                    updateId: "activity-file-hidden-update"
-                ),
-                subscription: fileUpdate
-            ),
+            .subscriptionCancelled(fileOpen),
             request: context.fileOpenRequest,
             context: context
         )
         await applyActivityMetadataEffect(
-            .subscriptionInterestsCommitted(
-                barrier: activityCommitBarrier(
-                    for: reviewUpdate,
-                    updateId: "activity-review-hidden-update"
-                ),
-                subscription: reviewUpdate
-            ),
-            request: context.reviewOpenRequest,
-            context: context
-        )
-        await waitForActivityMetadataSourceScheduling(context)
-        await applyActivityMetadataEffect(
-            .subscriptionCancelled(fileUpdate),
-            request: context.fileOpenRequest,
-            context: context
-        )
-        await applyActivityMetadataEffect(
-            .subscriptionCancelled(reviewUpdate),
+            .subscriptionCancelled(reviewOpen),
             request: context.reviewOpenRequest,
             context: context
         )
 
         // Assert
         #expect(await context.fileSource.openCallCount == 0)
-        #expect(await context.fileSource.updateCallCount == 0)
         #expect(await context.fileSource.statusPublicationCallCount == 0)
         #expect(await context.fileSource.descriptorSourceCallCount == 0)
         #expect(await context.reviewSource.openCallCount == 0)
-        #expect(await context.reviewSource.updateCallCount == 0)
         #expect(await context.reviewSource.reserveCallCount == 0)
         #expect(await context.reviewSource.deliverCallCount == 0)
         #expect(context.reviewReplayProbe.callCount == 0)
@@ -106,9 +78,7 @@ struct BridgePaneProductMetadataActivityAdmissionTests {
         context.activityCoordinator.applyActivity(.loadedHidden)
         await context.fileSource.releaseEmission()
         await context.fileSource.waitUntilEmissionFinished()
-        let hiddenSnapshot = await waitForActivityMetadataState(context) { snapshot in
-            snapshot.queuedFrameCount == 0
-        }
+        let hiddenSnapshot = await context.harness.session.producerSnapshot()
 
         // Assert
         #expect(await context.fileSource.openCallCount == 1)
@@ -210,6 +180,12 @@ func makeActivityMetadataContext(
 }
 
 actor ActivityMetadataFileSource: BridgePaneProductFileMetadataProducing {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private let suspendBeforeEmission: Bool
     private var emissionFinished = false
     private var emissionFinishedWaiters: [CheckedContinuation<Void, Never>] = []
@@ -236,7 +212,7 @@ actor ActivityMetadataFileSource: BridgePaneProductFileMetadataProducing {
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         openCallCount += 1
         await waitBeforeEmissionIfRequired()
@@ -245,11 +221,13 @@ actor ActivityMetadataFileSource: BridgePaneProductFileMetadataProducing {
         try await emit(try activityFileSourceAcceptedEvent())
     }
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         updateCallCount += 1
         descriptorSourceCallCount += 1
@@ -339,30 +317,11 @@ private actor ActivityMetadataReviewSource: BridgePaneProductReviewMetadataProdu
     private(set) var deliverCallCount = 0
     private(set) var openCallCount = 0
     private(set) var reserveCallCount = 0
-    private(set) var updateCallCount = 0
-
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {
+        productAdmission _: BridgeProductAdmissionContext
+    ) {
         openCallCount += 1
-        _ = try await emit(
-            try sealBridgeReviewMetadataEvent(activityReviewSourceAcceptedEvent()),
-            productAdmission
-        )
-    }
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {
-        updateCallCount += 1
-        _ = try await emit(
-            try sealBridgeReviewMetadataEvent(activityReviewSourceAcceptedEvent()),
-            productAdmission
-        )
     }
 
     func reserve(
@@ -407,27 +366,9 @@ func openActivityMetadataSubscription(
     guard case .execute(let token, _) = try await context.harness.begin(request) else {
         throw ActivityMetadataAdmissionTestError.expectedControlExecution
     }
-    #expect(await context.harness.session.claimControlProviderDispatch(token: token))
-    let interestSha256: String
-    switch request.surface {
-    case .file:
-        interestSha256 =
-            try BridgeProductSubscriptionInterestState
-            .fileMetadata(interests: [], pathScope: [])
-            .sha256Hex()
-    case .review:
-        interestSha256 =
-            try BridgeProductSubscriptionInterestState
-            .reviewMetadata(interests: [])
-            .sha256Hex()
-    case nil:
-        throw ActivityMetadataAdmissionTestError.expectedSurface
-    }
-    let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
-        correlating: request,
-        interestSha256: interestSha256
-    )
-    let effect = try await context.harness.session.completeControl(
+    #expect(await context.harness.session.admitControlProviderExecution(token: token))
+    let response = try BridgeProductControlResponse.subscriptionOpenAccepted(correlating: request, worktreeId: nil)
+    let effect = try await context.harness.session.completeAdmittedControl(
         token: token,
         exactResponseBytes: try JSONEncoder().encode(response)
     )
@@ -469,90 +410,16 @@ func requiredActivityMetadataFrame(
     return try #require(try decoder.append(delivery.frame.data).first)
 }
 
-private func activityUpdatedFileSubscription(
-    _ open: BridgeProductSubscriptionSnapshot
-) throws -> BridgeProductSubscriptionSnapshot {
-    let state = BridgeProductSubscriptionInterestState.fileMetadata(
-        interests: [
-            try BridgeProductFileMetadataInterestStateGroup(
-                lane: .foreground,
-                paths: ["Sources/Selected.swift"]
-            )
-        ],
-        pathScope: []
-    )
-    return BridgeProductSubscriptionSnapshot(
-        subscription: open.subscription,
-        subscriptionId: open.subscriptionId,
-        subscriptionKind: open.subscriptionKind,
-        workerDerivationEpoch: open.workerDerivationEpoch,
-        interestRevision: 1,
-        interestSha256: try state.sha256Hex(),
-        interestState: state,
-        hasStagedUpdate: false
-    )
-}
-
-private func activityUpdatedReviewSubscription(
-    _ open: BridgeProductSubscriptionSnapshot
-) throws -> BridgeProductSubscriptionSnapshot {
-    let state = BridgeProductSubscriptionInterestState.reviewMetadata(
-        interests: [
-            try BridgeProductReviewMetadataInterestStateGroup(
-                itemIds: ["review-item-selected"],
-                lane: .foreground
-            )
-        ]
-    )
-    return BridgeProductSubscriptionSnapshot(
-        subscription: open.subscription,
-        subscriptionId: open.subscriptionId,
-        subscriptionKind: open.subscriptionKind,
-        workerDerivationEpoch: open.workerDerivationEpoch,
-        interestRevision: 1,
-        interestSha256: try state.sha256Hex(),
-        interestState: state,
-        hasStagedUpdate: false
-    )
-}
-
-private func activityCommitBarrier(
-    for subscription: BridgeProductSubscriptionSnapshot,
-    updateId: String
-) -> BridgeProductSubscriptionCommitBarrierIntent {
-    BridgeProductSubscriptionCommitBarrierIntent(
-        subscriptionId: subscription.subscriptionId,
-        subscriptionKind: subscription.subscriptionKind,
-        workerDerivationEpoch: subscription.workerDerivationEpoch,
-        interestRevision: subscription.interestRevision,
-        interestSha256: subscription.interestSha256,
-        updateId: updateId
-    )
-}
-
-private func activityFileSourceAcceptedEvent() throws -> BridgeProductFileMetadataEvent {
+private func activityFileSourceAcceptedEvent() throws -> BridgePaneProductFileSourceFact {
     .sourceAccepted(
-        .init(
-            source: try .init(
-                repoId: "00000000-0000-4000-8000-000000000001",
-                rootRevisionToken: "root-token-activity",
-                sourceCursor: "source-cursor-activity",
-                sourceId: "file-source-activity",
-                subscriptionGeneration: 1,
-                worktreeId: "00000000-0000-4000-8000-000000000002"
-            )
-        )
-    )
-}
-
-private func activityReviewSourceAcceptedEvent() throws -> BridgeProductReviewMetadataEvent {
-    try .init(
-        generation: 1,
-        packageId: "review-package-activity",
-        publicationId: UUID(uuidString: "11111111-1111-7111-8111-111111111111")!,
-        revision: 1,
-        sourceIdentity: "review-query-activity"
-    )
+        try .init(
+            repoId: "00000000-0000-4000-8000-000000000001",
+            rootRevisionToken: "root-token-activity",
+            sourceCursor: "source-cursor-activity",
+            sourceId: "file-source-activity",
+            subscriptionGeneration: 1,
+            worktreeId: "00000000-0000-4000-8000-000000000002"
+        ))
 }
 
 private func activityMetadataStreamRequest() throws -> BridgeProductMetadataStreamRequest {
@@ -573,39 +440,6 @@ private func activityMetadataStreamRequest() throws -> BridgeProductMetadataStre
     )
 }
 
-private func waitForActivityMetadataSourceScheduling(
-    _ context: ActivityMetadataContext,
-    maxTurns: Int = 2000
-) async {
-    for _ in 0..<maxTurns {
-        let fileOpenCallCount = await context.fileSource.openCallCount
-        let fileUpdateCallCount = await context.fileSource.updateCallCount
-        let reviewOpenCallCount = await context.reviewSource.openCallCount
-        let reviewUpdateCallCount = await context.reviewSource.updateCallCount
-        let scheduledCallCount =
-            fileOpenCallCount
-            + fileUpdateCallCount
-            + reviewOpenCallCount
-            + reviewUpdateCallCount
-        if scheduledCallCount >= 4 { return }
-        await Task.yield()
-    }
-}
-
-@MainActor
-func waitForActivityMetadataState(
-    _ context: ActivityMetadataContext,
-    maxTurns: Int = 2000,
-    predicate: (BridgeProductProducerRegistrySnapshot) -> Bool
-) async -> BridgeProductProducerRegistrySnapshot {
-    var snapshot = await context.harness.session.producerSnapshot()
-    for _ in 0..<maxTurns where !predicate(snapshot) {
-        await Task.yield()
-        snapshot = await context.harness.session.producerSnapshot()
-    }
-    return snapshot
-}
-
 func finishActivityMetadataContext(_ context: ActivityMetadataContext) async {
     #expect(await context.pump.cancel())
     await context.provider.closeAndDrain()
@@ -617,5 +451,4 @@ enum ActivityMetadataAdmissionTestError: Error {
     case expectedMetadataFrame
     case expectedMetadataStreamAccepted
     case expectedSubscriptionAccepted
-    case expectedSurface
 }

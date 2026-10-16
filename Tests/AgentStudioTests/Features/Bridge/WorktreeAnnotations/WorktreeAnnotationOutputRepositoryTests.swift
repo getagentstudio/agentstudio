@@ -39,6 +39,209 @@ struct WorktreeAnnotationOutputRepositoryTests {
         #expect(prepared.attempt.formatVersion == 2)
     }
 
+    @Test(
+        "listed comment staleness conflicts without durable output rows",
+        arguments: ["revision", "deleted", "draft", "foreign"])
+    func staleListedCommentConflictsWithoutOutputRows(_ mutation: String) throws {
+        let fixture = try makeOutputRepositoryFixture()
+        let props = try fixture.prepareProps()
+        let foreignSessionID: WorktreeAnnotationSessionID?
+        if mutation == "foreign" {
+            foreignSessionID = try fixture.repository.createRootDraft(
+                .init(
+                    admission: .newSession,
+                    repositoryID: "repository-1",
+                    worktreeID: "worktree-other",
+                    sourceFingerprint: .init(
+                        repositoryID: "repository-1", worktreeID: "worktree-other",
+                        fileSourceIdentity: "foreign-source", reviewComparisonOrigin: nil
+                    ),
+                    origin: try #require(fixture.detail.threads.first?.thread.origin),
+                    body: "Foreign session draft", editToken: "foreign-editor",
+                    now: Date(timeIntervalSince1970: 4)
+                )
+            ).canonicalResult.session.id
+        } else {
+            foreignSessionID = nil
+        }
+        try fixture.databaseQueue.write { database in
+            switch mutation {
+            case "revision":
+                try database.execute(sql: "UPDATE annotation_message SET saved_revision = saved_revision + 1")
+            case "deleted":
+                try database.execute(sql: "DELETE FROM annotation_message")
+            case "draft":
+                try database.execute(
+                    sql: """
+                        INSERT INTO annotation_message_draft(message_id, body, body_utf8_bytes, draft_revision, updated_at)
+                        VALUES (?, 'draft', 5, 0, 4)
+                        """,
+                    arguments: [fixture.message.id.databaseValue]
+                )
+            default:
+                let foreignID = try #require(foreignSessionID)
+                try database.execute(
+                    sql: "UPDATE annotation_thread SET session_id = ?, created_ordinal = 2 WHERE id = ?",
+                    arguments: [foreignID.databaseValue, fixture.detail.threads[0].thread.id.databaseValue]
+                )
+            }
+        }
+
+        #expect(
+            throws: WorktreeAnnotationRepositoryError.conflict(
+                currentRevision: fixture.detail.session.semanticRevision
+            )
+        ) {
+            try fixture.repository.prepareOutput(props)
+        }
+        try fixture.databaseQueue.read { database in
+            for tableName in [
+                "annotation_output_attempt", "annotation_output_attempt_message", "annotation_output_event",
+            ] {
+                let count = try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM \(tableName)")
+                #expect(count == 0)
+            }
+        }
+    }
+
+    @Test("mutable source context and thread resolution do not invalidate listed comments")
+    func mutableContextDoesNotInvalidateListedComments() throws {
+        let fixture = try makeOutputRepositoryFixture()
+        let props = try fixture.prepareProps()
+        try fixture.databaseQueue.write { database in
+            try database.execute(
+                sql:
+                    "UPDATE annotation_session SET semantic_revision = semantic_revision + 1, source_relationship = 'uncertain'"
+            )
+            try database.execute(sql: "UPDATE annotation_thread SET resolution = 'resolved'")
+        }
+
+        let prepared = try fixture.repository.prepareOutput(props).canonicalResult
+
+        #expect(prepared.memberships.map(\.messageID) == [fixture.message.id])
+        #expect(prepared.attempt.exactBytes == fixture.exactBytes)
+    }
+
+    @Test("completed and read-only sessions can still output", arguments: ["completed", "uncertain", "detached"])
+    func completedAndReadOnlySessionsCanOutput(_ context: String) throws {
+        let fixture = try makeOutputRepositoryFixture()
+        try fixture.databaseQueue.write { database in
+            if context == "completed" {
+                try database.execute(sql: "UPDATE annotation_session SET lifecycle = 'completed'")
+            } else {
+                try database.execute(
+                    sql: "UPDATE annotation_session SET source_relationship = ?",
+                    arguments: [context]
+                )
+            }
+        }
+        let currentDetail = try fixture.repository.fetchSessionDetail(sessionID: fixture.detail.session.id)
+
+        let prepared = try fixture.repository.prepareOutput(
+            fixture.prepareProps(sessionDetail: currentDetail)
+        ).canonicalResult
+
+        #expect(prepared.memberships.map(\.messageID) == [fixture.message.id])
+        #expect(prepared.attempt.state == .prepared)
+    }
+
+    @Test("lifecycle changes after capture preserve the unchanged output batch")
+    func lifecycleChangeAfterCaptureDoesNotInvalidateOutput() throws {
+        let fixture = try makeOutputRepositoryFixture()
+        let capturedProps = try fixture.prepareProps()
+        try fixture.databaseQueue.write { database in
+            try database.execute(
+                sql: "UPDATE annotation_session SET lifecycle = 'completed', semantic_revision = semantic_revision + 1"
+            )
+        }
+
+        let prepared = try fixture.repository.prepareOutput(capturedProps).canonicalResult
+
+        #expect(prepared.memberships.map(\.messageID) == [fixture.message.id])
+        #expect(prepared.attempt.exactBytes == fixture.exactBytes)
+    }
+
+    @Test(
+        "well-formed fabricated immutable origins fail durable validation independently",
+        arguments: ["path", "range", "excerpt", "sourceIdentity", "side"]
+    )
+    func fabricatedImmutableOriginIsRejected(_ field: String) throws {
+        let fixture = try makeOutputRepositoryFixture()
+        let entry = try #require(fixture.snapshot.entries.first)
+        let original = entry.origin
+        var source = original.source
+        if field == "sourceIdentity" {
+            source = .file(sourceIdentity: "different-source")
+        } else if field == "side" {
+            let durableOrigin = WorktreeAnnotationThreadOrigin.located(
+                .init(
+                    repositoryRelativePath: original.path,
+                    startLine: original.startLine,
+                    endLine: original.endLine,
+                    sourceRole: .reviewBase,
+                    diffSide: .deletions,
+                    sourceIdentity: "source-1",
+                    selectedExcerpt: "let value = 1",
+                    contextBefore: nil,
+                    contextAfter: nil
+                )
+            )
+            let originJSON = try #require(String(data: JSONEncoder().encode(durableOrigin), encoding: .utf8))
+            try fixture.databaseQueue.write { database in
+                try database.execute(sql: "UPDATE annotation_thread SET origin_json = ?", arguments: [originJSON])
+            }
+            source = .diff(
+                side: .new,
+                sourceIdentity: "source-1",
+                comparisonOrigin: .init(
+                    baseRole: .commonCommit,
+                    symbolicTarget: .commit(oid: String(repeating: "a", count: 40)),
+                    resolvedTargetOID: "target",
+                    reviewedHeadOID: "head",
+                    baseOID: "base"
+                )
+            )
+        }
+        let lineNumber = field == "range" ? 2 : original.startLine
+        let origin = WorktreeAnnotationBatchSnapshot.Origin(
+            path: field == "path" ? "Sources/Other.swift" : original.path,
+            source: source,
+            startLine: lineNumber,
+            endLine: lineNumber,
+            excerpt: [.init(lineNumber: lineNumber, text: field == "excerpt" ? "fabricated excerpt" : "let value = 1")]
+        )
+        let fabricatedEntry = WorktreeAnnotationBatchSnapshotV2.Entry(
+            batchOrdinal: entry.batchOrdinal,
+            thread: .init(
+                threadID: entry.threadID,
+                resolution: entry.resolution,
+                origin: origin,
+                placement: entry.placement
+            ),
+            message: entry.message
+        )
+        let snapshot = WorktreeAnnotationBatchSnapshotV2(
+            batchID: fixture.snapshot.batchID,
+            createdAt: fixture.snapshot.createdAt,
+            session: fixture.snapshot.session,
+            entries: [fabricatedEntry]
+        )
+        // Establish that rejection comes from durable immutable-origin integrity,
+        // rather than schema, bytes, selection, or saved-message validation.
+        try WorktreeAnnotationBatchProjector.validate(snapshot)
+        let props = try fixture.prepareProps(canonicalSnapshot: snapshot)
+        #expect(props.canonicalSnapshot.entries.map(\.messageID) == props.selectedMessages.map(\.messageID))
+        #expect(
+            props.canonicalSnapshot.entries.map(\.savedRevision) == props.selectedMessages.map(\.expectedSavedRevision))
+        #expect(throws: WorktreeAnnotationRepositoryError.invalidState) {
+            try fixture.repository.prepareOutput(props)
+        }
+        try fixture.databaseQueue.read { database in
+            let attemptCount = try Int.fetchOne(database, sql: "SELECT COUNT(*) FROM annotation_output_attempt")
+            #expect(attemptCount == 0)
+        }
+    }
+
     @Test("new preparation rejects any non-v2 format declaration")
     func newPreparationRejectsV1FormatDeclaration() throws {
         let fixture = try makeOutputRepositoryFixture()

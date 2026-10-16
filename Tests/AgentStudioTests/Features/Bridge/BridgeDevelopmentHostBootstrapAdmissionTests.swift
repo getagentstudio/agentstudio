@@ -6,12 +6,7 @@ import Testing
 @testable import AgentStudioBridge
 @testable import AgentStudioCore
 
-/// Guards the owner's rule that the terminated-stream join must not loosen:
-/// one viewer, one session. A fresh `.initial` bootstrap while the first stream
-/// is genuinely still live is refused immediately, with no waiting.
-///
-/// Nothing asserted `.sessionAlreadyOpen` anywhere before this suite, so the rule
-/// was protected only by the code that implements it.
+/// A successor bootstrap must be usable while an old stream claim retires.
 @MainActor
 @Suite(
     "Bridge development product host bootstrap admission",
@@ -19,8 +14,8 @@ import Testing
     .timeLimit(.minutes(1))
 )
 struct BridgeDevelopmentHostBootstrapAdmissionTests {
-    @Test("a live metadata stream refuses a fresh initial bootstrap")
-    func liveMetadataStreamRefusesAFreshInitialBootstrap() async throws {
+    @Test("a live old metadata stream does not block its owning tab's fresh initial bootstrap")
+    func liveMetadataStreamPermitsSuccessorBootstrap() async throws {
         // Arrange
         let repositoryURL = try await FilesystemTestGitRepo.create(
             named: "bridge-development-host-bootstrap-admission-live"
@@ -28,6 +23,7 @@ struct BridgeDevelopmentHostBootstrapAdmissionTests {
         defer { FilesystemTestGitRepo.destroy(repositoryURL) }
         let host = try await BridgeDevelopmentProductHost(
             source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            operationDeadlineClock: TestPushClock(),
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: repositoryURL
             )
@@ -42,24 +38,61 @@ struct BridgeDevelopmentHostBootstrapAdmissionTests {
         )
         try await firstWorker.openSession()
         var firstMetadataStream = try firstWorker.startMetadataStream()
-        try await firstMetadataStream.requireOpeningFrameAndAcknowledge(using: firstWorker)
+        try await firstMetadataStream.requireOpeningFrame()
 
-        // Act — the stream is NOT stopped, so its scheme task is still live.
-        var refusedError: BridgeDevelopmentProductHostError?
-        do {
-            _ = try await host.issueBootstrap(for: bootstrapRequest)
-        } catch let error as BridgeDevelopmentProductHostError {
-            refusedError = error
-        }
+        // Act — the old stream task still holds its physical claim.
+        let secondDelivery = try await host.issueBootstrap(for: bootstrapRequest)
+        let secondWorker = try DevelopmentDisplayWorkerClient(host: host, delivery: secondDelivery)
+        try await secondWorker.openSession()
 
-        // Assert — refused, and refused for the right reason.
-        #expect(refusedError == .sessionAlreadyOpen)
+        #expect(secondWorker.workerInstanceId != firstWorker.workerInstanceId)
+        #expect(secondWorker.paneSessionId == firstWorker.paneSessionId)
 
         await firstMetadataStream.stop()
     }
 
-    @Test("a terminated stream's pending retirement joins instead of refusing")
-    func terminatedStreamPendingRetirementJoinsInsteadOfRefusing() async throws {
+    @Test("another tab receives a conflict until the owner's stream ends, then takes over")
+    func competingTabCannotTakeOverLiveOwner() async throws {
+        let repositoryURL = try await FilesystemTestGitRepo.create(
+            named: "bridge-development-host-tab-ownership"
+        )
+        defer { FilesystemTestGitRepo.destroy(repositoryURL) }
+        let host = try await BridgeDevelopmentProductHost(
+            source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            operationDeadlineClock: TestPushClock(),
+            contributionTargetCommit: developmentContributionTargetCommit(
+                worktreeRoot: repositoryURL
+            )
+        )
+        let ownerRequest = try developmentDisplayBootstrapRequest(
+            reason: "initial", surface: "file", tabId: "owner-tab-1"
+        )
+        let competingRequest = try developmentDisplayBootstrapRequest(
+            reason: "initial", surface: "file", tabId: "other-tab-2"
+        )
+        let firstWorker = try DevelopmentDisplayWorkerClient(
+            host: host,
+            delivery: await host.issueBootstrap(for: ownerRequest)
+        )
+        await #expect(throws: BridgeDevelopmentProductHostError.sessionAlreadyOpen) {
+            _ = try await host.issueBootstrap(for: competingRequest)
+        }
+        try await firstWorker.openSession()
+        var firstMetadataStream = try firstWorker.startMetadataStream()
+        try await firstMetadataStream.requireOpeningFrame()
+
+        await #expect(throws: BridgeDevelopmentProductHostError.sessionAlreadyOpen) {
+            _ = try await host.issueBootstrap(for: competingRequest)
+        }
+        await firstMetadataStream.stop()
+        let takeover = try await host.issueBootstrap(for: competingRequest)
+        let nextWorker = try DevelopmentDisplayWorkerClient(host: host, delivery: takeover)
+        try await nextWorker.openSession()
+        #expect(nextWorker.workerInstanceId != firstWorker.workerInstanceId)
+    }
+
+    @Test("a terminated old stream's pending retirement does not block a successor")
+    func terminatedStreamPendingRetirementDoesNotBlockSuccessor() async throws {
         // Arrange — the census observer holds the reply task's cancellation at
         // exactly the point where the stream is recorded terminated and its
         // retirement has not been written. Without the fix the bootstrap gate
@@ -71,6 +104,7 @@ struct BridgeDevelopmentHostBootstrapAdmissionTests {
         let terminationHold = BridgeSchemeTaskTerminationHold()
         let host = try await BridgeDevelopmentProductHost(
             source: makeDevelopmentProductSource(worktreeRoot: repositoryURL),
+            operationDeadlineClock: TestPushClock(),
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: repositoryURL
             ),
@@ -93,7 +127,7 @@ struct BridgeDevelopmentHostBootstrapAdmissionTests {
         let firstWorker = try DevelopmentDisplayWorkerClient(host: host, delivery: firstDelivery)
         try await firstWorker.openSession()
         var firstMetadataStream = try firstWorker.startMetadataStream()
-        try await firstMetadataStream.requireOpeningFrameAndAcknowledge(using: firstWorker)
+        try await firstMetadataStream.requireOpeningFrame()
 
         // Act — stop the stream, then wait for the hold to be ENTERED. At that
         // instant the census says terminated and no retirement is recorded.
@@ -101,17 +135,15 @@ struct BridgeDevelopmentHostBootstrapAdmissionTests {
         await terminationHold.waitUntilEntered()
 
         let bootstrap = Task { try await host.issueBootstrap(for: bootstrapRequest) }
-        await terminationHold.release()
-
-        // Assert — it joined the retirement rather than refusing it, and the
-        // successor is a new worker on the same pane session.
         let bootstrapDelivery = try await bootstrap.value
         let secondWorker = try DevelopmentDisplayWorkerClient(
             host: host,
             delivery: bootstrapDelivery
         )
+        try await secondWorker.openSession()
         #expect(secondWorker.paneSessionId == firstWorker.paneSessionId)
         #expect(secondWorker.workerInstanceId != firstWorker.workerInstanceId)
+        await terminationHold.release()
     }
 }
 

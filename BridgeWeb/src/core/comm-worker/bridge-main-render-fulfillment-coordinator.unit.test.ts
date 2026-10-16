@@ -124,6 +124,15 @@ describe('Bridge main render fulfillment coordinator', () => {
 		]);
 		expect(harness.dispositions.at(-1)?.operationCorrelationId).toBe(operationCorrelationId);
 		expect(harness.animationFrames.activeFrameHandles()).toEqual([]);
+		expect(harness.coordinator.releasePaintedCopy(publication.job.itemId)).toBe(true);
+		expect(harness.paintReleases).toEqual([
+			{
+				...publication.renderReceiptIdentity,
+				kind: 'paint.released',
+				receivedAtMilliseconds: 120,
+			},
+		]);
+		expect(harness.coordinator.releasePaintedCopy(publication.job.itemId)).toBe(false);
 	});
 
 	test('retains exact post-render readback that arrives before queued delivery', () => {

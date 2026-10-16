@@ -14,4 +14,3 @@ Artifacts: [Requirements](2026-09-27-ci-swift-build-cache-requirements.md) · [S
 | U4 | Main remains the uncompromised cold proof: every merge builds cold, and the seed comes only from that cold build. The per-merge proof is the cold compile of every target; the full suite runs on main nightly. | Owner decision B; refined 2026-09-30 |
 
 Non-goals: caching BridgeWeb, vendor or tool outputs (they have their own caches); speeding up main's cold build (main's per-merge job was cut to the prebuild and publication by owner decision 2026-09-30, to free macOS runner slots); an absolute repository-wide size guarantee (other writers and eviction exist; a miss is always a correct cold build).
-

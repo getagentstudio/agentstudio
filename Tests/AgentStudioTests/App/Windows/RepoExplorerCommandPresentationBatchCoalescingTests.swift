@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -15,12 +16,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func paneWriteOutsideActiveSelectionProducesNoObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -31,7 +32,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder
                     )
                     batch.start()
@@ -66,12 +70,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func activePaneChangeInActiveTabProducesOneObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -82,7 +86,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder
                     )
                     batch.start()
@@ -115,12 +122,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func visibleSnapshotRefreshDuringCoalescingYieldSupersedesPendingObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -128,16 +135,19 @@ extension RepoExplorerCommandPresentationBatchTests {
                         processIdentifier: 943
                     )
                     defer { try? FileManager.default.removeItem(at: trace.directory) }
-                    let yieldGate = RepoExplorerCoalescingYieldGate()
+                    let yieldGate = HeldStep<Void>("coalescing yield entry")
                     let resumedYield = ExactEventAcknowledgement<Bool>()
                     defer { yieldGate.release() }
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder,
                         coalescingYield: {
-                            await yieldGate.wait()
+                            try? await yieldGate.arrive(())
                             resumedYield.record(true)
                         }
                     )
@@ -159,7 +169,7 @@ extension RepoExplorerCommandPresentationBatchTests {
                     // Hold the old observation wake at its coalescing boundary while the
                     // visible snapshot synchronously supersedes its tracking generation.
                     fixture.store.setActivePane(fixture.paneA2.id, inTab: fixture.tabA.id)
-                    await eventually("coalescer reached its suspension boundary") { yieldGate.isSuspended }
+                    _ = try await yieldGate.firstArrival()
                     batch.acceptVisibleWorktreeSnapshot(
                         makeCoalescingVisibleWorktreeSnapshot(
                             worktreeIDs: [fixture.worktree.id],
@@ -186,12 +196,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func trackedWriteAfterVisibleSnapshotRefreshDuringYieldStillProducesOneObservationRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { _ in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -199,14 +209,17 @@ extension RepoExplorerCommandPresentationBatchTests {
                         processIdentifier: 944
                     )
                     defer { try? FileManager.default.removeItem(at: trace.directory) }
-                    let yieldGate = RepoExplorerCoalescingYieldGate()
+                    let yieldGate = HeldStep<Void>("coalescing yield entry")
                     defer { yieldGate.release() }
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder,
-                        coalescingYield: { await yieldGate.wait() }
+                        coalescingYield: { try? await yieldGate.arrive(()) }
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -227,7 +240,7 @@ extension RepoExplorerCommandPresentationBatchTests {
                     // after the superseding visible-snapshot refresh: the coalescing task must
                     // still see this newer wake and refresh once (no lost update).
                     fixture.store.setActivePane(fixture.paneA2.id, inTab: fixture.tabA.id)
-                    await eventually("coalescer reached its suspension boundary") { yieldGate.isSuspended }
+                    _ = try await yieldGate.firstArrival()
                     batch.acceptVisibleWorktreeSnapshot(
                         makeCoalescingVisibleWorktreeSnapshot(
                             worktreeIDs: [fixture.worktree.id],
@@ -255,12 +268,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func burstOfTrackedWritesInOneTurnProducesOneRefresh() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { coreAtoms in
                     let fixture = try makeCoalescingFixture()
                     let trace = makeCoalescingTraceRecorder(
@@ -271,7 +284,10 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared,
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        },
+                        executionOwnerIdentities: dispatcher.executionOwnerIdentities,
                         performanceTraceRecorder: trace.recorder
                     )
                     batch.start()
@@ -313,12 +329,12 @@ extension RepoExplorerCommandPresentationBatchTests {
     func eachGlobalCapabilityFactTriggersFullReresolution() async throws {
         let handler = RepoExplorerCoalescingRecordingHandler()
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                AppCommandDispatcher.shared.handler = handler
-                AppCommandDispatcher.shared.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 try await withAsyncTestCoreAtoms { coreAtoms in
                     coreAtoms.managementLayer.deactivate()
                     defer { coreAtoms.managementLayer.deactivate() }
@@ -327,7 +343,9 @@ extension RepoExplorerCommandPresentationBatchTests {
                     let batch = RepoExplorerCommandPresentationBatch(
                         store: fixture.store,
                         repoExplorerPrefs: RepoExplorerSidebarPrefsAtom(),
-                        dispatcher: .shared
+                        resolveCommandCapabilities: {
+                            dispatcher.repoExplorerCommandPresentationSnapshot(requests: $0, generation: $1)
+                        }, executionOwnerIdentities: dispatcher.executionOwnerIdentities
                     )
                     batch.start()
                     defer { batch.stop() }
@@ -504,26 +522,5 @@ private final class RepoExplorerCoalescingRecordingHandler: WorkspaceCommandHand
         repoExplorerCapabilityRequestBatches.append(requests)
         batchArrivals.record(requests)
         return Dictionary(uniqueKeysWithValues: requests.map { ($0, capabilityResult) })
-    }
-}
-
-@MainActor
-private final class RepoExplorerCoalescingYieldGate {
-    private(set) var isSuspended = false
-    private var isReleased = false
-    private var continuation: CheckedContinuation<Void, Never>?
-
-    func wait() async {
-        guard !isReleased else { return }
-        await withCheckedContinuation { continuation in
-            self.continuation = continuation
-            isSuspended = true
-        }
-    }
-
-    func release() {
-        isReleased = true
-        continuation?.resume()
-        continuation = nil
     }
 }

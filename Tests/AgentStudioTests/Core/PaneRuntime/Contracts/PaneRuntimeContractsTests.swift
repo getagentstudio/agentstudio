@@ -42,17 +42,6 @@ struct PaneRuntimeContractsTests {
         #expect(!source.contains("return .jumpToPrompt"))
     }
 
-    @Test("terminal runtime scrolling carries the signed viewport fraction")
-    func terminalRuntimeScrollingCarriesSignedViewportFraction() {
-        let command = PaneRuntimeCommand.terminal(.scrollPageFractional(fraction: -0.9))
-
-        guard case .terminal(.scrollPageFractional(let fraction)) = command else {
-            Issue.record("Expected fractional terminal scrolling command")
-            return
-        }
-        #expect(fraction == -0.9)
-    }
-
     @Test("pane runtime contract does not own terminal snapshot facts")
     func paneRuntimeContractDoesNotOwnTerminalSnapshotFacts() throws {
         let source = try Self.projectSource(

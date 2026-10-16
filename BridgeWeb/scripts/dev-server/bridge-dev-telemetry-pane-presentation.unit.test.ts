@@ -5,48 +5,52 @@ import type { BridgeTelemetrySample } from '../../src/foundation/telemetry/bridg
 import { createBridgeDevTelemetrySink } from './bridge-dev-telemetry.js';
 
 describe('Bridge dev pane-presentation telemetry', () => {
-	test('accepts the worker, main, and rendered comparison presentation vocabulary', async () => {
-		// Arrange
-		const fetchImpl = vi.fn(async (): Promise<Response> => new Response('', { status: 200 }));
-		const sink = createBridgeDevTelemetrySink({
-			fetchImpl,
-			marker: 'vite-dev-proof-1',
-			nowUnixNano: () => '1782218790000000000',
-			serviceVersion: 'vite-dev',
-			worktreeHash: 'wt-hash',
-		});
-		const panePresentationSample: BridgeTelemetrySample = {
-			booleanAttributes: { 'agentstudio.bridge.refreshing.review': true },
-			durationMilliseconds: null,
-			name: 'performance.bridge.web.pane_presentation',
-			numericAttributes: {
-				'agentstudio.bridge.presentation.revision': 3,
-				'agentstudio.bridge.review.generation': 2,
-			},
-			scope: 'web',
-			stringAttributes: {
-				'agentstudio.bridge.comparison.attempt.status': 'pending',
-				'agentstudio.bridge.phase': 'pane_presentation_applied',
-				'agentstudio.bridge.plane': 'control',
-				'agentstudio.bridge.presentation.disposition': 'applied',
-				'agentstudio.bridge.priority': 'hot',
-				'agentstudio.bridge.result': 'success',
-				'agentstudio.bridge.slice': 'review_metadata',
-				'agentstudio.bridge.transport': 'worker',
-			},
-			traceContext: null,
-		};
-		const batch = telemetryBatch([
-			panePresentationSample,
-			mainApplicationSample(panePresentationSample),
-			workerPublicationSample(panePresentationSample),
-			renderedComparisonSample(panePresentationSample),
-		]);
+	test.each(['pending', 'no_source'])(
+		'accepts %s through worker, main, and rendered comparison telemetry',
+		async (attemptStatus: string): Promise<void> => {
+			// Arrange
+			const fetchImpl = vi.fn(async (): Promise<Response> => new Response('', { status: 200 }));
+			const sink = createBridgeDevTelemetrySink({
+				fetchImpl,
+				marker: 'vite-dev-proof-1',
+				nowUnixNano: () => '1782218790000000000',
+				serviceVersion: 'vite-dev',
+				worktreeHash: 'wt-hash',
+			});
+			const panePresentationSample: BridgeTelemetrySample = {
+				booleanAttributes: { 'agentstudio.bridge.refreshing.review': true },
+				durationMilliseconds: null,
+				name: 'performance.bridge.web.pane_presentation',
+				numericAttributes: {
+					'agentstudio.bridge.presentation.revision': 3,
+					'agentstudio.bridge.review.generation': 2,
+				},
+				scope: 'web',
+				stringAttributes: {
+					'agentstudio.bridge.comparison.attempt.status': attemptStatus,
+					'agentstudio.bridge.phase': 'pane_presentation_applied',
+					'agentstudio.bridge.plane': 'control',
+					'agentstudio.bridge.presentation.disposition': 'applied',
+					'agentstudio.bridge.priority': 'hot',
+					'agentstudio.bridge.result': 'success',
+					'agentstudio.bridge.slice': 'review_metadata',
+					'agentstudio.bridge.transport': 'worker',
+				},
+				traceContext: null,
+			};
+			const batch = telemetryBatch([
+				panePresentationSample,
+				mainApplicationSample(panePresentationSample),
+				workerPublicationSample(panePresentationSample),
+				renderedComparisonSample(panePresentationSample),
+			]);
 
-		// Act / Assert
-		await expect(sink.ingestWorkerBatch(batch)).resolves.toMatchObject({ type: 'accepted' });
-		expect(sink.snapshot()).toMatchObject({ acceptedBatchCount: 1, failedBatchCount: 0 });
-	});
+			// Act / Assert
+			await expect(sink.ingestWorkerBatch(batch)).resolves.toMatchObject({ type: 'accepted' });
+			expect(sink.snapshot()).toMatchObject({ acceptedBatchCount: 1, failedBatchCount: 0 });
+			expect(sink.snapshot().recentSamples).toHaveLength(4);
+		},
+	);
 });
 
 function mainApplicationSample(sample: BridgeTelemetrySample): BridgeTelemetrySample {

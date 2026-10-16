@@ -1,12 +1,12 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { BRIDGE_PRODUCT_MAXIMUM_CONCURRENT_CONTENT_RESPONSES } from './bridge-product-content-response-admission.js';
+import { BRIDGE_PRODUCT_MAXIMUM_CONTENT_FRAME_BYTES } from './bridge-product-contract-primitives.js';
 import { bridgeProductReviewMetadataApplicationProtocol } from './bridge-product-metadata-application-registry.js';
 import {
 	createContentTransportHarness,
 	fileContentDescriptor,
 	metadataAccepted,
-	waitForCondition,
 } from './test-fixtures/bridge-product-transport-content.test-support.js';
 
 afterEach(() => {
@@ -14,6 +14,7 @@ afterEach(() => {
 });
 
 describe('Bridge product content transport', () => {
+	const oneFrameCreditBytes = BRIDGE_PRODUCT_MAXIMUM_CONTENT_FRAME_BYTES + 4;
 	test('opens concurrent content outside the control sequence', async () => {
 		const harness = createContentTransportHarness(3);
 		const first = harness.transport.openContent(
@@ -37,10 +38,10 @@ describe('Bridge product content transport', () => {
 			3, 3,
 		]);
 		expect(harness.server.controlRequests).toHaveLength(1);
-		expect(harness.server.controlRequests[0]?.requestSequence).toBe(2);
+		expect(harness.server.controlRequests[0]?.requestSequence).toBe(3);
 	});
 
-	test('acknowledges every committed frame with its exact response identity', async () => {
+	test('acknowledges cumulative content receipt with its exact response identity', async () => {
 		const harness = createContentTransportHarness(3);
 		const content = harness.transport.openContent(
 			fileContentDescriptor('descriptor-observed'),
@@ -52,13 +53,12 @@ describe('Bridge product content transport', () => {
 		const request = harness.server.contentRequests[0];
 		if (request === undefined) throw new Error('Expected one product content request.');
 		expect(harness.server.frameAcknowledgements).toEqual(
-			[0, 1, 2].map((contentSequence) => ({
+			[0].map((receivedThroughContentSequence) => ({
 				contentRequestId: request.contentRequestId,
-				contentSequence,
-				kind: 'stream.frameObserved',
+				receivedThroughContentSequence,
+				kind: 'content.acknowledge',
 				leaseId: request.leaseId,
 				paneSessionId: request.paneSessionId,
-				streamKind: 'content',
 				wireVersion: request.wireVersion,
 				workerInstanceId: request.workerInstanceId,
 			})),
@@ -66,9 +66,49 @@ describe('Bridge product content transport', () => {
 		expect(harness.server.requestRoutes).toEqual([
 			'agentstudio://rpc/content',
 			'agentstudio://rpc/command',
-			'agentstudio://rpc/command',
-			'agentstudio://rpc/command',
 		]);
+	});
+
+	test('does not send a data ACK for a one-chunk final window', async () => {
+		const harness = createContentTransportHarness();
+		harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-final-window'),
+			new AbortController().signal,
+		);
+
+		await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+		expect(
+			harness.server.frameAcknowledgements.map(
+				(acknowledgement) => acknowledgement.receivedThroughContentSequence,
+			),
+		).toEqual([0]);
+		expect(harness.server.unknownReadRefusalCount).toBe(0);
+	});
+
+	test('returns cumulative data credit only when the next native reservation would block', async () => {
+		const harness = createContentTransportHarness(
+			0,
+			undefined,
+			undefined,
+			undefined,
+			oneFrameCreditBytes + 80,
+		);
+		harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+		harness.server.splitContentDataFrames = true;
+		harness.server.gateContentTerminalOnDataAcknowledgement = true;
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-two-part-credit-boundary'),
+			new AbortController().signal,
+		);
+
+		await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+		expect(
+			harness.server.frameAcknowledgements.map(
+				(acknowledgement) => acknowledgement.receivedThroughContentSequence,
+			),
+		).toEqual([0, 2]);
+		expect(harness.server.unknownReadRefusalCount).toBe(0);
 	});
 
 	test('fails only the response whose observation is rejected', async () => {
@@ -96,62 +136,160 @@ describe('Bridge product content transport', () => {
 		expect(harness.server.frameAcknowledgements).toHaveLength(1);
 	});
 
-	test('bounds an unanswered metadata acknowledgement and surfaces failed reconciliation', async () => {
-		const harness = createContentTransportHarness(0, undefined, 100);
-		harness.server.resyncFailure = new Error('Controlled metadata reconciliation failure.');
-		const subscription = harness.transport.subscribe(
-			bridgeProductReviewMetadataApplicationProtocol,
-			{ interests: [] },
+	test('treats correlated unknown-read refusal during an active read as a read-local failure', async () => {
+		const harness = createContentTransportHarness();
+		harness.server.leaveContentOpenAfterAcceptance = true;
+		harness.server.nextAcknowledgementStatus = 404;
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-active-unknown-read'),
+			new AbortController().signal,
 		);
-		const firstEvent = subscription.events[Symbol.asyncIterator]().next();
-		let terminalObserved = false;
-		void firstEvent.then(
-			(): void => {
-				terminalObserved = true;
-			},
-			(): void => {
-				terminalObserved = true;
-			},
-		);
-		const firstEventExpectation = expect(firstEvent).rejects.toThrow(
-			'Controlled metadata reconciliation failure.',
-		);
-		harness.server.holdMetadataAcknowledgement();
-		await harness.server.waitForMetadataStream();
-		const request = harness.server.requiredMetadataRequest();
-		try {
-			vi.useFakeTimers();
-			harness.server.emitMetadata(metadataAccepted(request));
-			await vi.advanceTimersByTimeAsync(0);
-			expect(harness.server.frameAcknowledgements).toHaveLength(1);
-			expect(terminalObserved).toBe(false);
 
-			await vi.advanceTimersByTimeAsync(101);
+		await expect(content.terminal).rejects.toMatchObject({
+			failureCode: 'unknown_read',
+			status: 404,
+		});
+		expect(harness.server.frameAcknowledgements).toHaveLength(1);
+	});
 
-			await firstEventExpectation;
-			expect(harness.server.metadataReaderCancelCount).toBe(1);
+	test.each(['mismatched', 'malformed'] as const)(
+		'replays the exact credit after a %s unknown-read refusal',
+		async (refusalKind) => {
+			const harness = createContentTransportHarness();
+			harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+			harness.server.nextAcknowledgementStatus = 404;
+			if (refusalKind === 'mismatched') harness.server.mismatchNextUnknownReadRefusal = true;
+			else harness.server.malformNextUnknownReadRefusal = true;
+			const content = harness.transport.openContent(
+				fileContentDescriptor(`descriptor-${refusalKind}-unknown-read`),
+				new AbortController().signal,
+			);
+
+			await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
 			expect(
-				harness.server.controlRequests.filter(
-					(controlRequest) => controlRequest.kind === 'workerSession.resync',
+				harness.server.frameAcknowledgements.map(
+					(acknowledgement) => acknowledgement.receivedThroughContentSequence,
 				),
-			).toHaveLength(2);
-			expect(harness.transport.metadataStreamDiagnostics?.()).toMatchObject({
-				activeSubscriptionCount: 0,
-				acknowledgedFrameCount: 0,
-				failureStage: 'acknowledgement',
+			).toEqual([0, 0]);
+		},
+	);
+
+	test('ignores a correlated unknown-read refusal for a data ACK after terminal', async () => {
+		const harness = createContentTransportHarness(
+			0,
+			undefined,
+			undefined,
+			undefined,
+			oneFrameCreditBytes,
+		);
+		harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+		harness.server.holdContentAcknowledgement('content-request-1', 1);
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-late-unknown-read'),
+			new AbortController().signal,
+		);
+
+		await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+		harness.server.nextAcknowledgementStatus = 404;
+		harness.server.releaseHeldContentAcknowledgement();
+		expect(
+			harness.server.frameAcknowledgements.map(
+				(acknowledgement) => acknowledgement.receivedThroughContentSequence,
+			),
+		).toEqual([0, 1]);
+	});
+
+	test('replays the exact cumulative acknowledgement after a lost reply', async () => {
+		const harness = createContentTransportHarness();
+		harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+		harness.server.loseNextAcknowledgementReply = true;
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-lost-acknowledgement'),
+			new AbortController().signal,
+		);
+
+		await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+		expect(
+			harness.server.frameAcknowledgements.map(
+				(acknowledgement) => acknowledgement.receivedThroughContentSequence,
+			),
+		).toEqual([0, 0]);
+	});
+
+	test('replays the exact cumulative acknowledgement after a proxy 502', async () => {
+		const harness = createContentTransportHarness();
+		harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+		harness.server.nextAcknowledgementStatus = 502;
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-proxy-lost-acknowledgement'),
+			new AbortController().signal,
+		);
+
+		await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+		expect(
+			harness.server.frameAcknowledgements.map(
+				(acknowledgement) => acknowledgement.receivedThroughContentSequence,
+			),
+		).toEqual([0, 0]);
+	});
+
+	test('completes on a verified terminal without acknowledging it or waiting for a data ACK', async () => {
+		const harness = createContentTransportHarness(
+			0,
+			undefined,
+			undefined,
+			undefined,
+			oneFrameCreditBytes,
+		);
+		harness.server.gateContentBodyOnOpeningAcknowledgement = true;
+		harness.server.leaveContentOpenAfterTerminal = true;
+		harness.server.holdContentAcknowledgement('content-request-1', 1);
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-coalesced-acknowledgement'),
+			new AbortController().signal,
+		);
+		const frameIterator = content.frames[Symbol.asyncIterator]();
+		for (let sequence = 0; sequence <= 2; sequence += 1) {
+			// eslint-disable-next-line no-await-in-loop -- The three received frames establish one high-water.
+			await expect(frameIterator.next()).resolves.toMatchObject({
+				done: false,
+				value: { header: { contentSequence: sequence } },
 			});
+		}
+		try {
+			await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+			expect(
+				harness.server.frameAcknowledgements.map(
+					(acknowledgement) => acknowledgement.receivedThroughContentSequence,
+				),
+			).toEqual([0, 1]);
+			expect(harness.server.contentReaderCancelCount).toBe(1);
 		} finally {
 			harness.server.releaseHeldContentAcknowledgement();
-			vi.useRealTimers();
 		}
+	});
+
+	test('keeps verified content frames readable after terminal settlement', async () => {
+		const harness = createContentTransportHarness();
+		const content = harness.transport.openContent(
+			fileContentDescriptor('descriptor-read-after-terminal'),
+			new AbortController().signal,
+		);
+
+		await expect(content.terminal).resolves.toMatchObject({ kind: 'complete' });
+		const receivedKinds: string[] = [];
+		for await (const frame of content.frames) receivedKinds.push(frame.header.kind);
+		expect(receivedKinds).toEqual(['content.accepted', 'content.data', 'content.end']);
 	});
 
 	test('paces content independently from other content, metadata, and control', async () => {
 		const harness = createContentTransportHarness();
+		harness.server.leaveContentOpenAfterAcceptance = true;
 		harness.server.holdContentAcknowledgement('content-request-1');
+		const firstAbortController = new AbortController();
 		const first = harness.transport.openContent(
 			fileContentDescriptor('descriptor-held-observation'),
-			new AbortController().signal,
+			firstAbortController.signal,
 		);
 		let didFirstSettle = false;
 		void first.terminal.then(
@@ -161,18 +299,20 @@ describe('Bridge product content transport', () => {
 			(): void => {},
 		);
 		await harness.server.waitForFrameAcknowledgementCount(1);
+		harness.server.leaveContentOpenAfterAcceptance = false;
 
 		const second = harness.transport.openContent(
 			fileContentDescriptor('descriptor-independent-observation'),
 			new AbortController().signal,
 		);
 		await expect(second.terminal).resolves.toMatchObject({ kind: 'complete' });
-		harness.transport.subscribe(bridgeProductReviewMetadataApplicationProtocol, { interests: [] });
+		harness.transport.subscribe(bridgeProductReviewMetadataApplicationProtocol, {});
 		await harness.server.waitForMetadataStream();
 		harness.server.emitMetadata(metadataAccepted(harness.server.requiredMetadataRequest()));
-		await waitForCondition(
-			() => harness.transport.metadataStreamDiagnostics?.().acknowledgedFrameCount === 1,
+		await harness.server.waitForControlRequestWhere(
+			(request): boolean => request.kind === 'subscription.open',
 		);
+		expect(harness.transport.metadataStreamDiagnostics?.().routedFrameCount).toBe(1);
 		await expect(
 			harness.transport.call('review.markFileViewed', { itemId: 'review-item-independent' }),
 		).resolves.toBeNull();
@@ -180,18 +320,13 @@ describe('Bridge product content transport', () => {
 		expect(didFirstSettle).toBe(false);
 		expect(
 			harness.server.frameAcknowledgements.filter(
-				(acknowledgement) =>
-					acknowledgement.streamKind === 'content' &&
-					acknowledgement.contentRequestId === second.contentRequestId,
-			),
-		).toHaveLength(3);
-		expect(
-			harness.server.frameAcknowledgements.filter(
-				(acknowledgement) => acknowledgement.streamKind === 'metadata',
+				(acknowledgement) => acknowledgement.contentRequestId === second.contentRequestId,
 			),
 		).toHaveLength(1);
+
 		harness.server.releaseHeldContentAcknowledgement();
-		await expect(first.terminal).resolves.toMatchObject({ kind: 'complete' });
+		firstAbortController.abort(new DOMException('test cleanup', 'AbortError'));
+		await expect(first.terminal).rejects.toThrow();
 	});
 
 	test('reserves request capacity for observations while content remains open', async () => {
@@ -274,6 +409,7 @@ describe('Bridge product content transport', () => {
 			abortController.signal,
 		);
 		await harness.server.waitForContentRequestCount(1);
+		await harness.server.waitForHeldContentReadStarted(content.contentRequestId);
 
 		abortController.abort(new DOMException('cancelled', 'AbortError'));
 

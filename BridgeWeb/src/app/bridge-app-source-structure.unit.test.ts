@@ -39,36 +39,33 @@ describe('BridgeApp source structure', () => {
 		expect(source).not.toContain("this.#productTransport.subscribe('file.metadata', options)");
 	});
 
-	test('keeps application metadata schemas and transforms behind registered protocols', () => {
+	test('keeps metadata subscriptions limited to lifecycle and desired-scope contracts', () => {
 		const sessionContracts = readSource('../core/comm-worker/bridge-product-session-contracts.ts');
+		const applicationProtocol = readSource(
+			'../core/comm-worker/bridge-product-metadata-application-protocol.ts',
+		);
 		const subscriptionState = readSource(
 			'../core/comm-worker/bridge-product-subscription-state.ts',
 		);
-		const accounting = readSource('../core/comm-worker/bridge-product-subscription-accounting.ts');
-		const preflight = readSource(
-			'../core/comm-worker/bridge-product-subscription-interest-preflight.ts',
-		);
-		const codec = readSource(
-			'../core/comm-worker/bridge-product-subscription-interest-state-codec.ts',
-		);
 
-		expect(sessionContracts).not.toContain(
-			'bridgeProductSubscriptionDataFrameSchema = z.discriminatedUnion',
-		);
-		expect(sessionContracts).not.toContain('bridgeProductSubscriptionOpenSchema');
-		expect(sessionContracts).not.toContain('bridgeProductSubscriptionInterestDeltaSchema');
-		expect(subscriptionState).not.toContain("case 'file.metadata'");
-		expect(subscriptionState).not.toContain("case 'review.metadata'");
-		expect(accounting).not.toContain('switch (delta.subscriptionKind)');
-		expect(preflight).not.toContain("state.subscriptionKind === 'file.metadata'");
-		expect(codec).not.toContain('bridgeProductSubscriptionKindTag');
+		expect(applicationProtocol).not.toContain('dataSchema');
+		expect(applicationProtocol).not.toContain('interestDeltaSchema');
+		expect(applicationProtocol).not.toContain('updateOptionsSchema');
+		expect(sessionContracts).not.toContain("kind: z.literal('subscription.updateBatch')");
+		expect(sessionContracts).not.toContain("kind: z.literal('subscription.data')");
+		expect(subscriptionState).not.toContain('updateSubscriptionBatch');
+		expect(subscriptionState).not.toContain('currentInterestHash');
 	});
 
 	test('mounts one pane runtime and compile-deletes the legacy page-owned dispatcher', () => {
-		const source = readSource('bridge-app.tsx');
+		const appSource = readSource('bridge-app.tsx');
+		const source = [appSource, readSource('bridge-app-initial-composition.tsx')].join('\n');
+		const runtimeConstructionPattern =
+			/(?:createBridgePaneRuntime\s*\(|props\.paneRuntimeFactory\s*\(|\(props\.paneRuntimeFactory\s*\?\?\s*createBridgePaneRuntime\)\s*\()/g;
 
 		expect(source).toContain("from '../core/comm-worker/bridge-pane-runtime.js'");
-		expect(source).toContain('createBridgePaneRuntime(');
+		expect(source.match(runtimeConstructionPattern) ?? []).toHaveLength(1);
+		expect(appSource.match(runtimeConstructionPattern) ?? []).toHaveLength(0);
 		expect(source).not.toContain('createBridgePaneRuntimeProtocolDispatcher');
 		expect(source).not.toContain('createBridgeReviewRuntimeProtocolDispatcher');
 		expect(source).not.toContain('getBridgePaneCommWorkerSession');

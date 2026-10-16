@@ -20,18 +20,18 @@ struct WorkspaceCorePaneTopologyFacetMigrationTests {
         let migratedSnapshot = try fixture.snapshot()
         #expect(migratedSnapshot == predecessorSnapshot)
 
-        let schemaProof = try fixture.databaseQueue.read { database in
+        let schemaProof = try await fixture.databaseQueue.read { database in
             let paneColumns = try Row.fetchAll(database, sql: "PRAGMA table_info(pane)")
                 .map { row in row["name"] as String }
             let quickCheck = try String.fetchOne(database, sql: "PRAGMA quick_check")
-            let foreignKeyViolations = try Row.fetchAll(database, sql: "PRAGMA foreign_key_check")
+            let foreignKeyViolationCount = try Row.fetchAll(database, sql: "PRAGMA foreign_key_check").count
             let paneFacetTriggers = try fetchPaneFacetTriggerNames(database)
-            return (paneColumns, quickCheck, foreignKeyViolations, paneFacetTriggers)
+            return (paneColumns, quickCheck, foreignKeyViolationCount, paneFacetTriggers)
         }
         #expect(schemaProof.0.contains("facet_repo_id"))
         #expect(schemaProof.0.contains("facet_worktree_id"))
         #expect(schemaProof.1 == "ok")
-        #expect(schemaProof.2.isEmpty)
+        #expect(schemaProof.2 == 0)
         #expect(schemaProof.3.isEmpty)
     }
 
@@ -104,18 +104,18 @@ struct WorkspaceCorePaneTopologyFacetMigrationTests {
 
         // Assert
         #expect(try fixture.snapshot() == predecessorSnapshot)
-        let schemaProof = try fixture.databaseQueue.read { database in
+        let schemaProof = try await fixture.databaseQueue.read { database in
             let paneColumns = try Row.fetchAll(database, sql: "PRAGMA table_info(pane)")
                 .map { row in row["name"] as String }
             let quickCheck = try String.fetchOne(database, sql: "PRAGMA quick_check")
-            let foreignKeyViolations = try Row.fetchAll(database, sql: "PRAGMA foreign_key_check")
+            let foreignKeyViolationCount = try Row.fetchAll(database, sql: "PRAGMA foreign_key_check").count
             let paneFacetTriggers = try fetchPaneFacetTriggerNames(database)
-            return (paneColumns, quickCheck, foreignKeyViolations, paneFacetTriggers)
+            return (paneColumns, quickCheck, foreignKeyViolationCount, paneFacetTriggers)
         }
         #expect(schemaProof.0.contains("facet_repo_id"))
         #expect(schemaProof.0.contains("facet_worktree_id"))
         #expect(schemaProof.1 == "ok")
-        #expect(schemaProof.2.isEmpty)
+        #expect(schemaProof.2 == 0)
         #expect(schemaProof.3.isEmpty)
 
         let localDatabaseQueue = try SQLiteDatabaseFactory.makeInMemoryQueue(

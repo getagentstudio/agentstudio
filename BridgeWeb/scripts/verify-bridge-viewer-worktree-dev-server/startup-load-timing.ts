@@ -5,15 +5,9 @@ import {
 	type ReviewStartupLoadTimingProof,
 	type WorktreeStartupLoadTimingProof,
 } from '../verify-bridge-viewer-worktree-review-proof.ts';
+import { observeVerifierStartupStep } from './browser-session.ts';
 import { worktreeDevServerUrl, worktreeReviewDevServerUrl } from './config.ts';
-import {
-	waitForAnyWorktreeSelectedPathTiming,
-	waitForWorktreeFirstVisibleContentWindow,
-	waitForWorktreeMetadataMilliseconds,
-	waitForWorktreeOpenFileReadyMilliseconds,
-	waitForWorktreeSourceAcceptedMilliseconds,
-} from './performance-click-waits.ts';
-import { waitForAnyReviewSelectedContentState } from './review-tree-click.ts';
+import { observeBridgeStartupDOMFact, type BridgeStartupDOMFact } from './startup-dom-facts.ts';
 import { observeWorktreeFileContentRouteTiming } from './startup-route-timing.ts';
 
 export interface WorktreeStartupTimingSample {
@@ -84,45 +78,40 @@ export async function collectWorktreeStartupTimingSample(
 	const contentRouteTiming = observeWorktreeFileContentRouteTiming({
 		page,
 		startedAt: pageLoadStartedAt,
-		timeoutMilliseconds: 20_000,
 	});
-	await page.goto(worktreeDevServerUrl, { waitUntil: 'domcontentloaded', timeout: 30_000 });
+	await observeVerifierStartupStep(
+		'File DOM content loaded',
+		page.goto(worktreeDevServerUrl, { waitUntil: 'domcontentloaded' }),
+	).value();
 	const pageApplicationMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
-	await page.waitForSelector('[data-testid="bridge-file-viewer-shell"]', { timeout: 30_000 });
+	await waitForStartupFact(page, { kind: 'file.shell' });
 	const shellMountedMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
 	const handshakeWorkerMilliseconds = await waitForBridgeHandshakeWorkerMilliseconds({
 		page,
 		pageLoadStartedAtEpochMilliseconds,
 	});
-	const sourceAcceptedMilliseconds = await waitForWorktreeSourceAcceptedMilliseconds({
-		page,
-		startedAt: pageLoadStartedAt,
-		timeoutMilliseconds: 20_000,
-	});
-	const metadataMilliseconds = await waitForWorktreeMetadataMilliseconds({
-		page,
-		startedAt: pageLoadStartedAt,
-		timeoutMilliseconds: 20_000,
-	});
-	const selectedPathTiming = await waitForAnyWorktreeSelectedPathTiming({
-		page,
-		startedAt: pageLoadStartedAt,
-		timeoutMilliseconds: 20_000,
-	});
-	const [contentRequestStartedMilliseconds, contentResponseStartedMilliseconds] = await Promise.all(
-		[contentRouteTiming.requestStartedMilliseconds, contentRouteTiming.responseStartedMilliseconds],
+	await waitForStartupFact(page, { kind: 'file.source' });
+	const sourceAcceptedMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
+	await waitForStartupFact(page, { kind: 'file.metadata' });
+	const metadataMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
+	await waitForStartupFact(page, { kind: 'file.selection' });
+	const selectedPathMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
+	const path = await page.evaluate(
+		(): string =>
+			document
+				.querySelector('[data-testid="bridge-file-viewer-shell"]')
+				?.getAttribute('data-selected-display-path') ?? '',
 	);
-	const contentReadyMilliseconds = await waitForWorktreeOpenFileReadyMilliseconds({
-		page,
-		path: selectedPathTiming.path,
-		startedAt: pageLoadStartedAt,
-		timeoutMilliseconds: 20_000,
-	});
-	await waitForWorktreeFirstVisibleContentWindow({
-		page,
-		path: selectedPathTiming.path,
-		timeoutMilliseconds: 20_000,
-	});
+	if (path.length === 0) throw new Error('Expected a non-empty selected File startup path.');
+	const [contentRequestStartedMilliseconds, contentResponseStartedMilliseconds] = await Promise.all(
+		[
+			contentRouteTiming.requestStartedMilliseconds.value(),
+			contentRouteTiming.responseStartedMilliseconds.value(),
+		],
+	);
+	await waitForStartupFact(page, { kind: 'file.content', path });
+	const contentReadyMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
+	await waitForStartupFact(page, { kind: 'file.visibleContent', path });
 	return {
 		contentReadyMilliseconds,
 		contentRequestStartedMilliseconds,
@@ -131,7 +120,7 @@ export async function collectWorktreeStartupTimingSample(
 		handshakeWorkerMilliseconds,
 		metadataMilliseconds,
 		pageApplicationMilliseconds,
-		selectedPathMilliseconds: selectedPathTiming.selectedPathMilliseconds,
+		selectedPathMilliseconds,
 		shellMountedMilliseconds,
 		sourceAcceptedMilliseconds,
 	};
@@ -144,26 +133,19 @@ export async function collectReviewStartupTimingSample(
 	const pageLoadStartedAt = performance.now();
 	onTimingStarted?.(pageLoadStartedAt);
 	const pageLoadStartedAtEpochMilliseconds = Date.now();
-	await page.goto(worktreeReviewDevServerUrl, {
-		waitUntil: 'domcontentloaded',
-		timeout: 30_000,
-	});
+	await observeVerifierStartupStep(
+		'Review DOM content loaded',
+		page.goto(worktreeReviewDevServerUrl, { waitUntil: 'domcontentloaded' }),
+	).value();
 	const pageApplicationMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
-	await page.waitForSelector('[data-testid="review-viewer-shell"]', { timeout: 30_000 });
+	await waitForStartupFact(page, { kind: 'review.shell' });
 	const handshakeWorkerMilliseconds = await waitForBridgeHandshakeWorkerMilliseconds({
 		page,
 		pageLoadStartedAtEpochMilliseconds,
 	});
-	await page.waitForFunction(
-		(): boolean => {
-			const shell = document.querySelector('[data-testid="review-viewer-shell"]');
-			return Number(shell?.getAttribute('data-review-metadata-item-count') ?? '0') > 0;
-		},
-		undefined,
-		{ timeout: 30_000 },
-	);
+	await waitForStartupFact(page, { kind: 'review.metadata' });
 	const metadataMilliseconds = Math.max(0, performance.now() - pageLoadStartedAt);
-	await waitForAnyReviewSelectedContentState({ page, state: 'ready' });
+	await waitForStartupFact(page, { kind: 'review.content' });
 	return {
 		handshakeWorkerMilliseconds,
 		metadataMilliseconds,
@@ -176,11 +158,7 @@ async function waitForBridgeHandshakeWorkerMilliseconds(props: {
 	readonly page: Page;
 	readonly pageLoadStartedAtEpochMilliseconds: number;
 }): Promise<number> {
-	await props.page.waitForFunction(
-		(): boolean => Number.isFinite(window.bridgeCompleteJourneyHandshakeReadyEpochMilliseconds),
-		undefined,
-		{ timeout: 30_000 },
-	);
+	await waitForStartupFact(props.page, { kind: 'handshake' });
 	const readyEpochMilliseconds = await props.page.evaluate(
 		(): number => window.bridgeCompleteJourneyHandshakeReadyEpochMilliseconds ?? Number.NaN,
 	);
@@ -188,4 +166,11 @@ async function waitForBridgeHandshakeWorkerMilliseconds(props: {
 		throw new Error('Expected the Bridge handshake/worker-ready verifier timestamp.');
 	}
 	return Math.max(0, readyEpochMilliseconds - props.pageLoadStartedAtEpochMilliseconds);
+}
+
+async function waitForStartupFact(page: Page, fact: BridgeStartupDOMFact): Promise<void> {
+	await observeVerifierStartupStep(
+		`startup ${fact.kind}${'path' in fact ? ` ${fact.path}` : ''}`,
+		page.evaluate(observeBridgeStartupDOMFact, fact),
+	).value();
 }

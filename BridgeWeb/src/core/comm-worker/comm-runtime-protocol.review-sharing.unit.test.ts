@@ -6,10 +6,8 @@ import {
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
 import type { BridgeCommWorkerReviewRuntimeSource } from './bridge-comm-worker-review-source-diff.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerReviewViewerMode,
 	assertBridgeCommWorkerPreparationDrain,
@@ -28,8 +26,8 @@ import {
 import {
 	createTrackedBridgeWorkerReviewContentOpen,
 	drainBridgeWorkerVisibleDemandRuntimeUntil,
-	drainBridgeWorkerVisibleDemandRuntimeUntilQuiescent,
 } from './bridge-comm-worker-runtime-protocol.visible-demand.test-support.js';
+import { createBridgeProductDeferred } from './bridge-product-async-queue.js';
 import type { BridgeProductContentStream } from './bridge-product-transport-contract.js';
 import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
 import type { BridgeWorkerReviewContentRequestDescriptor } from './bridge-worker-contracts.js';
@@ -37,8 +35,9 @@ import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-rend
 
 describe('Bridge comm worker runtime Review demand sharing', () => {
 	test('reuses one completed body across authorization reissue without native or render retransmission', async () => {
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
+		const preparationDrainQueue = createReviewSharingPreparationDrainQueue();
 		const { dispatch, postedMessages, waitForMessage } = createRecordingBridgeCommWorkerPort();
+		const nativeContentOpened = createBridgeProductDeferred<void>();
 		const originalDescriptor = makeContentRequestDescriptor({
 			generation: 4,
 			itemId: 'item-1',
@@ -56,30 +55,43 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 			basePath: null,
 			changeKind: 'added',
 		} as const;
-		const trackedContentOpen = createTrackedBridgeWorkerReviewContentOpen((descriptor) =>
-			makeImmediateReviewContentStream(descriptor, 'resident authorization-neutral body\n'),
-		);
+		const trackedContentOpen = createTrackedBridgeWorkerReviewContentOpen((descriptor) => {
+			nativeContentOpened.resolve();
+			return makeImmediateReviewContentStream(descriptor, 'resident authorization-neutral body\n');
+		});
 		const pump = createWorkerContentPreparationPump({ maxSliceMs: 8, now: () => 0 });
-		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
-			bridgeDemandRank: { lane: 'selected', priority: 0 },
-			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
-			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
-			contentRequestDescriptors: [originalDescriptor],
-			createSequence: createBridgeWorkerSequenceCounter(901),
-			reviewPublicationIdentity: null,
-			openReviewContent: trackedContentOpen.openContent,
-			pump,
-			renderSemantics: [renderSemantics],
-			rows: [{ id: 'item-1', parentId: null, index: 0 }],
-			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
-			},
-		});
-		await drainBridgeWorkerVisibleDemandRuntimeUntilQuiescent({
-			pendingContentCompletions: trackedContentOpen.pendingCompletions,
-			pendingPreparationWorkIds: pump.getPendingWorkIds,
-			scheduledDrains,
-		});
+		const { reviewProductSource, initialDrains } =
+			await registerBridgeRuntimeWithDeferredInitialReviewSource(dispatch, {
+				bridgeDemandRank: { lane: 'selected', priority: 0 },
+				budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
+				contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
+				contentRequestDescriptors: [originalDescriptor],
+				createSequence: createBridgeWorkerSequenceCounter(901),
+				reviewPublicationIdentity: null,
+				openReviewContent: trackedContentOpen.openContent,
+				pump,
+				renderSemantics: [renderSemantics],
+				rows: [{ id: 'item-1', parentId: null, index: 0 }],
+				schedulePreparationDrain: preparationDrainQueue.schedule,
+			});
+		const firstRenderPublicationWait = waitForMessage(
+			(message) => message.kind === 'reviewPierreRenderJob' && message.job.itemId === 'item-1',
+		);
+		const initialDrain = assertBridgeCommWorkerPreparationDrain(initialDrains[0]);
+		const initialDrainCompletion = initialDrain();
+		await nativeContentOpened.promise;
+		const initialContentCompletion = trackedContentOpen.pendingCompletions()[0];
+		if (initialContentCompletion === undefined) {
+			throw new Error('Expected the completed Review content open.');
+		}
+		await initialContentCompletion;
+		const initialContinuationDrain = await preparationDrainQueue.takeNext();
+		const initialContinuationCompletion = initialContinuationDrain();
+		await Promise.all([initialDrainCompletion, initialContinuationCompletion]);
+		const firstRenderMessage = await firstRenderPublicationWait;
+		if (firstRenderMessage.kind !== 'reviewPierreRenderJob') {
+			throw new Error('Expected the initial Review render job.');
+		}
 		expect(trackedContentOpen.openedDescriptorIds).toEqual([originalDescriptor.descriptorId]);
 		expect(
 			postedMessages.filter(
@@ -92,20 +104,28 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 		if (firstRenderPublication?.kind !== 'reviewPierreRenderJob') {
 			throw new Error('Expected the first Review render publication.');
 		}
-		dispatch.message(
-			encodeBridgeWorkerRenderDispositionCommand({
-				epoch: 5,
-				receipts: [
-					bridgeWorkerRenderDispositionReceiptSchema.parse({
-						...firstRenderPublication.renderReceiptIdentity,
-						disposition: 'painted',
-						kind: 'render.disposition',
-						receivedAtMilliseconds: 0,
-					}),
-				],
-				requestId: 'request-acknowledge-resident-body-render',
-			}),
-		);
+		for (const disposition of ['queued', 'applied', 'painted'] as const) {
+			const requestId = `request-acknowledge-resident-body-render-${disposition}`;
+			dispatch.message(
+				encodeBridgeWorkerRenderDispositionCommand({
+					epoch: 5,
+					receipts: [
+						bridgeWorkerRenderDispositionReceiptSchema.parse({
+							...firstRenderPublication.renderReceiptIdentity,
+							disposition,
+							kind: 'render.disposition',
+							receivedAtMilliseconds: 0,
+						}),
+					],
+					requestId,
+				}),
+			);
+			// oxlint-disable-next-line no-await-in-loop -- Each receipt phase requires the previous phase's correlated acceptance.
+			const reply = await waitForMessage(
+				(message) => message.kind === 'health' && message.requestId === requestId,
+			);
+			expect(reply).toMatchObject({ status: 'ready' });
+		}
 		await flushBridgeWorkerRuntimeContinuations();
 
 		const reissuedCandidateReady = waitForMessage(
@@ -121,7 +141,15 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 			5,
 		);
 		await reissuedCandidateReady;
-		await drainReviewSharingPreparationUntilIdle({ pump, scheduledDrains });
+		const revalidationWorkIds = pump.getPendingWorkIds();
+		expect(revalidationWorkIds).toHaveLength(1);
+		expect(revalidationWorkIds[0]).toMatch(/^review-content-ready:item-1:review-ledger:item-1:/);
+		const revalidationDrain = await preparationDrainQueue.takeNext();
+		const revalidationStarted = revalidationDrain();
+		const revalidationContinuation = await preparationDrainQueue.takeNext();
+		const revalidationResult = await revalidationContinuation();
+		await revalidationStarted;
+		expect(revalidationResult.completedIds).toEqual(revalidationWorkIds);
 
 		expect(trackedContentOpen.openedDescriptorIds).toEqual([originalDescriptor.descriptorId]);
 		expect(
@@ -129,6 +157,8 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 				(postedMessage) => postedMessage.message.kind === 'reviewPierreRenderJob',
 			),
 		).toHaveLength(1);
+		expect(preparationDrainQueue.pendingCount()).toBe(0);
+		expect(pump.getPendingWorkIds()).toEqual([]);
 	});
 
 	test('promotes in-flight visible Review demand to selected without duplicate fetch', async () => {
@@ -150,7 +180,12 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 			text: 'let nextValue = 2;\n',
 		});
 
-		await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+		const { initialDrains } = await registerBridgeRuntimeWithDeferredInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -173,9 +208,7 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 				scheduledDrains.push(drain);
 			},
 		});
-		const initialBackgroundDrain = assertBridgeCommWorkerPreparationDrain(
-			scheduledDrains.shift(),
-		)();
+		const initialBackgroundDrain = assertBridgeCommWorkerPreparationDrain(initialDrains[0])();
 		await flushBridgeWorkerRuntimeContinuations();
 
 		dispatch.message(
@@ -265,7 +298,7 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 			window: { kind: 'byteRange', maximumBytes: 4, startByte: 0 },
 		} satisfies BridgeWorkerReviewContentRequestDescriptor;
 
-		await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
+		const { initialDrains } = await registerBridgeRuntimeWithDeferredInitialReviewSource(dispatch, {
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
@@ -284,9 +317,7 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 				scheduledDrains.push(drain);
 			},
 		});
-		const initialBackgroundDrain = assertBridgeCommWorkerPreparationDrain(
-			scheduledDrains.shift(),
-		)();
+		const initialBackgroundDrain = assertBridgeCommWorkerPreparationDrain(initialDrains[0])();
 		await flushBridgeWorkerRuntimeContinuations();
 
 		dispatch.message(
@@ -380,32 +411,36 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 			window: { ...firstHeadDescriptor.window, maximumBytes: 64 },
 		};
 
-		const reviewProductSource = await registerBridgeRuntimeWithInitialReviewSource(dispatch, {
-			bridgeDemandRank: { lane: 'selected', priority: 0 },
-			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
-			contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
-			contentRequestDescriptors: [baseDescriptor, firstHeadDescriptor],
-			createSequence: createBridgeWorkerSequenceCounter(1201),
-			reviewPublicationIdentity: null,
-			openReviewContent: (descriptor) => {
-				openCallsByDescriptorId.set(
-					descriptor.descriptorId,
-					(openCallsByDescriptorId.get(descriptor.descriptorId) ?? 0) + 1,
-				);
-				const deferredStream = createDeferredReviewContentStream(descriptor);
-				deferredStreamsByOpenCall.push(deferredStream);
-				return deferredStream.stream;
-			},
-			pump: createWorkerContentPreparationPump({ maxSliceMs: 8, now: () => clockMs }),
-			renderSemantics: [makeRenderSemantics({ itemId: 'item-1' })],
-			rows: [{ id: 'item-1', parentId: null, index: 0 }],
-			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
-			},
-		});
-		const initialBackgroundDrain = assertBridgeCommWorkerPreparationDrain(
-			scheduledDrains.shift(),
-		)();
+		const { reviewProductSource, initialDrains } =
+			await registerBridgeRuntimeWithDeferredInitialReviewSource(dispatch, {
+				expectedRetainedRenderWakes: {
+					count: 1,
+					reason:
+						'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+				},
+				bridgeDemandRank: { lane: 'selected', priority: 0 },
+				budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
+				contentItems: [makeWorkerReviewContentMetadata({ itemId: 'item-1' })],
+				contentRequestDescriptors: [baseDescriptor, firstHeadDescriptor],
+				createSequence: createBridgeWorkerSequenceCounter(1201),
+				reviewPublicationIdentity: null,
+				openReviewContent: (descriptor) => {
+					openCallsByDescriptorId.set(
+						descriptor.descriptorId,
+						(openCallsByDescriptorId.get(descriptor.descriptorId) ?? 0) + 1,
+					);
+					const deferredStream = createDeferredReviewContentStream(descriptor);
+					deferredStreamsByOpenCall.push(deferredStream);
+					return deferredStream.stream;
+				},
+				pump: createWorkerContentPreparationPump({ maxSliceMs: 8, now: () => clockMs }),
+				renderSemantics: [makeRenderSemantics({ itemId: 'item-1' })],
+				rows: [{ id: 'item-1', parentId: null, index: 0 }],
+				schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
+					scheduledDrains.push(drain);
+				},
+			});
+		const initialBackgroundDrain = assertBridgeCommWorkerPreparationDrain(initialDrains[0])();
 		await flushBridgeWorkerRuntimeContinuations();
 
 		dispatch.message(
@@ -484,13 +519,16 @@ describe('Bridge comm worker runtime Review demand sharing', () => {
 
 type InitialReviewSource = BridgeCommWorkerReviewRuntimeSource;
 
-async function registerBridgeRuntimeWithInitialReviewSource(
+async function registerBridgeRuntimeWithDeferredInitialReviewSource(
 	dispatch: {
 		readonly message: (data: unknown) => void;
 		readonly port: Parameters<typeof registerBridgeCommWorkerRuntimePortProtocol>[0];
 	},
 	props: Parameters<typeof registerBridgeCommWorkerRuntimePortProtocol>[1] & InitialReviewSource,
-): Promise<BridgeCommWorkerReviewProductTestSource> {
+): Promise<{
+	readonly initialDrains: readonly BridgeCommWorkerPreparationDrain[];
+	readonly reviewProductSource: BridgeCommWorkerReviewProductTestSource;
+}> {
 	const {
 		contentItems,
 		contentRequestDescriptors,
@@ -528,29 +566,36 @@ async function registerBridgeRuntimeWithInitialReviewSource(
 	);
 	await flushBridgeWorkerRuntimeContinuations();
 	isInitializingSource = false;
-	await assertBridgeCommWorkerPreparationDrain(initializationDrains.shift())();
-	expect(initializationDrains).toEqual([]);
-	return reviewProductSource;
+	return { initialDrains: initializationDrains, reviewProductSource };
 }
 
-async function drainReviewSharingPreparationUntilIdle(props: {
-	readonly pump: ReturnType<typeof createWorkerContentPreparationPump>;
-	readonly scheduledDrains: BridgeCommWorkerPreparationDrain[];
-}): Promise<void> {
-	const drainCompletions: Array<ReturnType<BridgeCommWorkerPreparationDrain>> = [];
-	for (let drainRound = 0; drainRound < 16; drainRound += 1) {
-		const drainsForRound = props.scheduledDrains.splice(0);
-		drainCompletions.push(...drainsForRound.map((drain) => drain()));
-		// oxlint-disable-next-line no-await-in-loop -- Each bounded round exposes the resident preparation continuation drain.
-		await flushBridgeWorkerRuntimeContinuations();
-		if (props.scheduledDrains.length === 0 && props.pump.getPendingWorkIds().length === 0) {
-			break;
-		}
-	}
-	expect(props.scheduledDrains).toEqual([]);
-	expect(props.pump.getPendingWorkIds()).toEqual([]);
-	await Promise.all(drainCompletions);
-	await flushBridgeWorkerRuntimeContinuations();
+interface ReviewSharingPreparationDrainQueue {
+	readonly pendingCount: () => number;
+	readonly schedule: (drain: BridgeCommWorkerPreparationDrain) => void;
+	readonly takeNext: () => Promise<BridgeCommWorkerPreparationDrain>;
+}
+
+function createReviewSharingPreparationDrainQueue(): ReviewSharingPreparationDrainQueue {
+	const drains: BridgeCommWorkerPreparationDrain[] = [];
+	const waiters: Array<(drain: BridgeCommWorkerPreparationDrain) => void> = [];
+	return {
+		pendingCount: (): number => drains.length,
+		schedule: (drain): void => {
+			const waiter = waiters.shift();
+			if (waiter !== undefined) {
+				waiter(drain);
+				return;
+			}
+			drains.push(drain);
+		},
+		takeNext: (): Promise<BridgeCommWorkerPreparationDrain> => {
+			const drain = drains.shift();
+			if (drain !== undefined) return Promise.resolve(drain);
+			return new Promise((resolve): void => {
+				waiters.push(resolve);
+			});
+		},
+	};
 }
 
 interface DeferredReviewContentFailureStream {

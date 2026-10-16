@@ -11,18 +11,19 @@ import Testing
 @Suite(.serialized)
 @MainActor
 struct AppBootSequenceTests {
-    @Test("boot sequence exposes only composition prerequisites before presentation")
+    @Test("boot sequence restores composition and sidebar memory before presentation")
     func presentationPrerequisitesMatchArchitectureContract() {
         #expect(
             WorkspaceBootSequence.presentationPrerequisiteSteps == [
                 .prepareDatabases,
                 .loadCanonicalStore,
+                .loadSidebarMemory,
                 .establishRuntimeBus,
             ])
         #expect(
             WorkspaceBootSequence.postPresentationSteps == [
                 .loadCacheStore,
-                .loadUIStore,
+                .loadWorkspaceSettings,
                 .startFilesystemActor,
                 .startGitProjector,
                 .startForgeActor,
@@ -41,7 +42,8 @@ struct AppBootSequenceTests {
         }
         #expect(recorded == WorkspaceBootSequence.presentationPrerequisiteSteps)
         #expect(!recorded.contains(.loadCacheStore))
-        #expect(!recorded.contains(.loadUIStore))
+        #expect(recorded.contains(.loadSidebarMemory))
+        #expect(!recorded.contains(.loadWorkspaceSettings))
         #expect(!recorded.contains(.triggerInitialTopologySync))
     }
 
@@ -264,6 +266,8 @@ struct AppBootSequenceTests {
             viewRegistry: viewRegistry,
             runtime: SessionRuntime(atom: atoms.core.sessionRuntime, store: store),
             surfaceManager: HarnessSurfaceManager(),
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: atoms.core.windowLifecycle,
             appLifecycleStore: appLifecycleStore,
@@ -285,10 +289,15 @@ struct AppBootSequenceTests {
         let delegate = AppDelegate()
 
         await withAsyncTestCoreAtoms(using: atoms.core) { _ in
+            let commandDispatcher = CommandDispatcherFixtureConfiguration().makeDispatcher()
             let dependencies = AppDelegateMainWindowCreationDependencies(
                 store: store,
                 repoCache: atoms.core.repoCache,
                 octiconLoader: makeTestOcticonLoader(),
+                commandDispatcher: commandDispatcher,
+                resolveCommandCapabilities: commandDispatcher.repoExplorerCommandPresentationSnapshot,
+                executionOwnerIdentities: commandDispatcher.executionOwnerIdentities,
+                synchronizeRuntimeFocus: { _ in },
                 executor: WorkspaceActionExecutor(coordinator: coordinator, store: store),
                 workspaceSurfaceCoordinator: coordinator,
                 applicationLifecycleMonitor: applicationLifecycleMonitor,

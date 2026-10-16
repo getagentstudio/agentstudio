@@ -38,7 +38,20 @@ run = """
 #!/usr/bin/env bash
 set -euo pipefail
 bash "${PROJECT_ROOT}/scripts/vendor-worktree.sh" require-producer
-zig build -Doptimize=ReleaseFast
+# Xcode 27 SDK headers ask Clang's float.h for INFINITY/NAN (__need_infinity_nan),
+# which Zig 0.16's bundled headers predate, so Zig's bundled libc++ fails to build.
+# Give zmx the compat include dir Ghostty injects into its own steps
+# (vendor/ghostty/pkg/apple-sdk/include) through a --libc file. Harmless on older SDKs.
+zmx_libc_args=()
+apple_sdk_compat_include="${PROJECT_ROOT}/vendor/ghostty/pkg/apple-sdk/include"
+# Ghostty drops this dir once Zig's headers catch up; then zmx needs no override.
+if [[ "$(uname -s)" == "Darwin" && -d "$apple_sdk_compat_include" ]]; then
+  mkdir -p .zig-cache
+  zmx_libc_file="$PWD/.zig-cache/agentstudio-apple-sdk-libc.txt"
+  zig libc | sed "s|^include_dir=.*|include_dir=${apple_sdk_compat_include}|" > "$zmx_libc_file"
+  zmx_libc_args=(--libc "$zmx_libc_file")
+fi
+zig build -Doptimize=ReleaseFast ${zmx_libc_args[@]+"${zmx_libc_args[@]}"}
 """
 dir = "vendor/zmx"
 
@@ -182,22 +195,16 @@ dir = "BridgeWeb"
 run = "pnpm run test:browser:stress"
 
 [tasks."test:bridge-web:e2e"]
-description = "Run the ordinary BridgeWeb Vite product E2E journeys; the stress journey is post-merge"
+description = "Run the ordinary BridgeWeb Vite product E2E journeys"
 depends = ["bridge-web-install", "build-bridge-development-server"]
 dir = "BridgeWeb"
 run = "pnpm run test:e2e:prepared:ordinary"
 
 [tasks."test:bridge-web:e2e:ordinary"]
-description = "Run the ordinary Vite E2E journeys; the stress journey runs in test:bridge-web:e2e:stress"
+description = "Run the ordinary Vite E2E journeys"
 depends = ["bridge-web-install", "build-bridge-development-server"]
 dir = "BridgeWeb"
 run = "pnpm run test:e2e:prepared:ordinary"
-
-[tasks."test:bridge-web:e2e:stress"]
-description = "Run the 1,699-item Vite E2E stress journey; post-merge benchmark lane, not a pull-request gate"
-depends = ["bridge-web-install", "build-bridge-development-server"]
-dir = "BridgeWeb"
-run = "pnpm run test:e2e:prepared:stress"
 
 [tasks.verify-bridge-review-controlled-composition]
 description = "Verify Review product-only authority and controlled Browser Mode composition"
@@ -259,7 +266,7 @@ bash scripts/doctor-mac.sh
 
 [tasks.setup]
 description = "Prepare shared vendors, or explicitly hydrate and build local vendors"
-depends = ["bridge-web-install", "web-install", "install-hooks"]
+depends = ["bridge-web-install", "install-hooks"]
 usage = '''
 flag "--use-local-vendors" help="Hydrate and build Ghostty and zmx in this worktree"
 '''
@@ -348,23 +355,14 @@ mise run lint
 mise run test:architecture
 mise run test:atomlib-compile-negative
 mise run test:bridge-web
-mise run test:web
 mise run verify-vendors
 mise run --skip-deps bridge-web-build
 test -f Sources/AgentStudio/Resources/BridgeWeb/app/index.html
 SWIFT_TEST_INCLUDE_E2E=1 \
 mise run --skip-deps test:swift
+mise run test:terminal-di-compile-negative
 git diff --check
 """
-
-[tasks."test:web"]
-description = "Run the marketing website pull-request gate"
-depends = ["web-install"]
-run = "pnpm --dir web run check && pnpm --dir web run build && pnpm --dir web exec cf build && pnpm --dir web run verify:cloudflare-discovery"
-
-[tasks.web-install]
-description = "Install frozen marketing website dependencies"
-run = "pnpm --dir web install --frozen-lockfile"
 
 [tasks."test:architecture"]
 description = "Run the AgentStudio architecture lint tool package tests"
@@ -383,6 +381,10 @@ swift test $(swift_package_sandbox_arguments) --package-path Tools/AgentStudioAr
 [tasks."test:atomlib-compile-negative"]
 description = "Verify AtomLib compile-time transfer constraints"
 run = "/bin/bash scripts/verify-atomlib-compile-failures.sh"
+
+[tasks."test:terminal-di-compile-negative"]
+description = "Verify compiled terminal DI owned-input and actor constraints (after Swift prebuild)"
+run = "/bin/bash scripts/verify-terminal-di-compile-failures.sh"
 
 [tasks."test:swift"]
 description = "Run Swift non-serialized and serialized WebKit tests"
@@ -426,6 +428,7 @@ swift_build_slot_acquire test "mise run test:swift:coverage"
 trap swift_build_slot_release EXIT
 BUILD_PATH="$SWIFT_BUILD_DIR"
 TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-60}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-$TIMEOUT_SECONDS}"
 echo "[test-coverage] BUILD_PATH=$BUILD_PATH"
 echo "[test-coverage] TIMEOUT_SECONDS=$TIMEOUT_SECONDS"
 
@@ -433,7 +436,15 @@ LOG_PREFIX="test-coverage"
 EXTRA_SWIFT_TEST_ARGS="--enable-code-coverage"
 source scripts/swift-test-helpers.sh
 
-prebuild_swift_tests
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane test
 
 run_fast_non_webkit_swift_tests
 run_large_non_webkit_swift_tests
@@ -480,11 +491,22 @@ swift_build_slot_acquire test "mise run test:swift:e2e"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
-xcb_pipe=$(_xcb_pipe_cmd)
-swift build $(swift_package_sandbox_arguments) --build-tests --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
-AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
+LOG_PREFIX="test-e2e"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane e2e
+run_swift_with_timeout "E2ESerializedTests" "$TIMEOUT_SECONDS" \
+env AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
   --filter "$(swift_test_lane_filter_pattern e2e)" \
-  --skip "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
+  --skip "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH"
 """
 
 [tasks."test:swift:zmx-e2e"]
@@ -500,10 +522,21 @@ swift_build_slot_acquire test "mise run test:swift:zmx-e2e"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
-xcb_pipe=$(_xcb_pipe_cmd)
-swift build $(swift_package_sandbox_arguments) --build-tests --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
-AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
-  --filter "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH" 2>&1 | $xcb_pipe
+LOG_PREFIX="test-zmx-e2e"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane zmx
+run_swift_with_timeout "ZmxE2ETests" "$TIMEOUT_SECONDS" \
+env AGENT_STUDIO_BENCHMARK_MODE=off swift test $(swift_package_sandbox_arguments) --skip-build \
+  --filter "$(swift_test_lane_filter_pattern zmx)" --build-path "$BUILD_PATH"
 """
 
 [tasks."test:swift:benchmark"]
@@ -519,19 +552,63 @@ swift_build_slot_acquire test "mise run test:swift:benchmark"
 trap swift_build_slot_release EXIT
 source "${PROJECT_ROOT}/scripts/swift-test-helpers.sh"
 BUILD_PATH="$SWIFT_BUILD_DIR"
+LOG_PREFIX="test-benchmark"
+TIMEOUT_SECONDS="${SWIFT_TEST_TIMEOUT_SECONDS:-600}"
+PREBUILD_TIMEOUT_SECONDS="${SWIFT_TEST_PREBUILD_TIMEOUT_SECONDS:-1200}"
 export AGENT_STUDIO_BENCHMARK_MODE=benchmark
 export _XCB_BYPASS=1
-xcb_pipe=$(_xcb_pipe_cmd)
-swift test $(swift_package_sandbox_arguments) --build-path "$BUILD_PATH" --filter "$(swift_test_lane_filter_pattern benchmark)" 2>&1 | $xcb_pipe
+source scripts/swift-test-lane-report.sh
+swift_test_begin_receipted_lane
+if [ "${SWIFT_TEST_SKIP_PREBUILD:-0}" != "1" ]; then
+  prebuild_swift_tests_with_build_receipt
+  LANE_BUNDLE_STATE=fresh
+else
+  LANE_BUNDLE_STATE=reused
+fi
+swift_test_preflight_lane benchmark
+run_swift_with_timeout "benchmark suites" "$TIMEOUT_SECONDS" \
+swift test $(swift_package_sandbox_arguments) --skip-build --build-path "$BUILD_PATH" --filter "$(swift_test_lane_filter_pattern benchmark)"
 """
 
 [tasks.clean-artifacts]
-description = "Clean swift build dirs and app bundle (vendor and vendor-derived files preserved)"
+description = "Clean swift build dirs and app bundle (vendor and vendor-derived files preserved; refuses while the build slot is held)"
 run = """
 #!/usr/bin/env bash
 set -euo pipefail
-rm -rf "${PROJECT_ROOT}/.build" "${PROJECT_ROOT}"/.build-*
-rm -rf "${PROJECT_ROOT}/AgentStudio.app"
+cd "${PROJECT_ROOT}"
+source "${PROJECT_ROOT}/scripts/swift-build-slot.sh"
+slot_directory="$(swift_build_slot_resolve_directory build)"
+if [ -d "$slot_directory" ]; then
+  # A held slot means a build or test is running in this worktree: refuse
+  # rather than wait, and never delete under it.
+  lock_status=0
+  swift_build_slot_lock_is_free "$slot_directory" || lock_status=$?
+  if [ "$lock_status" -eq 1 ]; then
+    holder="$(cat "$slot_directory/.slot.holder" 2>/dev/null || echo "holder_task=unknown")"
+    echo "[clean-artifacts] refused: the build slot is held ($holder); nothing removed" >&2
+    exit 1
+  elif [ "$lock_status" -ne 0 ]; then
+    echo "[clean-artifacts] refused: cannot check the build slot lock (status $lock_status); nothing removed" >&2
+    exit 1
+  fi
+  # Hold the slot for the whole delete, so a build that starts meanwhile waits
+  # on this same lock. Keep .slot.lock: the lock lives on that file, and a new
+  # file would let a second claimant in.
+  trap swift_build_slot_release EXIT
+  swift_build_slot_acquire build "mise run clean-artifacts"
+  # Also keep any .slot.ready.*/.slot.hold.* FIFOs: a build starting now creates
+  # them here before it blocks on this lock, and deleting one breaks its claim.
+  find "$slot_directory" -mindepth 1 -maxdepth 1 ! -name .slot.lock ! -name .slot.holder \
+    ! -name '.slot.ready.*' ! -name '.slot.hold.*' -exec rm -rf {} +
+fi
+# .build-ci belongs to CI, which builds there without this worktree's slot
+# (scripts/swift-build-slot.sh), so the slot cannot protect it from this delete.
+for build_directory in .build .build-*; do
+  [ "$build_directory" = "$slot_directory" ] && continue
+  [ "$build_directory" = .build-ci ] && continue
+  rm -rf "$build_directory"
+done
+rm -rf AgentStudio.app
 echo "Cleaned swift build dirs and app bundle in ${PROJECT_ROOT}"
 """
 
@@ -661,8 +738,15 @@ find "$APP_DIR/Resources/AgentPackage" -name '*.sh' -exec chmod 755 {} +
 # Do NOT embed the xcframework; it's only needed at build time for SwiftPM.
 
 # SwiftPM resource bundle — Bundle.appResources looks in Contents/Resources/
-RESOURCE_BUNDLE="$(find "$BUILD_PATH" -path '*/release/AgentStudio_AgentStudio.bundle' -type d | head -1)"
-[ -n "$RESOURCE_BUNDLE" ] && cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
+# $BUILD_PATH/release is the engine's own symlink (native: arm64-apple-macosx/release;
+# Swift Build: out/Products/Release); find does not follow it. A missing bundle
+# would ship an app that crashes at launch, so fail here instead.
+RESOURCE_BUNDLE="$BUILD_PATH/release/AgentStudio_AgentStudio.bundle"
+if [ ! -d "$RESOURCE_BUNDLE" ]; then
+  echo "create-app-bundle: missing SwiftPM resource bundle: $RESOURCE_BUNDLE" >&2
+  exit 1
+fi
+cp -R "$RESOURCE_BUNDLE" "$APP_DIR/Resources/"
 
 # Sign — uses Developer ID if SIGNING_IDENTITY is set, else ad-hoc
 ENTITLEMENTS="Sources/AgentStudio/Resources/AgentStudio.entitlements"

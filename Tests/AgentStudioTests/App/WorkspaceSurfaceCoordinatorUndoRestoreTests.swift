@@ -99,6 +99,8 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
             runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,
@@ -305,18 +307,23 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
         )
         let viewRegistry = ViewRegistry()
         let runtime = SessionRuntime(store: store)
-        let coordinator = WorkspaceSurfaceCoordinator(
-            store: store,
-            viewRegistry: viewRegistry,
-            runtime: runtime,
-            surfaceManager: UndoRestoreSurfaceManager(
+        let coordinator = {
+            let fixtureSurfaceManager = UndoRestoreSurfaceManager(
                 createSurfaceResult: .failure(.ghosttyNotInitialized)
-            ),
-            runtimeRegistry: RuntimeRegistry(),
-            windowLifecycleStore: WindowLifecycleAtom(),
-            ipcLifecycle: .testUnavailable,
-            bridgePaneAttendance: BridgePaneAttendanceAtom()
-        )
+            )
+            return WorkspaceSurfaceCoordinator(
+                store: store,
+                viewRegistry: viewRegistry,
+                runtime: runtime,
+                surfaceManager: fixtureSurfaceManager,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: fixtureSurfaceManager),
+                runtimeRegistry: RuntimeRegistry(),
+                windowLifecycleStore: WindowLifecycleAtom(),
+                ipcLifecycle: .testUnavailable,
+                bridgePaneAttendance: BridgePaneAttendanceAtom()
+            )
+        }()
         let (repo, worktree) = makeRepoAndWorktree(store, root: tempDir)
         let topologyStore = RepositoryTopologyStore(
             atom: store.repositoryTopologyAtom,
@@ -573,7 +580,8 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
         harness.coordinator.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
-        let mountedView = TerminalPaneMountView(paneId: pane.id, title: "Terminal")
+        let mountedView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: pane.id, title: "Terminal")
         harness.coordinator.registerHostedView(mountedView: mountedView, for: pane.id)
 
         let retainedSurface = ManagedSurface(
@@ -617,7 +625,8 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
             sizingMode: .halveTarget
         )
         harness.coordinator.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
-        let mountedView = TerminalPaneMountView(paneId: terminal.id, title: "Terminal")
+        let mountedView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: terminal.id, title: "Terminal")
         harness.coordinator.registerHostedView(mountedView: mountedView, for: terminal.id)
 
         let retainedSurface = ManagedSurface(
@@ -660,9 +669,11 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
             sizingMode: .halveTarget
         )
         harness.coordinator.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
-        let firstMountedView = TerminalPaneMountView(paneId: firstPane.id, title: "First")
+        let firstMountedView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: firstPane.id, title: "First")
         harness.coordinator.registerHostedView(mountedView: firstMountedView, for: firstPane.id)
-        let secondMountedView = TerminalPaneMountView(paneId: secondPane.id, title: "Second")
+        let secondMountedView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: secondPane.id, title: "Second")
         harness.coordinator.registerHostedView(mountedView: secondMountedView, for: secondPane.id)
 
         let retainedFirst = ManagedSurface(
@@ -708,7 +719,8 @@ struct WorkspaceSurfaceCoordinatorUndoRestoreTests {
         harness.store.appendTab(tab)
         harness.store.setActiveTab(tab.id)
         harness.coordinator.windowLifecycleStore.recordTerminalContainerBounds(trustedBounds)
-        let mountedView = TerminalPaneMountView(paneId: pane.id, title: "Terminal")
+        let mountedView = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: pane.id, title: "Terminal")
         harness.coordinator.registerHostedView(mountedView: mountedView, for: pane.id)
 
         // Act
@@ -773,6 +785,9 @@ private final class UndoRestoreSurfaceManager: WorkspaceSurfaceManaging {
 /// No-op dispatcher used only to satisfy `Ghostty.SurfaceView`'s bare test initializer.
 @MainActor
 private final class NoOpAppCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     func dispatch(_: AppCommand) -> Bool { false }
     func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
     func canDispatch(_: AppCommand) -> Bool { false }

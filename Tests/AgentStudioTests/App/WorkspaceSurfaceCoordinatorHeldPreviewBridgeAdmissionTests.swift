@@ -100,6 +100,8 @@ extension WebKitSerializedTests {
                 viewRegistry: viewRegistry,
                 runtime: SessionRuntime(store: store),
                 surfaceManager: BridgeActivityIntegrationSurfaceManager(),
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
                 runtimeRegistry: RuntimeRegistry(),
                 paneEventBus: makeTestPaneRuntimeEventBus(),
                 windowLifecycleStore: windowLifecycleStore,

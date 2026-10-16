@@ -1,12 +1,15 @@
 import { describe, expect, test } from 'vitest';
 
 import { makeReviewPublicationIdentity } from './bridge-comm-worker-entry.test-support.js';
+import { publishBridgeWorkerReviewContentReadyFetchResult } from './bridge-comm-worker-review-runtime.js';
+import { createRecordingBridgeCommWorkerPort } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { createBridgeCommWorkerStore } from './bridge-comm-worker-store.js';
 import {
 	bridgeWorkerServerToMainMessageSchema,
 	type BridgeWorkerReviewContentMetadata,
 	type BridgeWorkerReviewRenderSemantics,
 } from './bridge-worker-contracts.js';
+import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-render-fulfillment.js';
 import { makeBridgeWorkerRenderReceiptIdentity } from './bridge-worker-render-fulfillment.test-support.js';
 import type { BridgeWorkerFetchedReviewContentResource } from './bridge-worker-review-content-fetch.js';
 import {
@@ -15,6 +18,72 @@ import {
 } from './bridge-worker-review-content-ready.js';
 
 describe('Bridge worker review content ready', () => {
+	test('restores ready after a painted equivalent publication is deduplicated', () => {
+		const store = createBridgeCommWorkerStore({
+			surface: 'review',
+			contentItems: [makeWorkerReviewContentMetadata('item-1')],
+			rows: [{ id: 'item-1', parentId: null, index: 0 }],
+		});
+		store.actions.applySelectedFact({ epoch: 7, itemId: 'item-1' });
+		store.actions.takePendingSlicePatchEvent({ epoch: 7, sequence: 1 });
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const resources = [
+			makeFetchedReviewContentResource({
+				contentHash: 'sha256:item-1:base',
+				role: 'base',
+				text: 'base content\n',
+			}),
+			makeFetchedReviewContentResource({
+				contentHash: 'sha256:item-1:head',
+				role: 'head',
+				text: 'head content\n',
+			}),
+		];
+		const publicationProps = {
+			bridgeDemandRank: { lane: 'selected' as const, priority: 0 },
+			budget: { className: 'interactive' as const, maxBytes: 512 * 1024, maxWindowLines: 50 },
+			contentRequestDescriptors: [],
+			demandKey: 'selected:7',
+			epoch: 7,
+			fetchResult: {
+				outcomes: [],
+				resources,
+				semantics: makeRenderSemantics(),
+				status: 'ready' as const,
+			},
+			itemId: 'item-1',
+			port: dispatch.port,
+			renderSemantics: [makeRenderSemantics()],
+			reviewPublicationIdentity: makeReviewPublicationIdentity(),
+			store,
+			workerDerivationEpoch: 7,
+		};
+		publishBridgeWorkerReviewContentReadyFetchResult({ ...publicationProps, sequence: 11 });
+		const firstJob = postedMessages.find(({ message }) => message.kind === 'reviewPierreRenderJob');
+		if (firstJob?.message.kind !== 'reviewPierreRenderJob')
+			throw new Error('Expected Review render job.');
+		for (const [index, disposition] of (['queued', 'applied', 'painted'] as const).entries()) {
+			store.renderFulfillmentRegistry.applyDisposition(
+				bridgeWorkerRenderDispositionReceiptSchema.parse({
+					...firstJob.message.renderReceiptIdentity,
+					disposition,
+					kind: 'render.disposition',
+					receivedAtMilliseconds: index + 1,
+				}),
+			);
+		}
+		store.actions.applySelectedFact({ epoch: 7, itemId: 'item-1' });
+		store.actions.takePendingSlicePatchEvent({ epoch: 7, sequence: 12 });
+		expect(store.getState().availabilityByItemId.get('item-1')).toBe('loading');
+		publishBridgeWorkerReviewContentReadyFetchResult({ ...publicationProps, sequence: 13 });
+		expect(
+			postedMessages.filter(({ message }) => message.kind === 'reviewPierreRenderJob'),
+		).toHaveLength(1);
+		expect(store.getState().availabilityByItemId.get('item-1')).toBe('ready');
+		expect(
+			postedMessages.filter(({ message }) => message.kind === 'reviewRenderPatch'),
+		).toHaveLength(2);
+	});
 	test('publishes only schema-valid surface-typed Review content-ready events', () => {
 		// Arrange
 		const store = createBridgeCommWorkerStore({

@@ -1,3 +1,4 @@
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -10,10 +11,12 @@ struct BridgeProductFileRefreshRetryCompletionEffectTests {
         // Arrange
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(capabilityBytes)
+        let deadlineClock = TestPushClock()
         let session = try BridgeProductSession(
             paneSessionId: bridgeProductTestPaneSessionId,
             workerInstanceId: bridgeProductTestWorkerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes,
+            deadlineClock: deadlineClock
         )
         let recorder = await MainActor.run { FileRefreshRetryRecorder() }
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
@@ -40,21 +43,34 @@ struct BridgeProductFileRefreshRetryCompletionEffectTests {
         // Act
         _ = await provider.response(for: decodedCall)
         let countBeforeCommit = await recorder.count
-        _ = try await dispatcher.dispatch(
+        let openAdmission = try await dispatcher.dispatch(
             exactRequestBytes: bridgeProductSchemeWorkerOpenBody(),
             presentedCapability: capabilityHeader
         )
-        _ = try await dispatcher.dispatch(
+        let openResult = try await awaitBridgeProductAdmittedControlResult(
+            openAdmission,
+            session: session,
+            productAdmission: productAdmission
+        )
+        #expect(openResult.outcome == .succeeded)
+        let admitted = try await dispatcher.dispatch(
             exactRequestBytes: callBody,
             presentedCapability: capabilityHeader
         )
-        _ = try await dispatcher.dispatch(
+        let replay = try await dispatcher.dispatch(
             exactRequestBytes: callBody,
             presentedCapability: capabilityHeader
+        )
+        let result = try await awaitBridgeProductAdmittedControlResult(
+            admitted,
+            session: session,
+            productAdmission: productAdmission
         )
 
         // Assert
         #expect(countBeforeCommit == 0)
+        #expect(replay == admitted)
+        #expect(result.outcome == .succeeded)
         #expect(await recorder.count == 1)
     }
 }

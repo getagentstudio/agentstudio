@@ -67,6 +67,10 @@ package final class BridgeProductSchemeTaskCensus: Sendable {
         population.withLock { $0.started.isSubset(of: $0.terminated) }
     }
 
+    func isTerminated(_ id: UUID) -> Bool {
+        population.withLock { $0.terminated.contains(id) }
+    }
+
     /// Awaited only when an observer was supplied, so a test can suspend the
     /// reply task's cancellation at exactly the point where the census says
     /// "terminated" and the retirement write has not happened.

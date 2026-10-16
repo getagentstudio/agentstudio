@@ -324,8 +324,8 @@ package actor FilesystemActor {
     }
 
     package func start() async {
-        // Ingress/drain tasks are initialized during actor init; start is explicit for
-        // lifecycle parity with other filesystem source conformers.
+        // Start shared ingress before registration. Later ingress owners call this idempotently.
+        startIngressTaskIfNeeded()
     }
 
     package func runtimeTerminals() -> AsyncStream<FSEventStreamRuntimeTerminal> {
@@ -470,15 +470,16 @@ extension FilesystemActor {
                 ]
             )
             if isWatchedFolderRecovery {
-                let retainedBatch = FSEventBatch(
-                    worktreeId: recovery.worktreeId, paths: recovery.paths?.sorted() ?? [],
-                    requiresFullGitRefresh: recovery.requiresFullGitRefresh)
-                guard
-                    recovery.requiresWatchedFolderScan
-                        || WatchedFolderTopologyAdmission.mayAffectTopology(retainedBatch)
-                else { continue }
-                await handleCoarseWatchedFolderFSEvent(
-                    worktreeId: recovery.worktreeId, shouldRecordLogicalDebt: false)
+                if let paths = recovery.paths {
+                    let retainedBatch = FSEventBatch(
+                        worktreeId: recovery.worktreeId, paths: paths.sorted(),
+                        observations: recovery.observations,
+                        requiresFullGitRefresh: recovery.requiresFullGitRefresh)
+                    await handleWatchedFolderFSEvent(retainedBatch, shouldRecordLogicalDebt: false)
+                } else if recovery.requiresWatchedFolderScan || recovery.requiresFullGitRefresh {
+                    await handleCoarseWatchedFolderFSEvent(
+                        worktreeId: recovery.worktreeId, shouldRecordLogicalDebt: false)
+                }
                 continue
             }
             if let paths = recovery.paths {

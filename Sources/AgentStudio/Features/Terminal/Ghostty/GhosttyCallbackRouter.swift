@@ -18,7 +18,9 @@ extension Ghostty {
                         ghosttyLogger.fault("Ghostty action callback dropped: app pointer was nil")
                         return false
                     }
-                    return ActionRouter.handleAction(appPtr, target: target, action: action)
+                    guard let userdata = ghostty_app_userdata(appPtr) else { return false }
+                    let context = Unmanaged<GhosttyCallbackContext>.fromOpaque(userdata).takeUnretainedValue()
+                    return context.handling.handleAction(target: target, action: action)
                 }
             )
         }
@@ -35,17 +37,8 @@ extension Ghostty {
                         ghosttyLogger.error("Ghostty wakeup callback dropped: userdata was nil")
                         return
                     }
-                    // Capture the raw pointer as integer bits before the actor hop so the
-                    // closure crosses the Sendable boundary without carrying the pointer value.
-                    let userdataBits = UInt(bitPattern: userdata)
-                    Task { @MainActor in
-                        guard let userdata = UnsafeMutableRawPointer(bitPattern: userdataBits) else {
-                            ghosttyLogger.error("Ghostty wakeup callback dropped: userdata bits could not be restored")
-                            return
-                        }
-                        let app = Unmanaged<App>.fromOpaque(userdata).takeUnretainedValue()
-                        app.tick()
-                    }
+                    let context = Unmanaged<GhosttyCallbackContext>.fromOpaque(userdata).takeUnretainedValue()
+                    context.wakeup()
                 },
                 action_cb: actionCallback,
                 read_clipboard_cb: { userdata, location, state, mimes, count, list in
@@ -184,14 +177,9 @@ extension Ghostty {
                 return
             }
             let surfaceView = Unmanaged<SurfaceView>.fromOpaque(userdata).takeUnretainedValue()
-            let surfaceViewObjectId = ObjectIdentifier(surfaceView)
-            Task { @MainActor [weak surfaceView] in
-                guard let surfaceView else { return }
-                RestoreTrace.log(
-                    "Ghostty.CallbackRouter.closeSurface delivering close request view=\(surfaceViewObjectId)"
-                )
-                surfaceView.handleCloseRequested()
-            }
+            _ = surfaceView.callbackHandling?.accept(
+                .close(surfaceID: surfaceView.managedSurfaceID, viewObjectID: ObjectIdentifier(surfaceView))
+            )
         }
     }
 }

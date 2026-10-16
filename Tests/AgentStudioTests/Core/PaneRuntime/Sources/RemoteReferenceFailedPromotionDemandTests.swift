@@ -19,7 +19,14 @@ struct RemoteReferenceFailedPromotionDemandTests {
             remoteURL: fixture.originB,
             references: [.init(canonicalRefName: "refs/remotes/origin/main", oid: String(repeating: "a", count: 40))]
         )
+        let priorAcceptance = try #require(await fixture.acceptanceRecorder.lastLocalAcceptance)
+        let invalidationOpening = await fixture.acceptanceRecorder.invalidationCount
         await actor.setOrigin(repoId: fixture.repoId, expectedOrigin: fixture.originB)
+        // setOrigin awaits authority publication before returning. Check that boundary
+        // before the failed promotion can hide a late invalidation.
+        try await fixture.acceptanceRecorder.expectInvalidation(
+            after: invalidationOpening, repoId: fixture.repoId, priorAcceptance: priorAcceptance
+        )
 
         // Act
         let admission = await actor.startExplicitRepositoryUpdate(repoId: fixture.repoId, attemptId: UUIDv7.generate())

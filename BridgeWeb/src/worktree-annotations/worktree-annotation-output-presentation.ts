@@ -42,6 +42,9 @@ export function annotationOutputFeedback(
 				toast: successfulExportMessage(outcome.summary),
 			};
 		case 'effect_failed':
+			if (outcome.effectCode === 'missing_folder' || outcome.effectCode === 'permission_denied') {
+				return visibleOutputFeedback(outcome.effectError, 'error');
+			}
 			return visibleOutputFeedback(
 				outcome.summary.outputKind === 'clipboard_markdown'
 					? 'Clipboard copy failed. The clipboard was not changed and no output history was recorded.'
@@ -49,6 +52,12 @@ export function annotationOutputFeedback(
 				'error',
 			);
 		case 'effect_and_cleanup_failed':
+			if (outcome.effectCode === 'missing_folder' || outcome.effectCode === 'permission_denied') {
+				return visibleOutputFeedback(
+					`${outcome.effectError} Output-history cleanup also failed.`,
+					'error',
+				);
+			}
 			return visibleOutputFeedback(
 				outcome.summary.outputKind === 'clipboard_markdown'
 					? 'Clipboard copy failed, so the clipboard was not changed. Cleanup was not recorded; this attempt may later appear as unknown.'

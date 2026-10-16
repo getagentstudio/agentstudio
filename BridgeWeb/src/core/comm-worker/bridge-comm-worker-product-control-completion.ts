@@ -1,6 +1,6 @@
 import { bridgeCommWorkerAnnotationCommandAcceptedEvent } from './bridge-comm-worker-annotation-runtime-events.js';
 import { buildBridgeWorkerReviewPublicationInstallAdmissionEvent } from './bridge-comm-worker-protocol.js';
-import type { BridgeCommWorkerReviewSuccessorReExposureSettlement } from './bridge-comm-worker-review-successor-re-exposure.js';
+import type { BridgeCommWorkerReviewSuccessorReExposureSettlement } from './bridge-comm-worker-review-publication-types.js';
 import { bridgeWorkerRuntimeMessageIsReadyRequest } from './bridge-comm-worker-runtime-health.js';
 import { bridgeProductReviewPublicationInstallAdmissionResultSchema } from './bridge-product-call-contracts.js';
 import type { BridgeProductControlCommand } from './bridge-product-control-contracts.js';

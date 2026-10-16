@@ -48,26 +48,24 @@ describe('script runtime contract', () => {
 		expect(scripts['check']?.split(' && ')[0]).toBe('pnpm run lint:types');
 	});
 
-	test('keeps the required stress E2E isolated from ordinary product journeys', async () => {
+	test('runs only ordinary product journeys through the prepared E2E entrypoint', async () => {
 		// Arrange
 		const scripts = await readPackageScripts();
 
 		// Act
 		const preparedE2E = scripts['test:e2e:prepared'];
 		const ordinaryE2E = scripts['test:e2e:prepared:ordinary'];
-		const stressE2E = scripts['test:e2e:prepared:stress'];
+		const stressE2EScriptNames = Object.keys(scripts).filter(
+			(scriptName): boolean => scriptName.startsWith('test:e2e:') && scriptName.endsWith(':stress'),
+		);
 
 		// Assert
 		expect(scripts['test:e2e']).toBe(
 			'pnpm run build:swift-dev-server && pnpm run test:e2e:prepared',
 		);
-		expect(preparedE2E).toBe(
-			'pnpm run test:e2e:prepared:stress && pnpm run test:e2e:prepared:ordinary',
-		);
-		expect(stressE2E).toContain('bridge-viewer-vite-annotation-backpressure.e2e.test.ts');
-		expect(ordinaryE2E).toContain(
-			'--exclude tests/e2e/bridge-viewer-vite-annotation-backpressure.e2e.test.ts',
-		);
+		expect(preparedE2E).toBe('pnpm run test:e2e:prepared:ordinary');
+		expect(ordinaryE2E).toBe('vitest --config vitest.e2e.config.ts run');
+		expect(stressE2EScriptNames).toEqual([]);
 	});
 
 	test('loads the Bridge app Tailwind stylesheet from the WebKit entrypoint', async () => {

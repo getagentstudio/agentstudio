@@ -6,10 +6,8 @@ import {
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
 import type { BridgeCommWorkerReviewRuntimeSource } from './bridge-comm-worker-review-source-diff.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerReviewViewerMode,
 	createBridgeCommWorkerReviewProductTestSource,
@@ -254,6 +252,11 @@ describe('Bridge comm worker runtime render fulfillment', () => {
 		const itemIds = Array.from({ length: 13 }, (_, index) => `review-held-${index + 1}`);
 		const source = makeReviewRuntimeSourceForItems(itemIds);
 		const reviewProductSource = await registerRuntimeWithInitialReviewSource(dispatch, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			...source,
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
@@ -609,28 +612,9 @@ async function registerRuntimeWithInitialReviewSource(
 		4,
 	);
 	await flushBridgeWorkerRuntimeContinuations();
-	await drainAllScheduledPreparations(initializationDrains);
 	isInitializingSource = false;
+	for (const drain of initializationDrains) schedulePreparationDrain(drain);
 	return reviewProductSource;
-}
-
-async function drainAllScheduledPreparations(
-	scheduledDrains: BridgeCommWorkerPreparationDrain[],
-	nextDrainIndex = 0,
-	remainingRounds = 16,
-): Promise<void> {
-	await flushBridgeWorkerRuntimeContinuations();
-	const drainsForRound = scheduledDrains.slice(nextDrainIndex);
-	if (drainsForRound.length === 0) return;
-	if (remainingRounds === 0) {
-		throw new Error('Bridge render-fulfillment initialization exceeded its bounded drain rounds.');
-	}
-	await Promise.all(drainsForRound.map((drain) => drain()));
-	return drainAllScheduledPreparations(
-		scheduledDrains,
-		nextDrainIndex + drainsForRound.length,
-		remainingRounds - 1,
-	);
 }
 
 async function drainUntilReviewPublication(props: {

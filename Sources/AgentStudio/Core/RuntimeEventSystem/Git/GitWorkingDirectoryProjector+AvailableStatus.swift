@@ -119,6 +119,7 @@ extension GitWorkingDirectoryProjector {
         snapshotChanged: Bool,
         branchChanged: Bool
     ) {
+        guard factSink != nil else { return }
         closeRefreshFact(
             worktreeId: worktreeId,
             ifCurrent: refreshFactScope,

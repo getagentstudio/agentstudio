@@ -14,6 +14,7 @@ enum WorktreeAnnotationCommandFailureCode: String, Codable, Equatable, Sendable 
     case notFound = "not_found"
     case openThreadCountConflict = "open_thread_count_conflict"
     case outputUnavailable = "output_unavailable"
+    case outputFileMissing = "output_file_missing"
     case recoveryAcknowledgementRequired = "recovery_acknowledgement_required"
     case sessionReadOnly = "session_read_only"
     case sessionSelectionRequired = "session_selection_required"

@@ -295,9 +295,24 @@ export function createBridgeTelemetryWorkerPortHost(
 				barrierId,
 				generation: producer.generation,
 				disposition,
-				sampleCredits: disposition === 'reopen' ? props.bootstrap.policy.initialSampleCredits : 0,
-				controlCredits: disposition === 'reopen' ? props.bootstrap.policy.initialControlCredits : 0,
+				sampleCredits: 0,
+				controlCredits: 0,
 			} satisfies BridgeTelemetryWorkerProducerCommand);
+		}
+	}
+
+	function grantInitialProducerCreditsAfterReopen(): void {
+		for (const producerId of ['main', 'comm'] as const) {
+			const port = activePorts.get(producerId);
+			if (port === undefined) continue;
+			port.postMessage({
+				type: 'producer.credit-grant',
+				sampleCredits: props.bootstrap.policy.initialSampleCredits,
+			} satisfies BridgeTelemetryWorkerPortReply);
+			port.postMessage({
+				type: 'producer.credit-grant',
+				controlCredits: props.bootstrap.policy.initialControlCredits,
+			} satisfies BridgeTelemetryWorkerPortReply);
 		}
 	}
 
@@ -379,6 +394,7 @@ export function createBridgeTelemetryWorkerPortHost(
 			hostState = 'disposed';
 		} else {
 			hostState = 'active';
+			grantInitialProducerCreditsAfterReopen();
 		}
 		return finalResult;
 	}

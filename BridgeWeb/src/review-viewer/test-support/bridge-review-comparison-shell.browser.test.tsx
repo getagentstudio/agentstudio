@@ -4,6 +4,7 @@ import { cleanup, render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../../app/bridge-app.css';
+import { settleRenderedReviewFrame } from '../../app/bridge-app-review-render-snapshot-controller.browser-harness.test-support.js';
 import { BridgeReviewViewerShellBoundary } from '../../app/bridge-app-review-viewer-shell-boundary.js';
 import type { BridgeReviewComparisonPaneState } from '../../app/bridge-review-comparison-pane-state.js';
 import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
@@ -36,7 +37,7 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 				comparisonPaneState={{ kind: 'settled' }}
 				isActive
 				onRetryComparison={(): void => {}}
-				presentationState={{ status: 'empty' }}
+				presentationState={{ status: 'noTarget' }}
 				viewerContextSwitcher={<div>Files and Review</div>}
 				viewerHeaderControls={<div>Review controls</div>}
 			/>,
@@ -53,6 +54,32 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 		);
 	});
 
+	test('renders an installed empty-ready Review while initial comparison still reports loading', async () => {
+		const rendered = await render(
+			<BridgeReviewViewerShellBoundary
+				comparisonPaneState={{ kind: 'loadingInitial', requestedTargetLabel: 'clean worktree' }}
+				isActive
+				onRetryComparison={(): void => {}}
+				presentationState={{ status: 'readyEmpty' }}
+				viewerContextSwitcher={<div>Files and Review</div>}
+				viewerHeaderControls={<div>Review controls</div>}
+			/>,
+		);
+		await act(async (): Promise<void> => {
+			await settleRenderedReviewFrame();
+		});
+		await expect.element(rendered.getByTestId('bridge-review-empty-canvas')).toBeVisible();
+		await expect.element(rendered.getByText('Nothing to review')).toBeVisible();
+		expect(rendered.getByText('Waiting for review metadata').query()).toBeNull();
+		expect(rendered.getByTestId('bridge-review-metadata-loading-shell').query()).toBeNull();
+		expect(
+			rendered
+				.getByTestId('bridge-review-sidebar')
+				.element()
+				.querySelectorAll('[data-slot="skeleton"]'),
+		).toHaveLength(0);
+	});
+
 	test('keeps initial comparison loading inside the content pane while navigation remains available', async () => {
 		const rendered = await render(
 			<div className="h-[600px] w-[720px]">
@@ -63,21 +90,28 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 					}}
 					isActive
 					onRetryComparison={(): void => {}}
-					presentationState={{ status: 'empty' }}
+					presentationState={{ status: 'metadataLoading' }}
 					viewerContextSwitcher={<button type="button">Files and Review</button>}
 					viewerHeaderControls={<div>Review controls</div>}
 				/>
 			</div>,
 		);
 
-		await expect
-			.element(rendered.getByRole('status'))
-			.toHaveTextContent('Loading comparison with feature/new-target');
+		expect(
+			document
+				.querySelector('[data-bridge-region="review-content"]')
+				?.getAttribute('data-presentation-state'),
+		).toBe('loading');
+		expect(
+			document
+				.querySelector('[data-bridge-region="review-tree"]')
+				?.getAttribute('data-presentation-state'),
+		).toBe('loading');
 		expect(rendered.getByTestId('bridge-review-comparison-loading-spinner').query()).toBeNull();
 		expect(rendered.getByTestId('bridge-review-comparison-status-region').query()).toBeNull();
 		expect(rendered.getByRole('progressbar').query()).toBeNull();
 		await expect
-			.element(rendered.getByTestId('bridge-review-comparison-initial-shell'))
+			.element(rendered.getByTestId('bridge-review-metadata-loading-shell'))
 			.toBeVisible();
 		const contextSwitcher = rendered.getByRole('button', { name: 'Files and Review' }).element();
 		expect(
@@ -149,9 +183,12 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 				requestedTargetLabel: 'feature/new-target',
 			}),
 		);
-		await expect
-			.element(rendered.getByTestId('bridge-review-comparison-loading-status'))
-			.toHaveTextContent('Loading comparison with feature/new-target');
+		expect(
+			document
+				.querySelector('[data-bridge-region="review-content"]')
+				?.getAttribute('data-presentation-state'),
+		).toBe('updating');
+		expect(document.querySelector('.animate-spin')).toBeNull();
 		const loadingGeometry = loadedReviewViewportGeometry(rendered);
 		expectLoadedReviewViewportFillsContentFrame(loadingGeometry);
 		expect(Math.abs(loadingGeometry.viewportTop - settledGeometry.viewportTop)).toBeLessThanOrEqual(
@@ -162,11 +199,14 @@ describe('Bridge Review comparison shell Browser Mode', () => {
 			reviewShell({
 				displayedTargetLabel: 'origin/main',
 				kind: 'failedPrevious',
+				failureKind: 'targetNotFound',
 				requestedTargetLabel: 'feature/new-target',
 				retryTarget: null,
 			}),
 		);
-		await expect.element(rendered.getByRole('alert')).toBeVisible();
+		await expect
+			.element(rendered.getByTestId('bridge-pane-failure-summary').getByRole('alert'))
+			.toBeVisible();
 		const failedGeometry = loadedReviewViewportGeometry(rendered);
 		expectLoadedReviewViewportFillsContentFrame(failedGeometry);
 

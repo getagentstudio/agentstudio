@@ -321,10 +321,10 @@ struct WatchedFolderScanSchedulerTests {
     }
 
     @Test(
-        "ready selection performs fixed work independent of scheduled fleet size",
+        "ready selection increments diagnostic counters once per selection across fleet sizes",
         arguments: [10, 100, 300]
     )
-    func readySelectionWorkIsFleetSizeIndependent(rootCount: Int) async throws {
+    func readySelectionDiagnosticCountersIncrementPerSelection(rootCount: Int) async throws {
         let fixture = try SchedulerFixture(maximumConcurrentScans: 1)
         let requests = try (0..<rootCount).map { index in
             try fixture.makeRequest(name: "inspection-root-\(index)")

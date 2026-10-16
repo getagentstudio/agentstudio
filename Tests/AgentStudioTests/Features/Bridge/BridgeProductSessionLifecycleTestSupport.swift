@@ -1,4 +1,6 @@
+import AgentStudioInfrastructure
 import AgentStudioTestHarness
+import AgentStudioTestSupport
 import Foundation
 import Testing
 
@@ -10,9 +12,12 @@ struct BridgeProductSessionLifecycleHarness {
     let session: BridgeProductSession
 
     static func opened(
+        maximumMutationWatches: Int = AppPolicies.Bridge.maximumProductMutationWatches,
+        deadlineClock: (any Clock<Duration> & Sendable)? = TestPushClock(),
         producerQueueLimits: BridgeProductProducerQueueLimits = .productContract,
-        producerObservationPacingRegistrationObserver:
-            BridgeProductSession.ProducerObservationPacingRegistrationObserver? = nil
+        viewEmissionWaiterRegistrationObserver:
+            BridgeProductSession.ViewEmissionWaiterRegistrationObserver? = nil,
+        fileCaptureBatchSealer: BridgeProductSession.FileCaptureBatchSealer? = nil
     ) async throws -> Self {
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(capabilityBytes)
@@ -20,9 +25,11 @@ struct BridgeProductSessionLifecycleHarness {
             paneSessionId: "pane-session-1",
             workerInstanceId: "worker-instance-1",
             capabilityBytes: capabilityBytes,
+            maximumMutationWatches: maximumMutationWatches,
+            deadlineClock: deadlineClock,
             producerQueueLimits: producerQueueLimits,
-            producerObservationPacingRegistrationObserver:
-                producerObservationPacingRegistrationObserver
+            viewEmissionWaiterRegistrationObserver: viewEmissionWaiterRegistrationObserver,
+            fileCaptureBatchSealer: fileCaptureBatchSealer
         )
         let harness = try Self(
             capabilityHeader: capabilityHeader,
@@ -32,7 +39,7 @@ struct BridgeProductSessionLifecycleHarness {
         let request = try bridgeProductLifecycleControlRequest(workerSessionOpenObject())
         let token = try #require(lifecycleExecutionToken(try await harness.begin(request)))
         let response = try BridgeProductControlResponse.workerSessionAccepted(correlating: request)
-        _ = try await session.completeControl(
+        _ = try await session.completeAdmittedControl(
             token: token,
             exactResponseBytes: try JSONEncoder().encode(response)
         )
@@ -52,27 +59,19 @@ struct BridgeProductSessionLifecycleHarness {
     func openSubscription(_ object: [String: Any]) async throws {
         let request = try bridgeProductLifecycleControlRequest(object)
         let token = try #require(lifecycleExecutionToken(try await begin(request)))
-        let interestSha256: String
-        switch request.surface {
-        case .review:
-            interestSha256 =
-                try BridgeProductSubscriptionInterestState
-                .reviewMetadata(interests: [])
-                .sha256Hex()
-        case .file:
-            interestSha256 =
-                try BridgeProductSubscriptionInterestState
-                .fileMetadata(interests: [], pathScope: [])
-                .sha256Hex()
-        case nil:
-            Issue.record("Expected a surface-scoped subscription request")
-            return
-        }
+        let worktreeId: String? =
+            switch request {
+            case .subscriptionOpen(let open)
+            where open.subscription.subscriptionKind == .fileAnnotations
+                || open.subscription.subscriptionKind == .reviewAnnotations:
+                "worktree-1"
+            default: nil
+            }
         let response = try BridgeProductControlResponse.subscriptionOpenAccepted(
             correlating: request,
-            interestSha256: interestSha256
+            worktreeId: worktreeId
         )
-        _ = try await session.completeControl(
+        _ = try await session.completeAdmittedControl(
             token: token,
             exactResponseBytes: try JSONEncoder().encode(response)
         )
@@ -84,6 +83,9 @@ struct BridgeProductSessionLifecycleHarness {
     ) async throws -> BridgeProductControlResponse {
         guard case .workerSessionResync(let resyncRequest) = request else {
             throw BridgeProductSessionError.mismatchedControlResponse
+        }
+        if await session.operationTable.entry(for: token) == nil {
+            _ = try await session.admitControlOperation(token: token, execute: { _ in })
         }
         let providerResponse = try BridgeProductControlResponse.resyncAccepted(
             correlating: request,
@@ -100,7 +102,6 @@ struct BridgeProductSessionLifecycleHarness {
     func admitMetadataFrames(through lastSequence: Int) async throws -> BridgeProductProducerLease {
         let operation = HeldStep<BridgeProductProducerLease>("operation")
         let request = try metadataStreamRequest()
-        let progressSubscription = try metadataProgressSubscriptionCorrelation()
         let registration = await session.registerMetadataProducer(
             request: request,
             productAdmission: productAdmission.context
@@ -130,35 +131,46 @@ struct BridgeProductSessionLifecycleHarness {
         )
 
         if lastSequence > 0 {
-            for expectedSequence in 1...lastSequence {
-                let result = try await session.enqueueProducerFrame(
-                    for: lease,
-                    productAdmission: productAdmission.context,
-                    build: { sequence in
-                        try metadataProgressProducerFrame(
-                            request: request,
-                            streamSequence: sequence,
-                            subscription: progressSubscription
-                        )
-                    },
-                    overflowReset: { sequence in
-                        try metadataOverflowProducerFrame(
-                            request: request,
-                            streamSequence: sequence
-                        )
-                    }
-                )
-                #expect(lifecycleAdmittedFrame(result)?.sequence == expectedSequence)
-                #expect(
-                    await consumeNextBridgeProductProducerFrame(
-                        for: lease,
-                        from: session,
-                        productAdmission: productAdmission.context
-                    )?.sequence == expectedSequence
-                )
-            }
+            try await admitMetadataProgress(through: lastSequence, on: lease)
         }
         return lease
+    }
+
+    func admitMetadataProgress(
+        through lastSequence: Int,
+        on lease: BridgeProductProducerLease
+    ) async throws {
+        let request = try metadataStreamRequest()
+        let progressSubscription = try metadataProgressSubscriptionCorrelation()
+        let nextSequence = await session.producerSnapshot().nextMetadataStreamSequence
+        guard nextSequence <= lastSequence else { return }
+        for expectedSequence in nextSequence...lastSequence {
+            let result = try await session.enqueueProducerFrame(
+                for: lease,
+                productAdmission: productAdmission.context,
+                build: { sequence in
+                    try metadataProgressProducerFrame(
+                        request: request,
+                        streamSequence: sequence,
+                        subscription: progressSubscription
+                    )
+                },
+                overflowReset: { sequence in
+                    try metadataOverflowProducerFrame(
+                        request: request,
+                        streamSequence: sequence
+                    )
+                }
+            )
+            #expect(lifecycleAdmittedFrame(result)?.sequence == expectedSequence)
+            #expect(
+                await consumeNextBridgeProductProducerFrame(
+                    for: lease,
+                    from: session,
+                    productAdmission: productAdmission.context
+                )?.sequence == expectedSequence
+            )
+        }
     }
 
     func closeProducer(_ lease: BridgeProductProducerLease) async throws {
@@ -309,30 +321,18 @@ func bridgeProductLifecycleResyncObject(
     reviewEpoch: Int,
     fileEpoch: Int
 ) throws -> [String: Any] {
-    let reviewEmptySHA256 =
-        try BridgeProductSubscriptionInterestState
-        .reviewMetadata(interests: [])
-        .sha256Hex()
-    let fileEmptySHA256 =
-        try BridgeProductSubscriptionInterestState
-        .fileMetadata(interests: [], pathScope: [])
-        .sha256Hex()
-    return controlIdentity(
+    controlIdentity(
         kind: "workerSession.resync",
         requestId: "request-resync-\(requestSequence)",
         requestSequence: requestSequence
     ).merging([
         "activeSubscriptions": [
             [
-                "interestRevision": 0,
-                "interestSha256": reviewEmptySHA256,
                 "subscriptionId": "review-subscription-1",
                 "subscriptionKind": "review.metadata",
                 "workerDerivationEpoch": reviewEpoch,
             ],
             [
-                "interestRevision": 0,
-                "interestSha256": fileEmptySHA256,
                 "subscriptionId": "file-subscription-1",
                 "subscriptionKind": "file.metadata",
                 "workerDerivationEpoch": fileEpoch,
@@ -387,13 +387,6 @@ private func metadataProgressSubscriptionCorrelation()
     throws -> BridgeProductSubscriptionFrameCorrelation
 {
     try .init(
-        cursor: nil,
-        interestRevision: 0,
-        interestSha256:
-            BridgeProductSubscriptionInterestState
-            .reviewMetadata(interests: [])
-            .sha256Hex(),
-        sourceGeneration: 0,
         subscriptionId: "metadata-progress-subscription",
         subscriptionKind: .reviewMetadata,
         workerDerivationEpoch: 0

@@ -22,6 +22,10 @@ struct LiveServerFixtureTeardownTests {
                         body: { fixture in
                             try fixture.server.start()
                             try registerFixtureCredential(in: fixture)
+                            // Issuance after readiness schedules its own write. Settle
+                            // that failed attempt first so teardown's retry is the one
+                            // failed drain the fixture reports, in every order.
+                            #expect(await fixture.server.drainCredentialPersistence().failedOperationCount == 1)
                             if bodyThrows { throw FixtureTeardownProofError.bodyFailed }
                         })
                 } catch FixtureTeardownProofError.bodyFailed {
@@ -37,7 +41,8 @@ struct LiveServerFixtureTeardownTests {
         )
 
         #expect(observedBodyError == bodyThrows)
-        #expect(port.registrationCallCount == 1)
+        // The issuance attempt, then the graceful-shutdown retry of the still-unsaved credential.
+        #expect(port.registrationCallCount == 2)
         #expect(fixture.server.trackedConnectionHandlerCount == 0)
         #expect(!FileManager.default.fileExists(atPath: fixture.rootURL.path))
     }
@@ -54,7 +59,7 @@ struct LiveServerFixtureTeardownTests {
             body: { fixture in
                 try fixture.server.start()
                 try registerFixtureCredential(in: fixture)
-                fixture.stopAcceptingConnections()
+                await fixture.stopAcceptingConnections()
                 let credential = try await registration.firstArrival()
                 #expect(credential.paneID == fixture.boundPaneId)
                 registration.fail(FixtureTeardownProofError.writeFailed)
@@ -63,9 +68,9 @@ struct LiveServerFixtureTeardownTests {
 
                 // The facade is deliberately used here: it cannot bypass the
                 // fixture checkpoint and enqueue that unsaved credential again.
-                fixture.server.stopAcceptingConnections()
-                fixture.stopAcceptingConnections()
-                fixture.stop()
+                await fixture.server.stopAcceptingConnections()
+                await fixture.stopAcceptingConnections()
+                await fixture.stop()
             }
         )
 

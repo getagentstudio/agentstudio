@@ -269,13 +269,40 @@ export const bridgeProductWorktreeAnnotationOperationSchema = z.discriminatedUni
 		.strict(),
 	z
 		.object({
-			displayedProjectionRevision: z.number().int().nonnegative(),
-			expectedSessionRevision: z.number().int().nonnegative(),
+			destination: z.enum(['remembered', 'choose']).optional(),
 			kind: z.literal('output.scope.commit'),
+			messages: z
+				.array(
+					z
+						.object({
+							messageId: bridgeProductWorktreeAnnotationIdSchema,
+							savedRevision: z.number().int().positive(),
+						})
+						.strict(),
+				)
+				.min(1)
+				.refine(
+					(messages) =>
+						new Set(messages.map(({ messageId }) => messageId)).size === messages.length,
+					{ message: 'Output annotation messages must be unique.' },
+				),
 			outputKind: z.enum(['clipboardMarkdown', 'jsonFile']),
 			scope: z.enum(['pending', 'all']),
 			sessionId: bridgeProductWorktreeAnnotationIdSchema,
-			sourceGeneration: z.number().int().nonnegative(),
+		})
+		.strict()
+		.refine(
+			(operation) =>
+				operation.outputKind === 'jsonFile'
+					? operation.destination !== undefined
+					: operation.destination === undefined,
+			{ message: 'Only JSON export requires a destination.' },
+		),
+	z.object({ kind: z.literal('output.preference.changeFolder') }).strict(),
+	z
+		.object({
+			attemptId: bridgeProductWorktreeAnnotationIdSchema,
+			kind: z.literal('output.reveal'),
 		})
 		.strict(),
 	z

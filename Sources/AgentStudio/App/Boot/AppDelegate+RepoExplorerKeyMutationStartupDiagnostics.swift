@@ -122,7 +122,7 @@ import Foundation
             NSApp.activate(ignoringOtherApps: true)
             mainWindowController?.window?.makeKeyAndOrderFront(nil)
             await waitForStartupDiagnosticAppActivation()
-            AppCommandDispatcher.shared.dispatch(.showCommandBarEverything)
+            self.commandDispatcherForBoot().dispatch(.showCommandBarEverything)
             await Task.yield()
             recordRepoExplorerKeyMutationStep(action: action, phase: "command_bar_open", count: 1)
             commandBarController.dismiss()

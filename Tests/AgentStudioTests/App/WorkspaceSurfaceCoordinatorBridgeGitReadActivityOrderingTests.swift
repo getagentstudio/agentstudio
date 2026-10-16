@@ -220,6 +220,8 @@ private func makeActivityOrderingTestSetup() throws -> ActivityOrderingTestSetup
         viewRegistry: ViewRegistry(),
         runtime: SessionRuntime(store: store),
         surfaceManager: HarnessSurfaceManager(),
+        terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+        terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
         runtimeRegistry: RuntimeRegistry(),
         paneEventBus: makeTestPaneRuntimeEventBus(),
         bridgeGitReadScheduler: scheduler,

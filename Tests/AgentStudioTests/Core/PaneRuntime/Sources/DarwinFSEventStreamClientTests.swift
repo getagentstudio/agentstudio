@@ -745,13 +745,6 @@ struct DarwinFSEventStreamClientTests {
 }
 
 extension DarwinFSEventStreamClientTests {
-    @Test("conforms to FSEventStreamClient protocol")
-    func conformsToProtocol() {
-        let client: any FSEventStreamClient = DarwinFSEventStreamClient()
-        _ = client.events()
-        client.shutdown()
-    }
-
     @Test("register/unregister lifecycle is idempotent")
     func registerUnregisterLifecycleIsIdempotent() async {
         let client = DarwinFSEventStreamClient()
@@ -764,8 +757,33 @@ extension DarwinFSEventStreamClientTests {
 
         #expect(firstOutcome == .observing)
         #expect(secondOutcome == .observing)
-        client.unregister(worktreeId: worktreeId)
-        client.unregister(worktreeId: worktreeId)
+        for _ in 0..<2 {
+            client.unregister(worktreeId: worktreeId)
+            let owner = client.sharedLocalObservationSnapshot()
+            #expect(owner.logicalRegistrationCount == 0)
+            #expect(owner.logicalGenerationsByWorktreeID[worktreeId] == nil)
+            #expect(owner.physicalStreamCount == 0)
+            #expect(owner.physicalStreamCountByVolume.isEmpty)
+            #expect(!owner.hasPendingPhysicalReplacement)
+
+            // This callback enters the owning client synchronously. Its return
+            // closes the post-unregister callback window without waiting for OS idle.
+            _ = client.snapshotAndResetIngressPerformance()
+            client.receiveLocalRawEvents(
+                worktreeId: worktreeId,
+                rawEvents: [
+                    (
+                        path: DarwinFSEventPathCanonicalizer.canonicalURL(rootPath).appending(path: "retired.swift")
+                            .path,
+                        eventId: 901,
+                        flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+                    )
+                ]
+            )
+            let callback = client.snapshotAndResetIngressPerformance()
+            #expect(callback.localIngress.acceptedBatchCount == 0)
+            #expect(callback.localIngress.acceptedPathCount == 0)
+        }
 
         client.shutdown()
     }

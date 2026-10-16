@@ -2,7 +2,12 @@ import { act } from 'react';
 
 import type { BridgeCommWorkerPort } from '../core/comm-worker/bridge-comm-worker-entry.js';
 import { encodeBridgeWorkerActiveViewerModeUpdateCommand } from '../core/comm-worker/bridge-comm-worker-protocol.js';
-import { registerBridgeCommWorkerRuntimePortProtocol } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import type {
+	ExpectedRetainedRenderWakes,
+	TestBridgeCommWorkerRenderWakes,
+} from '../core/comm-worker/bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { createIdleWorktreeAnnotationSubscription } from '../core/comm-worker/bridge-comm-worker-runtime-protocol.worker-test-support.js';
 import { createBridgeMainRenderSnapshotStore } from '../core/comm-worker/bridge-main-render-snapshot-store.js';
 import type {
 	BridgePaneCommWorkerDispatcher,
@@ -13,36 +18,43 @@ import type {
 	CreateBridgePaneRuntimeProps,
 } from '../core/comm-worker/bridge-pane-runtime.js';
 import { BridgeProductBoundedAsyncQueue } from '../core/comm-worker/bridge-product-async-queue.js';
-import type { BridgeProductCallResult } from '../core/comm-worker/bridge-product-call-contracts.js';
+import type { BridgeProductBatchFrameSinks } from '../core/comm-worker/bridge-product-batch-frame-router.js';
+import {
+	bridgeProductFileWorktreeAnnotationCommandRequestSchema,
+	bridgeProductReviewWorktreeAnnotationCommandRequestSchema,
+	type BridgeProductCallResult,
+} from '../core/comm-worker/bridge-product-call-contracts.js';
 import {
 	bridgeProductFileContentDescriptorSchema,
 	type BridgeProductContentFrameFor,
 } from '../core/comm-worker/bridge-product-content-contracts.js';
-import type { BridgeProductMetadataDataFrame } from '../core/comm-worker/bridge-product-metadata-application-protocol.js';
 import { bridgeProductFileMetadataApplicationProtocol } from '../core/comm-worker/bridge-product-metadata-application-registry.js';
-import type {
-	BridgeProductSubscriptionEvent,
-	BridgeProductSubscriptionUpdateOptions,
-} from '../core/comm-worker/bridge-product-subscription-contracts.js';
 import type { BridgeProductMetadataApplicationSubscription } from '../core/comm-worker/bridge-product-transport-contract.js';
 import type { BridgeProductTransportSession } from '../core/comm-worker/bridge-product-transport.js';
+import { createTestMetadataReopenPort } from '../core/comm-worker/bridge-product-view-reopen.test-support.js';
 import {
 	bridgeWorkerServerToMainWireMessageSchema,
 	type BridgeWorkerFileQueryOutcomeEvent,
 	type BridgeWorkerMainToServerMessage,
 	type BridgeWorkerServerToMainMessage,
+	type BridgeWorkerServerToMainWireMessage,
 } from '../core/comm-worker/bridge-worker-contracts.js';
 import { bridgeWorkerPierreRenderPolicy } from '../core/demand/bridge-content-demand-policy.js';
 import { waitForBridgeViewerAnimationFrame } from '../review-viewer/test-support/bridge-viewer-browser-dom.js';
 import type { BridgeFileViewerBrowserTestProductSession } from './bridge-file-viewer-browser-test-app.js';
-import {
-	fileContentSha256Hex,
-	type PublishFileMetadataEvents,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+import type {
+	BrowserFileViewScope,
+	PublishBrowserFileBatch,
+} from './bridge-file-viewer-browser-test-batches.js';
+import { fileContentSha256Hex } from './bridge-file-viewer-browser-test-fixtures.js';
 
 export interface BridgeFileViewerBrowserTestPaneSessionFactory {
 	(): BridgePaneSessionPort;
 	readonly renderStoreFactory: NonNullable<CreateBridgePaneRuntimeProps['renderStoreFactory']>;
+}
+
+interface BridgeFileViewerBrowserControlledPaneSessionFactory extends BridgeFileViewerBrowserTestPaneSessionFactory {
+	readonly renderWakes: () => TestBridgeCommWorkerRenderWakes;
 }
 
 export interface BridgeFileViewerBrowserPreparedQueryCompletion {
@@ -126,10 +138,14 @@ export function prepareNextBridgeFileViewerBrowserQueryCompletion(): BridgeFileV
 
 export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 	readonly activateFileViewerOnInstall?: boolean;
+	readonly now?: () => number;
+	readonly observeAppliedWorkerMessage?: (message: BridgeWorkerServerToMainWireMessage) => void;
+	readonly expectedRetainedRenderWakes?: ExpectedRetainedRenderWakes;
 	readonly productSessionRef: {
 		readonly current: BridgeFileViewerBrowserTestProductSession | undefined;
 	};
-}): BridgeFileViewerBrowserTestPaneSessionFactory {
+}): BridgeFileViewerBrowserControlledPaneSessionFactory {
+	let currentRenderWakes: TestBridgeCommWorkerRenderWakes | null = null;
 	const queryCompletion = createBridgeFileViewerBrowserQueryCompletion();
 	let workerMessageActQueue: Promise<void> = Promise.resolve();
 	let fileSourceDiscoveryCompleted = false;
@@ -196,6 +212,7 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 				publishProps.publishWorkerMessages(publishProps.messages);
 				await Promise.resolve();
 			});
+			for (const message of publishProps.messages) props.observeAppliedWorkerMessage?.(message);
 		});
 		workerMessageActQueue = publishCompletion.catch((error: unknown) => {
 			queueMicrotask((): void => {
@@ -236,8 +253,15 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 					for (const resolve of pendingFileDisplayPatchWaiters) resolve();
 					pendingFileDisplayPatchWaiters.clear();
 				},
-				onMetadataEventsPublished: (eventCount): void => {
-					pendingFileDisplayPatchCount += eventCount;
+				onFileBatchInstallStarted: (): void => {
+					pendingFileDisplayPatchCount += 1;
+				},
+				onFileBatchInstallSettled: (): void => {
+					pendingFileDisplayPatchCount -= 1;
+					if (pendingFileDisplayPatchCount === 0) {
+						for (const resolve of pendingFileDisplayPatchWaiters) resolve();
+						pendingFileDisplayPatchWaiters.clear();
+					}
 				},
 				onMetadataInterestUpdateSettled: (): void => {
 					void Promise.resolve()
@@ -255,10 +279,26 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 				},
 				productSessionRef: props.productSessionRef,
 			});
+			const pendingActivationCommands = new Map<
+				string,
+				Extract<BridgeWorkerMainToServerMessage, { readonly command: 'activeViewerModeUpdate' }>
+			>();
 			channel.port1.addEventListener('message', (event: MessageEvent<unknown>): void => {
 				const message = bridgeWorkerServerToMainWireMessageSchema.parse(event.data);
+				if (message.kind === 'health' && typeof message.requestId === 'string') {
+					const activation = pendingActivationCommands.get(message.requestId);
+					if (activation !== undefined) {
+						pendingActivationCommands.delete(message.requestId);
+						props.productSessionRef.current?.onActivationCommandSettled?.(activation, message);
+					}
+				}
 				if (message.kind === 'fileQueryOutcome') {
 					queryCompletion.observeOutcome(message);
+					props.observeAppliedWorkerMessage?.(message);
+					return;
+				}
+				if (message.kind === 'sessionSuspect') {
+					props.observeAppliedWorkerMessage?.(message);
 					return;
 				}
 				if (
@@ -267,14 +307,8 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 				) {
 					workerDrainWaiters.get(message.requestId)?.();
 					workerDrainWaiters.delete(message.requestId);
+					props.observeAppliedWorkerMessage?.(message);
 					return;
-				}
-				if (message.kind === 'fileDisplayPatch' && pendingFileDisplayPatchCount > 0) {
-					pendingFileDisplayPatchCount -= 1;
-					if (pendingFileDisplayPatchCount === 0) {
-						for (const resolve of pendingFileDisplayPatchWaiters) resolve();
-						pendingFileDisplayPatchWaiters.clear();
-					}
 				}
 				if (message.kind === 'filePierreRenderJob' && pendingSettledContentPierreJobCount > 0) {
 					pendingSettledContentPierreJobCount -= 1;
@@ -304,16 +338,24 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 					publishWorkerMessages: dispatcherProps.publishWorkerMessages,
 				});
 			});
-			registerBridgeCommWorkerRuntimePortProtocol(channel.port2 as BridgeCommWorkerPort, {
-				bridgeDemandRank: { lane: 'selected', priority: 0 },
-				budget: bridgeWorkerPierreRenderPolicy.reviewInteractiveRenderBudget,
-				fileViewBudget: {
-					className: 'interactive',
-					maxBytes: 2 * 1024 * 1024,
-					maxWindowLines: 10_000,
+			const renderWakes = registerBridgeCommWorkerRuntimePortProtocol(
+				channel.port2 as BridgeCommWorkerPort,
+				{
+					...(props.now === undefined ? {} : { now: props.now }),
+					...(props.expectedRetainedRenderWakes === undefined
+						? {}
+						: { expectedRetainedRenderWakes: props.expectedRetainedRenderWakes }),
+					bridgeDemandRank: { lane: 'selected', priority: 0 },
+					budget: bridgeWorkerPierreRenderPolicy.reviewInteractiveRenderBudget,
+					fileViewBudget: {
+						className: 'interactive',
+						maxBytes: 2 * 1024 * 1024,
+						maxWindowLines: 10_000,
+					},
+					productTransport,
 				},
-				productTransport,
-			});
+			);
+			currentRenderWakes = renderWakes;
 			channel.port1.start();
 			channel.port2.start();
 			if (props.activateFileViewerOnInstall !== false) {
@@ -339,35 +381,45 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 			});
 			return {
 				dispatch: (message): void => {
+					if (message.command === 'activeViewerModeUpdate') {
+						pendingActivationCommands.set(message.requestId, message);
+						props.productSessionRef.current?.onActivationCommandPosted?.(message);
+					}
 					props.productSessionRef.current?.onWorkerCommand?.(message);
 					queryCompletion.observeCommand(message);
 					channel.port1.postMessage(message);
 				},
 				dispose: (): void => {
-					activeBridgeFileViewerBrowserWorkerMessageDrains.delete(workerMessageDrain);
-					activeBridgeFileViewerBrowserQueryCompletions.delete(queryCompletion);
-					queryCompletion.dispose();
-					const workerQueueJoin = workerMessageActQueue.then((): void => {});
-					pendingBridgeFileViewerBrowserWorkerQueueJoins.add(workerQueueJoin);
-					void workerQueueJoin.finally((): void => {
-						pendingBridgeFileViewerBrowserWorkerQueueJoins.delete(workerQueueJoin);
-					});
-					waitForWorkerToMainPortDrain = null;
-					fileSourceDiscoveryCompleted = true;
-					pendingFileDisplayPatchCount = 0;
-					pendingMetadataInterestUpdateCount = 0;
-					pendingSettledContentPierreJobCount = 0;
-					pendingSettledContentTerminalPatchCount = 0;
-					for (const resolve of pendingFileDisplayPatchWaiters) resolve();
-					pendingFileDisplayPatchWaiters.clear();
-					for (const resolve of workerDrainWaiters.values()) resolve();
-					workerDrainWaiters.clear();
-					channel.port1.close();
-					channel.port2.close();
+					try {
+						renderWakes.retire();
+					} finally {
+						activeBridgeFileViewerBrowserWorkerMessageDrains.delete(workerMessageDrain);
+						activeBridgeFileViewerBrowserQueryCompletions.delete(queryCompletion);
+						queryCompletion.dispose();
+						pendingActivationCommands.clear();
+						const workerQueueJoin = workerMessageActQueue.then((): void => {});
+						pendingBridgeFileViewerBrowserWorkerQueueJoins.add(workerQueueJoin);
+						void workerQueueJoin.finally((): void => {
+							pendingBridgeFileViewerBrowserWorkerQueueJoins.delete(workerQueueJoin);
+						});
+						waitForWorkerToMainPortDrain = null;
+						fileSourceDiscoveryCompleted = true;
+						pendingFileDisplayPatchCount = 0;
+						pendingMetadataInterestUpdateCount = 0;
+						pendingSettledContentPierreJobCount = 0;
+						pendingSettledContentTerminalPatchCount = 0;
+						for (const resolve of pendingFileDisplayPatchWaiters) resolve();
+						pendingFileDisplayPatchWaiters.clear();
+						for (const resolve of workerDrainWaiters.values()) resolve();
+						workerDrainWaiters.clear();
+						channel.port1.close();
+						channel.port2.close();
+					}
 				},
 			};
 		},
 		dispose: (): void => {},
+		setNativeBootstrapRequester: (): void => {},
 		installNativeBootstrap: (_bootstrap: BridgePaneCommWorkerNativeBootstrap): void => {},
 	});
 	const renderStoreFactory: NonNullable<CreateBridgePaneRuntimeProps['renderStoreFactory']> = (
@@ -382,7 +434,14 @@ export function createBridgeFileViewerBrowserTestPaneSessionFactory(props: {
 					},
 		);
 	};
-	return Object.assign(sessionFactory, { renderStoreFactory });
+	return Object.assign(sessionFactory, {
+		renderStoreFactory,
+		renderWakes: (): TestBridgeCommWorkerRenderWakes => {
+			if (currentRenderWakes === null)
+				throw new Error('Expected the browser fixture render clock.');
+			return currentRenderWakes;
+		},
+	});
 }
 
 export function createBridgeFileViewerBrowserQueryCompletion(): BridgeFileViewerBrowserQueryCompletion {
@@ -496,7 +555,8 @@ interface BridgeFileViewerBrowserQueryWaiter {
 function createBrowserTestProductTransport(props: {
 	readonly onContentTerminalSettled: (succeeded: boolean) => void;
 	readonly onFileSourceDiscoveryCompleted: () => void;
-	readonly onMetadataEventsPublished: (eventCount: number) => void;
+	readonly onFileBatchInstallStarted: () => void;
+	readonly onFileBatchInstallSettled: () => void;
 	readonly onMetadataInterestUpdateSettled: () => void;
 	readonly onMetadataInterestUpdateStarted: () => void;
 	readonly productSessionRef: {
@@ -504,8 +564,11 @@ function createBrowserTestProductTransport(props: {
 	};
 }): BridgeProductTransportSession {
 	let fileEpoch = 0;
+	let viewScopeRevision = 0;
+	let batchSinks: BridgeProductBatchFrameSinks | null = null;
 	return {
-		bumpWorkerDerivationEpoch: (surface): number => {
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (surface): number => {
 			if (surface === 'file') fileEpoch += 1;
 			return surface === 'file' ? fileEpoch : 0;
 		},
@@ -519,7 +582,28 @@ function createBrowserTestProductTransport(props: {
 					props.onFileSourceDiscoveryCompleted();
 				}
 			}
-			if (method === 'file.activeViewerMode.update') return null as never;
+			if (method === 'file.annotations.command' || method === 'review.annotations.command') {
+				const request = (
+					method === 'file.annotations.command'
+						? bridgeProductFileWorktreeAnnotationCommandRequestSchema
+						: bridgeProductReviewWorktreeAnnotationCommandRequestSchema
+				).parse(arguments_[1]);
+				if (request.operation.kind !== 'session.discover')
+					throw new Error('File browser fixture supports only Comments discovery.');
+				// The unrelated Comments source is admitted and idle, never a fabricated permanent failure.
+				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The narrowed annotation call returns its completed discovery contract.
+				return {
+					kind: 'completed',
+					outcome: {
+						requestId: 'browser-comments-discovery',
+						sessionId: null,
+						status: { kind: 'committed' },
+						surface: method === 'file.annotations.command' ? 'file' : 'review',
+					},
+				} as never;
+			}
+			if (method === 'file.activeViewerMode.update' || method === 'file.refresh.retry')
+				return null as never;
 			throw new Error(`Unexpected browser-test product call: ${method}.`);
 		},
 		openContent: (descriptor, signal): never => {
@@ -572,60 +656,64 @@ function createBrowserTestProductTransport(props: {
 				workerInstanceId: 'browser-file-test-worker-instance',
 			});
 		},
+		setBatchFrameSinks: (sinks): void => {
+			batchSinks = sinks;
+		},
+		setViewScopeForSubscription: async ({
+			scope,
+		}): Promise<{ readonly kind: 'accepted'; readonly scopeRevision: number }> => {
+			if (scope.kind !== 'file') throw new Error('Expected typed File view scope.');
+			props.onMetadataInterestUpdateStarted();
+			try {
+				await props.productSessionRef.current?.onFileScopeChange?.(scope as BrowserFileViewScope);
+				viewScopeRevision += 1;
+				return { kind: 'accepted', scopeRevision: viewScopeRevision };
+			} finally {
+				props.onMetadataInterestUpdateSettled();
+			}
+		},
 		subscribe: (...arguments_): never => {
 			const [protocol, options] = arguments_;
-			const subscriptionKind = protocol.kind;
-			if (subscriptionKind !== 'file.metadata') {
-				throw new Error(`Unexpected browser-test product subscription: ${subscriptionKind}.`);
+			if (protocol.kind === 'file.annotations' || protocol.kind === 'review.annotations') {
+				// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- This branch closes over an idle annotation subscription, unrelated to the File behavior under test.
+				return createIdleWorktreeAnnotationSubscription(protocol) as never;
+			}
+			if (protocol.kind !== 'file.metadata') {
+				throw new Error(`Unexpected browser-test product subscription: ${protocol.kind}.`);
 			}
 			const subscriptionId = 'browser-file-metadata-subscription';
-			let metadataStreamSequence = 0;
-			let subscriptionSequence = 0;
-			const events = new BridgeProductBoundedAsyncQueue<
-				BridgeProductMetadataDataFrame<BridgeProductSubscriptionEvent<'file.metadata'>>
-			>(256);
-			const publish: PublishFileMetadataEvents = (publishedEvents): void => {
-				props.onMetadataEventsPublished(publishedEvents.length);
-				for (const event of publishedEvents) {
-					metadataStreamSequence += 1;
-					subscriptionSequence += 1;
-					events.push({
-						data: event,
-						metadataStreamId: 'browser-file-test-metadata-stream',
-						operationCorrelationId: null,
-						sourceGeneration:
-							bridgeProductFileMetadataApplicationProtocol.readEventSourceGeneration(event),
-						streamSequence: metadataStreamSequence,
-						subscriptionId,
-						subscriptionKind: 'file.metadata',
-						subscriptionSequence,
-						workerDerivationEpoch: fileEpoch,
-					});
-				}
+			const events = new BridgeProductBoundedAsyncQueue<never>(1);
+			const publish: PublishBrowserFileBatch = (batch): void => {
+				const sink = batchSinks;
+				if (sink === null) throw new Error('File batch sink was not installed.');
+				props.onFileBatchInstallStarted();
+				// Subscribe returns before the controller records its subscription authority.
+				void Promise.resolve()
+					.then(() => sink.install(batch))
+					.then(
+						(): void => props.onFileBatchInstallSettled(),
+						(error: unknown): void => {
+							props.onFileBatchInstallSettled();
+							queueMicrotask((): void => {
+								throw error;
+							});
+						},
+					);
 			};
 			const session = props.productSessionRef.current;
 			session?.onMetadataSubscriptionOpen?.(options as never);
-			publish(session?.initialMetadataEvents ?? []);
-			session?.onMetadataSubscription?.(publish);
+			if (session?.initialFileBatch !== undefined) publish(session.initialFileBatch);
+			const disposePublisher = session?.onFileBatchPublisher?.(publish);
 			const subscription: BridgeProductMetadataApplicationSubscription<
 				typeof bridgeProductFileMetadataApplicationProtocol
 			> = {
 				cancel: async (): Promise<void> => {
+					disposePublisher?.();
 					events.close(true);
 				},
 				events,
 				subscriptionId,
 				subscriptionKind: 'file.metadata',
-				update: async (
-					updatedOptions: BridgeProductSubscriptionUpdateOptions<'file.metadata'>,
-				): Promise<void> => {
-					props.onMetadataInterestUpdateStarted();
-					try {
-						await props.productSessionRef.current?.onMetadataInterestUpdate?.(updatedOptions);
-					} finally {
-						props.onMetadataInterestUpdateSettled();
-					}
-				},
 			};
 			return subscription as never;
 		},
@@ -633,7 +721,7 @@ function createBrowserTestProductTransport(props: {
 	};
 }
 
-function defaultBrowserTestCurrentSource(): BridgeProductCallResult<'file.source.current'> {
+export function defaultBrowserTestCurrentSource(): BridgeProductCallResult<'file.source.current'> {
 	return {
 		status: 'available',
 		source: {

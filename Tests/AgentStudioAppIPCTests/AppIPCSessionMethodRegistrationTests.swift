@@ -7,36 +7,18 @@ import Testing
 
 @Suite("App IPC session method registrations")
 struct AppIPCSessionMethodRegistrationTests {
-    @Test("each session registration hands its port the canonical pane")
+    @Test("each retained session registration hands its port the canonical pane")
     func registrationsResolveTheCanonicalPane() async throws {
         let fixture = BuiltInMethodRegistrationsFixture()
         let port = RecordingSessionsPort()
         let registrations = try fixture.registrations(sessionsPort: port)
-        let principal = fixture.diagnosticPrincipal
+        let principal = IPCPrincipal(
+            principalId: UUIDv7.generate(), runtimeId: fixture.runtimeId,
+            accessMode: .agentStudioOnly,
+            kind: .spawnedPaneAgent(boundPaneId: fixture.paneId.uuidString, boundWorkspaceId: fixture.workspaceId),
+            approvalAuthority: .noApprovalAuthority)
         let correlationId = UUIDv7.generate()
 
-        _ = try await fixture.registration(named: "session.report", in: registrations).invoke(
-            parameters: try fixture.jsonValue(
-                IPCSessionReportParams(
-                    handle: "self", kind: .needsYou, explanation: "waiting", correlationId: correlationId
-                )
-            ),
-            connectionContext: fixture.connectionContext(principal: principal),
-            targetResolutionTools: fixture.targetResolutionTools(),
-            authorize: { _, request in
-                #expect(request.requiredPrivileges == [.sessionReportWrite])
-                #expect(request.dataScope == .sessionReport)
-                #expect(request.target == .pane(fixture.paneId.uuidString))
-            }
-        )
-        _ = try await fixture.registration(named: "session.message", in: registrations).invoke(
-            parameters: try fixture.jsonValue(
-                IPCSessionMessageParams(handle: "self", text: "hello", correlationId: correlationId)
-            ),
-            connectionContext: fixture.connectionContext(principal: principal),
-            targetResolutionTools: fixture.targetResolutionTools(),
-            authorize: { _, _ in }
-        )
         _ = try await fixture.registration(named: "session.event", in: registrations).invoke(
             parameters: try fixture.jsonValue(
                 Self.eventParams(handle: "self", correlationId: correlationId)
@@ -45,7 +27,7 @@ struct AppIPCSessionMethodRegistrationTests {
             targetResolutionTools: fixture.targetResolutionTools(),
             authorize: { _, _ in }
         )
-        _ = try await fixture.registration(named: "session.query", in: registrations).invoke(
+        let queried = try await fixture.registration(named: "session.query", in: registrations).invoke(
             parameters: try fixture.jsonValue(IPCSessionQueryParams(handle: "self")),
             connectionContext: fixture.connectionContext(principal: principal),
             targetResolutionTools: fixture.targetResolutionTools(),
@@ -55,11 +37,20 @@ struct AppIPCSessionMethodRegistrationTests {
             }
         )
 
-        #expect(await port.reportPaneIds == [fixture.paneId])
-        #expect(await port.messagePaneIds == [fixture.paneId])
+        let replyData: Data
+        switch queried {
+        case .value(let value): replyData = try JSONEncoder().encode(value)
+        case .encoded(let data): replyData = data
+        }
+        let result = try JSONDecoder().decode(IPCSessionQueryResult.self, from: replyData)
+        #expect(result.paneId == fixture.paneId)
+        #expect(result.sourceHealth == .unbound)
+        #expect(result.session == nil)
+
         #expect(await port.eventPaneIds == [fixture.paneId])
         #expect(await port.queryPaneIds == [fixture.paneId])
-        #expect(await port.reportedExplanations == ["waiting"])
+        #expect(!registrations.contains { $0.descriptor.metadata.name == "session.message" })
+        #expect(!registrations.contains { $0.descriptor.metadata.name == "session.report" })
     }
 
     @Test("a pane principal reporting into another pane is denied before the port runs")
@@ -78,14 +69,9 @@ struct AppIPCSessionMethodRegistrationTests {
         let authorizationService = try Self.authorizationService(registrations: registrations)
 
         await #expect(throws: AuthorizationError.self) {
-            _ = try await fixture.registration(named: "session.report", in: registrations).invoke(
+            _ = try await fixture.registration(named: "session.event", in: registrations).invoke(
                 parameters: try fixture.jsonValue(
-                    IPCSessionReportParams(
-                        handle: otherPaneId.uuidString,
-                        kind: .done,
-                        explanation: nil,
-                        correlationId: UUIDv7.generate()
-                    )
+                    Self.eventParams(handle: otherPaneId.uuidString, correlationId: UUIDv7.generate())
                 ),
                 connectionContext: fixture.connectionContext(principal: panePrincipal, channel: .stable),
                 targetResolutionTools: fixture.targetResolutionTools(),
@@ -94,7 +80,8 @@ struct AppIPCSessionMethodRegistrationTests {
                 }
             )
         }
-        #expect(await port.reportPaneIds.isEmpty)
+        let eventPaneIds = await port.eventPaneIds
+        #expect(eventPaneIds.isEmpty)
     }
 
     @Test("a pane principal reporting into its own pane needs no extra grant")
@@ -111,11 +98,9 @@ struct AppIPCSessionMethodRegistrationTests {
         )
         let authorizationService = try Self.authorizationService(registrations: registrations)
 
-        _ = try await fixture.registration(named: "session.report", in: registrations).invoke(
+        _ = try await fixture.registration(named: "session.event", in: registrations).invoke(
             parameters: try fixture.jsonValue(
-                IPCSessionReportParams(
-                    handle: "self", kind: .done, explanation: nil, correlationId: UUIDv7.generate()
-                )
+                Self.eventParams(handle: "self", correlationId: UUIDv7.generate())
             ),
             connectionContext: fixture.connectionContext(principal: panePrincipal, channel: .stable),
             targetResolutionTools: fixture.targetResolutionTools(),
@@ -123,8 +108,8 @@ struct AppIPCSessionMethodRegistrationTests {
                 try await authorizationService.authorize(principal: principal, request: request)
             }
         )
-
-        #expect(await port.reportPaneIds == [fixture.paneId])
+        let eventPaneIds = await port.eventPaneIds
+        #expect(eventPaneIds == [fixture.paneId])
     }
 
     @Test("a missing correlation is rejected as invalid parameters")
@@ -133,15 +118,55 @@ struct AppIPCSessionMethodRegistrationTests {
         let port = RecordingSessionsPort()
         let registrations = try fixture.registrations(sessionsPort: port)
 
+        let encoded = try fixture.jsonValue(Self.eventParams(handle: "self", correlationId: UUIDv7.generate()))
+        guard case .object(var fields) = encoded else {
+            Issue.record("Expected real event object")
+            return
+        }
+        fields.removeValue(forKey: "correlationId")
         await #expect(throws: IPCSchemaValidationError.self) {
-            _ = try await fixture.registration(named: "session.message", in: registrations).invoke(
-                parameters: .object(["handle": .string("self"), "text": .string("hello")]),
+            _ = try await fixture.registration(named: "session.event", in: registrations).invoke(
+                parameters: .object(fields),
                 connectionContext: fixture.connectionContext(principal: fixture.diagnosticPrincipal),
                 targetResolutionTools: fixture.targetResolutionTools(),
                 authorize: { _, _ in }
             )
         }
-        #expect(await port.messagePaneIds.isEmpty)
+        let eventPaneIds = await port.eventPaneIds
+        #expect(eventPaneIds.isEmpty)
+    }
+
+    @Test("refusal authenticates its pane and repeated correlation still reaches its typed port")
+    func refusalRegistrationIsPaneBound() async throws {
+        let fixture = BuiltInMethodRegistrationsFixture()
+        let port = RecordingSessionsPort()
+        let registrations = try fixture.registrations(sessionsPort: port)
+        let principal = IPCPrincipal(
+            principalId: UUIDv7.generate(), runtimeId: fixture.runtimeId,
+            accessMode: .agentStudioOnly,
+            kind: .spawnedPaneAgent(boundPaneId: fixture.paneId.uuidString, boundWorkspaceId: fixture.workspaceId),
+            approvalAuthority: .noApprovalAuthority)
+        let registration = try fixture.registration(named: "session.refusal", in: registrations)
+        let correlationId = UUIDv7.generate()
+        for reason in [IPCSessionRefusalReason.noSessionId, .undecodablePayload] {
+            _ = try await registration.invoke(
+                parameters: try fixture.jsonValue(
+                    IPCSessionRefusalParams(handle: "self", reason: reason, correlationId: correlationId)),
+                connectionContext: fixture.connectionContext(principal: principal),
+                targetResolutionTools: fixture.targetResolutionTools(), authorize: { _, _ in })
+        }
+        #expect(await port.refusalPaneIds == [fixture.paneId, fixture.paneId])
+        #expect(await port.refusalCorrelationIds == [correlationId, correlationId])
+        #expect(await port.eventPaneIds.isEmpty)
+        await #expect(throws: AppIPCSessionsError.self) {
+            _ = try await registration.invoke(
+                parameters: try fixture.jsonValue(
+                    IPCSessionRefusalParams(handle: "self", reason: .undecodablePayload, correlationId: correlationId)),
+                connectionContext: fixture.connectionContext(principal: fixture.diagnosticPrincipal),
+                targetResolutionTools: fixture.targetResolutionTools(), authorize: { _, _ in })
+        }
+        #expect(await port.refusalPaneIds == [fixture.paneId, fixture.paneId])
+        #expect(await port.refusalCorrelationIds == [correlationId, correlationId])
     }
 
     private static func authorizationService(

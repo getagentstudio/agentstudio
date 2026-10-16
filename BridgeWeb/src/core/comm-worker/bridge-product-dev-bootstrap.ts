@@ -88,6 +88,7 @@ export const bridgeProductDevBootstrapRequestSchema = z.discriminatedUnion('reas
 		.object({
 			navigationIntent: bridgeProductDevNavigationIntentSchema,
 			reason: z.literal('initial'),
+			tabId: bridgeProductIdentifierSchema,
 		})
 		.strict(),
 	z
@@ -95,6 +96,7 @@ export const bridgeProductDevBootstrapRequestSchema = z.discriminatedUnion('reas
 			navigationIntent: bridgeProductDevNavigationIntentSchema,
 			paneSessionId: bridgeProductIdentifierSchema,
 			reason: z.literal('workerReplacement'),
+			tabId: bridgeProductIdentifierSchema,
 		})
 		.strict(),
 ]);

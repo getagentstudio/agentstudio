@@ -511,29 +511,58 @@ agentstudio-cli executable (bundled as Contents/Helpers/agentstudio)
            -> AgentStudioIPCTransport and AgentStudioProgrammaticControl
 ```
 
-`agentstudio worktree new`, `fork`, and `list` use the local Git client inside
-the CLI process. They do not read IPC credentials, open the app socket, or use
-app permissions. Other arguments continue through the existing command-line
-runner, which handles local provider/package commands and sends app-backed
-methods through `AgentStudioIPCClientCore`.
+`agentstudio worktree new`, `list`, `remove`, and `prune` use the local Git
+client inside the CLI process. They do not read IPC credentials, open the app
+socket, or use app permissions. Other arguments continue through the existing
+command-line runner, which handles local provider/package commands and sends
+app-backed methods through `AgentStudioIPCClientCore`.
 
 ```sh
 agentstudio worktree new feature/cleanup --repo /path/to/repository
-agentstudio worktree fork feature/experiment --from /path/to/repository
+agentstudio worktree new -c feature/experiment --from /path/to/worktree
 agentstudio worktree list --repo /path/to/repository
 ```
 
 `--repo` and `--from` accept a folder inside the relevant worktree. Without
-either option, the command starts from the current directory. `new` and `list`
-accept `--repo`; `fork` accepts `--from`.
+either option, the command starts from the current directory. `new <branch>`
+copies the main worktree, or the worktree named by `--from`, and puts the copy
+on an existing local or origin branch; a name that exists nowhere is refused
+`noSuchBranch`. `new -c <branch>` creates the branch instead, at the source's
+HEAD or at `--from-branch <branch>`, and refuses a name that exists locally or
+on origin. `--no-fork` makes a plain checkout instead of a copy;
+`--changes-only` (with `-c` and `--from`) carries tracked changes and eligible
+untracked files without ignored files. The
+[worktree CLI guide](../../guides/worktree_cli.md) has the full rules. `list`
+accepts optional worktree or branch targets and reports working-change,
+integration, evidence, lock, and removal-readiness state. `remove` accepts one
+or more targets. `prune` previews eligible linked worktrees by default;
+`--apply` performs the removals.
+
+| Command | Options |
+| --- | --- |
+| `new <branch>` | `--repo <path>`, `--from <worktree>`, `--no-fork`, `--no-fetch`, `--json` |
+| `new -c <branch>` | `--repo <path>`, `--from <worktree>`, `--from-branch <branch>`, `--no-fork`, `--changes-only`, `--no-fetch`, `--json` |
+| `list [target...]` | `--repo <path>`, `--no-fetch`, `--json` |
+| `remove <target...>` | `--repo <path>`, `--no-fetch`, `-f` / `--force`, `-D`, `--no-delete-branch`, `--archive-to-main`, `--archive-to <path>`, `--discard-tmp`, `--remove-stale-lock`, `--dry-run`, `--json` |
+| `prune` | `--repo <path>`, `--no-fetch`, `--archive-to-main`, `--archive-to <path>`, `--apply`, `--json` |
+
+`-f` and `--force` are aliases for discarding working changes during
+`remove`. `-D` permits deletion of a branch with remaining contribution;
+`--no-delete-branch` keeps the branch. `--archive-to-main` and
+`--archive-to <path>` copy `tmp/` evidence before removal. `--discard-tmp`
+discards that evidence. `--remove-stale-lock` removes an identified stale lock
+after checking its identity and age. `--dry-run` reports the removal plan
+without changing the worktree lifecycle; the automatic fetch still runs unless
+`--no-fetch` is supplied. `prune` accepts neither `-f` / `--force` nor `-D`.
+Its only mutation option is `--apply`.
 
 The worktree commands use these exit codes:
 
 | Code | Meaning |
 | --- | --- |
-| 0 | Worktree created or list returned. |
-| 1 | Operation refused before changing anything. |
-| 2 | Operation failed after preflight. |
+| 0 | Creation or listing succeeded. Removal has no refused or failed entry. Prune has no failed entry; skipped worktrees do not change its exit code. |
+| 1 | Creation or fork was refused, or removal includes a refused entry and no entry failed. A dry-run target that cannot be resolved also returns 1. |
+| 2 | A command failed, a removal entry failed, or a prune entry failed. |
 | 64 | Malformed arguments. One usage line goes to stderr; stdout stays empty, including with `--json`. |
 
 The IPC client remains a client surface. It cannot import `AgentStudioAppIPC`

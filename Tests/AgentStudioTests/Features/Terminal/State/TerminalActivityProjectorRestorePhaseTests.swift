@@ -415,6 +415,41 @@ struct TerminalActivityProjectorRestorePhaseTests {
         await projector.reset()
     }
 
+    @Test("restore replay never submits to the persisted pane activity sink")
+    func armedReplayCannotSubmitPersistedPaneActivity() async {
+        let activityRecorder = RestorePhaseActivitySinkRecorder()
+        let readSequence = RestorePhaseViewportReadSequence(["fresh baseline", "new live output"])
+        let projector = TerminalActivityProjector(activitySink: { _ in activityRecorder.record() })
+        await projector.configure(lastOutputLineReader: { _ in readSequence.read() }, outcomeSink: { _ in })
+        let paneID = UUIDv7.generate()
+        let surfaceID = UUIDv7.generate()
+        let generation = RestoreGeneration(rawValue: 91)
+        await projector.armRestorePhase(paneID: paneID, generation: generation)
+
+        for latestTotal in [10, 100, 1000] {
+            await projector.ingest(
+                surfaceID: surfaceID, paneID: paneID,
+                aggregate: makeAggregate(firstTotal: 0, latestTotal: latestTotal),
+                latestState: ScrollbarState(top: latestTotal - 10, bottom: latestTotal, total: latestTotal),
+                context: projectionContext(isAttended: true))
+            await projector.commandFinished(surfaceID: surfaceID, paneID: paneID)
+        }
+        #expect(readSequence.readCount == 0)
+        #expect(activityRecorder.isEmpty)
+        #expect(await projector.scheduledTimerCount == 0)
+
+        await projector.applyOrderedControl(
+            surfaceID: surfaceID, paneID: paneID, precedingAggregate: nil,
+            control: .restorePhaseEnded(generation))
+        await projector.commandFinished(surfaceID: surfaceID, paneID: paneID)
+        #expect(readSequence.readCount == 1)
+        #expect(activityRecorder.isEmpty)
+        await projector.commandFinished(surfaceID: surfaceID, paneID: paneID)
+        #expect(readSequence.readCount == 2)
+        #expect(activityRecorder.count == 1)
+        await projector.reset()
+    }
+
     @Test("stale ends preserve gating across replacement, while duplicate matched ends are inert")
     func staleEndsPreserveGatingAcrossReplacement() async {
         let clock = TestPushClock()
@@ -502,7 +537,10 @@ struct TerminalActivityProjectorRestorePhaseTests {
         let router = TerminalActivityRouter(
             bus: EventBus<RuntimeEnvelope>(),
             activityAtom: TerminalActivityAtom(),
-            projector: projector
+            callbackHandlingAccess: { nil },
+            projector: projector,
+            surfaceIDForPaneID: { _ in nil },
+            lastOutputLineReader: { _ in .surfaceStale }
         )
         let paneID = UUIDv7.generate()
         let generation = RestoreGeneration(rawValue: 7)

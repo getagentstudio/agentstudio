@@ -34,8 +34,8 @@ package enum BridgeDevelopmentProductHostError: Error, Equatable, Sendable {
     case replacementNavigationChanged
     case replacementPaneNotFound
     case reviewPublicationFailed
-    case sessionActivationFailed
     case sessionAlreadyOpen
+    case sessionActivationFailed
     case shutdown
 }
 
@@ -60,11 +60,13 @@ package struct BridgeDevelopmentProductBootstrapRequest: Decodable, Equatable, S
     let navigationIntent: NavigationIntent
     package let paneSessionId: String?
     package let reason: Reason
+    package let tabId: String
 
     private enum CodingKeys: String, CodingKey, CaseIterable {
         case navigationIntent
         case paneSessionId
         case reason
+        case tabId
     }
 
     package init(from decoder: Decoder) throws {
@@ -79,6 +81,8 @@ package struct BridgeDevelopmentProductBootstrapRequest: Decodable, Equatable, S
             forKey: .navigationIntent
         ).value
         reason = try container.decode(Reason.self, forKey: .reason)
+        tabId = try container.decode(String.self, forKey: .tabId)
+        try BridgeProductContractDecoding.validateIdentifier(tabId, codingPath: decoder.codingPath)
         paneSessionId = try container.decodeIfPresent(String.self, forKey: .paneSessionId)
         switch reason {
         case .initial:

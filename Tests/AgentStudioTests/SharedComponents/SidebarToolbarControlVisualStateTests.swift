@@ -5,6 +5,7 @@ import Testing
 
 @testable import AgentStudioSharedComponents
 
+@MainActor
 @Suite("Sidebar toolbar control visual state", .serialized)
 struct SidebarToolbarControlVisualStateTests {
     @Test("outgoing label fade overlaps shared resizing")

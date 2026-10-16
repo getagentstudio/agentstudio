@@ -18,7 +18,7 @@ struct BridgeProductSessionControlDispatchTests {
 
         // Act
         let revocation = await fixture.session.revoke(acknowledgeLifecycle: { _ in true })
-        let claimedAfterRevocation = await fixture.session.claimControlProviderDispatch(token: token)
+        let claimedAfterRevocation = await fixture.session.admitControlProviderExecution(token: token)
 
         // Assert
         #expect(!claimedAfterRevocation)
@@ -28,8 +28,8 @@ struct BridgeProductSessionControlDispatchTests {
         #expect(snapshot.controlReplay.inFlightRequestSequence == nil)
     }
 
-    @Test("revocation waits for a claimed provider dispatch and preserves exact replay bytes")
-    func providerDispatchClaimWinsBeforeRevocation() async throws {
+    @Test("revocation settles an admitted operation and preserves its exact admission replay")
+    func admittedOperationIsFencedByRevocation() async throws {
         // Arrange
         let fixture = try makePendingControlFixture()
         let admission = await fixture.productAdmission.beginControl(
@@ -39,24 +39,30 @@ struct BridgeProductSessionControlDispatchTests {
         )
         let token = try #require(controlDispatchToken(admission))
         let request = try #require(controlDispatchRequest(admission))
-        #expect(await fixture.session.claimControlProviderDispatch(token: token))
+        let admitted = try await fixture.session.admitControlOperation(token: token, execute: { _ in })
         let exactResponseBytes = try JSONEncoder().encode(
             BridgeProductControlResponse.workerSessionAccepted(correlating: request)
         )
 
         // Act
         let revocation = await fixture.session.revoke(acknowledgeLifecycle: { _ in true })
-        let whileRevoking = await fixture.session.snapshot
-        _ = try await fixture.session.completeControl(
-            token: token,
-            exactResponseBytes: exactResponseBytes
-        )
         let revoked = await revocation.wait()
+        var replayCache = await fixture.session.controlReplay
+        let replay = replayCache.begin(
+            requestSequence: 1,
+            exactRequestBytes: fixture.requestBytes
+        )
 
         // Assert
-        #expect(whileRevoking.pendingRequestKind == "workerSession.open")
-        #expect(whileRevoking.pendingControlProviderDispatched)
         #expect(revoked)
+        await #expect(throws: BridgeProductSessionError.invalidAdmissionToken) {
+            _ = try await fixture.session.completeControl(
+                token: token,
+                exactResponseBytes: exactResponseBytes
+            )
+        }
+        #expect(replay == .replay(exactResponseBytes: admitted.responseBytes))
+        #expect((await fixture.session.diagnosticSnapshot).retainedOperationResultCount == 0)
         let finalSnapshot = await fixture.session.snapshot
         #expect(finalSnapshot.lifecycle == .revoked)
         #expect(finalSnapshot.pendingRequestKind == nil)

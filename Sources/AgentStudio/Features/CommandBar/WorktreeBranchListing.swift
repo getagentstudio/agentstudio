@@ -5,6 +5,6 @@ package protocol WorktreeBranchListing: Sendable {
     func branchNames(
         forRepositoryId repositoryId: UUID,
         repositoryPath: URL,
-        enrichmentRevision: Int
+        openingToken: UUID
     ) async throws -> [String]
 }

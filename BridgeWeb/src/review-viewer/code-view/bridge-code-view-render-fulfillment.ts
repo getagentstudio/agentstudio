@@ -260,7 +260,7 @@ function exactSourceItemForPresentationItem(item: BridgeMainCodeViewItem): Bridg
 	return exactSourceItemByPresentationItem.get(item) ?? item;
 }
 
-function bridgeCodeViewPresentationItemHasExactSource(
+export function bridgeCodeViewPresentationItemHasExactSource(
 	presentationItem: CodeViewItem | undefined,
 	exactSourceItem: BridgeMainCodeViewItem,
 ): boolean {

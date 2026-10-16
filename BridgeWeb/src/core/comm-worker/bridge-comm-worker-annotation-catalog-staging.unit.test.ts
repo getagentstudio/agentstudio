@@ -17,7 +17,6 @@ describe('Bridge communication worker annotation catalog staging', () => {
 
 		const messages = bridgeCommWorkerAnnotationCatalogStagingEvents({
 			catalog,
-			operationCorrelationId: 'a'.repeat(64),
 			surface: 'file',
 		});
 
@@ -37,6 +36,26 @@ describe('Bridge communication worker annotation catalog staging', () => {
 				BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 			);
 		}
+	});
+
+	test('rejects an operation ID on a view-batch catalog', () => {
+		const catalog = catalogWithEntries([]);
+		const viewBatch = bridgeCommWorkerAnnotationCatalogStagingEvents({
+			catalog,
+			surface: 'file',
+		});
+		expect(
+			viewBatch.every(
+				(message) => bridgeWorkerServerToMainMessageSchema.safeParse(message).success,
+			),
+		).toBe(true);
+		expect(viewBatch[0]).not.toHaveProperty('operationCorrelationId');
+		expect(
+			bridgeWorkerServerToMainMessageSchema.safeParse({
+				...viewBatch[0],
+				operationCorrelationId: 'a'.repeat(64),
+			}).success,
+		).toBe(false);
 	});
 });
 

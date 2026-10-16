@@ -22,7 +22,7 @@ struct SDKWorktreeForkEligibilityCheckerTests {
         ]
     )
     func unavailableReasonsMapToCopy(_ reason: GitWorktreeForkRejectionReason) async {
-        let checker = SDKWorktreeForkEligibilityChecker { _, _ in .unavailable(reason) }
+        let checker = SDKWorktreeForkEligibilityChecker { _, _, _ in .unavailable(reason) }
 
         let eligibility = await checker.forkEligibility(
             sourceWorktreePath: Self.source, destinationDirectory: Self.destinationDirectory)
@@ -43,8 +43,8 @@ struct SDKWorktreeForkEligibilityCheckerTests {
     @Test("the query names a probe destination beside the repository and passes available through")
     func availablePassesThroughWithProbeDestination() async {
         let recorder = EligibilityQueryRecorder()
-        let checker = SDKWorktreeForkEligibilityChecker { source, destination in
-            await recorder.record(source: source, destination: destination)
+        let checker = SDKWorktreeForkEligibilityChecker { source, destination, materialization in
+            await recorder.record(source: source, destination: destination, materialization: materialization)
             return .available
         }
 
@@ -53,6 +53,7 @@ struct SDKWorktreeForkEligibilityCheckerTests {
 
         #expect(eligibility == .available)
         #expect(await recorder.sources == [Self.source])
+        #expect(await recorder.materializations == [.copyOnWrite])
         #expect(
             await recorder.destinations.map(\.path)
                 == [
@@ -85,9 +86,11 @@ struct SDKWorktreeForkEligibilityCheckerTests {
 private actor EligibilityQueryRecorder {
     private(set) var sources: [URL] = []
     private(set) var destinations: [URL] = []
+    private(set) var materializations: [GitWorktreeForkMaterialization] = []
 
-    func record(source: URL, destination: URL) {
+    func record(source: URL, destination: URL, materialization: GitWorktreeForkMaterialization) {
         sources.append(source)
         destinations.append(destination)
+        materializations.append(materialization)
     }
 }

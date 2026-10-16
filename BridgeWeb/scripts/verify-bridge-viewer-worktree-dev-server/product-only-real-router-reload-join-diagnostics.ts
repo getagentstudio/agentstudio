@@ -11,7 +11,7 @@ const maximumCandidateCount = 32;
 const maximumStreamCount = 4;
 const maximumWorkerCount = 8;
 
-type ReloadJoinWaiterName = 'file-metadata-open' | 'frame-acknowledgement' | 'review-metadata-open';
+type ReloadJoinWaiterName = 'file-metadata-open' | 'subscription-receipt' | 'review-metadata-open';
 
 interface ReloadJoinRouteEntry {
 	documentGeneration: number;
@@ -52,7 +52,7 @@ interface ReloadJoinDiagnostics {
 
 export interface BridgeViewerReloadJoinResponses {
 	readonly fileMetadataOpen: Promise<PlaywrightResponse>;
-	readonly frameAcknowledgement: Promise<PlaywrightResponse>;
+	readonly subscriptionReceipt: Promise<PlaywrightResponse>;
 	readonly reviewMetadataOpen: Promise<PlaywrightResponse>;
 }
 
@@ -88,16 +88,16 @@ export class BridgeViewerReloadJoinDiagnosticRecorder {
 			omittedCandidateCount: 0,
 			waiters: new Map<ReloadJoinWaiterName, ReloadJoinWaiterState>([
 				['file-metadata-open', { state: 'armed' }],
-				['frame-acknowledgement', { state: 'armed' }],
+				['subscription-receipt', { state: 'armed' }],
 				['review-metadata-open', { state: 'armed' }],
 			]),
 		};
 		return {
-			frameAcknowledgement: this.#observeWaiter(
-				'frame-acknowledgement',
+			subscriptionReceipt: this.#observeWaiter(
+				'subscription-receipt',
 				page.waitForResponse(
 					(response): boolean =>
-						responseIsFromTargetGeneration(response) && responseIsFrameObservation(response),
+						responseIsFromTargetGeneration(response) && responseIsSubscriptionReceipt(response),
 					{ timeout: timeoutMilliseconds },
 				),
 			),
@@ -217,14 +217,14 @@ export class BridgeViewerReloadJoinDiagnosticRecorder {
 }
 
 const reloadJoinWaiterNames: readonly ReloadJoinWaiterName[] = [
-	'frame-acknowledgement',
+	'subscription-receipt',
 	'file-metadata-open',
 	'review-metadata-open',
 ];
 
 function entryIsCandidate(entry: ReloadJoinRouteEntry): boolean {
 	return (
-		entry.requestKind === 'stream.frameObserved' ||
+		entry.requestKind === 'subscription.acknowledge' ||
 		(entry.requestKind === 'subscription.open' &&
 			(entry.subscriptionKind === 'file.metadata' || entry.subscriptionKind === 'review.metadata'))
 	);
@@ -270,10 +270,11 @@ function rejectionReason(error: unknown): 'owned-deadline' | 'other' | 'wait-tim
 	return error instanceof errors.TimeoutError ? 'wait-timeout' : 'other';
 }
 
-function responseIsFrameObservation(response: PlaywrightResponse): boolean {
+function responseIsSubscriptionReceipt(response: PlaywrightResponse): boolean {
 	if (new URL(response.url()).pathname !== '/__bridge-product/command') return false;
 	return (
-		recordValue(parseJSONOrNull(response.request().postData()))?.['kind'] === 'stream.frameObserved'
+		recordValue(parseJSONOrNull(response.request().postData()))?.['kind'] ===
+		'subscription.acknowledge'
 	);
 }
 

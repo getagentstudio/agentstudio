@@ -56,6 +56,7 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
             let correlationId = UUID()
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             let result = try await controller.refreshReviewForIPC(correlationId: correlationId)
 
@@ -105,6 +106,7 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
             _ = try await controller.refreshReviewForIPC(correlationId: nil)
 
             let result = try controller.ipcReviewPackageSnapshot()
@@ -336,47 +338,6 @@ extension WebKitSerializedTests {
             _ = await teardownRetirement.value
         }
 
-        @Test("IPC content descriptor does not start provider body load")
-        func ipcContentDescriptor_doesNotStartProviderBodyLoad() async throws {
-            let handle = makeBridgeContentHandle(
-                itemId: "item-source",
-                role: .head,
-                reviewGeneration: 7,
-                contentHash: bridgeSHA256ContentHash("let value = 1\n"),
-                sizeBytes: 14
-            )
-            let gate = HeldStep<Void>("gate", cancellation: .holdThroughCancellation)
-            let provider = BridgeReviewSourceProviderFake(
-                comparison: BridgeEndpointComparison(
-                    baseEndpoint: makeBridgeEndpoint(endpointId: "index", kind: .index),
-                    headEndpoint: makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree),
-                    changedFiles: []
-                ),
-                contentByHandleId: [
-                    handle.handleId: makeContentResult(handle: handle, data: "let value = 1\n")
-                ],
-                contentLoadGate: gate
-            )
-            let controller = BridgePaneController(
-                paneId: UUIDv7.generate(),
-                state: BridgePaneState(panelKind: .diffViewer, source: nil),
-                appRootURL: testBridgeAppRootURL(),
-                reviewSourceProvider: provider,
-                initialPaneActivity: .foreground
-            )
-            defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-            try await installIPCContentDescriptorPackage(handle, in: controller)
-
-            let result = try await controller.loadContentForIPC(
-                contentHandleId: handle.handleId,
-                reviewGeneration: 7
-            )
-
-            #expect(result.handle.handleId == handle.handleId)
-            #expect(await provider.recordedContentRequestsCount() == 0)
-            gate.release()
-        }
-
         @Test("IPC content descriptor reflects active handle after byte cap tightens")
         func ipcContentDescriptor_reflectsActiveHandleAfterByteCapTightens() async throws {
             let handle = makeBridgeContentHandle(
@@ -521,7 +482,7 @@ extension WebKitSerializedTests {
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
-            _ = try await controller.refreshReviewForIPC(correlationId: nil)
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             #expect(throws: BridgeIPCProjectionError(reason: .payloadTooLarge)) {
                 try controller.ipcReviewPackageSnapshot()
@@ -578,7 +539,7 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-            _ = try await controller.refreshReviewForIPC(correlationId: nil)
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             await #expect(throws: BridgeIPCProjectionError(reason: .itemNotFound)) {
                 _ = try await controller.selectReviewItemForIPC(
@@ -695,7 +656,7 @@ extension WebKitSerializedTests {
                 initialPaneActivity: .foreground
             )
             defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-            _ = try await controller.refreshReviewForIPC(correlationId: nil)
+            try await showIPCReviewPageAndAwaitInitialPackage(controller)
 
             let snapshot = try await controller.telemetrySnapshotForIPC()
 
@@ -715,6 +676,22 @@ private func makeIPCForegroundController() -> BridgePaneController {
         appRootURL: testBridgeAppRootURL(),
         initialPaneActivity: .foreground
     )
+}
+
+@MainActor
+private func showIPCReviewPageAndAwaitInitialPackage(
+    _ controller: BridgePaneController
+) async throws {
+    let productAdmission = try #require(controller.productAdmissionGate.acquire())
+    await sendPageActiveViewerMode(
+        .review,
+        controller: controller,
+        productAdmission: productAdmission,
+        sequence: 1
+    )
+    if let initialReviewBuild = controller.activeReviewRefreshTask {
+        await initialReviewBuild.value
+    }
 }
 
 @MainActor
@@ -752,7 +729,7 @@ private func makeIPCReviewSelectionController() async throws -> BridgePaneContro
         reviewSourceProvider: provider,
         initialPaneActivity: .foreground
     )
-    _ = try await controller.refreshReviewForIPC(correlationId: nil)
+    try await showIPCReviewPageAndAwaitInitialPackage(controller)
     return controller
 }
 

@@ -59,6 +59,54 @@ extension BridgeComparisonTargetContentLifecycleTests {
         )
     }
 
+    func expectRetiredWorkerQueryRefused(
+        provider: BridgePaneProductSchemeProvider,
+        installation: BridgeProductSessionInstallation,
+        productAdmission: BridgeProductAdmissionContext
+    ) async throws {
+        let retiredWorkerQuery = try queryRequest(
+            suffix: "retired-worker",
+            sequence: 3,
+            paneSessionId: installation.bootstrap.paneSessionId,
+            workerInstanceId: installation.bootstrap.workerInstanceId
+        )
+        let retiredWorkerReply = await provider.response(
+            for: retiredWorkerQuery,
+            productAdmission: productAdmission
+        )
+        guard case .requestError = retiredWorkerReply else {
+            Issue.record("A retired worker must not receive a successful comparison-target query")
+            return
+        }
+    }
+
+    func expectSuccessorComparisonTargetReservation(
+        provider: BridgePaneProductSchemeProvider,
+        installation: BridgeProductSessionInstallation,
+        productAdmission: BridgeProductAdmissionContext
+    ) async throws {
+        try await openBridgePaneProductSession(installation)
+        let successorDispatcher = makeBridgeProductSchemeControlDispatcher(
+            session: installation.session,
+            provider: provider,
+            productAdmission: productAdmission
+        )
+        try await admitComparisonTargetQuery(
+            suffix: "successor",
+            sequence: 2,
+            installation: installation,
+            dispatcher: successorDispatcher,
+            capabilityHeader: try BridgeProductCapabilityHeaderEncoding.encode(
+                installation.capabilityBytes
+            ),
+            productAdmission: productAdmission
+        )
+        #expect(
+            await provider.pendingComparisonTargetReservation?.workerInstanceId
+                == installation.bootstrap.workerInstanceId
+        )
+    }
+
     func acknowledgeRemainingFramesAndRetire(
         lease: BridgeProductProducerLease,
         request: BridgeProductContentRequest,
@@ -73,15 +121,17 @@ extension BridgeComparisonTargetContentLifecycleTests {
                 productAdmission: productAdmission
             )
             #expect(delivery.frame.sequence == expectedSequence)
-            #expect(
-                await session.acknowledgeContentFrameObservation(
-                    try contentFrameAcknowledgement(
-                        for: request.admission,
-                        contentSequence: delivery.frame.sequence
-                    ),
-                    productAdmission: productAdmission
+            if expectedSequence == 1 {
+                #expect(
+                    await session.acknowledgeContentFrameObservation(
+                        try contentFrameAcknowledgement(
+                            for: request.admission,
+                            contentSequence: delivery.frame.sequence
+                        ),
+                        productAdmission: productAdmission
+                    )
                 )
-            )
+            }
         }
         let retirement = await session.beginProducerRetirement(
             lease,

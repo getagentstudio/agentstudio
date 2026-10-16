@@ -70,6 +70,7 @@ extension WorkspaceSurfaceCoordinator {
         }
 
         let terminalView = TerminalPaneMountView(
+            surfaceOperations: terminalSurfaceOperations,
             paneId: pane.id,
             title: pane.metadata.title,
             performanceTraceRecorder: performanceTraceRecorder

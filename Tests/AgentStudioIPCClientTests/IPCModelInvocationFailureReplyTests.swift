@@ -32,7 +32,6 @@ struct IPCModelInvocationFailureReplyTests {
     func replyReasonIsDeclaredBySessionDescriptors() throws {
         let catalog = try IPCBuiltInMethodCatalog(
             inputs: .init(
-                terminalWaitMaximumSeconds: 9,
                 relationships: .init(
                     paneFocus: .noInteractiveIdentity,
                     paneClose: .noInteractiveIdentity,
@@ -44,9 +43,9 @@ struct IPCModelInvocationFailureReplyTests {
                 examples: .init(illustrativeIdentifier: UUID())
             )
         )
-        let reportErrors = catalog.sessions.sessionReport.documentedErrors.map(\.reason)
+        let reportErrors = catalog.paneContext.messageSend.documentedErrors.map(\.reason)
 
         #expect(reportErrors.contains(IPCSessionFailureReason.bindingRequired))
-        #expect(reportErrors.contains(IPCSessionFailureReason.correlationConflict))
+        #expect(reportErrors.contains("conflict"))
     }
 }

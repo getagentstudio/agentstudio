@@ -13,6 +13,7 @@ extension BridgePaneProductFileMetadataSource {
         let subscriptionId: String
     }
 
+    // WIP checkpoint: split per-subscription publication before the 1.4c cutover commit.
     func publish(
         changeset: FileChangeset,
         productAdmission: BridgeProductAdmissionContext,
@@ -42,7 +43,6 @@ extension BridgePaneProductFileMetadataSource {
                 foregroundWorkAdmission.withValidAdmission({ true }) == true,
                 context.productAdmission.matches(productAdmission)
             else { return [] }
-            let productSource = context.productSource
             let changedPaths = Set(
                 changeset.paths.filter {
                     BridgeWorktreeFileMaterializer.canMaterializeDemandPath(
@@ -50,59 +50,120 @@ extension BridgePaneProductFileMetadataSource {
                         openedSource: context.openedSource
                     )
                 })
-            let refreshed = await treeRowRefresher(
-                authority.worktree.path,
-                changedPaths,
-                true
-            )
-            guard foregroundWorkAdmission.withValidAdmission({ true }) == true,
-                let currentContext = contextBySubscriptionId[subscriptionId],
-                currentContext.productSource == productSource,
-                currentContext.productAdmission.matches(productAdmission),
-                await currentContext.manifestIndex.upsertRowsForForegroundRefresh(
-                    refreshed.rows,
-                    productAdmission: productAdmission,
-                    foregroundWorkAdmission: foregroundWorkAdmission
-                )
-            else { return [] }
-            let removedRows: [BridgeWorktreeTreeRowMetadata]
-            switch await currentContext.manifestIndex.removePathsForForegroundRefresh(
-                refreshed.missingPaths,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            ) {
-            case .applied(let rows):
-                removedRows = rows
-            case .rejected:
-                return []
+            if deferFileChanges(
+                subscriptionId: subscriptionId, changedPaths: changedPaths, statusResult: gitStatusResult,
+                productAdmission: productAdmission, foregroundWorkAdmission: foregroundWorkAdmission)
+            {
+                continue
             }
-            guard
-                let subscriptionEmissions = try makeChangesetEmissions(
-                    .init(
-                        changedPaths: changedPaths,
-                        foregroundWorkAdmission: foregroundWorkAdmission,
-                        gitStatusResult: gitStatusResult,
-                        productAdmission: productAdmission,
-                        productSource: productSource,
-                        refreshed: refreshed,
-                        removedRows: removedRows,
-                        subscriptionId: subscriptionId
-                    )
-                )
-            else { return [] }
-            let renewalEmissions = try await renewInvalidatedDescriptorInterests(
-                subscription: currentContext.subscription,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            )
             emissions.append(
-                contentsOf: try changesetEmissionsWithRenewedDescriptors(
-                    subscriptionEmissions,
-                    renewalEmissions: renewalEmissions
-                )
-            )
+                contentsOf: try await applyFileChanges(
+                    .init(
+                        subscriptionId: subscriptionId, changedPaths: changedPaths, statusResult: gitStatusResult,
+                        productAdmission: productAdmission, foregroundWorkAdmission: foregroundWorkAdmission)))
         }
         return emissions
+    }
+
+    struct FileChangesPublicationRequest: Sendable {
+        let subscriptionId: String
+        let changedPaths: Set<String>
+        let statusResult: GitWorkingTreeStatusResult?
+        let productAdmission: BridgeProductAdmissionContext
+        let foregroundWorkAdmission: BridgePaneRefreshWorkAdmission
+    }
+
+    func applyFileChanges(_ request: FileChangesPublicationRequest) async throws
+        -> [BridgePaneProductFileMetadataEmission]
+    {
+        let subscriptionId = request.subscriptionId
+        let changedPaths = request.changedPaths
+        let gitStatusResult = request.statusResult
+        let productAdmission = request.productAdmission
+        let foregroundWorkAdmission = request.foregroundWorkAdmission
+        guard let context = contextBySubscriptionId[subscriptionId],
+            context.productAdmission.matches(productAdmission),
+            productAdmission.withValidAdmission({ true }) == true,
+            foregroundWorkAdmission.withValidAdmission({ true }) == true
+        else { return [] }
+        let productSource = context.productSource
+        let refreshed = await treeRowRefresher(
+            authority.worktree.path,
+            changedPaths,
+            true
+        )
+        guard foregroundWorkAdmission.withValidAdmission({ true }) == true,
+            let currentContext = contextBySubscriptionId[subscriptionId],
+            currentContext.productSource == productSource,
+            currentContext.productAdmission.matches(productAdmission),
+            await currentContext.manifestIndex.upsertRowsForForegroundRefresh(
+                refreshed.rows,
+                productAdmission: productAdmission,
+                foregroundWorkAdmission: foregroundWorkAdmission
+            )
+        else { return [] }
+        let removedRows: [BridgeWorktreeTreeRowMetadata]
+        switch await currentContext.manifestIndex.removePathsForForegroundRefresh(
+            refreshed.missingPaths,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission
+        ) {
+        case .applied(let rows):
+            removedRows = rows
+        case .rejected:
+            return []
+        }
+        if let gitStatusResult {
+            let acceptedStatus: Bool
+            switch gitStatusResult {
+            case .available(let status):
+                acceptedStatus = try await currentContext.manifestIndex.updateMemberStatus(
+                    state: .ready,
+                    branchName: status.branch,
+                    ahead: status.summary.aheadCount,
+                    behind: status.summary.behindCount,
+                    staged: status.summary.staged,
+                    unstaged: status.summary.changed,
+                    untracked: status.summary.untracked,
+                    productAdmission: productAdmission
+                )
+            case .unavailable:
+                acceptedStatus = try await currentContext.manifestIndex.updateMemberStatus(
+                    state: .stale,
+                    branchName: nil,
+                    ahead: nil,
+                    behind: nil,
+                    staged: nil,
+                    unstaged: nil,
+                    untracked: nil,
+                    productAdmission: productAdmission
+                )
+            }
+            guard acceptedStatus else { return [] }
+        }
+        guard
+            let subscriptionEmissions = try makeChangesetEmissions(
+                .init(
+                    changedPaths: changedPaths,
+                    foregroundWorkAdmission: foregroundWorkAdmission,
+                    gitStatusResult: gitStatusResult,
+                    productAdmission: productAdmission,
+                    productSource: productSource,
+                    refreshed: refreshed,
+                    removedRows: removedRows,
+                    subscriptionId: subscriptionId
+                )
+            )
+        else { return [] }
+        let renewalEmissions = try await renewInvalidatedDescriptorInterests(
+            subscription: currentContext.subscription,
+            productAdmission: productAdmission,
+            foregroundWorkAdmission: foregroundWorkAdmission
+        )
+        return try changesetEmissionsWithRenewedDescriptors(
+            subscriptionEmissions,
+            renewalEmissions: renewalEmissions
+        )
     }
 
     private func makeChangesetEmissions(
@@ -111,7 +172,7 @@ extension BridgePaneProductFileMetadataSource {
         guard request.foregroundWorkAdmission.withValidAdmission({ true }) == true,
             (request.productAdmission.withValidAdmission { true }) == true
         else { return nil }
-        var emissions = try BridgePaneProductFileMetadataEncoding.treeDeltaEmissions(
+        var emissions = try BridgePaneProductFileMetadataEncoding.inventoryChangeEmissions(
             refreshed: request.refreshed,
             removedRows: request.removedRows,
             source: request.productSource,
@@ -151,7 +212,7 @@ extension BridgePaneProductFileMetadataSource {
                 }
                 // Tree deltas cover unmaterialized paths; a null ID would reset every descriptor.
                 return .init(
-                    event: .invalidated(
+                    fact: .invalidated(
                         try .init(
                             fileId: previousDescriptor.fileId,
                             path: path,
@@ -165,22 +226,11 @@ extension BridgePaneProductFileMetadataSource {
             }
         guard (request.productAdmission.withValidAdmission { true }) == true else { return nil }
         emissions.append(contentsOf: invalidationEmissions)
-        if let gitStatusResult = request.gitStatusResult {
-            let statusEvent: BridgeProductFileMetadataEvent
-            switch gitStatusResult {
-            case .available(let status):
-                statusEvent = BridgePaneProductFileMetadataEncoding.statusEvent(
-                    status,
-                    source: request.productSource
-                )
-            case .unavailable:
-                statusEvent = .statusPatch(
-                    .init(patch: .invalidated, source: request.productSource)
-                )
-            }
+        if request.gitStatusResult != nil {
+            let statusEvent = BridgePaneProductFileSourceFact.statusChanged(request.productSource)
             emissions.append(
                 .init(
-                    event: statusEvent,
+                    fact: statusEvent,
                     subscriptionId: request.subscriptionId
                 )
             )

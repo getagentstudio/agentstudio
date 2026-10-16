@@ -3,14 +3,13 @@ import Testing
 
 @testable import AgentStudioBridge
 
-@Suite("Bridge File metadata interest admission")
+@Suite("Bridge File metadata scope admission")
 struct BridgeFileInterestAdmissionTests {
     @Test(
-        "committed File interest starts after source acceptance while bootstrap continues",
+        "accepted File scope reaches the source while source opening is suspended",
         .timeLimit(.minutes(1))
     )
-    func committedFileInterestStartsAfterSourceAcceptance() async throws {
-        // Arrange
+    func acceptedFileScopeCanStartDuringSourceOpening() async throws {
         let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
         let harness = try await BridgeProductSessionLifecycleHarness.opened()
         let lease = try await harness.admitMetadataFrames(through: 0)
@@ -36,67 +35,48 @@ struct BridgeFileInterestAdmissionTests {
             bridgeProductLifecycleFileSubscriptionOpenObject(requestSequence: 2, epoch: 1)
         )
         let openToken = try #require(controlExecutionToken(try await harness.begin(openRequest)))
-        #expect(await harness.session.claimControlProviderDispatch(token: openToken))
-        let emptyInterestSha256 = try BridgeProductSubscriptionInterestState.fileMetadata(
-            interests: [],
-            pathScope: []
-        ).sha256Hex()
+        #expect(await harness.session.admitControlProviderExecution(token: openToken))
         let openResponse = try BridgeProductControlResponse.subscriptionOpenAccepted(
             correlating: openRequest,
-            interestSha256: emptyInterestSha256
+            worktreeId: nil
         )
-        let openEffect = try await harness.session.completeControl(
+        let openEffect = try await harness.session.completeAdmittedControl(
             token: openToken,
             exactResponseBytes: try JSONEncoder().encode(openResponse)
         )
         _ = try await pullMetadataFrame(from: pump)
-        await coordinator.apply(
-            openEffect,
-            productAdmission: harness.productAdmission.context
-        )
-        await source.waitUntilOpenStarted()
+        await coordinator.apply(openEffect, productAdmission: harness.productAdmission.context)
+        #expect(await source.waitUntilOpenStarted() == 1)
         await harness.session.settleControlProviderDispatch(token: openToken)
-        let lifecycle = try coordinatorFileSubscriptionLifecycle()
-        let updateId = "file-update-before-source-acceptance"
-        let updateRequest = try coordinatorFileUpdateRequest(
-            emptyInterestSha256: emptyInterestSha256,
-            targetInterestSha256: lifecycle.updated.interestSha256,
-            updateId: updateId
+
+        let scopeRequest = try BridgeProductStrictJSON.decode(
+            BridgeProductViewScopeRequest.self,
+            from: Data(
+                """
+                {"kind":"subscription.setScope","wireVersion":2,"paneSessionId":"pane-session-1",\
+                "workerInstanceId":"worker-instance-1","requestId":"file-scope-before-source",\
+                "requestSequence":3,"subscriptionId":"file-subscription-1",\
+                "subscriptionKind":"file.metadata","domain":"default",\
+                "handle":"file-scope-handle-1","incarnation":"file-scope-incarnation-1",\
+                "scopeRevision":1,"scope":{"kind":"file","changeFilter":{"kind":"none"},\
+                "interests":[{"lane":"foreground","paths":["Sources/App.swift"]}],"pathScope":[]}}
+                """.utf8
+            )
+        )
+        #expect(
+            await coordinator.acceptViewScope(
+                scopeRequest,
+                productAdmission: harness.productAdmission.context
+            ) == nil
         )
 
-        // Act
-        let updateToken = try #require(controlExecutionToken(try await harness.begin(updateRequest)))
-        #expect(await harness.session.claimControlProviderDispatch(token: updateToken))
-        let updateResponse = try BridgeProductControlResponse.subscriptionUpdateBatchAccepted(
-            correlating: updateRequest,
-            disposition: .committed
-        )
-        let updateEffect = try await harness.session.completeControl(
-            token: updateToken,
-            exactResponseBytes: try JSONEncoder().encode(updateResponse)
-        )
-        let committedFrame = try await pullMetadataFrame(from: pump)
-        await coordinator.apply(
-            updateEffect,
-            productAdmission: harness.productAdmission.context
-        )
+        let updateStart = await source.waitUntilUpdateStarted()
+        #expect(!updateStart.sourceAccepted)
+        #expect(!updateStart.openFinished)
         await source.releaseSourceAcceptance()
-        _ = try await pullMetadataFrame(from: pump)
-        await source.waitUntilSourceAccepted()
-        await source.waitUntilUpdateStarted()
+        #expect((await source.waitUntilSourceAccepted()).sourceId == "file-source-1")
         await source.releaseOpen()
-        await source.waitUntilOpenFinished()
-
-        // Assert
-        #expect(!(await source.openObservedCancellation))
-        #expect(!(await source.updateObservedOpenFinished))
-        #expect(await source.updateObservedSourceAccepted)
-        guard case .subscriptionInterestsCommitted(let committed) = committedFrame else {
-            Issue.record("Expected the File interest commit before source acceptance")
-            return
-        }
-        #expect(committed.updateId == updateId)
-        await harness.session.settleControlProviderDispatch(token: updateToken)
+        #expect(!(await source.waitUntilOpenFinished()))
         await coordinator.uninstall(lease: lease)
         #expect(await pump.cancel())
     }

@@ -32,9 +32,25 @@ export function publishBridgeCommWorkerUpdatingChrome(props: {
 	readonly previousReviewComparison: BridgeCommWorkerPanePresentationSnapshot['reviewComparison'];
 	readonly presentation: BridgeCommWorkerPanePresentationSnapshot;
 	readonly publish: (message: BridgeWorkerServerToMainWireMessage) => void;
+	readonly publishCertifiedNoSourceComparison: (
+		comparison: NonNullable<BridgeCommWorkerPanePresentationSnapshot['reviewComparison']>,
+	) => void;
 	readonly surface: 'file' | 'review';
 	readonly telemetryClient: BridgeCommWorkerTelemetryRecorder | undefined;
 }): BridgeCommWorkerUpdatingChromePublication | null {
+	// Certified absence precedes any package. Publish it through the existing
+	// comparison display lane; every package-backed state keeps its lineage gate.
+	const comparison = props.presentation.reviewComparison;
+	if (
+		props.surface === 'review' &&
+		comparison?.attempt.status === 'noSource' &&
+		props.activeReviewPublicationIdentity === null
+	) {
+		const publicationIdentity = JSON.stringify(['noSource', comparison]);
+		if (props.previousPublicationIdentity === publicationIdentity) return null;
+		props.publishCertifiedNoSourceComparison(comparison);
+		return { projectedReviewComparison: comparison, publicationIdentity };
+	}
 	const workerDerivationEpoch =
 		props.surface === 'file'
 			? props.activeFileWorkerDerivationEpoch

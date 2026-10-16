@@ -10,6 +10,10 @@ import {
 	BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
 	BRIDGE_PRODUCT_WIRE_VERSION,
 } from './bridge-product-contract-primitives.js';
+import {
+	bridgeProductOperationResultAcknowledgementSchema,
+	bridgeProductOperationResultRequestSchema,
+} from './bridge-product-operation-wire-contracts.js';
 import type { BridgeProductRequestExecutor } from './bridge-product-request-executor.js';
 import {
 	BridgeProductControlMux,
@@ -28,9 +32,6 @@ type ActiveSubscriptions = Extract<
 >['activeSubscriptions'];
 type ResyncRequest = Extract<BridgeProductControlRequest, { kind: 'workerSession.resync' }>;
 type ResyncResponse = Extract<BridgeProductControlResponse, { kind: 'resync.accepted' }>;
-
-const firstInterestSha256 = '1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6';
-const secondInterestSha256 = '2535176c2a822c1f5007dd72a7987b7c0a1b6e9af1bc28324ec4618b43f71ebd';
 
 describe('Bridge product control mux resync', () => {
 	test('exposes the strict worker-session resync operation', () => {
@@ -56,7 +57,7 @@ describe('Bridge product control mux resync', () => {
 			).resolves.toMatchObject({
 				kind: 'resync.accepted',
 				metadataStreamSequenceBarrier: 12,
-				nextExpectedRequestSequence: 3,
+				nextExpectedRequestSequence: 4,
 				reconciliation: [outcome],
 			});
 		},
@@ -117,32 +118,23 @@ describe('Bridge product control mux resync', () => {
 		).rejects.toThrow(/order or identity/iu);
 	});
 
-	test.each([
-		['interest hash', { interestSha256: secondInterestSha256 }],
-		['interest revision', { interestRevision: 8 }],
-	] satisfies readonly [string, Readonly<Record<string, string | number>>][])(
-		'rejects a retained reconciliation with a mismatched %s',
-		async (_field, mismatch) => {
-			await expectRejectedResyncResponse(
-				(request) => ({
-					...resyncAcceptedResponse(request, [
-						retainedOutcome(requireArrayItem(oneActiveSubscription(), 0, 'active subscription')),
-					]),
-					reconciliation: [
-						{
-							...retainedOutcome(
-								requireArrayItem(oneActiveSubscription(), 0, 'active subscription'),
-							),
-							...mismatch,
-						},
-					],
-				}),
-				/retained reconciliation/iu,
-			);
-		},
-	);
+	test('rejects a retained reconciliation with a mismatched worker epoch', async () => {
+		await expectRejectedResyncResponse(
+			(request) => ({
+				...resyncAcceptedResponse(request, [
+					{
+						disposition: 'retained',
+						subscriptionId: 'review-subscription-1',
+						subscriptionKind: 'review.metadata',
+						workerDerivationEpoch: 99,
+					},
+				]),
+			}),
+			/retained reconciliation epoch/iu,
+		);
+	});
 
-	test('captures resync state only after a held prior control settles', async () => {
+	test('captures resync state after admission while a prior result remains held', async () => {
 		const heldCallResponse = createBridgeProductDeferred<Response>();
 		const heldCallStarted = createBridgeProductDeferred<void>();
 		const admittedRequests: BridgeProductControlRequest[] = [];
@@ -190,6 +182,7 @@ describe('Bridge product control mux resync', () => {
 		expect(streamSequenceReadCount).toBe(0);
 		activeSubscriptions = twoActiveSubscriptions();
 		lastAcceptedStreamSequence = 9;
+		await expect(resync).resolves.toMatchObject({ nextExpectedRequestSequence: 5 });
 		heldCallResponse.resolve(
 			responseWithJSON({
 				...responseIdentity(
@@ -201,7 +194,6 @@ describe('Bridge product control mux resync', () => {
 		);
 
 		await expect(heldCall).resolves.toBeNull();
-		await expect(resync).resolves.toMatchObject({ nextExpectedRequestSequence: 4 });
 		expect(activeSubscriptionReadCount).toBe(1);
 		expect(streamSequenceReadCount).toBe(1);
 		const resyncRequest = requireResyncRequestValue(
@@ -209,27 +201,32 @@ describe('Bridge product control mux resync', () => {
 		);
 		expect(resyncRequest).toMatchObject({
 			activeSubscriptions,
-			lastAcceptedRequestSequence: 2,
+			lastAcceptedRequestSequence: 3,
 			lastAcceptedStreamSequence: 9,
-			requestSequence: 3,
+			requestSequence: 4,
 		});
 	});
 
 	test('retries an ambiguous resync failure with identical request bytes', async () => {
 		const requestBodies: Uint8Array[] = [];
 		let attemptCount = 0;
-		const mux = createControlMux(async (_route, requestInit): Promise<Response> => {
-			const body = requireUint8Array(requestInit.body);
-			requestBodies.push(Uint8Array.from(body));
-			attemptCount += 1;
-			if (attemptCount === 1) throw new Error('ambiguous resync transport failure');
-			const request = requireResyncRequest(requestInit);
-			return responseWithJSON(
-				resyncAcceptedResponse(request, [
-					retainedOutcome(requireArrayItem(oneActiveSubscription(), 0, 'active subscription')),
-				]),
-			);
-		});
+		const mux = createControlMux(
+			async (_route, requestInit): Promise<Response> => {
+				const request = requireResyncRequest(requestInit);
+				return responseWithJSON(
+					resyncAcceptedResponse(request, [
+						retainedOutcome(requireArrayItem(oneActiveSubscription(), 0, 'active subscription')),
+					]),
+				);
+			},
+			['resync-request-1'],
+			(requestInit): void => {
+				const body = requireUint8Array(requestInit.body);
+				requestBodies.push(Uint8Array.from(body));
+				attemptCount += 1;
+				if (attemptCount === 1) throw new Error('ambiguous resync transport failure');
+			},
+		);
 
 		await expect(
 			mux.resync({
@@ -263,8 +260,6 @@ async function expectRejectedResyncResponse(
 function oneActiveSubscription(): ActiveSubscriptions {
 	return [
 		{
-			interestRevision: 7,
-			interestSha256: firstInterestSha256,
 			subscriptionId: 'review-subscription-1',
 			subscriptionKind: 'review.metadata',
 			workerDerivationEpoch: 3,
@@ -276,8 +271,6 @@ function twoActiveSubscriptions(): ActiveSubscriptions {
 	return [
 		...oneActiveSubscription(),
 		{
-			interestRevision: 2,
-			interestSha256: secondInterestSha256,
 			subscriptionId: 'file-subscription-1',
 			subscriptionKind: 'file.metadata',
 			workerDerivationEpoch: 5,
@@ -289,15 +282,6 @@ function canonicalReconciliationOutcomes(): readonly BridgeProductResyncReconcil
 	const activeSubscription = requireArrayItem(oneActiveSubscription(), 0, 'active subscription');
 	return [
 		retainedOutcome(activeSubscription),
-		{
-			disposition: 'reset',
-			interestRevision: 8,
-			interestSha256: secondInterestSha256,
-			reason: 'interest_mismatch',
-			subscriptionId: activeSubscription.subscriptionId,
-			subscriptionKind: activeSubscription.subscriptionKind,
-			workerDerivationEpoch: activeSubscription.workerDerivationEpoch,
-		},
 		{
 			disposition: 'cancelled',
 			priorWorkerDerivationEpoch: activeSubscription.workerDerivationEpoch,
@@ -320,8 +304,6 @@ function retainedOutcome(
 ): BridgeProductResyncReconciliationOutcome {
 	return {
 		disposition: 'retained',
-		interestRevision: activeSubscription.interestRevision,
-		interestSha256: activeSubscription.interestSha256,
 		subscriptionId: activeSubscription.subscriptionId,
 		subscriptionKind: activeSubscription.subscriptionKind,
 		workerDerivationEpoch: activeSubscription.workerDerivationEpoch,
@@ -360,6 +342,7 @@ function responseIdentity(request: BridgeProductControlRequest): {
 function createControlMux(
 	executeProductRequest: BridgeProductRequestExecutor,
 	requestIds: string[] = ['resync-request-1'],
+	onAdmission?: (requestInit: RequestInit) => void,
 ): BridgeProductControlMux {
 	const authority: BridgeProductSessionAuthority = {
 		bootstrap: {
@@ -369,6 +352,19 @@ function createControlMux(
 				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
+				admissionRetryCount: 2,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
+				viewBatchProgressDeadlineMilliseconds: 5_000,
+				streamKeepaliveIntervalMilliseconds: 350,
+				telemetryPreReadyBufferMaxBytes: 64 * 1024,
+				telemetryPreReadyBufferMaxSamples: 128,
+				workerSettlementDeadlineMilliseconds: 5_000,
+				viewAcknowledgementDeadlineMilliseconds: 4_000,
+				viewCreditBytes: 524_288,
+				viewCreditParts: 8,
+				viewMaximumConsecutiveResnapshots: 3,
+				viewMaximumDirtyKeys: 4_096,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
@@ -379,10 +375,50 @@ function createControlMux(
 		capabilityHeader: 'private-capability',
 		open: Promise.resolve(),
 	};
+	const pendingResults = new Map<string, Promise<Response>>();
+	let nextOperationId = 1;
+	let nextFallbackRequestId = 1;
+	const executeV2Request: BridgeProductRequestExecutor = async (route, requestInit) => {
+		const body: unknown = JSON.parse(new TextDecoder().decode(requireUint8Array(requestInit.body)));
+		if (typeof body !== 'object' || body === null || !('kind' in body)) {
+			throw new Error('Expected a typed product command.');
+		}
+		if (body.kind === 'operation.result') {
+			const resultRequest = bridgeProductOperationResultRequestSchema.parse(body);
+			const pendingResult = pendingResults.get(resultRequest.operationId);
+			if (pendingResult === undefined) throw new Error('Result read has no admitted operation.');
+			const finalResponse = await pendingResult;
+			return responseWithJSON({
+				failureCode: null,
+				kind: 'operation.result',
+				operationId: resultRequest.operationId,
+				outcome: 'succeeded',
+				result: JSON.parse(await finalResponse.text()),
+			});
+		}
+		if (body.kind === 'operation.resultAcknowledgement') {
+			const acknowledgement = bridgeProductOperationResultAcknowledgementSchema.parse(body);
+			pendingResults.delete(acknowledgement.operationId);
+			return responseWithJSON({ ...acknowledgement, kind: 'operation.resultAcknowledged' });
+		}
+		const request = bridgeProductControlRequestSchema.parse(body);
+		onAdmission?.(requestInit);
+		const operationId = `resync-operation-${nextOperationId++}`;
+		const finalResponse = executeProductRequest(route, requestInit);
+		void finalResponse.catch((): void => {});
+		pendingResults.set(operationId, finalResponse);
+		return responseWithJSON({
+			...responseIdentity(request),
+			kind: 'operation.admitted',
+			operationId,
+			waitKind: 'ordinary',
+		});
+	};
 	return new BridgeProductControlMux({
 		authority,
-		createRequestId: (): string => requireShiftedValue(requestIds),
-		executeProductRequest,
+		createRequestId: (): string =>
+			requestIds.shift() ?? `resync-result-ack-${nextFallbackRequestId++}`,
+		executeProductRequest: executeV2Request,
 	});
 }
 
@@ -422,12 +458,6 @@ function requireArrayItem<TValue>(
 
 function requireUint8Array(value: BodyInit | null | undefined): Uint8Array {
 	if (!(value instanceof Uint8Array)) throw new Error('Expected encoded Uint8Array request body.');
-	return value;
-}
-
-function requireShiftedValue(values: string[]): string {
-	const value = values.shift();
-	if (value === undefined) throw new Error('Test request id queue was exhausted.');
 	return value;
 }
 

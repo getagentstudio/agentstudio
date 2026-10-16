@@ -56,6 +56,32 @@ struct AgentStudioOTLPSidebarTraceProjectionTests {
         #expect(projection.attributes["agentstudio.performance.sidebar.total_worker_elapsed_ms"] == .double(2.25))
     }
 
+    @Test(arguments: [("ascending", true), ("descending", true), ("uncontrolled", false)])
+    func sidebarSortProjectionKeepsOnlyControlledSortOrders(sortOrder: String, shouldExport: Bool) {
+        let record = AgentStudioTraceRecord(
+            timeUnixNano: 182,
+            severityText: .info,
+            body: "performance.sidebar.projection",
+            traceID: nil,
+            spanID: nil,
+            parentSpanID: nil,
+            resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+            attributes: [
+                "agentstudio.performance.sidebar.surface": .string("repo"),
+                "agentstudio.performance.sidebar.phase": .string("projection_worker"),
+                "agentstudio.performance.sidebar.group_mode": .string("repo"),
+                "agentstudio.performance.sidebar.sort_order": .string(sortOrder),
+                "agentstudio.performance.sidebar.trigger": .string("sort_order"),
+            ]
+        )
+
+        let projection = AgentStudioOTLPTraceProjection.project(record)
+
+        let expectedSortOrder: AgentStudioTraceValue? = shouldExport ? .string(sortOrder) : nil
+        #expect(projection.attributes["agentstudio.performance.sidebar.sort_order"] == expectedSortOrder)
+    }
+
     @Test
     func sidebarSurfaceSwitchProjectionKeepsControlledPhase() {
         let record = AgentStudioTraceRecord(

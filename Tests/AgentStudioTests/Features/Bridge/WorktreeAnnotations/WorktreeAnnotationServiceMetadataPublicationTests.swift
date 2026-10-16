@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -6,6 +7,144 @@ import Testing
 
 @Suite("Worktree annotation service metadata publication")
 struct WorktreeAnnotationServiceMetadataPublicationTests {
+    @Test("three unconsumed session invalidations coalesce as a union of ranges")
+    func invalidationBufferPreservesEveryRange() async throws {
+        let worktreeID = "worktree-invalidation-union"
+        let access = MetadataPublicationRepositoryAccess(
+            catalogCapture: .init(worktreeID: worktreeID, sessions: [], threads: [], messages: [])
+        )
+        let service = WorktreeAnnotationServiceActor(repositoryAccess: access)
+        let observer = await service.registerCatalogInvalidationObserver(worktreeID: worktreeID)
+        let sessionIDs = (0..<3).map { _ in WorktreeAnnotationSessionID.generate() }
+
+        for sessionID in sessionIDs {
+            await service.emitCommittedCatalogInvalidation(
+                .content(sessionChanges: [
+                    .init(worktreeID: worktreeID, sessionID: sessionID, semanticRevision: 0)
+                ])
+            )
+        }
+
+        var iterator = observer.stream.makeAsyncIterator()
+        let invalidation = try #require(await iterator.next())
+        #expect(invalidation.ranges == Set(sessionIDs.map(WorktreeAnnotationCatalogRange.session)))
+        await service.removeCatalogInvalidationObserver(token: observer.token)
+    }
+
+    @Test("a committed session change emits its range before the caller returns")
+    func committedChangeEmitsSessionRange() async throws {
+        let detail = try makeCommittedDetail()
+        let access = MetadataPublicationRepositoryAccess(
+            catalogCapture: .init(worktreeID: "worktree-1", sessions: [], threads: [], messages: [])
+        )
+        await access.enqueueMutation(.content(detail))
+        let service = WorktreeAnnotationServiceActor(repositoryAccess: access)
+        let observer = await service.registerCatalogInvalidationObserver(worktreeID: detail.session.worktreeID)
+        var iterator = observer.stream.makeAsyncIterator()
+
+        _ = try await service.createRootDraft(makeCreateRootDraftProps())
+
+        let invalidation = try #require(await iterator.next())
+        #expect(invalidation.ranges == [.session(detail.session.id)])
+        await service.removeCatalogInvalidationObserver(token: observer.token)
+    }
+
+    @Test("an unknown mutation outcome conservatively invalidates the observed worktree")
+    func unknownOutcomeEmitsWorktreeRange() async throws {
+        let access = MetadataPublicationRepositoryAccess(
+            catalogCapture: .init(worktreeID: "worktree-1", sessions: [], threads: [], messages: [])
+        )
+        await access.failNextMutation()
+        let service = WorktreeAnnotationServiceActor(repositoryAccess: access)
+        let observer = await service.registerCatalogInvalidationObserver(worktreeID: "worktree-1")
+        var iterator = observer.stream.makeAsyncIterator()
+
+        await #expect(throws: WorktreeAnnotationRepositoryError.invalidState) {
+            _ = try await service.createRootDraft(makeCreateRootDraftProps())
+        }
+
+        let invalidation = try #require(await iterator.next())
+        #expect(invalidation.ranges == [.worktree])
+        await service.removeCatalogInvalidationObserver(token: observer.token)
+    }
+
+    @Test("cancellation after the repository commits cannot skip its invalidation")
+    func cancellationAfterCommitStillEmitsRange() async throws {
+        let detail = try makeCommittedDetail()
+        let access = MetadataPublicationRepositoryAccess(
+            catalogCapture: .init(worktreeID: "worktree-1", sessions: [], threads: [], messages: [])
+        )
+        await access.enqueueMutation(.content(detail))
+        let committedReturn = HeldStep<Void>(
+            "annotationRepositoryCommittedReturn",
+            cancellation: .holdThroughCancellation
+        )
+        await access.holdNextMutationReturn(committedReturn)
+        let service = WorktreeAnnotationServiceActor(repositoryAccess: access)
+        let observer = await service.registerCatalogInvalidationObserver(worktreeID: detail.session.worktreeID)
+        var iterator = observer.stream.makeAsyncIterator()
+        let mutation = Task { try await service.createRootDraft(makeCreateRootDraftProps()) }
+        _ = try await committedReturn.firstArrival()
+
+        mutation.cancel()
+        try await committedReturn.cancellationObserved()
+        committedReturn.release()
+        _ = try await mutation.value
+
+        let invalidation = try #require(await iterator.next())
+        #expect(invalidation.ranges == [.session(detail.session.id)])
+        await service.removeCatalogInvalidationObserver(token: observer.token)
+    }
+
+    @Test("content, control, and catalog mutations invalidate their complete committed ranges")
+    func mutationClassesEmitTheirRanges() async throws {
+        let detail = try makeCommittedDetail()
+        let anotherSessionID = WorktreeAnnotationSessionID.generate()
+        let sessionChange = detail.committedSessionChange
+        let anotherSessionChange = WorktreeAnnotationCommittedSessionChange(
+            worktreeID: detail.session.worktreeID,
+            sessionID: anotherSessionID,
+            semanticRevision: 0
+        )
+        let cases: [(WorktreeAnnotationCommittedChange, Set<WorktreeAnnotationCatalogRange>)] = [
+            (.content(sessionChanges: [sessionChange]), [.session(detail.session.id)]),
+            (
+                .control(
+                    worktreeIDs: [detail.session.worktreeID],
+                    reason: .recovery,
+                    sessionChanges: []
+                ),
+                [.worktree]
+            ),
+            (
+                .catalog(
+                    worktreeIDs: [detail.session.worktreeID],
+                    sessionChanges: [sessionChange, anotherSessionChange]
+                ),
+                [.session(detail.session.id), .session(anotherSessionID)]
+            ),
+        ]
+        for (change, expectedRanges) in cases {
+            let access = MetadataPublicationRepositoryAccess(
+                catalogCapture: .init(
+                    worktreeID: detail.session.worktreeID,
+                    sessions: [],
+                    threads: [],
+                    messages: []
+                )
+            )
+            await access.enqueueMutation(.init(canonicalResult: detail, change: change))
+            let service = WorktreeAnnotationServiceActor(repositoryAccess: access)
+            let observer = await service.registerCatalogInvalidationObserver(
+                worktreeID: detail.session.worktreeID
+            )
+            var iterator = observer.stream.makeAsyncIterator()
+            _ = try await service.createRootDraft(makeCreateRootDraftProps())
+            #expect(try #require(await iterator.next()).ranges == expectedRanges)
+            await service.removeCatalogInvalidationObserver(token: observer.token)
+        }
+    }
+
     @Test("none preserves the canonical result without advancing generation or notifying")
     func nonePreservesCanonicalResultWithoutPublication() async throws {
         // Arrange
@@ -220,6 +359,8 @@ private actor MetadataPublicationRepositoryAccess: WorktreeAnnotationRepositoryA
     private var shouldSuspendCatalogCapture = false
     private var didStartCatalogCapture = false
     private var mutations: [WorktreeAnnotationCommittedMutation<WorktreeAnnotationSessionDetail>] = []
+    private var shouldFailNextMutation = false
+    private var heldNextMutationReturn: HeldStep<Void>?
     private var associationMutation:
         WorktreeAnnotationCommittedMutation<WorktreeAnnotationSQLiteRepository.AssociationMutationResult>?
 
@@ -229,6 +370,12 @@ private actor MetadataPublicationRepositoryAccess: WorktreeAnnotationRepositoryA
 
     func enqueueMutation(_ mutation: WorktreeAnnotationCommittedMutation<WorktreeAnnotationSessionDetail>) {
         mutations.append(mutation)
+    }
+
+    func failNextMutation() { shouldFailNextMutation = true }
+
+    func holdNextMutationReturn(_ heldReturn: HeldStep<Void>) {
+        heldNextMutationReturn = heldReturn
     }
 
     func setAssociationMutation(
@@ -279,8 +426,17 @@ private actor MetadataPublicationRepositoryAccess: WorktreeAnnotationRepositoryA
         -> WorktreeAnnotationCommittedMutation<WorktreeAnnotationSessionDetail>
     {
         _ = props
+        if shouldFailNextMutation {
+            shouldFailNextMutation = false
+            throw WorktreeAnnotationRepositoryError.invalidState
+        }
         guard !mutations.isEmpty else { throw WorktreeAnnotationRepositoryError.invalidState }
-        return mutations.removeFirst()
+        let committed = mutations.removeFirst()
+        if let heldNextMutationReturn {
+            self.heldNextMutationReturn = nil
+            try await heldNextMutationReturn.arrive(())
+        }
+        return committed
     }
 
     func acceptCurrentAssociation(

@@ -83,7 +83,7 @@ struct CIFastLaneWorkflowTests {
         #expect(triggers == "on:\n  workflow_dispatch:\n")
         // It runs on the same 3-core runner and build directory as the gated lanes,
         // through the same mise task a developer runs locally.
-        #expect(comparisonJob.contains("runs-on: macos-26"))
+        #expect(comparisonJob.contains("runs-on: xcode-27"))
         #expect(comparisonJob.contains("SWIFT_BUILD_DIR: .build-ci"))
         #expect(runStep.contains("run: mise run --skip-deps --raw test:swift:width-comparison"))
         #expect(!runStep.contains("SWIFT_TEST_PARALLELIZATION_WIDTH"))
@@ -112,7 +112,6 @@ struct CIFastLaneWorkflowTests {
 
         for jobName in [
             "code-quality",
-            "marketing-site-validation",
             "bridge-web",
             "swift-test-suite",
         ] {
@@ -195,8 +194,8 @@ struct CIFastLaneWorkflowTests {
         #expect(swiftJob.contains("uses: actions/cache@v4"))
     }
 
-    @Test("Swift jobs always build cold without caching build outputs")
-    func swiftJobsAlwaysBuildColdWithoutCachingBuildOutputs() throws {
+    @Test("Swift prebuild runs unconditionally through the canonical task")
+    func swiftPrebuildRunsUnconditionallyThroughCanonicalTask() throws {
         let ciWorkflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         let backendJob = try workflowJob(named: "bridge-web", in: ciWorkflow)
         let swiftJob = try workflowJob(named: "swift-test-suite", in: ciWorkflow)
@@ -248,34 +247,38 @@ struct CIFastLaneWorkflowTests {
         #expect(buildParallelBlock.contains("if: steps.cache-zmx.outputs.cache-hit != 'true'"))
     }
 
-    @Test("benchmark workflow uses the canonical CI Swift build directory")
+    @Test("benchmark workflow restores the canonical CI Swift seed read-only")
     func benchmarkWorkflowUsesCanonicalCISwiftBuildDirectory() throws {
         let benchmarkWorkflow = try String(
             contentsOfFile: ".github/workflows/benchmarks.yml",
             encoding: .utf8
         )
         let benchmarksJob = try workflowJob(named: "benchmarks", in: benchmarkWorkflow)
-        let cacheStep = try workflowStep(
-            named: "Cache Swift benchmark build",
-            in: benchmarksJob
-        )
+        let prefixStep = try workflowStep(named: "Compute Swift cache compatibility prefix", in: benchmarksJob)
+        let restoreStep = try workflowStep(named: "Restore Swift build seed", in: benchmarksJob)
+        let verifyStep = try workflowStep(named: "Verify and restamp PR Swift seed", in: benchmarksJob)
 
         #expect(benchmarksJob.contains("SWIFT_BUILD_DIR: .build-ci"))
-        #expect(cacheStep.contains("path: .build-ci"))
         #expect(
-            cacheStep.contains(
-                "key: benchmark-swift-build-ci-${{ runner.os }}-${{ hashFiles('Package.swift', 'Package.resolved') }}"
+            benchmarksJob.contains(
+                "SWIFT_BUILD_STATS_DIR: ${{ github.workspace }}/tmp/plan-workflows/ci-runs/compiler-stats"
             )
         )
-        #expect(cacheStep.contains("restore-keys: |\n            benchmark-swift-build-ci-${{ runner.os }}-"))
-        #expect(!cacheStep.contains("swift-benchmark-"))
+        #expect(prefixStep.contains("scripts/ci-swift-build-inputs.sh fingerprint"))
+        #expect(restoreStep.contains("uses: actions/cache/restore@v4"))
+        #expect(restoreStep.contains("path: .build-ci"))
+        #expect(restoreStep.contains("steps.swift-cache-prefix.outputs.prefix"))
+        #expect(verifyStep.contains("scripts/ci-swift-build-inputs.sh verify"))
+        #expect(verifyStep.contains("scripts/ci-swift-build-inputs.sh restamp"))
+        #expect(!benchmarksJob.contains("benchmark-swift-build-ci-"))
+        #expect(!benchmarksJob.contains("actions/cache/save"))
         #expect(!benchmarksJob.contains(".build-benchmark"))
-        // The responsiveness journey lives in this post-merge lane and nowhere in
-        // the pull-request workflow.
-        #expect(benchmarksJob.contains("mise run test:bridge-web:e2e:stress"))
+        // The retired responsiveness journey must not block Swift benchmarks.
+        #expect(!benchmarksJob.contains("BridgeWeb Vite E2E stress journey"))
+        #expect(!benchmarksJob.contains("mise run test:bridge-web:e2e"))
         #expect(
             !(try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8))
-                .contains("test:bridge-web:e2e:stress")
+                .contains("BridgeWeb Vite E2E stress journey")
         )
     }
 
@@ -581,20 +584,10 @@ struct CIFastLaneWorkflowTests {
 
         #expect(
             helperScript.contains(
-                "xcbeautify \"${extra_args[@]}\" | /usr/bin/iconv -f UTF-8 -t UTF-8 -c"
+                "xcbeautify --preserve-unbeautified --disable-logging \"${extra_args[@]}\" | /usr/bin/iconv -f UTF-8 -t UTF-8 -c"
             )
         )
         #expect(filteredOutput == "raw input\n")
-    }
-
-    @Test("Swift failure scanner preserves failure detection across invalid UTF-8")
-    func swiftFailureScannerPreservesFailureDetectionAcrossInvalidUTF8() async throws {
-        let scannerStatus = try await runBashStatus(
-            "source scripts/swift-test-helpers.sh; "
-                + "swift_test_output_has_failures <(printf $'ok\\xffrecorded an issue\\n')"
-        )
-
-        #expect(scannerStatus == 0)
     }
 
     @Test("aggregate lane isolates executor-sensitive and AppKit-global tests")
@@ -619,7 +612,7 @@ struct CIFastLaneWorkflowTests {
         let isolatedSuiteRunner = try shellFunction(named: "run_selected_isolated_suite", in: helperScript)
         let fastRunner = try shellFunction(named: "run_fast_non_webkit_swift_tests", in: helperScript)
         let discoveredSuiteFilters = try await runBash(
-            "LOG_PREFIX=test TIMEOUT_SECONDS=60 PREBUILD_TIMEOUT_SECONDS=60 BUILD_PATH=.build-agent-1 "
+            "LOG_PREFIX=test TIMEOUT_SECONDS=60 PREBUILD_TIMEOUT_SECONDS=60 "
                 + "bash -c 'source scripts/swift-test-helpers.sh; aggregate_serial_non_webkit_suite_filters'"
         )
         let webKitSuiteFilters = try await runBash(
@@ -655,7 +648,7 @@ struct CIFastLaneWorkflowTests {
         #expect(aggregateRunner.contains("while IFS= read -r aggregate_serial_suite_filter"))
         #expect(aggregateRunner.contains("done <<<\"$aggregate_serial_suite_filters\""))
         #expect(
-            aggregateRunner.contains(
+            fastRunner.contains(
                 "if ! aggregate_serial_suite_filters=\"$(aggregate_serial_non_webkit_suite_filters)\"; then"))
         #expect(aggregateRunner.contains("dispatch_isolated_suites fast \"${selected_filters[@]}\""))
         #expect(isolatedDispatcher.contains("swift_test_isolated_process_concurrency"))
@@ -671,7 +664,7 @@ struct CIFastLaneWorkflowTests {
                 "--filter \"$(swift_test_isolated_suite_filter_pattern \"$suite_filter\")\""
             ))
         #expect(isolatedSuiteRunner.contains("\"$swift_testing_helper\" --test-bundle-path \"$swift_test_bundle\""))
-        #expect(isolatedSuiteRunner.contains("DYLD_FRAMEWORK_PATH=\"$testing_framework_path\""))
+        #expect(isolatedSuiteRunner.contains("swift_testing_helper_environment \"$testing_framework_path\""))
         #expect(isolatedSuiteRunner.contains("--testing-library swift-testing"))
         #expect(!aggregateRunner.contains("< <("))
         #expect(isolatedDispatcher.contains("return \"$lane_status\""))
@@ -748,7 +741,7 @@ struct CIFastLaneWorkflowTests {
                 separatedBy: "--skip \"$large_process_global_filter_pattern\""
             ).count - 1 == 1
         )
-        #expect(largeRunner.contains("fi\n\n  run_large_process_global_swift_tests"))
+        #expect(largeRunner.contains("run_large_process_global_swift_tests || phase_status=$?"))
         #expect(largeProcessGlobalRunner.contains("dispatch_isolated_suites large"))
         for suiteName in [
             "AgentStudioOTLPBootstrapSmokeTests",
@@ -980,6 +973,7 @@ func runBash(_ command: String, standardInput: String? = nil) async throws -> St
         let input = standardInput.map { _ in Pipe() }
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
+        process.environment = testProcessEnvironmentWithoutLaneState()
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         process.standardInput = input
         process.standardOutput = outputHandle
@@ -1006,6 +1000,7 @@ private func runBashStatus(_ command: String) async throws -> Int32 {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/bash")
         process.arguments = ["-c", command]
+        process.environment = testProcessEnvironmentWithoutLaneState()
         process.currentDirectoryURL = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
         try process.run()
         process.waitUntilExit()
