@@ -42,6 +42,7 @@ struct GhosttyRouterRestorePhaseEndDuringDrainTests {
                         for: surfaceID, lane: lane, accumulator: accumulator)
                 },
                 enqueueMainActorDrain: { operation in
+                    // fire-and-forget: taskOwner admits this task and the test joins every admitted task at teardown.
                     _ = taskOwner.enqueueTask {
                         await operation()
                         if schedulerReference.withLock({ $0?.pendingDrainClaimCount }) == 0 {

@@ -132,7 +132,10 @@ struct ZmxSessionInventoryParserTests {
         let inventory = ZmxSessionInventoryParser.parse(stdout: stdout)
 
         // Assert
-        guard case .unavailable(let failure) = inventory else { return }
+        guard case .unavailable(let failure) = inventory else {
+            Issue.record("expected .unavailable, got \(inventory)")
+            return
+        }
         #expect(failure == .unparsable, "the parser's own failure vocabulary is limited to .unparsable")
     }
 }

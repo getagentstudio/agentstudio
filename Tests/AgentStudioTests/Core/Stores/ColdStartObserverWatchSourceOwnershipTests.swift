@@ -255,7 +255,10 @@ struct ColdStartObserverWatchSourceOwnershipTests {
         // once, the teardown half of ownership.
         let createdSources = recordingMaker.createdSources
         #expect(createdSources.count == 2)
-        guard let setsidSource = createdSources.first, let handoffSource = createdSources.last else { return }
+        guard let setsidSource = createdSources.first, let handoffSource = createdSources.last else {
+            Issue.record("expected the setsid and handoff sources, got \(createdSources.count)")
+            return
+        }
         #expect(setsidSource.cancelCallCount == 1)
         #expect(handoffSource.cancelCallCount == 1)
 
