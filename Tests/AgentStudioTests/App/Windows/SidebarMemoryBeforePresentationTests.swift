@@ -90,6 +90,9 @@ struct SidebarMemoryBeforePresentationTests {
                 try #require(sidebarState.filterText == "pane 1")
                 #expect(!uiStore.isAutosaveObservationActive)
 
+                // Give the window an explicit content size, as the shell layout tests do, so the
+                // display cycle's constraint-based window sizing never derives an invalid frame.
+                harness.window.setContentSize(NSSize(width: 1000, height: 700))
                 harness.controller.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
                 harness.controller.splitView.frame = harness.controller.view.bounds
                 harness.window.makeKeyAndOrderFront(nil)
