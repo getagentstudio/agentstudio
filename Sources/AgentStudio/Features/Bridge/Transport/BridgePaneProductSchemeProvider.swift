@@ -59,7 +59,7 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
             BridgeProductAdmissionContext
         ) -> BridgeReviewDisplayedApplicationResult
     nonisolated let refreshWorkAdmissionSource: BridgePaneRefreshWorkAdmissionSource
-    private let reviewContentSource: any BridgePaneProductReviewContentProducing
+    let reviewContentSource: any BridgePaneProductReviewContentProducing
     let reviewComparisonTargetCatalogProducer: any BridgeReviewComparisonTargetCatalogProducing
     let comparisonTargetCatalogTraceRecorder: (any BridgeReviewComparisonTargetCatalogTraceRecording)?
     package var pendingComparisonTargetReservation: BridgeProductReviewComparisonTargetsReservation?
@@ -740,43 +740,6 @@ actor BridgePaneProductSchemeProvider: BridgeProductSchemeProvider {
                 session: session
             )
         }
-    }
-
-    private func runReviewContentProducer(
-        request: BridgeProductReviewContentRequest,
-        lease: BridgeProductProducerLease,
-        productAdmission: BridgeProductAdmissionContext,
-        foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        session: BridgeProductSession
-    ) async throws {
-        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-        guard
-            let body = try? await reviewContentSource.contentBody(
-                for: request,
-                productAdmission: productAdmission
-            )
-        else {
-            guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-            try await enqueueUnavailableContentTerminal(
-                for: lease,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission,
-                session: session
-            )
-            return
-        }
-        guard foregroundWorkAdmission.withValidAdmission({ true }) == true else { return }
-        _ = try await runBufferedContentProducer(
-            BufferedContentBody(
-                data: body.data,
-                endOfSource: body.isFinalRange,
-                sha256: body.sha256
-            ),
-            lease: lease,
-            productAdmission: productAdmission,
-            foregroundWorkAdmission: foregroundWorkAdmission,
-            session: session
-        )
     }
 
     private func runAnnotationOutputContentProducer(
