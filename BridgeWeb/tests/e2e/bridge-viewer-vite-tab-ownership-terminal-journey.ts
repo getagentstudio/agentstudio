@@ -1,11 +1,13 @@
-import type { Browser, Page, Route } from 'playwright';
+import type { Browser, ConsoleMessage, Page, Route } from 'playwright';
 import { expect, test } from 'vitest';
+import { z } from 'zod';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import {
 	handleLaunchPromise,
 	type HandledLaunchPromise,
 } from '../../scripts/dev-server/handled-launch-promise.ts';
+import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
 import {
 	selectReviewFile,
 	waitForSelectedReviewReady,
@@ -43,6 +45,30 @@ export function registerTabOwnershipTerminalJourney(): void {
 			let readiness: HandledLaunchPromise<void> | null = null;
 			let competingReadiness: HandledLaunchPromise<void> | null = null;
 			let phase = 'initial selected Review';
+			let ownerObservation: Awaited<
+				ReturnType<typeof installSelectedContentOwnerObservation>
+			> | null = null;
+			const ownerTerminal = createBridgeProductDeferred<unknown>();
+			const terminalObservation = handleLaunchPromise(
+				ownerTerminal.promise,
+				'TQ109 terminal worker owner fact',
+			);
+			const retireTerminal = (): void =>
+				ownerTerminal.reject(new Error('TQ109 page retired before terminal worker owner fact'));
+			let retainedTerminal: unknown = null;
+			let observedReplacementRequests = 0;
+			const retainTerminal = (message: ConsoleMessage): void => {
+				const requestPrefix = '__tq109_replacement_request_count:';
+				if (message.text().startsWith(requestPrefix)) {
+					observedReplacementRequests = Number(message.text().slice(requestPrefix.length));
+					return;
+				}
+				const prefix = '__tq109_exhausted_owner:';
+				if (!message.text().startsWith(prefix)) return;
+				const snapshot: unknown = JSON.parse(message.text().slice(prefix.length));
+				retainedTerminal = snapshot;
+				ownerTerminal.resolve(snapshot);
+			};
 			const replacementHold = createTabOwnershipReplacementHold(context.signal);
 			const routeJobs: HandledLaunchPromise<void>[] = [];
 			let replacementTransportCount = 0;
@@ -51,7 +77,10 @@ export function registerTabOwnershipTerminalJourney(): void {
 				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				const sharedProfile = await browser.newContext({ viewport: { width: 1728, height: 980 } });
 				firstTab = await sharedProfile.newPage();
-				await installSelectedContentOwnerObservation(firstTab);
+				ownerObservation = await installSelectedContentOwnerObservation(firstTab);
+				firstTab.on('console', retainTerminal);
+				firstTab.on('close', retireTerminal);
+				firstTab.on('crash', retireTerminal);
 				await installControlledFirstTabReplacement(firstTab);
 				const reviewFile = fixture.oracle.reviewFiles[0];
 				if (reviewFile === undefined) throw new Error('Tab ownership proof needs a Review file.');
@@ -67,10 +96,12 @@ export function registerTabOwnershipTerminalJourney(): void {
 					const diagnostics = await import(new URL('/src/foundation/diagnostics/bridge-review-selection-diagnostic.ts', location.href).href);
 					const unsubscribe = diagnostics.observeBridgePaneCommWorkerSessionDiagnosticSnapshots(snapshot => {
 						if (snapshot.state !== 'failed') return;
-						document.documentElement.dataset.tq109ExhaustedOwnerState = snapshot.state;
-						document.documentElement.dataset.tq109ExhaustedOwnerReason = snapshot.failureReason;
+						console.debug('__tq109_exhausted_owner:' + JSON.stringify({
+							state: snapshot.state, reason: snapshot.failureReason,
+							replacementRequests: snapshot.replacementRequestCount,
+						}));
 					});
-					document.addEventListener('__tq109_stop_owner_observation', unsubscribe, { once: true });
+					window.addEventListener('pagehide', unsubscribe, { once: true });
 				})()`);
 
 				const holdReplacement = async (route: Route): Promise<void> => {
@@ -145,27 +176,25 @@ export function registerTabOwnershipTerminalJourney(): void {
 				await firstTab
 					.locator('[data-bridge-region="pane-failure"][data-presentation-state="failed"]')
 					.waitFor({ state: 'attached' });
+				phase = 'retained terminal worker owner fact';
+				const terminal = await server.testLaunch
+					.observeStep(phase, terminalObservation.value())
+					.value();
+				expect(observedReplacementRequests).toBe(4);
 				expect(
-					await firstTab.evaluate((): number =>
-						Number(document.documentElement.dataset['tq109ReplacementRequests']),
-					),
-				).toBe(4);
-				console.log(
-					`TQ109_HELD_BOOTSTRAP competing=inactive first=pane-failed replacementRequests=4 detail=${await firstTab.locator('[data-bridge-region="pane-failure"]').textContent()}`,
-				);
-
-				phase = 'read terminal owner diagnostic fields';
-				expect(
-					await server.testLaunch
-						.observeStep(
-							phase,
-							firstTab.evaluate(() => ({
-								state: document.documentElement.dataset['tq109ExhaustedOwnerState'],
-								reason: document.documentElement.dataset['tq109ExhaustedOwnerReason'],
-							})),
-						)
-						.value(),
-				).toEqual({ state: 'failed', reason: 'bootstrapBudgetExhausted' });
+					z
+						.object({
+							state: z.literal('failed'),
+							reason: z.literal('bootstrapBudgetExhausted'),
+							replacementRequests: z.literal(4),
+						})
+						.parse(terminal),
+				).toEqual({
+					state: 'failed',
+					reason: 'bootstrapBudgetExhausted',
+					replacementRequests: 4,
+				});
+				console.log(`TQ109_HELD_BOOTSTRAP competing=inactive owner=${JSON.stringify(terminal)}`);
 				phase = 'join first and competing tab terminal owner results';
 				readiness = handleLaunchPromise(
 					waitForTabOwnershipReviewReady({ page: firstTab, itemId: reviewFile.itemId }),
@@ -182,9 +211,6 @@ export function registerTabOwnershipTerminalJourney(): void {
 				await expect(competingReadiness.value()).rejects.toThrow(
 					'Tab ownership Review readiness ended: open-elsewhere',
 				);
-				replacementHold.release();
-				await firstTab.close();
-				firstTab = null;
 			} catch (error: unknown) {
 				primaryFailure = {
 					error: new Error(`Tab ownership terminal journey failed while awaiting ${phase}`, {
@@ -194,6 +220,15 @@ export function registerTabOwnershipTerminalJourney(): void {
 				await appendJourneyFailureDiagnostics({
 					primaryError: primaryFailure.error,
 					reads: [
+						{
+							name: 'retained-bootstrap-request-count',
+							read: (): number => observedReplacementRequests,
+						},
+						{ name: 'retained-terminal-owner', read: (): unknown => retainedTerminal },
+						{
+							name: 'retained-selected-owner',
+							read: (): unknown => ownerObservation?.readRetained(),
+						},
 						{ name: 'backend', read: (): string => server?.diagnostics() ?? 'not started' },
 						{
 							name: 'owner',
@@ -204,6 +239,12 @@ export function registerTabOwnershipTerminalJourney(): void {
 				});
 				throw primaryFailure.error;
 			} finally {
+				ownerObservation?.dispose();
+				firstTab?.off('console', retainTerminal);
+				firstTab?.off('close', retireTerminal);
+				firstTab?.off('crash', retireTerminal);
+				retireTerminal();
+				await terminalObservation.settled;
 				replacementHold.dispose();
 				await runAllOwnedCleanupOperations({
 					operations: [
@@ -283,6 +324,7 @@ async function installControlledFirstTabReplacement(page: Page): Promise<void> {
 				return;
 			currentReplacementRequestId = detail.requestId;
 			replacementRequests += 1;
+			console.debug(`__tq109_replacement_request_count:${replacementRequests}`);
 			document.documentElement.dataset['tq109ReplacementRequests'] = String(replacementRequests);
 		});
 		document.addEventListener('__tq109_fail_comm_worker', (): void => {

@@ -4,7 +4,11 @@ import { expect, test } from 'vitest';
 
 import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
 import type { BridgePaneCommWorkerSessionDiagnosticState } from '../../src/foundation/diagnostics/bridge-review-selection-diagnostic.js';
-import type { SelectedContentOwnerSnapshot } from './bridge-viewer-vite-selected-content-owner.ts';
+import {
+	createSelectedContentOwnerRecorder,
+	selectedContentTerminalFailure,
+	type SelectedContentOwnerSnapshot,
+} from './bridge-viewer-vite-selected-content-owner.ts';
 import {
 	selectedContentOwnerWaitScript,
 	type SelectedContentReadyTarget,
@@ -20,6 +24,7 @@ function runWaitScript(props: {
 	readonly sessionState?: BridgePaneCommWorkerSessionDiagnosticState;
 	readonly withDiagnosticLifecycle?: boolean;
 	readonly displayedPublication?: string;
+	readonly recorder?: ReturnType<typeof createSelectedContentOwnerRecorder>;
 }): {
 	readonly outcome: Promise<unknown>;
 	readonly retire: () => void;
@@ -27,6 +32,7 @@ function runWaitScript(props: {
 	readonly disconnected: () => boolean;
 	readonly diagnosticSubscription: Promise<void>;
 	readonly publishWorkerSessionState: (state: BridgePaneCommWorkerSessionDiagnosticState) => void;
+	readonly publishOwnerMessage: (message: unknown) => void;
 	readonly publishSuccessor: (state: {
 		readonly contentState: string;
 		readonly paintedSha: string;
@@ -79,7 +85,8 @@ function runWaitScript(props: {
 	});
 	const windowTarget = Object.assign(new EventTarget(), {
 		bridgeSelectedContentOwnerObservation: {
-			read: (): SelectedContentOwnerSnapshot => observation,
+			read: (): SelectedContentOwnerSnapshot =>
+				props.recorder?.read(props.target.surface) ?? observation,
 		},
 		__bridgeReviewSelectionDiagnostic: {
 			sessionState: props.sessionState ?? 'ready',
@@ -133,6 +140,10 @@ function runWaitScript(props: {
 		outcome: Promise.resolve(result),
 		diagnosticSubscription: diagnosticSubscription.promise,
 		publishWorkerSessionState,
+		publishOwnerMessage: (message): void => {
+			props.recorder?.observe(1, message);
+			documentTarget.dispatchEvent(new Event('__bridge_selected_content_owner_changed'));
+		},
 		publishSuccessor: (state): void => {
 			contentState = state.contentState;
 			paintedSha = state.paintedSha;
@@ -148,6 +159,7 @@ function runWaitScript(props: {
 				'__bridgeReviewSelectionDiagnostic'
 			].reviewInstallationGate.activeIdentity.publicationId = 'successor-publication';
 			publishWorkerSessionState('ready');
+			documentTarget.dispatchEvent(new Event('__bridge_selected_content_owner_changed'));
 		},
 		retire: (): void => {
 			windowTarget.dispatchEvent(new Event('pagehide'));
@@ -170,6 +182,101 @@ function runWaitScript(props: {
 		},
 	};
 }
+
+function recoveringFileRecorder(): ReturnType<typeof createSelectedContentOwnerRecorder> {
+	const recorder = createSelectedContentOwnerRecorder(selectedContentTerminalFailure);
+	recorder.observe(1, { method: 'bridgeCommWorker.bootstrap' });
+	recorder.observe(1, {
+		wireVersion: 1,
+		direction: 'mainToServerWorker',
+		command: 'select',
+		surface: 'fileView',
+		selectedItemId: 'selected-file',
+		requestId: 'selection',
+	});
+	recorder.observe(1, {
+		wireVersion: 1,
+		direction: 'serverWorkerToMain',
+		kind: 'fileDisplayPatch',
+		surface: 'fileView',
+		epoch: 7,
+	});
+	return recorder;
+}
+
+function viewRecovery(status: 'recovering' | 'failedRetryable' | 'ready'): unknown {
+	return {
+		wireVersion: 1,
+		direction: 'serverWorkerToMain',
+		kind: 'viewRecoveryStatus',
+		view: { kind: 'file.metadata', subscriptionId: 'live-file-subscription' },
+		status,
+	};
+}
+
+test('the File waiter consumes the actual view-owner final failure before document retirement', async () => {
+	const wait = runWaitScript({
+		recorder: recoveringFileRecorder(),
+		target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+	});
+	const assertion = expect(wait.outcome).rejects.toThrow(
+		'file-view-recovery:failedRetryable:live-file-subscription',
+	);
+	try {
+		wait.publishOwnerMessage(viewRecovery('recovering'));
+		expect.soft(wait.disconnected()).toBe(false);
+		wait.publishOwnerMessage(viewRecovery('failedRetryable'));
+		expect.soft(wait.disconnected()).toBe(true);
+	} finally {
+		// Retire even a broken positive-only waiter, so its red names the wrong owner.
+		wait.retire();
+		await assertion;
+	}
+});
+
+test('recovering and transient failed File presentation stay pending until ready exact-SHA paint', async () => {
+	const wait = runWaitScript({
+		recorder: recoveringFileRecorder(),
+		target: { surface: 'file', itemId: 'selected-file', expectedSha256: 'new-sha' },
+	});
+	try {
+		wait.publishOwnerMessage(viewRecovery('recovering'));
+		wait.publishOwnerMessage({
+			wireVersion: 1,
+			direction: 'serverWorkerToMain',
+			kind: 'fileRenderPatch',
+			surface: 'file',
+			workerDerivationEpoch: 7,
+			publicationSequence: 1,
+			patches: [
+				{
+					slice: 'contentAvailability',
+					operation: 'upsert',
+					itemId: 'selected-file',
+					payload: { state: 'failed', reason: 'load_failed' },
+				},
+			],
+		});
+		expect(wait.disconnected()).toBe(false);
+		wait.publishOwnerMessage(viewRecovery('ready'));
+		wait.publishSuccessor({
+			contentState: 'ready',
+			paintedSha: 'old-sha',
+			renderedItemId: 'selected-file',
+		});
+		expect(wait.disconnected()).toBe(false);
+		wait.publishSuccessor({
+			contentState: 'ready',
+			paintedSha: 'new-sha',
+			renderedItemId: 'selected-file',
+		});
+		await wait.outcome;
+		expect(wait.disconnected()).toBe(true);
+	} finally {
+		wait.retire();
+		await Promise.allSettled([wait.outcome]);
+	}
+});
 
 test('a current File owner failure ends the wait even when its canvas is already absent', async () => {
 	const wait = runWaitScript({

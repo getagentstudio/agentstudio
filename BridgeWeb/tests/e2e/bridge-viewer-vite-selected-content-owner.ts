@@ -66,6 +66,10 @@ export function createSelectedContentOwnerRecorder(
 	// Native refresh completion is a different owner from a selected content attempt.
 	// A later content-ready patch must not erase the refresh owner's final failure.
 	let fileRefreshFailure: SelectedContentOwnerFailure | null = null;
+	let fileRecovery: {
+		readonly subscriptionId: string;
+		readonly status: 'ready' | 'recovering' | 'failedRetryable';
+	} | null = null;
 	const sequences = { file: -1, review: -1 };
 	// oxlint-disable-next-line unicorn/consistent-function-scoping -- Serialized with this enclosing recorder into the page realm.
 	const record = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -73,6 +77,24 @@ export function createSelectedContentOwnerRecorder(
 	return {
 		read: (surface): SelectedContentOwnerSnapshot => {
 			const snapshot = snapshots[surface];
+			if (
+				surface === 'file' &&
+				fileRecovery?.status === 'failedRetryable' &&
+				snapshot.selectedItemId !== null &&
+				snapshot.workerDerivationEpoch !== null
+			) {
+				return {
+					...snapshot,
+					failure: {
+						channelId: currentChannelId,
+						itemId: snapshot.selectedItemId,
+						workerDerivationEpoch: snapshot.workerDerivationEpoch,
+						publicationId: snapshot.publicationId,
+						state: 'failed',
+						reason: `file-view-recovery:failedRetryable:${fileRecovery.subscriptionId}`,
+					},
+				};
+			}
 			return surface === 'file' && fileRefreshFailure?.itemId === snapshot.selectedItemId
 				? { ...snapshot, failure: fileRefreshFailure }
 				: snapshot;
@@ -86,9 +108,36 @@ export function createSelectedContentOwnerRecorder(
 				sequences.file = -1;
 				sequences.review = -1;
 				fileRefreshFailure = null;
+				fileRecovery = null;
 				return;
 			}
 			if (channelId !== currentChannelId || message['wireVersion'] !== 1) return;
+			// W2 publishes this on the product port without a surface field. Its failed
+			// status ends automatic recovery; Retry is a separate explicit operation.
+			if (
+				message['direction'] === 'serverWorkerToMain' &&
+				message['kind'] === 'viewRecoveryStatus'
+			) {
+				const view = message['view'];
+				const status = message['status'];
+				if (
+					!record(view) ||
+					view['kind'] !== 'file.metadata' ||
+					typeof view['subscriptionId'] !== 'string' ||
+					view['subscriptionId'].length === 0 ||
+					(status !== 'ready' && status !== 'recovering' && status !== 'failedRetryable')
+				)
+					return;
+				// New subscriptions announce recovering before any of their later outcomes.
+				if (
+					fileRecovery !== null &&
+					fileRecovery.subscriptionId !== view['subscriptionId'] &&
+					status !== 'recovering'
+				)
+					return;
+				fileRecovery = { subscriptionId: view['subscriptionId'], status };
+				return;
+			}
 			const surface =
 				message['surface'] === 'review'
 					? 'review'

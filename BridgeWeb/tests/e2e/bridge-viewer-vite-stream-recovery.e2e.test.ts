@@ -41,13 +41,16 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 			let primaryFailure: { readonly error: Error } | null = null;
 			let phase = 'prepare fixture and server';
 			let retention: Awaited<ReturnType<typeof observeSelectedFileRetention>> | null = null;
+			let ownerObservation: Awaited<
+				ReturnType<typeof installSelectedContentOwnerObservation>
+			> | null = null;
 			try {
 				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
 				if (streamState !== 'direct') proxy = await startBridgeStreamFaultProxy(server.origin);
 				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 				phase = 'install owner observation before navigation';
-				await installSelectedContentOwnerObservation(page);
+				ownerObservation = await installSelectedContentOwnerObservation(page);
 				diagnostics = observeBrowserRuntimeDiagnostics(page);
 				failures = await observeInteractionProfileFailures(page);
 				await page.goto(
@@ -82,7 +85,12 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 				// Act — cut only the established metadata connection, not the worker or backend.
 				if (streamState === 'disconnected') expect(proxy?.disconnectMetadata()).toBe(1);
 				phase = 'mutate fixture bytes';
-				const updatedContent = await fixture.mutateLargeFile();
+				const updatedContent = await server.testLaunch
+					.observeStep(
+						`File metadata ${streamState}: fixture write (filesystem invalidation stimulus)`,
+						fixture.mutateLargeFile(),
+					)
+					.value();
 				phase = `new source, selected content owner result, and exact SHA paint ${updatedContent.sha256}`;
 				console.info(`STREAM_RECOVERY ${streamState}: ${phase}`);
 
@@ -111,6 +119,9 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 				await appendJourneyFailureDiagnostics({
 					primaryError: primaryFailure.error,
 					reads: [
+						{ name: 'retained-owner', read: (): unknown => ownerObservation?.readRetained() },
+						{ name: 'retained-failures', read: (): unknown => failures?.readRetained() },
+						{ name: 'retained-browser', read: (): unknown => diagnostics?.readRetained() },
 						{ name: 'wire', read: (): unknown => proxy?.snapshot() ?? 'direct stream' },
 						{
 							name: 'owner',
@@ -123,6 +134,7 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 					],
 				});
 			} finally {
+				ownerObservation?.dispose();
 				await runAllOwnedCleanupOperations({
 					operations: [
 						{
@@ -138,6 +150,12 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 							name: 'browser close',
 							run: async (): Promise<void> => {
 								await browser?.close();
+							},
+						},
+						{
+							name: 'interaction diagnostic response joins',
+							run: async (): Promise<void> => {
+								await failures?.dispose();
 							},
 						},
 						{
