@@ -205,9 +205,13 @@ dependency that ignores cancellation behaves, and `cancellationObserved()` is th
 event to await. A synchronous seam reached from a thread that may block (a
 socket accept queue, a thread from `valueFromDedicatedThread`) uses
 `arriveBlocking(_:)`; called from inside a task it parks nothing and fails naming
-the step. No harness wait has a deadline: a step that is never reached leaves the
-test waiting for the hang bound, whose cancellation makes the wait throw
-`HeldStepNeverReached` with the step's name. A lane's own hang bound kills the
+the step. No harness wait has a deadline. When the work that should arrive runs
+in a task that can return, throw, or be cancelled first, await `firstArrival()`
+together with that task, and fail when the task ends without arriving
+([Every wait has an exit for every outcome](#every-wait-has-an-exit-for-every-outcome)).
+Only work that announces no terminal outcome at all leaves the test waiting for
+the hang bound, whose cancellation makes the wait throw `HeldStepNeverReached`
+with the step's name. A lane's own hang bound kills the
 process instead of cancelling the task, so when `AGENTSTUDIO_HELD_STEP_LOG` names a
 file every step appends `waiting` and `arrived` lines there
 ([`HeldStepEventLog.swift`](../../../Tests/AgentStudioTestHarness/HeldStepEventLog.swift)),
