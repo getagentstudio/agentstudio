@@ -182,6 +182,7 @@ These are the permitted forms. Anything not in the left column is a poll.
 | Work finishes but announces nothing | The owner emits a closing fact for the operation; `expectNext` it ([Typed facts](#typed-facts)) | Yield-and-hope; `waitUntilIdle` in a test |
 | Something must not happen | `expectNone` from an opening position marked before the stimulus, until the operation's correlated closing fact | "Did not happen in N turns/seconds"; asserting after idle |
 | Time is the behavior | Advance a controlled clock, then `expectNext` the owner's deadline disposition | Waiting in real time |
+| The awaited work runs in a task, page, or process that can end, fail, or retire before it gets there | End on the first of: the arrival, the producing task's completion, the owner's final failure, page or process retirement; a non-arrival ending fails naming what was seen ([Every wait has an exit for every outcome](#every-wait-has-an-exit-for-every-outcome)) | A wait whose only exit is success |
 | None of the above fits | The production owner is missing a signal; add it | Any poll |
 
 **No correctness budgets.** A test must not decide pass or fail by an
@@ -267,6 +268,46 @@ which lands it on a thread of its own, or through
 which delegates to it. `@concurrent` is not a substitute — it still
 draws from the cooperative pool. The
 `agentstudio_test_blocking_wait_off_cooperative_pool` lint rule enforces this.
+
+### Every wait has an exit for every outcome
+
+A wait whose only exit is success turns an ordinary failure into a ten-minute
+hang with no cause. List every way the awaited work can fail to arrive, and give
+the wait an exit for each one:
+
+- the task that should arrive returns, throws, or is cancelled;
+- the owner reports its final failure, as opposed to a transient failure it is
+  still recovering from;
+- the page, process, or connection is retired.
+
+Each non-arrival exit fails the test promptly and names what was seen. A
+`HeldStep` is the common case. Await `firstArrival()` together with the
+producing task, so that the task finishing first fails the test instead of
+leaving it waiting for the hang bound. On 2026-10-16 a TQ53 HTTP test hung the
+Swift fast lane for 600 s this way. Two E2E families did the same: their File
+wait ignored the view owner's final `failedRetryable`. A transient failure the
+owner still owns (a retry, a successor, automatic recovery) stays pending. Only
+the owner's final outcome ends the wait.
+
+### Failure evidence survives teardown
+
+When a test fails, keep the primary error before collecting diagnostics:
+
+- Collect each diagnostic as a handled result. A read that fails after
+  retirement, such as a `page.evaluate` on a closed page, is recorded as a gap
+  and never replaces the original cause.
+- Keep the facts a test observes outside the thing being torn down: in Node for
+  a page, in the test for a process.
+- When an intermittent failure cannot be diagnosed from its log, the fix is to
+  make the next failure carry its cause, never to rerun it.
+
+### Test the product, not the harness
+
+A test proves behavior that a user or a caller relies on. Do not add a test
+whose only subject is a wait helper's or fixture's internals, and do not assert
+the exact shape of diagnostic payloads. A helper earns its own test only when
+its failure would otherwise be invisible: when it could make a product test hang
+or pass without exercising its path.
 
 ## Typed facts
 

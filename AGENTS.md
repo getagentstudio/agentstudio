@@ -111,6 +111,7 @@ organization, always load command specs and directory structure together.
 | Debug/beta proof launch | [Observability — Local proof launch](docs/architecture/observability/observability_and_traceability.md#local-proof-launch) | You inherit production identity, share zmx roots, or treat JSONL as proof. |
 | MainActor, debounce, Ghostty samples, sidebar rows | [Performance Lane](#performance-lane-directive) below | You infer hop shape from `@MainActor` and skip source admission. |
 | Designing or reviewing an atom, store, coordinator, actor, bus case, observer, timer, cache, projection, or MainActor hop | [MainActor And Atom Boundaries skill](.codex/skills/agentstudio-mainactor-atom-boundaries/SKILL.md) | You put gating, ordering, deadlines, retention, or I/O in an atom, or approve a lint-clean diff that still breaks the atom-method rule. |
+| Writing or reviewing any test (Swift Testing, Vitest, Playwright E2E) or test support | [Writing Tests skill](.codex/skills/agentstudio-writing-tests/SKILL.md) | You write a wait with only a success exit that hangs CI for ten minutes, a diagnostic that destroys the real error, a test of a test helper, or a test in the wrong lane. |
 
 Do not infer hop shape from `@MainActor` annotations in this file.
 
@@ -401,6 +402,7 @@ Instead:
 - await the exact event or the owner's typed fact through the fact harness (`FactRecorder`), or the observed state change
 - drive time-as-subject through a controlled clock (`TestPushClock`)
 - to prove a negative, consume the operation's facts with `expectNone` from an opening position up to its correlated closing fact; never wait for idle (`waitUntilIdle` is forbidden in tests)
+- give every wait an exit for each way the awaited work can fail to arrive (the producing task ending, the owner's final failure, page or process retirement); see [Every wait has an exit for every outcome](docs/architecture/testing/testing_architecture.md#every-wait-has-an-exit-for-every-outcome)
 - fully shut down tasks, streams, actors, and observers before the test returns
 - use explicit protocol seams and fakes for testability
 - if nothing announces completion, the production owner is missing a signal:
