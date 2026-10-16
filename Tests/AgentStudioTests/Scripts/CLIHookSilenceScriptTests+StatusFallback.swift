@@ -94,6 +94,7 @@ extension CLIHookSilenceScriptTests {
         let pane = UUIDv7.generate()
         let workspace = UUIDv7.generate()
         let session = UUIDv7.generate().uuidString
+        let unexpectedStreams = Mutex<[String]>([])
         let observed: Int32
         do {
             observed = try await valueFromDedicatedThread {
@@ -123,8 +124,8 @@ extension CLIHookSilenceScriptTests {
                         arguments: ["hook", provider, "SessionStart"], environment: environment,
                         executablePath: "/fixture/agentstudio-cli", bundleExecutableURL: nil,
                         standardInput: { Data() }, identifierGenerator: { UUIDv7.generate() },
-                        standardOutputSink: { _ in Issue.record("Hook wrote stdout") },
-                        standardErrorSink: { _ in Issue.record("Hook wrote stderr") },
+                        standardOutputSink: { _ in unexpectedStreams.withLock { $0.append("stdout") } },
+                        standardErrorSink: { _ in unexpectedStreams.withLock { $0.append("stderr") } },
                         standardInputFileDescriptor: pipe.fileHandleForReading.fileDescriptor,
                         deadlineTiming: driver.timing))
             }
@@ -134,6 +135,7 @@ extension CLIHookSilenceScriptTests {
         }
         await fixture.shutdown()
         #expect(observed == 0)
+        #expect(unexpectedStreams.withLock { $0 }.isEmpty, "a hook writes nothing to stdout or stderr")
         if token == .healthy {
             #expect(
                 fixture.requests.map(\.method) == [

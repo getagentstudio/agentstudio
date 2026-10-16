@@ -73,12 +73,13 @@ struct ProviderHookStatusFallbackTests {
         arguments: ["session.status", "pane.title.set", "pane.line.set", "pane.writer.claimEpoch"],
         [IPCAgentConnectionRefusalReason.paneNotFound, .paneRetired, .otherWorkspace, .intentRequiresToken])
     func claimRefusalKeepsDiagnosticReason(method: String, reason: IPCAgentConnectionRefusalReason) async throws {
-        try await valueFromDedicatedThread {
+        let observed = try await valueFromDedicatedThread { () throws -> ClaimRefusalObservation in
             let descriptors = try IPCCompiledInvocationResolver().resolve(
                 arguments: [method], authenticated: false,
                 inputs: .init(examples: .init(illustrativeIdentifier: UUIDv7.generate())))
-            let descriptor = try #require(descriptors.first { $0.metadata.name == method })
-            let sample = try #require(descriptor.metadata.examples.first)
+            guard let descriptor = descriptors.first(where: { $0.metadata.name == method }),
+                let sample = descriptor.metadata.examples.first
+            else { return .missingCompiledExample }
             let invocation = try IPCDescriptorInvocation(
                 descriptor: descriptor,
                 normalizedParameters: descriptor.normalizeParameters(sample.encodedParameters()), presentation: .tooling
@@ -96,15 +97,14 @@ struct ProviderHookStatusFallbackTests {
             }
             defer { listener.stop() }
             let client = AgentStudioIPCClient(configuration: .init(socketPath: endpoint.path), descriptors: descriptors)
-            guard case .remoteFailure(let failure) = try client.call(invocation) else {
-                Issue.record("Expected claim admission refusal")
-                return
-            }
-            #expect(failure.code == -32_001)
-            #expect(failure.documentedReason == reason.rawValue)
+            guard case .remoteFailure(let failure) = try client.call(invocation) else { return .notRefused }
             let deadline = CallDeadline(limit: .seconds(2), timing: StatusFallbackTiming())
-            #expect(ProviderHookStatusReporting.reason(for: failure, deadline: deadline) == reason)
+            return .refused(
+                code: failure.code, documentedReason: failure.documentedReason,
+                classifiedReason: ProviderHookStatusReporting.reason(for: failure, deadline: deadline))
         }
+        #expect(
+            observed == .refused(code: -32_001, documentedReason: reason.rawValue, classifiedReason: reason))
     }
 
     @Test("authentication transport failure grants no status fallback")
@@ -144,4 +144,11 @@ private final class StatusFallbackTiming: CallDeadlineTiming, Sendable {
         Issue.record("Delivery seam must not perform socket I/O")
         return .timedOut
     }
+}
+
+/// What a claim-refused compiled call observed on the dedicated thread, asserted on the test task.
+private enum ClaimRefusalObservation: Equatable, Sendable {
+    case missingCompiledExample
+    case notRefused
+    case refused(code: Int, documentedReason: String?, classifiedReason: IPCAgentConnectionRefusalReason)
 }
