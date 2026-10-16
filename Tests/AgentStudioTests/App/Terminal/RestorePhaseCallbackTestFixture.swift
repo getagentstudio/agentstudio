@@ -11,39 +11,12 @@ final class RestorePhaseCallbackTestFixture {
     let projector: TerminalActivityProjector
     var inputObserved: @MainActor (TerminalActivitySourceInput) -> Void = { _ in }
 
-    lazy var manager = SurfaceManager(
-        appCommandDispatcher: AppTerminalFixtureCommandDispatcher(),
-        engineAccess: { .unavailable },
-        callbackHandlingAccess: { [weak self] in self?.handler }
-    )
-    private lazy var host = GhosttyActionRoutingHost(
-        dependencies: .init(
-            runtimeRegistry: RuntimeRegistry(),
-            routingLookup: manager,
-            mountedHostResolver: .init(
-                surfaceForID: { [weak self] in self?.manager.surface(for: $0) },
-                paneIDForSurfaceID: { [weak self] in self?.manager.paneId(for: $0) }
-            ),
-            applyNativeView: { _, _, _ in .dropped(.engineUnavailable) },
-            activityContext: { [weak self] in self?.router.sourceInputContext(paneID: $0) },
-            submitActivityInput: { [weak self] input in
-                guard let self else { return }
-                await router.consumeSourceInputIfAccepting(input)
-                inputObserved(input)
-            },
-            startupTraceRecorder: nil,
-            traceRuntime: nil
-        )
-    )
-    lazy var handler = Ghostty.ActionRouter(host: host)
-    lazy var router = TerminalActivityRouter(
-        bus: EventBus<RuntimeEnvelope>(),
-        activityAtom: TerminalActivityAtom(),
-        callbackHandlingAccess: { [weak self] in self?.handler },
-        projector: projector,
-        surfaceIDForPaneID: { [weak self] in self?.manager.surfaceId(forPaneId: $0) },
-        lastOutputLineReader: { _ in .surfaceStale }
-    )
+    // Factories with explicit return types keep this lazy graph out of type inference
+    // (each property's initializer captures the others, so inference would be circular).
+    lazy var manager: SurfaceManager = makeManager()
+    private lazy var host: GhosttyActionRoutingHost = makeHost()
+    lazy var handler: Ghostty.ActionRouter = makeHandler()
+    lazy var router: TerminalActivityRouter = makeRouter()
 
     init(projector: TerminalActivityProjector) {
         self.projector = projector
@@ -60,5 +33,50 @@ final class RestorePhaseCallbackTestFixture {
         await router.stop()
         for surfaceID in registeredSurfaceIDs { manager.destroy(surfaceID) }
         registeredSurfaceIDs.removeAll()
+    }
+
+    private func makeManager() -> SurfaceManager {
+        SurfaceManager(
+            appCommandDispatcher: AppTerminalFixtureCommandDispatcher(),
+            engineAccess: { .unavailable },
+            callbackHandlingAccess: { [weak self] in self?.handler }
+        )
+    }
+
+    private func makeHost() -> GhosttyActionRoutingHost {
+        GhosttyActionRoutingHost(
+            dependencies: .init(
+                runtimeRegistry: RuntimeRegistry(),
+                routingLookup: manager,
+                mountedHostResolver: .init(
+                    surfaceForID: { [weak self] in self?.manager.surface(for: $0) },
+                    paneIDForSurfaceID: { [weak self] in self?.manager.paneId(for: $0) }
+                ),
+                applyNativeView: { _, _, _ in .dropped(.engineUnavailable) },
+                activityContext: { [weak self] in self?.router.sourceInputContext(paneID: $0) },
+                submitActivityInput: { [weak self] input in
+                    guard let self else { return }
+                    await router.consumeSourceInputIfAccepting(input)
+                    inputObserved(input)
+                },
+                startupTraceRecorder: nil,
+                traceRuntime: nil
+            )
+        )
+    }
+
+    private func makeHandler() -> Ghostty.ActionRouter {
+        Ghostty.ActionRouter(host: host)
+    }
+
+    private func makeRouter() -> TerminalActivityRouter {
+        TerminalActivityRouter(
+            bus: EventBus<RuntimeEnvelope>(),
+            activityAtom: TerminalActivityAtom(),
+            callbackHandlingAccess: { [weak self] in self?.handler },
+            projector: projector,
+            surfaceIDForPaneID: { [weak self] in self?.manager.surfaceId(forPaneId: $0) },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
     }
 }
