@@ -299,6 +299,16 @@ struct CITopologyWorkflowTests {
         #expect(!swiftJob.contains("install-ci-lint-tools.sh"))
         #expect(qualityJob.contains("bash scripts/install-ci-lint-tools.sh"))
         #expect(swiftJob.contains("test \"$(swiftlint version)\" = \"0.65.1\""))
+        // The swift-format source build is cached per container image and installer revision;
+        // only main saves the entry, and a miss proves the copied binary runs without its build tree.
+        #expect(
+            qualityJob.contains(
+                "key: lint-tools-linux-${{ runner.arch }}-image-8de8ea332a61-${{ hashFiles('scripts/install-ci-lint-tools.sh') }}"
+            ))
+        #expect(qualityJob.contains("name: Save lint tools cache"))
+        #expect(qualityJob.contains("steps.lint-tools-cache-restore.outputs.cache-hit != 'true'"))
+        #expect(lintInstaller.contains("if [[ -x \"$format_cached_binary\" ]]; then"))
+        #expect(lintInstaller.contains("rm -rf \"$format_source\" \"$format_build\""))
         #expect(lintInstaller.contains("--branch 603.0.0"))
         #expect(lintInstaller.contains("supports only the Linux code-quality job"))
         #expect(lintInstaller.contains("swiftlint_linux_${swiftlint_arch}.zip"))
