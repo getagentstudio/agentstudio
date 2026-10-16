@@ -84,8 +84,10 @@ struct SidebarMemoryBeforePresentationTests {
                 #expect(harness.controller.isSidebarCollapsed == sidebarCollapsed)
                 guard harness.controller.isSidebarCollapsed == sidebarCollapsed else { return }
                 #expect(sidebarState.sidebarCollapsed == sidebarCollapsed)
-                #expect(sidebarState.sidebarSurface == .panes)
-                #expect(sidebarState.filterText == "pane 1")
+                // Fail fast on a missing restore: the presentation wait below matches only the
+                // restored filter, so an unrestored launch must stop here instead of waiting.
+                try #require(sidebarState.sidebarSurface == .panes)
+                try #require(sidebarState.filterText == "pane 1")
                 #expect(!uiStore.isAutosaveObservationActive)
 
                 harness.controller.view.frame = NSRect(x: 0, y: 0, width: 1000, height: 700)
