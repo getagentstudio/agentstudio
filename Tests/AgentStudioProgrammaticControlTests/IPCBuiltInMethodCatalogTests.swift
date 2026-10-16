@@ -47,6 +47,9 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(catalog.systemAndAuth.authLogin.principalAvailability == .preAuthentication)
         #expect(catalog.systemAndAuth.authStatus.principalAvailability == .preAuthentication)
         #expect(
+            catalog.erasedDescriptors.filter { $0.metadata.principalAvailability == .preAuthentication }
+                .map(\.metadata.name).sorted() == ["auth.login", "auth.status", "system.ping"])
+        #expect(
             catalog.erasedDescriptors.filter { $0.metadata.responseDelivery == .subscription }
                 .map(\.metadata.name) == ["events.subscribe"]
         )

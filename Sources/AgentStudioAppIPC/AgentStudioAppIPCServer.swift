@@ -321,7 +321,10 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             throw refusal
         }
         guard let registration else { throw AgentStudioAppIPCRequestError.methodNotFound }
-        if connectionState.principal == nil, !AgentStudioIPCPreAuthMethods.isAllowed(request.method),
+        // The descriptor declares whether a method runs before authentication, the
+        // same source the typed registration enforces; only status intent may use a claim.
+        if connectionState.principal == nil,
+            registration.descriptor.metadata.principalAvailability == .authenticated,
             registration.descriptor.metadata.callIntent != .status
         {
             throw AppIPCPaneClaimError(reason: .intentRequiresToken)
