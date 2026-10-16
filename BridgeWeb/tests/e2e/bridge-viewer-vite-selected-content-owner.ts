@@ -43,6 +43,8 @@ export interface SelectedContentOwnerSnapshot {
 	readonly publicationId: string | null;
 	readonly phase: 'awaiting-selection' | 'selected' | 'source-installed' | 'content-result';
 	readonly failure: SelectedContentOwnerFailure | null;
+	readonly contentClosedSha256?: string | null;
+	readonly preparedSha256?: string | null;
 }
 
 /** Self-contained so the exact reducer tested in Node can run in a page init script. */
@@ -66,6 +68,15 @@ export function createSelectedContentOwnerRecorder(
 	// Native refresh completion is a different owner from a selected content attempt.
 	// A later content-ready patch must not erase the refresh owner's final failure.
 	let fileRefreshFailure: SelectedContentOwnerFailure | null = null;
+	let fileRecovery: {
+		readonly subscriptionId: string;
+		readonly status: 'ready' | 'recovering' | 'failedRetryable';
+	} | null = null;
+	let preparedFile: {
+		readonly itemId: string;
+		readonly sequence: number;
+		readonly sha256: string;
+	} | null = null;
 	const sequences = { file: -1, review: -1 };
 	// oxlint-disable-next-line unicorn/consistent-function-scoping -- Serialized with this enclosing recorder into the page realm.
 	const record = (value: unknown): value is Readonly<Record<string, unknown>> =>
@@ -73,6 +84,24 @@ export function createSelectedContentOwnerRecorder(
 	return {
 		read: (surface): SelectedContentOwnerSnapshot => {
 			const snapshot = snapshots[surface];
+			if (
+				surface === 'file' &&
+				fileRecovery?.status === 'failedRetryable' &&
+				snapshot.selectedItemId !== null &&
+				snapshot.workerDerivationEpoch !== null
+			) {
+				return {
+					...snapshot,
+					failure: {
+						channelId: currentChannelId,
+						itemId: snapshot.selectedItemId,
+						workerDerivationEpoch: snapshot.workerDerivationEpoch,
+						publicationId: snapshot.publicationId,
+						state: 'failed',
+						reason: `file-view-recovery:failedRetryable:${fileRecovery.subscriptionId}`,
+					},
+				};
+			}
 			return surface === 'file' && fileRefreshFailure?.itemId === snapshot.selectedItemId
 				? { ...snapshot, failure: fileRefreshFailure }
 				: snapshot;
@@ -86,9 +115,37 @@ export function createSelectedContentOwnerRecorder(
 				sequences.file = -1;
 				sequences.review = -1;
 				fileRefreshFailure = null;
+				fileRecovery = null;
+				preparedFile = null;
 				return;
 			}
 			if (channelId !== currentChannelId || message['wireVersion'] !== 1) return;
+			// W2 publishes this on the product port without a surface field. Its failed
+			// status ends automatic recovery; Retry is a separate explicit operation.
+			if (
+				message['direction'] === 'serverWorkerToMain' &&
+				message['kind'] === 'viewRecoveryStatus'
+			) {
+				const view = message['view'];
+				const status = message['status'];
+				if (
+					!record(view) ||
+					view['kind'] !== 'file.metadata' ||
+					typeof view['subscriptionId'] !== 'string' ||
+					view['subscriptionId'].length === 0 ||
+					(status !== 'ready' && status !== 'recovering' && status !== 'failedRetryable')
+				)
+					return;
+				// New subscriptions announce recovering before any of their later outcomes.
+				if (
+					fileRecovery !== null &&
+					fileRecovery.subscriptionId !== view['subscriptionId'] &&
+					status !== 'recovering'
+				)
+					return;
+				fileRecovery = { subscriptionId: view['subscriptionId'], status };
+				return;
+			}
 			const surface =
 				message['surface'] === 'review'
 					? 'review'
@@ -108,7 +165,10 @@ export function createSelectedContentOwnerRecorder(
 					selectionRequestId: requestId,
 					phase: 'selected',
 					failure: null,
+					contentClosedSha256: null,
+					preparedSha256: null,
 				};
+				if (surface === 'file') preparedFile = null;
 				return;
 			}
 			if (message['direction'] !== 'serverWorkerToMain') return;
@@ -137,9 +197,42 @@ export function createSelectedContentOwnerRecorder(
 					publicationId,
 					phase: 'source-installed',
 					failure: changed ? null : previous.failure,
+					...(changed ? { contentClosedSha256: null, preparedSha256: null } : {}),
 				};
+				if (changed && surface === 'file') preparedFile = null;
 				if (changed) sequences[surface] = -1;
 				if (changed && surface === 'file') fileRefreshFailure = null;
+				return;
+			}
+			if (kind === 'filePierreRenderJob' && surface === 'file') {
+				const job = message['job'];
+				const sequence = message['publicationSequence'];
+				if (
+					message['workerDerivationEpoch'] !== previous.workerDerivationEpoch ||
+					typeof sequence !== 'number' ||
+					!Number.isSafeInteger(sequence) ||
+					sequence < Math.max(0, sequences.file, preparedFile?.sequence ?? -1) ||
+					!record(job) ||
+					job['itemId'] !== previous.selectedItemId ||
+					!Array.isArray(job['sourceCorrelations'])
+				)
+					return;
+				for (const correlation of job['sourceCorrelations']) {
+					if (
+						record(correlation) &&
+						correlation['itemId'] === previous.selectedItemId &&
+						typeof correlation['observedSha256'] === 'string' &&
+						previous.selectedItemId !== null
+					) {
+						preparedFile = {
+							itemId: previous.selectedItemId,
+							sequence,
+							sha256: correlation['observedSha256'],
+						};
+						snapshots.file = { ...previous, preparedSha256: correlation['observedSha256'] };
+						break;
+					}
+				}
 				return;
 			}
 			if (kind !== 'fileRenderPatch' && kind !== 'reviewRenderPatch') return;
@@ -231,6 +324,12 @@ export function createSelectedContentOwnerRecorder(
 				snapshots[surface] = {
 					...previous,
 					phase: 'content-result',
+					...(surface === 'file' &&
+					state === 'ready' &&
+					preparedFile?.itemId === previous.selectedItemId &&
+					preparedFile?.sequence === sequence
+						? { contentClosedSha256: preparedFile.sha256 }
+						: {}),
 					failure: classify({
 						surface,
 						current,
