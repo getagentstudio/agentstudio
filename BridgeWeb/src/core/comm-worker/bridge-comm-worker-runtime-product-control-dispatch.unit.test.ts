@@ -26,13 +26,12 @@ describe.each(['fileView', 'review'] as const)(
 				dispatchAnnotationOutput({
 					surface,
 					operation: {
-						displayedProjectionRevision: 9,
-						expectedSessionRevision: 4,
+						destination: 'remembered',
 						kind: 'output.scope.commit',
+						messages: [{ messageId: '00000000-0000-7000-8000-000000000011', savedRevision: 4 }],
 						outputKind: 'jsonFile',
 						scope: 'pending',
 						sessionId: '00000000-0000-7000-8000-000000000013',
-						sourceGeneration: 7,
 					},
 					publish: (message): void => {
 						publishedMessages.push(message);
@@ -233,13 +232,11 @@ describe.each(['fileView', 'review'] as const)(
 			dispatchAnnotationOutput({
 				surface,
 				operation: {
-					displayedProjectionRevision: 9,
-					expectedSessionRevision: 4,
 					kind: 'output.scope.commit',
+					messages: [{ messageId: '00000000-0000-7000-8000-000000000011', savedRevision: 4 }],
 					outputKind: 'clipboardMarkdown',
 					scope: 'pending',
 					sessionId: '00000000-0000-7000-8000-000000000013',
-					sourceGeneration: 7,
 				},
 				publish: (message): void => {
 					publishedMessages.push(message);
