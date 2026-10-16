@@ -104,10 +104,12 @@ extension AppDelegate {
             await bootPrepareDatabases()
         case .loadCanonicalStore:
             await bootLoadCanonicalStore()
+        case .loadSidebarMemory:
+            await bootLoadSidebarMemory()
         case .loadCacheStore:
             await bootLoadCacheStore()
-        case .loadUIStore:
-            await bootLoadUIStore()
+        case .loadWorkspaceSettings:
+            await bootLoadWorkspaceSettings()
         case .establishRuntimeBus:
             await bootEstablishRuntimeBus(paneRuntimeBus: paneRuntimeBus, filesystemSource: &filesystemSource)
         case .startFilesystemActor:
@@ -337,9 +339,12 @@ extension AppDelegate {
         await sidebarCacheStore.restoreAsync(for: store.identityAtom.workspaceId)
     }
 
-    private func bootLoadUIStore() async {
-        await workspaceSettingsStore.restoreAsync(for: store.identityAtom.workspaceId)
+    private func bootLoadSidebarMemory() async {
         await uiStateStore.restoreAsync(for: store.identityAtom.workspaceId)
+    }
+
+    private func bootLoadWorkspaceSettings() async {
+        await workspaceSettingsStore.restoreAsync(for: store.identityAtom.workspaceId)
     }
 
     private func bootRecoverUndoJournal() async -> WorkspaceUndoJournalRecovery {
