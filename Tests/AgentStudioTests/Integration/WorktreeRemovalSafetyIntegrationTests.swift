@@ -385,6 +385,7 @@ struct WorktreeRemovalSafetyIntegrationTests {
         let sibling = fixture.path.deletingLastPathComponent()
             .appending(path: "\(fixture.path.lastPathComponent).feature-unregistered", directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: sibling, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: sibling) }
         let before = try await removalRepositorySnapshot(fixture.path)
 
         let report = await WorktreeRemovalRunner(client: fixture.client).run(

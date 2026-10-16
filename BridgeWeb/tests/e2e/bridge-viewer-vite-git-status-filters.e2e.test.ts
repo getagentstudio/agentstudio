@@ -2,6 +2,7 @@ import type { Browser, Locator, Page } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { launchBridgeViewerE2EChromium } from './bridge-viewer-vite-e2e-browser.ts';
 import {
 	createBridgeViewerGitStatusFixture,
@@ -14,8 +15,6 @@ import {
 import { bridgeViewerViteProductReviewUrl } from './bridge-viewer-vite-product-url.ts';
 import { observeBrowserRuntimeDiagnostics } from './bridge-viewer-vite-review-comparison-observation.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
-
-const treeSettlementTimeoutMilliseconds = 30_000;
 
 test('filters the native Git working-tree review by every status and clears combined facets', async (context): Promise<void> => {
 	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
@@ -34,9 +33,13 @@ test('filters the native Git working-tree review by every status and clears comb
 				waitUntil: 'domcontentloaded',
 			});
 			await page.getByTestId('review-viewer-shell').waitFor({ state: 'visible' });
-			await expectReviewTreePaths(page, fixture.expectedAllTreePaths, 'initial All statuses');
+			await expectReviewTreePaths(
+				{ page, testLaunch: fixture.oracle.testLaunch },
+				fixture.expectedAllTreePaths,
+				'initial All statuses',
+			);
 			await expectSelectedReviewCodeContent(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.selectedSourceContentMarker,
 				'initial selected source content',
 			);
@@ -46,47 +49,51 @@ test('filters the native Git working-tree review by every status and clears comb
 				await selectFacetOption(page, 'Git status', statusCase.label);
 				// oxlint-disable-next-line no-await-in-loop -- Exact rows prove matches, exclusions, ancestors, and the honest empty Copied result.
 				await expectReviewTreePaths(
-					page,
+					{ page, testLaunch: fixture.oracle.testLaunch },
 					statusCase.expectedTreePaths,
 					`${statusCase.label} Git status`,
 				);
 			}
 
 			await selectFacetOption(page, 'Git status', 'All statuses');
-			await expectReviewTreePaths(page, fixture.expectedAllTreePaths, 'selected All statuses');
+			await expectReviewTreePaths(
+				{ page, testLaunch: fixture.oracle.testLaunch },
+				fixture.expectedAllTreePaths,
+				'selected All statuses',
+			);
 			await expectSelectedReviewCodeContent(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.selectedSourceContentMarker,
 				'selected source content after empty status and All statuses',
 			);
 
 			await setVisibilityToggle(page, 'bridge-review-facet-show-binary', true);
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.expectedWithBinaryTreePaths,
 				'Include binary files enabled independently',
 			);
 			await setVisibilityToggle(page, 'bridge-review-facet-show-binary', false);
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.expectedAllTreePaths,
 				'Include binary files disabled independently',
 			);
 			await setVisibilityToggle(page, 'bridge-review-facet-show-large', true);
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.expectedWithLargeTreePaths,
 				'Include large files enabled independently',
 			);
 			await setVisibilityToggle(page, 'bridge-review-facet-show-binary', true);
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.expectedWithBinaryAndLargeTreePaths,
 				'Include binary and large files together',
 			);
 			await setVisibilityToggle(page, 'bridge-review-facet-show-large', false);
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.expectedWithBinaryTreePaths,
 				'Include large files disabled independently',
 			);
@@ -97,7 +104,7 @@ test('filters the native Git working-tree review by every status and clears comb
 			await clear.click();
 			await popover.waitFor({ state: 'hidden' });
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.expectedAllTreePaths,
 				'Clear resets visibility toggles',
 			);
@@ -105,22 +112,30 @@ test('filters the native Git working-tree review by every status and clears comb
 			await selectFacetOption(page, 'Git status', 'Added');
 			await selectFacetOption(page, 'File category', 'Tests');
 			await expectReviewTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.addedTestTreePaths,
 				'combined Added and Tests facets',
 			);
 
 			await selectFacetOption(page, 'Git status', 'Deleted');
-			await expectReviewTreePaths(page, [], 'combined Deleted and Tests empty result');
+			await expectReviewTreePaths(
+				{ page, testLaunch: fixture.oracle.testLaunch },
+				[],
+				'combined Deleted and Tests empty result',
+			);
 
 			popover = await ensureFacetMenuOpen(page);
 			clear = popover.getByTestId('bridge-review-facet-clear');
 			expect(await clear.getAttribute('data-disabled')).toBeNull();
 			await clear.click();
 			await popover.waitFor({ state: 'hidden' });
-			await expectReviewTreePaths(page, fixture.expectedAllTreePaths, 'Clear filters restore');
+			await expectReviewTreePaths(
+				{ page, testLaunch: fixture.oracle.testLaunch },
+				fixture.expectedAllTreePaths,
+				'Clear filters restore',
+			);
 			await expectSelectedReviewCodeContent(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				fixture.selectedSourceContentMarker,
 				'selected source content after combined empty result and Clear',
 			);
@@ -199,38 +214,43 @@ async function ensureFacetMenuOpen(page: Page): Promise<Locator> {
 }
 
 async function expectReviewTreePaths(
-	page: Page,
+	owner: { readonly page: Page; readonly testLaunch: BridgeWebTestLaunch },
 	expectedPaths: readonly string[],
 	label: string,
 ): Promise<void> {
+	const { page, testLaunch } = owner;
 	if (expectedPaths.length === 0) {
-		await expectReviewEmptyState(page, label);
+		await expectReviewEmptyState(owner, label);
 		return;
 	}
 	const treeSelector = '[data-testid="bridge-review-trees-panel"] file-tree-container';
 	try {
-		await page.waitForFunction(
-			({ expected, selector }): boolean => {
-				const treeHost = document.querySelector(selector);
-				if (!(treeHost instanceof HTMLElement) || treeHost.shadowRoot === null) return false;
-				const observed = [
-					...new Set(
-						Array.from(treeHost.shadowRoot.querySelectorAll('button[data-item-path]'))
-							.filter(
-								(candidate): candidate is HTMLElement =>
-									candidate instanceof HTMLElement &&
-									!candidate.hasAttribute('data-file-tree-sticky-row') &&
-									!candidate.hasAttribute('data-item-parked'),
-							)
-							.map((candidate): string => candidate.dataset['itemPath'] ?? '')
-							.filter((path): boolean => path.length > 0),
-					),
-				].toSorted();
-				return JSON.stringify(observed) === JSON.stringify(expected);
-			},
-			{ expected: [...expectedPaths].toSorted(), selector: treeSelector },
-			{ timeout: treeSettlementTimeoutMilliseconds },
-		);
+		await testLaunch
+			.observeStep(
+				`${label}: exact native Git-status Review tree paths`,
+				page.waitForFunction(
+					({ expected, selector }): boolean => {
+						const treeHost = document.querySelector(selector);
+						if (!(treeHost instanceof HTMLElement) || treeHost.shadowRoot === null) return false;
+						const observed = [
+							...new Set(
+								Array.from(treeHost.shadowRoot.querySelectorAll('button[data-item-path]'))
+									.filter(
+										(candidate): candidate is HTMLElement =>
+											candidate instanceof HTMLElement &&
+											!candidate.hasAttribute('data-file-tree-sticky-row') &&
+											!candidate.hasAttribute('data-item-parked'),
+									)
+									.map((candidate): string => candidate.dataset['itemPath'] ?? '')
+									.filter((path): boolean => path.length > 0),
+							),
+						].toSorted();
+						return JSON.stringify(observed) === JSON.stringify(expected);
+					},
+					{ expected: [...expectedPaths].toSorted(), selector: treeSelector },
+				),
+			)
+			.value();
 	} catch (error: unknown) {
 		let observedPaths: readonly string[] | string;
 		try {
@@ -247,28 +267,35 @@ async function expectReviewTreePaths(
 	expect(observedPaths, label).toEqual([...expectedPaths].toSorted());
 }
 
-async function expectReviewEmptyState(page: Page, label: string): Promise<void> {
-	await page.waitForFunction(
-		(): boolean => {
-			const shell = document.querySelector('[data-testid="review-viewer-shell"]');
-			const emptyCanvas = document.querySelector('[data-testid="bridge-review-empty-canvas"]');
-			const emptyFileTree = document.querySelector('[data-testid="bridge-review-empty-file-tree"]');
-			const filterTrigger = document.querySelector(
-				'[data-testid="bridge-review-facet-menu-control"]',
-			);
-			return (
-				shell instanceof HTMLElement &&
-				shell.dataset['reviewMetadataItemCount'] === '0' &&
-				shell.dataset['reviewMetadataTreeRowCount'] === '0' &&
-				emptyCanvas instanceof HTMLElement &&
-				emptyFileTree instanceof HTMLElement &&
-				filterTrigger instanceof HTMLButtonElement &&
-				!filterTrigger.disabled
-			);
-		},
-		undefined,
-		{ timeout: treeSettlementTimeoutMilliseconds },
-	);
+async function expectReviewEmptyState(
+	owner: { readonly page: Page; readonly testLaunch: BridgeWebTestLaunch },
+	label: string,
+): Promise<void> {
+	const { page, testLaunch } = owner;
+	await testLaunch
+		.observeStep(
+			`${label}: zero-item Review empty canvas and enabled filter control`,
+			page.waitForFunction((): boolean => {
+				const shell = document.querySelector('[data-testid="review-viewer-shell"]');
+				const emptyCanvas = document.querySelector('[data-testid="bridge-review-empty-canvas"]');
+				const emptyFileTree = document.querySelector(
+					'[data-testid="bridge-review-empty-file-tree"]',
+				);
+				const filterTrigger = document.querySelector(
+					'[data-testid="bridge-review-facet-menu-control"]',
+				);
+				return (
+					shell instanceof HTMLElement &&
+					shell.dataset['reviewMetadataItemCount'] === '0' &&
+					shell.dataset['reviewMetadataTreeRowCount'] === '0' &&
+					emptyCanvas instanceof HTMLElement &&
+					emptyFileTree instanceof HTMLElement &&
+					filterTrigger instanceof HTMLButtonElement &&
+					!filterTrigger.disabled
+				);
+			}, undefined),
+		)
+		.value();
 	const shell = page.getByTestId('review-viewer-shell');
 	expect(await shell.getAttribute('data-review-metadata-item-count'), label).toBe('0');
 	expect(await shell.getAttribute('data-review-metadata-tree-row-count'), label).toBe('0');
@@ -278,38 +305,40 @@ async function expectReviewEmptyState(page: Page, label: string): Promise<void> 
 }
 
 async function expectSelectedReviewCodeContent(
-	page: Page,
+	owner: { readonly page: Page; readonly testLaunch: BridgeWebTestLaunch },
 	marker: string,
 	label: string,
 ): Promise<void> {
-	await page.waitForFunction(
-		(markerText: string): boolean => {
-			const panel = document.querySelector('[data-testid="bridge-code-view-panel"]');
-			if (!(panel instanceof HTMLElement)) return false;
-			const pending: Array<Element | ShadowRoot> = [panel];
-			while (pending.length > 0) {
-				const current = pending.shift();
-				if (current === undefined) break;
-				for (const row of current.querySelectorAll('[data-line]')) {
-					const bounds = row.getBoundingClientRect();
-					if (
-						row.closest('[data-additions]') !== null &&
-						bounds.width > 0 &&
-						bounds.height > 0 &&
-						(row.textContent?.includes(markerText) ?? false)
-					) {
-						return true;
+	const { page, testLaunch } = owner;
+	await testLaunch
+		.observeStep(
+			`${label}: selected Review additions paint ${marker}`,
+			page.waitForFunction((markerText: string): boolean => {
+				const panel = document.querySelector('[data-testid="bridge-code-view-panel"]');
+				if (!(panel instanceof HTMLElement)) return false;
+				const pending: Array<Element | ShadowRoot> = [panel];
+				while (pending.length > 0) {
+					const current = pending.shift();
+					if (current === undefined) break;
+					for (const row of current.querySelectorAll('[data-line]')) {
+						const bounds = row.getBoundingClientRect();
+						if (
+							row.closest('[data-additions]') !== null &&
+							bounds.width > 0 &&
+							bounds.height > 0 &&
+							(row.textContent?.includes(markerText) ?? false)
+						) {
+							return true;
+						}
+					}
+					for (const descendant of current.querySelectorAll('*')) {
+						if (descendant.shadowRoot !== null) pending.push(descendant.shadowRoot);
 					}
 				}
-				for (const descendant of current.querySelectorAll('*')) {
-					if (descendant.shadowRoot !== null) pending.push(descendant.shadowRoot);
-				}
-			}
-			return false;
-		},
-		marker,
-		{ timeout: treeSettlementTimeoutMilliseconds },
-	);
+				return false;
+			}, marker),
+		)
+		.value();
 	expect(
 		await page.evaluate((markerText: string): boolean => {
 			const panel = document.querySelector('[data-testid="bridge-code-view-panel"]');

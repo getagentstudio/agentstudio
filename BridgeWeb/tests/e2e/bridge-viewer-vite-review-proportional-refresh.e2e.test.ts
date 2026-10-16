@@ -6,6 +6,7 @@ import type { JSHandle, Page, Request } from 'playwright';
 import { describe, expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
 import { bridgeTelemetryWorkerSnapshotSchema } from '../../src/core/telemetry-worker/bridge-telemetry-worker-contracts.js';
 import {
@@ -74,16 +75,18 @@ describe('Bridge Viewer proportional Review refresh E2E', () => {
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 				const reviewContentRequests = observeReviewContentRequests(page);
 				appliedPublications = observeAppliedReviewPublications(page);
-				await page.goto(
-					bridgeViewerViteProductReviewUrl(
-						server.origin,
-						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
-					),
-					{
-						timeout: proportionalRefreshTimeoutMilliseconds,
-						waitUntil: 'domcontentloaded',
-					},
-				);
+				await fixture.oracle.testLaunch
+					.observeStep(
+						'Proportional Review refresh: navigation DOM content loaded',
+						page.goto(
+							bridgeViewerViteProductReviewUrl(
+								server.origin,
+								requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+							),
+							{ waitUntil: 'domcontentloaded' },
+						),
+					)
+					.value();
 				const affectedFile = fixture.oracle.reviewFiles[0];
 				const unchangedFile = fixture.oracle.reviewFiles[1];
 				if (affectedFile === undefined || unchangedFile === undefined) {
@@ -98,6 +101,7 @@ describe('Bridge Viewer proportional Review refresh E2E', () => {
 				await selectReviewFile({ page, path: unchangedFile.path });
 				await waitForSelectedReviewReady({ itemId: unchangedFile.itemId, page });
 				const unchangedPaintedContainer = await waitForPaintedReviewItemContainer({
+					testLaunch: fixture.oracle.testLaunch,
 					itemId: unchangedFile.itemId,
 					page,
 				});
@@ -147,6 +151,7 @@ describe('Bridge Viewer proportional Review refresh E2E', () => {
 				const changedBody = await readFile(join(fixture.oracle.worktreeRoot, reviewMutation.path));
 				const changedSha256 = createHash('sha256').update(changedBody).digest('hex');
 				const paintedChangedItem = await waitForPaintedReviewItemContainer({
+					testLaunch: fixture.oracle.testLaunch,
 					itemId: successorItemId ?? '',
 					observedSha256: changedSha256,
 					page,
@@ -524,44 +529,50 @@ function requireReviewRefreshLossAttribution(props: {
 }
 
 async function waitForPaintedReviewItemContainer(props: {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly itemId: string;
 	readonly observedSha256?: string;
 	readonly page: Page;
 }): Promise<JSHandle<Element | null>> {
-	return await props.page.waitForFunction(
-		({ itemId, observedSha256 }): Element | null => {
-			for (const container of document.querySelectorAll(
-				'diffs-container[data-bridge-painted-source-correlations]',
-			)) {
-				const encodedCorrelations = container.getAttribute(
-					'data-bridge-painted-source-correlations',
-				);
-				if (encodedCorrelations === null) continue;
-				let correlations: unknown;
-				try {
-					correlations = JSON.parse(encodedCorrelations);
-				} catch {
-					continue;
-				}
-				if (
-					Array.isArray(correlations) &&
-					correlations.some(
-						(correlation): boolean =>
-							typeof correlation === 'object' &&
-							correlation !== null &&
-							'itemId' in correlation &&
-							correlation.itemId === itemId &&
-							(observedSha256 === undefined ||
-								('observedSha256' in correlation && correlation.observedSha256 === observedSha256)),
-					)
-				)
-					return container;
-			}
-			return null;
-		},
-		{ itemId: props.itemId, observedSha256: props.observedSha256 },
-		{ timeout: proportionalRefreshTimeoutMilliseconds },
-	);
+	return await props.testLaunch
+		.observeStep(
+			`Proportional Review refresh: painted item ${props.itemId} with matching source ${props.observedSha256 ?? 'initial'}`,
+			props.page.waitForFunction(
+				({ itemId, observedSha256 }): Element | null => {
+					for (const container of document.querySelectorAll(
+						'diffs-container[data-bridge-painted-source-correlations]',
+					)) {
+						const encodedCorrelations = container.getAttribute(
+							'data-bridge-painted-source-correlations',
+						);
+						if (encodedCorrelations === null) continue;
+						let correlations: unknown;
+						try {
+							correlations = JSON.parse(encodedCorrelations);
+						} catch {
+							continue;
+						}
+						if (
+							Array.isArray(correlations) &&
+							correlations.some(
+								(correlation): boolean =>
+									typeof correlation === 'object' &&
+									correlation !== null &&
+									'itemId' in correlation &&
+									correlation.itemId === itemId &&
+									(observedSha256 === undefined ||
+										('observedSha256' in correlation &&
+											correlation.observedSha256 === observedSha256)),
+							)
+						)
+							return container;
+					}
+					return null;
+				},
+				{ itemId: props.itemId, observedSha256: props.observedSha256 },
+			),
+		)
+		.value();
 }
 
 async function reviewItemContainerMatchesHandle(props: {

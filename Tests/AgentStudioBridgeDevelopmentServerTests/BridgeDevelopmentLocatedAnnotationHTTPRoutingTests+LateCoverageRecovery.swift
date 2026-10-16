@@ -64,14 +64,14 @@ private func exerciseLateFileCoverageHTTPRecovery(
         await coordinator.fileMetadataSource as? BridgePaneProductFileMetadataSource)
     let priorObserver = await source.sourceAcceptedObserver
     let subscriptionID = "tq53-late-file"
-    let beforeEnumeration = HeldStep<BridgeWorktreeFileKeyedSnapshot>("File inventory before enumeration")
-    let beforeSeal = HeldStep<BridgeWorktreeFileKeyedSnapshot>("Older File capture before session sealing")
+    let beforeEnumeration = TQ53TerminalStep<BridgeWorktreeFileKeyedSnapshot>("File inventory before enumeration")
+    let beforeSeal = TQ53TerminalStep<BridgeWorktreeFileKeyedSnapshot>("Older File capture before session sealing")
     await source.setSourceAcceptedObserver { identity in
         await priorObserver(identity)
         guard let context = await source.contextBySubscriptionId[subscriptionID],
             context.productSource == identity
         else {
-            beforeEnumeration.fail(HTTPAnnotationIntegrationError.incompleteFileBatch)
+            await beforeEnumeration.failBeforeArrival(HTTPAnnotationIntegrationError.incompleteFileBatch)
             return
         }
         let snapshot = await context.manifestIndex.captureKeyedSnapshot()
@@ -82,7 +82,7 @@ private func exerciseLateFileCoverageHTTPRecovery(
             let connection = try await openHTTPProductConnection(client: client)
             let metadataStream = try await startHTTPMetadataStream(
                 host: runtime.host, connection: connection, streamID: "tq53-late-file-stream")
-            var delayedCapture: Task<Bool, any Error>?
+            var delayedCapture: Task<BridgeWorktreeFileKeyedSnapshot, any Error>?
             do {
                 let _: BridgeProductMetadataStreamAcceptedFrame = try await waitForAcknowledgedMetadataFrame(
                     client: client, connection: connection, recorder: metadataStream.recorder
@@ -110,10 +110,14 @@ private func exerciseLateFileCoverageHTTPRecovery(
                 // The immutable capture is real host inventory. Hold its delivery at
                 // the existing session boundary; the coordinator itself is not replaced.
                 delayedCapture = Task {
-                    try await beforeSeal.arrive(olderCapture)
-                    return try await activeStream.session.sealFileCapture(
-                        subscriptionId: subscriptionID, snapshot: olderCapture,
-                        scope: scope, productAdmission: activeStream.productAdmission)
+                    try await beforeSeal.run(
+                        describeCompletion: { (capture: BridgeWorktreeFileKeyedSnapshot) in
+                            "capture target=\(capture.targetRevision)"
+                        },
+                        operation: {
+                            try await beforeSeal.arrive(olderCapture)
+                            return olderCapture
+                        })
                 }
                 _ = try await beforeSeal.firstArrival()
                 await source.setSourceAcceptedObserver(priorObserver)
@@ -124,7 +128,13 @@ private func exerciseLateFileCoverageHTTPRecovery(
                 try #require(certificate.begin.targetRevision > olderCapture.targetRevision)
 
                 beforeSeal.release()
-                try #require(try await delayedCapture?.value == true)
+                let delayedSnapshot = try #require(try await delayedCapture?.value)
+                var retainedState = HTTPFileBatchRetainedState()
+                _ = try applyTQ53CompleteFileBatch(certificate, retainedState: &retainedState)
+                try await sealTQ53LateCapture(
+                    client: client, connection: connection, recorder: metadataStream.recorder,
+                    activeStream: activeStream, capture: (snapshot: delayedSnapshot, scope: scope),
+                    retainedState: &retainedState)
                 if usesSharedHelper {
                     try await verifyTQ53SharedHelperRecovery(
                         client: client, connection: connection, recorder: metadataStream.recorder,
@@ -138,7 +148,10 @@ private func exerciseLateFileCoverageHTTPRecovery(
             } catch {
                 beforeEnumeration.release()
                 beforeSeal.release()
-                if let delayedCapture { _ = await delayedCapture.result }
+                if let delayedCapture {
+                    delayedCapture.cancel()
+                    _ = await delayedCapture.result
+                }
                 try await shutdownHTTPHostAndDrainMetadataStream(host: runtime.host, drain: metadataStream.drain)
                 throw error
             }
@@ -158,16 +171,23 @@ private func verifyTQ53SharedHelperRecovery(
     activeStream: BridgePaneProductMetadataCoordinator.ActiveStream,
     certificate: TQ53HTTPFileBatch
 ) async throws {
-    let beforeRecovery = HeldStep<(BridgeProductBatchBeginFrame, Int?)>("stale File PART before HTTP resnapshot")
+    let beforeRecovery = TQ53TerminalStep<(BridgeProductBatchBeginFrame, Int?)>(
+        "stale File PART before HTTP resnapshot")
     let reading = Task {
-        var retainedState = HTTPFileBatchRetainedState()
-        _ = try applyTQ53CompleteFileBatch(certificate, retainedState: &retainedState)
-        while true {
-            let snapshot = try await nextHTTPFileBatchSnapshot(
-                client: client, connection: connection, recorder: recorder, retainedState: &retainedState,
-                beforeResnapshot: { begin, delivery in try await beforeRecovery.arrive((begin, delivery)) })
-            if !beforeRecovery.recordedArrivals.isEmpty { return (snapshot, retainedState) }
-        }
+        try await beforeRecovery.run(
+            describeCompletion: { (recovery: (HTTPFileBatchSnapshot, HTTPFileBatchRetainedState)) in
+                "snapshot target=\(recovery.0.targetRevision)"
+            },
+            operation: {
+                var retainedState = HTTPFileBatchRetainedState()
+                _ = try applyTQ53CompleteFileBatch(certificate, retainedState: &retainedState)
+                while true {
+                    let snapshot = try await nextHTTPFileBatchSnapshot(
+                        client: client, connection: connection, recorder: recorder, retainedState: &retainedState,
+                        beforeResnapshot: { begin, delivery in try await beforeRecovery.arrive((begin, delivery)) })
+                    if beforeRecovery.hasArrived { return (snapshot, retainedState) }
+                }
+            })
     }
     do {
         let (stale, rejectedDelivery) = try await beforeRecovery.firstArrival()
@@ -185,13 +205,14 @@ private func verifyTQ53SharedHelperRecovery(
         #expect(await activeStream.session.controlReplay.snapshot.nextExpectedRequestSequence == 5)
         beforeRecovery.release()
         let recoveryResult = try await reading.value
+        reading.cancel()
         let recovered = recoveryResult.0
         var retainedState = recoveryResult.1
         #expect(recovered.targetRevision >= certificate.begin.targetRevision)
         #expect(recovered.memberStatus.status == .ready)
         #expect(recovered.memberStatus.branchName == "main")
         #expect(recovered.certificatePartCount == certificate.begin.partCount)
-        #expect(beforeRecovery.recordedArrivals.count == 1)
+        #expect(beforeRecovery.arrivalCount == 1)
         #expect(await activeStream.session.controlReplay.snapshot.nextExpectedRequestSequence == 6)
         // A real subsequent control proves recovery did not steal a caller's sequence.
         _ = try await queryHTTPFileSource(client: client, connection: connection)
@@ -205,6 +226,7 @@ private func verifyTQ53SharedHelperRecovery(
     } catch {
         beforeRecovery.release()
         reading.cancel()
+        await recorder.fail(error)
         _ = await reading.result
         throw error
     }
@@ -254,8 +276,9 @@ private func recoverTQ53LateHTTPFileCoverage(
     olderCapture: BridgeWorktreeFileKeyedSnapshot,
     certificate: TQ53HTTPFileBatch
 ) async throws {
-    let lateBeginFrame = try await nextTQ53HTTPFileFrame(
-        recorder: recorder, subscriptionID: certificate.begin.identity.subscriptionId)
+    let lateBeginFrame = try await nextTQ53LateHTTPFileCoverageBegin(
+        client: client, connection: connection, recorder: recorder,
+        subscriptionID: certificate.begin.identity.subscriptionId, targetRevision: olderCapture.targetRevision)
     guard case .batch(.begin(let lateBegin)) = lateBeginFrame else {
         throw HTTPAnnotationIntegrationError.unexpectedControlResponse(
             callSite: "late coverage BEGIN", receivedKind: lateBeginFrame.kind)
@@ -319,6 +342,27 @@ private func recoverTQ53LateHTTPFileCoverage(
     let transcript = certificate.frames + [lateBeginFrame, latePartFrame] + recovery.frames
     let encoded = try JSONEncoder().encode(transcript)
     print("TQ53-R2 HTTP frame transcript \(try #require(String(bytes: encoded, encoding: .utf8)))")
+}
+
+private func nextTQ53LateHTTPFileCoverageBegin(
+    client: some TestClientProtocol,
+    connection: HTTPProductConnection,
+    recorder: HTTPMetadataFrameRecorder,
+    subscriptionID: String,
+    targetRevision: Int
+) async throws -> BridgeProductMetadataFrame {
+    // A preceding complete batch may already be buffered after its emission
+    // ends. Credit those parts, but stop before crediting any late coverage.
+    while true {
+        let frame = try await nextTQ53HTTPFileFrame(recorder: recorder, subscriptionID: subscriptionID)
+        switch frame {
+        case .batch(.begin(let begin)) where begin.mode == .coverage && begin.targetRevision == targetRevision:
+            return frame
+        case .batch(.part(let part)):
+            try await acknowledgeHTTPViewPart(client: client, connection: connection, part: part)
+        default: continue
+        }
+    }
 }
 
 private func applyTQ53CompleteFileBatch(

@@ -354,30 +354,26 @@ struct WorktreeAnnotationTransportContractTests {
 
     private func annotationOutputOperations(
         sessionID: String,
-        messageID _: String,
+        messageID: String,
         attemptID: String
     ) -> [[String: Any]] {
         [
             [
                 "destination": "remembered",
-                "displayedProjectionRevision": 9,
-                "expectedSessionRevision": 4,
+                "messages": [["messageId": messageID, "savedRevision": 1]],
                 "kind": "output.scope.commit",
                 "outputKind": "jsonFile",
                 "scope": "pending",
                 "sessionId": sessionID,
-                "sourceGeneration": 7,
             ],
             ["kind": "output.preference.changeFolder"],
             ["attemptId": attemptID, "kind": "output.reveal"],
             [
-                "displayedProjectionRevision": 9,
-                "expectedSessionRevision": 4,
+                "messages": [["messageId": messageID, "savedRevision": 1]],
                 "kind": "output.scope.commit",
                 "outputKind": "clipboardMarkdown",
                 "scope": "pending",
                 "sessionId": sessionID,
-                "sourceGeneration": 7,
             ],
             [
                 "attemptId": attemptID,
@@ -493,17 +489,49 @@ struct WorktreeAnnotationTransportContractTests {
         }
     }
 
+    @Test("output requires unique saved comments and rejects legacy fences and unknown fields")
+    func outputMessagesAreStrict() throws {
+        let message: [String: Any] = [
+            "messageId": "00000000-0000-7000-8000-000000000013", "savedRevision": 1,
+        ]
+        let valid: [String: Any] = [
+            "kind": "output.scope.commit", "outputKind": "clipboardMarkdown", "scope": "all",
+            "sessionId": "00000000-0000-7000-8000-000000000011", "messages": [message],
+        ]
+        let command = try decodeAnnotationCommand(method: "file.annotations.command", operation: valid)
+        let encoded = try JSONEncoder().encode(command)
+        #expect(try JSONDecoder().decode(BridgeProductCallRequest.self, from: encoded) == command)
+        for invalid in [
+            valid.merging(["messages": []]) { _, new in new },
+            valid.merging(["messages": [message, message]]) { _, new in new },
+            valid.merging(["messages": [message.merging(["savedRevision": 0]) { _, new in new }]]) { _, new in new },
+            valid.merging(["messages": [message.merging(["unknown": true]) { _, new in new }]]) { _, new in new },
+            valid.merging(["messages": [message.merging(["messageId": "not-an-id"]) { _, new in new }]]) { _, new in new
+            },
+            valid.merging(["displayedProjectionRevision": 1]) { _, new in new },
+            valid.merging(["expectedSessionRevision": 1]) { _, new in new },
+            valid.merging(["sourceGeneration": 1]) { _, new in new },
+        ] {
+            #expect(throws: (any Error).self) {
+                _ = try decodeAnnotationCommand(method: "file.annotations.command", operation: invalid)
+            }
+        }
+        var missingMessages = valid
+        missingMessages.removeValue(forKey: "messages")
+        #expect(throws: (any Error).self) {
+            _ = try decodeAnnotationCommand(method: "file.annotations.command", operation: missingMessages)
+        }
+    }
+
     @Test("JSON output requires a destination while clipboard output forbids one")
     func outputDestinationIsStrictByKind() {
         let sessionID = "00000000-0000-7000-8000-000000000011"
         let outputOperation: [String: Any] = [
-            "displayedProjectionRevision": 9,
-            "expectedSessionRevision": 4,
+            "messages": [["messageId": "00000000-0000-7000-8000-000000000013", "savedRevision": 1]],
             "kind": "output.scope.commit",
             "outputKind": "jsonFile",
             "scope": "pending",
             "sessionId": sessionID,
-            "sourceGeneration": 7,
         ]
         for operation in [
             outputOperation,
