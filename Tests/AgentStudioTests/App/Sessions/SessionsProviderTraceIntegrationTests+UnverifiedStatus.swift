@@ -23,6 +23,7 @@ extension SessionsProviderTraceIntegrationTests {
             submissionObserver: { fact in activity.withLock { $0.append(fact) } }, sink: { _ in })
         do {
             try await fixture.withIngestion(activityClock: clock) { ingestion, adapter in
+                let statusMailbox = await ingestion.statusPublicationMailbox
                 func report(_ session: String, _ name: IPCSessionEventName) -> IPCSessionStatusParams {
                     .init(
                         paneClaim: .init(paneId: pane, workspaceId: workspace), tokenOutcome: .rejected,
@@ -50,7 +51,7 @@ extension SessionsProviderTraceIntegrationTests {
                 #expect(read.lastRefusal?.reason == .credentialNotRecognized)
                 #expect(read.lastRefusal?.intent == .status)
                 #expect(
-                    ingestion.statusPublicationMailbox.takeBatch()[.init(existingUUID: pane)]
+                    statusMailbox.takeBatch()[.init(existingUUID: pane)]
                         == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
                 let context = try await ingestion.repository.statusContext(paneId: pane)
                 #expect(context.bindings.isEmpty)
@@ -64,7 +65,7 @@ extension SessionsProviderTraceIntegrationTests {
                     let state = try await adapter.readSessionState(paneId: pane, params: .init(handle: "self"))
                     #expect(state.lastRefusal?.reason == reason)
                     #expect(
-                        ingestion.statusPublicationMailbox.takeBatch()[.init(existingUUID: pane)]
+                        statusMailbox.takeBatch()[.init(existingUUID: pane)]
                             == .set(
                                 .init(
                                     status: .needsYou(.approval),

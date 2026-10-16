@@ -16,11 +16,12 @@ struct SessionsUnverifiedStatusTests {
         let pane = UUIDv7.generate()
         let key = PaneId(existingUUID: pane)
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let statusMailbox = await ingestion.statusPublicationMailbox
             let before = try await Self.protectedCounts(fixture)
             let applied = try await Self.submit(
                 ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
             #expect(applied)
-            let batch = ingestion.statusPublicationMailbox.takeBatch()
+            let batch = statusMailbox.takeBatch()
             #expect(batch[key] == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
             #expect(try await ingestion.readSessionStatus(paneId: pane) == .unbound)
             #expect(try await Self.protectedCounts(fixture) == before)
@@ -29,10 +30,10 @@ struct SessionsUnverifiedStatusTests {
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified",
                     eventName: .turnStart, signal: .turnStart, turnId: nil))
-            #expect(ingestion.statusPublicationMailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
+            #expect(statusMailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(!(try await Self.submit(ingestion, pane: pane, signal: .turnDone)))
-            #expect(ingestion.statusPublicationMailbox.takeBatch().isEmpty)
+            #expect(statusMailbox.takeBatch().isEmpty)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
         }
     }
@@ -42,6 +43,7 @@ struct SessionsUnverifiedStatusTests {
         let fixture = try SessionsDatabaseFixture()
         let pane = UUIDv7.generate()
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let statusMailbox = await ingestion.statusPublicationMailbox
             let before = try await Self.protectedCounts(fixture)
             for (index, reason) in AgentConnectionRefusalReason.allCases.enumerated() {
                 _ = try await ingestion.recordUnverifiedStatus(
@@ -52,7 +54,7 @@ struct SessionsUnverifiedStatusTests {
                 #expect(refusal?.reason == reason)
                 #expect(refusal?.count == index + 1)
                 #expect(
-                    ingestion.statusPublicationMailbox.takeBatch()[.init(existingUUID: pane)]
+                    statusMailbox.takeBatch()[.init(existingUUID: pane)]
                         == .set(.init(status: .unknown, connectionIssue: reason)))
             }
             #expect(try await Self.protectedCounts(fixture) == before)
@@ -73,12 +75,13 @@ struct SessionsUnverifiedStatusTests {
             vocabulary: .init(
                 describeScope: { $0.uuidString }, describeFact: { "pending=\($0)" },
                 isClosing: { _, value in value == 0 }))
-        let recorder = await depth.recorder()
+        let recorder = try depth.attach()
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: access), limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8),
             probe: { statistics in
                 if statistics.paneId == pane { depth.sink(pane, statistics.pendingForPane) }
             })
+        let statusMailbox = await ingestion.statusPublicationMailbox
         let predecessor = Task { try await ingestion.submitHook(makeHookAdmission(paneId: other)) }
         var status: Task<Bool, any Error>?
         do {
@@ -97,7 +100,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(!(try await pending.value))
             try await recorder.expectNext(in: pane, 0)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
-            let publication = ingestion.statusPublicationMailbox.takeBatch()[.init(existingUUID: pane)]
+            let publication = statusMailbox.takeBatch()[.init(existingUUID: pane)]
             #expect(publication == (retire ? .remove : nil))
             #expect(try await ingestion.repository.statusContext(paneId: pane).bindings.isEmpty)
         } catch {
@@ -122,6 +125,7 @@ struct SessionsUnverifiedStatusTests {
         let origin = ContinuousClock.now
         let oldExit = HeldStep<ContinuousClock.Instant>("old terminal exit before Sessions ingress")
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let statusMailbox = await ingestion.statusPublicationMailbox
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart, instant: origin)
             let pendingExit = Task {
                 try await oldExit.arrive(origin + .seconds(1))
@@ -132,10 +136,10 @@ struct SessionsUnverifiedStatusTests {
                 _ = try await Self.submit(ingestion, pane: pane, signal: .sessionEnd, instant: origin + .seconds(2))
                 _ = try await Self.submit(
                     ingestion, pane: pane, session: "B", signal: .turnStart, instant: origin + .seconds(3))
-                _ = ingestion.statusPublicationMailbox.takeBatch()
+                _ = statusMailbox.takeBatch()
                 oldExit.release()
                 #expect(try await pendingExit.value == nil)
-                #expect(ingestion.statusPublicationMailbox.takeBatch().isEmpty)
+                #expect(statusMailbox.takeBatch().isEmpty)
                 #expect(
                     !(try await Self.submit(ingestion, pane: pane, signal: .turnDone, instant: origin + .seconds(4))))
             } catch {
@@ -173,11 +177,12 @@ struct SessionsUnverifiedStatusTests {
             vocabulary: .init(
                 describeScope: { $0.uuidString }, describeFact: { "pending=\($0)" },
                 isClosing: { _, value in value == 0 }))
-        let recorder = await depth.recorder()
+        let recorder = try depth.attach()
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: HeldUnverifiedStatusSQLiteAccess(base: fixture.sqliteAccess, held: held)),
             limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8),
             probe: { statistics in if statistics.paneId == pane { depth.sink(pane, statistics.pendingForPane) } })
+        let statusMailbox = await ingestion.statusPublicationMailbox
         let binding = Task {
             try await ingestion.submitHook(
                 makeHookAdmission(
@@ -201,7 +206,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
             #expect(
-                ingestion.statusPublicationMailbox.takeBatch()[.init(existingUUID: pane)]
+                statusMailbox.takeBatch()[.init(existingUUID: pane)]
                     == .set(.init(status: .working(.active))))
         } catch {
             held.release()
@@ -224,6 +229,7 @@ struct SessionsUnverifiedStatusTests {
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: HeldUnverifiedStatusSQLiteAccess(base: fixture.sqliteAccess, held: held)),
             limits: .init(maximumPendingPerPane: 1, maximumPendingGlobal: 1), probe: { _ in })
+        let statusMailbox = await ingestion.statusPublicationMailbox
         let binding = Task { try await ingestion.submitHook(makeHookAdmission(paneId: other)) }
         do {
             try await held.firstArrival()
@@ -233,7 +239,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .queueFull)
             #expect(await ingestion.lastRefusal(paneId: pane)?.intent == .status)
             #expect(
-                ingestion.statusPublicationMailbox.takeBatch()[.init(existingUUID: pane)]
+                statusMailbox.takeBatch()[.init(existingUUID: pane)]
                     == .set(.init(status: .unknown, connectionIssue: .queueFull)))
             held.release()
             _ = try await binding.value

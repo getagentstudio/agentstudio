@@ -154,7 +154,8 @@ struct CLIPaneContextStatusFallbackTests {
             #expect(discovered.exitCode == 0)
             #expect(context.port.claims.count == 1)
             #expect(context.port.titles.map(\.number.counter) == [1, 2])
-            #expect(try await context.title() == "discovered")
+            let title = try await context.title()
+            #expect(title == "discovered")
         }
     }
 

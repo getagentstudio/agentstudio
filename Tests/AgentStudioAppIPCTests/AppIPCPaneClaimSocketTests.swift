@@ -70,12 +70,16 @@ struct AppIPCPaneClaimSocketTests {
                 #expect(await port.queryPaneIds.isEmpty)
             })
     }
+
     @Test("a recognized pane token keeps the identity method and authenticated pre-auth status")
     func recognizedTokenRetainsIdentity() async throws {
         let pane = UUIDv7.generate()
         let port = RecordingSessionsPort()
         try await withLiveServer(
-            makeFixture: { try LiveServerFixture(channel: .stable, sessionsPort: port) },
+            makeFixture: {
+                try LiveServerFixture(
+                    channel: .stable, panes: [makePaneSummary(id: pane, ordinal: 1)], sessionsPort: port)
+            },
             body: { fixture in
                 try fixture.server.start()
                 let token = try fixture.issueTestCredential(
@@ -113,5 +117,4 @@ struct AppIPCPaneClaimSocketTests {
                 }
             })
     }
-
 }
