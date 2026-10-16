@@ -742,18 +742,19 @@ Boot is driven by `WorkspaceBootSequence` ([`App/Boot/WorkspaceBootSequence.swif
 Presentation (shell may not appear until these finish):
   1. prepareDatabases
   2. loadCanonicalStore
-  3. establishRuntimeBus
+  3. loadSidebarMemory          ← UIStateStore restore before sidebar hosts exist
+  4. establishRuntimeBus
 
 Post-presentation (async, after the composition-backed shell is visible):
-  4. loadCacheStore
-  5. loadUIStore
-  6. startFilesystemActor
-  7. startGitProjector
-  8. startForgeActor
-  9. startCacheCoordinator
- 10. armPersistenceObservation   ← before topology replay
- 11. triggerInitialTopologySync
- 12. readyForReactiveSidebar
+  5. loadCacheStore
+  6. loadWorkspaceSettings      ← settings only
+  7. startFilesystemActor
+  8. startGitProjector
+  9. startForgeActor
+ 10. startCacheCoordinator
+ 11. armPersistenceObservation   ← after both restores, before topology replay
+ 12. triggerInitialTopologySync
+ 13. readyForReactiveSidebar
 ```
 
 Database preparation is cached for the launch. Local recovery is exactly
