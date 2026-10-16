@@ -172,8 +172,12 @@ extension AppIPCBuiltInMethodRegistrations {
                     try AppIPCPaneContextTargetSupport.credentialTarget(
                         parameters, handle: parameters.handle, context: context)
                 },
-                connectionHandler: { parameters, _, target in
-                    try await port.setLine(paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters)
+                connectionHandler: { parameters, context, target in
+                    let paneId = try AppIPCSessionTargetSupport.paneId(from: target)
+                    try await recordPaneWriterRefusal(
+                        paneId: paneId, paneClaim: parameters.paneClaim, tokenOutcome: parameters.tokenOutcome,
+                        correlationId: parameters.correlationId, context: context, inputs: inputs)
+                    return try await port.setLine(paneId: paneId, params: parameters)
                 },
                 execution: .inline
             ).erase(),
@@ -184,8 +188,12 @@ extension AppIPCBuiltInMethodRegistrations {
                     try AppIPCPaneContextTargetSupport.credentialTarget(
                         parameters, handle: parameters.handle, context: context)
                 },
-                connectionHandler: { parameters, _, target in
-                    try await port.setTitle(paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters)
+                connectionHandler: { parameters, context, target in
+                    let paneId = try AppIPCSessionTargetSupport.paneId(from: target)
+                    try await recordPaneWriterRefusal(
+                        paneId: paneId, paneClaim: parameters.paneClaim, tokenOutcome: parameters.tokenOutcome,
+                        correlationId: parameters.correlationId, context: context, inputs: inputs)
+                    return try await port.setTitle(paneId: paneId, params: parameters)
                 },
                 execution: .inline
             ).erase(),
@@ -219,14 +227,31 @@ extension AppIPCBuiltInMethodRegistrations {
         ]
     }
 
+    private static func recordPaneWriterRefusal(
+        paneId: UUID, paneClaim: IPCPaneClaim?, tokenOutcome: IPCSessionTokenOutcome?, correlationId: UUID,
+        context: AppIPCConnectionContext, inputs: AppIPCBuiltInRegistrationInputs
+    ) async throws {
+        guard case .paneClaim? = context.principal?.kind, let paneClaim, let tokenOutcome else { return }
+        _ = try await inputs.ports.sessionsPort.recordUnverifiedStatus(
+            paneId: paneId,
+            params: .init(
+                paneClaim: paneClaim, tokenOutcome: tokenOutcome, report: .refusal(reason: .credentialNotRecognized),
+                correlationId: correlationId),
+            revalidateClaim: { try inputs.ports.paneClaimAdmission.validate(paneClaim) })
+    }
 }
 
 enum AppIPCPaneContextTargetSupport {
     static func credentialTarget<Parameters: Sendable>(
         _ parameters: Parameters, handle: String, context: AppIPCConnectionContext
     ) throws -> AppIPCTargetResolution<Parameters> {
-        guard case .spawnedPaneAgent(let boundPaneId, _)? = context.principal?.kind else {
-            throw AuthorizationError(reason: .unauthorized)
+        let boundPaneId: String
+        switch context.principal?.kind {
+        case .spawnedPaneAgent(let paneId, _): boundPaneId = paneId
+        case .paneClaim(let paneId, _):
+            try context.revalidatePaneClaim()
+            boundPaneId = paneId.uuidString
+        default: throw AuthorizationError(reason: .unauthorized)
         }
         guard handle == "self" else { throw AppIPCPaneContextError(reason: .notOwnPane) }
         guard

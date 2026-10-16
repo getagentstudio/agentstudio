@@ -5,7 +5,7 @@ import AgentStudioSharedComponents
 /// App composes Feature-owned keyed facts; consumers never reach across Features.
 @MainActor
 struct PaneContextUIReaders {
-    let sessionStatusForPane: @MainActor (PaneId) -> AgentSessionStatus?
+    let sessionStatusForPane: @MainActor (PaneId) -> PaneAgentStatusPresentation?
     let contextDisplayForPane: @MainActor (PaneId) -> PaneContextDisplay?
     let serviceProvider: @MainActor () -> PaneContextUIAdapter?
     let isDrawerPane: @MainActor (PaneId) -> Bool

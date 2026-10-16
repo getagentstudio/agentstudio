@@ -181,6 +181,7 @@ package struct IPCMethodDescriptorMetadata<
 >: Codable, Sendable {
     package let name: String
     package let description: String
+    package let callIntent: IPCCallIntent
     package let parameterSchema: IPCJSONSchema
     package let resultSchema: IPCJSONSchema
     package let examples: [IPCMethodExample<Parameters, Result>]

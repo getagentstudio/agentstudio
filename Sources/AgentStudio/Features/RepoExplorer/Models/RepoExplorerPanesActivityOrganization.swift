@@ -304,6 +304,7 @@ extension RepoExplorerProjection {
             isActive: row.isActive,
             agentLine: facts?.contextDisplay?.agentLine,
             sessionStatus: facts?.sessionStatus,
+            connectionIssue: facts?.connectionIssue,
             messageCount: pinnedRow.messageChip?.count ?? 0
         )
         return pinnedRow

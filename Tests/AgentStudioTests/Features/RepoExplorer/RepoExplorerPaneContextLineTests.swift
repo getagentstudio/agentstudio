@@ -110,4 +110,24 @@ struct RepoExplorerPaneContextLineTests {
         #expect(drawerRow.variants?.compact.lines == drawerRow.variants?.expanded.lines)
     }
 
+    @Test("Needs you and the persistent connection reason remain separate lines in both row variants")
+    func connectionIssueNeverHidesStatus() throws {
+        let variants = RepoExplorerPaneRowVariants.make(
+            title: "Pane", branchContext: nil, note: nil, isDrawer: false, branchStatus: nil, isActive: false,
+            sessionStatus: .needsYou(.approval), connectionIssue: .credentialNotRecognized)
+        #expect(variants.compact.lines == variants.expanded.lines)
+        try #require(variants.compact.lines.count == 3)
+        guard case .sessionStatus(let status) = variants.compact.lines[1],
+            case .connectionIssue(let connection) = variants.compact.lines[2]
+        else {
+            Issue.record("Status and connection issue must be distinct ordered lines")
+            return
+        }
+        #expect(status.text == "Needs you · approval")
+        #expect(connection.text == "agent not connected · credentialNotRecognized")
+        #expect(connection.tooltip.text == connection.text)
+        #expect(connection.tone == .warning)
+        #expect(variants.compact.fallbackLineCount == 4)
+    }
+
 }

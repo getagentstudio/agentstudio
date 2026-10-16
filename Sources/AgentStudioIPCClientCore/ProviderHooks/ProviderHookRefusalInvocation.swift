@@ -14,23 +14,6 @@ package enum ProviderHookRefusalInvocation {
         }
     }
 
-    static func report(
-        reason: IPCSessionRefusalReason, event: String?, environment: [String: String],
-        identifierGenerator: () -> UUID, deadline: CallDeadline
-    ) {
-        guard deadline.remainingBudget > .zero,
-            let token = environment["AGENTSTUDIO_PANE_TOKEN"], !token.isEmpty
-        else { return }
-        do {
-            let configuration = AgentStudioIPCClientConfiguration(
-                socketPath: try AgentStudioIPCClientDiscovery.socketPath(
-                    explicitSocketPath: nil, environment: environment, metadataURL: nil), authToken: token)
-            try send(
-                params: .init(handle: "self", reason: reason, event: event, correlationId: identifierGenerator()),
-                configuration: configuration, deadline: deadline)
-        } catch {}
-    }
-
     static func send(
         params: IPCSessionRefusalParams, configuration: AgentStudioIPCClientConfiguration, deadline: CallDeadline
     ) throws {
@@ -40,10 +23,11 @@ package enum ProviderHookRefusalInvocation {
             inputs: .init(examples: .init(illustrativeIdentifier: params.correlationId)))
         guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.refusal" }) else { return }
         let client = AgentStudioIPCClient(configuration: configuration, descriptors: descriptors, deadline: deadline)
-        _ = try client.call(
+        let result = try client.call(
             .init(
                 descriptor: descriptor,
                 normalizedParameters: try descriptor.normalizeParameters(JSONEncoder().encode(params)),
                 presentation: .tooling))
+        if case .remoteFailure(let failure) = result { throw failure }
     }
 }

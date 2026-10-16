@@ -372,6 +372,7 @@ public struct AuthorizationService: Sendable {
     }
 
     package func authorize(principal: IPCPrincipal, request: AppIPCMethodAuthorizationRequest) async throws {
+        if case .paneClaim = principal.kind { throw AppIPCPaneClaimError(reason: .intentRequiresToken) }
         guard let registration = methodRegistry.registration(named: request.methodName) else {
             throw AuthorizationError(reason: .methodNotFound)
         }
@@ -415,7 +416,8 @@ public struct AuthorizationService: Sendable {
         case (.automationClient, _),
             (.unsafeDebugClient, _),
             (.spawnedPaneAgent, _),
-            (.futureMCPClient, _):
+            (.futureMCPClient, _),
+            (.paneClaim, _):
             false
         }
     }
@@ -424,6 +426,7 @@ public struct AuthorizationService: Sendable {
         principal: IPCPrincipal,
         scope: IPCPermissionScope
     ) throws {
+        if case .paneClaim = principal.kind { throw AppIPCPaneClaimError(reason: .intentRequiresToken) }
         let canonicalScope = try canonicalizer.canonicalize(scope, for: principal)
 
         if baselineAllows(canonicalScope, for: principal) {
@@ -479,7 +482,7 @@ extension IPCPrincipal {
         switch kind {
         case .spawnedPaneAgent(let boundPaneId, _):
             boundPaneId
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             nil
         }
     }

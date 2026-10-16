@@ -11,6 +11,11 @@ enum PaneContextLineActionSpecs {
         }
         return ActionSpec(label: "Agent Line", helpText: "Show this agent's work", icon: icon)
     }
+    static func connectionIssue(_ reason: AgentConnectionRefusalReason) -> ActionSpec {
+        let text = "agent not connected · \(reason.rawValue)"
+        return ActionSpec(label: text, helpText: text, icon: .system(.flag))
+    }
+
     static func sessionStatus(_ status: AgentSessionStatus) -> ActionSpec {
         let text: String
         let icon: CommandIcon

@@ -132,7 +132,7 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
             let example = inputs.examples
             return try IPCBuiltInDescriptorSupport.read(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameters: IPCBridgePaneParams(handle: "self"),
                 result: Self.reviewPackage(example: example),
                 privilege: .bridgeRead,
@@ -153,7 +153,7 @@ package struct IPCBridgeReviewMethodDescriptors: Sendable {
             let example = inputs.examples
             return try IPCBuiltInDescriptorSupport.read(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameters: IPCBridgePaneParams(handle: "self"),
                 result: Self.renderState(example: example),
                 privilege: .bridgeRead,

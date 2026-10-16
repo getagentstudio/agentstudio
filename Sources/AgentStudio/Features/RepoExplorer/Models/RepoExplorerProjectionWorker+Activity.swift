@@ -133,6 +133,7 @@ extension RepoExplorerProjectionWorker {
             return RepoExplorerPaneRowFacts(
                 terminalTitle: facts.terminalTitle,
                 sessionStatus: facts.sessionStatus,
+                connectionIssue: facts.connectionIssue,
                 contextDisplay: facts.contextDisplay,
                 activityAt: activity.activityDate,
                 paneActivityTime: facts.paneActivityTime,

@@ -56,6 +56,7 @@ enum RepoExplorerPaneSecondaryLine: Equatable, Sendable {
 struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     let terminalTitle: String
     let sessionStatus: AgentSessionStatus?
+    let connectionIssue: AgentConnectionRefusalReason?
     let contextDisplay: PaneContextDisplay?
     let activityAt: Date?
     let paneActivityTime: PaneActivityTime?
@@ -73,6 +74,7 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     init(
         terminalTitle: String,
         sessionStatus: AgentSessionStatus? = nil,
+        connectionIssue: AgentConnectionRefusalReason? = nil,
         contextDisplay: PaneContextDisplay? = nil,
         activityAt: Date? = nil,
         paneActivityTime: PaneActivityTime? = nil,
@@ -89,6 +91,7 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     ) {
         self.terminalTitle = terminalTitle
         self.sessionStatus = sessionStatus
+        self.connectionIssue = connectionIssue
         self.contextDisplay = contextDisplay
         self.activityAt = activityAt
         self.paneActivityTime = paneActivityTime

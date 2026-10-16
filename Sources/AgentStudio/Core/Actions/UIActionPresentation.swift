@@ -78,6 +78,7 @@ package enum LocalActionSpec {
     case goToMessagePane
     case showPaneAgentLine(AgentLineWork)
     case paneSessionStatus(AgentSessionStatus)
+    case paneAgentConnectionIssue(AgentConnectionRefusalReason)
     case countInformationalPaneMessages
     case showPaneMessages
     case showPaneMessageDetails
@@ -154,6 +155,8 @@ package enum LocalActionSpec {
         switch self {
         case .showPaneAgentLine(let work):
             return PaneContextLineActionSpecs.agentLine(work)
+        case .paneAgentConnectionIssue(let reason):
+            return PaneContextLineActionSpecs.connectionIssue(reason)
         case .paneSessionStatus(let status):
             return PaneContextLineActionSpecs.sessionStatus(status)
         case .goToMessagePane:

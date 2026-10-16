@@ -1,5 +1,5 @@
 enum RepoExplorerPaneLineKind: Hashable, Sendable {
-    case title, worktreeBranch, note, agentLine, sessionStatus, chips
+    case title, worktreeBranch, note, agentLine, sessionStatus, connectionIssue, chips
 }
 enum RepoExplorerPaneLineVisibility: Sendable {
     case always, whenPresent, selectedWhenPresent
@@ -21,6 +21,7 @@ enum RepoExplorerPaneLineVisibilityTable {
         (.note, .whenPresent),
         (.agentLine, .whenPresent),
         (.sessionStatus, .whenPresent),
+        (.connectionIssue, .whenPresent),
         (.chips, .always),
     ]
     static func showsChips(selected: Bool) -> Bool {

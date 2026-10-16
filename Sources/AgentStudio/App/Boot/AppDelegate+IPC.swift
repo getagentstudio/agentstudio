@@ -440,6 +440,7 @@ extension AppDelegate {
             commandDispatcher: commandDispatcherForBoot()
         )
         let commandCatalogProjectionInputs = commandPort.commandCatalogProjectionInputs()
+        let paneClaimDirectory = atomStore.core.workspacePaneGraph.paneContextMembershipDirectory
         let ports = AgentStudioAppIPCPorts(
             queryPort: AgentStudioIPCQueryAdapter(
                 runtimeId: runtimeId,
@@ -480,7 +481,15 @@ extension AppDelegate {
                 workspaceStore: store, performanceTraceRecorder: performanceTraceRecorder),
             agentAuthorizationTelemetry: AgentStudioIPCAgentAuthorizationTelemetry(
                 performanceTraceRecorder: performanceTraceRecorder),
-            paneContextPort: sessionsComposition.paneContextIPCAdapter
+            paneContextPort: sessionsComposition.paneContextIPCAdapter,
+            paneClaimAdmission: .init(membershipRefusal: { [paneClaimDirectory] claim in
+                switch paneClaimDirectory.claimMembership(paneId: claim.paneId, workspaceId: claim.workspaceId) {
+                case .live: nil
+                case .paneNotFound: .paneNotFound
+                case .paneRetired: .paneRetired
+                case .otherWorkspace: .otherWorkspace
+                }
+            })
         )
         let eventBroker = IPCEventBroker()
         guard
