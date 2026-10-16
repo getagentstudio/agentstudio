@@ -363,7 +363,7 @@ final class TerminalLocalActionAccumulator: Sendable {
             let wasIdle = state.phase(for: .immediate) == .idle
             if wasIdle { state.setPhase(.scheduled, for: .immediate) }
             storage.statesBySurfaceID[surfaceID] = state
-            if wasIdle { scheduleDrain(surfaceID, drainRequest(for: .immediate, state: state)) }
+            if wasIdle { scheduleDrain(surfaceID, drainRequest(for: .immediate, state: state), self) }
         }
     }
 
@@ -523,7 +523,7 @@ final class TerminalLocalActionAccumulator: Sendable {
                 pending.metrics.followUpDrainCount += 1
                 state.setPending(pending, for: lane)
                 storage.statesBySurfaceID[surfaceID] = state
-                scheduleFollowUpDrain(surfaceID, drainRequest(for: lane, state: state))
+                scheduleFollowUpDrain(surfaceID, drainRequest(for: lane, state: state), self)
                 return .followUpScheduled
             }
             if state.pending(for: lane).hasWork {
