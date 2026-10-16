@@ -24,9 +24,8 @@ describe('Bridge Review installed receipt recovery', () => {
 				harness.admit(admission, ACTIVE, 'admitted');
 				const installed = await harness.nextCommand('reviewPublicationInstalled');
 				harness.fail(installed);
-				await vi.waitFor(() =>
-					expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(1),
-				);
+				await harness.waitForPendingCommand('reviewPublicationInstalled');
+				expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(1);
 				harness.fail(await harness.nextCommand('reviewPublicationInstalled'));
 				await harness.integration.whenSettled();
 				expect(harness.requestWorkerReplacement).toHaveBeenCalledOnce();
@@ -40,9 +39,8 @@ describe('Bridge Review installed receipt recovery', () => {
 				harness.receive(candidateReady(ACTIVE, 'ordinary', []));
 
 				// Assert — retained paint is not evidence of installation by the new worker.
-				await vi.waitFor(() =>
-					expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(1),
-				);
+				await harness.waitForPendingCommand('reviewPublicationInstallAdmit');
+				expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(1);
 				const replayAdmission = await harness.nextCommand('reviewPublicationInstallAdmit');
 				expect(replayAdmission).toMatchObject({
 					candidatePublicationId: ACTIVE.publicationId,
@@ -121,9 +119,8 @@ describe('Bridge Review installed receipt recovery', () => {
 
 			// Act
 			harness.fail(installed);
-			await vi.waitFor(() =>
-				expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(1),
-			);
+			await harness.waitForPendingCommand('reviewPublicationInstalled');
+			expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(1);
 			const retry = await harness.nextCommand('reviewPublicationInstalled');
 			expect(retry).toMatchObject({ publicationId: CANDIDATE.publicationId });
 			expect(retry.requestId).not.toBe(installed.requestId);
@@ -156,9 +153,8 @@ describe('Bridge Review installed receipt recovery', () => {
 
 			// Act
 			harness.fail(installed);
-			await vi.waitFor(() =>
-				expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(1),
-			);
+			await harness.waitForPendingCommand('reviewPublicationInstalled');
+			expect(harness.pendingCommandCount('reviewPublicationInstalled')).toBe(1);
 			const retry = await harness.nextCommand('reviewPublicationInstalled');
 			harness.fail(retry);
 			await harness.integration.whenSettled();
@@ -186,13 +182,18 @@ describe('Bridge Review installed receipt recovery', () => {
 			const installed = await harness.nextCommand('reviewPublicationInstalled');
 
 			// Act / Assert — C may be ready, but native has not yet confirmed displayed B.
+			const noSuccessorAdmission = harness.expectNoCommandUntilAck(
+				'reviewPublicationInstallAdmit',
+				installed.requestId,
+			);
+			void noSuccessorAdmission.catch((): void => {});
 			harness.receive(reviewDisplayEvent(SUCCESSOR, 'item-c'));
 			harness.receive(candidateReady(SUCCESSOR, 'ordinary', []));
 			expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(0);
 			harness.ack(installed);
-			await vi.waitFor(() =>
-				expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(1),
-			);
+			await noSuccessorAdmission;
+			await harness.waitForPendingCommand('reviewPublicationInstallAdmit');
+			expect(harness.pendingCommandCount('reviewPublicationInstallAdmit')).toBe(1);
 			const successorAdmission = await harness.nextCommand('reviewPublicationInstallAdmit');
 			expect(successorAdmission).toMatchObject({
 				expectedDisplayedPublicationId: CANDIDATE.publicationId,
@@ -208,4 +209,18 @@ describe('Bridge Review installed receipt recovery', () => {
 			harness.dispose();
 		}
 	});
+});
+
+test('rejects a withheld publication dispatch fact even when the count claims a queued command', async () => {
+	const harness = createHarness();
+	try {
+		vi.spyOn(harness, 'pendingCommandCount').mockReturnValue(1);
+		const pending = harness.waitForPendingCommand('reviewPublicationInstalled');
+		harness.dispose();
+		await expect(pending).rejects.toThrow(
+			'Awaiting Review publication queued reviewPublicationInstalled: Review publication harness disposed',
+		);
+	} finally {
+		harness.dispose();
+	}
 });

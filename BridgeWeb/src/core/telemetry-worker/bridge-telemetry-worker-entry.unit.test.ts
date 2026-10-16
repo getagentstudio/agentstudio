@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { BridgeTestFactRecorder } from '../../../tests/test-support/bridge-test-fact-recorder.ts';
 import type { BridgeTelemetryWorkerBatchRequest } from './bridge-telemetry-worker-contracts.js';
 import {
 	createSettlementSkewHarness,
@@ -486,7 +487,8 @@ describe('telemetry worker port entry', () => {
 	});
 
 	it('continues replacement with failed proof after the old producer barrier times out', async () => {
-		const scheduledTimeouts: Array<() => void> = [];
+		const scheduler = createReplacementBarrierScheduleFacts();
+		const scheduledTimeouts = scheduler.callbacks;
 		const mainChannel = new MessageChannel();
 		const commChannel = new MessageChannel();
 		const replacementChannel = new MessageChannel();
@@ -495,13 +497,11 @@ describe('telemetry worker port entry', () => {
 			transport: acceptedTransport([]),
 			mainPort: mainChannel.port1,
 			commPort: commChannel.port1,
-			scheduleLifecycleTimeout: (callback): (() => void) => {
-				scheduledTimeouts.push(callback);
-				return (): void => {};
-			},
+			scheduleLifecycleTimeout: scheduler.schedule,
 		});
 		const replacement = host.replaceProducer('comm', replacementChannel.port1);
-		await vi.waitFor(() => expect(scheduledTimeouts).toHaveLength(1));
+		await scheduler.whenScheduled();
+		expect(scheduledTimeouts).toHaveLength(1);
 
 		scheduledTimeouts[0]?.();
 		await replacement;
@@ -511,8 +511,40 @@ describe('telemetry worker port entry', () => {
 			producers: { comm: { generation: 2 } },
 		});
 		host.dispose();
+		scheduler.close();
 		mainChannel.port2.close();
 		commChannel.port2.close();
 		replacementChannel.port2.close();
 	});
+});
+
+function createReplacementBarrierScheduleFacts(): {
+	readonly callbacks: Array<() => void>;
+	readonly schedule: (callback: () => void) => () => void;
+	readonly whenScheduled: () => Promise<() => void>;
+	readonly close: () => void;
+} {
+	const callbacks: Array<() => void> = [];
+	const facts = new BridgeTestFactRecorder<() => void>();
+	return {
+		callbacks,
+		schedule: (callback): (() => void) => {
+			callbacks.push(callback);
+			facts.record(callback);
+			return (): void => {};
+		},
+		whenScheduled: (): Promise<() => void> =>
+			facts.waitFor((): boolean => true, 'old comm producer replacement barrier scheduled'),
+		close: (): void => facts.close(new Error('Replacement scheduler owner retired')),
+	};
+}
+
+it('rejects a withheld barrier schedule fact even when the callback array is populated', async () => {
+	const scheduler = createReplacementBarrierScheduleFacts();
+	scheduler.callbacks.push((): void => {});
+	const waiting = scheduler.whenScheduled();
+	scheduler.close();
+	await expect(waiting).rejects.toThrow(
+		'Awaiting old comm producer replacement barrier scheduled: Replacement scheduler owner retired',
+	);
 });

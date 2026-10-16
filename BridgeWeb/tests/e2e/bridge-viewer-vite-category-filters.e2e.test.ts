@@ -2,6 +2,7 @@ import type { Browser, Locator, Page } from 'playwright';
 import { expect, test } from 'vitest';
 
 import { runAllOwnedCleanupOperations } from '../../scripts/dev-server/bridge-development-server-process.ts';
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import {
 	createBridgeViewerCategoryFixture,
 	type BridgeViewerCategoryCase,
@@ -16,8 +17,6 @@ import { observeBrowserRuntimeDiagnostics } from './bridge-viewer-vite-review-co
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 type CategoryViewerSurface = 'file' | 'review';
-
-const treeSettlementTimeoutMilliseconds = 30_000;
 
 test('filters File and Review trees with native-classified filesystem metadata', async (context): Promise<void> => {
 	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
@@ -36,8 +35,14 @@ test('filters File and Review trees with native-classified filesystem metadata',
 				bridgeViewerViteProductFileUrl(server.origin, 'category-corpus/source/component.ts'),
 				{ waitUntil: 'domcontentloaded' },
 			);
-			await expectTreePaths(page, 'file', fixture.expectedAllTreePaths, 'initial File tree');
+			await expectTreePaths(
+				{ page, testLaunch: fixture.oracle.testLaunch },
+				'file',
+				fixture.expectedAllTreePaths,
+				'initial File tree',
+			);
 			await exerciseCategoryMenu({
+				testLaunch: fixture.oracle.testLaunch,
 				categoryCases: fixture.categoryCases,
 				menuOptionTestId: 'worktree-file-filter-menu-option',
 				popoverTestId: 'worktree-file-filter-menu-popover',
@@ -49,6 +54,7 @@ test('filters File and Review trees with native-classified filesystem metadata',
 
 			const finalFileCategory = requireFinalCategoryCase(fixture.categoryCases);
 			await exerciseEmptySearchIntersection({
+				testLaunch: fixture.oracle.testLaunch,
 				categoryTreePaths: finalFileCategory.expectedFileTreePaths,
 				clearSearchTestId: 'worktree-file-search-clear',
 				inputTestId: 'worktree-file-search-input',
@@ -57,6 +63,7 @@ test('filters File and Review trees with native-classified filesystem metadata',
 				triggerTestId: 'worktree-file-search-toggle',
 			});
 			await clearCategoryFilter({
+				testLaunch: fixture.oracle.testLaunch,
 				clearTestId: 'worktree-file-filter-menu-clear',
 				page,
 				popoverTestId: 'worktree-file-filter-menu-popover',
@@ -71,12 +78,13 @@ test('filters File and Review trees with native-classified filesystem metadata',
 				.click();
 			await page.getByTestId('review-viewer-shell').waitFor({ state: 'visible' });
 			await expectTreePaths(
-				page,
+				{ page, testLaunch: fixture.oracle.testLaunch },
 				'review',
 				fixture.expectedReviewDefaultTreePaths,
 				'initial Review tree',
 			);
 			await exerciseCategoryMenu({
+				testLaunch: fixture.oracle.testLaunch,
 				categoryCases: fixture.categoryCases,
 				menuOptionTestId: 'bridge-review-facet-option',
 				popoverTestId: 'bridge-review-facet-popover',
@@ -88,6 +96,7 @@ test('filters File and Review trees with native-classified filesystem metadata',
 
 			const finalReviewCategory = requireFinalCategoryCase(fixture.categoryCases);
 			await exerciseEmptySearchIntersection({
+				testLaunch: fixture.oracle.testLaunch,
 				categoryTreePaths: finalReviewCategory.expectedReviewTreePaths,
 				clearSearchTestId: 'bridge-review-search-clear',
 				inputTestId: 'bridge-review-search-input',
@@ -96,6 +105,7 @@ test('filters File and Review trees with native-classified filesystem metadata',
 				triggerTestId: 'bridge-review-search-toggle',
 			});
 			await clearCategoryFilter({
+				testLaunch: fixture.oracle.testLaunch,
 				clearTestId: 'bridge-review-facet-clear',
 				page,
 				popoverTestId: 'bridge-review-facet-popover',
@@ -137,6 +147,7 @@ test('filters File and Review trees with native-classified filesystem metadata',
 });
 
 async function exerciseCategoryMenu(props: {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly categoryCases: readonly BridgeViewerCategoryCase[];
 	readonly menuOptionTestId: string;
 	readonly page: Page;
@@ -153,7 +164,7 @@ async function exerciseCategoryMenu(props: {
 				? categoryCase.expectedFileTreePaths
 				: categoryCase.expectedReviewTreePaths;
 		await expectTreePaths(
-			props.page,
+			{ page: props.page, testLaunch: props.testLaunch },
 			props.surface,
 			expectedTreePaths,
 			`${props.surface} ${categoryCase.label} category`,
@@ -178,6 +189,7 @@ async function selectCategory(props: {
 }
 
 async function clearCategoryFilter(props: {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly clearTestId: string;
 	readonly page: Page;
 	readonly popoverTestId: string;
@@ -188,7 +200,7 @@ async function clearCategoryFilter(props: {
 	const popover = await ensureMenuOpen(props);
 	await popover.getByTestId(props.clearTestId).click();
 	await expectTreePaths(
-		props.page,
+		{ page: props.page, testLaunch: props.testLaunch },
 		props.surface,
 		props.restoredTreePaths,
 		`${props.surface} Clear restore`,
@@ -226,6 +238,7 @@ async function expectSingleOption(option: Locator, label: string): Promise<void>
 }
 
 async function exerciseEmptySearchIntersection(props: {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly categoryTreePaths: readonly string[];
 	readonly clearSearchTestId: string;
 	readonly inputTestId: string;
@@ -237,10 +250,15 @@ async function exerciseEmptySearchIntersection(props: {
 	const searchInput = props.page.getByTestId(props.inputTestId);
 	await searchInput.waitFor({ state: 'visible' });
 	await searchInput.fill('NO_NATIVE_CATEGORY_MATCH');
-	await expectTreePaths(props.page, props.surface, [], `${props.surface} deliberate empty result`);
+	await expectTreePaths(
+		{ page: props.page, testLaunch: props.testLaunch },
+		props.surface,
+		[],
+		`${props.surface} deliberate empty result`,
+	);
 	await props.page.getByTestId(props.clearSearchTestId).click();
 	await expectTreePaths(
-		props.page,
+		{ page: props.page, testLaunch: props.testLaunch },
 		props.surface,
 		props.categoryTreePaths,
 		`${props.surface} category after search Clear`,
@@ -248,38 +266,43 @@ async function exerciseEmptySearchIntersection(props: {
 }
 
 async function expectTreePaths(
-	page: Page,
+	owner: { readonly page: Page; readonly testLaunch: BridgeWebTestLaunch },
 	surface: CategoryViewerSurface,
 	expectedPaths: readonly string[],
 	label: string,
 ): Promise<void> {
+	const { page, testLaunch } = owner;
 	const selector =
 		surface === 'file'
 			? '[data-testid="bridge-file-viewer-pierre-file-tree"] file-tree-container'
 			: '[data-testid="bridge-review-trees-panel"] file-tree-container';
 	try {
-		await page.waitForFunction(
-			({ expected, treeSelector }): boolean => {
-				const treeHost = document.querySelector(treeSelector);
-				if (!(treeHost instanceof HTMLElement) || treeHost.shadowRoot === null) return false;
-				const observed = [
-					...new Set(
-						Array.from(treeHost?.shadowRoot?.querySelectorAll('button[data-item-path]') ?? [])
-							.filter(
-								(candidate): candidate is HTMLElement =>
-									candidate instanceof HTMLElement &&
-									!candidate.hasAttribute('data-file-tree-sticky-row') &&
-									!candidate.hasAttribute('data-item-parked'),
-							)
-							.map((candidate): string => candidate.dataset['itemPath'] ?? '')
-							.filter((path): boolean => path.length > 0),
-					),
-				].toSorted();
-				return JSON.stringify(observed) === JSON.stringify(expected);
-			},
-			{ expected: [...expectedPaths].toSorted(), treeSelector: selector },
-			{ timeout: treeSettlementTimeoutMilliseconds },
-		);
+		await testLaunch
+			.observeStep(
+				`${label}: exact ${surface} category tree paths`,
+				page.waitForFunction(
+					({ expected, treeSelector }): boolean => {
+						const treeHost = document.querySelector(treeSelector);
+						if (!(treeHost instanceof HTMLElement) || treeHost.shadowRoot === null) return false;
+						const observed = [
+							...new Set(
+								Array.from(treeHost?.shadowRoot?.querySelectorAll('button[data-item-path]') ?? [])
+									.filter(
+										(candidate): candidate is HTMLElement =>
+											candidate instanceof HTMLElement &&
+											!candidate.hasAttribute('data-file-tree-sticky-row') &&
+											!candidate.hasAttribute('data-item-parked'),
+									)
+									.map((candidate): string => candidate.dataset['itemPath'] ?? '')
+									.filter((path): boolean => path.length > 0),
+							),
+						].toSorted();
+						return JSON.stringify(observed) === JSON.stringify(expected);
+					},
+					{ expected: [...expectedPaths].toSorted(), treeSelector: selector },
+				),
+			)
+			.value();
 	} catch (error: unknown) {
 		let observedPaths: readonly string[] | string;
 		try {

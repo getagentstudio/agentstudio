@@ -3,6 +3,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
+import { observeBridgeTransitionDOMFact } from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode mounts the production File shell.
 import '../app/bridge-app.css';
 import { bridgeAppControlProbeSchema } from '../app/bridge-app-control.js';
@@ -83,7 +85,13 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 		await waitForMetadataTreeRowCount(1);
 
 		// Assert
-		await expect.poll(selectedDisplayPath, { timeout: 1_000 }).toBeNull();
+		const clearedSelection = observeClearedFileSelection();
+		try {
+			await clearedSelection.promise;
+			expect(selectedDisplayPath()).toBeNull();
+		} finally {
+			clearedSelection.close();
+		}
 		await expect
 			.poll((): readonly string[] => mountedFileTreePaths())
 			.toEqual(['Docs', 'Docs/Guide.md']);
@@ -833,4 +841,31 @@ vi.mock('../components/ui/dropdown-menu.js', async (importOriginal) => {
 	const { withFileMenuCompletion } =
 		await import('./bridge-file-viewer-menu-completion.browser.test-support.js');
 	return withFileMenuCompletion(original);
+});
+
+function observeClearedFileSelection(): ReturnType<typeof observeBridgeTransitionDOMFact> {
+	return observeBridgeTransitionDOMFact({
+		isCommitted: (): boolean => selectedDisplayPath() === null,
+		label: 'excluded File selection cleared',
+	});
+}
+
+test('names a withheld File selection-clear fact at explicit owner retirement', async () => {
+	const shell = document.createElement('main');
+	shell.setAttribute('data-testid', 'bridge-file-viewer-shell');
+	shell.setAttribute('data-selected-display-path', 'held-selection.ts');
+	document.body.append(shell);
+	const observation = observeClearedFileSelection();
+	void observation.promise.catch((): void => {});
+	try {
+		observation.close();
+		await expect(
+			Promise.race([
+				observation.promise,
+				Promise.reject(new Error('Owner close did not settle File selection observation')),
+			]),
+		).rejects.toThrow('Test owner retired while awaiting excluded File selection cleared');
+	} finally {
+		shell.remove();
+	}
 });
