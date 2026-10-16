@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import type { Page, Request, Route } from 'playwright';
 
+import type { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { bridgeProductContentRequestSchema } from '../../src/core/comm-worker/bridge-product-content-contracts.js';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
 import { waitForAnnotationMainProjectionReceipt } from './bridge-viewer-vite-annotation-main-projection-observation.ts';
@@ -29,7 +30,6 @@ import type {
 } from './bridge-viewer-vite-product-fixture.ts';
 
 const churnFileCount = 12;
-const churnTimeoutMilliseconds = 30_000;
 
 interface ChurnBurst {
 	readonly expectedReadiness: {
@@ -138,6 +138,7 @@ export async function runCopyFileChurnReproduction(props: {
 					const editedBody = `${savedBody} Edited while File refresh is pending.`;
 					const [editResult, burstResult] = await Promise.allSettled([
 						editAndSaveCurrentAnnotation({
+							testLaunch: props.oracle.testLaunch,
 							editedBody,
 							page,
 							savedBody,
@@ -217,16 +218,18 @@ export async function runCopyFileChurnReproduction(props: {
 									selectedOriginalBody,
 								});
 								ongoingCopyBurstRef.current = ongoingCopyBurst;
-								const interceptedRequest = page.waitForRequest(
-									(request): boolean => {
-										const body: unknown = request.postDataJSON();
-										return isExactFileContentRequest(
-											body,
-											ongoingCopyBurst.expectedReadiness.sha256,
-										);
-									},
-									{ timeout: churnTimeoutMilliseconds },
-								);
+								const interceptedRequest = props.oracle.testLaunch
+									.observeStep(
+										'Copy under File churn: selected File content request from the current worker epoch',
+										page.waitForRequest((request): boolean => {
+											const body: unknown = request.postDataJSON();
+											return isExactFileContentRequest(
+												body,
+												ongoingCopyBurst.expectedReadiness.sha256,
+											);
+										}),
+									)
+									.value();
 								await ongoingCopyBurst.writesCommitted;
 								await interceptedRequest;
 								const body = await exactFileContentIntercepted.promise;
@@ -345,7 +348,11 @@ function startChurnBurst(props: {
 		)
 		.then((): void => writes.resolve())
 		.then(async (): Promise<void> => {
-			await waitForPaintedFileHash(props.page, selectedSha256);
+			await waitForPaintedFileHash({
+				page: props.page,
+				expectedSha256: selectedSha256,
+				testLaunch: props.oracle.testLaunch,
+			});
 		})
 		.catch((error: unknown): never => {
 			writes.reject(error);
@@ -374,6 +381,7 @@ function selectedFileLineCount(body: string): number {
 }
 
 async function editAndSaveCurrentAnnotation(props: {
+	readonly testLaunch: BridgeWebTestLaunch;
 	readonly beforeSave?: (() => Promise<void>) | undefined;
 	readonly afterSave?: () => void;
 	readonly afterCommittedSave?: (() => void) | undefined;
@@ -387,7 +395,12 @@ async function editAndSaveCurrentAnnotation(props: {
 		.first();
 	await message.getByRole('button', { name: 'Edit annotation', exact: true }).click();
 	const editor = message.getByRole('textbox', { name: 'Annotation Markdown', exact: true });
-	await editor.waitFor({ state: 'visible', timeout: churnTimeoutMilliseconds });
+	await props.testLaunch
+		.observeStep(
+			'Copy under File churn: annotation editor visible',
+			editor.waitFor({ state: 'visible' }),
+		)
+		.value();
 	const flush = waitForCommittedAnnotationOutcome(props.page, 'draft.flush', 'file');
 	await editor.fill(props.editedBody);
 	await flush;
@@ -405,9 +418,12 @@ async function editAndSaveCurrentAnnotation(props: {
 		messageState: 'saved',
 	});
 	props.afterSave?.();
-	await message
-		.getByText(props.editedBody, { exact: true })
-		.waitFor({ state: 'visible', timeout: churnTimeoutMilliseconds });
+	await props.testLaunch
+		.observeStep(
+			'Copy under File churn: exact edited annotation body visible after Save',
+			message.getByText(props.editedBody, { exact: true }).waitFor({ state: 'visible' }),
+		)
+		.value();
 }
 
 function isExactFileContentRequest(body: unknown, expectedSha256: string | undefined): boolean {
@@ -445,31 +461,37 @@ function isOutputScopeCommitRequest(request: Request): boolean {
 	);
 }
 
-async function waitForPaintedFileHash(page: Page, expectedSha256: string): Promise<void> {
-	await page.waitForFunction(
-		(expected: string): boolean => {
-			const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
-			const painted = canvas?.querySelector(
-				'diffs-container[data-bridge-painted-source-correlations]',
-			);
-			const correlations: unknown = JSON.parse(
-				painted?.getAttribute('data-bridge-painted-source-correlations') ?? '[]',
-			);
-			return (
-				canvas?.getAttribute('data-worktree-open-file-state') === 'ready' &&
-				Array.isArray(correlations) &&
-				correlations.some(
-					(correlation: unknown): boolean =>
-						typeof correlation === 'object' &&
-						correlation !== null &&
-						'observedSha256' in correlation &&
-						correlation.observedSha256 === expected,
-				)
-			);
-		},
-		expectedSha256,
-		{ timeout: churnTimeoutMilliseconds },
-	);
+async function waitForPaintedFileHash(props: {
+	readonly page: Page;
+	readonly expectedSha256: string;
+	readonly testLaunch: BridgeWebTestLaunch;
+}): Promise<void> {
+	const { page, expectedSha256, testLaunch } = props;
+	await testLaunch
+		.observeStep(
+			`Copy under File churn: selected File ready with painted source ${expectedSha256}`,
+			page.waitForFunction((expected: string): boolean => {
+				const canvas = document.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
+				const painted = canvas?.querySelector(
+					'diffs-container[data-bridge-painted-source-correlations]',
+				);
+				const correlations: unknown = JSON.parse(
+					painted?.getAttribute('data-bridge-painted-source-correlations') ?? '[]',
+				);
+				return (
+					canvas?.getAttribute('data-worktree-open-file-state') === 'ready' &&
+					Array.isArray(correlations) &&
+					correlations.some(
+						(correlation: unknown): boolean =>
+							typeof correlation === 'object' &&
+							correlation !== null &&
+							'observedSha256' in correlation &&
+							correlation.observedSha256 === expected,
+					)
+				);
+			}, expectedSha256),
+		)
+		.value();
 }
 
 async function isPaintedFileHash(page: Page, expectedSha256: string): Promise<boolean> {

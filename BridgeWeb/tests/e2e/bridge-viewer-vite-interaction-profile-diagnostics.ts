@@ -63,6 +63,8 @@ interface AnnotationQueryObservation {
 }
 
 export async function observeInteractionProfileFailures(page: Page): Promise<{
+	readonly readRetained: () => unknown;
+	readonly dispose: () => Promise<void>;
 	readonly read: () => Promise<{
 		readonly annotationQueries: readonly AnnotationQueryObservation[];
 		readonly controlRejections: readonly ControlRejectionObservation[];
@@ -184,7 +186,7 @@ export async function observeInteractionProfileFailures(page: Page): Promise<{
 			unreadableControlResponseCount += 1;
 		}
 	};
-	page.on('response', (response): void => {
+	const observeResponse = (response: Response): void => {
 		if (
 			response.status() !== 200 ||
 			new URL(response.url()).pathname !== '/__bridge-product/command'
@@ -195,8 +197,21 @@ export async function observeInteractionProfileFailures(page: Page): Promise<{
 		void pending.finally((): void => {
 			pendingReads.delete(pending);
 		});
-	});
+	};
+	page.on('response', observeResponse);
 	return {
+		dispose: async (): Promise<void> => {
+			page.off('response', observeResponse);
+			await Promise.all(pendingReads);
+		},
+		readRetained: (): unknown => ({
+			annotationQueries: [...annotationQueries],
+			controlRejections: [...controlRejections],
+			resyncs: [...resyncs],
+			resnapshots: [...resnapshots],
+			unreadableControlResponseCount,
+			pendingControlResponseCount: pendingReads.size,
+		}),
 		read: async () => {
 			return {
 				annotationQueries: [...annotationQueries],

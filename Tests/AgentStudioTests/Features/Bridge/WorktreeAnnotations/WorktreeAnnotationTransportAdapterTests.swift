@@ -472,22 +472,14 @@ struct WorktreeAnnotationTransportAdapterTests {
         let savedFixture = try await prepareSavedOutputCommandFixture(harness: harness)
         let sessionID = savedFixture.sessionID
         let outputCorrelation = try makeAnnotationCorrelation(requestID: "annotation-output-prepare")
-        let projection = try await harness.store.captureProjection(
-            worktreeID: "worktree-1",
-            demandedSessionIDs: [sessionID]
-        )
-        let sessionRevision = try #require(projection.repositorySnapshot.details.first?.session.semanticRevision)
-
         // Act
         let exactOutcome = await harness.adapter.apply(
             try decodeAnnotationCommand(
                 """
                 { "operation": {
-                  "displayedProjectionRevision": \(projection.revision),
-                  "expectedSessionRevision": \(sessionRevision),
+                  "messages": \(try outputSelectionJSON([savedFixture.message])),
                   "kind": "output.scope.commit", "outputKind": "clipboardMarkdown",
-                  "scope": "pending", "sessionId": "\(sessionID.rawValue.uuidString.lowercased())",
-                  "sourceGeneration": 7
+                  "scope": "pending", "sessionId": "\(sessionID.rawValue.uuidString.lowercased())"
                 } }
                 """
             ),
@@ -601,30 +593,20 @@ struct WorktreeAnnotationTransportAdapterTests {
         }
     }
 
-    @Test("stale displayed output scope conflicts without an effect or durable transition")
-    func staleDisplayedOutputScopeHasNoEffect() async throws {
+    @Test("stale listed saved revision conflicts without an effect or durable transition")
+    func staleListedSavedRevisionHasNoEffect() async throws {
         let outputEffect = TransportTestOutputEffect(outcome: .succeeded(destinationPath: nil))
         let harness = try await makeTransportAdapterHarness(outputEffect: outputEffect)
         defer { try? FileManager.default.removeItem(at: harness.root) }
         let savedFixture = try await prepareSavedOutputCommandFixture(harness: harness)
-        let projection = try await harness.store.captureProjection(
-            worktreeID: "worktree-1",
-            demandedSessionIDs: [savedFixture.sessionID]
-        )
-        let sessionRevision = try #require(
-            projection.repositorySnapshot.details.first?.session.semanticRevision
-        )
-
         let outcome = await harness.adapter.apply(
             try decodeAnnotationCommand(
                 """
                 { "operation": {
-                  "displayedProjectionRevision": \(projection.revision + 1),
-                  "expectedSessionRevision": \(sessionRevision),
+                  "messages": [{ "messageId": "\(savedFixture.message.id.rawValue.uuidString.lowercased())", "savedRevision": \(try #require(savedFixture.message.savedRevision) + 1) }],
                   "kind": "output.scope.commit", "outputKind": "clipboardMarkdown",
                   "scope": "pending",
-                  "sessionId": "\(savedFixture.sessionID.rawValue.uuidString.lowercased())",
-                  "sourceGeneration": 7
+                  "sessionId": "\(savedFixture.sessionID.rawValue.uuidString.lowercased())"
                 } }
                 """
             ),

@@ -15,11 +15,23 @@ tool_root="${RUNNER_TEMP:?RUNNER_TEMP is required}/agentstudio-lint-tools"
 format_source="$tool_root/swift-format-source"
 format_build="$tool_root/swift-format-build"
 tool_bin="$tool_root/bin"
+# The workflow restores .build-ci/lint-tools from a cache keyed on the container image and
+# this script's hash, and only main saves it, so a hit reuses main's build of this revision.
+format_cache_dir="$PWD/.build-ci/lint-tools"
+format_cached_binary="$format_cache_dir/swift-format-$swift_format_revision"
 mkdir -p "$tool_bin"
-git clone --depth 1 --branch 603.0.0 https://github.com/swiftlang/swift-format.git "$format_source"
-test "$(git -C "$format_source" rev-parse HEAD)" = "$swift_format_revision"
-swift build -c release --package-path "$format_source" --scratch-path "$format_build" --product swift-format
-ln -s "$format_build/release/swift-format" "$tool_bin/swift-format"
+if [[ -x "$format_cached_binary" ]]; then
+  echo "swift-format: reusing the cached build of $swift_format_revision"
+else
+  git clone --depth 1 --branch 603.0.0 https://github.com/swiftlang/swift-format.git "$format_source"
+  test "$(git -C "$format_source" rev-parse HEAD)" = "$swift_format_revision"
+  swift build -c release --package-path "$format_source" --scratch-path "$format_build" --product swift-format
+  mkdir -p "$format_cache_dir"
+  cp "$format_build/release/swift-format" "$format_cached_binary"
+  # Delete the build tree so this run's version checks prove the cached binary runs on its own.
+  rm -rf "$format_source" "$format_build"
+fi
+ln -s "$format_cached_binary" "$tool_bin/swift-format"
 
 case "$(uname -m)" in
   x86_64)
