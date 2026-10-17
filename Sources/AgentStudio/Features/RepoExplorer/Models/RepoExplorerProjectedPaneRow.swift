@@ -95,7 +95,6 @@ struct RepoExplorerProjectedPaneRow: Equatable, Sendable {
     let recencyText: String
     let recencyTier: RepoExplorerPaneRecencyTier
     let isActive: Bool
-    let isStreaming: Bool
     let isDrawerPane: Bool
     var messageChip: PaneMessageChipModel?
     var isPinned = false
@@ -123,7 +122,6 @@ struct RepoExplorerProjectedPaneRow: Equatable, Sendable {
         recencyText: String = "Now",
         recencyTier: RepoExplorerPaneRecencyTier = .strongBlue,
         isActive: Bool = false,
-        isStreaming: Bool = false,
         isDrawerPane: Bool = false
     ) {
         self.groupId = groupId
@@ -138,7 +136,6 @@ struct RepoExplorerProjectedPaneRow: Equatable, Sendable {
         self.recencyText = recencyText
         self.recencyTier = recencyTier
         self.isActive = isActive
-        self.isStreaming = isStreaming
         self.isDrawerPane = isDrawerPane
         variants = nil
     }
@@ -152,7 +149,6 @@ struct RepoExplorerProjectedPaneRow: Equatable, Sendable {
         recencyText: String = "Now",
         recencyTier: RepoExplorerPaneRecencyTier = .strongBlue,
         isActive: Bool = false,
-        isStreaming: Bool = false,
         isDrawerPane: Bool = false
     ) {
         self.groupId = groupId
@@ -166,7 +162,6 @@ struct RepoExplorerProjectedPaneRow: Equatable, Sendable {
         self.recencyText = recencyText
         self.recencyTier = recencyTier
         self.isActive = isActive
-        self.isStreaming = isStreaming
         self.isDrawerPane = isDrawerPane
         variants = nil
     }

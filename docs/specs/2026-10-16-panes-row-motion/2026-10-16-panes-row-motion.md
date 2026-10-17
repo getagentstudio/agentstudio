@@ -40,3 +40,11 @@
 - View: motion is a function of the line model. A focused test proves that `none` yields no effect and that Reduce Motion disables effects, where the harness allows it.
 - Real app: a working agent in a debug pane, then a sequence of captures showing the dot changing and the chip pulsing. Then Reduce Motion on, showing everything still.
 - Gates: lint, full `mise run test`, independent review, CI, pinned squash.
+
+## Revision 2026-10-17: the chip pulse is withdrawn (Lead decision under owner delegation)
+
+The real-app frame capture showed that terminal output reaches pane activity only when a burst settles: `TerminalActivityProjector` emits on `commandFinished`, `closeUnseenWindow` and `closeAgentCandidate`, never while output flows. An age-based "activity in the last 12 s" flag can't mean "streaming now". For plain terminals it pulsed only *after* output stopped. The chip pulse, `isStreaming`, `streamingActivityDuration` and the streaming lapse in `nextPresentationChangeDate` are removed.
+
+Unchanged: the breathing and rotating glyph motion with Reduce Motion, the detached/unknown branch line, the equal-paint deadline re-arm, and the worktree-fact full-projection fallback.
+
+A correct "pulse while streaming" needs a live per-pane output-burst fact from the projector, published for the row. That adds observed state to a pane-status atom, so it waits for the owner's approval.

@@ -145,7 +145,6 @@ extension RepoExplorerProjectionWorker {
                 recencyTier: activity.recencyTier,
                 nextPresentationChangeDate: activity.nextPresentationChangeDate,
                 isActive: activity.isActive,
-                isStreaming: activity.isStreaming,
                 isDrawerPane: facts.isDrawerPane,
                 drawerOwnerPaneID: facts.drawerOwnerPaneID
             )

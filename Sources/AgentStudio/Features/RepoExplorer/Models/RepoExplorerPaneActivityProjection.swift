@@ -24,7 +24,6 @@ struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
     let clockText: String
     let recencyTier: RepoExplorerPaneRecencyTier
     let isActive: Bool
-    let isStreaming: Bool
     let unpinnedBucket: RepoExplorerActivityBucket
     let pinnedBucket: RepoExplorerPinnedActivityBucket
     let nextPresentationChangeDate: Date?
@@ -42,7 +41,6 @@ struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
                 clockText: "—",
                 recencyTier: .grey,
                 isActive: false,
-                isStreaming: false,
                 unpinnedBucket: .noActivity,
                 pinnedBucket: .older,
                 nextPresentationChangeDate: nil
@@ -52,7 +50,6 @@ struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
         let age = max(.zero, time.orderingInstant.duration(to: referenceInstant))
         let components = age.components
         let ageSeconds = Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
-        let isStreaming = ageSeconds < AppPolicies.RepoExplorer.streamingActivityDuration
         let activityDate = wallNow.addingTimeInterval(-ageSeconds)
         let unpinnedBucket = RepoExplorerActivityBucket.classify(
             activityAt: activityDate,
@@ -76,10 +73,7 @@ struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
             now: wallNow,
             calendar: calendar
         )
-        let streamingLapse =
-            isStreaming
-            ? activityDate.addingTimeInterval(AppPolicies.RepoExplorer.streamingActivityDuration) : nil
-        let nextPresentationChangeDate = [nextClockChange, nextBucketChange, streamingLapse].compactMap(\.self).min()
+        let nextPresentationChangeDate = [nextClockChange, nextBucketChange].compactMap(\.self).min()
 
         return Self(
             age: age,
@@ -87,7 +81,6 @@ struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
             clockText: RepoExplorerPaneRecencyText.display(lastInteractedAt: activityDate, now: wallNow),
             recencyTier: RepoExplorerPaneRecencyTier.classify(referenceDate: activityDate, now: wallNow),
             isActive: pinnedBucket == .active,
-            isStreaming: isStreaming,
             unpinnedBucket: unpinnedBucket,
             pinnedBucket: pinnedBucket,
             nextPresentationChangeDate: nextPresentationChangeDate

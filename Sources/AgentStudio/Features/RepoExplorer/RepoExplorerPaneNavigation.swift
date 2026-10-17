@@ -54,8 +54,7 @@ struct RepoExplorerPaneRow: View {
                 paneId: PaneId(existingUUID: row.destination.paneId),
                 paneContextControl: paneContextControl,
                 preparedLines: row.displayVariant == .expanded
-                    ? row.variants?.expanded.lines : row.variants?.compact.lines,
-                isStreaming: row.isStreaming
+                    ? row.variants?.expanded.lines : row.variants?.compact.lines
             )
         }
         .frame(maxHeight: .infinity, alignment: .top)
@@ -91,8 +90,6 @@ struct RepoExplorerPaneRow: View {
 }
 
 struct RepoExplorerPaneRowContent: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
     let primaryText: String
     let secondaryLine: RepoExplorerPaneSecondaryLine?
     let branchContextText: String?
@@ -110,7 +107,6 @@ struct RepoExplorerPaneRowContent: View {
     var paneId: PaneId?
     var paneContextControl: RepoExplorerPaneContextControlFactory = { _, _ in nil }
     var preparedLines: [RepoExplorerPaneRowLine]?
-    var isStreaming = false
 
     static func leadingContentInset(for drawerRail: RepoExplorerDrawerRail) -> CGFloat {
         switch drawerRail {
@@ -232,14 +228,6 @@ struct RepoExplorerPaneRowContent: View {
                         text: recencyText,
                         style: recencyChipStyle
                     )
-                    .phaseAnimator(isClockPulseActive ? [false, true] : [false]) { chip, dimmed in
-                        chip.opacity(
-                            isClockPulseActive && dimmed ? AppStyles.Shell.Sidebar.streamingChipMinimumOpacity : 1
-                        )
-                    } animation: { _ in
-                        isClockPulseActive
-                            ? .easeInOut(duration: AppStyles.Shell.Sidebar.streamingChipPulsePeriod / 2) : nil
-                    }
                     if isActive {
                         SidebarChip(
                             icon: .system(.playCircleFill),
@@ -252,8 +240,6 @@ struct RepoExplorerPaneRowContent: View {
             }
         }
     }
-
-    private var isClockPulseActive: Bool { isStreaming && !reduceMotion }
 
     private var recencyChipStyle: SidebarChip.Style {
         switch recencyTier {

@@ -56,7 +56,6 @@ struct RepoExplorerPaneActivityProjectionTests {
 
         #expect(result.clockText == "—")
         #expect(!result.isActive)
-        #expect(!result.isStreaming)
         #expect(result.nextPresentationChangeDate == nil)
         #expect(result.unpinnedBucket == .noActivity)
         #expect(result.pinnedBucket == .older)
@@ -236,50 +235,8 @@ struct RepoExplorerPaneActivityProjectionTests {
         #expect(projection.sections[1].title == "Panes")
     }
 
-    @Test(
-        "streaming ends exactly at the 12-second publication window",
-        arguments: [
-            (0.0, true), (10.0, true), (11.999, true), (12.0, false), (12.001, false), (60.0, false),
-        ])
-    func streamingUsesActivityAge(ageSeconds: Double, expectedStreaming: Bool) {
-        let referenceInstant = ContinuousClock.now
-        let time = PaneActivityTime(
-            orderingInstant: referenceInstant.advanced(by: .seconds(-ageSeconds)),
-            wallTime: .distantPast, source: .terminal)
-
-        let result = RepoExplorerPaneActivityProjection.make(
-            time: time, referenceInstant: referenceInstant,
-            wallNow: Date(timeIntervalSince1970: 1_769_000_000), calendar: utcCalendar)
-
-        #expect(result.isStreaming == expectedStreaming)
-    }
-
-    @Test("streaming lapse wins the presentation deadline, then the clock boundary resumes")
-    func streamingLapseSchedulesPresentationChange() {
-        let referenceInstant = ContinuousClock.now
-        let wallNow = utcDate(year: 2026, month: 1, day: 15, hour: 12, minute: 0)
-        let time = PaneActivityTime(
-            orderingInstant: referenceInstant.advanced(by: .seconds(-11)),
-            wallTime: .distantPast, source: .terminal)
-
-        let streaming = RepoExplorerPaneActivityProjection.make(
-            time: time, referenceInstant: referenceInstant, wallNow: wallNow, calendar: utcCalendar)
-        let lapsed = RepoExplorerPaneActivityProjection.make(
-            time: time, referenceInstant: referenceInstant.advanced(by: .seconds(1)),
-            wallNow: wallNow.addingTimeInterval(1), calendar: utcCalendar)
-
-        #expect(streaming.isStreaming)
-        #expect(streaming.nextPresentationChangeDate == wallNow.addingTimeInterval(1))
-        #expect(!lapsed.isStreaming)
-        #expect(lapsed.nextPresentationChangeDate == wallNow.addingTimeInterval(49))
-        #expect(lapsed.clockText == streaming.clockText)
-        #expect(lapsed.isActive == streaming.isActive)
-        #expect(lapsed.unpinnedBucket == streaming.unpinnedBucket)
-        #expect(lapsed.pinnedBucket == streaming.pinnedBucket)
-    }
-
-    @Test("terminal activity without an agent carries streaming and its deadline into the row")
-    func workerThreadsStreamingIntoPaneRow() throws {
+    @Test("terminal activity without an agent carries the clock deadline and row recency")
+    func workerThreadsClockDeadlineAndRecencyIntoPaneRow() throws {
         let referenceInstant = ContinuousClock.now
         let wallNow = utcDate(year: 2026, month: 1, day: 15, hour: 12, minute: 0)
         let paneID = UUIDv7.generate()
@@ -301,9 +258,7 @@ struct RepoExplorerPaneActivityProjectionTests {
         let projection = RepoExplorerProjection.project(snapshot, paneRowFactsByPaneId: prepared)
         let row = try #require(projection.paneRowsByGroupId.values.flatMap { $0 }.first)
 
-        #expect(prepared[paneID]?.isStreaming == true)
-        #expect(prepared[paneID]?.nextPresentationChangeDate == wallNow.addingTimeInterval(2))
-        #expect(row.isStreaming)
+        #expect(prepared[paneID]?.nextPresentationChangeDate == wallNow.addingTimeInterval(50))
         #expect(row.recencyText == "Now")
     }
 

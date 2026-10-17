@@ -46,7 +46,6 @@ extension RepoExplorerProjection {
                 recencyText: paneFacts?.recencyText ?? "Now",
                 recencyTier: paneFacts?.recencyTier ?? .strongBlue,
                 isActive: paneFacts?.isActive ?? false,
-                isStreaming: paneFacts?.isStreaming ?? false,
                 isDrawerPane: paneFacts?.isDrawerPane ?? false
             )
         case .unassociated(let unassociatedDestination):
@@ -60,7 +59,6 @@ extension RepoExplorerProjection {
                 recencyText: paneFacts?.recencyText ?? "Now",
                 recencyTier: paneFacts?.recencyTier ?? .strongBlue,
                 isActive: paneFacts?.isActive ?? false,
-                isStreaming: paneFacts?.isStreaming ?? false,
                 isDrawerPane: paneFacts?.isDrawerPane ?? false
             )
         }

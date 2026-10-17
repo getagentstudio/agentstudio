@@ -68,7 +68,6 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     let recencyTier: RepoExplorerPaneRecencyTier
     let nextPresentationChangeDate: Date?
     let isActive: Bool
-    let isStreaming: Bool
     let isDrawerPane: Bool
     let drawerOwnerPaneID: UUID?
 
@@ -87,7 +86,6 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
         recencyTier: RepoExplorerPaneRecencyTier = .strongBlue,
         nextPresentationChangeDate: Date? = nil,
         isActive: Bool,
-        isStreaming: Bool = false,
         isDrawerPane: Bool = false,
         drawerOwnerPaneID: UUID? = nil
     ) {
@@ -105,7 +103,6 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
         self.recencyTier = recencyTier
         self.nextPresentationChangeDate = nextPresentationChangeDate
         self.isActive = isActive
-        self.isStreaming = isStreaming
         self.isDrawerPane = isDrawerPane
         self.drawerOwnerPaneID = drawerOwnerPaneID
     }
