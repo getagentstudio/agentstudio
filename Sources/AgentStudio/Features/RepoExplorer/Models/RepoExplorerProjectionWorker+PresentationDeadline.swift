@@ -61,8 +61,8 @@ extension RepoExplorerProjectionWorker {
 }
 
 extension RepoExplorerProjectionResult {
-    /// An equal-paint result can still move the next visible change: a pane's clock text, bucket
-    /// or streaming lapse, or a repository's activity cutoff. Re-arming only when one of those
+    /// An equal-paint result can still move the next visible change: a pane's clock text or bucket
+    /// boundary, or a repository's activity cutoff. Re-arming only when one of those
     /// moved keeps a fired deadline, whose re-projection lands on the same transitions, from
     /// re-arming itself in a loop.
     func movesPresentationTransitions(from previous: RepoExplorerProjectionResult?) -> Bool {

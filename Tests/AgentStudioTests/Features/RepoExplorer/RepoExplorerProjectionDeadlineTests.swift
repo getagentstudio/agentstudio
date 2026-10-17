@@ -77,31 +77,31 @@ struct RepoExplorerProjectionDeadlineTests {
         fireEvents.continuation.finish()
     }
 
-    /// Output at t=10 moves a streaming pane's lapse from t=12 to t=22 while its row still reads
-    /// "Now", so the projection is equal-paint. The deadline must move with it, or the pulse never
-    /// stops; a re-projection that lands on the same transitions must not re-arm, or a fired
+    /// Output at t=10 moves a pane's clock boundary from t=60 to t=70 while its row still reads
+    /// "Now", so the projection is equal-paint. The deadline must move with it, or "Now" goes
+    /// stale; a re-projection that lands on the same transitions must not re-arm, or a fired
     /// deadline would loop.
     @Test("an equal-paint result re-arms only when a pane or repository transition moved")
     func equalPaintRearmFollowsMovedTransitions() {
         let paneID = UUIDv7.generate()
         let repositoryID = UUIDv7.generate()
-        let firstLapse = Date(timeIntervalSince1970: 1012)
+        let firstTransition = Date(timeIntervalSince1970: 1060)
         let repositoryCutoff = Date(timeIntervalSince1970: 1060)
         let baseline = Self.result(
-            paneTransitions: [paneID: firstLapse],
+            paneTransitions: [paneID: firstTransition],
             repositoryTransitions: [repositoryID: repositoryCutoff]
         )
 
         let movedPane = Self.result(
-            paneTransitions: [paneID: firstLapse.addingTimeInterval(10)],
+            paneTransitions: [paneID: firstTransition.addingTimeInterval(10)],
             repositoryTransitions: [repositoryID: repositoryCutoff]
         )
         let movedRepository = Self.result(
-            paneTransitions: [paneID: firstLapse],
+            paneTransitions: [paneID: firstTransition],
             repositoryTransitions: [repositoryID: repositoryCutoff.addingTimeInterval(60)]
         )
         let unchanged = Self.result(
-            paneTransitions: [paneID: firstLapse],
+            paneTransitions: [paneID: firstTransition],
             repositoryTransitions: [repositoryID: repositoryCutoff]
         )
 
