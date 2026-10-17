@@ -147,11 +147,6 @@ struct PaneRuntimeEventChannelTests {
     func outboundCompletionObservesAcceptedPostAndRetirement(bufferedEnvelopeCount: Int) async throws {
         try await proveReplyDependsOnStep(
             makeScenario: {
-                () -> HeldReplyScenario<
-                    OwnedChannelCompletionFixture,
-                    RuntimeEnvelope,
-                    OwnedChannelCompletionReply
-                > in
                 let fixture = OwnedChannelCompletionFixture(bufferedEnvelopeCount: bufferedEnvelopeCount)
                 return HeldReplyScenario(
                     context: fixture,
