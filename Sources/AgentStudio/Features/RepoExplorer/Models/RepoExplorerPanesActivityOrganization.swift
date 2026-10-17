@@ -272,6 +272,7 @@ extension RepoExplorerProjection {
                 recencyText: facts?.recencyText ?? "—",
                 recencyTier: facts?.recencyTier ?? .grey,
                 isActive: facts?.isActive ?? false,
+                isStreaming: facts?.isStreaming ?? false,
                 isDrawerPane: facts?.isDrawerPane ?? false
             )
         case .unassociated(let unassociated):
@@ -284,6 +285,7 @@ extension RepoExplorerProjection {
                 recencyText: facts?.recencyText ?? "—",
                 recencyTier: facts?.recencyTier ?? .grey,
                 isActive: facts?.isActive ?? false,
+                isStreaming: facts?.isStreaming ?? false,
                 isDrawerPane: facts?.isDrawerPane ?? false
             )
         }

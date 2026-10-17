@@ -107,6 +107,9 @@ package enum AppPolicies {
 
     package enum RepoExplorer {
         package static let inactiveRefreshRevealDuration: Duration = .seconds(30)
+        /// Pane activity publishes at most every 10 seconds. Two seconds of margin keep
+        /// continuous output pulsing across publication and projection delivery.
+        package static let streamingActivityDuration: TimeInterval = 12
         package static let activeActivityDuration: TimeInterval = 60
         package static let justNowActivityDuration: TimeInterval = 10 * 60
         package static let lastHourActivityDuration: TimeInterval = 60 * 60

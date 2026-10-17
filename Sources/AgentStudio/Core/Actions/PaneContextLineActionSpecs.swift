@@ -34,7 +34,7 @@ enum PaneContextLineActionSpecs {
             icon = .system(.xmarkOctagon)
         case .working(let work):
             text = work == .monitoring ? "Working · monitoring" : "Working"
-            icon = .system(.circleFill)
+            icon = work == .monitoring ? .system(.circleDotted) : .system(.circleFill)
         case .idle(let state):
             let word =
                 switch state {

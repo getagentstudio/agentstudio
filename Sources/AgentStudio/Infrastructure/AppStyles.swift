@@ -101,6 +101,9 @@ package enum AppStyles {
 
     package enum Shell {
         package enum Sidebar {
+            package static let paneLineRotationSpeed = 0.35
+            package static let streamingChipMinimumOpacity: Double = 0.75
+            package static let streamingChipPulsePeriod: Double = 2
             package static let pendingFactsSymbolEffectSpeed = 0.35
             package static let statusUnavailableForegroundOpacity: CGFloat = 0.7
             package static let minimumWidth: CGFloat = 200
