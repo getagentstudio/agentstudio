@@ -191,24 +191,9 @@ func makeBridgeGitReadRequest(
 }
 
 func makeBridgeGitReadContext(rootURL: URL) -> BridgeGitReadContext {
-    let topology = BridgeGitReadSchedulerTopology(
-        slotsByOperationClass: [
-            .reviewMetadata: [
-                BridgeGitReadSlotID(token: "test-review-metadata")
-            ],
-            .selectedVisibleContent: [
-                BridgeGitReadSlotID(token: "test-selected-visible-content")
-            ],
-        ],
-        maximumQueuedOperationCountByClass: [
-            .reviewMetadata: 8,
-            .selectedVisibleContent: 8,
-        ],
-        maximumLogicalWaiterCountPerOperation: 4
-    )
-    return BridgeGitReadContext(
+    BridgeGitReadContext(
         scheduler: BridgeGitReadScheduler(
-            topology: topology,
+            topology: .recoveryBaseline,
             deadlineScheduler: BridgeGitReadManualDeadlineScheduler()
         ),
         worktreeKey: BridgeGitReadWorktreeKey(token: StableKey.fromPath(rootURL))
