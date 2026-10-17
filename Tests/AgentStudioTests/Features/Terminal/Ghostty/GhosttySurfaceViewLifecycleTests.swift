@@ -16,11 +16,6 @@ struct GhosttySurfaceViewLifecycleTests {
         do {
             try await proveReplyDependsOnStep(
                 makeScenario: {
-                    () throws -> HeldReplyScenario<
-                        HeldSurfaceCloseFixture,
-                        Void,
-                        HeldSurfaceCloseOutcome
-                    > in
                     let fixture = HeldSurfaceCloseFixture()
                     fixtures.append(fixture)
                     return fixture.scenario()
