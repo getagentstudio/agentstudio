@@ -121,6 +121,16 @@ package enum AppDataPaths {
         return "~\(suffix)"
     }
 
+    package static func scrollbackDirectory(
+        environment: [String: String] = ProcessInfo.processInfo.environment,
+        releaseChannel: ReleaseChannel = .current,
+        isDebugBuild: Bool = Self.isDebugBuild
+    ) -> URL {
+        rootDirectory(environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
+            .appending(path: "scrollback")
+            .standardizedFileURL
+    }
+
     private static func expandPath(_ rawPath: String) -> URL {
         if rawPath == "~" {
             return FileManager.default.homeDirectoryForCurrentUser

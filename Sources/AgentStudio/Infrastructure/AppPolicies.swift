@@ -389,6 +389,18 @@ package enum AppPolicies {
     /// Session-restore-after-reboot policy (R1: SR1-SR6b). S3's observer
     /// deadlines are added by that slice, alongside these.
     package enum Restore {
+        package static let captureInterval: Duration = .seconds(300)
+        /// Shorter than zmx's own 5s history timeout and the existing 2s quit
+        /// drain. The outer drain still owns the whole fleet's quit budget.
+        package static let captureDeadline: Duration = .seconds(1)
+        /// Includes inventory, capture and persistence; cancellation then
+        /// joins the fleet inside the existing two-second termination drain.
+        package static let quitCaptureBudget: Duration = .seconds(1)
+        /// Bounds raw capture memory before the persisted 2 MiB suffix cap.
+        package static let captureByteCeiling: Int = 8 * 1024 * 1024
+        package static let maximumConcurrentCaptures: Int = 4
+        package static let snapshotByteCap: Int = 2 * 1024 * 1024
+        package static let snapshotReadChunkByteCount: Int = 16_384
         /// Bounds the one `zmx list` inventory probe `mount()` runs, off-main,
         /// before the terminal lane activates (SR1, SR4; Program Design item
         /// 1). The probe never retries: a probe that exceeds this becomes
