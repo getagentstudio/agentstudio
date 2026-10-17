@@ -63,6 +63,11 @@ struct PaneActivitySaveIntegrationTests {
     func sinkReturnDependsOnCommit() async throws {
         try await proveReplyDependsOnStep(
             makeScenario: {
+                () -> HeldReplyScenario<
+                    PaneActivityHeldCommitRecorder,
+                    PaneActivityCommit,
+                    PaneActivityCommitOutcome
+                > in
                 let delegate = AppDelegate()
                 delegate.atomStore = makeTestAtomRegistry()
                 let recorder = PaneActivityHeldCommitRecorder()

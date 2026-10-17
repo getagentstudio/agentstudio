@@ -17,6 +17,11 @@ struct TerminalRuntimeOutboundCompletionTests {
         do {
             try await proveReplyDependsOnStep(
                 makeScenario: {
+                    () async -> HeldReplyScenario<
+                        TerminalRuntimeOutboundSnapshotRecorder,
+                        RuntimeEnvelope,
+                        RuntimeOutboundCompletionReply
+                    > in
                     let fixture = TerminalRuntimeOutboundCompletionFixture()
                     await fixtureStore.append(fixture)
                     return HeldReplyScenario(
