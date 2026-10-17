@@ -128,7 +128,10 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
             startupTraceRecorder: startupTraceRecorder,
             traceRuntime: traceRuntime,
             engineAccess: { @MainActor [weak self] in self?.engineAvailabilityForBoot() ?? .unavailable },
-            activityRouterAccess: { @MainActor [weak self] in self?.terminalActivityRouter }
+            activityRouterAccess: { @MainActor [weak self] in self?.terminalActivityRouter },
+            reportColdStartAttachClientExited: { [weak self] paneID in
+                self?.workspaceSurfaceCoordinator?.coldStartAttachExitBinding.reportAttachClientExited(paneID: paneID)
+            }
         )
         return Ghostty.ActionRouter(host: host)
     }()
