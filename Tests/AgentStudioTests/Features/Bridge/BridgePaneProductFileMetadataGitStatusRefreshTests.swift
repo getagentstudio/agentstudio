@@ -33,16 +33,15 @@ extension BridgePaneProductFileMetadataSourceTests {
         )
 
         // Assert
-        let statusPatches = emissions.compactMap { emission -> BridgeProductFileStatusPatch? in
-            guard case .statusPatch(let event) = emission.event else { return nil }
-            return event.patch
+        let statusFacts = emissions.compactMap { emission -> BridgeProductFileSourceIdentity? in
+            guard case .statusChanged(let identity) = emission.fact else { return nil }
+            return identity
         }
-        #expect(statusPatches.count == 1)
-        let statusPatch = try #require(statusPatches.first)
-        guard case .summary(let summary) = statusPatch else {
-            Issue.record("Expected refreshed status summary after a Git-internal change")
-            return
-        }
+        #expect(statusFacts.count == 1)
+        let identity = try #require(statusFacts.first)
+        let inventory = try #require(await productFileCanonicalInventory(source: source, identity: identity))
+        let summary = inventory.memberStatus.record
+        #expect(summary.status == .ready)
         #expect(summary.branchName == "main")
         #expect(summary.staged == 2)
         #expect(summary.unstaged == 1)

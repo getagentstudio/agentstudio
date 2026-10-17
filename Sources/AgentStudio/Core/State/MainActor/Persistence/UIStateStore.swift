@@ -5,6 +5,23 @@ import os.log
 
 private let uiStateStoreLogger = Logger(subsystem: "com.agentstudio", category: "UIStateStore")
 
+/// One persisted save attempt; its generation is minted by the owning store.
+package struct UIStateStoreSaveScope: Hashable, Sendable {
+    package let workspaceId: UUID
+    package let generation: UInt64
+}
+
+/// Synchronous observations of the store's own transitions; they do not add
+/// events to the app runtime bus. Completion acknowledges a committed SQLite write.
+package enum UIStateStoreFact: Equatable, Sendable {
+    case saveStarted
+    case saveCompleted
+    case saveFailed
+    case saveCancelled
+}
+
+package typealias UIStateStoreFactSink = @Sendable (UIStateStoreSaveScope, UIStateStoreFact) -> Void
+
 @MainActor
 package final class UIStateStore {
     private let atom: WorkspaceSidebarState
@@ -12,6 +29,8 @@ package final class UIStateStore {
     private let persistDebounceDuration: Duration
     private let delay: AsyncDelay
     private let recoveryReporter: PersistenceRecoveryReporter?
+    private let factSink: UIStateStoreFactSink?
+    private var saveFactGeneration: UInt64 = 0
     private var debouncedSaveTask: Task<Void, Never>?
     private var isObservingUIState = false
     private var isRestoringState = false
@@ -25,13 +44,15 @@ package final class UIStateStore {
         sqliteDatastore: WorkspaceSQLiteDatastoreActor,
         persistDebounceDuration: Duration = .milliseconds(500),
         clock: (any Clock<Duration> & Sendable)? = nil,
-        recoveryReporter: PersistenceRecoveryReporter? = nil
+        recoveryReporter: PersistenceRecoveryReporter? = nil,
+        factSink: UIStateStoreFactSink? = nil
     ) {
         self.atom = atom
         self.sqliteDatastore = sqliteDatastore
         self.persistDebounceDuration = persistDebounceDuration
         delay = clock.map(AsyncDelay.clock) ?? .taskSleep
         self.recoveryReporter = recoveryReporter
+        self.factSink = factSink
     }
 
     /// Begin observing atom mutations for debounced autosave.
@@ -134,15 +155,28 @@ package final class UIStateStore {
     }
 
     private func persistNow(for workspaceId: UUID) async throws {
+        let saveScope = beginSaveFact(for: workspaceId)
         do {
             try await sqliteDatastore.saveUIState(
                 currentSidebarStateRecord(),
                 workspaceContextId: workspaceId
             )
+            if let saveScope { factSink?(saveScope, .saveCompleted) }
         } catch {
+            if let saveScope {
+                factSink?(saveScope, error is CancellationError ? .saveCancelled : .saveFailed)
+            }
             reportSaveFailed(workspaceId: workspaceId)
             throw error
         }
+    }
+
+    private func beginSaveFact(for workspaceId: UUID) -> UIStateStoreSaveScope? {
+        guard let factSink else { return nil }
+        saveFactGeneration &+= 1
+        let scope = UIStateStoreSaveScope(workspaceId: workspaceId, generation: saveFactGeneration)
+        factSink(scope, .saveStarted)
+        return scope
     }
 
     private func reportSaveFailed(workspaceId: UUID) {

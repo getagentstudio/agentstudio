@@ -4,9 +4,11 @@ import {
 	bridgeCommWorkerReviewDisplayPatchEvent,
 } from './bridge-comm-worker-review-display-projection.js';
 import type { BridgeCommWorkerReviewSourceIdentity } from './bridge-comm-worker-review-display-projection.js';
-import type { BridgeCommWorkerReviewRuntimeApplicationTransaction } from './bridge-comm-worker-review-metadata-applicator.js';
 import type { BridgeCommWorkerReviewQueryProjection } from './bridge-comm-worker-review-query-projection.js';
-import type { BridgeCommWorkerReviewMetadataApplication } from './bridge-comm-worker-review-runtime-application.js';
+import type {
+	BridgeCommWorkerReviewMetadataApplication,
+	BridgeCommWorkerReviewRuntimeApplicationTransaction,
+} from './bridge-comm-worker-review-runtime-application.js';
 import {
 	recordBridgeOperationLifecycleTelemetry,
 	type BridgeOperationLifecycleTelemetryRecorder,

@@ -1,7 +1,8 @@
 import { readFile } from 'node:fs/promises';
 
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test, vi, type Mock } from 'vitest';
 
+import { BridgeTestFactRecorder } from '../../tests/test-support/bridge-test-fact-recorder.ts';
 import {
 	BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH,
 	BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
@@ -21,6 +22,7 @@ import {
 	type BridgeProductDevBootstrapDelivery,
 } from '../core/comm-worker/bridge-product-dev-bootstrap.js';
 import { bridgeProductSessionBootstrapSchema } from '../core/comm-worker/bridge-product-session-contracts.js';
+import validProductSessionCorpus from '../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import { installBridgeAppDevProductSessionHost } from './bridge-app-dev-product-session-host.js';
 
 const navigationIntent = {
@@ -33,7 +35,8 @@ describe('Bridge app dev product session host', () => {
 	test('reports an occupied dev session without polling health or delivering a bootstrap', async () => {
 		// Arrange
 		const target = new EventTarget();
-		const onSessionInUse = vi.fn();
+		const refusal = createOwnerCallbackFact('occupied-session refusal');
+		const onSessionInUse = refusal.callback;
 		const fetchHealth = vi.fn<typeof fetch>();
 		const delivered = vi.fn();
 		target.addEventListener('__bridge_product_session_bootstrap', delivered);
@@ -53,7 +56,8 @@ describe('Bridge app dev product session host', () => {
 				}),
 			);
 			// Assert
-			await vi.waitFor(() => expect(onSessionInUse).toHaveBeenCalledOnce());
+			await refusal.whenCalled();
+			expect(onSessionInUse).toHaveBeenCalledOnce();
 			expect(delivered).not.toHaveBeenCalled();
 			expect(fetchHealth).not.toHaveBeenCalled();
 		} finally {
@@ -109,6 +113,7 @@ describe('Bridge app dev product session host', () => {
 		const host = installBridgeAppDevProductSessionHost({
 			fetchBootstrap,
 			navigationIntent,
+			tabId: 'tab-owner-1',
 			target,
 		});
 
@@ -145,7 +150,7 @@ describe('Bridge app dev product session host', () => {
 		const secondFetch = fetchBootstrap.mock.calls[1];
 		expect(firstFetch?.[0]).toBe(BRIDGE_PRODUCT_DEV_BOOTSTRAP_ROUTE);
 		expect(firstFetch?.[1]).toMatchObject({
-			body: JSON.stringify({ navigationIntent, reason: 'initial' }),
+			body: JSON.stringify({ navigationIntent, reason: 'initial', tabId: 'tab-owner-1' }),
 			cache: 'no-store',
 			credentials: 'same-origin',
 			headers: { 'Content-Type': BRIDGE_PRODUCT_DEV_BOOTSTRAP_REQUEST_MEDIA_TYPE },
@@ -156,6 +161,7 @@ describe('Bridge app dev product session host', () => {
 				navigationIntent,
 				paneSessionId: first.bootstrap.paneSessionId,
 				reason: 'workerReplacement',
+				tabId: 'tab-owner-1',
 			}),
 			method: 'POST',
 		});
@@ -312,7 +318,8 @@ describe('Bridge app dev product session host', () => {
 			.mockResolvedValueOnce(new Response(null, { status: 503 }))
 			.mockResolvedValueOnce(new Response(null, { status: 204 }));
 		const probeWaits = createControlledHealthProbeWaits();
-		const reloadPage = vi.fn();
+		const initialReload = createOwnerCallbackFact('initial-failure reload after healthy probe');
+		const reloadPage = initialReload.callback;
 		const acknowledgement = waitForReadyAcknowledgement(target);
 		const host = installBridgeAppDevProductSessionHost({
 			fetchBootstrap,
@@ -340,16 +347,20 @@ describe('Bridge app dev product session host', () => {
 			error: { code: -32_000, message: 'Bridge development backend unavailable' },
 		});
 		await probeWaits.releaseNext();
+		await probeWaits.waitForArrival(2);
 		expect(fetchHealth).toHaveBeenNthCalledWith(
 			1,
 			BRIDGE_PRODUCT_DEV_HEALTH_ROUTE,
 			expect.objectContaining({ method: 'GET' }),
 		);
 		await probeWaits.releaseNext();
+		await probeWaits.waitForArrival(3);
 		await probeWaits.releaseNext();
+		await initialReload.whenCalled();
 		expect(fetchHealth).toHaveBeenCalledTimes(3);
 		expect(reloadPage).toHaveBeenCalledOnce();
 		host.dispose();
+		probeWaits.close();
 	});
 
 	test('recovers a failed replacement bootstrap after the backend becomes healthy', async () => {
@@ -373,7 +384,10 @@ describe('Bridge app dev product session host', () => {
 			});
 		});
 		const fetchHealth = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-		const reloadPage = vi.fn();
+		const replacementReload = createOwnerCallbackFact(
+			'replacement-outage reload after healthy probe',
+		);
+		const reloadPage = replacementReload.callback;
 		const host = installBridgeAppDevProductSessionHost({
 			fetchBootstrap,
 			fetchHealth,
@@ -398,7 +412,8 @@ describe('Bridge app dev product session host', () => {
 			);
 
 			// Assert — restored backend availability rebinds the page once without another UI action.
-			await vi.waitFor((): void => expect(reloadPage).toHaveBeenCalledOnce());
+			await replacementReload.whenCalled();
+			expect(reloadPage).toHaveBeenCalledOnce();
 			expect(fetchBootstrap).toHaveBeenCalledTimes(2);
 			expect(fetchHealth).toHaveBeenCalledOnce();
 		} finally {
@@ -418,7 +433,10 @@ describe('Bridge app dev product session host', () => {
 		);
 		const fetchBootstrap = vi.fn<typeof fetch>(async () => truncatedResponse);
 		const fetchHealth = vi.fn<typeof fetch>(async () => new Response(null, { status: 204 }));
-		const reloadPage = vi.fn();
+		const truncatedReload = createOwnerCallbackFact(
+			'truncated-bootstrap reload after healthy probe',
+		);
+		const reloadPage = truncatedReload.callback;
 		const acknowledgement = waitForReadyAcknowledgement(target);
 		const host = installBridgeAppDevProductSessionHost({
 			fetchBootstrap,
@@ -445,10 +463,9 @@ describe('Bridge app dev product session host', () => {
 			id: 'bridge-ready-truncated',
 			error: { code: -32_000, message: 'Bridge development backend unavailable' },
 		});
-		await vi.waitFor((): void => {
-			expect(fetchHealth).toHaveBeenCalledOnce();
-			expect(reloadPage).toHaveBeenCalledOnce();
-		});
+		await truncatedReload.whenCalled();
+		expect(fetchHealth).toHaveBeenCalledOnce();
+		expect(reloadPage).toHaveBeenCalledOnce();
 		host.dispose();
 	});
 
@@ -579,33 +596,73 @@ function waitForReadyAcknowledgement(target: EventTarget): Promise<unknown> {
 	});
 }
 
+interface HealthProbeArrival {
+	readonly sequence: number;
+	readonly release: () => void;
+}
 function createControlledHealthProbeWaits(): {
 	readonly releaseNext: () => Promise<void>;
+	readonly waitForArrival: (sequence: number) => Promise<HealthProbeArrival>;
 	readonly wait: (signal: AbortSignal) => Promise<void>;
+	readonly close: () => void;
 } {
-	const pendingWaits: Array<() => void> = [];
+	const arrivals = new BridgeTestFactRecorder<HealthProbeArrival>();
+	let issuedSequence = 0;
+	let nextRelease = 1;
+	const waitForArrival = (sequence: number): Promise<HealthProbeArrival> =>
+		arrivals.waitFor(
+			(arrival): boolean => arrival.sequence === sequence,
+			`health probe ${sequence} readiness`,
+		);
 	return {
+		waitForArrival,
+		close: (): void => arrivals.close(new Error('Health probe owner retired')),
 		releaseNext: async (): Promise<void> => {
-			await vi.waitFor((): void => {
-				expect(pendingWaits.length).toBeGreaterThan(0);
-			});
-			pendingWaits.shift()?.();
-			for (let microtask = 0; microtask < 4; microtask += 1) {
-				await Promise.resolve();
-			}
+			const arrival = await waitForArrival(nextRelease);
+			nextRelease += 1;
+			arrival.release();
 		},
-		wait: async (signal): Promise<void> => {
-			await new Promise<void>((resolve): void => {
+		wait: (signal): Promise<void> =>
+			new Promise((resolve): void => {
 				if (signal.aborted) {
 					resolve();
 					return;
 				}
-				pendingWaits.push(resolve);
-				signal.addEventListener('abort', (): void => resolve(), { once: true });
-			});
-		},
+				const release = (): void => {
+					signal.removeEventListener('abort', release);
+					resolve();
+				};
+				signal.addEventListener('abort', release, { once: true });
+				issuedSequence += 1;
+				arrivals.record({ sequence: issuedSequence, release });
+			}),
 	};
 }
+
+function createOwnerCallbackFact(label: string): {
+	readonly callback: Mock<() => void>;
+	readonly whenCalled: () => Promise<boolean>;
+	readonly close: () => void;
+} {
+	const facts = new BridgeTestFactRecorder<boolean>();
+	const callback = vi.fn((): void => facts.record(true));
+	return {
+		callback,
+		whenCalled: (): Promise<boolean> => facts.waitFor((fact): boolean => fact, label),
+		close: (): void => facts.close(new Error('Dev host callback owner retired')),
+	};
+}
+
+test('rejects a withheld dev-host callback fact even when the spy already has a call', async () => {
+	const observation = createOwnerCallbackFact('withheld session refusal');
+	observation.callback.mockImplementationOnce((): void => {});
+	observation.callback();
+	const waiting = observation.whenCalled();
+	observation.close();
+	await expect(waiting).rejects.toThrow(
+		'Awaiting withheld session refusal: Dev host callback owner retired',
+	);
+});
 
 function productBootstrapDelivery(sequence: number): BridgeProductDevBootstrapDelivery {
 	return {
@@ -613,12 +670,22 @@ function productBootstrapDelivery(sequence: number): BridgeProductDevBootstrapDe
 			kind: 'productSession.bootstrap',
 			paneSessionId: 'vite-dev-pane-session',
 			policy: {
+				...validProductSessionCorpus.bootstrap.policy,
+				admissionRetryCount: validProductSessionCorpus.bootstrap.policy.admissionRetryCount,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
 				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
+				telemetryPreReadyBufferMaxBytes:
+					validProductSessionCorpus.bootstrap.policy.telemetryPreReadyBufferMaxBytes,
+				telemetryPreReadyBufferMaxSamples:
+					validProductSessionCorpus.bootstrap.policy.telemetryPreReadyBufferMaxSamples,
+				workerSettlementDeadlineMilliseconds:
+					validProductSessionCorpus.bootstrap.policy.workerSettlementDeadlineMilliseconds,
 			},
 			wireVersion: BRIDGE_PRODUCT_WIRE_VERSION,
 			workerInstanceId: `vite-dev-worker-${sequence}`,

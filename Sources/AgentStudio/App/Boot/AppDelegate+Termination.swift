@@ -118,11 +118,11 @@ extension AppDelegate {
         // leaving the socket open across the flushes below would let a late
         // IPC request mutate state the workspace flush had already written.
         await runTerminationDrain("IPC stop") { [weak self] in
-            self?.startupTraceRecorder?.recordAppStartup(
+            self?.startupTraceRecorder.recordAppStartup(
                 "app.termination.ipc_stop", phase: "started", outcome: "started"
             )
             await self?.stopAcceptingAppIPCConnections()
-            self?.startupTraceRecorder?.recordAppStartup(
+            self?.startupTraceRecorder.recordAppStartup(
                 "app.termination.ipc_stop", phase: "completed", outcome: "completed"
             )
         }
@@ -168,8 +168,8 @@ extension AppDelegate {
             appLogger.warning("Workspace settings flush failed at termination: \(error.localizedDescription)")
         }
 
-        await runTerminationDrain("terminal activity trace") { [weak self] in
-            await self?.terminalActivityRouter?.stop()
+        await runCallbackHandlingAndActivityDrains { name, operation in
+            await self.runTerminationDrain(name, operation: operation)
         }
         await runTerminationDrain("pane activity clock") { [weak self] in
             await self?.paneActivityClock?.shutdown()
@@ -177,11 +177,9 @@ extension AppDelegate {
         await runTerminationDrain("trace identity refresh") { [weak self] in
             await self?.waitForTraceIdentityRefreshIdle()
         }
-        await runTerminationDrain("Ghostty action trace") {
-            await Ghostty.ActionRouter.drainTraceRuntimeForActionRouting()
-        }
+
         await runTerminationDrain("startup trace") { [weak self] in
-            try? await self?.startupTraceRecorder?.drain()
+            try? await self?.startupTraceRecorder.drain()
         }
 
         let ipcDrainOutcome = await runBoundedIPCDrainAfterWorkspaceFlush(
@@ -195,11 +193,11 @@ extension AppDelegate {
                 }
             },
             ipcDrain: { [weak self] in
-                self?.startupTraceRecorder?.recordAppStartup(
+                self?.startupTraceRecorder.recordAppStartup(
                     "app.termination.ipc_drain", phase: "started", outcome: "started"
                 )
                 await self?.drainAppIPCCredentialPersistence()
-                self?.startupTraceRecorder?.recordAppStartup(
+                self?.startupTraceRecorder.recordAppStartup(
                     "app.termination.ipc_drain", phase: "completed", outcome: "completed"
                 )
             }
@@ -236,6 +234,18 @@ extension AppDelegate {
                 }
             }
         )
+    }
+
+    /// Callback-owned close work drains before its activity consumer stops; the runner owns each stage's bound.
+    func runCallbackHandlingAndActivityDrains(
+        using runDrain: @MainActor (String, @escaping @MainActor () async -> Void) async -> Void
+    ) async {
+        await runDrain("Ghostty action trace") { [weak self] in
+            await self?.callbackHandlingForBoot().retire()
+        }
+        await runDrain("terminal activity trace") { [weak self] in
+            await self?.terminalActivityRouter?.stop()
+        }
     }
 
     private func runTerminationDrain(

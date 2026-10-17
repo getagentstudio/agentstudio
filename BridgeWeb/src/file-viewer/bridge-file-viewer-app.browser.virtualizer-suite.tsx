@@ -12,19 +12,15 @@ import {
 } from '../review-viewer/test-support/bridge-viewer-browser-dom.js';
 import { BridgeFileViewerBrowserHarnessApp as BridgeFileViewerApp } from './bridge-file-viewer-browser-test-app.js';
 import {
-	makeFlatFileTreeRows,
-	makeSourceIdentity,
-	makeSourceAcceptedMetadataEvent,
-	makeTreeRow,
-	makeTreeWindowedMetadataEvents,
-	parseFileMetadataEvent,
-	type FileMetadataEvent,
-	type PublishFileMetadataEvents,
-} from './bridge-file-viewer-browser-test-fixtures.js';
+	makeBrowserFileBatch,
+	makeBrowserFileRow,
+	makeBrowserFileSourceIdentity,
+	type PublishBrowserFileBatch,
+} from './bridge-file-viewer-browser-test-batches.js';
 import {
 	actFrame,
 	actUpdate,
-	requireMetadataPublisher,
+	requireBrowserFileBatchPublisher,
 	makeTestTelemetryRecorder,
 	settleBridgeFileViewerBrowserUpdates,
 	waitForMetadataTreeRowCount,
@@ -40,22 +36,22 @@ describe('BridgeFileViewerApp virtualizer anchoring', () => {
 	});
 
 	test('does not app-side anchor restore when a reset prepends rows above the viewport', async () => {
-		let publishMetadataEvents: PublishFileMetadataEvents | null = null;
+		let publishFileBatch: PublishBrowserFileBatch | null = null;
 		const telemetrySamples: BridgeTelemetrySample[] = [];
 
 		await render(
 			<BridgeFileViewerApp
 				codeViewWorkerPoolEnabled={false}
-				initialMetadataEvents={makeTreeWindowedMetadataEvents({
-					rowCount: 240,
-					totalPathCount: 240,
+				initialFileBatch={makeBrowserFileBatch({
+					snapshotCause: 'open',
+					rows: makeFlatFileRows(240),
 				})}
 				telemetryRecorder={makeTestTelemetryRecorder(telemetrySamples)}
 				fileProductSession={{
-					onMetadataSubscription: (handler): (() => void) => {
-						publishMetadataEvents = handler;
+					onFileBatchPublisher: (handler): (() => void) => {
+						publishFileBatch = handler;
 						return (): void => {
-							publishMetadataEvents = null;
+							publishFileBatch = null;
 						};
 					},
 				}}
@@ -76,7 +72,7 @@ describe('BridgeFileViewerApp virtualizer anchoring', () => {
 		const scrollTopBefore = scrollOwner.scrollTop;
 
 		await actUpdate((): void => {
-			requireMetadataPublisher(publishMetadataEvents)(makeResetWithPrependedRows());
+			requireBrowserFileBatchPublisher(publishFileBatch)(makeReplacementWithPrependedRows());
 		});
 		expect(scrollOwner.scrollTop).toBe(scrollTopBefore);
 
@@ -100,39 +96,35 @@ describe('BridgeFileViewerApp virtualizer anchoring', () => {
 	});
 });
 
-function makeResetWithPrependedRows(): readonly FileMetadataEvent[] {
-	const source = makeSourceIdentity({
+function makeReplacementWithPrependedRows(): ReturnType<typeof makeBrowserFileBatch> {
+	const source = makeBrowserFileSourceIdentity({
 		sourceCursor: 'cursor-reset-anchor',
 		subscriptionGeneration: 2,
 	});
 	const prependedRows = Array.from({ length: 10 }, (_value, index) =>
-		makeTreeRow({
-			depth: 0,
+		makeBrowserFileRow({
 			fileId: `file-anchor-prepended-${index}`,
-			isDirectory: false,
-			name: `Anchor-Prepended-${String(index).padStart(3, '0')}.swift`,
-			parentPath: null,
 			path: `Anchor-Prepended-${String(index).padStart(3, '0')}.swift`,
 			sizeBytes: 24,
 		}),
 	);
-	const rows = [...prependedRows, ...makeFlatFileTreeRows({ count: 240, startIndex: 0 })];
-	return [
-		makeSourceAcceptedMetadataEvent(source),
-		parseFileMetadataEvent({
-			eventKind: 'file.treeWindow',
-			finalWindow: true,
-			lineage: {
-				loadedBy: 'replacement',
-				lane: 'foreground',
-			},
-			pathScope: [],
-			rows,
-			source,
-			startIndex: 0,
-			totalRowCount: rows.length,
-		}),
-	];
+	return makeBrowserFileBatch({
+		snapshotCause: 'open',
+		rows: [...prependedRows, ...makeFlatFileRows(240)],
+		revision: 2,
+		source,
+	});
+}
+
+function makeFlatFileRows(count: number): ReturnType<typeof makeBrowserFileRow>[] {
+	return Array.from({ length: count }, (_value, index) => {
+		const suffix = String(index).padStart(3, '0');
+		return makeBrowserFileRow({
+			fileId: `file-${suffix}`,
+			path: `File-${suffix}.swift`,
+			sizeBytes: 24,
+		});
+	});
 }
 
 function requireTreeScrollOwner(): HTMLElement {

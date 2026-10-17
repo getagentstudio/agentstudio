@@ -8,11 +8,10 @@ import {
 	type BridgePaneRuntime,
 } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeWorkerMainToServerMessage } from '../core/comm-worker/bridge-worker-contracts.js';
+import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
 import {
 	actWait,
 	installControlledBridgeReadyHandshake,
-	pollWithinActUntilEqual,
-	pollWithinActUntilTruthy,
 } from './bridge-app-browser-test-actions.js';
 import { BridgeAppProtocolRouter } from './bridge-app-protocol-router.js';
 
@@ -26,11 +25,28 @@ describe('BridgeApp ready-gated active mode', () => {
 		document.body.replaceChildren();
 	});
 
-	test('forwards the initial Review activation after page readiness is acknowledged', async () => {
+	test('forwards the initial Review activation after page readiness is acknowledged', async (context) => {
 		// Arrange
 		const paneCommands: BridgeWorkerMainToServerMessage[] = [];
+		const commandFacts = new BridgeProductTestFactRecorder<BridgeWorkerMainToServerMessage>();
+		let isRecording = true;
+		const closeCommandObservation = (): void => {
+			isRecording = false;
+			commandFacts.close(new Error('Ready-gated command observation closed.'));
+		};
+		context.signal.addEventListener('abort', closeCommandObservation, { once: true });
+		context.onTestFinished((): void => {
+			if (context.task.result?.state === 'fail')
+				console.info(
+					`Awaiting first Review activation after ready acknowledgement; last command=${JSON.stringify(paneCommands.at(-1) ?? null)}`,
+				);
+			context.signal.removeEventListener('abort', closeCommandObservation);
+			closeCommandObservation();
+		});
 		const controlledHandshake = installControlledBridgeReadyHandshake();
-		const paneRuntime = createRecordingBridgePaneRuntime(paneCommands);
+		const paneRuntime = createRecordingBridgePaneRuntime(paneCommands, (command): void => {
+			if (isRecording) commandFacts.record(command);
+		});
 		activePaneRuntime = paneRuntime;
 		await actWait(async (): Promise<void> => {
 			await render(
@@ -43,19 +59,21 @@ describe('BridgeApp ready-gated active mode', () => {
 			);
 			await Promise.resolve();
 		});
-		expect(await pollWithinActUntilTruthy(controlledHandshake.readyRequestId)).not.toBeNull();
+		const readyRequestId = await actWait(controlledHandshake.waitForReadyRequest);
+		expect(readyRequestId).not.toBeNull();
 		expect(activeViewerModeUpdates(paneCommands)).toHaveLength(0);
 
 		// Act
 		await actWait(async (): Promise<void> => {
-			controlledHandshake.acknowledgeReady();
+			controlledHandshake.acknowledgeReady(readyRequestId);
 			await Promise.resolve();
 		});
 
 		// Assert
-		expect(
-			await pollWithinActUntilEqual(() => activeViewerModeUpdates(paneCommands).length, 1),
-		).toBe(1);
+		await actWait(() =>
+			commandFacts.waitFor((command): boolean => command.command === 'activeViewerModeUpdate'),
+		);
+		expect(activeViewerModeUpdates(paneCommands)).toHaveLength(1);
 		expect(activeViewerModeUpdates(paneCommands)[0]).toMatchObject({
 			command: 'activeViewerModeUpdate',
 			update: {
@@ -68,11 +86,28 @@ describe('BridgeApp ready-gated active mode', () => {
 		controlledHandshake.dispose();
 	});
 
-	test('forwards the initial File activation after page readiness is acknowledged', async () => {
+	test('forwards the initial File activation after page readiness is acknowledged', async (context) => {
 		// Arrange
 		const paneCommands: BridgeWorkerMainToServerMessage[] = [];
+		const commandFacts = new BridgeProductTestFactRecorder<BridgeWorkerMainToServerMessage>();
+		let isRecording = true;
+		const closeCommandObservation = (): void => {
+			isRecording = false;
+			commandFacts.close(new Error('Ready-gated command observation closed.'));
+		};
+		context.signal.addEventListener('abort', closeCommandObservation, { once: true });
+		context.onTestFinished((): void => {
+			if (context.task.result?.state === 'fail')
+				console.info(
+					`Awaiting first File activation after ready acknowledgement; last command=${JSON.stringify(paneCommands.at(-1) ?? null)}`,
+				);
+			context.signal.removeEventListener('abort', closeCommandObservation);
+			closeCommandObservation();
+		});
 		const controlledHandshake = installControlledBridgeReadyHandshake();
-		const paneRuntime = createRecordingBridgePaneRuntime(paneCommands);
+		const paneRuntime = createRecordingBridgePaneRuntime(paneCommands, (command): void => {
+			if (isRecording) commandFacts.record(command);
+		});
 		activePaneRuntime = paneRuntime;
 		await actWait(async (): Promise<void> => {
 			await render(
@@ -85,19 +120,21 @@ describe('BridgeApp ready-gated active mode', () => {
 			);
 			await Promise.resolve();
 		});
-		expect(await pollWithinActUntilTruthy(controlledHandshake.readyRequestId)).not.toBeNull();
+		const readyRequestId = await actWait(controlledHandshake.waitForReadyRequest);
+		expect(readyRequestId).not.toBeNull();
 		expect(activeViewerModeUpdates(paneCommands)).toHaveLength(0);
 
 		// Act
 		await actWait(async (): Promise<void> => {
-			controlledHandshake.acknowledgeReady();
+			controlledHandshake.acknowledgeReady(readyRequestId);
 			await Promise.resolve();
 		});
 
 		// Assert
-		expect(
-			await pollWithinActUntilEqual(() => activeViewerModeUpdates(paneCommands).length, 1),
-		).toBe(1);
+		await actWait(() =>
+			commandFacts.waitFor((command): boolean => command.command === 'activeViewerModeUpdate'),
+		);
+		expect(activeViewerModeUpdates(paneCommands)).toHaveLength(1);
 		expect(activeViewerModeUpdates(paneCommands)[0]).toMatchObject({
 			command: 'activeViewerModeUpdate',
 			update: {
@@ -113,12 +150,14 @@ describe('BridgeApp ready-gated active mode', () => {
 
 function createRecordingBridgePaneRuntime(
 	paneCommands: BridgeWorkerMainToServerMessage[],
+	onCommand: (command: BridgeWorkerMainToServerMessage) => void,
 ): BridgePaneRuntime {
 	return createBridgePaneRuntime({
 		sessionFactory: () => ({
 			createDispatcher: ({ publishWorkerMessages }) => ({
 				dispatch: (command): void => {
 					paneCommands.push(command);
+					onCommand(command);
 					publishWorkerMessages([
 						{
 							direction: 'serverWorkerToMain',
@@ -134,6 +173,7 @@ function createRecordingBridgePaneRuntime(
 			}),
 			dispose: (): void => {},
 			installNativeBootstrap: (): void => {},
+			handleNativeBootstrapFailure: (): void => {},
 			setNativeBootstrapRequester: (): void => {},
 		}),
 	});

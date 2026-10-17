@@ -1,44 +1,40 @@
 // oxlint-disable unicorn/require-post-message-target-origin -- MessagePort postMessage does not accept a target origin.
 import { describe, expect, test, vi } from 'vitest';
 
+import type { BridgeWorkerReplacementReason } from '../../foundation/diagnostics/bridge-worker-replacement-reason.js';
+import pageConfigurationFixture from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
 import { bridgeWorkerPierreRenderPolicy } from '../demand/bridge-content-demand-policy.js';
-import {
-	encodeBridgeWorkerActiveViewerModeUpdateCommand,
-	encodeBridgeWorkerSelectCommand,
-} from './bridge-comm-worker-protocol.js';
+import { encodeBridgeWorkerViewRecoveryRetryCommand } from './bridge-comm-worker-protocol.js';
 import {
 	BridgePaneCommWorkerSession,
 	disposeBridgePaneCommWorkerSession,
 	getBridgePaneCommWorkerSession,
 	installBridgePaneCommWorkerSessionForHost,
-	type BridgePaneCommWorkerNativeBootstrap,
 } from './bridge-pane-comm-worker-session.js';
 import {
-	BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH,
-	BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
-	BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
-	BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
-	BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
-	BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
-	BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
-	BRIDGE_PRODUCT_WIRE_VERSION,
-} from './bridge-product-contract-primitives.js';
+	MessagePortRecorder,
+	RecordingPaneCommWorker,
+	RecordingPaneCommWorkerClient,
+	createDeferredVoid,
+	expectPaneSurfacePolicies,
+	expectRecordedGlobalPost,
+	flushMicrotasks,
+	makeActiveViewerModeUpdateCommand,
+	makeNativeBootstrap,
+	makeReadyHealth,
+	makeRuntimeBootstrapRequest,
+	makeSelectCommand,
+} from './bridge-pane-comm-worker-session.test-support.js';
+import { BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH } from './bridge-product-contract-primitives.js';
 import { bridgePaneCommWorkerInstallSchema } from './bridge-product-session-contracts.js';
 import {
 	bridgeWorkerMainToServerMessageSchema,
 	bridgeWorkerServerToMainMessageSchema,
-	type BridgeCommWorkerBootstrapRequest,
-	type BridgeWorkerServerToMainMessage,
 } from './bridge-worker-contracts.js';
 
-interface RecordedGlobalWorkerPost {
-	readonly message: unknown;
-	readonly transferredCapability: boolean;
-	readonly transferredPort: boolean;
-	readonly transferListLength: number;
-}
-
 interface ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot {
+	readonly failureReason: 'bootstrapBudgetExhausted' | null;
+	readonly lastReplacementReason: BridgeWorkerReplacementReason | null;
 	readonly latestFileModeDispatchDisposition:
 		| 'dropped_detached'
 		| 'queued_not_ready'
@@ -62,12 +58,14 @@ interface ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot {
 		| 'bootstrapping'
 		| 'ready'
 		| 'replacement_requested'
+		| 'failed'
 		| 'disposed';
 }
 
 describe('Bridge pane comm worker session', () => {
 	test('accepts exactly one host-owned shared session', () => {
 		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
 			workerFactory: (): Worker => new RecordingPaneCommWorker(),
 		});
 
@@ -78,6 +76,8 @@ describe('Bridge pane comm worker session', () => {
 			expect(() =>
 				installBridgePaneCommWorkerSessionForHost(
 					new BridgePaneCommWorkerSession({
+						bootstrapTimeoutMilliseconds:
+							pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
 						workerFactory: (): Worker => new RecordingPaneCommWorker(),
 					}),
 				),
@@ -92,6 +92,7 @@ describe('Bridge pane comm worker session', () => {
 		const workerFactory = vi.fn((): Worker => worker);
 		let nowMilliseconds = 100;
 		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
 			now: (): number => nowMilliseconds++,
 			workerFactory,
 		});
@@ -213,7 +214,10 @@ describe('Bridge pane comm worker session', () => {
 
 	test('forwards strict File display patches through the authoritative server parser', async () => {
 		const worker = new RecordingPaneCommWorker();
-		const session = new BridgePaneCommWorkerSession({ workerFactory: (): Worker => worker });
+		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+			workerFactory: (): Worker => worker,
+		});
 		const client = new RecordingPaneCommWorkerClient();
 		const runtimeBootstrap = makeRuntimeBootstrapRequest('file-display-bootstrap');
 		const dispatcher = session.createDispatcher({
@@ -268,6 +272,7 @@ describe('Bridge pane comm worker session', () => {
 		});
 		const diagnosticSnapshots: ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot[] = [];
 		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
 			recordDiagnosticSnapshot: (
 				snapshot: ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot,
 			): void => {
@@ -345,6 +350,7 @@ describe('Bridge pane comm worker session', () => {
 					nativeBootstrapInstallCount: 1,
 					queuedCommandCount: 3,
 					replacementRequestCount: 1,
+					lastReplacementReason: { kind: 'workerError' },
 					state: 'replacement_requested',
 				}),
 			);
@@ -417,6 +423,7 @@ describe('Bridge pane comm worker session', () => {
 		// Act / Assert: diagnostic failure cannot prevent session construction.
 		expect((): void => {
 			session = new BridgePaneCommWorkerSession({
+				bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
 				recordDiagnosticSnapshot: (): never => {
 					throw new Error('diagnostic recorder failed');
 				},
@@ -492,7 +499,17 @@ describe('Bridge pane comm worker session', () => {
 				return worker;
 			});
 			const restartReasons: string[] = [];
+			const replacementFacts: BridgeWorkerReplacementReason[] = [];
 			const session = new BridgePaneCommWorkerSession({
+				bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+				recordDiagnosticSnapshot: (snapshot): void => {
+					if (
+						snapshot.state === 'replacement_requested' &&
+						snapshot.lastReplacementReason !== null
+					) {
+						replacementFacts.push(snapshot.lastReplacementReason);
+					}
+				},
 				requestNativeBootstrap: (reason): void => {
 					restartReasons.push(reason);
 				},
@@ -523,6 +540,9 @@ describe('Bridge pane comm worker session', () => {
 			await flushMicrotasks();
 
 			expect(restartReasons).toEqual(['workerReplacement']);
+			expect(replacementFacts[0]).toEqual({
+				kind: failureEventName === 'error' ? 'workerError' : 'messageError',
+			});
 			expect(workers[0]?.terminateCount).toBe(1);
 			expect(workers[1]?.globalPosts).toHaveLength(1);
 			expect(secondBootstrap.productCapability.byteLength).toBe(0);
@@ -560,7 +580,10 @@ describe('Bridge pane comm worker session', () => {
 
 	test('prepares runtime replacement state before retiring the failed worker', async () => {
 		const worker = new RecordingPaneCommWorker();
-		const session = new BridgePaneCommWorkerSession({ workerFactory: (): Worker => worker });
+		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+			workerFactory: (): Worker => worker,
+		});
 		const prepareWorkerReplacement = vi.fn((): void => {
 			expect(worker.terminateCount).toBe(0);
 		});
@@ -582,11 +605,213 @@ describe('Bridge pane comm worker session', () => {
 		}
 	});
 
+	test('initial bootstrap failures exhaust the bounded budget and end in failed start', () => {
+		const snapshots: ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot[] = [];
+		const nativeBootstrapRequests: string[] = [];
+		const workerFactory = vi.fn<() => Worker>(() => new RecordingPaneCommWorker());
+		const client = new RecordingPaneCommWorkerClient();
+		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+			workerFactory,
+			recordDiagnosticSnapshot: (snapshot): void => {
+				snapshots.push(snapshot);
+			},
+			requestNativeBootstrap: (reason): void => {
+				nativeBootstrapRequests.push(reason);
+			},
+		});
+		const dispatcher = session.createDispatcher({
+			bootstrapRequest: makeRuntimeBootstrapRequest('initial-failed-start'),
+			publishWorkerMessages: client.publish,
+		});
+		try {
+			dispatcher.dispatch(makeSelectCommand('before-initial-failure', 1, 'item-1', 'review'));
+			session.handleNativeBootstrapFailure();
+			expect(nativeBootstrapRequests).toEqual(['workerReplacement']);
+			for (let failureReply = 0; failureReply < 4; failureReply += 1)
+				session.handleNativeBootstrapFailure();
+			expect(nativeBootstrapRequests).toHaveLength(4);
+			expect(snapshots.at(-1)).toMatchObject({
+				state: 'failed',
+				failureReason: 'bootstrapBudgetExhausted',
+				nativeBootstrapInstallCount: 0,
+				queuedCommandCount: 0,
+			});
+			expect(workerFactory).not.toHaveBeenCalled();
+			expect(client.messages).toContainEqual(
+				expect.objectContaining({
+					requestId: 'before-initial-failure',
+					errorKind: 'workerUnavailable',
+				}),
+			);
+			session.handleNativeBootstrapFailure();
+			expect(nativeBootstrapRequests).toHaveLength(4);
+			expect(snapshots.at(-1)?.state).toBe('failed');
+		} finally {
+			dispatcher.dispose();
+			session.dispose();
+		}
+	});
+
+	test('re-requests native bootstrap after a failure reply within a bounded budget per replacement', async () => {
+		// Arrange
+		const firstWorker = new RecordingPaneCommWorker();
+		const secondWorker = new RecordingPaneCommWorker();
+		const workerFactory = vi
+			.fn<() => Worker>()
+			.mockReturnValueOnce(firstWorker)
+			.mockReturnValueOnce(secondWorker);
+		const nativeBootstrapRequests: string[] = [];
+		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+			requestNativeBootstrap: (reason): void => {
+				nativeBootstrapRequests.push(reason);
+			},
+			workerFactory,
+		});
+		const dispatcher = session.createDispatcher({
+			bootstrapRequest: makeRuntimeBootstrapRequest('bounded-rerequest-bootstrap'),
+			publishWorkerMessages: (): void => {},
+		});
+		try {
+			session.installNativeBootstrap(makeNativeBootstrap('bounded-first-worker'));
+			await flushMicrotasks();
+			firstWorker.dispatchEvent(new Event('error'));
+			expect(nativeBootstrapRequests).toEqual(['workerReplacement']);
+
+			// Act: native answers every replacement request with a typed failure.
+			for (let reply = 0; reply < 4; reply += 1) session.handleNativeBootstrapFailure();
+
+			// Assert: three re-requests, then the session stops asking.
+			expect(nativeBootstrapRequests).toHaveLength(4);
+
+			// A user Retry admits one fresh replacement with a fresh budget.
+			dispatcher.dispatch(
+				encodeBridgeWorkerViewRecoveryRetryCommand({
+					epoch: 1,
+					requestId: 'retry-after-budget',
+					view: { kind: 'review.metadata', subscriptionId: 'review-subscription' },
+				}),
+			);
+			session.installNativeBootstrap(makeNativeBootstrap('bounded-second-worker'));
+			await flushMicrotasks();
+			secondWorker.dispatchEvent(new Event('error'));
+			session.handleNativeBootstrapFailure();
+
+			// Assert
+			expect(nativeBootstrapRequests).toHaveLength(7);
+		} finally {
+			dispatcher.dispose();
+			session.dispose();
+		}
+	});
+
+	test('exhausted replacement bootstrap failures settle and drain queued work', () => {
+		const snapshots: ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot[] = [];
+		const nativeBootstrapRequests: string[] = [];
+		const client = new RecordingPaneCommWorkerClient();
+		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+			recordDiagnosticSnapshot: (snapshot): void => {
+				snapshots.push(snapshot);
+			},
+			requestNativeBootstrap: (reason): void => {
+				nativeBootstrapRequests.push(reason);
+			},
+			workerFactory: (): Worker => new RecordingPaneCommWorker(),
+		});
+		const dispatcher = session.createDispatcher({
+			bootstrapRequest: makeRuntimeBootstrapRequest('exhausted-replacement-bootstrap'),
+			publishWorkerMessages: client.publish,
+		});
+		try {
+			session.requestWorkerReplacement({ kind: 'workerError' });
+			dispatcher.dispatch(makeSelectCommand('queued-before-exhaustion', 1, 'item-1', 'review'));
+			for (let reply = 0; reply < 4; reply += 1) session.handleNativeBootstrapFailure();
+			dispatcher.dispatch(makeSelectCommand('after-exhaustion', 1, 'item-1', 'review'));
+
+			expect(nativeBootstrapRequests).toHaveLength(4);
+			expect(snapshots.at(-1)).toMatchObject({
+				failureReason: 'bootstrapBudgetExhausted',
+				state: 'failed',
+				queuedCommandCount: 0,
+			});
+			expect(client.messages).toEqual([
+				expect.objectContaining({
+					requestId: 'queued-before-exhaustion',
+					errorKind: 'workerUnavailable',
+				}),
+				expect.objectContaining({ requestId: 'after-exhaustion', errorKind: 'workerUnavailable' }),
+			]);
+		} finally {
+			dispatcher.dispose();
+			session.dispose();
+		}
+	});
+
+	test('a user Retry gets one fresh budget and exhaustion returns to failed without a loop', () => {
+		const snapshots: ExpectedBridgePaneCommWorkerSessionDiagnosticSnapshot[] = [];
+		const nativeBootstrapRequests: string[] = [];
+		const client = new RecordingPaneCommWorkerClient();
+		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+			recordDiagnosticSnapshot: (snapshot): void => {
+				snapshots.push(snapshot);
+			},
+			requestNativeBootstrap: (reason): void => {
+				nativeBootstrapRequests.push(reason);
+			},
+			workerFactory: (): Worker => new RecordingPaneCommWorker(),
+		});
+		const dispatcher = session.createDispatcher({
+			bootstrapRequest: makeRuntimeBootstrapRequest('retry-budget-bootstrap'),
+			publishWorkerMessages: client.publish,
+		});
+		try {
+			session.requestWorkerReplacement({ kind: 'workerError' });
+			for (let reply = 0; reply < 4; reply += 1) session.handleNativeBootstrapFailure();
+			dispatcher.dispatch(
+				encodeBridgeWorkerViewRecoveryRetryCommand({
+					epoch: 1,
+					requestId: 'retry-budget-command',
+					view: { kind: 'file.metadata', subscriptionId: 'file-subscription' },
+				}),
+			);
+			expect(nativeBootstrapRequests).toHaveLength(5);
+			expect(snapshots.at(-1)).toMatchObject({ state: 'replacement_requested' });
+			expect(client.messages).toContainEqual(
+				expect.objectContaining({
+					requestId: 'retry-budget-command',
+					status: 'ready',
+				}),
+			);
+			for (let reply = 0; reply < 4; reply += 1) session.handleNativeBootstrapFailure();
+			expect(nativeBootstrapRequests).toHaveLength(8);
+			expect(snapshots.at(-1)).toMatchObject({
+				state: 'failed',
+				failureReason: 'bootstrapBudgetExhausted',
+				queuedCommandCount: 0,
+			});
+			session.handleNativeBootstrapFailure();
+			session.requestWorkerReplacement({ kind: 'workerError' });
+			expect(nativeBootstrapRequests).toHaveLength(8);
+		} finally {
+			dispatcher.dispose();
+			session.dispose();
+		}
+	});
+
 	test('requests one replacement when worker bootstrap readiness times out', async () => {
 		vi.useFakeTimers();
 		const worker = new RecordingPaneCommWorker();
 		const restartReasons: string[] = [];
+		const replacementFacts: BridgeWorkerReplacementReason[] = [];
 		const session = new BridgePaneCommWorkerSession({
+			recordDiagnosticSnapshot: (snapshot): void => {
+				if (snapshot.state === 'replacement_requested' && snapshot.lastReplacementReason !== null) {
+					replacementFacts.push(snapshot.lastReplacementReason);
+				}
+			},
 			bootstrapTimeoutMilliseconds: 25,
 			requestNativeBootstrap: (reason): void => {
 				restartReasons.push(reason);
@@ -605,6 +830,7 @@ describe('Bridge pane comm worker session', () => {
 
 			expect(worker.terminateCount).toBe(1);
 			expect(restartReasons).toEqual(['workerReplacement']);
+			expect(replacementFacts[0]).toEqual({ kind: 'bootstrapTimeout' });
 		} finally {
 			dispatcher.dispose();
 			session.dispose();
@@ -621,6 +847,7 @@ describe('Bridge pane comm worker session', () => {
 		const restartReasons: string[] = [];
 		const replacementRequest = createDeferredVoid();
 		const session = new BridgePaneCommWorkerSession({
+			bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
 			requestNativeBootstrap: (reason): void => {
 				restartReasons.push(reason);
 				replacementRequest.resolve();
@@ -672,276 +899,3 @@ describe('Bridge pane comm worker session', () => {
 		}
 	});
 });
-
-class RecordingPaneCommWorker extends EventTarget implements Worker {
-	onmessage: ((this: Worker, event: MessageEvent) => void) | null = null;
-	onmessageerror: ((this: Worker, event: MessageEvent) => void) | null = null;
-	onerror: ((this: AbstractWorker, event: ErrorEvent) => void) | null = null;
-	readonly globalPosts: RecordedGlobalWorkerPost[] = [];
-	terminateCount = 0;
-
-	override addEventListener<KEventName extends keyof WorkerEventMap>(
-		type: KEventName,
-		listener: (this: Worker, event: WorkerEventMap[KEventName]) => void,
-		options?: boolean | AddEventListenerOptions,
-	): void;
-	override addEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject | null,
-		options?: boolean | AddEventListenerOptions,
-	): void;
-	override addEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject | null,
-		options?: boolean | AddEventListenerOptions,
-	): void {
-		super.addEventListener(type, listener, options);
-	}
-
-	override removeEventListener<KEventName extends keyof WorkerEventMap>(
-		type: KEventName,
-		listener: (this: Worker, event: WorkerEventMap[KEventName]) => void,
-		options?: boolean | EventListenerOptions,
-	): void;
-	override removeEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject | null,
-		options?: boolean | EventListenerOptions,
-	): void;
-	override removeEventListener(
-		type: string,
-		listener: EventListenerOrEventListenerObject | null,
-		options?: boolean | EventListenerOptions,
-	): void {
-		super.removeEventListener(type, listener, options);
-	}
-
-	postMessage(message: unknown, transferList: Transferable[]): void;
-	postMessage(message: unknown, options?: StructuredSerializeOptions): void;
-	postMessage(
-		message: unknown,
-		transferListOrOptions: Transferable[] | StructuredSerializeOptions = [],
-	): void {
-		const transferList = Array.isArray(transferListOrOptions)
-			? transferListOrOptions
-			: (transferListOrOptions.transfer ?? []);
-		const parsedInstall = bridgePaneCommWorkerInstallSchema.safeParse(message);
-		const transferredCapability =
-			parsedInstall.success && transferList.includes(parsedInstall.data.productCapability);
-		const transferredPort =
-			parsedInstall.success && transferList.includes(parsedInstall.data.productPort);
-		const clonedMessage = structuredClone(message, { transfer: transferList });
-		this.globalPosts.push({
-			message: clonedMessage,
-			transferredCapability,
-			transferredPort,
-			transferListLength: transferList.length,
-		});
-	}
-
-	terminate(): void {
-		this.terminateCount += 1;
-	}
-}
-
-class MessagePortRecorder {
-	readonly #messages: unknown[] = [];
-	readonly #port: MessagePort;
-	readonly #waiters: Array<{
-		readonly count: number;
-		readonly resolve: (messages: readonly unknown[]) => void;
-	}> = [];
-
-	constructor(port: MessagePort) {
-		this.#port = port;
-		port.addEventListener('message', (event: MessageEvent<unknown>): void => {
-			this.#messages.push(event.data);
-			this.#resolveWaiters();
-		});
-		port.start();
-	}
-
-	waitForCount(count: number): Promise<readonly unknown[]> {
-		if (this.#messages.length >= count) {
-			return Promise.resolve([...this.#messages]);
-		}
-		return new Promise((resolve) => {
-			this.#waiters.push({ count, resolve });
-		});
-	}
-
-	close(): void {
-		this.#port.close();
-	}
-
-	#resolveWaiters(): void {
-		for (let index = this.#waiters.length - 1; index >= 0; index -= 1) {
-			const waiter = this.#waiters[index];
-			if (waiter !== undefined && this.#messages.length >= waiter.count) {
-				this.#waiters.splice(index, 1);
-				waiter.resolve([...this.#messages]);
-			}
-		}
-	}
-}
-
-class RecordingPaneCommWorkerClient {
-	readonly messages: BridgeWorkerServerToMainMessage[] = [];
-	readonly #waiters: Array<{
-		readonly count: number;
-		readonly resolve: (messages: readonly BridgeWorkerServerToMainMessage[]) => void;
-	}> = [];
-
-	readonly publish = (messages: readonly BridgeWorkerServerToMainMessage[]): void => {
-		this.messages.push(...messages);
-		this.#resolveWaiters();
-	};
-
-	waitForCount(count: number): Promise<readonly BridgeWorkerServerToMainMessage[]> {
-		if (this.messages.length >= count) {
-			return Promise.resolve([...this.messages]);
-		}
-		return new Promise((resolve) => {
-			this.#waiters.push({ count, resolve });
-		});
-	}
-
-	clear(): void {
-		this.messages.splice(0, this.messages.length);
-	}
-
-	#resolveWaiters(): void {
-		for (let index = this.#waiters.length - 1; index >= 0; index -= 1) {
-			const waiter = this.#waiters[index];
-			if (waiter !== undefined && this.messages.length >= waiter.count) {
-				this.#waiters.splice(index, 1);
-				waiter.resolve([...this.messages]);
-			}
-		}
-	}
-}
-
-function makeNativeBootstrap(
-	workerInstanceId = 'worker-instance-1',
-): BridgePaneCommWorkerNativeBootstrap {
-	return {
-		bootstrap: {
-			kind: 'productSession.bootstrap',
-			paneSessionId: 'pane-session-1',
-			policy: {
-				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
-				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
-				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
-				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
-				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
-				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
-			},
-			wireVersion: BRIDGE_PRODUCT_WIRE_VERSION,
-			workerInstanceId,
-		},
-		productCapability: new ArrayBuffer(BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH),
-	};
-}
-
-function makeRuntimeBootstrapRequest(requestId: string): BridgeCommWorkerBootstrapRequest {
-	return {
-		schemaVersion: 1,
-		method: 'bridgeCommWorker.bootstrap',
-		requestId,
-		runtime: {
-			bridgeDemandRank: { lane: 'selected', priority: 0 },
-			budget: {
-				className: 'interactive',
-				maxBytes: 512 * 1024,
-				maxWindowLines: 400,
-			},
-		},
-	};
-}
-
-function expectPaneSurfacePolicies(): ReturnType<typeof expect.objectContaining> {
-	return expect.objectContaining({
-		fileView: {
-			bridgeDemandRank: { lane: 'selected', priority: 0 },
-			budget: bridgeWorkerPierreRenderPolicy.fileViewSelectedRenderBudget,
-		},
-		review: {
-			bridgeDemandRank: { lane: 'selected', priority: 0 },
-			budget: bridgeWorkerPierreRenderPolicy.reviewInteractiveRenderBudget,
-		},
-	});
-}
-
-function makeSelectCommand(
-	requestId: string,
-	epoch: number,
-	selectedItemId: string,
-	surface: 'fileView' | 'review',
-): ReturnType<typeof encodeBridgeWorkerSelectCommand> {
-	return encodeBridgeWorkerSelectCommand({
-		requestId,
-		epoch,
-		surface,
-		selectedItemId,
-		selectedSource: 'user',
-	});
-}
-
-function makeActiveViewerModeUpdateCommand(
-	requestId: string,
-	epoch: number,
-): ReturnType<typeof encodeBridgeWorkerActiveViewerModeUpdateCommand> {
-	return encodeBridgeWorkerActiveViewerModeUpdateCommand({
-		epoch,
-		requestId,
-		update: {
-			activeSource: null,
-			mode: 'file',
-			nativeSelectionRequestId: null,
-			sequence: epoch,
-			sessionId: 'private-file-mode-session',
-		},
-	});
-}
-
-function makeReadyHealth(requestId: string): BridgeWorkerServerToMainMessage {
-	return bridgeWorkerServerToMainMessageSchema.parse({
-		wireVersion: 1,
-		direction: 'serverWorkerToMain',
-		kind: 'health',
-		requestId,
-		status: 'ready',
-		transferDescriptors: [],
-	});
-}
-
-function expectRecordedGlobalPost(
-	post: RecordedGlobalWorkerPost | undefined,
-): RecordedGlobalWorkerPost {
-	if (post === undefined) {
-		throw new Error('Expected one global typed install post.');
-	}
-	return post;
-}
-
-async function flushMicrotasks(): Promise<void> {
-	await Promise.resolve();
-	await Promise.resolve();
-	await Promise.resolve();
-}
-
-function createDeferredVoid(): { readonly promise: Promise<void>; readonly resolve: () => void } {
-	let resolvePromise: (() => void) | null = null;
-	const promise = new Promise<void>((resolve): void => {
-		resolvePromise = resolve;
-	});
-	return {
-		promise,
-		resolve: (): void => {
-			if (resolvePromise === null) {
-				throw new Error('Deferred promise resolver was not initialized.');
-			}
-			resolvePromise();
-		},
-	};
-}

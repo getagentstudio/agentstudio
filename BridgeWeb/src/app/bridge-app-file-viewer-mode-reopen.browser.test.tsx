@@ -1,32 +1,92 @@
-import { afterAll, afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { createElement, type ComponentProps, type ReactElement } from 'react';
+import { afterAll, afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
+
+import {
+	observeBridgeTransitionDOMFact,
+	runBridgeTransitionFramesInAct,
+} from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode renders need app CSS.
 import './bridge-app.css';
 import { createBridgePaneRuntime } from '../core/comm-worker/bridge-pane-runtime.js';
 import type { BridgeProductCallResult } from '../core/comm-worker/bridge-product-call-contracts.js';
 import type { BridgeProductSubscriptionOptions } from '../core/comm-worker/bridge-product-subscription-contracts.js';
+import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
 import type { BridgeFileViewerBrowserTestProductSession } from '../file-viewer/bridge-file-viewer-browser-test-app.js';
-import { makeTreeRowsOnlyMetadataEvents } from '../file-viewer/bridge-file-viewer-browser-test-fixtures.js';
+import { makeBrowserMetadataOnlyFileBatch } from '../file-viewer/bridge-file-viewer-browser-test-batches.js';
+import { waitForBridgeFileViewerWorkerPublicationQueue } from '../file-viewer/bridge-file-viewer-browser-test-comm-worker.js';
 import {
 	createBridgeFileViewerBrowserTestPaneSessionFactory,
 	installBridgeFileViewerNoopResizeObserver,
-	settleBridgeFileViewerBrowserUpdates,
 } from '../file-viewer/bridge-file-viewer-browser-test-harness.js';
 import {
 	actClick,
 	actUpdate,
 	actWait,
 	installBridgeReadyHandshake,
-	pollWithinActUntilEqual,
-	pollWithinActUntilTruthy,
 } from './bridge-app-browser-test-actions.js';
+import {
+	awaitContextFocusHandoff,
+	holdNextContextFocusHandoff,
+	nextContextFocusHandoff,
+	observeContextFocusIn,
+} from './bridge-app-context-focus.browser.test-support.js';
+import {
+	observeBridgeAppDomUntilEqual,
+	observeBridgeAppDomUntilTruthy,
+} from './bridge-app-dom-observation.browser.test-support.js';
+import { createFileShellResource } from './bridge-app-file-shell-resource.browser.test-support.js';
 import { BridgeAppProtocolRouter } from './bridge-app-protocol-router.js';
+import {
+	awaitViewSettingsClose,
+	awaitViewSettingsOpen,
+	hasPendingViewSettingsClose,
+	joinViewSettingsCloseWithinAct,
+	markViewSettingsOpening,
+} from './bridge-app-view-settings-completion.browser.test-support.js';
+
+// The existing shell-component seam preserves the production Suspense boundary.
+vi.mock('../file-viewer/bridge-file-viewer-app.js', async (importOriginal) => {
+	const original =
+		await importOriginal<typeof import('../file-viewer/bridge-file-viewer-app.js')>();
+	await import('../file-viewer/bridge-file-viewer-shell.js');
+	return {
+		...original,
+		BridgeFileViewerApp: (
+			props: ComponentProps<typeof original.BridgeFileViewerApp>,
+		): ReactElement =>
+			createElement(original.BridgeFileViewerAppImplementation, {
+				...props,
+				shellComponent: fileShellResource.component,
+			}),
+	};
+});
+
+vi.mock('../components/ui/popover.js', async (importOriginal) => {
+	const original = await importOriginal<typeof import('../components/ui/popover.js')>();
+	const support = await import('./bridge-app-view-settings-completion.browser.test-support.js');
+	return support.withViewSettingsPopoverLifecycle(original);
+});
 
 const originalBridgeFileViewerModeResizeObserver = globalThis.ResizeObserver;
+let lastReopenPhase = 'setup';
+let fileShellResource = createFileShellResource();
+const activeReopenWorkerFacts = new Set<() => void>();
+
+function markReopenPhase(phase: string): void {
+	lastReopenPhase = phase;
+	console.info(`A7 phase: ${phase}`);
+}
 
 describe('Bridge file viewer mode re-open on switch', () => {
-	beforeEach(async () => {
+	beforeEach(async (context) => {
+		fileShellResource = createFileShellResource();
+		lastReopenPhase = 'setup';
+		context.onTestFinished((): void => {
+			if (context.signal.aborted || context.task.result?.state === 'fail')
+				console.info(`A7 reopen failed/aborted at ${lastReopenPhase}.`);
+		});
 		installBridgeFileViewerNoopResizeObserver();
 		await actUpdate(async (): Promise<void> => {
 			await Promise.all([
@@ -41,38 +101,81 @@ describe('Bridge file viewer mode re-open on switch', () => {
 	});
 
 	afterEach(async () => {
-		if (document.querySelector('[data-testid="bridge-file-viewer-shell"]') !== null) {
-			await settleBridgeFileViewerBrowserUpdates();
-		}
+		for (const close of activeReopenWorkerFacts) close();
+		activeReopenWorkerFacts.clear();
+		await actWait(async (): Promise<void> => {
+			fileShellResource.release();
+			if (fileShellResource.hasStarted()) await fileShellResource.completed();
+		});
+		await actWait(waitForBridgeFileViewerWorkerPublicationQueue);
 		await actUpdate(cleanup);
 		document.body.replaceChildren();
 		document.documentElement.removeAttribute('data-bridge-app-protocol');
 	});
 
+	test('harness guard joins a held File shell Suspense resolution before the Review-first switch returns', async () => {
+		fileShellResource = createFileShellResource(true);
+		const handshake = installBridgeReadyHandshake();
+		let switching: Promise<void> | undefined;
+		try {
+			await renderFileProductApp('review', {
+				currentSource: availableFileSource,
+				initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
+			});
+			switching = clickContext('file');
+			await fileShellResource.started;
+			expect(document.querySelector('[data-testid="bridge-file-viewer-shell"]')).toBeNull();
+			const outcome = await Promise.race([
+				switching.then((): 'returned' => 'returned'),
+				fileShellResource.awaited.then((): 'owner-awaited' => 'owner-awaited'),
+			]);
+			expect(outcome, 'File switching must join its suspended shell loader.').toBe('owner-awaited');
+			fileShellResource.release();
+			await switching;
+			expect(document.querySelector('[data-testid="bridge-file-viewer-shell"]')).not.toBeNull();
+		} finally {
+			await actWait(async (): Promise<void> => {
+				fileShellResource.release();
+				if (fileShellResource.hasStarted()) await fileShellResource.completed();
+				await switching;
+			});
+			handshake.dispose();
+		}
+	});
+
 	test('reuses the pane-owned File source warmed by a Review-first route', async () => {
+		const workerFacts = createReopenWorkerFacts();
+		const warmupFacts = workerFacts.warmup;
 		let sourceDiscoveryCount = 0;
 		let metadataSubscriptionOpenCount = 0;
 		const productSession: BridgeFileViewerBrowserTestProductSession = {
+			...workerFacts.callbacks,
 			currentSource: (): BridgeProductCallResult<'file.source.current'> => {
 				sourceDiscoveryCount += 1;
+				warmupFacts.record('sourceRead');
 				return availableFileSource();
 			},
-			initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 			onMetadataSubscriptionOpen: (
 				_options: BridgeProductSubscriptionOptions<'file.metadata'>,
 			): void => {
 				metadataSubscriptionOpenCount += 1;
+				warmupFacts.record('metadataSubscribed');
 			},
 		};
 		const handshake = installBridgeReadyHandshake();
 
 		await renderFileProductApp('review', productSession);
-		expect(await pollWithinActUntilEqual(() => sourceDiscoveryCount, 1)).toBe(1);
-		expect(await pollWithinActUntilEqual(() => metadataSubscriptionOpenCount, 1)).toBe(1);
+		await actWait(() => warmupFacts.waitFor((fact): boolean => fact === 'sourceRead'));
+		expect(sourceDiscoveryCount).toBe(1);
+		await actWait(() => warmupFacts.waitFor((fact): boolean => fact === 'metadataSubscribed'));
+		expect(metadataSubscriptionOpenCount).toBe(1);
 
+		const activationClosed = workerFacts.openReactivation('file');
 		await clickContext('file');
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
-		await settleBridgeFileViewerBrowserUpdates();
+		await activationClosed();
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'file')).toBe('file');
+		await awaitDisplayedFileSource();
 		const contextSwitcher = document.querySelector<HTMLElement>(
 			'[data-testid="bridge-viewer-context-switcher"]',
 		);
@@ -88,33 +191,43 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		handshake.dispose();
 	});
 
+	test('preserves a context click failure before its focus observation arrives', async () => {
+		const handshake = installBridgeReadyHandshake();
+		await renderFileProductApp('worktree-file', {
+			currentSource: availableFileSource,
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
+		});
+		const failure = new Error('held context click failed before focus');
+		const button = activeContextButton('file', 'review');
+		const spy = vi.spyOn(button, 'click').mockImplementation((): never => {
+			throw failure;
+		});
+		try {
+			await expect(clickContext('review', true)).rejects.toBe(failure);
+		} finally {
+			spy.mockRestore();
+			handshake.dispose();
+		}
+	});
+
 	test('hands context-switcher focus to the newly visible retained surface', async () => {
 		// Arrange
 		const handshake = installBridgeReadyHandshake();
 		await renderFileProductApp('worktree-file', {
 			currentSource: availableFileSource,
-			initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 		});
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'file')).toBe('file');
 		const outgoingReviewButton = activeContextButton('file', 'review');
 		await actUpdate((): void => outgoingReviewButton.focus());
 		expect(document.activeElement).toBe(outgoingReviewButton);
 
 		// Act
-		await actClick(outgoingReviewButton);
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'review')).toBe('review');
+		await clickContext('review', true);
 
 		// Assert
 		const incomingReviewButton = activeContextButton('review', 'review');
-		const focusWasHandedOff = await pollWithinActUntilEqual(
-			() => document.activeElement === incomingReviewButton,
-			true,
-		);
-		if (!focusWasHandedOff) {
-			throw new Error(
-				`Expected focus on incoming Review control; actual=${document.activeElement?.outerHTML ?? 'none'}`,
-			);
-		}
+		expect(document.activeElement).toBe(incomingReviewButton);
 		expect(
 			document
 				.querySelector<HTMLElement>('[data-bridge-viewer-mode-host="file"]')
@@ -123,38 +236,66 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		handshake.dispose();
 	});
 
+	test('settles a held context focus handoff before the mode-switch step completes', async () => {
+		// Arrange: hold only the production handoff, leaving other owners' frames real.
+		const handshake = installBridgeReadyHandshake();
+		await renderFileProductApp('worktree-file', {
+			currentSource: availableFileSource,
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
+		});
+		await awaitDisplayedFileSource();
+		try {
+			await clickContext('review', true);
+			expect(activeViewerMode()).toBe('review');
+			expect(document.activeElement).toBe(activeContextButton('review', 'review'));
+		} finally {
+			handshake.dispose();
+		}
+	});
+
 	test('reuses a live healthy stream — no re-open spam on healthy re-activations', async () => {
+		const workerFacts = createReopenWorkerFacts();
+		const warmupFacts = workerFacts.warmup;
 		let sourceDiscoveryCount = 0;
 		let metadataSubscriptionOpenCount = 0;
 		const productSession: BridgeFileViewerBrowserTestProductSession = {
+			...workerFacts.callbacks,
 			currentSource: (): BridgeProductCallResult<'file.source.current'> => {
 				sourceDiscoveryCount += 1;
+				warmupFacts.record('sourceRead');
 				return availableFileSource();
 			},
-			initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+			initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 			onMetadataSubscriptionOpen: (): void => {
 				metadataSubscriptionOpenCount += 1;
+				warmupFacts.record('metadataSubscribed');
 			},
 		};
 		const handshake = installBridgeReadyHandshake();
 
 		await renderFileProductApp('worktree-file', productSession);
-		expect(await pollWithinActUntilEqual(() => sourceDiscoveryCount, 1)).toBe(1);
-		expect(await pollWithinActUntilEqual(() => metadataSubscriptionOpenCount, 1)).toBe(1);
+		await actWait(() => warmupFacts.waitFor((fact): boolean => fact === 'sourceRead'));
+		expect(sourceDiscoveryCount).toBe(1);
+		await actWait(() => warmupFacts.waitFor((fact): boolean => fact === 'metadataSubscribed'));
+		expect(metadataSubscriptionOpenCount).toBe(1);
 
+		const reviewActivationClosed = workerFacts.openReactivation('review');
 		await clickContext('review');
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'review')).toBe('review');
-		await settleViewerFrames();
+		await reviewActivationClosed();
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'review')).toBe('review');
+		const fileActivationClosed = workerFacts.openReactivation('file');
 		await clickContext('file');
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
-		await settleBridgeFileViewerBrowserUpdates();
-		await settleViewerFrames();
+		await fileActivationClosed();
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'file')).toBe('file');
+		await awaitDisplayedFileSource();
 		expect(sourceDiscoveryCount).toBe(1);
 		expect(metadataSubscriptionOpenCount).toBe(1);
 		handshake.dispose();
 	});
 
 	test('keeps Files and Review view settings separate across surface switches', async () => {
+		const workerFacts = createReopenWorkerFacts();
+		const warmupFacts = workerFacts.warmup;
 		let sourceDiscoveryCount = 0;
 		let metadataSubscriptionOpenCount = 0;
 		const handshake = installBridgeReadyHandshake();
@@ -163,18 +304,20 @@ describe('Bridge file viewer mode re-open on switch', () => {
 			{
 				currentSource: (): BridgeProductCallResult<'file.source.current'> => {
 					sourceDiscoveryCount += 1;
+					warmupFacts.record('sourceRead');
 					return availableFileSource();
 				},
-				initialMetadataEvents: makeTreeRowsOnlyMetadataEvents(),
+				initialFileBatch: makeBrowserMetadataOnlyFileBatch('open'),
 				onMetadataSubscriptionOpen: (): void => {
 					metadataSubscriptionOpenCount += 1;
+					warmupFacts.record('metadataSubscribed');
 				},
 			},
 			true,
 		);
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'file')).toBe('file');
 		expect(
-			await pollWithinActUntilTruthy(
+			await observeBridgeAppDomUntilTruthy(
 				() => activeFileShell()?.getAttribute('data-selected-display-path') ?? null,
 			),
 		).not.toBeNull();
@@ -188,7 +331,7 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		expect(metadataSubscriptionOpenCount).toBe(1);
 
 		await clickContext('review');
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'review')).toBe('review');
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'review')).toBe('review');
 		await waitForViewSettingsClosed('file');
 		await openViewSettings('review');
 		expect(viewSettingsRow('review', 'Word wrap').getAttribute('aria-checked')).toBe('true');
@@ -196,14 +339,14 @@ describe('Bridge file viewer mode re-open on switch', () => {
 		expect(viewSettingsRow('review', 'Line numbers').getAttribute('aria-checked')).toBe('false');
 
 		await clickContext('file');
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'file')).toBe('file');
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'file')).toBe('file');
 		await waitForViewSettingsClosed('review');
 		await openViewSettings('file');
 		expect(viewSettingsRow('file', 'Word wrap').getAttribute('aria-checked')).toBe('false');
 		expect(viewSettingsRow('file', 'Line numbers').getAttribute('aria-checked')).toBe('true');
 
 		await clickContext('review');
-		expect(await pollWithinActUntilEqual(activeViewerMode, 'review')).toBe('review');
+		expect(await observeBridgeAppDomUntilEqual(activeViewerMode, 'review')).toBe('review');
 		await waitForViewSettingsClosed('file');
 		await openViewSettings('review');
 		expect(viewSettingsRow('review', 'Word wrap').getAttribute('aria-checked')).toBe('true');
@@ -221,7 +364,7 @@ async function renderFileProductApp(
 	const paneSessionFactory = createBridgeFileViewerBrowserTestPaneSessionFactory({
 		productSessionRef: { current: productSession },
 	});
-	return await render(
+	const rendered = await render(
 		<BridgeAppProtocolRouter
 			codeViewWorkerPoolEnabled={false}
 			fileViewerProps={{ autoOpenInitialFile }}
@@ -229,6 +372,8 @@ async function renderFileProductApp(
 			protocol={protocol}
 		/>,
 	);
+	if (protocol === 'worktree-file') await actWait(fileShellResource.completed);
+	return rendered;
 }
 
 function activeFileShell(): HTMLElement | null {
@@ -282,57 +427,93 @@ function activeContextButton(
 	return button;
 }
 
-async function clickContext(context: 'file' | 'review'): Promise<void> {
+async function clickContext(context: 'file' | 'review', waitForFocus = false): Promise<void> {
 	const button = document.querySelector<HTMLElement>(
 		`[data-testid="bridge-viewer-context-${context}"]`,
 	);
 	if (button === null) {
 		throw new Error(`Missing bridge-viewer-context-${context} button`);
 	}
-	await actClick(button);
+	const outgoingSurface = activeViewerMode();
+	const focusHandoff = nextContextFocusHandoff();
+	const focusObservation = waitForFocus
+		? observeContextFocusIn(
+				(target): boolean =>
+					target instanceof HTMLElement &&
+					target ===
+						document.querySelector<HTMLElement>(
+							`[data-bridge-viewer-mode-host="${context}"][data-bridge-viewer-mode-active="true"] [data-bridge-viewer-context-target="${context}"]`,
+						),
+			)
+		: null;
+	const heldFocus = holdNextContextFocusHandoff();
+	markReopenPhase(`context ${context}: click`);
+	try {
+		await actClick(button);
+		if (context === 'file') await actWait(fileShellResource.completed);
+		await observeBridgeAppDomUntilEqual(activeViewerMode, context);
+		markReopenPhase(`context ${context}: native focus and outgoing close`);
+		await actWait(async (): Promise<void> => {
+			await heldFocus.arrived;
+			heldFocus.release();
+			focusObservation?.inspect();
+			await Promise.all([
+				awaitContextFocusHandoff(focusHandoff),
+				focusObservation?.arrived ?? Promise.resolve(),
+				(outgoingSurface === 'file' || outgoingSurface === 'review') &&
+				hasPendingViewSettingsClose(outgoingSurface)
+					? awaitViewSettingsClose(outgoingSurface)
+					: Promise.resolve(),
+			]);
+		});
+	} finally {
+		focusObservation?.close();
+	}
+	await observeBridgeAppDomUntilEqual(activeViewerMode, context);
 }
 
 async function openViewSettings(surface: 'file' | 'review'): Promise<void> {
-	const trigger = activeViewSettingsTrigger(surface);
-	await actClick(trigger);
-	expect(
-		await pollWithinActUntilEqual(
-			() =>
-				document.querySelector(`[data-testid="bridge-${surface}-view-settings-content"]`) !== null,
-			true,
-		),
-	).toBe(true);
-	await actWait(async (): Promise<void> => {
-		const content = document.querySelector<HTMLElement>(
-			`[data-testid="bridge-${surface}-view-settings-content"]`,
-		);
-		if (content === null) return;
-		await Promise.all(
-			content.getAnimations().map(async (animation): Promise<void> => {
-				try {
-					await animation.finished;
-				} catch {
-					// A surface switch can cancel the menu transition it supersedes.
-				}
-			}),
-		);
+	markReopenPhase(`${surface} view settings: open`);
+	markViewSettingsOpening(surface);
+	const transitionCommitted = observeBridgeTransitionDOMFact({
+		label: `${surface} view settings opening transition committed`,
+		isCommitted: (): boolean => {
+			const content = document.querySelector(
+				`[data-testid="bridge-${surface}-view-settings-content"]`,
+			);
+			return (
+				content?.hasAttribute('data-open') === true && !content.hasAttribute('data-starting-style')
+			);
+		},
 	});
+	try {
+		await runBridgeTransitionFramesInAct(async (): Promise<void> => {
+			await actClick(activeViewSettingsTrigger(surface));
+			await transitionCommitted.promise;
+			await actWait(async (): Promise<void> => {
+				await awaitViewSettingsOpen(surface);
+			});
+		});
+	} finally {
+		transitionCommitted.close();
+	}
 }
 
 async function closeViewSettings(surface: 'file' | 'review'): Promise<void> {
+	markReopenPhase(`${surface} view settings: close`);
 	await actClick(activeViewSettingsTrigger(surface));
 	await waitForViewSettingsClosed(surface);
 }
 
 async function waitForViewSettingsClosed(surface: 'file' | 'review'): Promise<void> {
+	await joinViewSettingsCloseWithinAct(surface);
 	expect(
-		await pollWithinActUntilEqual(
+		await observeBridgeAppDomUntilEqual(
 			() =>
 				document.querySelector(`[data-testid="bridge-${surface}-view-settings-content"]`) === null,
 			true,
 		),
 	).toBe(true);
-	await settleViewerFrames();
 }
 
 function activeViewSettingsTrigger(surface: 'file' | 'review'): HTMLElement {
@@ -355,13 +536,95 @@ function viewSettingsRow(surface: 'file' | 'review', label: string): HTMLElement
 	return row;
 }
 
-async function settleViewerFrames(): Promise<void> {
-	await actWait(
-		() =>
-			new Promise<void>((resolve): void => {
-				requestAnimationFrame((): void => {
-					requestAnimationFrame((): void => resolve());
-				});
-			}),
+async function awaitDisplayedFileSource(): Promise<void> {
+	await actWait(waitForBridgeFileViewerWorkerPublicationQueue);
+	const shell = await observeBridgeAppDomUntilTruthy(() =>
+		document.querySelector<HTMLElement>('[data-testid="bridge-file-viewer-shell"]'),
 	);
+	await observeBridgeAppDomUntilTruthy(
+		() => shell?.getAttribute('data-file-display-source-id') ?? null,
+	);
+}
+
+function createReopenWorkerFacts(): {
+	readonly warmup: {
+		readonly record: (fact: 'sourceRead' | 'metadataSubscribed') => void;
+		readonly waitFor: (
+			matches: (fact: 'sourceRead' | 'metadataSubscribed') => boolean,
+		) => Promise<'sourceRead' | 'metadataSubscribed'>;
+	};
+	readonly callbacks: Pick<
+		BridgeFileViewerBrowserTestProductSession,
+		'onActivationCommandPosted' | 'onActivationCommandSettled'
+	>;
+	readonly openReactivation: (mode: 'file' | 'review') => () => Promise<void>;
+} {
+	type Activation = Parameters<
+		NonNullable<BridgeFileViewerBrowserTestProductSession['onActivationCommandPosted']>
+	>[0];
+	type Reply = Parameters<
+		NonNullable<BridgeFileViewerBrowserTestProductSession['onActivationCommandSettled']>
+	>[1];
+	const warmup = new BridgeProductTestFactRecorder<'sourceRead' | 'metadataSubscribed'>();
+	const posted = new BridgeProductTestFactRecorder<Activation>();
+	const settled = new BridgeProductTestFactRecorder<{
+		readonly command: Activation;
+		readonly reply: Reply;
+		readonly warmupPosition: number;
+	}>();
+	const commands: Activation[] = [];
+	const warmupHistory: Array<'sourceRead' | 'metadataSubscribed'> = [];
+	let isClosed = false;
+	const close = (): void => {
+		if (isClosed) return;
+		isClosed = true;
+		const reason = new Error('Reopen worker activation observation retired.');
+		warmup.close(reason);
+		posted.close(reason);
+		settled.close(reason);
+		activeReopenWorkerFacts.delete(close);
+	};
+	activeReopenWorkerFacts.add(close);
+	return {
+		warmup: {
+			record: (fact): void => {
+				if (isClosed) return;
+				warmupHistory.push(fact);
+				warmup.record(fact);
+			},
+			waitFor: (matches) => warmup.waitFor(matches),
+		},
+		callbacks: {
+			onActivationCommandPosted: (command): void => {
+				if (!isClosed) {
+					commands.push(command);
+					posted.record(command);
+				}
+			},
+			onActivationCommandSettled: (command, reply): void =>
+				isClosed
+					? undefined
+					: settled.record({ command, reply, warmupPosition: warmupHistory.length }),
+		},
+		openReactivation: (mode): (() => Promise<void>) => {
+			const commandOpening = commands.length;
+			const warmupOpening = warmupHistory.length;
+			return async (): Promise<void> => {
+				const command = await actWait(() =>
+					posted.waitFor(
+						(candidate): boolean =>
+							commands.indexOf(candidate) >= commandOpening && candidate.update.mode === mode,
+					),
+				);
+				const closing = await actWait(() =>
+					settled.waitFor((fact): boolean => fact.command.requestId === command.requestId),
+				);
+				expect(closing.reply).toMatchObject({
+					kind: 'health',
+					requestId: command.requestId,
+				});
+				expect(warmupHistory.slice(warmupOpening, closing.warmupPosition)).toEqual([]);
+			};
+		},
+	};
 }

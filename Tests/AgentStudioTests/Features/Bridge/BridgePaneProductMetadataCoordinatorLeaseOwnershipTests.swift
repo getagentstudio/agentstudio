@@ -51,10 +51,18 @@ struct BridgeMetadataCoordinatorLeaseTests {
 
         // Assert
         #expect(await coordinator.hasActiveStream)
+        try await firstHarness.closeProducer(firstLease)
+        try await replacementHarness.closeProducer(replacementLease)
     }
 }
 
 private actor LeaseOwnershipGatedFileMetadataSource: BridgePaneProductFileMetadataProducing {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private var cancellationRelease: CheckedContinuation<Void, Never>?
     private var cancellationStarted = false
     private var cancellationStartedWaiters: [CheckedContinuation<Void, Never>] = []
@@ -67,14 +75,16 @@ private actor LeaseOwnershipGatedFileMetadataSource: BridgePaneProductFileMetada
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId _: String) async {

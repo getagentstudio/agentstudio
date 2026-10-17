@@ -1,7 +1,7 @@
 import type { ReactElement } from 'react';
 
 import type { BridgeFileViewerSelectedCodeViewItem } from '../../file-viewer/bridge-file-viewer-code-view-items.js';
-import { BridgeMarkdownCanvas } from './bridge-markdown-canvas.js';
+import { BridgeMarkdownCanvas, type BridgeMarkdownCanvasProps } from './bridge-markdown-canvas.js';
 import type { BridgeMarkdownRenderIntent } from './use-bridge-markdown-presentation.js';
 import { buildBridgeMarkdownRenderWorkerSuccessResponse } from './worker/bridge-markdown-render-worker-renderer.js';
 
@@ -49,7 +49,7 @@ export async function markdownCanvas(
 	contents: string,
 	version = 1,
 	path = 'plan.md',
-): Promise<ReactElement> {
+): Promise<ReactElement<BridgeMarkdownCanvasProps>> {
 	const item = fileItem(contents, version, path);
 	const intent = fileIntent(item);
 	const response = await buildBridgeMarkdownRenderWorkerSuccessResponse({

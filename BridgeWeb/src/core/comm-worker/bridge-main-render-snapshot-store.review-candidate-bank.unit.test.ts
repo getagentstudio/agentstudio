@@ -20,6 +20,53 @@ const LATEST_IDENTITY = reviewIdentity(4, 1, '14');
 const FINAL_IDENTITY = reviewIdentity(5, 1, '15');
 
 describe('Bridge main render snapshot store Review candidate bank', () => {
+	test('clears candidate Review comparison when a nullable display patch carries null', () => {
+		// Arrange
+		const store = createBridgeMainRenderSnapshotStore();
+		const activeComparison = {
+			activeTarget: { basis: 'commonCommit', kind: 'branch', name: 'origin/main' },
+			attempt: { reviewGeneration: 1, status: 'settled' },
+			displayedSnapshot: {
+				packageId: 'package-1',
+				reviewGeneration: 1,
+				revision: 11,
+				status: 'current',
+			},
+			repositoryDefaultTarget: null,
+		} as const;
+		const activeEvent = reviewDisplayEvent(1, 'item-a', 1);
+		installReview(store, ACTIVE_IDENTITY, {
+			...activeEvent,
+			patches: [
+				{ operation: 'replace', payload: activeComparison, slice: 'reviewComparison' },
+				...activeEvent.patches,
+			],
+		});
+		expect(store.getSnapshot().panelChromeSlice.reviewComparison).toEqual(activeComparison);
+		startCandidate(store, CANDIDATE_IDENTITY);
+		const candidateEvent = reviewDisplayEvent(2, 'item-b', 1);
+
+		// Act
+		const staged = store.stageReviewCandidateDisplayEvent({
+			event: {
+				...candidateEvent,
+				patches: [
+					{ operation: 'replace', payload: null, slice: 'reviewComparison' },
+					...candidateEvent.patches,
+				],
+			},
+			identity: CANDIDATE_IDENTITY,
+		});
+
+		// Assert
+		expect(staged).toBe(true);
+		expect(
+			store.markReviewCandidateReady({ identity: CANDIDATE_IDENTITY, role: 'provisional' }),
+		).toBe(true);
+		expect(store.promoteReviewCandidate(CANDIDATE_IDENTITY)).toBe(true);
+		expect(store.getSnapshot().panelChromeSlice.reviewComparison).toBeNull();
+	});
+
 	test('keeps A visible while a complete B and its render copies remain private', () => {
 		// Arrange
 		const store = createBridgeMainRenderSnapshotStore();

@@ -25,6 +25,18 @@ func metadataStreamRequiredError(
     )
 }
 
+func viewControlRejectedError(
+    for request: BridgeProductControlRequest,
+    code: BridgeProductRequestErrorCode
+) throws -> BridgeProductControlResponse {
+    try makeProductRequestError(
+        for: request,
+        code: code,
+        retryable: code == .staleWorker,
+        safeMessage: "View control was not accepted"
+    )
+}
+
 func annotationOutputUnavailableError(
     for request: BridgeProductControlRequest
 ) throws -> BridgeProductControlResponse {

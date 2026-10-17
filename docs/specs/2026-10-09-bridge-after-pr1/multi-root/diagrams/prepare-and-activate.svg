@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="950" viewBox="0 0 1120 950">
+<defs><marker id="arrow" markerWidth="9" markerHeight="9" refX="8" refY="4" orient="auto"><path d="M0,0 L8,4 L0,8" fill="none" stroke="#52657c" stroke-width="1.4"/></marker></defs>
+<rect width="1120" height="950" fill="#fff"/>
+<text x="32" y="39" font-family="Arial, sans-serif" font-size="25" font-weight="700" fill="#243449">Prepare first; show only after explicit activation</text>
+<text x="32" y="69" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">Same receiver throughout. Dashed arrows are acknowledgements; failure branches preserve truthful outcomes.</text>
+<text x="37" y="113" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#243449">Caller</text>
+<line x1="92" y1="132" x2="92" y2="883" stroke="#ccd4df" stroke-dasharray="4 6"/>
+<text x="275" y="113" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#243449">App handler</text>
+<line x1="330" y1="132" x2="330" y2="883" stroke="#ccd4df" stroke-dasharray="4 6"/>
+<text x="525" y="113" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#243449">Native file / state</text>
+<line x1="580" y1="132" x2="580" y2="883" stroke="#ccd4df" stroke-dasharray="4 6"/>
+<text x="785" y="113" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#243449">Existing save</text>
+<line x1="840" y1="132" x2="840" y2="883" stroke="#ccd4df" stroke-dasharray="4 6"/>
+<text x="985" y="113" font-family="Arial, sans-serif" font-size="15" font-weight="700" fill="#243449">Bridge viewer</text>
+<line x1="1040" y1="132" x2="1040" y2="883" stroke="#ccd4df" stroke-dasharray="4 6"/>
+<polyline points="92,168 330,168" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="110" y="155" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">1  Agent: prepare exact path</text>
+<polyline points="330,224 580,224" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="349" y="211" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">2  Validate file off-main</text>
+<polyline points="580,276 330,276" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+<text x="355" y="263" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">admitted location / refusal</text>
+<polyline points="330,330 580,330" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="350" y="317" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">3  Retain opened-file entry</text>
+<polyline points="580,382 840,382" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="600" y="369" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">4  Save captured revision</text>
+<polyline points="840,432 330,432" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+<text x="414" y="419" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">saved acknowledgement, or partial / unsaved</text>
+<polyline points="330,482 92,482" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+<text x="106" y="469" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">5  Prepared; not displayed</text>
+<text x="680" y="488" font-family="Arial, sans-serif" font-size="16" font-weight="700" fill="#243449">No viewer required for preparation.</text>
+<line x1="32" y1="518" x2="1080" y2="518" stroke="#a2afbd" stroke-width="2"/>
+<polyline points="92,562 330,562" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="106" y="549" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">6  Human/debug: activate</text>
+<polyline points="330,615 1040,615" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="363" y="601" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">7  If an editor exists: await draft.flush persistence before leaving it</text>
+<polyline points="1040,663 330,663" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+<text x="404" y="650" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">draft acknowledged; otherwise stop with old editor intact</text>
+<polyline points="330,716 1040,716" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="352" y="703" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">8  Revalidate target, bind sources, mount/reuse and select exact file</text>
+<polyline points="1040,766 330,766" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+<text x="390" y="753" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">9  Matching generation reports actually displayed, or failure</text>
+<polyline points="330,815 840,815" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)"/>
+<text x="389" y="802" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">10  Save the successfully displayed selection</text>
+<polyline points="330,866 92,866" fill="none" stroke="#52657c" stroke-width="1.8" marker-end="url(#arrow)" stroke-dasharray="6 5"/>
+<text x="105" y="853" font-family="Arial, sans-serif" font-size="15" font-weight="400" fill="#243449">Activated / partial / failed</text>
+<text x="32" y="921" font-family="Arial, sans-serif" font-size="16" font-weight="400" fill="#243449">A save failure after display reports the visible effect; it does not pretend the old file is still shown.</text>
+</svg>

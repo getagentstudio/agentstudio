@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from 'vitest';
+import { beforeEach, afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
 	bootstrapBridgeCommWorkerEntry,
@@ -7,6 +7,7 @@ import {
 	type BridgeCommWorkerPort,
 } from './bridge-comm-worker-entry.js';
 import { encodeBridgeWorkerSelectCommand } from './bridge-comm-worker-protocol.js';
+import { installTestBridgeCommWorkerEntryRenderWakes } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
 import { executeAgentStudioBridgeProductRequest } from './bridge-product-agent-studio-request-executor.js';
 import {
 	BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH,
@@ -69,6 +70,8 @@ function makeTestEntryDependencies(): BridgeCommWorkerEntryDependencies {
 			makeTestInstalledProductSession(input),
 	};
 }
+
+beforeEach(installTestBridgeCommWorkerEntryRenderWakes);
 
 describe('Bridge comm worker one-shot install lifecycle', () => {
 	afterEach((): void => {
@@ -165,6 +168,8 @@ describe('Bridge comm worker one-shot install lifecycle', () => {
 		expect(installProductSession).toHaveBeenCalledWith({
 			bootstrap: install.bootstrap,
 			productCapability: install.productCapability,
+			publishSessionSuspect: expect.any(Function),
+			publishViewRecoveryStatus: expect.any(Function),
 		});
 		expect(install.productCapability.byteLength).toBe(BRIDGE_PRODUCT_CAPABILITY_BYTE_LENGTH);
 
@@ -333,6 +338,19 @@ function makePaneWorkerInstall(productPort: MessagePort): BridgePaneCommWorkerIn
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
+				admissionRetryCount: 2,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
+				viewBatchProgressDeadlineMilliseconds: 5_000,
+				streamKeepaliveIntervalMilliseconds: 350,
+				telemetryPreReadyBufferMaxBytes: 64 * 1024,
+				telemetryPreReadyBufferMaxSamples: 128,
+				workerSettlementDeadlineMilliseconds: 5_000,
+				viewAcknowledgementDeadlineMilliseconds: 4_000,
+				viewCreditBytes: 524_288,
+				viewCreditParts: 8,
+				viewMaximumConsecutiveResnapshots: 3,
+				viewMaximumDirtyKeys: 4_096,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,
 			},

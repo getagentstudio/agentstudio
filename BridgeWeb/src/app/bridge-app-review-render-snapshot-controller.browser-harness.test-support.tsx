@@ -41,6 +41,9 @@ import {
 	createBridgeReviewWorkerPierreCourier,
 	useBridgeReviewRenderSnapshotController,
 } from './bridge-app-review-render-snapshot-controller.js';
+import { BridgePaneFailureMessage } from './bridge-region-presentation.js';
+import type { BridgeReviewComparisonTarget } from './bridge-review-comparison-target.js';
+import { BridgeViewerRecoveryRetryButton } from './bridge-viewer-recovery-retry-button.js';
 
 export { hierarchicalReviewDisplayEvent };
 
@@ -63,6 +66,44 @@ export function ReviewDirectDisplayProbe(props: {
 			data-review-tree-row-order-length={controller.catalogSnapshot.treeRowOrderLength}
 			data-testid="review-direct-display-probe"
 		/>
+	);
+}
+
+export function ReviewRecoveryRetryProbe(props: {
+	readonly comparisonTarget: BridgeReviewComparisonTarget | null;
+	readonly reviewClient: BridgePaneSurfaceClient;
+}): ReactElement {
+	const pierreCourier = useMemo(() => createBridgeReviewWorkerPierreCourier(), []);
+	const controller = useBridgeReviewRenderSnapshotController({
+		pierreCourier,
+		prepareActiveEditorsForInstallation: prepareNoActiveEditorsForInstallation,
+		reviewClient: props.reviewClient,
+	});
+	return (
+		<div>
+			<BridgePaneFailureMessage
+				entries={[
+					{
+						part: 'review',
+						state:
+							controller.viewRecoveryStatus?.status === 'failedRetryable'
+								? {
+										kind: 'failed',
+										retainsContent: true,
+										failure: { kind: 'retryable', scope: 'surface', message: 'Review failure' },
+									}
+								: { kind: 'content' },
+						retry: (): void => controller.retryFailedMetadataView(props.comparisonTarget),
+					},
+				]}
+				retryControl={(onClick): ReactElement => (
+					<BridgeViewerRecoveryRetryButton surface="pane" onClick={onClick} />
+				)}
+			/>
+			<output data-testid="last-good-review">
+				{controller.displayStore.getReviewTreeRowAtIndex(0)?.path ?? ''}
+			</output>
+		</div>
 	);
 }
 
@@ -409,4 +450,131 @@ export async function settleRenderedReviewFrame(): Promise<void> {
 		requestAnimationFrame((): void => resolve());
 	});
 	await Promise.resolve();
+}
+
+export function reviewDisplayEventWithContribution(
+	props: Parameters<typeof reviewDisplayEvent>[0],
+): ReturnType<typeof reviewDisplayEvent> {
+	const event = reviewDisplayEvent(props);
+	return {
+		...event,
+		// oxlint-disable-next-line no-map-spread -- The strict immutable fixture preserves every non-source patch while replacing one nested source payload.
+		patches: event.patches.map((patch) =>
+			patch.slice !== 'reviewSource' || patch.operation !== 'upsert'
+				? patch
+				: {
+						...patch,
+						payload: {
+							...patch.payload,
+							comparisonOrigin: {
+								baseOID: 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb',
+								baseRole: 'commonCommit',
+								comparedRole: 'capturedWorkingTree',
+								kind: 'contribution',
+								resolvedTargetOID: 'mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm',
+								reviewedHeadOID: 'hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh',
+								reviewedSubjectBranchName: null,
+								symbolicTarget: {
+									basis: 'commonCommit',
+									branchName: 'master',
+									kind: 'localDefaultBranch',
+								},
+							},
+						},
+					},
+		),
+	};
+}
+
+const TEST_REVIEW_PUBLICATION_IDENTITY = {
+	packageId: 'test-review-package',
+	publicationId: '00000000-0000-7000-8000-000000000001',
+	reviewGeneration: 1,
+	revision: 1,
+	sourceIdentity: 'test-review-source',
+} as const;
+
+export function reviewComparisonPanelChromeEvent(): Extract<
+	BridgeWorkerServerToMainMessage,
+	{ readonly kind: 'reviewRenderPatch' }
+> {
+	return {
+		direction: 'serverWorkerToMain',
+		kind: 'reviewRenderPatch',
+		reviewPublicationIdentity: TEST_REVIEW_PUBLICATION_IDENTITY,
+		patches: [
+			{
+				operation: 'upsert',
+				payload: {
+					reviewComparison: {
+						activeTarget: {
+							basis: 'commonCommit',
+							branchName: 'master',
+							kind: 'localDefaultBranch',
+						},
+						attempt: { reviewGeneration: 1, status: 'settled' },
+						displayedSnapshot: { status: 'none' },
+						repositoryDefaultTarget: null,
+					},
+				},
+				slice: 'panelChrome',
+			},
+		],
+		publicationSequence: 1,
+		surface: 'review',
+		transferDescriptors: [],
+		wireVersion: 1,
+		workerDerivationEpoch: 1,
+	};
+}
+
+export function reviewComparisonPanelChromeEventForHarness(): ReturnType<
+	typeof reviewComparisonPanelChromeEvent
+> {
+	return {
+		...reviewComparisonPanelChromeEvent(),
+		reviewPublicationIdentity: {
+			packageId: 'review-browser-harness-package',
+			publicationId: '00000000-0000-7000-8000-000000000001',
+			reviewGeneration: 1,
+			revision: 1,
+			sourceIdentity: 'review-browser-harness-source',
+		},
+	};
+}
+
+export function reviewComparisonLoadingPanelChromeEventForHarness(
+	props: {
+		readonly activeTarget?: BridgeReviewComparisonTarget;
+	} = {},
+): ReturnType<typeof reviewComparisonPanelChromeEvent> {
+	const event = reviewComparisonPanelChromeEventForHarness();
+	return {
+		...event,
+		// oxlint-disable-next-line no-map-spread -- The strict immutable fixture preserves every non-panel patch while replacing one nested panel payload.
+		patches: event.patches.map((patch) =>
+			patch.slice !== 'panelChrome' || patch.operation !== 'upsert'
+				? patch
+				: {
+						...patch,
+						payload: {
+							reviewComparison: {
+								activeTarget: props.activeTarget ?? {
+									basis: 'commonCommit',
+									branchName: 'master',
+									kind: 'localDefaultBranch',
+								},
+								attempt: { reviewGeneration: 2, status: 'pending' },
+								displayedSnapshot: {
+									packageId: 'review-browser-harness-package',
+									reviewGeneration: 1,
+									revision: 1,
+									status: 'current',
+								},
+								repositoryDefaultTarget: null,
+							},
+						},
+					},
+		),
+	};
 }

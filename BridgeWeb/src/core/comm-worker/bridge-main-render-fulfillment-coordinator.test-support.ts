@@ -19,6 +19,7 @@ import {
 } from './bridge-worker-pierre-render-job.js';
 import {
 	bridgeWorkerRenderDispositionReceiptSchema,
+	type BridgeWorkerPaintReleasedReceipt,
 	type BridgeWorkerRenderDisposition,
 	type BridgeWorkerRenderDispositionReceipt,
 	type BridgeWorkerRenderRejectionReason,
@@ -43,6 +44,7 @@ export type {
 export interface CreateCoordinatorProps {
 	readonly animationFrames: ControlledAnimationFrames;
 	readonly dispositions: BridgeWorkerRenderDispositionReceipt[];
+	readonly paintReleases?: BridgeWorkerPaintReleasedReceipt[];
 	readonly nowMilliseconds: () => number;
 }
 
@@ -56,6 +58,9 @@ export function createCoordinator(
 		sendDisposition: (receipt): void => {
 			props.dispositions.push(receipt);
 		},
+		sendPaintRelease: (receipt): void => {
+			props.paintReleases?.push(receipt);
+		},
 	});
 }
 
@@ -63,6 +68,7 @@ export interface CoordinatorHarness {
 	readonly animationFrames: ControlledAnimationFrames;
 	readonly coordinator: BridgeMainRenderFulfillmentCoordinator;
 	readonly dispositions: BridgeWorkerRenderDispositionReceipt[];
+	readonly paintReleases: BridgeWorkerPaintReleasedReceipt[];
 	readonly setNowMilliseconds: (nextNowMilliseconds: number) => void;
 }
 
@@ -70,14 +76,17 @@ export function createCoordinatorHarness(initialNowMilliseconds: number): Coordi
 	let nowMilliseconds = initialNowMilliseconds;
 	const animationFrames = createControlledAnimationFrames();
 	const dispositions: BridgeWorkerRenderDispositionReceipt[] = [];
+	const paintReleases: BridgeWorkerPaintReleasedReceipt[] = [];
 	return {
 		animationFrames,
 		coordinator: createCoordinator({
 			animationFrames,
 			dispositions,
+			paintReleases,
 			nowMilliseconds: (): number => nowMilliseconds,
 		}),
 		dispositions,
+		paintReleases,
 		setNowMilliseconds: (nextNowMilliseconds): void => {
 			nowMilliseconds = nextNowMilliseconds;
 		},
@@ -367,6 +376,7 @@ export function testRenderedElement(
 ): BridgeMainRenderedItemReadback['element'] {
 	return {
 		isConnected,
+		getAttribute: (qualifiedName): string | null => attributes.get(qualifiedName) ?? null,
 		removeAttribute: (qualifiedName): void => {
 			attributes.delete(qualifiedName);
 		},

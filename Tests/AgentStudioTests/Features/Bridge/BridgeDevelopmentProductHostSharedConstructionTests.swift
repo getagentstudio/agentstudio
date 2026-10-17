@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -28,9 +29,16 @@ struct BridgeDevHostSharedConstructionTests {
             let initialPublication = try #require(await host.diagnosticCommittedReviewPublication())
             #expect(initialPublication.classifiedRefreshImpact == nil)
 
+            let productAdmission = await host.productAdmission
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(target: .branch(name: "stack/base")),
-                productAdmission: await host.productAdmission
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
             )
             let comparisonTask = await host.activeReviewComparisonTask
             await comparisonTask?.value
@@ -151,9 +159,15 @@ struct BridgeDevHostSharedConstructionTests {
             let completionRecorder = BridgeComparisonUpdateCompletionRecorder()
             let productAdmission = await host.productAdmission
             let updatedTarget = WorkspaceReviewContributionTarget.branch(name: "stack/base")
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
+            )
             let update = Task {
                 await host.applyCommittedReviewComparisonUpdate(
                     BridgeProductReviewComparisonUpdateRequest(target: updatedTarget),
+                    workerDerivationEpoch: 1,
                     productAdmission: productAdmission
                 )
                 await completionRecorder.recordCompletion()
@@ -233,13 +247,25 @@ struct BridgeDevHostSharedConstructionTests {
             let currentTarget = WorkspaceReviewContributionTarget.branch(name: "stack/second")
 
             // Act
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 2,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(target: supersededTarget),
+                workerDerivationEpoch: 2,
                 productAdmission: productAdmission
             )
             await comparisonGate.waitForStartedComparisonCount(1)
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 3,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(target: currentTarget),
+                workerDerivationEpoch: 3,
                 productAdmission: productAdmission
             )
             await comparisonGate.waitForStartedComparisonCount(2)
@@ -318,9 +344,16 @@ struct BridgeDevHostSharedConstructionTests {
             named: "bridge-development-product-host-comparison-shutdown"
         )
         defer { try? FileManager.default.removeItem(at: worktreeRoot) }
+        let source = makeDevelopmentProductSource(worktreeRoot: worktreeRoot)
+        let factSource = makeDevelopmentProductHostShutdownFactSource()
+        let facts = try factSource.attach()
+        let shutdownScope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
+        let retirementClock = TestPushClock()
         let provider = BridgeDevelopmentSharedConstructionReviewProvider()
         let host = try await BridgeDevelopmentProductHost(
-            source: makeDevelopmentProductSource(worktreeRoot: worktreeRoot),
+            source: source,
+            retirementClock: retirementClock,
+            shutdownFactSink: factSource.sink,
             contributionTargetCommit: developmentContributionTargetCommit(
                 worktreeRoot: worktreeRoot
             ),
@@ -330,28 +363,75 @@ struct BridgeDevHostSharedConstructionTests {
         let comparisonGate = BridgeComparisonGate()
         await provider.setComparisonGate(comparisonGate)
         let productAdmission = await host.productAdmission
+        await admitDevelopmentReviewComparisonIntent(
+            host: host,
+            workerDerivationEpoch: 1,
+            productAdmission: productAdmission
+        )
         await host.applyCommittedReviewComparisonUpdate(
             BridgeProductReviewComparisonUpdateRequest(target: .branch(name: "stack/base")),
+            workerDerivationEpoch: 1,
             productAdmission: productAdmission
         )
         await comparisonGate.waitForStartedComparisonCount(1)
 
         // Act
         let shutdown = Task { await host.shutdown() }
-        for _ in 0..<100 where !(await host.isShutdown) {
-            await Task.yield()
+        do {
+            try await facts.expectNext(in: shutdownScope, .shutdownStarted)
+        } catch {
+            await comparisonGate.releaseAll()
+            _ = await shutdown.value
+            throw error
         }
-        let shutdownStarted = await host.isShutdown
+        #expect(await host.isShutdown)
         await comparisonGate.releaseAll()
-        await shutdown.value
+        let shutdownResult = await shutdown.value
+        #expect(shutdownResult == .completed)
+        try await facts.expectNext(in: shutdownScope, .shutdownResolved(shutdownResult))
 
         // Assert
-        #expect(shutdownStarted)
         #expect(
             await host.diagnosticPanePresentation().reviewComparison?.attempt
                 == .unavailable(failureKind: "publication_failed", retryable: true)
         )
         #expect(await host.activeReviewComparisonTask == nil)
+        factSource.end()
+        try await facts.finish()
+    }
+
+    @Test("shutdown fact contract reports entry and resolution")
+    func shutdownFactContractReportsEntryAndResolution() async throws {
+        // Arrange
+        let worktreeRoot = try makeDevelopmentWorktreeRoot(
+            named: "bridge-development-product-host-shutdown-fact-contract"
+        )
+        defer { try? FileManager.default.removeItem(at: worktreeRoot) }
+        let source = makeDevelopmentProductSource(worktreeRoot: worktreeRoot)
+        let factSource = makeDevelopmentProductHostShutdownFactSource()
+        let facts = try factSource.attach()
+        let scope = BridgeDevelopmentProductHostFactScope(paneID: source.paneID)
+        let retirementClock = TestPushClock()
+        let provider = BridgeDevelopmentSharedConstructionReviewProvider()
+        let host = try await BridgeDevelopmentProductHost(
+            source: source,
+            retirementClock: retirementClock,
+            shutdownFactSink: factSource.sink,
+            contributionTargetCommit: developmentContributionTargetCommit(
+                worktreeRoot: worktreeRoot
+            ),
+            makeReviewProvider: { _, _ in provider }
+        )
+
+        // Act
+        let shutdownResult = await host.shutdown()
+
+        // Assert
+        #expect(shutdownResult == .completed)
+        try await facts.expectNext(in: scope, .shutdownStarted)
+        try await facts.expectNext(in: scope, .shutdownResolved(shutdownResult))
+        factSource.end()
+        try await facts.finish()
     }
 
     @Test("detected observation terminal retains the last complete Review publication")
@@ -463,10 +543,16 @@ struct BridgeDevHostSharedConstructionTests {
             let productAdmission = await host.productAdmission
 
             // Act
+            await admitDevelopmentReviewComparisonIntent(
+                host: host,
+                workerDerivationEpoch: 1,
+                productAdmission: productAdmission
+            )
             await host.applyCommittedReviewComparisonUpdate(
                 BridgeProductReviewComparisonUpdateRequest(
                     target: .branch(name: "stack/base")
                 ),
+                workerDerivationEpoch: 1,
                 productAdmission: productAdmission
             )
             await defaultTargetGate.waitForStartedComparisonCount(1)
@@ -650,6 +736,7 @@ actor BridgeDevelopmentSharedConstructionReviewProvider:
         reviewGenerationValues.append(request.reviewGenerationValue)
         reviewAttemptAuthorityGenerations.append(request.reviewAttemptAuthorityGeneration)
         gitRefreshScopes.append(request.gitRefreshScope)
+        try await contributionCaptureHold?(request)
         await comparisonGate?.waitUntilReleased()
         let baseEndpoint = resolvedEndpoint(request.baseEndpoint)
         return BridgeContributionComparisonCapture(
@@ -667,6 +754,7 @@ actor BridgeDevelopmentSharedConstructionReviewProvider:
     }
 
     private var comparisonGate: BridgeComparisonGate?
+    private var contributionCaptureHold: (@Sendable (BridgeContributionComparisonRequest) async throws -> Void)?
     private var contributionCaptureCount = 0
     private var contributionTargets: [WorkspaceReviewContributionTarget] = []
     private var regularComparisonCount = 0
@@ -695,6 +783,12 @@ actor BridgeDevelopmentSharedConstructionReviewProvider:
 
     func setComparisonGate(_ comparisonGate: BridgeComparisonGate?) {
         self.comparisonGate = comparisonGate
+    }
+
+    func setContributionCaptureHold(
+        _ contributionCaptureHold: (@Sendable (BridgeContributionComparisonRequest) async throws -> Void)?
+    ) {
+        self.contributionCaptureHold = contributionCaptureHold
     }
 
     func setRepositoryDefaultTarget(
@@ -876,13 +970,29 @@ private func makeDevelopmentWorktreeRoot(named name: String) throws -> URL {
     return worktreeRoot
 }
 
+private func makeDevelopmentProductHostShutdownFactSource() -> LocalFactSource<
+    BridgeDevelopmentProductHostFactScope,
+    BridgeDevelopmentProductHostFact
+> {
+    LocalFactSource(
+        vocabulary: FactVocabulary(
+            describeScope: { String(describing: $0) },
+            describeFact: { String(describing: $0) },
+            isClosing: { _, fact in
+                if case .shutdownResolved = fact { return true }
+                return false
+            }
+        )
+    )
+}
+
 func makeDevelopmentBootstrapRequest(
     surface: String
 ) throws -> BridgeDevelopmentProductBootstrapRequest {
     try JSONDecoder().decode(
         BridgeDevelopmentProductBootstrapRequest.self,
         from: Data(
-            #"{"navigationIntent":{"commandId":"open-\#(surface)-view","commandKind":"activateContext","surface":"\#(surface)"},"reason":"initial"}"#
+            #"{"navigationIntent":{"commandId":"open-\#(surface)-view","commandKind":"activateContext","surface":"\#(surface)"},"reason":"initial","tabId":"owner-tab-1"}"#
                 .utf8
         )
     )

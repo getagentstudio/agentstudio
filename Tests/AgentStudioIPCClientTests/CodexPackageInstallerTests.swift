@@ -33,6 +33,83 @@ struct CodexPackageInstallerTests {
         #expect(output.contains { $0.contains("trust") })
     }
 
+    @Test("owned Codex hooks are async except SessionEnd and lifecycle timeouts don't trigger provider clamping")
+    func ownedHookExecutionPolicyMatchesProvider() throws {
+        let home = try CodexHomeFixture()
+        defer { home.tearDown() }
+        _ = try CodexPackageInstaller.install(home.props)
+        for event in CodexHookEventName.installedEvents {
+            let group = try #require(home.ownedGroup(event: event))
+            let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
+            if event == .sessionEnd {
+                #expect(handler["async"] == nil)
+            } else {
+                #expect(handler["async"] as? Bool == true)
+            }
+            let expectedTimeout =
+                event == .sessionEnd || event == .interrupt ? 1 : CodexPackageInstaller.hookTimeoutSeconds
+            #expect(handler["timeout"] as? Int == expectedTimeout)
+        }
+    }
+
+    @Test("reinstall upgrades old Codex hooks and preserves every user hook in its original position")
+    func reinstallUpgradesOldHookExecutionPolicy() throws {
+        let home = try CodexHomeFixture()
+        defer { home.tearDown() }
+        let userHook: [String: Any] = [
+            "matcher": "user-matcher", "userNote": "Keep my hook",
+            "hooks": [["type": "command", "command": "/usr/local/bin/user-hook", "async": false, "timeout": 42]],
+        ]
+        let script = home.props.locator.hookScriptURL(
+            provider: CodexPackageInstaller.providerIdentifier, scriptName: CodexPackageInstaller.hookScriptName)
+        var hooks: [String: Any] = [:]
+        for event in CodexHookEventName.installedEvents {
+            let legacy: [String: Any] = [
+                "hooks": [
+                    [
+                        "type": "command", "command": "\"\(script.path)\" \(event.rawValue)",
+                        "timeout": CodexPackageInstaller.hookTimeoutSeconds,
+                    ]
+                ]
+            ]
+            hooks[event.rawValue] = [userHook, legacy]
+        }
+        let legacyDocument = try JSONSerialization.data(withJSONObject: ["hooks": hooks, "description": "Mine"])
+        let legacyText = try #require(String(data: legacyDocument, encoding: .utf8))
+        try home.writeHooks(legacyText)
+        let output = try CodexPackageInstaller.install(home.props)
+        let notices = output.filter { $0.hasPrefix("notice:") }
+        let expectedNotices = Set(
+            CodexHookEventName.installedEvents.map {
+                "notice: replacing modified agentstudio entry \($0.rawValue)"
+            })
+        let observedNotices = Set(notices)
+        #expect(observedNotices == expectedNotices)
+        #expect(notices.count == CodexHookEventName.installedEvents.count)
+        let document = try home.hooksDocument()
+        let expectedUser = try JSONSerialization.data(withJSONObject: userHook, options: [.sortedKeys])
+        for event in CodexHookEventName.installedEvents {
+            let groups = document.groups(event: event.rawValue)
+            #expect(groups.count == 2)
+            let first = try #require(groups.first)
+            let observedUser = try JSONSerialization.data(withJSONObject: first, options: [.sortedKeys])
+            #expect(observedUser == expectedUser)
+            let owned = document.ownedGroups(
+                event: event.rawValue, ownedCommandFragment: CodexPackageInstaller.ownedCommandFragment)
+            #expect(owned.count == 1)
+            let group = try #require(owned.first)
+            let handler = try #require((group["hooks"] as? [[String: Any]])?.first)
+            if event == .sessionEnd {
+                #expect(handler["async"] == nil)
+            } else {
+                #expect(handler["async"] as? Bool == true)
+            }
+            let expectedTimeout =
+                event == .sessionEnd || event == .interrupt ? 1 : CodexPackageInstaller.hookTimeoutSeconds
+            #expect(handler["timeout"] as? Int == expectedTimeout)
+        }
+    }
+
     /// Codex runs the command through a shell, so a bundle path with a space
     /// must survive as one word.
     @Test("the hook command quotes the script path and names the event")

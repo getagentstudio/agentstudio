@@ -1,12 +1,14 @@
 import Foundation
 
 extension SurfaceManager {
-    /// Ends the accumulator lifetime before a surface can be reused or destroyed.
-    func detachTerminalLocalActions(surfaceID: UUID, paneID: UUID?) {
+    /// Keep the selected handling even after this operation removes lookup membership.
+    func detachTerminalLocalActions(
+        surfaceID: UUID, paneID: UUID?, handling: Ghostty.ActionRouter?
+    ) {
         if let paneID {
-            Ghostty.ActionRouter.closeLocalActions(surfaceID: surfaceID, paneID: paneID)
+            handling?.closeLocalActions(surfaceID: surfaceID, paneID: paneID)
         } else {
-            Ghostty.ActionRouter.retireLocalActions(for: surfaceID)
+            handling?.retireLocalActions(for: surfaceID)
         }
     }
 }

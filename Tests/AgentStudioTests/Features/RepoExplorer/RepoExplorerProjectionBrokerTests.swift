@@ -166,7 +166,10 @@ struct RepoExplorerProjectionBrokerTests {
         )
 
         adapter.admit(requestA)
-        guard await gate.waitUntilStarted() else { return }
+        guard await gate.waitUntilStarted() else {
+            Issue.record("Initial projection did not start")
+            return
+        }
         adapter.admitDelta([.repo(repositoryID)], request: requestB)
         adapter.admitDelta([.worktreeFact(worktreeID)], request: requestC)
 

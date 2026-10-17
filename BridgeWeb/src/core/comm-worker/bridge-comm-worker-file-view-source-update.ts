@@ -1,6 +1,6 @@
 import type { StoreApi } from 'zustand/vanilla';
 
-import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewRuntimeMutation } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	isBridgeCommWorkerDemandEligibleContentMetadata,
 	reconcileBridgeCommWorkerDemandMembership,

@@ -69,7 +69,8 @@ This section is the contract implementers follow. It applies the repo rules in [
 | Own the bucket-deadline task: cancel/replace, wait, demand gate | `RepoExplorerProjectionWorker` **actor** | Features/RepoExplorer | **Changed** (see "Bucket deadlines"). Today the MainActor adapter owns this task. |
 | Selection, which variant each row shows, measured heights, anchor capture/restore | table materializer (AppKit main) | Features/RepoExplorer | UI owner. Cost is O(rows whose variant or height changed) + O(1) anchor work. It derives nothing. |
 | Drawer visibility preference | `RepoExplorerSidebarPrefsAtom` — one new `AtomValue` field, assigned by the drawer-toggle command handler | Features/RepoExplorer | A persisted UI preference; the command decides, the atom holds it. |
-| Agent title, Agent Line, counts, revision, git/PR summary | PR B: off-main derivation, thin apply into `PaneContextPresentationAtom` | PR B | PR C reads it through capture and derived readers only. |
+| Agent title, Agent Line, counts per attention type, revision, pull-request summary | PR B: off-main derivation, thin apply into `PaneContextPresentationAtom` (keyed by pane) | PR B | PR C reads `value(for: paneId)` through capture only. |
+| Session status per pane | PR B: off-main, thin apply into `SessionStatusAtom` (`AtomFamily<PaneId, AgentSessionStatus>`, owned by Features/Sessions) | PR B | Features never import siblings, so App injects a keyed reader `(PaneId) -> AgentSessionStatus?` into `RepoExplorerProjectionInputCapture`; capture calls it as a keyed `value(for:)` read. RepoExplorer never imports Sessions. |
 | Popover detail and person actions | PR B `PaneContextDetailReading` / `PaneContextPersonActing` (off-main, implemented in `App/PaneContext/PaneContextUIAdapter`) awaited by `PaneContextPopoverController` | PR B / App | MainActor only resumes and assigns local UI state. |
 
 ### The two new types
@@ -188,7 +189,7 @@ flowchart TB
         MAT["Materializer + host — selection, variants, heights, anchor"]
     end
     subgraph Shared["SharedComponents"]
-        CH["SidebarChip (moved) · GitPRSummaryChip/popover · NotificationChip/popover · DrawerRail"]
+        CH["SidebarChip (moved) · GitPRSummaryChip/popover · MessagesChip/popover · DrawerRail"]
     end
     TP --> TR --> BUS --> CLK
     HOOK --> REPO
@@ -302,7 +303,7 @@ Batches are emitted and applied in order by the single drain loop, so a `.remove
 | Deadline | worker actor | worker | next deadline | the one reschedulable wait; on fire → "recapture" to the adapter |
 | Materialize | AppKit main | materializer + host | row model + selection | shows the expanded variant for the selected row only; measured heights; anchor restore |
 
-**Line rules (spec "Row and chip design"):** compact = title · worktree/branch · one context line (Agent Line while current, else note, else none) · compact chips. Expanded = every existing line + all chips. The terminal-output secondary line and the "zsh" title fallback line are **removed** (explorer §4.2).
+**Line rules (spec "Row and chip design"):** every row, selected or not, shows every existing line (title · worktree/branch · note · Agent Line · Session status) and the chips; selection only adds the changes and ahead/behind chips (owner, 2026-10-01; one visibility table, `RepoExplorerPaneLineVisibilityTable`). The terminal-output secondary line and the "zsh" title fallback line are **removed** (explorer §4.2).
 
 **Changed edges in capture:** Panes rows take their recency from the published `PaneActivityTime` with the capture's reference pair; Repos keeps its basis. `isActive` stops reading focus and comes from the worker's bucket (explorer §3.5).
 
@@ -355,7 +356,7 @@ A drawer whose owner is filtered out or sits in another section shows unindented
 
 ### Chips
 
-`SidebarChip`'s stateless capsule moves from `Core/Views/SidebarChips.swift` to SharedComponents with `package` visibility. Its tones already use Infrastructure `AppStyles`, but its `Icon.system` case takes Core's `SystemSymbol` (`Core/Actions/CommandIcon.swift:5`). The moved capsule therefore takes a value-only icon (octicon name or SF Symbol name), and Core callers pass `symbol.rawValue`. The Core domain wrappers that read `GitBranchStatus` stay in Core and call it. New stateless SharedComponents: `GitPRSummaryChip` (icon + count + glyph, color = state; words only in tooltip), its popover, `NotificationChip` + popover, and `DrawerRail`. The PR-loading spinner leaves the leading column and becomes the git/PR chip's neutral state (explorer §4.3). The same popover views serve the pane bottom bar and Bridge.
+`SidebarChip`'s stateless capsule moves from `Core/Views/SidebarChips.swift` to SharedComponents with `package` visibility. Its tones already use Infrastructure `AppStyles`, but its `Icon.system` case takes Core's `SystemSymbol` (`Core/Actions/CommandIcon.swift:5`). The moved capsule therefore takes a value-only icon (octicon name or SF Symbol name), and Core callers pass `symbol.rawValue`. The Core domain wrappers that read `GitBranchStatus` stay in Core and call it. New stateless SharedComponents: `GitPRSummaryChip` (icon + count + glyph, color = state; words only in tooltip), its popover, `MessagesChip` + popover (attention-type count and filter), the Agent Line popover, and `DrawerRail`. The PR-loading spinner leaves the leading column and becomes the git/PR chip's neutral state (explorer §4.3). The same popover views serve the pane bottom bar and Bridge.
 
 ## Keyboard, drawers, grouping
 
@@ -369,41 +370,95 @@ A drawer whose owner is filtered out or sits in another section shows unindented
 
 ## PR C: agent context on rows and in the pane
 
-Rows read `PaneContextPresentationAtom` through capture. Popovers and the bottom-bar button use PR B's UI-facing seams ("UI-facing seams for Panes PR C" in PR B's Program Design) through one App-owned `PaneContextPopoverController`.
+PR C renders what PR B derives. Its consumed contracts are PR B's "Contracts PR C consumes" (PR B PD rev 22, plus the rev-23 display change accepted by IPC on 2026-10-01), in `Core/PaneContext/Contracts/`, first green at PR B slice 1 (`f6fcf44e4`). PR C never derives status, counts or the pull-request summary. It reads keyed atom values and awaits the two seams.
 
 ```mermaid
 sequenceDiagram
-    participant V as Popover view (SharedComponents)
+    participant V as Popover / chip views (SharedComponents)
     participant P as PaneContextPopoverController (App, MainActor)
     participant R as PaneContextDetailReading (PR B, off-main)
     participant X as PaneContextPersonActing (PR B, off-main)
-    participant A as PaneContextPresentationAtom (PR B)
+    participant A as PaneContextPresentationAtom / SessionStatusAtom (PR B)
     V->>P: open(pane)
-    P->>R: await readDetail(paneId) [generation g]
-    R-->>P: PaneContextDetail(revision r)
-    P->>V: assign local state (only if g is current)
-    A-->>P: revision changed while open → re-read [g+1]
-    V->>P: Allow / Answer / Mark read / Remove link
-    P->>X: await action(requestId)
-    X-->>P: typed outcome
-    P->>V: show outcome (expired / alreadyResolved / protected / ...)
+    P->>R: await readDetail(paneId, page: .first) [generation g]
+    R-->>P: .detail(PaneContextDetail, revision r) / .paneGone / .sourceNotInView / .unavailable
+    Note over P: @concurrent shaping → SharedComponents models (off-main)
+    P->>V: assign shaped state (only if g is current)
+    A-->>P: revision(for: pane) changed while open → re-read [g+1]
+    V->>P: answer / dismiss / mark read / run action
+    P->>X: await answer|dismiss|markRead|runAction
+    X-->>P: typed result
+    P->>V: show the result (answered, refused(reason), alreadySettled, unavailable)
 ```
 
-| Entity (spec) | Row source | Detail / action owner | Panes consumer |
+### What PR C reads
+
+| Spec entity | Row source (keyed atom read, `value(for: paneId)`) | Detail / action (PR B seam) | Panes consumer |
 | --- | --- | --- | --- |
-| E5 Pane context, E6 Agent Line | `PaneContextPresentationAtom` (title via PR B derived reader `agentTitle ?? PaneMetadata.title`; Agent Line summary + state) | `readDetail` → `PaneContextDetail.agentLine: AgentStatusLine?` (summary, state, step, detail, refs, writer/agent, updatedAt, lifetime, stale) | capture → row lines; clicking the Agent Line opens its popover from the detail (R21) |
-| E7 Notification | unread count in the atom | `readDetail` notifications; `markNotificationRead` / `dismissNotification` → `done \| alreadyGone` | NotificationChip, bottom-bar popover; withdrawn by the sender (`pane.notification.withdraw`) drops from the counts and shows dimmed |
-| E8 Git link, git/PR summary | summary in the atom | `readDetail` links (contributions, author, `removableByPerson`, `isProtected`, forge facts); `removeLink` → Bridge v3 union | GitPRSummaryChip + popover |
-| E11 Approval | waiting count + `newestWaitingApprovalId` in the atom | `readDetail` approvals with state `waiting \| answered(by, answer) \| expired \| withdrawn \| stale` (terminal ones kept for `AppPolicies.paneContextResolvedRequestVisibility`, 30 min, ≤ 20 per pane); `answerApproval` → `answered \| refused(alreadyAnswered \| expired \| withdrawn \| stale)` | bottom-bar popover; auto-open (below); refusal shown with its reason (R25b) |
-| E12 Question | open count in the atom | `readDetail` questions with state `open \| answered(by, answer) \| withdrawn` and form `freeText \| choices`; `answerQuestion` → `answered \| withdrawn \| alreadyAnswered` | bottom-bar popover (nonblocking) |
-| E13 Open request | PR B | `readDetail` → `openRequests: [PaneOpenRequestDetail]` (id, agent, reason, target, sourcePaneId, lastRevealOutcome); `openRequest(requestId:)` → Bridge reveal union v3 (admission: noLivePage, unsupportedTarget, staleOwner, staleReceiver; settlement: shown, hidden, superseded, unavailable, notFound, draftKept, cancelled, outcomeUnknown) | bottom-bar popover row showing who and why; "Open view" on hidden, "Retry" on unavailable; PR and artifact targets show unsupported; withdrawn by the requester before a reveal is admitted (`pane.open.withdraw`) shows dimmed |
-| E14 Artifact | PR B | PR B | not shown in Panes Stage 1 (spec: artifacts are defined, their opener is later) |
-| E15 Change feed | PR B | PR B (agent pull) | none; `revision` in the atom triggers re-reads |
-| Drawer items | aggregated by PR B with `sourcePaneId` | same | attribution line in the popover |
+| E5 title, E6 Agent Line | `PaneContextPresentationAtom` (agent title, Agent Line summary and work) | `PaneContextDetail.agentTitle`, `.agentLine: AgentLineDetail?` (summary, work, detail, refs, writer, updatedAt, lifetime, stale) | row lines; the Agent Line popover (R21) |
+| E17 session status | `SessionStatusAtom` keyed by `PaneId` → `AgentSessionStatus` (`needsYou(AskReason)`, `failed`, `working`, `idle`, `unknown`) | `PaneContextDetail.session: SessionSummary?` (status, provider prompts) | the row's Session status line (R13, R21a; owner 2026-10-01: its own line, every row); provider-prompt rows shown read-only (R25c) |
+| E7 messages | `PaneContextDisplay.own` / `.includingDrawers: PaneMessageCounts` (needsApproval / needsReply / attention / informational counts + `newestOpenBlockingAskId`; IPC-accepted 2026-10-01, PR B PD rev 23). An owner's chip reads `includingDrawers`, a drawer child's chip reads `own`, and any cross-pane total sums `own` only | `.messages: [AgentMessageDetail]`, `.drawerMessages`, `.truncation` (more pages via `page: .more(source:after:)`) | messages chip (R20), bottom-bar button and popover (R24) |
+| E16 message actions | — | `AgentMessageDetail.actions: [MessageAction]` (`openFile`, `openPullRequest`, `goToPane`); `runAction` → `MessageActionResult` | action buttons; the file-open outcome names opened / shown / declined / notFound / paneUnavailable |
+| E8 links, E19 PR summary | `pullRequests` in `PaneContextPresentationAtom` | `.links: PaneLinksDetail` (`.unknown` until Bridge B2), `.pullRequests: PullRequestSummaryDetail` (`notApplicable` below two worktrees; `summary(state, members)` where a member has worktreeId, number, checks, review) | the shared git/PR summary chip and popover (R18). The popover shows what the contract carries (number, checks, review, per worktree); title, mergeability, who-added and person link removal arrive with B2 and are listed as unverified until then. Person link removal goes through Bridge's B2 removal seam (`PaneLinkMembershipPort`, Bridge-defined; exact API from the Bridge Lead), not `PaneContextPersonActing`; PaneContext only records the committed removal for the contributing session (PR B R19). PR demand: `PullRequestDemandProjection.worktreeIds(from: Input)` is a pure function; PR C adds one Input field, `pullRequestSummaryMemberWorktreeIds: Set<UUID>` (member worktrees of the PR-summary chips currently on screen: visible sidebar rows and visible panes' bottom bars), unioned after the `.visible` guard. The App site that builds Input fills it from `PaneContextDisplay.pullRequests` with keyed `value(for:)` reads only, no joins. One worktree keeps today's PR chip. |
+| E15 change feed | — | PR B (agent pull) | none; the atom's revision triggers re-reads |
+| Source pane titles (popover group labels) | `titleForPane: (PaneId) -> String?`, an App-injected keyed reader backed by PR B's `PaneDisplayTitleDerived` (wired in stage 2) | — | `PaneContextPopoverShaping.shape(_:sourceTitles:)`; the controller reads titles for the owner and each drawer source on MainActor (keyed reads only) and passes a value dictionary off-main; a missing title falls back to `This pane` / `Drawer pane`, never an id |
 
-**Auto-open (R24):** PR B computes `PaneContextDisplay.newestWaitingApprovalId` off-main, across the pane and its drawers. The controller keeps `lastPresentedApprovalId` per pane (local UI state). When the pane is visible, and either it just became visible or its display value changed, the controller opens the popover if `newestWaitingApprovalId` is non-nil and differs from `lastPresentedApprovalId`, then records it. That's one equality check on MainActor. It covers a request that arrived while the pane was hidden, and one approval replacing another at the same count. Terminal requests stay listed with their state for the visibility window, so an approval that expires while its popover is open shows "expired" from the reread alone.
+### Attention types
 
-**Currentness:** each read carries a generation, and only the latest generation assigns. An action's outcome is shown even if a re-read lands later; the re-read then reflects the committed state.
+The attention type of each message (needs approval / needs reply / attention / informational, R20) is a pure function of `AgentMessageShape` and `MessageImportance`:
+- blocking ask → needs approval;
+- non-blocking ask → needs reply;
+- notice with `attention`/`failure` → attention;
+- notice with `info`/`done` → informational.
+
+The classifier is `AgentMessageAttentionType.classify(shape:importance:)` in Core/PaneContext/Contracts, shared with PR B (accepted 2026-10-01), so the counts and the popover agree. It classifies type only (blocking ask → needsApproval, whatever its AskReason); only outstanding messages count (asks `.open`, notices `.unread`). The chip counts arrive precomputed in `PaneContextPresentationAtom`. The popover is shaped OFF the main actor: a `@concurrent nonisolated` shaping step maps `PaneContextDetail` into SharedComponents value models (SharedComponents can't import Core) and precomputes one partition per attention type (open asks first, then notices newest first, drawer attribution). The controller resumes on MainActor only to assign the shaped result; a filter toggle picks a precomputed partition and runs no sort or filter on MainActor.
+
+### Person actions
+
+The controller calls `PaneContextPersonActing` with `PersonActor.localUser`:
+- `answer(AnswerAskRequest)` → `answered` / `refused(AnswerRefusal)` / `unavailable`. Refusal reasons are shown as returned: alreadyAnswered, handedBack, dismissed, expired, withdrawn, stale, notFound, invalidAnswer.
+- `dismiss` → `done` / `alreadySettled` / `notFound` / `unavailable`. Dismissing a blocking ask hands back to the agent's own prompt (R25).
+- `markRead`, and `runAction(MessageActionRequest)`.
+
+An answered ask shows its receipt (not yet confirmed / confirmed / unconfirmed) from the re-read.
+
+### Auto-open (R24)
+
+The controller keeps `lastPresentedAskId` per pane as local UI state. When a visible pane's `includingDrawers.newestOpenBlockingAskId` (owner) or `own.newestOpenBlockingAskId` (drawer child) is non-nil and differs from it, the controller opens the popover (finding a drawer child's ask in `readDetail`'s `drawerMessages`, labelled by source) and records it. That's one equality check on MainActor. Drawer children have no bottom bar of their own: they share their owner's (`PaneLeafContainer` mounts the toolbar host only for non-drawer leaves). So the owner's bar reads `includingDrawers`, auto-opens on `includingDrawers.newestOpenBlockingAskId` and opens the owner's detail, whose drawer items are labelled by source title. A zoom container's bar for a drawer child reads `own`. Only a host whose pane is visible auto-opens; zoom replaces the leaf view, so one host per pane is visible. Nothing else auto-opens, and a notice never takes focus.
+
+**Where the service comes from.** PR B publishes `PaneContextService` asynchronously, after the IPC server prepares (off the first-frame path). It installs it beside `workspaceSurfaceCoordinator.paneContextService` in `AppDelegate+IPC` and clears it before the composition shuts down. PR C never constructs it and never reads it once at host creation. Button presence follows `PaneContextPresentationAtom` (empty when there's no service), and the host resolves a `PaneContextUIAdapter` lazily through an injected `@MainActor` provider when the popover opens or an action runs. If the provider returns nil, the popover shows a plain not-available state with no controls. `.unavailable(StorageFailureSummary)` from a live service is shown as a storage failure. `PaneLinkMembershipPort` is resolved the same way; with no conformer (until Bridge B2), no remove-link control is shown.
+
+### What runs on MainActor
+
+Only these run on MainActor:
+- `value(for: paneId)` reads of the two atoms, inside capture and the controller;
+- resuming awaited seam calls and assigning local UI state;
+- the auto-open equality check.
+
+No subscription other than the two atoms, and no sort, filter or join, runs on MainActor (PR B PD "MainActor and atom boundaries"). Native effects behind `runAction` (goToPane focus, openPullRequest) are PR B's thin calls on their existing MainActor owners.
+
+### Currentness
+
+`.paneGone` closes the popover. `.sourceNotInView` (a `.more` page for a drawer that moved away) drops that drawer's group and re-reads `.first`. `.unavailable` keeps the last shown state with an "unavailable" note. Each read carries a generation, and only the latest generation assigns. An action's result is shown even if a re-read lands later; the re-read then shows the committed state.
+
+### Delivery shape (Lead decision, 2026-10-01)
+
+PR B's slice 1 carries the detail and action contracts. `SessionStatusAtom` (S2) and `PaneContextPresentationAtom` (S3b) come later. PR C is built in two parts, stacked on PR B:
+1. **On slice 1's contracts (now, base `f6fcf44e4`):** only what slice 1 carries:
+   - the read and action protocols;
+   - the `@concurrent` popover shaping and SharedComponents value models;
+   - the message popover with answer / dismiss / mark read / run action and every result shown;
+   - the Agent Line popover;
+   - the git/PR popover over `PullRequestSummaryDetail`;
+   - `PaneContextPopoverController` with currentness and the four read results.
+   All are tested against fakes that honour the contract shapes.
+2. **Row wiring (after PR B S2/S3b green and the 01a0f7b2 display change):** capture reads of the two atoms through the App-injected readers, the Session status line (R21a; owner 2026-10-01: every row shows every existing line, one presentation table of line → shown-when), the chip counts and tint, auto-open for blocking asks, the PR summary on rows with demand registration, and real-seam integration. It re-stacks onto PR B's head.
+
+Unverified until B2: links and their removal, the real file open, and the two-or-more-worktree summary on live data.
+
+3. **Permission hook installer (stage 2, after PR B's `ask --wait`):** the installed Claude Code and Codex permission hooks switch from report-only to `agentstudio ask --wait` (a blocking approval ask; choices allow / deny / ask-hand-back), with the wait ending before the provider's hook timeout and no grant on timeout, withdrawal or hand-back (PR B R13, R6). Owner: the hook installer (confirmed with IPC before editing). Cursor's hook follows only after the owner's timeout decision. Proof: real-socket integration plus installer tests.
+
+Each stand-in fake is recorded as a known gap until the real atom or seam lands.
 
 ## When things go wrong
 
@@ -421,7 +476,7 @@ sequenceDiagram
 | Sleep past a deadline | Worker wait wakes after sleep; recapture uses current wall time | worker |
 | Pane moves bucket under the anchor | View follows the pane by `anchorIdentity` | materializer |
 | Approval expires while its popover is open | Revision changes → re-read shows expired; an Allow pressed late returns `expired` | controller + PR B |
-| PR B context unavailable | No Agent Line / notification / git chip; activity unaffected | capture |
+| PR B context unavailable | No Agent Line / messages / git chip and no status glyph; activity unaffected | capture |
 | Width too small | Chips hide right-to-left: ahead/behind, then changes | row model |
 
 ## Performance and privacy
@@ -429,7 +484,7 @@ sequenceDiagram
 - MainActor work added by this design: one assign-only batch apply per clock batch; keyed capture reads (including the deadline recapture); the materializer's variant swap, height measure and anchor restore; and the popover controller's local state assignment after awaited off-main reads. No ordering, gating, scheduling or derivation runs on MainActor. PR A also moves the existing bucket-deadline scheduling off MainActor.
 - New policy constant: `AppPolicies.Panes.activityTimePublishInterval`. It's behavior, so it lives in `AppPolicies`, not `AppStyles`.
 - Proof of the `often` hook lane uses marker-scoped probes per [Observability — Proof Model](../../architecture/observability/observability_and_traceability.md#proof-model): clock admissions vs publishes vs MainActor apply count.
-- No raw terminal output reaches rows. Agent Line and notification text are agent-authored strings, shown as given.
+- No raw terminal output reaches rows. Agent Line and message text are agent-authored strings, shown as given.
 
 ## How each requirement is realized and proved
 
@@ -447,7 +502,7 @@ Tests follow the repo testing standard ([How a test may wait](../../architecture
 | R11–R24 rows, chips, variants | row model; SharedComponents | Row-model tests for both variants; architecture lint passes after the chip move; native visual proof |
 | No-jump rule | materializer anchor | Materializer tests: first partly visible pane crosses buckets, pin/unpin, new section at top while at top, selected-row expansion above the anchor, true deletion |
 | R31–R31c keyboard | nav index + host | Nav-index unit tests (> 9 destinations, drawers, headers); native key-path test: ↓ past nine, → on a collapsed header selects its first child, `D` with a selected drawer, Esc / repeat Cmd+Shift+S |
-| R18, R20–R25b, E7–E12 popovers and actions | `PaneContextPopoverController` + PR B seams | Controller tests against a contract-faithful PR B stand-in: expiry while open (shown from the reread), competing answers, refusals for alreadyAnswered, expired, withdrawn and stale checked separately, protected link removal, drawer attribution, question answer, Agent Line popover fields, open-request outcomes (hidden → Open view, unavailable → Retry, unsupported target), auto-open when a hidden pane becomes visible and when one approval replaces another at the same count; then the real PR B + Bridge integration before Stage 1 is called complete |
+| R18, R20–R25c, E7/E16–E19 popovers, status glyph and actions | `PaneContextPopoverController` + PR B seams; capture reads of `SessionStatusAtom` / `PaneContextPresentationAtom` | Unit: the attention-type function over every shape × importance. Controller tests against contract-faithful fakes: ask answered / handed back on dismiss / expired while open (from the re-read) / each refusal reason shown; receipt states; mark read; runAction outcomes (file opened / shown / declined / notFound / paneUnavailable); drawer attribution; truncation paging; auto-open only for a new blocking ask; provider prompts read-only. After S2/S3b: integration through the real seams and atoms, the status glyph per pane (including after the session ends), chip counts excluding informational by default, and the PR summary below and above two worktrees. Native: the debug app via IPC (`pane.message.send/ask`, hooks) showing the chip, popover, glyph and auto-open. |
 
 ## Open items
 

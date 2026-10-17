@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import CryptoKit
 import Foundation
 import Testing
@@ -7,8 +8,8 @@ import Testing
 
 @Suite("Bridge File content stream pacing")
 struct BridgeFileContentStreamPacingTests {
-    @Test("large File content waits for each exact worker observation")
-    func largeFileContentWaitsForEachExactWorkerObservation() async throws {
+    @Test("large File content keeps several chunks in flight within its credit window")
+    func largeFileContentKeepsSeveralChunksInFlight() async throws {
         // Arrange
         let finalCanary = Data("bridge-file-stream-final-canary".utf8)
         var sourceData = Data(
@@ -31,8 +32,8 @@ struct BridgeFileContentStreamPacingTests {
         )
 
         // Assert
-        #expect(evidence.maximumUnobservedFrameCount <= 1)
-        #expect(evidence.maximumReadAheadCount <= 1)
+        #expect(evidence.maximumUnobservedFrameCount <= AppPolicies.Bridge.productViewCreditParts)
+        #expect(evidence.maximumReadAheadCount > 1)
         #expect(evidence.pullRejection == nil)
         #expect(evidence.resetHeaders.isEmpty)
         #expect(evidence.errorHeaders.isEmpty)
@@ -57,7 +58,7 @@ struct BridgeFileContentStreamPacingTests {
     func cancellationAfterReaderOpenClosesOnce() async throws {
         // Arrange
         let context = try await makePacingStreamContext(
-            sourceData: Data("cancel-after-open".utf8)
+            sourceData: Data(repeating: 0x63, count: AppPolicies.Bridge.productViewCreditBytes * 2)
         )
         let decoder = try BridgeProductContentFrameDecoder()
         let openingDelivery = try await requiredFrameDelivery(
@@ -82,7 +83,8 @@ struct BridgeFileContentStreamPacingTests {
         )
         #expect(try decoder.append(dataDelivery.frame.data).first?.header.kind == "content.data")
         #expect(await context.readerHarness.openCount == 1)
-        #expect(await context.readerHarness.readCount == 1)
+        #expect(await context.readerHarness.readCount >= 1)
+        #expect(await context.readerHarness.readCount <= AppPolicies.Bridge.productViewCreditParts)
         #expect(await context.readerHarness.closeCount == 0)
 
         // Act
@@ -91,6 +93,30 @@ struct BridgeFileContentStreamPacingTests {
         // Assert
         #expect(await context.readerHarness.closeCount == 1)
         #expect((await context.harness.session.producerSnapshot()).hasZeroResidue)
+    }
+
+    @Test("a moved File descriptor ends its read as superseded without resetting E3")
+    func movedFileDescriptorEndsAsSupersededWithoutResettingE3() async throws {
+        let context = try await makePacingStreamContext(
+            sourceData: Data("original File bytes".utf8),
+            readerData: Data("moved File bytes".utf8)
+        )
+        let decoder = try BridgeProductContentFrameDecoder()
+        let openingQueuedFrameCount = try await observeAcceptedFrameBeforeFileAccess(
+            context: context,
+            decoder: decoder
+        )
+
+        let evidence = try await consumePacedStream(
+            context: context,
+            decoder: decoder,
+            openingQueuedFrameCount: openingQueuedFrameCount
+        )
+
+        #expect(evidence.errorHeaders.map(\.code) == [.superseded])
+        #expect(evidence.resetHeaders.isEmpty)
+        #expect(evidence.contentEndHeader == nil)
+        #expect(evidence.teardownSnapshot.hasZeroResidue)
     }
 }
 
@@ -117,7 +143,8 @@ private struct PacingFileContentStreamEvidence {
 }
 
 private func makePacingStreamContext(
-    sourceData: Data
+    sourceData: Data,
+    readerData: Data? = nil
 ) async throws -> PacingFileContentStreamContext {
     let sourceSHA256 = sha256(sourceData)
     let request = try fileContentRequest(
@@ -133,7 +160,7 @@ private func makePacingStreamContext(
             rootURL: FileManager.default.temporaryDirectory
         )
     )
-    let readerHarness = PacingFileContentReaderHarness(sourceData: sourceData)
+    let readerHarness = PacingFileContentReaderHarness(sourceData: readerData ?? sourceData)
     let refreshWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
     let provider = BridgePaneProductSchemeProvider(
         fileMetadataSource: fileMetadataSource,
@@ -181,26 +208,15 @@ private func observeAcceptedFrameBeforeFileAccess(
     #expect(openingFrames.count == 1)
     #expect(openingFrames.first?.header.kind == "content.accepted")
 
-    for _ in 0..<1000 {
-        let readPlanAccessCount = await context.fileMetadataSource.readPlanAccessCount
-        let snapshot = await context.harness.session.producerSnapshot()
-        if readPlanAccessCount > 0
-            || snapshot.pendingProducerObservationPacingWaiterCount == 1
-        {
-            break
-        }
-        await Task.yield()
-    }
     let snapshot = await context.harness.session.producerSnapshot()
 
     // The accepted frame is in flight: its pull waiter is fulfilled, while the producer waits
-    // for exact observation before File authority or bytes may be touched.
+    // for the opening content credit before File authority or bytes may be touched.
     #expect(await context.fileMetadataSource.readPlanAccessCount == 0)
     #expect(await context.readerHarness.openCount == 0)
     #expect(await context.readerHarness.readCount == 0)
     #expect(snapshot.pendingFrameWaiterCount == 0)
-    #expect(snapshot.pendingProducerObservationPacingWaiterCount == 1)
-    #expect(snapshot.inFlightFrameReceiptCount == 1)
+    #expect(snapshot.inFlightFrameReceiptCount == 0)
     #expect(
         await context.harness.session.acknowledgeContentFrameObservation(
             try contentFrameAcknowledgement(
@@ -266,15 +282,20 @@ private func consumePacedStream(
             }
         }
         #expect(
-            await context.harness.session.acknowledgeContentFrameObservation(
-                try contentFrameAcknowledgement(
-                    for: context.request.admission,
-                    contentSequence: delivery.frame.sequence
-                ),
+            await context.harness.session.acknowledgeProducerFrameConsumed(
+                delivery.receipt,
                 productAdmission: context.harness.productAdmission.context
-            )
-        )
+            ))
         if decodedFrames.contains(where: { if case .data = $0.header { true } else { false } }) {
+            #expect(
+                await context.harness.session.acknowledgeContentFrameObservation(
+                    try contentFrameAcknowledgement(
+                        for: context.request.admission,
+                        contentSequence: delivery.frame.sequence
+                    ),
+                    productAdmission: context.harness.productAdmission.context
+                )
+            )
             acknowledgedDataFrameCount += 1
         }
     }
@@ -294,6 +315,12 @@ private func consumePacedStream(
 }
 
 private actor PacingFileMetadataSource: BridgePaneProductFileMetadataProducing {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private let expectedRequest: BridgeProductFileContentRequest
     private let readPlan: BridgePaneProductFileContentReadPlan
     private(set) var readPlanAccessCount = 0
@@ -314,14 +341,16 @@ private actor PacingFileMetadataSource: BridgePaneProductFileMetadataProducing {
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId _: String) {}
@@ -482,6 +511,11 @@ private func requiredFrameDelivery(
     else {
         throw BridgeFileContentStreamPacingTestError.expectedProducerFrame
     }
+    #expect(
+        await session.acknowledgeProducerFrameConsumed(
+            delivery.receipt,
+            productAdmission: productAdmission
+        ))
     return delivery
 }
 
@@ -492,11 +526,10 @@ private func contentFrameAcknowledgement(
     let acknowledgementData = try JSONSerialization.data(
         withJSONObject: [
             "contentRequestId": admission.contentRequestId,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": contentSequence,
+            "kind": "content.acknowledge",
             "leaseId": admission.leaseId,
             "paneSessionId": admission.paneSessionId,
-            "streamKind": "content",
             "wireVersion": admission.wireVersion,
             "workerInstanceId": admission.workerInstanceId,
         ],

@@ -151,6 +151,8 @@ const bridgeDevStringAttributeKeys = new Set<string>([
 	'agentstudio.bridge.worker.lane',
 	'agentstudio.bridge.worker.payload_class',
 	'agentstudio.bridge.worker.review_select_dispatch',
+	'agentstudio.bridge.worker.replacement_reason',
+	'agentstudio.bridge.worker.replacement_source',
 	'agentstudio.bridge.worker.semantic_class',
 	'agentstudio.bridge.worker.session_state',
 	'agentstudio.bridge.worker.task_kind',
@@ -175,7 +177,7 @@ const bridgeDevRestrictedStringAttributeValuesByKey = new Map<string, ReadonlySe
 	['agentstudio.bridge.activation.from_viewer', new Set(['file', 'review'])],
 	[
 		'agentstudio.bridge.comparison.attempt.status',
-		new Set(['absent', 'pending', 'selection_required', 'settled', 'unavailable']),
+		new Set(['absent', 'no_source', 'pending', 'selection_required', 'settled', 'unavailable']),
 	],
 	[
 		'agentstudio.bridge.comparison.package_match',
@@ -242,6 +244,31 @@ const bridgeDevRestrictedStringAttributeValuesByKey = new Map<string, ReadonlySe
 		new Set(['awaiting_bootstrap', 'bootstrapping', 'disposed', 'ready', 'replacement_requested']),
 	],
 	[
+		'agentstudio.bridge.worker.replacement_reason',
+		new Set([
+			'bootstrap_timeout',
+			'explicit_dispose',
+			'message_error',
+			'none',
+			'runtime_recovery',
+			'session_in_use',
+			'session_suspect',
+			'worker_error',
+		]),
+	],
+	[
+		'agentstudio.bridge.worker.replacement_source',
+		new Set([
+			'admission_reply_exhausted',
+			'none',
+			'render_disposition_overload',
+			'render_disposition_probe_exhausted',
+			'result_acknowledgement_exhausted',
+			'result_deadline_exhausted',
+			'review_installed_receipt_failed',
+		]),
+	],
+	[
 		'agentstudio.bridge.render_disposition.outcome',
 		new Set(['acked', 'cleared', 'degraded', 'timed_out']),
 	],
@@ -249,6 +276,7 @@ const bridgeDevRestrictedStringAttributeValuesByKey = new Map<string, ReadonlySe
 		'agentstudio.bridge.render_publication.outcome',
 		new Set([
 			'cleared',
+			'held',
 			'painted',
 			'published',
 			'queued',

@@ -53,6 +53,7 @@ class DraggableTabBarHostingView: NSView, NSDraggingSource {
 
     private var managementLayerObservation: Task<Void, Never>?
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    private let commandDispatcher: any AppCommandDispatching
     private var rightMouseDownMonitor: Any?
 
     isolated deinit {
@@ -66,8 +67,10 @@ class DraggableTabBarHostingView: NSView, NSDraggingSource {
 
     init(
         rootView: CustomTabBar,
+        commandDispatcher: any AppCommandDispatching,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     ) {
+        self.commandDispatcher = commandDispatcher
         self.performanceTraceRecorder = performanceTraceRecorder
         super.init(frame: .zero)
 
@@ -609,7 +612,7 @@ class DraggableTabBarHostingView: NSView, NSDraggingSource {
             return false
         }
 
-        AppCommandDispatcher.shared.dispatchExtractPaneToTab(
+        commandDispatcher.dispatchExtractPaneToTab(
             tabId: payload.tabId,
             paneId: payload.paneId,
             targetTabInsertionIndex: targetTabInsertionIndex

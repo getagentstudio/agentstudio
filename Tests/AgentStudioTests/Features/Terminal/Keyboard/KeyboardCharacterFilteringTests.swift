@@ -5,8 +5,8 @@ import Testing
 
 @testable import AgentStudioTerminal
 
+@MainActor
 @Suite(.serialized)
-
 final class KeyboardCharacterFilteringTests {
     struct KeyEventTextCase: CustomTestStringConvertible, Sendable {
         let name: String
@@ -15,7 +15,7 @@ final class KeyboardCharacterFilteringTests {
         var testDescription: String { name }
     }
 
-    static let keyEventTextCases: [KeyEventTextCase] = [
+    nonisolated static let keyEventTextCases: [KeyEventTextCase] = [
         .init(name: "nil text", text: nil, expectedText: nil),
         .init(name: "empty text", text: "", expectedText: nil),
         .init(name: "single C0 control", text: "\u{03}", expectedText: nil),

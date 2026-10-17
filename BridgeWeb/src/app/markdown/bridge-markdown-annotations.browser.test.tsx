@@ -248,9 +248,7 @@ describe('rendered Markdown production annotations', () => {
 		await act(async (): Promise<void> => {
 			harness.surface.settleMostRecentConflict('root.create');
 		});
-		await expect
-			.element(screen.getByText('Your editor is retained. Finish editing or retry the refresh.'))
-			.toBeVisible();
+		await expect.element(screen.getByRole('status', { name: 'File changed' })).toBeVisible();
 		expect(editor.element()).toBe(originalEditor);
 		await expect.element(editor).toHaveValue('Unflushed text');
 		await expect.element(screen.getByText('Original paragraph', { exact: true })).toBeVisible();

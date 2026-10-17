@@ -23,7 +23,9 @@ package final class TerminalActivityRouter {
 
     private let bus: EventBus<RuntimeEnvelope>
     private let projector: TerminalActivityProjector
-    private let projectorBindingID = UUIDv7.generate()
+    private let callbackHandlingAccess: @MainActor @Sendable () -> Ghostty.ActionRouter?
+    private var acceptsSourceInput = false
+    private var sourceInputWaitersByID: [UUID: CheckedContinuation<Void, Never>] = [:]
     private let activityAtom: TerminalActivityAtom
     private let attendedPane: AttendedPaneDerived?
     private let traceRuntime: AgentStudioTraceRuntime?
@@ -46,6 +48,7 @@ package final class TerminalActivityRouter {
     private let lastOutputLineReader: @MainActor (UUID) -> TerminalViewportTextReadResult
     private let recordSettledActivityStatus: @MainActor (UUID, String?) -> Void
     private let clearPaneActivityStatus: @MainActor (UUID) -> Void
+    private let factSink: TerminalActivityRouterFactSink?
 
     private var busTask: Task<Void, Never>?
     private var derivedActivityPostTask: Task<Void, Never>?
@@ -64,15 +67,16 @@ package final class TerminalActivityRouter {
     package init(
         bus: EventBus<RuntimeEnvelope>,
         activityAtom: TerminalActivityAtom,
+        callbackHandlingAccess: @escaping @MainActor @Sendable () -> Ghostty.ActionRouter?,
         projector: TerminalActivityProjector? = nil,
         attendedPane: AttendedPaneDerived? = nil,
         traceRuntime: AgentStudioTraceRuntime? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
         onFirstRender: (@MainActor @Sendable (UUID) -> Void)? = nil,
-        surfaceIDForPaneID: (@MainActor (UUID) -> UUID?)? = nil,
+        surfaceIDForPaneID: @escaping @MainActor (UUID) -> UUID?,
         isPaneCurrentlyAttended: (@MainActor (UUID) -> Bool)? = nil,
         isPaneAgentClassified: (@MainActor (UUID, PaneContentType) -> Bool)? = nil,
-        lastOutputLineReader: (@MainActor (UUID) -> TerminalViewportTextReadResult)? = nil,
+        lastOutputLineReader: @escaping @MainActor (UUID) -> TerminalViewportTextReadResult,
         recordSettledActivityStatus: (@MainActor (UUID, String?) -> Void)? = nil,
         clearPaneActivityStatus: (@MainActor (UUID) -> Void)? = nil,
         activityOccurrenceSink: (@Sendable (PaneActivityOccurrence) -> Void)? = nil,
@@ -82,9 +86,11 @@ package final class TerminalActivityRouter {
         unseenActivityClock: (any Clock<Duration> & Sendable)? = nil,
         nowMilliseconds _: @escaping @Sendable () -> Int64 = {
             Int64(DispatchTime.now().uptimeNanoseconds / 1_000_000)
-        }
+        },
+        factSink: TerminalActivityRouterFactSink? = nil
     ) {
         self.bus = bus
+        self.callbackHandlingAccess = callbackHandlingAccess
         self.projector =
             projector
             ?? TerminalActivityProjector(
@@ -99,17 +105,17 @@ package final class TerminalActivityRouter {
         self.traceRuntime = traceRuntime
         self.startupTraceRecorder = startupTraceRecorder
         self.onFirstRender = onFirstRender
-        self.surfaceIDForPaneID = surfaceIDForPaneID ?? { SurfaceManager.shared.surfaceId(forPaneId: $0) }
+        self.surfaceIDForPaneID = surfaceIDForPaneID
         self.isPaneCurrentlyAttended =
             isPaneCurrentlyAttended
             ?? { [attendedPane] paneID in
                 attendedPane?.attendedPaneId == paneID
             }
         self.isPaneAgentClassified = isPaneAgentClassified ?? { _, paneKind in paneKind == .agent }
-        self.lastOutputLineReader =
-            lastOutputLineReader ?? { SurfaceManager.shared.readViewportTrailingText(forSurfaceID: $0) }
+        self.lastOutputLineReader = lastOutputLineReader
         self.recordSettledActivityStatus = recordSettledActivityStatus ?? { _, _ in }
         self.clearPaneActivityStatus = clearPaneActivityStatus ?? { _ in }
+        self.factSink = factSink
     }
 
     deinit {
@@ -142,10 +148,12 @@ package final class TerminalActivityRouter {
             }
         }
         lifecycleOperationTask = operation
+        factSink?(.lifecycle(sequence), .lifecycleEnqueued(starting ? .start : .stop))
         await operation.value
         if lifecycleOperationSequence == sequence {
             lifecycleOperationTask = nil
         }
+        factSink?(.lifecycle(sequence), .lifecycleCompleted)
     }
 
     private func performStart() async {
@@ -159,20 +167,8 @@ package final class TerminalActivityRouter {
                 self?.consumeProjectionOutcomes(outcomes)
             }
         )
-        Ghostty.ActionRouter.bindTerminalActivityInput(
-            id: projectorBindingID,
-            context: { [weak self] paneID in
-                self?.projectionContext(for: paneID)
-                    ?? TerminalActivityProjectionContext(
-                        isAttended: false,
-                        isAgentClassified: false,
-                        outputBurstThreshold: AppPolicies.InboxNotification.terminalActivityOutputBurstThresholdRows
-                    )
-            },
-            sink: { [weak self] input in
-                await self?.consumeTerminalActivityInput(input)
-            }
-        )
+        acceptsSourceInput = true
+        resumeSourceInputWaiters()
         let stream = await bus.subscribe(
             policy: .lossyNewest(BusSubscriberPolicy.standardLossyBufferLimit),
             subscriberName: "TerminalActivityRouter",
@@ -194,7 +190,8 @@ package final class TerminalActivityRouter {
     }
 
     private func performStop() async {
-        Ghostty.ActionRouter.unbindTerminalActivityInput(id: projectorBindingID)
+        acceptsSourceInput = false
+        resumeSourceInputWaiters()
         let task = busTask
         task?.cancel()
         busTask = nil
@@ -210,7 +207,7 @@ package final class TerminalActivityRouter {
     package func markUnseenActivityObserved(paneId: UUID) {
         guard let surfaceID = surfaceIDForPaneID(paneId) else { return }
         Task { @MainActor in
-            await Ghostty.ActionRouter.applyOrderedActivityControl(
+            _ = await callbackHandlingAccess()?.applyOrderedActivityControl(
                 surfaceID: surfaceID,
                 paneID: paneId,
                 control: .observed
@@ -222,6 +219,58 @@ package final class TerminalActivityRouter {
     /// `consumeTerminalActivityInput` call, without blocking ordinary production callers.
     package func waitForPendingDerivedActivityPosts() async {
         await derivedActivityPostTask?.value
+    }
+
+    /// Activation waits for this router instance to finish configuring its projector.
+    func awaitSourceInputReady(onWaiterRegistered: (@Sendable () -> Void)? = nil) async {
+        guard !acceptsSourceInput, !Task.isCancelled else { return }
+        let waiterID = UUIDv7.generate()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !acceptsSourceInput, !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                sourceInputWaitersByID[waiterID] = continuation
+                onWaiterRegistered?()
+            }
+        } onCancel: {
+            Task { @MainActor [weak self] in
+                self?.sourceInputWaitersByID.removeValue(forKey: waiterID)?.resume()
+            }
+        }
+    }
+
+    private func resumeSourceInputWaiters() {
+        let waiters = sourceInputWaitersByID
+        sourceInputWaitersByID.removeAll()
+        for waiter in waiters.values { waiter.resume() }
+    }
+
+    package func armRestorePhase(
+        paneID: UUID,
+        restoreGeneration: RestoreGeneration,
+        onWaiterRegistered: (@Sendable () -> Void)? = nil
+    ) async -> RestorePhaseArmAcknowledgment {
+        await awaitSourceInputReady(onWaiterRegistered: onWaiterRegistered)
+        guard acceptsSourceInput, !Task.isCancelled else { return .projectorUnbound }
+        await projector.armRestorePhase(paneID: paneID, generation: restoreGeneration)
+        return .armed
+    }
+
+    package func retirePanePermanently(paneID: UUID) async {
+        guard acceptsSourceInput else { return }
+        await projector.retirePanePermanently(paneID: paneID)
+    }
+
+    func sourceInputContext(paneID: UUID) -> TerminalActivityProjectionContext? {
+        guard acceptsSourceInput else { return nil }
+        return projectionContext(for: paneID)
+    }
+
+    func consumeSourceInputIfAccepting(_ input: TerminalActivitySourceInput) async {
+        guard acceptsSourceInput else { return }
+        await consumeTerminalActivityInput(input)
     }
 
     func consumeTerminalActivityInput(_ input: TerminalActivitySourceInput) async {
@@ -348,7 +397,7 @@ package final class TerminalActivityRouter {
                 // semantic fact entered the lossy bus. Other consumers retain the fact; this
                 // projector must not settle it twice or depend on subscriber delivery.
             } else {
-                await Ghostty.ActionRouter.applyOrderedActivityControl(
+                _ = await callbackHandlingAccess()?.applyOrderedActivityControl(
                     surfaceID: surfaceID,
                     paneID: paneEnvelope.paneId.uuid,
                     control: .semanticSignal
@@ -356,6 +405,9 @@ package final class TerminalActivityRouter {
             }
         }
         await traceTerminalActivity(paneEnvelope)
+        factSink?(
+            .runtimeEnvelope(paneID: paneEnvelope.paneId.uuid, eventID: paneEnvelope.eventId),
+            .runtimeEnvelopeHandled)
     }
 
     private func derivedActivityEnvelope(_ event: TerminalActivityEvent, paneID: UUID) -> RuntimeEnvelope {
@@ -572,7 +624,7 @@ extension TerminalActivityRouter {
             for delivery in deliveries {
                 guard !Task.isCancelled, attentionLifecycleEpoch == epoch, busTask != nil else { return }
                 guard surfaceIDForPaneID(delivery.paneID) == delivery.surfaceID else { continue }
-                await Ghostty.ActionRouter.applyOrderedActivityControl(
+                _ = await callbackHandlingAccess()?.applyOrderedActivityControl(
                     surfaceID: delivery.surfaceID,
                     paneID: delivery.paneID,
                     control: .contextChanged(delivery.after),

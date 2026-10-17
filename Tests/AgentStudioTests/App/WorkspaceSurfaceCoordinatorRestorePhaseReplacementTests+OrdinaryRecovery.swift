@@ -65,25 +65,12 @@ extension WorkspaceSurfaceRestorePhaseReplacementTests {
     private func armAndMountInitialSurfaceForOrdinaryRecoveryTest(
         coordinator: WorkspaceSurfaceCoordinator,
         pane: Pane,
-        projector: TerminalActivityProjector,
-        recorder: FactRecorder<UUID, ReplacementFact>
+        projector: TerminalActivityProjector
     ) async throws -> (generation: RestoreGeneration, initialSurface: Ghostty.SurfaceView) {
         let generation = coordinator.allocateRestoreGeneration()
-        let acknowledgment = await Ghostty.ActionRouter.armRestorePhase(
+        let acknowledgment = await coordinator.terminalActivityRouter?.armRestorePhase(
             paneID: pane.id, restoreGeneration: generation)
         #expect(acknowledgment == .armed)
-        let armedFact = try await recorder.expectNext(
-            in: pane.id,
-            where: {
-                if case .restorePhaseArmed = $0 { return true }
-                return false
-            },
-            "restorePhaseArmed"
-        )
-        guard case .restorePhaseArmed(let armedGeneration) = armedFact, armedGeneration == generation else {
-            Issue.record("expected restorePhaseArmed(\(generation)), got \(armedFact)")
-            throw ReplacementTestFailure.setupDidNotSucceed
-        }
         #expect(await projector.isRestorePhaseActive(paneID: pane.id))
 
         let authority: TerminalSurfaceCreationAuthority = .released(PaneId(existingUUID: pane.id))
@@ -106,9 +93,9 @@ extension WorkspaceSurfaceRestorePhaseReplacementTests {
         return (generation: generation, initialSurface: initialSurface)
     }
 
-    private func arrangeArmedPaneRecoveredThroughOrdinaryRestoreAfterOneRepairWithEmptyBounds(
-        bindingID: UUID
-    ) async throws -> ReplacementScenario {
+    private func arrangeArmedPaneRecoveredThroughOrdinaryRestoreAfterOneRepairWithEmptyBounds() async throws
+        -> ReplacementScenario
+    {
         let windowLifecycleStore = WindowLifecycleAtom()
         // Bounds intentionally left empty here -- set only after the
         // empty-bounds repair attempt below.
@@ -127,11 +114,12 @@ extension WorkspaceSurfaceRestorePhaseReplacementTests {
         let projector = TerminalActivityProjector()
         let source = LocalFactSource(vocabulary: vocabulary())
         let recorder = try source.attach()
-        bindProjector(projector, bindingID: bindingID, factSink: source.sink)
+        let routing = await bindProjector(projector, coordinator: coordinator, factSink: source.sink)
+        surfaceManager.routing = routing
 
         // 1. Arm and mount the initial surface.
         let (generation, initialSurface) = try await armAndMountInitialSurfaceForOrdinaryRecoveryTest(
-            coordinator: coordinator, pane: pane, projector: projector, recorder: recorder)
+            coordinator: coordinator, pane: pane, projector: projector)
 
         // 2. Repair while bounds are still empty -- the real failure
         // branch, never a hand-set pending entry.
@@ -171,18 +159,6 @@ extension WorkspaceSurfaceRestorePhaseReplacementTests {
             "the pending entry must clear once ordinary recovery actually installs it"
         )
 
-        // Register with `SurfaceManager.shared` and replay a pre-end output
-        // burst -- identical to `arrangeArmedAndRepairedPane`'s own closing
-        // steps; see that function's comments for why each is needed.
-        guard
-            case .success = SurfaceManager.shared.acceptCreatedSurface(
-                recoveredSurface, metadata: SurfaceMetadata(paneId: pane.id))
-        else {
-            Issue.record("expected SurfaceManager.shared to accept the recovered surface")
-            throw ReplacementTestFailure.setupDidNotSucceed
-        }
-        SurfaceManager.shared.attach(recoveredSurface.managedSurfaceID, to: pane.id)
-
         let outcomes = ReplacementOutcomeRecorder()
         await projector.configure(outcomeSink: { recorded in outcomes.record(recorded) })
         await projector.ingest(
@@ -197,7 +173,7 @@ extension WorkspaceSurfaceRestorePhaseReplacementTests {
         return ReplacementScenario(
             coordinator: coordinator, projector: projector, outcomes: outcomes, facts: recorder, paneID: pane.id,
             generation: generation, preRepairSurface: initialSurface, repairedSurface: recoveredSurface,
-            bindingID: bindingID
+            routing: routing
         )
     }
 
@@ -205,9 +181,7 @@ extension WorkspaceSurfaceRestorePhaseReplacementTests {
         "a generation stuck pending through an empty-bounds repair still reinstalls through ordinary visible-pane recovery, then a real keyDown ends the restore phase exactly once at the projector"
     )
     func realKeyDownAfterOrdinaryRecoveryFollowingEmptyBoundsRepairEndsRestorePhase() async throws {
-        let bindingID = UUIDv7.generate()
-        let scenario = try await arrangeArmedPaneRecoveredThroughOrdinaryRestoreAfterOneRepairWithEmptyBounds(
-            bindingID: bindingID)
+        let scenario = try await arrangeArmedPaneRecoveredThroughOrdinaryRestoreAfterOneRepairWithEmptyBounds()
         do {
             // Real first-person input on the surface ordinary recovery
             // mounted -- never `markRestorePhaseEnded` or

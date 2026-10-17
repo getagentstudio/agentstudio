@@ -6,22 +6,18 @@ import {
 	createBridgeCommWorkerReviewDemandLedger,
 	type BridgeCommWorkerReviewCurrentActiveDemand,
 } from './bridge-comm-worker-review-demand-ledger.js';
-import {
-	createBridgeCommWorkerReviewDemandScheduling,
-	createBridgeCommWorkerVisibleSourceChurnDedupeState,
-	recordBridgeCommWorkerVisibleSourceChurn,
-} from './bridge-comm-worker-review-demand-scheduling.js';
+import { createBridgeCommWorkerReviewDemandScheduling } from './bridge-comm-worker-review-demand-scheduling.js';
 import {
 	createDeferredReviewContentStream,
 	createRecordingBridgeCommWorkerPort,
 	flushBridgeWorkerRuntimeContinuations,
 	makeContentRequestDescriptor,
+	makeImmediateReviewContentStream,
 	makeRenderSemantics,
 	makeWorkerReviewContentMetadata,
 	type DeferredReviewContentStream,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { createBridgeCommWorkerStore } from './bridge-comm-worker-store.js';
-import { createBridgeProductDeferred } from './bridge-product-async-queue.js';
 import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
 import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-render-fulfillment.js';
 
@@ -32,93 +28,6 @@ interface TestDemandAdmission {
 	readonly role: BridgeCommWorkerDemandMember['role'];
 	readonly signal: AbortSignal;
 }
-
-describe('Bridge comm worker Review demand source-churn dedupe', () => {
-	test('retains only the affected item membership for the current revision', () => {
-		let state = createBridgeCommWorkerVisibleSourceChurnDedupeState();
-
-		for (let sourceChurnRevision = 1; sourceChurnRevision <= 256; sourceChurnRevision += 1) {
-			const result = recordBridgeCommWorkerVisibleSourceChurn({
-				affectedItemIds: ['item-1', 'item-2'],
-				identity: { epoch: 7, sourceChurnRevision },
-				state,
-			});
-
-			expect(result.accepted).toBe(true);
-			expect(result.unmarkedAffectedItemIds).toEqual(['item-1', 'item-2']);
-			expect(result.state.currentIdentity).toEqual({ epoch: 7, sourceChurnRevision });
-			expect([...result.state.markedItemIds]).toEqual(['item-1', 'item-2']);
-			state = result.state;
-		}
-
-		const sameRevisionResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-1', 'item-2', 'item-3'],
-			identity: { epoch: 7, sourceChurnRevision: 256 },
-			state,
-		});
-		expect(sameRevisionResult.accepted).toBe(true);
-		expect(sameRevisionResult.unmarkedAffectedItemIds).toEqual(['item-3']);
-		expect([...sameRevisionResult.state.markedItemIds]).toEqual(['item-1', 'item-2', 'item-3']);
-
-		const repeatedRevisionResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-1', 'item-2', 'item-3'],
-			identity: { epoch: 7, sourceChurnRevision: 256 },
-			state: sameRevisionResult.state,
-		});
-		expect(repeatedRevisionResult.accepted).toBe(true);
-		expect(repeatedRevisionResult.unmarkedAffectedItemIds).toEqual([]);
-		expect(repeatedRevisionResult.state.markedItemIds.size).toBe(3);
-	});
-
-	test('orders reset epochs and projection revisions without letting stale work erase dedupe', () => {
-		const resetResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-reset'],
-			identity: { epoch: 8, sourceChurnRevision: null },
-			state: createBridgeCommWorkerVisibleSourceChurnDedupeState(),
-		});
-		const firstRevisionResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-revision'],
-			identity: { epoch: 8, sourceChurnRevision: 1 },
-			state: resetResult.state,
-		});
-		expect(firstRevisionResult.accepted).toBe(true);
-		expect(firstRevisionResult.unmarkedAffectedItemIds).toEqual(['item-revision']);
-		expect([...firstRevisionResult.state.markedItemIds]).toEqual(['item-revision']);
-
-		const staleEpochResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-stale-epoch'],
-			identity: { epoch: 7, sourceChurnRevision: 99 },
-			state: firstRevisionResult.state,
-		});
-		expect(staleEpochResult.accepted).toBe(false);
-		expect(staleEpochResult.unmarkedAffectedItemIds).toEqual([]);
-		expect(staleEpochResult.state).toBe(firstRevisionResult.state);
-
-		const staleResetResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-stale-reset'],
-			identity: { epoch: 8, sourceChurnRevision: null },
-			state: firstRevisionResult.state,
-		});
-		expect(staleResetResult.accepted).toBe(false);
-		expect(staleResetResult.state).toBe(firstRevisionResult.state);
-
-		const nextRevisionResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-next-revision'],
-			identity: { epoch: 8, sourceChurnRevision: 2 },
-			state: firstRevisionResult.state,
-		});
-		expect(nextRevisionResult.accepted).toBe(true);
-		expect([...nextRevisionResult.state.markedItemIds]).toEqual(['item-next-revision']);
-
-		const nextEpochResetResult = recordBridgeCommWorkerVisibleSourceChurn({
-			affectedItemIds: ['item-next-reset'],
-			identity: { epoch: 9, sourceChurnRevision: null },
-			state: nextRevisionResult.state,
-		});
-		expect(nextEpochResetResult.accepted).toBe(true);
-		expect([...nextEpochResetResult.state.markedItemIds]).toEqual(['item-next-reset']);
-	});
-});
 
 describe('Bridge comm worker Review logical-position ledger', () => {
 	test('holds twelve positions with three interactive reservations and leaves the thirteenth wanted', () => {
@@ -484,6 +393,162 @@ describe('Bridge comm worker Review logical-position ledger', () => {
 });
 
 describe('Bridge comm worker Review production demand scheduling', () => {
+	test('re-admits a selected released paint from resident content and leaves hidden release dormant', async () => {
+		const itemId = 'item-1';
+		const contentItems = [makeWorkerReviewContentMetadata({ itemId })];
+		const descriptors = [
+			makeContentRequestDescriptor({ itemId, role: 'base', text: 'base body\n' }),
+			makeContentRequestDescriptor({ itemId, role: 'head', text: 'head body\n' }),
+		];
+		const rows = [{ id: itemId, index: 0, parentId: null }];
+		const store = createBridgeCommWorkerStore({ contentItems, rows, surface: 'review' });
+		store.actions.applySelectedFact({ epoch: 7, itemId });
+		store.actions.takePendingSlicePatchEvent({ epoch: 7, sequence: 1 });
+		const pump = createWorkerContentPreparationPump({ maxSliceMs: 8, now: () => 0 });
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		let nativeOpenCount = 0;
+		let nextSequence = 0;
+		const scheduling = createBridgeCommWorkerReviewDemandScheduling({
+			bridgeDemandRank: { lane: 'selected', priority: 0 },
+			budget: { className: 'interactive', maxBytes: 1024, maxWindowLines: 50 },
+			createSequence: (): number => ++nextSequence,
+			markPreparationDrainRequired: (): void => {},
+			openReviewContent: (descriptor) => {
+				nativeOpenCount += 1;
+				return makeImmediateReviewContentStream(
+					descriptor,
+					descriptor.role === 'base' ? 'base body\n' : 'head body\n',
+				);
+			},
+			port: dispatch.port,
+			pump,
+			recordPreparationCompletion: (): void => {},
+			requestPreparationDrain: (): void => {},
+			usesProductTransport: false,
+		});
+		scheduling.updateRuntimeSource({
+			contentItems,
+			contentRequestDescriptors: descriptors,
+			renderSemantics: [makeRenderSemantics({ itemId })],
+			reviewPublicationIdentity: makeReviewPublicationIdentity(),
+			rows,
+		});
+		scheduling.resume();
+		scheduling.scheduleDemandExecution({ cause: 'viewport', epoch: 7, store });
+		for (let stage = 0; stage < 12; stage += 1) {
+			pump.runUntilBudget();
+			// oxlint-disable-next-line no-await-in-loop -- Each pump stage schedules the next owned continuation.
+			await flushBridgeWorkerRuntimeContinuations();
+		}
+		const firstJob = postedMessages.find(({ message }) => message.kind === 'reviewPierreRenderJob');
+		if (firstJob?.message.kind !== 'reviewPierreRenderJob')
+			throw new Error('Expected first Review job.');
+		const firstIdentity = firstJob.message.renderReceiptIdentity;
+		for (const [index, disposition] of (['queued', 'applied', 'painted'] as const).entries()) {
+			const receipt = bridgeWorkerRenderDispositionReceiptSchema.parse({
+				...firstIdentity,
+				disposition,
+				kind: 'render.disposition',
+				receivedAtMilliseconds: index + 1,
+			});
+			store.renderFulfillmentRegistry.applyDisposition(receipt);
+			scheduling.applyPublishedDisposition(receipt);
+		}
+		store.actions.applySelectedFact({ epoch: 7, itemId });
+		store.actions.takePendingSlicePatchEvent({ epoch: 7, sequence: ++nextSequence });
+		expect(store.getState().availabilityByItemId.get(itemId)).toBe('loading');
+		expect(
+			store.renderFulfillmentRegistry.applyPaintRelease({
+				...firstIdentity,
+				kind: 'paint.released',
+				receivedAtMilliseconds: 4,
+			}).status,
+		).toBe('accepted');
+		scheduling.readmitPaintRelease(itemId);
+		for (let stage = 0; stage < 12; stage += 1) {
+			pump.runUntilBudget();
+			// oxlint-disable-next-line no-await-in-loop -- Each pump stage schedules the next owned continuation.
+			await flushBridgeWorkerRuntimeContinuations();
+		}
+		expect(
+			postedMessages.filter(({ message }) => message.kind === 'reviewPierreRenderJob'),
+		).toHaveLength(2);
+		expect(store.getState().availabilityByItemId.get(itemId)).toBe('ready');
+		expect(nativeOpenCount).toBe(2);
+		store.actions.clearSelectedFact({ epoch: 7 });
+		const secondIdentity = postedMessages.findLast(
+			({ message }) => message.kind === 'reviewPierreRenderJob',
+		);
+		if (secondIdentity?.message.kind !== 'reviewPierreRenderJob')
+			throw new Error('Expected second Review job.');
+		const secondReceipt = secondIdentity.message.renderReceiptIdentity;
+		for (const [index, disposition] of (['queued', 'applied', 'painted'] as const).entries()) {
+			store.renderFulfillmentRegistry.applyDisposition(
+				bridgeWorkerRenderDispositionReceiptSchema.parse({
+					...secondReceipt,
+					disposition,
+					kind: 'render.disposition',
+					receivedAtMilliseconds: index + 5,
+				}),
+			);
+		}
+		expect(
+			store.renderFulfillmentRegistry.applyPaintRelease({
+				...secondReceipt,
+				kind: 'paint.released',
+				receivedAtMilliseconds: 8,
+			}).status,
+		).toBe('accepted');
+		scheduling.readmitPaintRelease(itemId);
+		expect(
+			postedMessages.filter(({ message }) => message.kind === 'reviewPierreRenderJob'),
+		).toHaveLength(2);
+	});
+	test('keeps selected and visible Review interests through a content-ready install without active jobs', async () => {
+		const itemIds = ['selected-item', 'visible-item'] as const;
+		const contentItems = itemIds.map((itemId) => makeWorkerReviewContentMetadata({ itemId }));
+		const rows = itemIds.map((itemId, index) => ({ id: itemId, index, parentId: null }));
+		const store = createBridgeCommWorkerStore({ contentItems, rows, surface: 'review' });
+		store.actions.applySelectedFact({ epoch: 7, itemId: itemIds[0] });
+		store.actions.applyViewportFact({
+			firstVisibleIndex: 0,
+			lastVisibleIndex: 1,
+			visibleItemIds: itemIds,
+		});
+		store.actions.takePendingSlicePatchEvent({ epoch: 7, sequence: 1 });
+		const publishedDemand: Array<readonly BridgeCommWorkerReviewCurrentActiveDemand[]> = [];
+		const { dispatch } = createRecordingBridgeCommWorkerPort();
+		const scheduling = createBridgeCommWorkerReviewDemandScheduling({
+			bridgeDemandRank: { lane: 'selected', priority: 0 },
+			budget: { className: 'interactive', maxBytes: 1024, maxWindowLines: 50 },
+			createSequence: (): number => 1,
+			markPreparationDrainRequired: () => {},
+			port: dispatch.port,
+			pump: createWorkerContentPreparationPump({ maxSliceMs: 8, now: () => 0 }),
+			recordPreparationCompletion: () => {},
+			replaceReviewMetadataInterests: ({ activeDemand }): Promise<void> => {
+				publishedDemand.push(activeDemand);
+				return Promise.resolve();
+			},
+			requestPreparationDrain: () => {},
+			usesProductTransport: true,
+		});
+		scheduling.updateWorkerDerivationEpoch(7);
+		scheduling.resume();
+		scheduling.scheduleDemandExecution({ cause: 'viewport', epoch: 7, store });
+		await scheduling.publishCurrentMetadataInterests();
+		expect(publishedDemand.at(-1)).toEqual([
+			{ itemId: 'selected-item', role: 'selected' },
+			{ itemId: 'visible-item', role: 'visible' },
+		]);
+		const publicationCount = publishedDemand.length;
+		for (const itemId of itemIds) {
+			store.actions.applyContentReady({ contentCacheKey: `${itemId}-ready`, itemId });
+		}
+		scheduling.scheduleDemandExecution({ cause: 'viewport', epoch: 8, store });
+		expect(publishedDemand).toHaveLength(publicationCount);
+	});
+
 	test('retires membership and refill authority before a replacement generation is admitted', async () => {
 		// Arrange
 		const itemId = 'retired-authority-item';
@@ -547,7 +612,7 @@ describe('Bridge comm worker Review production demand scheduling', () => {
 
 		// Assert
 		expect(openedSignals.every((signal) => signal.aborted)).toBe(true);
-		expect(activeDemandSnapshots.at(-1)).toEqual([]);
+		expect(activeDemandSnapshots.at(-1)).toEqual([{ itemId, role: 'visible' }]);
 		expect(openedSignals).toHaveLength(2);
 	});
 
@@ -727,7 +792,6 @@ describe('Bridge comm worker Review production demand scheduling', () => {
 		const deferredStreamsByItemId = new Map<string, DeferredReviewContentStream[]>();
 		const signalsByItemId = new Map<string, AbortSignal[]>();
 		const activeDemandSnapshots: Array<readonly BridgeCommWorkerReviewCurrentActiveDemand[]> = [];
-		const refillInterestCommit = createBridgeProductDeferred<void>();
 		let requestedPreparationDrainCount = 0;
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		const pump = createWorkerContentPreparationPump({ maxSliceMs: 8, now: () => 0 });
@@ -763,9 +827,7 @@ describe('Bridge comm worker Review production demand scheduling', () => {
 			recordPreparationCompletion: () => {},
 			replaceReviewMetadataInterests: ({ activeDemand }): Promise<void> => {
 				activeDemandSnapshots.push(activeDemand);
-				return activeDemand.some(({ itemId }) => itemId === 'item-13')
-					? refillInterestCommit.promise
-					: Promise.resolve();
+				return Promise.resolve();
 			},
 			requestPreparationDrain: (): void => {
 				requestedPreparationDrainCount += 1;
@@ -832,15 +894,11 @@ describe('Bridge comm worker Review production demand scheduling', () => {
 		pump.runUntilBudget();
 		await flushBridgeWorkerRuntimeContinuations();
 
-		expect(activeDemandSnapshots.at(-1)).toHaveLength(12);
-		expect(activeDemandSnapshots.at(-1)).toContainEqual({
-			itemId: 'item-13',
-			role: 'background',
-		});
-		expect(deferredStreamsByItemId.has('item-13')).toBe(false);
-		refillInterestCommit.resolve();
-		await flushBridgeWorkerRuntimeContinuations();
-
+		expect(activeDemandSnapshots.at(-1)).toEqual([
+			{ itemId: 'item-2', role: 'selected' },
+			{ itemId: 'item-1', role: 'visible' },
+			{ itemId: 'item-3', role: 'visible' },
+		]);
 		expect(deferredStreamsByItemId.get('item-13')).toHaveLength(2);
 		expect(requestedPreparationDrainCount).toBe(14);
 	});

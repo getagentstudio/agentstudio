@@ -88,6 +88,7 @@ struct ZoomPresentationContainer: View {
     let paneNotePresentation: PaneNotePresentation?
     let workspaceWindowId: UUID?
     let actionDispatcher: PaneActionDispatching
+    let commandDispatcher: any AppCommandDispatching
     let arrangementInlineRenameState: ArrangementInlineRenameState
     let onPaneFocusTrigger: PaneFocusTriggerHandler
     let onFocusPane: (UUID) -> Void
@@ -127,6 +128,7 @@ struct ZoomPresentationContainer: View {
         paneNotePresentation: PaneNotePresentation? = nil,
         workspaceWindowId: UUID? = nil,
         actionDispatcher: PaneActionDispatching,
+        commandDispatcher: any AppCommandDispatching,
         arrangementInlineRenameState: ArrangementInlineRenameState,
         onPaneFocusTrigger: @escaping PaneFocusTriggerHandler,
         onFocusPane: @escaping (UUID) -> Void = { _ in },
@@ -153,6 +155,7 @@ struct ZoomPresentationContainer: View {
         self.paneNotePresentation = paneNotePresentation
         self.workspaceWindowId = workspaceWindowId
         self.actionDispatcher = actionDispatcher
+        self.commandDispatcher = commandDispatcher
         self.arrangementInlineRenameState = arrangementInlineRenameState
         self.onPaneFocusTrigger = onPaneFocusTrigger
         self.onFocusPane = onFocusPane
@@ -283,6 +286,7 @@ struct ZoomPresentationContainer: View {
                 workspaceWindowId: workspaceWindowId,
                 owningPaneSize: owningPaneSize,
                 actionDispatcher: actionDispatcher,
+                commandDispatcher: commandDispatcher,
                 onPaneFocusTrigger: onPaneFocusTrigger
             )
             .fixedSize(horizontal: false, vertical: true)
@@ -447,6 +451,7 @@ struct ZoomPresentationContainer: View {
                 tabSize: tabSize,
                 iconBarFrame: iconBarFrame,
                 actionDispatcher: actionDispatcher,
+                commandDispatcher: commandDispatcher,
                 arrangementInlineRenameState: arrangementInlineRenameState,
                 onPaneFocusTrigger: onPaneFocusTrigger,
                 onFocusPane: onFocusPane,

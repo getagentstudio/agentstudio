@@ -110,14 +110,18 @@ extension AppIPCBuiltInMethodRegistrations {
                     for: descriptors.workspaceQueries.paneList),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
-                connectionHandler: { _, _, _ in try await inputs.ports.queryPort.listPanes() }
+                connectionHandler: { _, context, _ in
+                    try await Self.paneListResponse(inputs: inputs, principal: context.principal)
+                }
             ).erase(),
             AppIPCTypedMethodRegistration(
                 descriptorRepresentations: try inputs.descriptorRepresentations(
                     for: descriptors.workspaceQueries.paneCurrent),
                 correlation: .notRequired,
                 resolveTarget: { parameters, _, _ in AppIPCBuiltInRegistrationSupport.appTarget(parameters) },
-                connectionHandler: { _, _, _ in try await inputs.ports.queryPort.currentPane() }
+                connectionHandler: { _, context, _ in
+                    try await Self.currentPaneResponse(inputs: inputs, principal: context.principal)
+                }
             ).erase(),
             AppIPCTypedMethodRegistration(
                 descriptorRepresentations: try inputs.descriptorRepresentations(
@@ -138,8 +142,8 @@ extension AppIPCBuiltInMethodRegistrations {
                     guard case (.pane, .canonicalUUID(let paneId)) = (handle.kind, handle.reference) else {
                         throw AppIPCTypedMethodRegistrationError.targetKindNotAllowed
                     }
-                    return try await inputs.ports.queryPort.snapshotPane(
-                        paneId, ownPaneAssertion: AppIPCOwnPaneAssertion(principal: context.principal))
+                    return try await Self.paneSnapshotResponse(
+                        paneId: paneId, inputs: inputs, principal: context.principal)
                 }
             ).erase(),
         ]

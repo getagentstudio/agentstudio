@@ -20,14 +20,14 @@ func fetchHTTPFileAnnotationProjection(
     connection: HTTPProductConnection,
     demandedSessionIDs: [UUID],
     sourceGeneration: Int,
-    requestSequence: Int
+    queryOrdinal: Int
 ) async throws -> HTTPAnnotationProjectionSnapshot {
     let descriptor = try await queryHTTPFileAnnotationProjection(
         client: client,
         connection: connection,
         demandedSessionIDs: demandedSessionIDs,
         sourceGeneration: sourceGeneration,
-        requestSequence: requestSequence
+        queryOrdinal: queryOrdinal
     )
     guard descriptor.page.isLastPage, descriptor.page.nextCursor == nil else {
         throw HTTPAnnotationProjectionIntegrationError.unexpectedPagedFixture
@@ -37,7 +37,7 @@ func fetchHTTPFileAnnotationProjection(
         host: host,
         connection: connection,
         descriptor: descriptor,
-        requestSequence: requestSequence
+        queryOrdinal: queryOrdinal
     )
     guard sha256Hex(pageData) == descriptor.page.aggregateSHA256 else {
         throw HTTPAnnotationProjectionIntegrationError.aggregateIntegrityMismatch
@@ -75,13 +75,12 @@ private func queryHTTPFileAnnotationProjection(
     connection: HTTPProductConnection,
     demandedSessionIDs: [UUID],
     sourceGeneration: Int,
-    requestSequence: Int
+    queryOrdinal: Int
 ) async throws -> BridgeProductAnnotationProjectionContentDescriptor {
-    let requestID = "annotation-projection-query-\(requestSequence)"
+    let requestID = "annotation-projection-query-\(queryOrdinal)"
     let queryObject = httpAnnotationProjectionControlIdentity(
         connection: connection,
-        requestID: requestID,
-        requestSequence: requestSequence
+        requestID: requestID
     ).merging([
         "call": [
             "method": "file.annotations.projection.query",
@@ -94,7 +93,7 @@ private func queryHTTPFileAnnotationProjection(
             ],
         ]
     ]) { _, newValue in newValue }
-    let response = try await executeHTTPAnnotationProjectionControl(
+    let response = try await executeHTTPControl(
         client: client,
         connection: connection,
         object: queryObject
@@ -114,10 +113,10 @@ private func openHTTPAnnotationProjectionContent(
     host: BridgeDevelopmentProductHost,
     connection: HTTPProductConnection,
     descriptor: BridgeProductAnnotationProjectionContentDescriptor,
-    requestSequence: Int
+    queryOrdinal: Int
 ) async throws -> Data {
-    let contentRequestID = "annotation-projection-content-\(requestSequence)"
-    let leaseID = "annotation-projection-lease-\(requestSequence)"
+    let contentRequestID = "annotation-projection-content-\(queryOrdinal)"
+    let leaseID = "annotation-projection-lease-\(queryOrdinal)"
     let requestObject: [String: Any] = [
         "contentKind": "annotation.projection",
         "contentRequestId": contentRequestID,
@@ -162,17 +161,11 @@ private func openHTTPAnnotationProjectionContent(
 
     let recorder = try HTTPContentFrameRecorder()
     let responseBody = response.body
-    let drain = Task { try await responseBody.write(recorder) }
+    let drain = Task { try await responseBody.write(ForwardingResponseBodyWriter(sink: recorder)) }
     var pageData = Data()
     var reachedTerminal = false
     while !reachedTerminal {
         let frame = try await recorder.nextFrame()
-        try await acknowledgeHTTPContentFrame(
-            client: client,
-            connection: connection,
-            request: strictRequest,
-            contentSequence: frame.header.contentSequence
-        )
         switch frame.header {
         case .accepted(let accepted):
             guard case .annotationProjection(let identity) = accepted.identity,
@@ -183,8 +176,22 @@ private func openHTTPAnnotationProjectionContent(
             else {
                 throw HTTPAnnotationProjectionIntegrationError.acceptedIdentityMismatch
             }
+            try await acknowledgeHTTPContentThrough(
+                client: client,
+                connection: connection,
+                request: strictRequest,
+                receivedThroughContentSequence: frame.header.contentSequence,
+                dataFrameRecorder: nil
+            )
         case .data:
             pageData.append(frame.payload)
+            try await acknowledgeHTTPContentThrough(
+                client: client,
+                connection: connection,
+                request: strictRequest,
+                receivedThroughContentSequence: frame.header.contentSequence,
+                dataFrameRecorder: recorder
+            )
         case .end(let end):
             guard end.endOfSource,
                 end.observedByteLength == pageData.count,
@@ -202,11 +209,12 @@ private func openHTTPAnnotationProjectionContent(
     return pageData
 }
 
-private func acknowledgeHTTPContentFrame(
+private func acknowledgeHTTPContentThrough(
     client: some TestClientProtocol,
     connection: HTTPProductConnection,
     request: BridgeProductAnnotationProjectionContentRequest,
-    contentSequence: Int
+    receivedThroughContentSequence: Int,
+    dataFrameRecorder: HTTPContentFrameRecorder?
 ) async throws {
     let capabilityHeader = try #require(
         HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
@@ -214,11 +222,10 @@ private func acknowledgeHTTPContentFrame(
     let body = try JSONSerialization.data(
         withJSONObject: [
             "contentRequestId": request.contentRequestID,
-            "contentSequence": contentSequence,
-            "kind": "stream.frameObserved",
+            "receivedThroughContentSequence": receivedThroughContentSequence,
+            "kind": "content.acknowledge",
             "leaseId": request.leaseID,
             "paneSessionId": request.paneSessionID,
-            "streamKind": "content",
             "wireVersion": request.wireVersion,
             "workerInstanceId": request.workerInstanceID,
         ],
@@ -233,60 +240,39 @@ private func acknowledgeHTTPContentFrame(
         ],
         body: ByteBuffer(data: body)
     )
+    if response.status.code == 404,
+        let dataFrameRecorder,
+        await dataFrameRecorder.hasReceivedTerminalFrame(),
+        let refusal = try? BridgeProductStrictJSON.decode(
+            BridgeProductContentAcknowledgementRefusedResponse.self,
+            from: Data(response.body.readableBytesView)
+        ),
+        refusal.reason == .unknownRead,
+        refusal.contentRequestId == request.contentRequestID,
+        refusal.leaseId == request.leaseID,
+        refusal.paneSessionId == request.paneSessionID,
+        refusal.receivedThroughContentSequence == receivedThroughContentSequence,
+        refusal.wireVersion == request.wireVersion,
+        refusal.workerInstanceId == request.workerInstanceID
+    {
+        return
+    }
     guard response.status == .noContent else {
         throw unexpectedHTTPAnnotationResponse(
             response,
-            context: "annotation projection frame acknowledgement sequence \(contentSequence)"
+            context: "annotation projection cumulative credit through \(receivedThroughContentSequence)"
         )
     }
-}
-
-private func executeHTTPAnnotationProjectionControl(
-    client: some TestClientProtocol,
-    connection: HTTPProductConnection,
-    object: [String: Any]
-) async throws -> BridgeProductControlResponse {
-    let capabilityHeader = try #require(
-        HTTPField.Name(BridgeProductWireContract.capabilityHeaderName)
-    )
-    let response = try await client.execute(
-        uri: "/__bridge-product/command",
-        method: .post,
-        headers: [
-            .contentType: "application/json",
-            capabilityHeader: connection.capability,
-        ],
-        body: ByteBuffer(
-            data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-        )
-    )
-    guard response.status == .ok,
-        response.headers[.contentType] == "application/json"
-    else {
-        throw unexpectedHTTPAnnotationResponse(
-            response,
-            context: String(
-                data: try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys]),
-                encoding: .utf8
-            ) ?? "<invalid UTF-8 request>"
-        )
-    }
-    return try BridgeProductStrictJSON.decode(
-        BridgeProductControlResponse.self,
-        from: Data(response.body.readableBytesView)
-    )
 }
 
 private func httpAnnotationProjectionControlIdentity(
     connection: HTTPProductConnection,
-    requestID: String,
-    requestSequence: Int
+    requestID: String
 ) -> [String: Any] {
     [
         "kind": "product.call",
         "paneSessionId": connection.bootstrap.paneSessionId,
         "requestId": requestID,
-        "requestSequence": requestSequence,
         "wireVersion": BridgeProductWireContract.version,
         "workerDerivationEpoch": 0,
         "workerInstanceId": connection.bootstrap.workerInstanceId,
@@ -308,7 +294,7 @@ private func sha256Hex(_ data: Data) -> String {
     SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
 }
 
-actor HTTPContentFrameRecorder: ResponseBodyWriter {
+actor HTTPContentFrameRecorder: RecordingResponseBodySink {
     private let decoder: BridgeProductContentFrameDecoder
     private var frames: [BridgeProductContentFrame] = []
     private var nextReadIndex = 0
@@ -355,6 +341,15 @@ actor HTTPContentFrameRecorder: ResponseBodyWriter {
             }
             await withCheckedContinuation { continuation in
                 nextFrameWaiters.append(continuation)
+            }
+        }
+    }
+
+    func hasReceivedTerminalFrame() -> Bool {
+        frames.contains { frame in
+            switch frame.header {
+            case .end, .error, .reset: true
+            case .accepted, .data: false
             }
         }
     }

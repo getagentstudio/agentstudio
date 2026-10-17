@@ -1,10 +1,8 @@
 import { describe, expect, test } from 'vitest';
 
 import { encodeBridgeWorkerViewportCommand } from './bridge-comm-worker-protocol.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerReviewViewerMode,
 	assertBridgeCommWorkerPreparationDrain,
@@ -31,6 +29,11 @@ describe('Bridge comm worker runtime Review demand rerun', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -79,14 +82,8 @@ describe('Bridge comm worker runtime Review demand rerun', () => {
 			4,
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		const staleFirstDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[1])();
-		await flushBridgeWorkerRuntimeContinuations();
-		expect(deferredStreamsByDescriptorId.size).toBe(2);
-		scheduledDrains.length = 0;
-		postedMessages.length = 0;
-
+		// The certified bank is complete. Visible demand, not a source-reset chunk,
+		// starts the old content reads that the replacement must retire.
 		dispatch.message(
 			encodeBridgeWorkerViewportCommand({
 				requestId: 'request-visible-before-update',
@@ -99,7 +96,11 @@ describe('Bridge comm worker runtime Review demand rerun', () => {
 			}),
 		);
 		await flushBridgeWorkerRuntimeContinuations();
-		expect(scheduledDrains).toEqual([]);
+		const staleFirstDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
+		await flushBridgeWorkerRuntimeContinuations();
+		expect(deferredStreamsByDescriptorId.size).toBe(2);
+		scheduledDrains.length = 0;
+		postedMessages.length = 0;
 
 		reviewProductSource.publishSource(
 			{

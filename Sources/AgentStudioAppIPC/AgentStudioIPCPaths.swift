@@ -11,7 +11,7 @@ public struct AgentStudioIPCPaths: Equatable, Sendable {
     public let socketDirectory: URL
     public let metadataURL: URL
     public let socketURL: URL
-    public let spoolDirectory: URL
+    public let cliStoreURL: URL
 
     public init(
         rootDirectory: URL,
@@ -19,14 +19,14 @@ public struct AgentStudioIPCPaths: Equatable, Sendable {
         socketDirectory: URL,
         metadataURL: URL,
         socketURL: URL,
-        spoolDirectory: URL
+        cliStoreURL: URL
     ) {
         self.rootDirectory = rootDirectory
         self.ipcDirectory = ipcDirectory
         self.socketDirectory = socketDirectory
         self.metadataURL = metadataURL
         self.socketURL = socketURL
-        self.spoolDirectory = spoolDirectory
+        self.cliStoreURL = cliStoreURL
     }
 }
 
@@ -42,7 +42,7 @@ public struct AgentStudioIPCPathResolver: Sendable {
             socketDirectory: resolvedSocketDirectory,
             metadataURL: ipcDirectory.appendingPathComponent("runtime.json"),
             socketURL: resolvedSocketDirectory.appendingPathComponent("agentstudio.sock"),
-            spoolDirectory: ipcDirectory.appendingPathComponent("spool/v2", isDirectory: true)
+            cliStoreURL: ipcDirectory.appendingPathComponent("cli.sqlite")
         )
     }
 }

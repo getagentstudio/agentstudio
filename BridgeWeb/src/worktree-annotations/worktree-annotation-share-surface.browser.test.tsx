@@ -270,6 +270,55 @@ describe('worktree annotation Annotations integrated surface', () => {
 		await expect.element(rendered.getByRole('button', { name: 'Copy Markdown' })).toBeEnabled();
 	});
 
+	test.each([
+		{ scope: 'pending', outputKind: 'clipboardMarkdown' },
+		{ scope: 'all', outputKind: 'clipboardMarkdown' },
+		{ scope: 'pending', outputKind: 'jsonFile' },
+		{ scope: 'all', outputKind: 'jsonFile' },
+	] as const)(
+		'sends the displayed $scope batch for $outputKind and keeps Share open on conflict',
+		async ({ scope, outputKind }) => {
+			const surface = new RecordingAnnotationBrowserSurface('review');
+			const rendered = await render(<ShareSurfaceFixture surface={surface} />);
+			await publishShareProjection(surface);
+			await performBrowserAction(() => {
+				clickHtmlButton(
+					rendered.getByRole('button', { name: 'Annotations', exact: true }).element(),
+				);
+			});
+			if (scope === 'all')
+				await performBrowserAction(() => requireShareScopeButton('All comments').click());
+			await performBrowserAction(() => {
+				clickHtmlButton(
+					rendered
+						.getByRole('button', {
+							name: outputKind === 'jsonFile' ? 'Export JSON' : 'Copy Markdown',
+							exact: true,
+						})
+						.element(),
+				);
+			});
+			expect(findLastOperation(surface, 'output.scope.commit')).toEqual({
+				...(outputKind === 'jsonFile' ? { destination: 'remembered' } : {}),
+				kind: 'output.scope.commit',
+				messages: [
+					...(scope === 'all' ? [{ messageId: handledMessageId, savedRevision: 1 }] : []),
+					{ messageId: newMessageId, savedRevision: 1 },
+					{ messageId: unavailableMessageId, savedRevision: 1 },
+				],
+				outputKind,
+				scope,
+				sessionId: annotationSessionId,
+			});
+			await performBrowserAction(() => surface.settleMostRecentConflict('output.scope.commit'));
+			await expect.element(rendered.getByRole('region', { name: 'Annotations' })).toBeVisible();
+			await expect.element(rendered.getByText('conflict', { exact: true })).toBeVisible();
+			expect(
+				surface.sentOperations.filter(({ kind }) => kind === 'output.scope.commit'),
+			).toHaveLength(1);
+		},
+	);
+
 	test.each(['fileView', 'review'] as const)(
 		'uses the %s header entry and exact All scope, then dismisses with reversible success',
 		async (surfaceKind) => {
@@ -311,13 +360,15 @@ describe('worktree annotation Annotations integrated surface', () => {
 				clickHtmlButton(rendered.getByRole('button', { name: 'Copy Markdown' }).element());
 			});
 			expect(findLastOperation(surface, 'output.scope.commit')).toEqual({
-				displayedProjectionRevision: 3,
-				expectedSessionRevision: 3,
 				kind: 'output.scope.commit',
+				messages: [
+					{ messageId: handledMessageId, savedRevision: 1 },
+					{ messageId: newMessageId, savedRevision: 1 },
+					{ messageId: unavailableMessageId, savedRevision: 1 },
+				],
 				outputKind: 'clipboardMarkdown',
 				scope: 'all',
 				sessionId: annotationSessionId,
-				sourceGeneration: 3,
 			});
 
 			const closingShelf = requireHtmlElement(

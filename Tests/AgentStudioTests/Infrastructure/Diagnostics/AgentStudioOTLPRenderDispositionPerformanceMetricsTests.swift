@@ -54,8 +54,8 @@ struct BridgeRenderDispositionOTLPMetricsTests {
         )
     }
 
-    @Test
-    func workerOutstandingPublicationProjectsBoundedGauges() throws {
+    @Test(arguments: ["published", "held"])
+    func workerOutstandingPublicationProjectsBoundedGauges(outcome: String) throws {
         let record = AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: 123,
             severityText: .info,
@@ -72,7 +72,7 @@ struct BridgeRenderDispositionOTLPMetricsTests {
                 "agentstudio.bridge.render_publication.current_count": .int(12),
                 "agentstudio.bridge.render_publication.high_water_mark": .int(12),
                 "agentstudio.bridge.render_publication.oldest_age_ms": .double(25),
-                "agentstudio.bridge.render_publication.outcome": .string("published"),
+                "agentstudio.bridge.render_publication.outcome": .string(outcome),
                 "agentstudio.bridge.slice": .string("command_acks"),
                 "agentstudio.bridge.viewer": .string("review"),
             ]
@@ -81,7 +81,7 @@ struct BridgeRenderDispositionOTLPMetricsTests {
         let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: record))
 
         #expect(metricEvent.dimensions.contains(.init(name: "viewer", value: "review")))
-        #expect(metricEvent.dimensions.contains(.init(name: "render_publication_outcome", value: "published")))
+        #expect(metricEvent.dimensions.contains(.init(name: "render_publication_outcome", value: outcome)))
         #expect(
             metricEvent.samples.map(\.label) == [
                 "agentstudio_bridge_render_publication_current_count",

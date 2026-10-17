@@ -484,6 +484,10 @@ export function useWorktreeAnnotationSurfaceClient(): WorktreeAnnotationSurfaceC
 	return annotationClient;
 }
 
+export function useOptionalWorktreeAnnotationSurfaceClient(): WorktreeAnnotationSurfaceClient | null {
+	return useContext(worktreeAnnotationSurfaceClientContext);
+}
+
 export function useWorktreeAnnotationSessionSelection(): WorktreeAnnotationSessionSelection {
 	const selection = useContext(worktreeAnnotationSessionSelectionContext);
 	if (selection === null) {

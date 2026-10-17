@@ -8,6 +8,68 @@ import Testing
 
 @Suite("Worktree annotation SQLite catalog repository")
 struct WorktreeAnnotationSQLiteCatalogRepositoryTests {
+    @Test("session range read returns complete current children and certifies a later cascade absence")
+    func sessionRangeReadCoversCascadeDeletion() throws {
+        let fixture = try WorktreeAnnotationCatalogRepositoryFixture()
+        let sessionID = WorktreeAnnotationSessionID.generate()
+        let threadID = WorktreeAnnotationThreadID.generate()
+        let messageID = WorktreeAnnotationMessageID.generate()
+        try fixture.insertSession(id: sessionID, worktreeID: "worktree-range")
+        try fixture.insertThread(id: threadID, sessionID: sessionID)
+        try fixture.insertMessage(id: messageID, threadID: threadID)
+
+        let before = try fixture.repository.fetchCatalogRange(
+            worktreeID: "worktree-range",
+            range: .session(sessionID)
+        )
+        #expect(Set(before.keys) == [.session(sessionID), .thread(threadID), .message(messageID)])
+
+        try fixture.databaseQueue.write { database in
+            try database.execute(
+                sql: "DELETE FROM annotation_session WHERE id = ?",
+                arguments: [sessionID.databaseValue]
+            )
+        }
+        let after = try fixture.repository.fetchCatalogRange(
+            worktreeID: "worktree-range",
+            range: .session(sessionID)
+        )
+        #expect(after.isEmpty)
+    }
+
+    @Test("keyed catalog read returns current rows and omits deleted or foreign keys")
+    func keyedCatalogReadUsesOneCurrentTransaction() throws {
+        let fixture = try WorktreeAnnotationCatalogRepositoryFixture()
+        let sessionID = WorktreeAnnotationSessionID.generate()
+        let foreignSessionID = WorktreeAnnotationSessionID.generate()
+        let threadID = WorktreeAnnotationThreadID.generate()
+        let messageID = WorktreeAnnotationMessageID.generate()
+        let missingMessageID = WorktreeAnnotationMessageID.generate()
+        try fixture.insertSession(id: sessionID, worktreeID: "worktree-current", semanticRevision: 0, createdAt: 1)
+        try fixture.insertSession(
+            id: foreignSessionID, worktreeID: "worktree-foreign", semanticRevision: 1, createdAt: 1)
+        try fixture.insertThread(id: threadID, sessionID: sessionID, scope: .located, createdOrdinal: 0)
+        try fixture.insertMessage(id: messageID, threadID: threadID, ordinal: 0)
+
+        let rows = try fixture.repository.fetchCurrentCatalogEntries(
+            worktreeID: "worktree-current",
+            keys: [
+                .session(sessionID), .session(foreignSessionID), .thread(threadID),
+                .message(messageID), .message(missingMessageID),
+            ]
+        )
+
+        #expect(rows.count == 3)
+        let expectedSession = WorktreeAnnotationCatalogEntry.session(
+            try .init(sessionID: sessionID, semanticRevision: 0)
+        )
+        #expect(rows[.session(sessionID)] == expectedSession)
+        #expect(rows[.session(foreignSessionID)] == nil)
+        #expect(rows[.thread(threadID)] != nil)
+        #expect(rows[.message(messageID)] != nil)
+        #expect(rows[.message(missingMessageID)] == nil)
+    }
+
     @Test("empty worktree returns an empty body-free catalog capture")
     func emptyWorktreeReturnsEmptyCapture() throws {
         let fixture = try WorktreeAnnotationCatalogRepositoryFixture()

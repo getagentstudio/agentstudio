@@ -7,9 +7,9 @@ import {
 	bridgeProductNonnegativeSequenceSchema,
 	bridgeProductSafeMessageSchema,
 } from './bridge-product-contract-primitives.js';
+import { bridgeProductReviewFileClassSchema } from './bridge-product-review-primitives.js';
 import {
 	bridgeProductFileChangeStatusSchema,
-	bridgeProductFileTreeFileClassSchema,
 	bridgeProductFileTruncationKindSchema,
 } from './bridge-product-subscription-contracts.js';
 import { bridgeWorkerFileQueryDisplayPayloadSchema } from './bridge-worker-file-query-contracts.js';
@@ -22,7 +22,7 @@ const bridgeWorkerFileTreeDisplayRowSchema = z
 		changeStatus: bridgeProductFileChangeStatusSchema.nullable(),
 		depth: bridgeProductNonnegativeSequenceSchema,
 		fileId: bridgeProductIdentifierSchema.nullable(),
-		fileClass: bridgeProductFileTreeFileClassSchema.nullable(),
+		fileClass: bridgeProductReviewFileClassSchema.nullable(),
 		isDirectory: z.boolean(),
 		lineCount: bridgeProductNonnegativeSequenceSchema.nullable(),
 		name: bridgeProductSafeMessageSchema,
@@ -178,7 +178,7 @@ const bridgeWorkerFileStatusDisplayPayloadSchema = z.discriminatedUnion('state',
 			untracked: bridgeProductNonnegativeSequenceSchema.nullable(),
 		})
 		.strict(),
-	z.object({ state: z.literal('stale') }).strict(),
+	z.object({ state: z.enum(['loading', 'stale', 'failed', 'noSource']) }).strict(),
 ]);
 
 const bridgeWorkerFileStatusDisplayPatchSchema = z.discriminatedUnion('operation', [

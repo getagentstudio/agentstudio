@@ -3,21 +3,177 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 
 import type { BridgeViewerDocumentGenerations } from './product-only-real-router-document-generations.ts';
+import { createOwnedProductJourneyDeadline } from './product-only-real-router-journey-deadline.ts';
 import {
 	BridgeViewerRealRouterObserver,
 	freshReviewInitialWindowRequiresTraversal,
 	mountedHeaderOrderViolationForExpectedOrder,
 	nextFreshReviewTraversalScrollTop,
 } from './product-only-real-router-page.ts';
+import { captureBridgeViewerProductOnlyJourneyFailure } from './product-only-real-router-review-failure.ts';
 import { previousFreshReviewTraversalScrollTop } from './product-only-real-router-review-hydration-window.ts';
 
 type PageEventName = 'request' | 'requestfailed' | 'requestfinished' | 'response';
 type PageEventHandler = (event: unknown) => void;
 
 describe('BridgeViewerRealRouterObserver', () => {
+	test('the journey deadline also ends a missed worker close during cleanup', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadlineController = new AbortController();
+		const deadline = createOwnedProductJourneyDeadline({
+			signal: deadlineController.signal,
+			page: { close: pageClose },
+			browser: { close: browserClose },
+		});
+		let closeWorker!: () => void;
+		const workerClosed = new Promise<void>((resolve): void => {
+			closeWorker = resolve;
+		});
+		const joined = deadline.waitFor(workerClosed, 'observed-worker-closure').then(
+			(): string => 'closed',
+			(error: unknown): string => String(error),
+		);
+		try {
+			deadlineController.abort(new Error('inherited launch bound exceeded'));
+			expect(await joined).toContain('awaiting observed-worker-closure');
+			expect(browserClose).toHaveBeenCalledOnce();
+			expect(pageClose).toHaveBeenCalledOnce();
+		} finally {
+			closeWorker();
+			await joined;
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
+
+	test.each(['legacy-metadata-completion', 'product-response-quiescence'] as const)(
+		'owner deadline rejects %s and reaches browser cleanup',
+		async (waiterName): Promise<void> => {
+			vi.useFakeTimers();
+			const harness = makeObserverHarness();
+			const observer = new BridgeViewerRealRouterObserver(
+				harness.page,
+				documentGenerationsAt((): number => 1),
+			);
+			const pageClose = vi.fn(async (): Promise<void> => {});
+			const browserClose = vi.fn(async (): Promise<void> => {});
+			const deadlineController = new AbortController();
+			const deadline = createOwnedProductJourneyDeadline({
+				signal: deadlineController.signal,
+				page: { close: pageClose },
+				browser: { close: browserClose },
+				onDeadline: (reason: Error): void => observer.close(reason),
+			});
+			const request =
+				waiterName === 'legacy-metadata-completion'
+					? makeLegacyMetadataRequest()
+					: ({
+							url: (): string => 'http://127.0.0.1:5173/__bridge-product/stream',
+							method: (): string => 'POST',
+							postData: (): null => null,
+						} as unknown as PlaywrightRequest);
+			harness.emit('request', request);
+			if (waiterName === 'legacy-metadata-completion') {
+				harness.emit('response', makeLegacyMetadataResponse(request, 'next'));
+				await observer.flushResponseParsers();
+			}
+			const wait =
+				waiterName === 'legacy-metadata-completion'
+					? observer.waitForObservedLegacyMetadataCompletion()
+					: observer.waitForAllProductResponses();
+			let observedOutcome: string | undefined;
+			const result = wait.then(
+				(): string => 'unexpected success',
+				(error: unknown): string => {
+					observedOutcome = String(error);
+					return observedOutcome;
+				},
+			);
+			try {
+				deadlineController.abort(new Error('inherited launch bound exceeded'));
+				await deadline.dispose();
+				await result;
+				expect(observedOutcome).toContain(waiterName);
+				expect(observedOutcome).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
+					documentGeneration: 1,
+					name: waiterName,
+				});
+				expect(pageClose).toHaveBeenCalledOnce();
+				expect(browserClose).toHaveBeenCalledOnce();
+			} finally {
+				// Release the old implementation too, so the deterministic red leaves no wait.
+				if (waiterName === 'legacy-metadata-completion')
+					harness.emit('response', makeLegacyMetadataResponse(request, null));
+				else {
+					harness.emit('response', makeSuccessfulResponse(request));
+					await flushMicrotasks();
+					if (harness.pendingAnimationFrameCount() > 0) harness.resolveNextAnimationFrame();
+				}
+				await result;
+				await deadline.dispose();
+				vi.useRealTimers();
+			}
+		},
+	);
+
+	test('deadline checkpoint keeps transport evidence when the closed page loses DOM capture', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const harness = makeObserverHarness();
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => 1),
+		);
+		const request = makeLegacyMetadataRequest();
+		harness.emit('request', request);
+		harness.emit('response', makeLegacyMetadataResponse(request, 'next'));
+		await observer.flushResponseParsers();
+		const wait = observer.waitForObservedLegacyMetadataCompletion();
+		void wait.catch((): void => {});
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadlineController = new AbortController();
+		const deadline = createOwnedProductJourneyDeadline({
+			signal: deadlineController.signal,
+			page: { close: pageClose },
+			browser: { close: browserClose },
+			onDeadline: (reason: Error): void => observer.close(reason),
+		});
+		const closedPage = {
+			evaluate: async (): Promise<never> => {
+				throw new Error('Target page, context or browser has been closed');
+			},
+		} as unknown as Page;
+		try {
+			deadlineController.abort(new Error('inherited launch bound exceeded'));
+			await expect(wait).rejects.toThrow('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+			const checkpoint = await captureBridgeViewerProductOnlyJourneyFailure({
+				browserDiagnostics: [],
+				documentGeneration: 1,
+				error: new Error('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED'),
+				failedResponses: [],
+				page: closedPage,
+				routeObserver: observer,
+			});
+			expect(checkpoint.captureStatus).toBe('unavailable');
+			expect(checkpoint.failureCode).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+			expect(checkpoint.transport.unresolvedWaiters).toContainEqual({
+				documentGeneration: 1,
+				name: 'legacy-metadata-completion',
+			});
+			expect(pageClose).toHaveBeenCalledOnce();
+			expect(browserClose).toHaveBeenCalledOnce();
+		} finally {
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
+	});
+
 	test('records the scrub-safe product call method in failure transport evidence', () => {
 		// Arrange
 		const harness = makeObserverHarness();
@@ -35,6 +191,25 @@ describe('BridgeViewerRealRouterObserver', () => {
 				requestKind: 'product.call',
 			}),
 		]);
+	});
+
+	test('correlates only a strict typed unknown-read refusal for content credit', async () => {
+		const harness = makeObserverHarness();
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => 1),
+		);
+		const matchingRequest = makeContentAcknowledgementRequest('content-request-matching');
+		const foreignRequest = makeContentAcknowledgementRequest('content-request-foreign');
+		harness.emit('request', matchingRequest);
+		harness.emit('response', makeUnknownReadResponse(matchingRequest, 'content-request-matching'));
+		harness.emit('request', foreignRequest);
+		harness.emit('response', makeUnknownReadResponse(foreignRequest, 'content-request-other'));
+
+		await observer.flushResponseParsers();
+		expect(
+			observer.productRouteTranscript().map((entry) => entry.contentUnknownReadRefusalCorrelated),
+		).toEqual([true, false]);
 	});
 
 	test('retains scrubbed content lifecycle and unfinished request ordinals for a failed journey', () => {
@@ -303,18 +478,18 @@ describe('BridgeViewerRealRouterObserver', () => {
 	});
 
 	test('settles a reload waiter only with a response to a request from the next page generation', async () => {
-		// Arrange: the previous document sent a frame acknowledgement before the reload.
+		// Arrange: the previous document sent a subscription receipt before the reload.
 		const harness = makeObserverHarness();
 		let documentGeneration = 1;
 		const observer = new BridgeViewerRealRouterObserver(
 			harness.page,
 			documentGenerationsAt((): number => documentGeneration),
 		);
-		const staleAcknowledgementRequest = makeFrameObservationRequest();
+		const staleAcknowledgementRequest = makeSubscriptionReceiptRequest();
 		harness.emit('request', staleAcknowledgementRequest);
 		const reloadJoin = observer.armReloadJoinWaiters();
 		let settledAcknowledgement: PlaywrightResponse | null = null;
-		const acknowledgement = reloadJoin.frameAcknowledgement.then(
+		const acknowledgement = reloadJoin.subscriptionReceipt.then(
 			(response: PlaywrightResponse): PlaywrightResponse => {
 				settledAcknowledgement = response;
 				return response;
@@ -323,19 +498,19 @@ describe('BridgeViewerRealRouterObserver', () => {
 
 		// Act: the new document commits, then the previous document's response arrives first.
 		documentGeneration = 2;
-		harness.emit('response', makeBodylessCommandResponse(staleAcknowledgementRequest));
+		harness.emit('response', makeSubscriptionReceiptResponse(staleAcknowledgementRequest));
 		await flushMicrotasks();
 
 		// Assert
 		expect(settledAcknowledgement).toBeNull();
 		expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
 			documentGeneration: 2,
-			name: 'frame-acknowledgement',
+			name: 'subscription-receipt',
 		});
 
 		// Act: the new document's own acknowledgement arrives.
-		const currentAcknowledgementRequest = makeFrameObservationRequest();
-		const currentAcknowledgementResponse = makeBodylessCommandResponse(
+		const currentAcknowledgementRequest = makeSubscriptionReceiptRequest();
+		const currentAcknowledgementResponse = makeSubscriptionReceiptResponse(
 			currentAcknowledgementRequest,
 		);
 		harness.emit('request', currentAcknowledgementRequest);
@@ -347,6 +522,60 @@ describe('BridgeViewerRealRouterObserver', () => {
 			{ documentGeneration: 2, name: 'file-metadata-open' },
 			{ documentGeneration: 2, name: 'review-metadata-open' },
 		]);
+	});
+
+	test('deadline closes an expiry with only reload-join waiters pending', async (): Promise<void> => {
+		vi.useFakeTimers();
+		const harness = makeObserverHarness();
+		let documentGeneration = 1;
+		const observer = new BridgeViewerRealRouterObserver(
+			harness.page,
+			documentGenerationsAt((): number => documentGeneration),
+		);
+		const reloadJoin = observer.armReloadJoinWaiters();
+		documentGeneration = 2;
+		const reloadWaits = [
+			reloadJoin.subscriptionReceipt,
+			reloadJoin.fileMetadataOpen,
+			reloadJoin.reviewMetadataOpen,
+		];
+		for (const reloadWait of reloadWaits) void reloadWait.catch((): void => {});
+		const pageClose = vi.fn(async (): Promise<void> => {});
+		const browserClose = vi.fn(async (): Promise<void> => {});
+		const deadlineController = new AbortController();
+		const deadline = createOwnedProductJourneyDeadline({
+			signal: deadlineController.signal,
+			page: { close: pageClose },
+			browser: { close: browserClose },
+			onDeadline: (reason: Error): void => observer.close(reason),
+		});
+		try {
+			deadlineController.abort(new Error('inherited launch bound exceeded'));
+			await deadline.dispose();
+			expect(pageClose).toHaveBeenCalledOnce();
+			expect(pageClose).toHaveBeenCalledWith({
+				reason: 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED',
+			});
+			expect(browserClose).toHaveBeenCalledOnce();
+			expect(browserClose).toHaveBeenCalledWith({
+				reason: 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED',
+			});
+			for (const name of [
+				'subscription-receipt',
+				'file-metadata-open',
+				'review-metadata-open',
+			] as const)
+				expect(observer.failureTransportSnapshot().unresolvedWaiters).toContainEqual({
+					documentGeneration: 2,
+					name,
+				});
+		} finally {
+			observer.close(new Error('Reload-join test cleanup.'));
+			harness.close();
+			await Promise.allSettled(reloadWaits);
+			await deadline.dispose();
+			vi.useRealTimers();
+		}
 	});
 });
 
@@ -393,31 +622,9 @@ describe('mountedHeaderOrderViolationForExpectedOrder', () => {
 });
 
 describe('nextFreshReviewTraversalScrollTop', () => {
-	test('skips the already-hydrated body while retaining viewport overlap at the next header', () => {
-		// Arrange
-		const codeScroll = {
-			clientHeight: 1_000,
-			scrollHeight: 40_000,
-			scrollTop: 5_000,
-		};
-
-		// Act
-		const nextScrollTop = nextFreshReviewTraversalScrollTop({
-			codeScroll,
-			visibleItems: [
-				{
-					contentState: 'hydrated',
-					hostBottomOffset: 6_000,
-					hostTopOffset: -250,
-					itemId: 'review-item-42',
-					paintIdentity: 'paint-42',
-					renderedLineCount: 42,
-				},
-			],
-		});
-
-		// Assert
-		expect(nextScrollTop).toBe(10_900);
+	test('keeps every item geometry-visible during forward traversal with viewport overlap', () => {
+		const observedIndexes = simulateReviewTraversal('forward');
+		expect(observedIndexes).toEqual(Array.from({ length: 20 }, (_, index) => index));
 	});
 
 	test('falls back to bounded viewport progress when no host geometry is available', () => {
@@ -428,7 +635,6 @@ describe('nextFreshReviewTraversalScrollTop', () => {
 				scrollHeight: 6_500,
 				scrollTop: 5_000,
 			},
-			visibleItems: [],
 		});
 
 		// Assert
@@ -493,18 +699,9 @@ describe('freshReviewInitialWindowRequiresTraversal', () => {
 });
 
 describe('previousFreshReviewTraversalScrollTop', () => {
-	test('skips the already-hydrated body while retaining viewport overlap at the previous header', () => {
-		// Arrange / Act
-		const previousScrollTop = previousFreshReviewTraversalScrollTop({
-			codeScroll: {
-				clientHeight: 1_000,
-				scrollTop: 10_000,
-			},
-			visibleItems: [{ hostTopOffset: -6_000 }],
-		});
-
-		// Assert
-		expect(previousScrollTop).toBe(3_900);
+	test('keeps every item geometry-visible during reverse traversal with viewport overlap', () => {
+		const observedIndexes = simulateReviewTraversal('backward');
+		expect(observedIndexes).toEqual(Array.from({ length: 20 }, (_, index) => index));
 	});
 
 	test('falls back to bounded viewport progress when no host geometry is available', () => {
@@ -514,13 +711,40 @@ describe('previousFreshReviewTraversalScrollTop', () => {
 				clientHeight: 1_000,
 				scrollTop: 5_000,
 			},
-			visibleItems: [],
 		});
 
 		// Assert
 		expect(previousScrollTop).toBe(4_200);
 	});
 });
+
+function simulateReviewTraversal(direction: 'forward' | 'backward'): number[] {
+	const itemCount = 20;
+	const itemHeight = 100;
+	const clientHeight = 400;
+	const scrollHeight = itemCount * itemHeight;
+	const maximumScrollTop = scrollHeight - clientHeight;
+	const observedIndexes = new Set<number>();
+	let scrollTop = direction === 'forward' ? 0 : maximumScrollTop;
+	for (let stepIndex = 0; stepIndex < itemCount * 2; stepIndex += 1) {
+		const visibleIndexes = Array.from({ length: itemCount }, (_, index) => index).filter(
+			(index) =>
+				(index + 1) * itemHeight > scrollTop && index * itemHeight < scrollTop + clientHeight,
+		);
+		for (const index of visibleIndexes) observedIndexes.add(index);
+		if (direction === 'forward' && scrollTop === maximumScrollTop) break;
+		if (direction === 'backward' && scrollTop === 0) break;
+		scrollTop =
+			direction === 'forward'
+				? nextFreshReviewTraversalScrollTop({
+						codeScroll: { clientHeight, scrollHeight, scrollTop },
+					})
+				: previousFreshReviewTraversalScrollTop({
+						codeScroll: { clientHeight, scrollTop },
+					});
+	}
+	return [...observedIndexes].toSorted((left, right) => left - right);
+}
 
 // A page whose every request and worker belongs to the current generation, as
 // the tests set it; the observer reads generations only through this seam.
@@ -537,6 +761,7 @@ function documentGenerationsAt(currentGeneration: () => number): BridgeViewerDoc
 
 function makeObserverHarness(): {
 	readonly emit: (eventName: PageEventName, event: unknown) => void;
+	readonly close: () => void;
 	readonly page: Page;
 	readonly pendingAnimationFrameCount: () => number;
 	readonly resolveNextAnimationFrame: () => void;
@@ -547,6 +772,7 @@ function makeObserverHarness(): {
 	const responseWaiters: Array<{
 		readonly predicate: (response: PlaywrightResponse) => boolean;
 		readonly resolve: (response: PlaywrightResponse) => void;
+		readonly reject: (error: Error) => void;
 	}> = [];
 	const animationFrameResolvers: Array<() => void> = [];
 	let activeFrameSettlement:
@@ -573,8 +799,8 @@ function makeObserverHarness(): {
 		waitForResponse: async (
 			predicate: (response: PlaywrightResponse) => boolean,
 		): Promise<PlaywrightResponse> =>
-			await new Promise<PlaywrightResponse>((resolve): void => {
-				responseWaiters.push({ predicate, resolve });
+			await new Promise<PlaywrightResponse>((resolve, reject): void => {
+				responseWaiters.push({ predicate, reject, resolve });
 			}),
 		waitForFunction: async (): Promise<void> => {
 			const frameSettlement = activeFrameSettlement;
@@ -589,6 +815,10 @@ function makeObserverHarness(): {
 	};
 
 	return {
+		close: (): void => {
+			for (const waiter of responseWaiters) waiter.reject(new Error('Page closed.'));
+			responseWaiters.length = 0;
+		},
 		emit: (eventName, event): void => {
 			for (const eventHandler of eventHandlers.get(eventName) ?? []) eventHandler(event);
 			if (eventName !== 'response') return;
@@ -640,6 +870,47 @@ function makeProductContentRequest(contentRequestId: string): PlaywrightRequest 
 	} as unknown as PlaywrightRequest;
 }
 
+function makeContentAcknowledgementRequest(contentRequestId: string): PlaywrightRequest {
+	return {
+		method: (): string => 'POST',
+		postData: (): string =>
+			JSON.stringify({
+				contentRequestId,
+				kind: 'content.acknowledge',
+				leaseId: 'lease-1',
+				paneSessionId: 'pane-session-secret',
+				receivedThroughContentSequence: 1,
+				wireVersion: 2,
+				workerInstanceId: 'worker-instance-secret',
+			}),
+		url: (): string => 'http://127.0.0.1:5173/__bridge-product/command',
+	} as unknown as PlaywrightRequest;
+}
+
+function makeUnknownReadResponse(
+	request: PlaywrightRequest,
+	contentRequestId: string,
+): PlaywrightResponse {
+	const body = new TextEncoder().encode(
+		JSON.stringify({
+			contentRequestId,
+			kind: 'content.acknowledgementRefused',
+			leaseId: 'lease-1',
+			paneSessionId: 'pane-session-secret',
+			reason: 'unknownRead',
+			receivedThroughContentSequence: 1,
+			wireVersion: 2,
+			workerInstanceId: 'worker-instance-secret',
+		}),
+	);
+	return {
+		body: async (): Promise<Uint8Array> => body,
+		request: (): PlaywrightRequest => request,
+		status: (): number => 404,
+		url: (): string => request.url(),
+	} as unknown as PlaywrightResponse;
+}
+
 function makeLegacyMetadataRequest(): PlaywrightRequest {
 	return {
 		method: (): string => 'GET',
@@ -661,23 +932,29 @@ function makeLegacyMetadataResponse(
 	} as unknown as PlaywrightResponse;
 }
 
-function makeFrameObservationRequest(): PlaywrightRequest {
+function makeSubscriptionReceiptRequest(): PlaywrightRequest {
 	return {
 		method: (): string => 'POST',
 		postData: (): string =>
 			JSON.stringify({
-				kind: 'stream.frameObserved',
+				kind: 'subscription.acknowledge',
+				domain: 'default',
+				handle: 'handle-1',
+				incarnation: 'incarnation-1',
 				paneSessionId: 'pane-session-secret',
+				receivedThroughDeliverySequence: 1,
+				subscriptionId: 'subscription-1',
+				wireVersion: 2,
 				workerInstanceId: 'worker-instance-secret',
 			}),
 		url: (): string => 'http://127.0.0.1:5173/__bridge-product/command',
 	} as unknown as PlaywrightRequest;
 }
 
-function makeBodylessCommandResponse(request: PlaywrightRequest): PlaywrightResponse {
+function makeSubscriptionReceiptResponse(request: PlaywrightRequest): PlaywrightResponse {
 	return {
 		request: (): PlaywrightRequest => request,
-		status: (): number => 204,
+		status: (): number => 200,
 		url: (): string => request.url(),
 	} as unknown as PlaywrightResponse;
 }

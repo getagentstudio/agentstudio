@@ -11,56 +11,6 @@ import Testing
 @testable import AgentStudioTerminal
 @testable import AgentStudioTestSupport
 
-/// S3's fourth forced-timing item, "the intersection" (Program Design item
-/// 3's S3 zmx-e2e list: "requires S5's latch"): proves the coordinator does
-/// NOT couple the restore-phase end (S5, SR6b) and the cold-start startup
-/// window (S3, SR4/SR5) -- they can overlap in time; they don't share a
-/// flag. Early input ending the restore phase while a cold start is still
-/// held must not cancel or short-circuit the startup window, and the
-/// window's own eventual outcome must not gate whether the phase can end.
-///
-/// Drives the real `mountPreparedTerminalContent` entry point directly
-/// (not `beginObservingColdStart` bypassed, unlike `ColdStartObservationWiringTests`
-/// -- their shared `TerminalRestoreCapturingSurfaceManager` always fails
-/// `createSurface` ("capture only"), so a cold pane's mount never reaches
-/// `.mounted(...)` there; confirmed by reading it and its only two callers).
-/// This suite's own surface-manager double succeeds instead, following the
-/// exact `ManagedSurface(surface: Ghostty.SurfaceView(...))` construction
-/// `WorkspaceSurfaceCoordinatorUndoRestoreTests` already uses.
-///
-/// The surface manager double never runs a real command -- `createSurface`
-/// ignores `config` entirely (confirmed by reading `createTopologyIndependentTerminalView`,
-/// which only ever passes `config` to the injected `surfaceManager`). So the
-/// real zmx cold-restore session is spawned independently by this test,
-/// directly against `plan`, exactly like `ZmxE2ETests+ForcedTiming.swift`'s
-/// items -- held at `cat plan.replayFile` (a FIFO) -- before the mount call,
-/// so the coordinator's own `ColdStartObserver` (started internally by
-/// `mountPreparedTerminalContent` on a successful mount) discovers and
-/// watches that same real, already-spawned session.
-///
-/// Early input goes through `Ghostty.ActionRouter.localActionAccumulator`,
-/// the exact global instance `GhosttySurfaceView+Input.swift:423`'s
-/// key/paste latch calls, then `Ghostty.ActionRouter.drainLocalActions`,
-/// the real static drain entry point -- not a hand-rolled substitute. A
-/// real `TerminalActivityProjector` is bound to `Ghostty.ActionRouter`'s
-/// singleton the same way `GhosttyActionRouterRestorePhaseArmingTests`
-/// already proves `armRestorePhase` against it, standing in for the full
-/// `TerminalActivityRouter` (594 lines of EventBus/inbox-notification
-/// wiring this test doesn't need) -- this test's own sink replicates only
-/// the two dispatch arms `TerminalActivityRouter.consumeTerminalActivityInput`
-/// already has for `.restorePhaseArmed` and `.orderedControl(...
-/// .restorePhaseEnded)`, confirmed by reading that method directly.
-///
-/// `@MainActor` + `.serialized`: binds the same process-global
-/// `Ghostty.ActionRouter` singleton and calls the real, global
-/// `localActionAccumulator` + `drainLocalActions`, matching
-/// `GhosttyActionRouterRestorePhaseArmingTests`'s own classification.
-/// Registered in `swift_test_suite_lane_inventory` as a `zmx` suite (see
-/// `scripts/swift-test-helpers.sh`) so `mise run test:swift:zmx-e2e` runs
-/// it; living in a file with `extension E2ESerializedTests` already
-/// excludes it from `aggregate_serial_non_webkit_suite_filters`'s dynamic
-/// MainActor-suite discovery (`is_dedicated_e2e_or_zmx_lane_suite` matches
-/// on that exact extension pattern), so it never double-runs there.
 extension E2ESerializedTests {
     @MainActor
     @Suite("Cold restore and restore-phase-end intersection", .serialized)
@@ -74,7 +24,6 @@ extension E2ESerializedTests {
         /// `.restorePhaseEnded` and then `.coldStartOutcome` in sequence is
         /// itself the ordering proof: it fails if they arrived reversed.
         private enum IntersectionFact: Sendable, Equatable {
-            case restorePhaseArmed(generation: RestoreGeneration)
             case restorePhaseEnded(generation: RestoreGeneration)
             case coldStartOutcome(ColdStartOutcome)
         }
@@ -95,6 +44,7 @@ extension E2ESerializedTests {
         /// assertion.
         @MainActor
         private final class SucceedingRestoreSurfaceManager: WorkspaceSurfaceManaging {
+            var routing: RestorePhaseCallbackTestFixture?
             private(set) var reportedFailures: [(paneID: UUID, failure: ColdStartFailure)] = []
             /// `attachTopologyIndependentSurface` requires this to return
             /// the exact surface `createSurface` just made, non-nil, or the
@@ -114,8 +64,10 @@ extension E2ESerializedTests {
                 let surfaceID = UUIDv7.generate()
                 let surface = Ghostty.SurfaceView(
                     managedSurfaceID: surfaceID,
-                    appCommandDispatcher: NoOpAppCommandDispatcher()
+                    appCommandDispatcher: AppTerminalFixtureCommandDispatcher(),
+                    callbackHandling: routing?.handler
                 )
+                if let paneID = metadata.paneId { routing?.register(surface, paneID: paneID) }
                 surfacesByID[surfaceID] = surface
                 return .success(ManagedSurface(id: surfaceID, surface: surface, metadata: metadata))
             }
@@ -140,7 +92,9 @@ extension E2ESerializedTests {
                 viewRegistry: ViewRegistry(),
                 runtime: SessionRuntime(store: store),
                 surfaceManager: surfaceManager,
-                runtimeRegistry: .shared,
+                terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+                terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
+                runtimeRegistry: RuntimeRegistry(),
                 windowLifecycleStore: WindowLifecycleAtom(),
                 ipcLifecycle: .testUnavailable,
                 bridgePaneAttendance: BridgePaneAttendanceAtom()
@@ -194,40 +148,20 @@ extension E2ESerializedTests {
             }
         }
 
-        /// Binds a real `TerminalActivityProjector` to `Ghostty.ActionRouter`'s
-        /// singleton, standing in for the full `TerminalActivityRouter`.
-        /// Replicates only `TerminalActivityRouter.consumeTerminalActivityInput`'s
-        /// two dispatch arms this test needs -- `.restorePhaseArmed` and
-        /// `.orderedControl(... .restorePhaseEnded)` -- confirmed by reading
-        /// that method's real switch directly, not guessed.
         private func bindProjector(
             _ projector: TerminalActivityProjector,
-            bindingID: UUID,
+            coordinator: WorkspaceSurfaceCoordinator,
             factSink: @escaping @Sendable (UUID, IntersectionFact) -> Void
-        ) {
-            Ghostty.ActionRouter.bindTerminalActivityInput(
-                id: bindingID,
-                context: { _ in
-                    TerminalActivityProjectionContext(
-                        isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
-                },
-                sink: { input in
-                    switch input {
-                    case .restorePhaseArmed(let paneID, let restoreGeneration):
-                        await projector.armRestorePhase(paneID: paneID, generation: restoreGeneration)
-                        factSink(paneID, .restorePhaseArmed(generation: restoreGeneration))
-                    case .orderedControl(let surfaceID, let paneID, let precedingAggregate, let control):
-                        await projector.applyOrderedControl(
-                            surfaceID: surfaceID, paneID: paneID, precedingAggregate: precedingAggregate,
-                            control: control)
-                        if case .restorePhaseEnded(let generation) = control {
-                            factSink(paneID, .restorePhaseEnded(generation: generation))
-                        }
-                    case .aggregate, .restorePhaseEnded, .paneRetiredPermanently:
-                        break
-                    }
+        ) async -> RestorePhaseCallbackTestFixture {
+            let routing = RestorePhaseCallbackTestFixture(projector: projector)
+            routing.inputObserved = { input in
+                if case .orderedControl(_, let paneID, _, .restorePhaseEnded(let generation)) = input {
+                    factSink(paneID, .restorePhaseEnded(generation: generation))
                 }
-            )
+            }
+            coordinator.terminalActivityRouter = routing.router
+            await routing.router.start()
+            return routing
         }
 
         /// `runIntersectionScenario`'s result: the harness is returned, not
@@ -281,9 +215,8 @@ extension E2ESerializedTests {
             }
 
             let projector = TerminalActivityProjector()
-            let bindingID = UUID()
-            bindProjector(projector, bindingID: bindingID, factSink: source.sink)
-            defer { Ghostty.ActionRouter.unbindTerminalActivityInput(id: bindingID) }
+            let routing = await bindProjector(projector, coordinator: coordinator, factSink: source.sink)
+            surfaceManager.routing = routing
 
             let pane = makeZmxPane(
                 coordinator: coordinator, sessionID: sessionID, launchDirectory: URL(fileURLWithPath: "/tmp"))
@@ -318,42 +251,15 @@ extension E2ESerializedTests {
             // mountPreparedTerminalContent before it ever creates the
             // surface, so the armed fact is already recorded by the time
             // the mount call above returns.
-            let armedFact = try await recorder.expectNext(
-                in: paneID,
-                where: {
-                    if case .restorePhaseArmed = $0 { return true }
-                    return false
-                },
-                "restorePhaseArmed"
-            )
-            guard case .restorePhaseArmed(let armedGeneration) = armedFact else {
-                Issue.record("expected restorePhaseArmed, got \(armedFact)")
-                throw ColdRestoreIntersectionTestFailure.mountDidNotSucceed
-            }
-
-            // Deliver early input exactly as GhosttySurfaceView+Input.swift
-            // does: the real, global accumulator's latch.
-            Ghostty.ActionRouter.localActionAccumulator.markRestorePhaseEnded(
-                surfaceID: surfaceID,
-                generation: armedGeneration,
-                contextBeforeControl: TerminalActivityProjectionContext(
-                    isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
-            )
-            let host = IntersectionDrainHost(managedSurfaceID: surfaceID)
-            let dependencies = TerminalLocalActionDrainDependencies(
-                mountedHostResolver: TerminalLocalActionMountedHostResolver(
-                    surfaceForID: { $0 == surfaceID ? host : nil },
-                    paneIDForSurfaceID: { $0 == surfaceID ? paneID : nil }
-                ),
-                runtimeRegistry: .shared,
-                fallbackRuntimeRegistry: nil,
-                activityContext: { _ in
-                    TerminalActivityProjectionContext(
-                        isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
-                },
-                submitActivityInput: { await Ghostty.ActionRouter.submitTerminalActivityInput($0) }
-            )
-            await Ghostty.ActionRouter.drainLocalActions(for: surfaceID, lane: .immediate, dependencies: dependencies)
+            let armedGeneration = try #require(await projector.restorePhaseGenerationsByPane[paneID])
+            let surface = try #require(coordinator.viewRegistry.terminalView(for: paneID)?.ghosttySurface)
+            #expect(surface.restorePhaseLatch == armedGeneration)
+            // This is the synchronous latch used by real keys, paste and committed text.
+            surface.endRestorePhaseIfLatched()
+            routing.handler.localActionDrainScheduler.cancel(for: surfaceID)
+            await routing.handler.host.drainLocalActions(
+                for: surfaceID, lane: .immediate, accumulator: routing.handler.localActionAccumulator)
+            #expect(await projector.isRestorePhaseActive(paneID: paneID) == false)
 
             // Release: the script's only in-process exec follows.
             let writeDescriptor = try await openFIFOForWriting(atPath: holdFIFOPath)
@@ -399,7 +305,7 @@ extension E2ESerializedTests {
             } catch {
                 bodyError = error
             }
-            Ghostty.ActionRouter.retireLocalActions(for: scenario.surfaceID)
+            await scenario.surfaceManager.routing?.closeAndJoin()
             _ = await scenario.harness.cleanup()
             if let bodyError { throw bodyError }
         }
@@ -428,7 +334,7 @@ extension E2ESerializedTests {
             } catch {
                 bodyError = error
             }
-            Ghostty.ActionRouter.retireLocalActions(for: scenario.surfaceID)
+            await scenario.surfaceManager.routing?.closeAndJoin()
             _ = await scenario.harness.cleanup()
             if let bodyError { throw bodyError }
         }
@@ -437,38 +343,4 @@ extension E2ESerializedTests {
 
 private enum ColdRestoreIntersectionTestFailure: Error {
     case mountDidNotSucceed
-}
-
-/// No-op dispatcher used only to satisfy `Ghostty.SurfaceView`'s bare test
-/// initializer, matching `WorkspaceSurfaceCoordinatorUndoRestoreTests`'s own
-/// file-local copy (each test file that needs one declares its own; the type
-/// is deliberately `private`, not shared).
-@MainActor
-private final class NoOpAppCommandDispatcher: AppCommandDispatching {
-    func dispatch(_: AppCommand) -> Bool { false }
-    func dispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) {}
-    func canDispatch(_: AppCommand) -> Bool { false }
-    func canDispatch(_: AppCommand, target _: UUID, targetType _: SearchItemType) -> Bool { false }
-    func bridgePaneCommandTarget(worktreeId _: UUID) -> BridgePaneCommandTarget? { nil }
-    func dispatchMovePaneToTab(sourcePaneId _: UUID, sourceTabId _: UUID?, targetTabId _: UUID) {}
-}
-
-@MainActor
-private final class IntersectionDrainHost: TerminalLocalActionDrainHost {
-    let managedSurfaceID: UUID
-    var hostScrollbarState: ScrollbarState?
-    var title: String = ""
-    var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
-
-    init(managedSurfaceID: UUID) {
-        self.managedSurfaceID = managedSurfaceID
-    }
-
-    func updateHostScrollbarState(_ state: ScrollbarState) {
-        hostScrollbarState = state
-    }
-
-    func titleDidChange(_ title: String) {
-        self.title = title
-    }
 }

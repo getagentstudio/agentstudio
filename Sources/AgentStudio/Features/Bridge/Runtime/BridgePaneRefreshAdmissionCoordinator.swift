@@ -60,8 +60,39 @@ struct BridgePaneRefreshWorkAdmission: Sendable {
 struct BridgePaneRefreshWorkAdmissionSource: Sendable {
     fileprivate let gate: BridgePaneRefreshWorkAdmissionGate
 
+    /// Mirror the Review epoch accepted by BridgeProductSession.prepare.
+    /// Call while the matching product admission is valid so source updates and
+    /// canonical target commits share the product-admission → intent-lock order.
+    func admitReviewComparisonIntent(
+        workerDerivationEpoch: Int,
+        productAdmission: BridgeProductAdmissionContext
+    ) {
+        gate.admitReviewComparisonIntent(
+            workerDerivationEpoch: workerDerivationEpoch,
+            productAdmission: productAdmission
+        )
+    }
+
+    /// Keep the floor lock held through the synchronous target mutation so a
+    /// newer admitted Review intent cannot slip between validation and commit.
+    func withCurrentReviewComparisonIntent<MutationResult>(
+        workerDerivationEpoch: Int,
+        productAdmission: BridgeProductAdmissionContext,
+        perform mutation: () throws -> MutationResult
+    ) rethrows -> MutationResult? {
+        try gate.withCurrentReviewComparisonIntent(
+            workerDerivationEpoch: workerDerivationEpoch,
+            productAdmission: productAdmission,
+            perform: mutation
+        )
+    }
+
     func acquire() -> BridgePaneRefreshWorkAdmission? {
         gate.acquire(validity: .foregroundOnly)
+    }
+
+    func acquireFileSurfaceOutcome() -> BridgePaneRefreshWorkAdmission? {
+        gate.acquire(validity: .foregroundOnly, authorityLane: .file)
     }
 
     func acquireReviewContentContinuation() -> BridgePaneRefreshWorkAdmission? {
@@ -208,6 +239,23 @@ final class BridgePaneRefreshAdmissionCoordinator {
         presentationRevision += 1
     }
 
+    func beginAndFailReviewComparisonAttempt(
+        activeTarget: WorkspaceReviewContributionTarget,
+        reviewGeneration: Int,
+        failureKind: String,
+        retryable: Bool
+    ) {
+        beginReviewComparisonAttempt(
+            activeTarget: activeTarget,
+            reviewGeneration: reviewGeneration
+        )
+        failReviewComparisonAttempt(
+            reviewGeneration: reviewGeneration,
+            failureKind: failureKind,
+            retryable: retryable
+        )
+    }
+
     func isReviewComparisonAttemptPending(reviewGeneration: Int) -> Bool {
         reviewComparison?.attempt == .pending(reviewGeneration: reviewGeneration)
     }
@@ -246,7 +294,7 @@ final class BridgePaneRefreshAdmissionCoordinator {
         switch reviewComparison.attempt {
         case .pending, .unavailable:
             nextAttempt = .settled(reviewGeneration: reviewGeneration)
-        case .selectionRequired, .settled:
+        case .noSource, .selectionRequired, .settled:
             nextAttempt = reviewComparison.attempt
         }
         let nextComparison = BridgePaneReviewComparisonPresentation(
@@ -383,19 +431,20 @@ final class BridgePaneRefreshAdmissionCoordinator {
         return nextAuthorityGeneration
     }
 
+    @discardableResult
     func completeRefreshPass(
         _ reservation: BridgePaneRefreshCatchUpReservation,
         outcome: BridgePaneRefreshCatchUpOutcome
-    ) {
+    ) -> Bool {
         // Leaving foreground already restores and clears the active reservation.
         // Its later cancelled/stale completion must not merge the same fact twice.
         guard reservation.lanes.count == 1,
             let lane = reservation.lanes.first,
             activeRefreshPassByLane[lane]?.id == reservation.id
-        else { return }
+        else { return false }
         let previousPresentation = productPresentationSnapshot
         activeRefreshPassByLane[lane] = nil
-        guard activity != .closed else { return }
+        guard activity != .closed else { return false }
         switch outcome {
         case .succeeded:
             if lane == .file { fileRefreshFailure = nil }
@@ -409,6 +458,7 @@ final class BridgePaneRefreshAdmissionCoordinator {
             )
         }
         advancePresentationRevisionIfNeeded(from: previousPresentation)
+        return true
     }
 
     func reserveForegroundRefreshPass() -> BridgePaneRefreshCatchUpReservation? {
@@ -436,10 +486,14 @@ final class BridgePaneRefreshAdmissionCoordinator {
         advancePresentationRevisionIfNeeded(from: previousPresentation)
     }
 
-    func recordFileRefreshFailure(_ failure: BridgePaneProductFileRefreshFailure) {
+    func recordCurrentFileRefreshFailure(_ failure: BridgePaneProductFileRefreshFailure?) {
         guard activity != .closed, fileRefreshFailure != failure else { return }
         fileRefreshFailure = failure
         presentationRevision += 1
+    }
+
+    var hasPendingFileRefreshWork: Bool {
+        dirtyFactByLane[.file] != nil
     }
 
     @discardableResult
@@ -701,6 +755,11 @@ final class BridgePaneRefreshAdmissionCoordinator {
 }
 
 private final class BridgePaneRefreshWorkAdmissionGate: @unchecked Sendable {
+    private struct ReviewComparisonIntent {
+        let productAdmission: BridgeProductAdmissionContext
+        var workerDerivationEpoch: Int
+    }
+
     fileprivate enum Validity: Sendable {
         case foregroundOnly
         case foregroundOrLoadedHidden
@@ -730,12 +789,14 @@ private final class BridgePaneRefreshWorkAdmissionGate: @unchecked Sendable {
     }
 
     private let lock = NSLock()
+    private let reviewComparisonIntentLock = NSLock()
     private let identity = Identity()
     private var activity: BridgePaneActivity
     private var foregroundEpoch: UInt64 = 0
     private var reviewContinuationEpoch: UInt64 = 0
     private var authorityGenerationByLane: [BridgePaneRefreshLane: UInt64] = [:]
     private var invalidationHandlerById: [UUID: InvalidationHandler] = [:]
+    private var reviewComparisonIntent: ReviewComparisonIntent?
 
     init(initialActivity: BridgePaneActivity) {
         activity = initialActivity
@@ -745,12 +806,52 @@ private final class BridgePaneRefreshWorkAdmissionGate: @unchecked Sendable {
         lock.withLock { DiagnosticSnapshot(epoch: foregroundEpoch) }
     }
 
+    func admitReviewComparisonIntent(
+        workerDerivationEpoch: Int,
+        productAdmission: BridgeProductAdmissionContext
+    ) {
+        reviewComparisonIntentLock.withLock {
+            guard var currentIntent = reviewComparisonIntent,
+                currentIntent.productAdmission.matches(productAdmission)
+            else {
+                reviewComparisonIntent = ReviewComparisonIntent(
+                    productAdmission: productAdmission,
+                    workerDerivationEpoch: workerDerivationEpoch
+                )
+                return
+            }
+            guard workerDerivationEpoch >= currentIntent.workerDerivationEpoch else { return }
+            currentIntent.workerDerivationEpoch = workerDerivationEpoch
+            reviewComparisonIntent = currentIntent
+        }
+    }
+
+    func withCurrentReviewComparisonIntent<MutationResult>(
+        workerDerivationEpoch: Int,
+        productAdmission: BridgeProductAdmissionContext,
+        perform mutation: () throws -> MutationResult
+    ) rethrows -> MutationResult? {
+        try reviewComparisonIntentLock.withLock {
+            guard let currentIntent = reviewComparisonIntent,
+                currentIntent.productAdmission.matches(productAdmission),
+                workerDerivationEpoch >= currentIntent.workerDerivationEpoch
+            else { return nil }
+            return try mutation()
+        }
+    }
+
     func acquire(
         validity: Validity,
-        authorityFence: AuthorityFence? = nil
+        authorityFence: AuthorityFence? = nil,
+        authorityLane: BridgePaneRefreshLane? = nil
     ) -> BridgePaneRefreshWorkAdmission? {
         lock.withLock {
             guard activity == .foreground else { return nil }
+            let authorityFence =
+                authorityFence
+                ?? authorityLane.map {
+                    AuthorityFence(lane: $0, generation: authorityGenerationByLane[$0, default: 0])
+                }
             if let authorityFence {
                 guard
                     authorityGenerationByLane[authorityFence.lane, default: 0]

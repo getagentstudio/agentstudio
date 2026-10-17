@@ -217,9 +217,7 @@ extension Ghostty.SurfaceView {
 
             let sourcePaneId =
                 terminalRuntime?.paneId.uuid
-                ?? SurfaceManager.shared
-                .surfaceId(forView: self)
-                .flatMap { SurfaceManager.shared.paneId(for: $0) }
+                ?? paneIDForViewObjectID(ObjectIdentifier(self))
 
             switch Self.handleTerminalAppOwnedShortcut(
                 trigger: trigger,
@@ -519,11 +517,13 @@ extension Ghostty.SurfaceView {
     func endRestorePhaseIfLatched() {
         guard let generation = restorePhaseLatch else { return }
         restorePhaseLatch = nil
-        guard let paneID = SurfaceManager.shared.paneId(for: managedSurfaceID) else { return }
-        Ghostty.ActionRouter.localActionAccumulator.markRestorePhaseEnded(
+        guard let callbackHandling,
+            let paneID = callbackHandling.host.routingLookup.paneId(for: managedSurfaceID)
+        else { return }
+        callbackHandling.localActionAccumulator.markRestorePhaseEnded(
             surfaceID: managedSurfaceID,
             generation: generation,
-            contextBeforeControl: Ghostty.ActionRouter.terminalActivityProjectionContext(paneID: paneID)
+            contextBeforeControl: callbackHandling.host.activityContext(paneID)
         )
     }
 

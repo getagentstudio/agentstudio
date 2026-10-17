@@ -20,6 +20,6 @@ describe('bridgeFileViewerContentHeaderTitle', () => {
 				selectedPath: null,
 				sourceId: 'pane-companion-uuid-worktree-uuid-1',
 			}),
-		).toBe('Source pending');
+		).toBe('Files');
 	});
 });

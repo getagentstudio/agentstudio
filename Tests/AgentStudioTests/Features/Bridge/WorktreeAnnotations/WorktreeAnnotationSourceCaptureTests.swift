@@ -512,6 +512,55 @@ struct WorktreeAnnotationSourceCaptureTests {
         #expect(await provider.recordedContentRequestsCount(handleId: requiredHandle.handleId) == 1)
     }
 
+    @Test("Review refresh uses the named retained publication and identifies retirement")
+    func reviewRefreshIdentifiesRetiredPublication() async throws {
+        let admission = try BridgeProductAdmissionTestContext.make()
+        let package = makeReviewPackage(
+            itemCount: 1,
+            comparisonOrigin: .contribution(
+                .init(
+                    symbolicTarget: .branch(name: "main"),
+                    resolvedTargetOID: "target-oid",
+                    reviewedHeadOID: "head-oid",
+                    baseRole: .commonCommit,
+                    baseOID: "base-oid"
+                )
+            )
+        )
+        let coordinator = BridgeReviewPublicationCoordinator()
+        let identity = try await commit(
+            package: package, coordinator: coordinator, productAdmission: admission.context
+        )
+        let cache = BridgeReviewContentLoaderCache(
+            provider: BridgeReviewSourceProviderFake(
+                comparison: .init(
+                    baseEndpoint: package.baseEndpoint,
+                    headEndpoint: package.headEndpoint,
+                    changedFiles: []
+                ),
+                contentByHandleId: [:]
+            )
+        )
+        let retained = try await WorktreeAnnotationSourceCapture.reviewRefresh(
+            identity: identity,
+            publicationCoordinator: coordinator,
+            contentLoaderCache: cache,
+            requirements: [],
+            productAdmission: admission.context
+        )
+        #expect(retained.fingerprint.reviewComparisonOrigin?.reviewedHeadOID == "head-oid")
+        _ = coordinator.close()
+        await #expect(throws: WorktreeAnnotationSourceResolutionError.unavailable) {
+            _ = try await WorktreeAnnotationSourceCapture.reviewRefresh(
+                identity: identity,
+                publicationCoordinator: coordinator,
+                contentLoaderCache: cache,
+                requirements: [],
+                productAdmission: admission.context
+            )
+        }
+    }
+
     private func commit(
         package: BridgeReviewPackage,
         coordinator: BridgeReviewPublicationCoordinator,

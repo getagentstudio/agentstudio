@@ -2,6 +2,7 @@ import { writeFile } from 'node:fs/promises';
 
 import type { Page } from 'playwright';
 
+import { bridgeViewerFileCategoryOptions } from '../../src/app/bridge-viewer-file-class-options.tsx';
 import { worktreeFileSplitResetReplacementSatisfied } from '../verify-bridge-viewer-worktree-review-proof.ts';
 import {
 	clickWorktreeFilePath,
@@ -26,7 +27,6 @@ import {
 	waitForWorktreeOpenFileState,
 	waitForWorktreeRenderedFilePathSample,
 	worktreeFileControlPressed,
-	worktreeFileFilterMenuContains,
 	worktreeFileFilterStatusText,
 	worktreeFileFilterStatusVisibleCount,
 	worktreeFileRowExists,
@@ -72,32 +72,11 @@ export async function verifyWorktreeFileProductControls(props: {
 	readonly page: Page;
 	readonly targetPath: string;
 }): Promise<WorktreeFileProductControlsProof> {
-	const expectedFetchableFilterCount = props.descriptors.filter((descriptor) =>
-		isFetchableWorktreeFileDescriptor(descriptor),
-	).length;
-	const expectedUnavailableFilterCount = props.descriptors.filter((descriptor) =>
-		isUnavailableWorktreeFileDescriptor(descriptor),
-	).length;
-	const fetchablePaths = props.descriptors
-		.filter((descriptor) => isFetchableWorktreeFileDescriptor(descriptor))
-		.map((descriptor) => descriptor.path);
-	const unavailablePathSet = new Set(
-		props.descriptors
-			.filter((descriptor) => isUnavailableWorktreeFileDescriptor(descriptor))
-			.map((descriptor) => descriptor.path),
-	);
-	const unavailablePaths = [...unavailablePathSet];
 	const expectedUnavailableDescriptor =
 		props.descriptors.find((descriptor) => isUnavailableWorktreeFileDescriptor(descriptor)) ?? null;
 	const expectedSearchTreeSizePixels = projectedTreeSizePixels([props.targetPath]);
 	const expectedRegexTreeSizePixels = projectedTreeSizePixels([props.targetPath]);
 	const expectedInvalidRegexTreeSizePixels = projectedTreeSizePixels([]);
-	const expectedFetchableTreeSizePixels =
-		fetchablePaths.length === props.descriptors.length
-			? null
-			: projectedTreeSizePixels(fetchablePaths);
-	const expectedUnavailableTreeSizePixels =
-		unavailablePaths.length === 0 ? null : projectedTreeSizePixels(unavailablePaths);
 	const initialVisibleCount = await visibleWorktreeFileRowCount(props.page);
 	const initialRenderedPathSample = await visibleWorktreeFilePathSample(props.page);
 	const initialTreeSizeSource = await worktreeFileTreeTotalSizeSource(props.page);
@@ -138,24 +117,18 @@ export async function verifyWorktreeFileProductControls(props: {
 	const invalidRegexTreeSizeSource = await worktreeFileTreeTotalSizeSource(props.page);
 	await fillWorktreeFileSearch(props.page, '');
 	await waitForWorktreeFileFilterStatusAtLeast(props.page, 1);
-	await selectWorktreeFileFilter(props.page, 'Text files');
+	const resetFilterOption = bridgeViewerFileCategoryOptions.find(
+		(option) => option.value === 'all',
+	);
+	if (resetFilterOption === undefined)
+		throw new Error('Product File category reset option is missing.');
+	await selectWorktreeFileFilter(props.page, resetFilterOption.label);
+	await fillWorktreeFileSearch(props.page, '');
 	await waitForWorktreeFileFilterStatusAtLeast(props.page, 1);
-	const fetchableFilterActive = await worktreeFileFilterMenuContains(props.page, 'Text');
-	const fetchableFilterVisibleCount = await worktreeFileFilterStatusVisibleCount(props.page);
-	const fetchableRenderedPathSample = await visibleWorktreeFilePathSample(props.page);
-	const fetchableTreeSizePixels = await worktreeFileTreeTotalSizePixels(props.page);
-	const fetchableTreeSizeSource = await worktreeFileTreeTotalSizeSource(props.page);
-	await selectWorktreeFileFilter(props.page, 'Unavailable files');
-	await waitForWorktreeFileFilterStatus(props.page, expectedUnavailableFilterCount, undefined);
-	const unavailableFilterActive = await worktreeFileFilterMenuContains(props.page, 'Unavailable');
-	const unavailableFilterVisibleCount = await worktreeFileFilterStatusVisibleCount(props.page);
 	if (expectedUnavailableDescriptor !== null) {
 		await scrollTreeToFilePath(props.page, expectedUnavailableDescriptor.path);
 		await waitForPierreFileTreeAnchorSettled(props.page, expectedUnavailableDescriptor.path);
 	}
-	const unavailableRenderedPathSample = await visibleWorktreeFilePathSample(props.page);
-	const unavailableTreeSizePixels = await worktreeFileTreeTotalSizePixels(props.page);
-	const unavailableTreeSizeSource = await worktreeFileTreeTotalSizeSource(props.page);
 	const unavailableOpenProof =
 		expectedUnavailableDescriptor === null
 			? null
@@ -163,9 +136,6 @@ export async function verifyWorktreeFileProductControls(props: {
 					descriptor: expectedUnavailableDescriptor,
 					page: props.page,
 				});
-	await selectWorktreeFileFilter(props.page, 'All files');
-	await fillWorktreeFileSearch(props.page, '');
-	await waitForWorktreeFileFilterStatusAtLeast(props.page, 1);
 	const allFilterVisibleCount = await worktreeFileFilterStatusVisibleCount(props.page);
 	const allRenderedPathSample = await visibleWorktreeFilePathSample(props.page);
 	const allTreeSizePixels = await worktreeFileTreeTotalSizePixels(props.page);
@@ -175,19 +145,9 @@ export async function verifyWorktreeFileProductControls(props: {
 		allRenderedPathSample,
 		allTreeSizePixels,
 		allTreeSizeSource,
-		expectedFetchableFilterCount,
-		expectedFetchableTreeSizePixels,
 		expectedInvalidRegexTreeSizePixels,
 		expectedRegexTreeSizePixels,
 		expectedSearchTreeSizePixels,
-		expectedUnavailableTreeSizePixels,
-		expectedUnavailableFilterCount,
-		expectedUnavailablePath: expectedUnavailableDescriptor?.path ?? null,
-		fetchableFilterActive,
-		fetchableFilterVisibleCount,
-		fetchableRenderedPathSample,
-		fetchableTreeSizePixels,
-		fetchableTreeSizeSource,
 		initialVisibleCount,
 		initialRenderedPathSample,
 		initialTreeSizeSource,
@@ -211,22 +171,10 @@ export async function verifyWorktreeFileProductControls(props: {
 		searchVisibleCount: searchRenderedPathSample.length,
 		targetPath: props.targetPath,
 		totalTreeRowCount: allFilterVisibleCount,
-		unavailableFilterActive,
-		unavailableFilterVisibleCount,
 		unavailableOpenProof,
-		unavailableRenderedPathSample,
-		unavailableTreeSizePixels,
-		unavailableTreeSizeSource,
 	};
-	assertWorktreeFileProductControlsProof({
-		proof,
-		unavailablePathSet,
-	});
+	assertWorktreeFileProductControlsProof({ proof });
 	return proof;
-}
-
-export function isFetchableWorktreeFileDescriptor(descriptor: WorktreeFileDescriptor): boolean {
-	return descriptor['isBinary'] !== true && descriptor['virtualizedExtentKind'] !== 'unavailable';
 }
 
 export function isUnavailableWorktreeFileDescriptor(descriptor: WorktreeFileDescriptor): boolean {

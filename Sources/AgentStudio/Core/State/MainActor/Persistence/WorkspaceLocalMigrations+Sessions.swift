@@ -7,6 +7,47 @@ extension WorkspaceLocalMigrations {
                 try database.execute(sql: statement)
             }
         }
+        migrator.registerMigration("020_sessions_status_and_replay") { database in
+            try database.execute(sql: "ALTER TABLE sessions_operation ADD COLUMN fingerprint_version INTEGER")
+            try database.execute(sql: "ALTER TABLE sessions_operation ADD COLUMN source_occurred_at REAL")
+            try database.execute(sql: "ALTER TABLE sessions_evidence ADD COLUMN admission_sequence INTEGER")
+            try database.execute(sql: "ALTER TABLE sessions_evidence ADD COLUMN source_occurred_at REAL")
+            try database.execute(sql: "ALTER TABLE sessions_pane_binding ADD COLUMN resume_hint TEXT")
+            try database.execute(sql: "ALTER TABLE sessions_pane_binding ADD COLUMN owner_pane_id TEXT")
+            for column in [
+                "provider_event", "tool_name", "tool_call_id", "failure_summary", "elicitation_id", "prompt_summary",
+            ] {
+                try database.execute(sql: "ALTER TABLE sessions_evidence ADD COLUMN \(column) TEXT")
+            }
+            try database.execute(
+                sql: "ALTER TABLE sessions_evidence ADD COLUMN has_questions INTEGER NOT NULL DEFAULT 0")
+            try database.execute(
+                sql: """
+                    CREATE TABLE sessions_provider_question (
+                        occurrence_id TEXT NOT NULL REFERENCES sessions_evidence(occurrence_id) ON DELETE CASCADE,
+                        question_index INTEGER NOT NULL,
+                        question TEXT NOT NULL, header TEXT NOT NULL,
+                        multi_select INTEGER NOT NULL CHECK (multi_select IN (0, 1)),
+                        PRIMARY KEY (occurrence_id, question_index)
+                    )
+                    """)
+            try database.execute(
+                sql: """
+                    CREATE TABLE sessions_provider_question_option (
+                        occurrence_id TEXT NOT NULL, question_index INTEGER NOT NULL,
+                        option_index INTEGER NOT NULL, label TEXT NOT NULL, description TEXT NOT NULL,
+                        PRIMARY KEY (occurrence_id, question_index, option_index),
+                        FOREIGN KEY (occurrence_id, question_index)
+                            REFERENCES sessions_provider_question(occurrence_id, question_index) ON DELETE CASCADE
+                    )
+                    """)
+        }
+    }
+
+    static func registerSessionsPermissionHandling(in migrator: inout DatabaseMigrator) {
+        migrator.registerMigration("026_sessions_permission_handling") { database in
+            try database.execute(sql: "ALTER TABLE sessions_evidence ADD COLUMN permission_handling TEXT")
+        }
     }
 
     private static let sessionsSchemaStatements: [String] = [

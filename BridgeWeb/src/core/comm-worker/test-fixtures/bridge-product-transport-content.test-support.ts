@@ -1,6 +1,3 @@
-import { createHash } from 'node:crypto';
-import { performance } from 'node:perf_hooks';
-
 import { vi } from 'vitest';
 
 import { executeAgentStudioBridgeProductRequest } from '../bridge-product-agent-studio-request-executor.js';
@@ -15,12 +12,17 @@ import {
 	encodeMinimalControlFrame,
 	encodeMinimalDataFrame,
 } from '../bridge-product-content-frame-test-support.js';
+import type { BridgeProductDeadlineClock } from '../bridge-product-deadline-clock.js';
 import {
 	bridgeProductFrameAcknowledgementRequestSchema,
 	type BridgeProductFrameAcknowledgementRequest,
 } from '../bridge-product-frame-acknowledgement-contracts.js';
 import { bridgeProductMetadataApplicationRegistry } from '../bridge-product-metadata-application-registry.js';
 import { encodeBridgeProductMetadataFrame } from '../bridge-product-metadata-frame-codec.js';
+import {
+	bridgeProductOperationResultAcknowledgementSchema,
+	bridgeProductOperationResultRequestSchema,
+} from '../bridge-product-operation-wire-contracts.js';
 import {
 	BridgeProductControlMux,
 	type BridgeProductSessionAuthority,
@@ -33,11 +35,11 @@ import {
 	type BridgeProductMetadataFrame,
 	type BridgeProductMetadataStreamRequest,
 } from '../bridge-product-session-contracts.js';
-import { encodeBridgeProductSubscriptionInterestState } from '../bridge-product-subscription-interest-state-codec.js';
 import {
 	createBridgeProductTransport,
 	type BridgeProductIdentifierPurpose,
 } from '../bridge-product-transport.js';
+import { BridgeProductTestFactRecorder } from './bridge-product-test-fact-recorder.js';
 
 const abcSha256 = 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad';
 
@@ -45,6 +47,8 @@ export function createContentTransportHarness(
 	fileEpoch = 0,
 	maximumConcurrentContentResponses?: number,
 	frameAcknowledgementTimeoutMilliseconds?: number,
+	deadlineClock?: BridgeProductDeadlineClock,
+	viewCreditBytes?: number,
 ): {
 	readonly server: TestContentProductServer;
 	readonly transport: ReturnType<typeof createBridgeProductTransport>;
@@ -54,9 +58,23 @@ export function createContentTransportHarness(
 			kind: 'productSession.bootstrap',
 			paneSessionId: 'pane-session-1',
 			policy: {
+				contentAcknowledgementDeadlineMilliseconds:
+					frameAcknowledgementTimeoutMilliseconds ?? 5_000,
 				maximumContentBytes: 2 * 1024 * 1024,
 				maximumMetadataFrameBytes: 256 * 1024,
 				maximumQueuedStreamBytes: 4 * 1024 * 1024,
+				admissionRetryCount: 2,
+				contentProgressDeadlineMilliseconds: 5_000,
+				viewBatchProgressDeadlineMilliseconds: 5_000,
+				streamKeepaliveIntervalMilliseconds: 350,
+				telemetryPreReadyBufferMaxBytes: 64 * 1024,
+				telemetryPreReadyBufferMaxSamples: 128,
+				workerSettlementDeadlineMilliseconds: 5_000,
+				viewAcknowledgementDeadlineMilliseconds: 4_000,
+				viewCreditBytes: viewCreditBytes ?? 524_288,
+				viewCreditParts: 8,
+				viewMaximumConsecutiveResnapshots: 3,
+				viewMaximumDirtyKeys: 4_096,
 				maximumQueuedStreamFrames: 64,
 				maximumRequestBodyBytes: 128 * 1024,
 				terminalFrameReserve: 1,
@@ -81,18 +99,24 @@ export function createContentTransportHarness(
 			createIdentifier: purposeIdentifier(),
 			executeProductRequest: executeAgentStudioBridgeProductRequest,
 			initialWorkerDerivationEpochs: { file: fileEpoch, review: 0 },
+			...(deadlineClock === undefined ? {} : { deadlineClock }),
 			metadataApplicationRegistry: bridgeProductMetadataApplicationRegistry,
 			...(maximumConcurrentContentResponses === undefined
 				? {}
 				: { maximumConcurrentContentResponses }),
-			...(frameAcknowledgementTimeoutMilliseconds === undefined
-				? {}
-				: { frameAcknowledgementTimeoutMilliseconds }),
 		}),
 	};
 }
 
 export class TestContentProductServer {
+	readonly #heldContentReadFacts = new BridgeProductTestFactRecorder<string>();
+	readonly #contentRequestFacts = new BridgeProductTestFactRecorder<BridgeProductContentRequest>();
+	readonly #contentInvocationFacts = new BridgeProductTestFactRecorder<number>();
+	readonly #frameAcknowledgementFacts =
+		new BridgeProductTestFactRecorder<BridgeProductFrameAcknowledgementRequest>();
+	readonly #metadataOpeningFacts =
+		new BridgeProductTestFactRecorder<BridgeProductMetadataStreamRequest>();
+	readonly #controlRequestFacts = new BridgeProductTestFactRecorder<BridgeProductControlRequest>();
 	readonly contentRequestHeaders: {
 		readonly capability: string | null;
 		readonly contentType: string | null;
@@ -102,18 +126,32 @@ export class TestContentProductServer {
 	contentReaderCancelCount = 0;
 	metadataReaderCancelCount = 0;
 	readonly controlRequests: BridgeProductControlRequest[] = [];
+	readonly #operationResults = new Map<string, unknown>();
+	readonly #operationIdByRequestId = new Map<string, string>();
+	#nextOperationOrdinal = 1;
 	readonly frameAcknowledgements: BridgeProductFrameAcknowledgementRequest[] = [];
+	unknownReadRefusalCount = 0;
+	readonly #contentBodyAfterOpeningAcknowledgement = new Map<string, () => void>();
+	readonly #contentTerminalAfterDataAcknowledgement = new Map<string, () => void>();
 	holdContentResponses = false;
+	gateContentBodyOnOpeningAcknowledgement = false;
+	leaveContentOpenAfterData = false;
+	leaveContentOpenAfterTerminal = false;
+	splitContentDataFrames = false;
+	gateContentTerminalOnDataAcknowledgement = false;
 	holdNextContentRequestBeforeResponse = false;
 	leaveContentOpenAfterAcceptance = false;
 	nextContentRequestFailure: Error | null = null;
 	nextContentResponseKind: 'ordinary' | 'read-error' | 'unexpected-eof' = 'ordinary';
 	nextAcknowledgementStatus = 204;
+	mismatchNextUnknownReadRefusal = false;
+	malformNextUnknownReadRefusal = false;
+	loseNextAcknowledgementReply = false;
 	resyncFailure: Error | null = null;
 	readonly requestRoutes: string[] = [];
 	#heldAcknowledgement: Promise<void> | null = null;
 	#heldContentRequestId: string | null = null;
-	#holdMetadataAcknowledgement = false;
+	#heldContentSequence: number | null = null;
 	#metadataController: ReadableStreamDefaultController<Uint8Array> | null = null;
 	#metadataRequest: BridgeProductMetadataStreamRequest | null = null;
 	#releaseHeldContentRequestBeforeResponse: (() => void) | null = null;
@@ -124,6 +162,7 @@ export class TestContentProductServer {
 		this.requestRoutes.push(url);
 		if (url === 'agentstudio://rpc/content') {
 			this.contentRequestInvocationCount += 1;
+			this.#contentInvocationFacts.record(this.contentRequestInvocationCount);
 			if (this.holdNextContentRequestBeforeResponse) {
 				this.holdNextContentRequestBeforeResponse = false;
 				await new Promise<void>((resolve): void => {
@@ -142,7 +181,7 @@ export class TestContentProductServer {
 			typeof body === 'object' &&
 			body !== null &&
 			'kind' in body &&
-			body.kind === 'stream.frameObserved'
+			body.kind === 'content.acknowledge'
 		) {
 			return await this.#acknowledgeFrame(body);
 		}
@@ -154,15 +193,12 @@ export class TestContentProductServer {
 		this.#metadataController.enqueue(encodeBridgeProductMetadataFrame(frame));
 	}
 
-	holdContentAcknowledgement(contentRequestId: string): void {
+	holdContentAcknowledgement(
+		contentRequestId: string,
+		receivedThroughContentSequence?: number,
+	): void {
 		this.#heldContentRequestId = contentRequestId;
-		this.#heldAcknowledgement = new Promise<void>((resolve): void => {
-			this.#releaseHeldAcknowledgement = resolve;
-		});
-	}
-
-	holdMetadataAcknowledgement(): void {
-		this.#holdMetadataAcknowledgement = true;
+		this.#heldContentSequence = receivedThroughContentSequence ?? null;
 		this.#heldAcknowledgement = new Promise<void>((resolve): void => {
 			this.#releaseHeldAcknowledgement = resolve;
 		});
@@ -173,7 +209,7 @@ export class TestContentProductServer {
 		if (release === null) throw new Error('No content acknowledgement is held.');
 		this.#heldAcknowledgement = null;
 		this.#heldContentRequestId = null;
-		this.#holdMetadataAcknowledgement = false;
+		this.#heldContentSequence = null;
 		this.#releaseHeldAcknowledgement = null;
 		release();
 	}
@@ -190,44 +226,117 @@ export class TestContentProductServer {
 		return this.#metadataRequest;
 	}
 
-	async waitForContentRequestCount(count: number): Promise<void> {
-		await waitForCondition(() => this.contentRequests.length >= count);
+	waitForContentRequestCount(count: number): Promise<BridgeProductContentRequest> {
+		return this.#contentRequestFacts.waitFor((): boolean => true, count);
 	}
 
-	async waitForContentRequestInvocationCount(count: number): Promise<void> {
-		await waitForCondition(() => this.contentRequestInvocationCount >= count);
+	waitForContentRequestInvocationCount(count: number): Promise<number> {
+		return this.#contentInvocationFacts.waitFor((invocations): boolean => invocations >= count);
 	}
 
-	async waitForFrameAcknowledgementCount(count: number): Promise<void> {
-		await waitForCondition(() => this.frameAcknowledgements.length >= count);
+	waitForHeldContentReadStarted(contentRequestId: string): Promise<string> {
+		return this.#heldContentReadFacts.waitFor((observed): boolean => observed === contentRequestId);
 	}
 
-	async waitForMetadataStream(): Promise<void> {
-		await waitForCondition(() => this.#metadataRequest !== null);
+	waitForFrameAcknowledgementCount(
+		count: number,
+	): Promise<BridgeProductFrameAcknowledgementRequest> {
+		return this.#frameAcknowledgementFacts.waitFor((): boolean => true, count);
+	}
+
+	waitForMetadataStream(): Promise<BridgeProductMetadataStreamRequest> {
+		return this.#metadataOpeningFacts.waitFor();
+	}
+
+	waitForControlRequestWhere(
+		matches: (request: BridgeProductControlRequest) => boolean,
+	): Promise<BridgeProductControlRequest> {
+		return this.#controlRequestFacts.waitFor(matches);
 	}
 
 	async #acknowledgeFrame(body: unknown): Promise<Response> {
 		const request = bridgeProductFrameAcknowledgementRequestSchema.parse(body);
 		this.frameAcknowledgements.push(request);
+		this.#frameAcknowledgementFacts.record(request);
 		if (
-			(request.streamKind === 'content' &&
-				request.contentRequestId === this.#heldContentRequestId) ||
-			(request.streamKind === 'metadata' && this.#holdMetadataAcknowledgement)
+			request.contentRequestId === this.#heldContentRequestId &&
+			(this.#heldContentSequence === null ||
+				request.receivedThroughContentSequence === this.#heldContentSequence)
 		) {
 			if (this.#heldAcknowledgement === null) throw new Error('Held acknowledgement is missing.');
 			await this.#heldAcknowledgement;
 		}
 		const status = this.nextAcknowledgementStatus;
 		this.nextAcknowledgementStatus = 204;
+		if (this.loseNextAcknowledgementReply) {
+			this.loseNextAcknowledgementReply = false;
+			throw new Error('Synthetic lost acknowledgement reply.');
+		}
+		if (status === 204 && request.receivedThroughContentSequence === 0) {
+			this.#contentBodyAfterOpeningAcknowledgement.get(request.contentRequestId)?.();
+			this.#contentBodyAfterOpeningAcknowledgement.delete(request.contentRequestId);
+		}
+		if (status === 204 && request.receivedThroughContentSequence > 0) {
+			this.#contentTerminalAfterDataAcknowledgement.get(request.contentRequestId)?.();
+			this.#contentTerminalAfterDataAcknowledgement.delete(request.contentRequestId);
+		}
+		if (status === 404) {
+			this.unknownReadRefusalCount += 1;
+			if (this.malformNextUnknownReadRefusal) {
+				this.malformNextUnknownReadRefusal = false;
+				return jsonResponse({ kind: 'content.acknowledgementRefused' }, 404);
+			}
+			const contentRequestId = this.mismatchNextUnknownReadRefusal
+				? 'content-request-foreign'
+				: request.contentRequestId;
+			this.mismatchNextUnknownReadRefusal = false;
+			return jsonResponse(
+				{
+					contentRequestId,
+					kind: 'content.acknowledgementRefused',
+					leaseId: request.leaseId,
+					paneSessionId: request.paneSessionId,
+					reason: 'unknownRead',
+					receivedThroughContentSequence: request.receivedThroughContentSequence,
+					wireVersion: request.wireVersion,
+					workerInstanceId: request.workerInstanceId,
+				},
+				404,
+			);
+		}
 		return new Response(null, { status });
 	}
 
 	async #handleControl(body: unknown): Promise<Response> {
+		if (typeof body === 'object' && body !== null && 'kind' in body) {
+			if (body.kind === 'operation.result') {
+				const request = bridgeProductOperationResultRequestSchema.parse(body);
+				if (!this.#operationResults.has(request.operationId)) {
+					throw new Error('Result requested for an unknown test operation.');
+				}
+				return jsonResponse({
+					failureCode: null,
+					kind: 'operation.result',
+					operationId: request.operationId,
+					outcome: 'succeeded',
+					result: this.#operationResults.get(request.operationId),
+				});
+			}
+			if (body.kind === 'operation.resultAcknowledgement') {
+				const request = bridgeProductOperationResultAcknowledgementSchema.parse(body);
+				this.#operationResults.delete(request.operationId);
+				return jsonResponse({ ...request, kind: 'operation.resultAcknowledged' });
+			}
+		}
 		const request = bridgeProductControlRequestSchema.parse(body);
 		this.controlRequests.push(request);
+		this.#controlRequestFacts.record(request);
 		if (request.kind === 'workerSession.resync' && this.resyncFailure !== null) {
 			throw this.resyncFailure;
 		}
+		const existingOperationId = this.#operationIdByRequestId.get(request.requestId);
+		if (existingOperationId !== undefined)
+			return this.#admittedResponse(request, existingOperationId);
 		const identity = {
 			paneSessionId: request.paneSessionId,
 			requestId: request.requestId,
@@ -235,24 +344,51 @@ export class TestContentProductServer {
 			wireVersion: request.wireVersion,
 			workerInstanceId: request.workerInstanceId,
 		};
+		let result: object;
 		if (request.kind === 'product.call') {
-			return jsonResponse({
+			result = {
 				...identity,
 				call: { method: request.call.method, result: null },
 				kind: 'call.completed',
-			});
-		}
-		if (request.kind === 'subscription.open') {
-			return jsonResponse({
+			};
+		} else if (request.kind === 'subscription.open') {
+			result = {
 				...identity,
-				interestRevision: 0,
-				interestSha256: emptyReviewInterestHash(),
 				kind: 'subscription.openAccepted',
 				subscriptionId: request.subscriptionId,
 				subscriptionKind: request.subscription.subscriptionKind,
-			});
+			};
+		} else if (request.kind === 'subscription.setScope') {
+			result = {
+				...identity,
+				domain: request.domain,
+				handle: request.handle,
+				incarnation: request.incarnation,
+				kind: 'subscription.scopeAccepted',
+				scopeRevision: request.scopeRevision,
+				subscriptionId: request.subscriptionId,
+				subscriptionKind: request.subscriptionKind,
+			};
+		} else {
+			throw new Error(`Unexpected control request ${request.kind}.`);
 		}
-		throw new Error(`Unexpected control request ${request.kind}.`);
+		const operationId = `content-test-operation-${this.#nextOperationOrdinal++}`;
+		this.#operationIdByRequestId.set(request.requestId, operationId);
+		this.#operationResults.set(operationId, result);
+		return this.#admittedResponse(request, operationId);
+	}
+
+	#admittedResponse(request: BridgeProductControlRequest, operationId: string): Response {
+		return jsonResponse({
+			kind: 'operation.admitted',
+			operationId,
+			paneSessionId: request.paneSessionId,
+			requestId: request.requestId,
+			requestSequence: request.requestSequence,
+			waitKind: 'ordinary',
+			wireVersion: request.wireVersion,
+			workerInstanceId: request.workerInstanceId,
+		});
 	}
 
 	#openContent(init?: RequestInit): Response {
@@ -263,6 +399,7 @@ export class TestContentProductServer {
 		});
 		const request = bridgeProductContentRequestSchema.parse(parseBody(init));
 		this.contentRequests.push(request);
+		this.#contentRequestFacts.record(request);
 		const responseKind = this.nextContentResponseKind;
 		this.nextContentResponseKind = 'ordinary';
 		if (responseKind === 'unexpected-eof') {
@@ -278,13 +415,15 @@ export class TestContentProductServer {
 			);
 		}
 		if (this.holdContentResponses) {
-			return new Response(
-				new ReadableStream<Uint8Array>({
-					cancel: (): void => {
-						this.contentReaderCancelCount += 1;
-					},
-				}),
-			);
+			const responseStream = new ReadableStream<Uint8Array>({
+				pull: (): void => {
+					if (responseStream.locked) this.#heldContentReadFacts.record(request.contentRequestId);
+				},
+				cancel: (): void => {
+					this.contentReaderCancelCount += 1;
+				},
+			});
+			return new Response(responseStream);
 		}
 		const acceptedBody = {
 			contentRequestId: request.contentRequestId,
@@ -307,6 +446,60 @@ export class TestContentProductServer {
 					},
 					start: (controller): void => {
 						controller.enqueue(encodeMinimalControlFrame(0x01, 0, acceptedBody));
+					},
+				}),
+			);
+		}
+		if (this.gateContentBodyOnOpeningAcknowledgement) {
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					cancel: (): void => {
+						this.contentReaderCancelCount += 1;
+						this.#contentBodyAfterOpeningAcknowledgement.delete(request.contentRequestId);
+						this.#contentTerminalAfterDataAcknowledgement.delete(request.contentRequestId);
+					},
+					start: (controller): void => {
+						controller.enqueue(encodeMinimalControlFrame(0x01, 0, acceptedBody));
+						this.#contentBodyAfterOpeningAcknowledgement.set(request.contentRequestId, (): void => {
+							controller.enqueue(
+								encodeMinimalDataFrame(
+									1,
+									0,
+									this.splitContentDataFrames
+										? Uint8Array.from([97])
+										: Uint8Array.from([97, 98, 99]),
+									request.operationCorrelationId,
+								),
+							);
+							if (this.splitContentDataFrames) {
+								controller.enqueue(
+									encodeMinimalDataFrame(
+										2,
+										1,
+										Uint8Array.from([98, 99]),
+										request.operationCorrelationId,
+									),
+								);
+							}
+							const finishContent = (): void => {
+								controller.enqueue(
+									encodeMinimalControlFrame(0x03, this.splitContentDataFrames ? 3 : 2, {
+										endOfSource: true,
+										observedByteLength: 3,
+										observedSha256: abcSha256,
+										operationCorrelationId: request.operationCorrelationId,
+									}),
+								);
+								if (!this.leaveContentOpenAfterTerminal) controller.close();
+							};
+							if (this.leaveContentOpenAfterData) return;
+							if (this.gateContentTerminalOnDataAcknowledgement) {
+								this.#contentTerminalAfterDataAcknowledgement.set(
+									request.contentRequestId,
+									finishContent,
+								);
+							} else finishContent();
+						});
 					},
 				}),
 			);
@@ -334,6 +527,7 @@ export class TestContentProductServer {
 
 	#openMetadataStream(init?: RequestInit): Response {
 		this.#metadataRequest = bridgeProductMetadataStreamRequestSchema.parse(parseBody(init));
+		this.#metadataOpeningFacts.record(this.#metadataRequest);
 		return new Response(
 			new ReadableStream<Uint8Array>({
 				cancel: (): void => {
@@ -382,17 +576,6 @@ export function fileContentDescriptor(descriptorId: string): BridgeProductFileCo
 	} as const;
 }
 
-function emptyReviewInterestHash(): string {
-	return createHash('sha256')
-		.update(
-			encodeBridgeProductSubscriptionInterestState({
-				interests: [],
-				subscriptionKind: 'review.metadata',
-			}),
-		)
-		.digest('hex');
-}
-
 function parseBody(init?: RequestInit): unknown {
 	const body = init?.body;
 	if (body instanceof ArrayBuffer) return JSON.parse(new TextDecoder().decode(body)) as unknown;
@@ -400,10 +583,10 @@ function parseBody(init?: RequestInit): unknown {
 	throw new Error('Expected a binary request body.');
 }
 
-function jsonResponse(value: unknown): Response {
+function jsonResponse(value: unknown, status = 200): Response {
 	return new Response(JSON.stringify(value), {
 		headers: { 'Content-Type': 'application/json' },
-		status: 200,
+		status,
 	});
 }
 
@@ -419,16 +602,4 @@ function purposeIdentifier(): (purpose: BridgeProductIdentifierPurpose) => strin
 function sequenceIdentifier(prefix: string): () => string {
 	let sequence = 0;
 	return (): string => `${prefix}-${(sequence += 1)}`;
-}
-
-export async function waitForCondition(predicate: () => boolean): Promise<void> {
-	const deadline = performance.now() + 2_000;
-	while (performance.now() < deadline) {
-		if (predicate()) return;
-		// oxlint-disable-next-line eslint/no-await-in-loop -- Advances one bounded stream event turn.
-		await new Promise<void>((resolve): void => {
-			setImmediate(resolve);
-		});
-	}
-	throw new Error('Timed out waiting for the bounded protocol condition.');
 }

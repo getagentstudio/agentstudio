@@ -39,6 +39,7 @@ export type BridgeCommWorkerTelemetryCommand =
 	| 'annotationCommand'
 	| 'annotationOutputInspect'
 	| 'annotationProjectionRetry'
+	| 'viewRecoveryRetry'
 	| 'fileDisplayResync'
 	| 'fileQueryUpdate'
 	| 'fileRefreshRetry'
@@ -64,6 +65,7 @@ export interface BridgeCommWorkerTelemetryRecorder {
 }
 
 type BridgeCommWorkerComparisonAttemptStatus =
+	| 'no_source'
 	| 'absent'
 	| 'pending'
 	| 'selection_required'
@@ -94,9 +96,11 @@ export function bridgeCommWorkerComparisonTelemetryFacts(
 	const comparisonAttemptStatus =
 		attempt === undefined
 			? 'absent'
-			: attempt.status === 'selectionRequired'
-				? 'selection_required'
-				: attempt.status;
+			: attempt.status === 'noSource'
+				? 'no_source'
+				: attempt.status === 'selectionRequired'
+					? 'selection_required'
+					: attempt.status;
 	return {
 		comparisonAttemptStatus,
 		...(attempt?.status === 'pending' || attempt?.status === 'settled'
@@ -163,7 +167,7 @@ export interface RecordBridgeCommWorkerTaskTelemetryProps {
 	readonly lane: BridgeCommWorkerTelemetryLane;
 	readonly payloadClass?: string;
 	readonly queueWaitMilliseconds?: number;
-	readonly result?: 'failed' | 'success' | 'unavailable';
+	readonly result?: 'cancelled' | 'failed' | 'success' | 'unavailable';
 	readonly resultReason?: BridgeCommWorkerTelemetryResultReason;
 	readonly semanticClass?: BridgeCommWorkerTelemetrySemanticClass;
 	readonly sourceEpoch?: number;

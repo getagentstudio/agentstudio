@@ -11,7 +11,7 @@ import Testing
 struct GhosttyCallbackRouterTests {
     private final class RoutedActionCapture {
         var actionTag: UInt32?
-        var payload: GhosttyAdapter.ActionPayload?
+        var payload: GhosttyActionPayload?
         var handledResult: Bool?
     }
 
@@ -109,25 +109,7 @@ struct GhosttyCallbackRouterTests {
     func runtimeConfig_actionCallback_copiesBorrowedTitleBeforeInvokingTypedRoute() throws {
         let routeCapture = RoutedActionCapture()
         let appHandle = Unmanaged.passUnretained(routeCapture).toOpaque()
-        let runtimeConfig = Ghostty.CallbackRouter.runtimeConfig(
-            userdataPointer: appHandle,
-            actionCallback: { appPtr, target, action in
-                guard let appPtr else { return false }
-                let routeCapture = Unmanaged<RoutedActionCapture>.fromOpaque(appPtr).takeUnretainedValue()
-                return Ghostty.ActionRouter.handleAction(
-                    appPtr,
-                    target: target,
-                    action: action,
-                    routingLookupProvider: { @MainActor in SurfaceManager.shared },
-                    metadataActionRouter: { actionTag, payload, _, handledResult in
-                        routeCapture.actionTag = actionTag
-                        routeCapture.payload = payload
-                        routeCapture.handledResult = handledResult
-                        return handledResult
-                    }
-                )
-            }
-        )
+        let runtimeConfig = Self.metadataRuntimeConfig(capture: routeCapture)
         let target = ghostty_target_s(
             tag: GHOSTTY_TARGET_APP,
             target: ghostty_target_u(surface: nil)
@@ -151,5 +133,68 @@ struct GhosttyCallbackRouterTests {
         #expect(routeCapture.actionTag == UInt32(GHOSTTY_ACTION_SET_TITLE.rawValue))
         #expect(try #require(routeCapture.payload) == .titleChanged(originalTitle))
         #expect(routeCapture.handledResult == true)
+    }
+
+    @Test("runtimeConfig action callback copies borrowed working directory before returning")
+    func runtimeConfig_actionCallback_copiesBorrowedWorkingDirectory() throws {
+        let routeCapture = RoutedActionCapture()
+        let appHandle = Unmanaged.passUnretained(routeCapture).toOpaque()
+        let runtimeConfig = Self.metadataRuntimeConfig(capture: routeCapture)
+        let target = ghostty_target_s(tag: GHOSTTY_TARGET_APP, target: ghostty_target_u(surface: nil))
+        let originalWorkingDirectory = "/tmp/callback-owned-directory"
+        var borrowedWorkingDirectory = Array(originalWorkingDirectory.utf8CString)
+
+        let handled = borrowedWorkingDirectory.withUnsafeMutableBufferPointer { directoryBuffer in
+            let action = ghostty_action_s(
+                tag: GHOSTTY_ACTION_PWD,
+                action: ghostty_action_u(pwd: .init(pwd: directoryBuffer.baseAddress))
+            )
+            let handled = runtimeConfig.action_cb(appHandle, target, action)
+            directoryBuffer[0] = 88
+            return handled
+        }
+
+        #expect(handled)
+        #expect(routeCapture.actionTag == UInt32(GHOSTTY_ACTION_PWD.rawValue))
+        #expect(try #require(routeCapture.payload) == .cwdChanged(originalWorkingDirectory))
+        #expect(routeCapture.handledResult == true)
+    }
+
+    @Test("nil working directory preserves false handled result and produces no exact metadata work")
+    func runtimeConfig_actionCallback_nilWorkingDirectoryDoesNotRouteExactMetadata() {
+        let routeCapture = RoutedActionCapture()
+        let appHandle = Unmanaged.passUnretained(routeCapture).toOpaque()
+        let runtimeConfig = Self.metadataRuntimeConfig(capture: routeCapture)
+        let target = ghostty_target_s(tag: GHOSTTY_TARGET_APP, target: ghostty_target_u(surface: nil))
+        let action = ghostty_action_s(
+            tag: GHOSTTY_ACTION_PWD,
+            action: ghostty_action_u(pwd: .init(pwd: nil))
+        )
+
+        let handled = runtimeConfig.action_cb(appHandle, target, action)
+
+        #expect(!handled)
+        #expect(routeCapture.actionTag == nil)
+        #expect(routeCapture.payload == nil)
+        #expect(routeCapture.handledResult == nil)
+    }
+
+    private static func metadataRuntimeConfig(capture: RoutedActionCapture) -> ghostty_runtime_config_s {
+        let appHandle = Unmanaged.passUnretained(capture).toOpaque()
+        let runtimeConfig = Ghostty.CallbackRouter.runtimeConfig(
+            userdataPointer: appHandle,
+            actionCallback: { appPtr, _, action in
+                guard let appPtr else { return false }
+                let routeCapture = Unmanaged<RoutedActionCapture>.fromOpaque(appPtr).takeUnretainedValue()
+                guard case .payload(let payload, let handled) = GhosttyCallbackPayloadDecoder.decode(action) else {
+                    return false
+                }
+                routeCapture.actionTag = UInt32(truncatingIfNeeded: action.tag.rawValue)
+                routeCapture.payload = payload
+                routeCapture.handledResult = handled
+                return handled
+            }
+        )
+        return runtimeConfig
     }
 }

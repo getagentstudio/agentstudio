@@ -3,7 +3,10 @@ import Foundation
 actor BridgePaneProductContentDemandAuthority {
     private let fileMetadataSource: any BridgePaneProductFileMetadataProducing
     private let reviewContentSource: any BridgePaneProductReviewContentProducing
-    private var committedSubscriptionById: [String: BridgeProductSubscriptionSnapshot] = [:]
+    private var fileDemandBySubscriptionId:
+        [String: (admissionSequence: Int, state: BridgeProductFileMetadataInterestState)] = [:]
+    private var reviewDemandBySubscriptionId:
+        [String: (admissionSequence: Int, state: BridgeProductReviewMetadataInterestState)] = [:]
 
     init(
         fileMetadataSource: any BridgePaneProductFileMetadataProducing,
@@ -18,35 +21,57 @@ actor BridgePaneProductContentDemandAuthority {
         productAdmission: BridgeProductAdmissionContext
     ) {
         switch effect {
-        case .subscriptionOpened(let subscription),
-            .subscriptionInterestsCommitted(_, let subscription):
-            _ = productAdmission.withValidAdmission {
-                committedSubscriptionById[subscription.subscriptionId] = subscription
-            }
+        case .subscriptionOpened:
+            break
         case .subscriptionCancelled(let subscription):
-            committedSubscriptionById.removeValue(forKey: subscription.subscriptionId)
+            removeDemand(subscriptionId: subscription.subscriptionId)
         case .resynced(let result):
             for outcome in result.reconciliation {
                 switch outcome {
                 case .retained:
                     break
-                case .cancelled, .reopenRequired, .reset:
-                    committedSubscriptionById.removeValue(forKey: outcome.subscriptionId)
+                case .cancelled, .reopenRequired:
+                    removeDemand(subscriptionId: outcome.subscriptionId)
                 }
             }
             for subscriptionId in result.revokedNativeOnlySubscriptionIds {
-                committedSubscriptionById.removeValue(forKey: subscriptionId)
+                removeDemand(subscriptionId: subscriptionId)
             }
-            for resetIntent in result.resetIntents {
-                committedSubscriptionById.removeValue(forKey: resetIntent.subscriptionId)
+        case .viewScopeAccepted(let request):
+            guard productAdmission.withValidAdmission({ true }) == true else { return }
+            switch request.subscriptionKind {
+            case .fileMetadata:
+                if let state = try? BridgeProductViewScopeContract.fileDemand(from: request.scope),
+                    request.correlation.requestSequence
+                        > (fileDemandBySubscriptionId[request.subscriptionId]?.admissionSequence ?? 0)
+                {
+                    fileDemandBySubscriptionId[request.subscriptionId] = (request.correlation.requestSequence, state)
+                }
+            case .reviewMetadata:
+                if let state = try? BridgeProductViewScopeContract.reviewDemand(from: request.scope),
+                    request.correlation.requestSequence
+                        > (reviewDemandBySubscriptionId[request.subscriptionId]?.admissionSequence ?? 0)
+                {
+                    reviewDemandBySubscriptionId[request.subscriptionId] = (request.correlation.requestSequence, state)
+                }
+            case .fileAnnotations, .reviewAnnotations:
+                break
+            default:
+                break
             }
-        case .noEffect, .productCall:
+        case .noEffect, .productCall, .viewResnapshotAccepted:
             break
         }
     }
 
+    private func removeDemand(subscriptionId: String) {
+        fileDemandBySubscriptionId.removeValue(forKey: subscriptionId)
+        reviewDemandBySubscriptionId.removeValue(forKey: subscriptionId)
+    }
+
     func removeAll() {
-        committedSubscriptionById.removeAll(keepingCapacity: false)
+        fileDemandBySubscriptionId.removeAll(keepingCapacity: false)
+        reviewDemandBySubscriptionId.removeAll(keepingCapacity: false)
     }
 
     func interest(
@@ -95,10 +120,8 @@ actor BridgePaneProductContentDemandAuthority {
 
     private func highestFileDemandLane(for path: String) -> BridgeProductDemandLane? {
         var highestLane: BridgeProductDemandLane?
-        for subscription in committedSubscriptionById.values {
-            guard let interests = subscription.interestState.fileMetadataState?.interests else {
-                continue
-            }
+        for demand in fileDemandBySubscriptionId.values {
+            let interests = demand.state.interests
             for interest in interests where interest.paths.contains(path) {
                 highestLane = Self.higherPriorityLane(highestLane, interest.lane)
             }
@@ -108,10 +131,8 @@ actor BridgePaneProductContentDemandAuthority {
 
     private func highestReviewDemandLane(for itemId: String) -> BridgeProductDemandLane? {
         var highestLane: BridgeProductDemandLane?
-        for subscription in committedSubscriptionById.values {
-            guard let interests = subscription.interestState.reviewMetadataState?.interests else {
-                continue
-            }
+        for demand in reviewDemandBySubscriptionId.values {
+            let interests = demand.state.interests
             for interest in interests where interest.itemIds.contains(itemId) {
                 highestLane = Self.higherPriorityLane(highestLane, interest.lane)
             }

@@ -1,0 +1,9 @@
+{
+  "session_id": "bd2513de-fce0-49b0-9f74-a408d9cb2fd6",
+  "transcript_path": "/recorded/transcript_path",
+  "cwd": "/recorded/cwd",
+  "scratchpad_dir": "/recorded/scratchpad_dir",
+  "prompt_id": "cedbf2c9-1cfa-4261-8325-c9298a56f9b9",
+  "hook_event_name": "SessionEnd",
+  "reason": "other"
+}

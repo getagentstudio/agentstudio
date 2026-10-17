@@ -432,7 +432,10 @@ struct GitWorkingDirectoryProjectorAdmissionTests {
         #expect(await actor.worktreeTasks.isEmpty)
         #expect(pathProbe.recordedRootPaths.count == rootPaths.count)
         #expect(Set(pathProbe.recordedRootPaths) == Set(rootPaths))
-        #expect(await actor.validatedRootPathByWorktreeId.isEmpty)
+        #expect(
+            await actor.validatedRootPathByWorktreeId
+                == Dictionary(uniqueKeysWithValues: zip(worktreeIds, rootPaths))
+        )
         if let firstProbedRootPath {
             #expect(pathProbe.recordedRootPaths.filter { $0 == firstProbedRootPath }.count == 1)
         }

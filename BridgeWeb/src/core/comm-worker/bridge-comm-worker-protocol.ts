@@ -19,6 +19,8 @@ import {
 	bridgeWorkerReviewPublicationInstallAdmissionEventSchema,
 	bridgeWorkerReviewPublicationInstallAdmitCommandSchema,
 	bridgeWorkerReviewPublicationInstalledCommandSchema,
+	bridgeWorkerViewRecoveryRetryCommandSchema,
+	bridgeWorkerViewRecoveryStatusEventSchema,
 	bridgeWorkerSelectCommandSchema,
 	bridgeWorkerViewportCommandSchema,
 	type BridgeWorkerHealthEvent,
@@ -45,6 +47,8 @@ import {
 	type BridgeWorkerReviewPublicationInstallAdmissionEvent,
 	type BridgeWorkerReviewPublicationInstallAdmitCommand,
 	type BridgeWorkerReviewPublicationInstalledCommand,
+	type BridgeWorkerViewRecoveryRetryCommand,
+	type BridgeWorkerViewRecoveryStatusEvent,
 	type BridgeWorkerSelectCommand,
 	type BridgeWorkerViewportCommand,
 } from './bridge-worker-contracts.js';
@@ -117,6 +121,15 @@ export interface EncodeBridgeWorkerFileDisplayResyncCommandProps extends EncodeB
 	readonly reason: BridgeWorkerFileDisplayResyncCommand['reason'];
 	readonly transactionId: string | null;
 }
+
+export interface EncodeBridgeWorkerViewRecoveryRetryCommandProps extends EncodeBridgeWorkerCommandBaseProps {
+	readonly view: BridgeWorkerViewRecoveryRetryCommand['view'];
+}
+
+export type BuildBridgeWorkerViewRecoveryStatusEventProps = Pick<
+	BridgeWorkerViewRecoveryStatusEvent,
+	'status' | 'view'
+>;
 
 export interface EncodeBridgeWorkerReviewInvalidateCommandProps extends EncodeBridgeWorkerCommandBaseProps {
 	readonly scope: BridgeWorkerReviewInvalidateCommand['scope'];
@@ -300,6 +313,15 @@ export function encodeBridgeWorkerFileDisplayResyncCommand(
 	});
 }
 
+export function encodeBridgeWorkerViewRecoveryRetryCommand(
+	props: EncodeBridgeWorkerViewRecoveryRetryCommandProps,
+): BridgeWorkerViewRecoveryRetryCommand {
+	return bridgeWorkerViewRecoveryRetryCommandSchema.parse({
+		...bridgeWorkerCommandEnvelope(props, 'viewRecoveryRetry'),
+		view: props.view,
+	});
+}
+
 export function encodeBridgeWorkerReviewInvalidateCommand(
 	props: EncodeBridgeWorkerReviewInvalidateCommandProps,
 ): BridgeWorkerReviewInvalidateCommand {
@@ -423,6 +445,19 @@ export function buildBridgeWorkerReviewPublicationInstallAdmissionEvent(
 		requestId: props.requestId,
 		candidatePublicationId: props.candidatePublicationId,
 		status: props.status,
+	});
+}
+
+export function buildBridgeWorkerViewRecoveryStatusEvent(
+	props: BuildBridgeWorkerViewRecoveryStatusEventProps,
+): BridgeWorkerViewRecoveryStatusEvent {
+	return bridgeWorkerViewRecoveryStatusEventSchema.parse({
+		direction: 'serverWorkerToMain',
+		kind: 'viewRecoveryStatus',
+		status: props.status,
+		transferDescriptors: [],
+		view: props.view,
+		wireVersion: BRIDGE_WORKER_WIRE_VERSION,
 	});
 }
 

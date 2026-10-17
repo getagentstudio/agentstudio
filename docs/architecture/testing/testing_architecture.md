@@ -182,6 +182,7 @@ These are the permitted forms. Anything not in the left column is a poll.
 | Work finishes but announces nothing | The owner emits a closing fact for the operation; `expectNext` it ([Typed facts](#typed-facts)) | Yield-and-hope; `waitUntilIdle` in a test |
 | Something must not happen | `expectNone` from an opening position marked before the stimulus, until the operation's correlated closing fact | "Did not happen in N turns/seconds"; asserting after idle |
 | Time is the behavior | Advance a controlled clock, then `expectNext` the owner's deadline disposition | Waiting in real time |
+| The awaited work runs in a task, page, or process that can end, fail, or retire before it gets there | End on the first of: the arrival, the producing task's completion, the owner's final failure, page or process retirement; a non-arrival ending fails naming what was seen ([Every wait has an exit for every outcome](#every-wait-has-an-exit-for-every-outcome)) | A wait whose only exit is success |
 | None of the above fits | The production owner is missing a signal; add it | Any poll |
 
 **No correctness budgets.** A test must not decide pass or fail by an
@@ -204,9 +205,13 @@ dependency that ignores cancellation behaves, and `cancellationObserved()` is th
 event to await. A synchronous seam reached from a thread that may block (a
 socket accept queue, a thread from `valueFromDedicatedThread`) uses
 `arriveBlocking(_:)`; called from inside a task it parks nothing and fails naming
-the step. No harness wait has a deadline: a step that is never reached leaves the
-test waiting for the hang bound, whose cancellation makes the wait throw
-`HeldStepNeverReached` with the step's name. A lane's own hang bound kills the
+the step. No harness wait has a deadline. When the work that should arrive runs
+in a task that can return, throw, or be cancelled first, await `firstArrival()`
+together with that task, and fail when the task ends without arriving
+([Every wait has an exit for every outcome](#every-wait-has-an-exit-for-every-outcome)).
+Only work that announces no terminal outcome at all leaves the test waiting for
+the hang bound, whose cancellation makes the wait throw `HeldStepNeverReached`
+with the step's name. A lane's own hang bound kills the
 process instead of cancelling the task, so when `AGENTSTUDIO_HELD_STEP_LOG` names a
 file every step appends `waiting` and `arrived` lines there
 ([`HeldStepEventLog.swift`](../../../Tests/AgentStudioTestHarness/HeldStepEventLog.swift)),
@@ -268,6 +273,46 @@ which delegates to it. `@concurrent` is not a substitute — it still
 draws from the cooperative pool. The
 `agentstudio_test_blocking_wait_off_cooperative_pool` lint rule enforces this.
 
+### Every wait has an exit for every outcome
+
+A wait whose only exit is success turns an ordinary failure into a ten-minute
+hang with no cause. List every way the awaited work can fail to arrive, and give
+the wait an exit for each one:
+
+- the task that should arrive returns, throws, or is cancelled;
+- the owner reports its final failure, as opposed to a transient failure it is
+  still recovering from;
+- the page, process, or connection is retired.
+
+Each non-arrival exit fails the test promptly and names what was seen. A
+`HeldStep` is the common case. Await `firstArrival()` together with the
+producing task, so that the task finishing first fails the test instead of
+leaving it waiting for the hang bound. On 2026-10-16 a TQ53 HTTP test hung the
+Swift fast lane for 600 s this way. Two E2E families did the same: their File
+wait ignored the view owner's final `failedRetryable`. A transient failure the
+owner still owns (a retry, a successor, automatic recovery) stays pending. Only
+the owner's final outcome ends the wait.
+
+### Failure evidence survives teardown
+
+When a test fails, keep the primary error before collecting diagnostics:
+
+- Collect each diagnostic as a handled result. A read that fails after
+  retirement, such as a `page.evaluate` on a closed page, is recorded as a gap
+  and never replaces the original cause.
+- Keep the facts a test observes outside the thing being torn down: in Node for
+  a page, in the test for a process.
+- When an intermittent failure cannot be diagnosed from its log, the fix is to
+  make the next failure carry its cause, never to rerun it.
+
+### Test the product, not the harness
+
+A test proves behavior that a user or a caller relies on. Do not add a test
+whose only subject is a wait helper's or fixture's internals, and do not assert
+the exact shape of diagnostic payloads. A helper earns its own test only when
+its failure would otherwise be invisible: when it could make a product test hang
+or pass without exercising its path.
+
 ## Typed facts
 
 Async tests observe typed facts that owners emit at each step, in order, and a
@@ -291,6 +336,11 @@ In short:
   forbidden in tests (`agentstudio_no_forbidden_test_wait`); remaining uses are
   debt in `Tools/AgentStudioArchitectureLint/forbidden-test-wait-ledger.tsv`,
   which only goes down.
+- A guard in an `@Test` function records setup failure before returning; the
+  `agentstudio_no_silent_test_return` rule checks nested control-flow paths and
+  exempts only an exact preceding `#expect(E)` / `guard E else { return }` pair.
+  Nested helper functions and closures own their returns. Remaining sites are
+  debt in `Tools/AgentStudioArchitectureLint/silent-return-test-ledger.tsv`.
 
 <a id="quiescence"></a>
 
@@ -434,6 +484,42 @@ agrees with itself.
 The lane `--filter` and `--skip` patterns are anchored to the type; see
 [Why filters are anchored](#lanes-and-why-they-are-split).
 
+### Lane-runner fixtures and the inner watchdog
+
+Script tests that run the real lane runner inside a fixture face a trap. The
+runner's inactivity watchdog times the whole tracked process: the command, then
+the runner's own pipeline, relay drain and epilogue. Under load, that overhead
+alone can use up a fixture's short bound (20 or 60 seconds), and the fixture then
+reports a timeout for a command that has already exited. The `test:swift` gating
+lanes use a 600-second bound; `test:swift:coverage` uses a 60-second bound.
+
+So the fixture launchers run the inner watchdog **unarmed** by default
+(`LaneFixtureInnerWatchdog.unarmed` in
+[`SwiftLaneScriptTestSupport.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneScriptTestSupport.swift)).
+The default covers `runLaneScriptBash`, `laneBash`, `InvocationReceiptFixture.run`
+and the output-relay pipe launcher. A test whose subject is the watchdog arms it
+by name at the call site with `innerWatchdog: .armed`. Such subjects include the
+timeout reap, "no output progress" and hang evidence. A fixture that starts the
+runner in a separate `bash` process does not inherit the default and must set it
+itself.
+
+A hang test whose report must carry what its command printed passes
+`innerWatchdog: .armedByFixture`. Its command arms the watchdog once it has
+parked by printing `laneWatchdogArmLine` as a whole line, after that evidence.
+The runner, started with `LANE_WATCHDOG_ARM_REQUIRED=1`, times out only once
+that line is in the command's output file as a newline-terminated record. The
+line travels the same pipe as the evidence, so every line printed before it is
+in the file the timeout report reads. An arm signal outside that stream races
+the output copy and can leave the last evidence out of the report. The tests in
+`SwiftLaneHangEvidenceTests+WatchdogArmLine.swift` hold both rules with a `tee`
+that stops until the watchdog has sampled the file: the evidence is reported
+however late the copy runs, and the arm line's bytes without their newline do
+not arm.
+
+`exitedCommandUnderStarvedRunner` proves the trap deterministically: a FIFO hook
+starves the runner after an `exit 0` command. Armed, it times out; with the
+default, it keeps its status.
+
 ## When a run is red
 
 **A red run is diagnosed, never rerun.** The point of this whole standard is
@@ -543,10 +629,15 @@ A hand-maintained list that test correctness depends on — the set of suites th
 need process isolation, the lint debt — must be verified by a gate, so that
 a member cannot silently fall out. The isolation list has
 [`SwiftLaneIsolationListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneIsolationListGateTests.swift).
+The WebKit lane runs only the suites named in `webkit_suite_filters`, so a
+`WebKitSerializedTests` suite missing from that list never runs anywhere (four
+did, from #463 until TQ50).
+[`SwiftLaneWebKitSuiteListGateTests`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift)
+fails when a source suite is unlisted, when a suite listed test by test is missing one of its tests, or when a listed entry no longer selects anything; it scans source text, so it does not evaluate `#if` conditional compilation.
 Lint debt — polling waits, blocking waits, ad-hoc gates, void wait helpers and
-the MainActor shapes — lives in one file,
-[`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),
-as a permitted site count per rule and file. Every lint run requires each file
+the MainActor shapes — lives in the general and specialized rule ledgers,
+including [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv),
+as permitted site counts per rule and file. Every lint run requires each file
 to hold exactly its count, so the ledger always states the real debt; the CI
 ratchet rejects a raised count or a new row. The ledger and the ratchet are
 described in the
@@ -581,9 +672,12 @@ See [`BridgeWeb/AGENTS.md` — Test Waits](../../../BridgeWeb/AGENTS.md#test-wai
 | [`TestBlockingWaitOffCooperativePoolRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestBlockingWaitOffCooperativePoolRule.swift) | `agentstudio_test_blocking_wait_off_cooperative_pool` |
 | [`TestTaskSleepRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestTaskSleepRule.swift) | `agentstudio_no_task_sleep_in_tests` |
 | [`TestElapsedTimeBudgetRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestElapsedTimeBudgetRule.swift) | `agentstudio_no_test_elapsed_time_budget` |
-| [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv) | Permitted site counts per lint rule and file; only ever lowered |
+| [`TestSilentReturnRule.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Rules/TestSilentReturnRule.swift) | `agentstudio_no_silent_test_return` |
+| [`silent-return-test-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/silent-return-test-ledger.tsv) | Specialized residual counts for silent test returns |
+| [`architecture-debt-ledger.tsv`](../../../Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv) and specialized ledgers | Permitted site counts per lint rule and file; only ever lowered |
 | [`check-ledger-ratchet.sh`](../../../Tools/AgentStudioArchitectureLint/check-ledger-ratchet.sh) | The CI step that rejects a raised count or a new ledger row against the merge base |
 | [`ArchitectureAllowlists.swift`](../../../Tools/AgentStudioArchitectureLint/Sources/AgentStudioArchitectureLintCore/Paths/ArchitectureAllowlists.swift) | Named owners of blocking waits and other allowed sites (ownership, not debt) |
 | [`Tests/AgentStudioTests/TestSupport/`](../../../Tests/AgentStudioTests/TestSupport) | The `AgentStudioTestSupport` harnesses |
 | [`SwiftLaneIsolationListGateTests.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneIsolationListGateTests.swift) | The isolation-list gate |
+| [`SwiftLaneWebKitSuiteListGateTests.swift`](../../../Tests/AgentStudioTests/Scripts/SwiftLaneWebKitSuiteListGateTests.swift) | The WebKit suite-list gate (no unlisted or stale WebKit suite) |
 | [CI Reliability — Specification](../../specs/2026-09-17-ci-reliability/2026-09-17-ci-reliability.md) | The requirements this document implements |

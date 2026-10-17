@@ -5,23 +5,23 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-@Suite("App command dispatcher request capability", .serialized)
+@Suite("App command dispatcher request capability")
 struct AppCommandDispatcherRequestCapabilityTests {
     @Test("no-argument requests preserve workspace-handler routing")
     func requestsWithoutArgumentsPreserveWorkspaceHandlerRouting() async throws {
-        let dispatcher = AppCommandDispatcher.shared
+
         let handler = MockCommandHandler()
         let request = AppCommandExecutionRequest(
             command: .closeTab,
             arguments: .noArguments
         )
 
-        try await withIsolatedCommandDispatcher(
-            configure: {
-                dispatcher.handler = handler
-                dispatcher.appCommandRouter = nil
+        try await withCommandDispatcherFixture(
+            configure: { configuration in
+                configuration.workspaceOwner = handler
+                configuration.shellOwner = nil
             },
-            body: {
+            body: { dispatcher in
                 let outcome = dispatcher.dispatch(request)
 
                 #expect(outcome == .applied)

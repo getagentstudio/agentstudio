@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'vitest';
 
+import nullBranchPublication from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-contribution-null-branch.json' with { type: 'json' };
+import { bridgeProductReviewBatchRecordSchema } from './bridge-product-review-batch-record-contracts.js';
 import {
 	BRIDGE_PRODUCT_REVIEW_COMPARISON_TARGET_MAXIMUM_ROWS,
 	bridgeProductReviewComparisonOriginSchema,
@@ -8,6 +10,20 @@ import {
 } from './bridge-product-review-comparison-contracts.js';
 
 describe('Bridge product review comparison contracts', () => {
+	test('accepts the native contribution publication with a required null branch name', () => {
+		expect(bridgeProductReviewBatchRecordSchema.parse(nullBranchPublication)).toEqual(
+			nullBranchPublication,
+		);
+		const origin = nullBranchPublication.displayed.comparisonOrigin;
+		expect(bridgeProductReviewComparisonOriginSchema.parse(origin)).toEqual(origin);
+		expect(
+			bridgeProductReviewComparisonOriginSchema.safeParse({
+				...origin,
+				reviewedSubjectBranchName: undefined,
+			}).success,
+		).toBe(false);
+	});
+
 	test('requires a comparison basis for every moving symbolic target', () => {
 		const symbolicTargets = [
 			{ basis: 'commonCommit', branchName: 'main', kind: 'localDefaultBranch' },
@@ -51,6 +67,7 @@ describe('Bridge product review comparison contracts', () => {
 			kind: 'contribution',
 			resolvedTargetOID: 'resolved-target-oid',
 			reviewedHeadOID: 'reviewed-head-oid',
+			reviewedSubjectBranchName: null,
 			symbolicTarget: {
 				basis: 'commonCommit',
 				kind: 'branch',

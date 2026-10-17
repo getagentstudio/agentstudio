@@ -3,12 +3,17 @@ import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
+import AgentStudioSessions
 import AppKit
 import SwiftUI
 
 struct SidebarRootViewDependencies {
     let store: WorkspaceStore
     let octiconLoader: OcticonLoader
+    var paneContextReaders: PaneContextUIReaders?
+    let commandDispatcher: any AppCommandDispatching
+    let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
     let paneActivityStatusAtom: PaneActivityStatusAtom
     let applicationLifecycleMonitor: ApplicationLifecycleMonitor
     let sidebarTimeInvalidationConsumerID: UUID
@@ -45,9 +50,13 @@ class MainSplitViewController: NSSplitViewController {
     ) -> AnyView {
         AnyView(
             SidebarSurfaceHost(
+                commandDispatcher: dependencies.commandDispatcher,
+                resolveCommandCapabilities: dependencies.resolveCommandCapabilities,
+                executionOwnerIdentities: dependencies.executionOwnerIdentities,
                 store: dependencies.store,
                 octiconLoader: dependencies.octiconLoader,
                 paneActivityStatusAtom: dependencies.paneActivityStatusAtom,
+                paneContextReaders: dependencies.paneContextReaders,
                 applicationLifecycleMonitor: dependencies.applicationLifecycleMonitor,
                 sidebarTimeInvalidationConsumerID: dependencies.sidebarTimeInvalidationConsumerID,
                 sidebarState: dependencies.sidebarState,
@@ -78,6 +87,7 @@ class MainSplitViewController: NSSplitViewController {
 
     // MARK: - Dependencies (injected)
 
+    private let paneContextReaders: PaneContextUIReaders?
     private let store: WorkspaceStore
     private let octiconLoader: OcticonLoader
     private let workspaceWindowId: UUID?
@@ -85,7 +95,10 @@ class MainSplitViewController: NSSplitViewController {
     private var uiState: WorkspaceSidebarState { atom(\.workspaceSidebarState) }
     private let workspaceActionExecutor: WorkspaceActionExecutor
     private let runtimeCommandDispatcher: any PaneRuntimeCommandDispatching
+    private let synchronizeRuntimeFocus: @MainActor (UUID?) -> Void
     private let commandDispatcher: any AppCommandDispatching
+    private let resolveCommandCapabilities: RepoExplorerCommandCapabilityResolver
+    private let executionOwnerIdentities: @MainActor () -> CommandExecutionOwnerIdentities
     private let applicationLifecycleMonitor: ApplicationLifecycleMonitor
     private let sidebarTimeInvalidationConsumerID: UUID
     private let appLifecycleStore: AppLifecycleAtom
@@ -96,6 +109,7 @@ class MainSplitViewController: NSSplitViewController {
     private let bridgeAttendanceSnapshot: BridgeAttendanceSnapshot
     private let bridgePaneAttendance: BridgePaneAttendanceAtom
     private let editorChooser: EditorChooserState
+    private let sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let onSidebarVisibleWorktreesChanged: @MainActor @Sendable () -> Void
     private let onPerformanceProofReadback: @MainActor @Sendable (RepoExplorerPerformanceProofReadback) -> Void
@@ -123,10 +137,14 @@ class MainSplitViewController: NSSplitViewController {
     init(
         store: WorkspaceStore,
         octiconLoader: OcticonLoader,
+        paneContextReaders: PaneContextUIReaders? = nil,
         workspaceWindowId: UUID? = nil,
         workspaceActionExecutor: WorkspaceActionExecutor,
         runtimeCommandDispatcher: any PaneRuntimeCommandDispatching,
-        commandDispatcher: any AppCommandDispatching = AppCommandDispatcher.shared,
+        commandDispatcher: any AppCommandDispatching,
+        resolveCommandCapabilities: @escaping RepoExplorerCommandCapabilityResolver,
+        executionOwnerIdentities: @escaping @MainActor () -> CommandExecutionOwnerIdentities,
+        synchronizeRuntimeFocus: @escaping @MainActor (UUID?) -> Void,
         applicationLifecycleMonitor: ApplicationLifecycleMonitor,
         appLifecycleStore: AppLifecycleAtom,
         windowLifecycleStore: WindowLifecycleAtom = atom(\.windowLifecycle),
@@ -136,6 +154,7 @@ class MainSplitViewController: NSSplitViewController {
         bridgeAttendanceSnapshot: @escaping BridgeAttendanceSnapshot,
         bridgePaneAttendance: BridgePaneAttendanceAtom,
         editorChooser: EditorChooserState,
+        sessionsPaneViewedMailbox: SessionsPaneViewedMailbox? = nil,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         onSidebarVisibleWorktreesChanged: @escaping @MainActor @Sendable () -> Void = {},
         onPerformanceProofReadback:
@@ -147,12 +166,16 @@ class MainSplitViewController: NSSplitViewController {
         closeTransitionCoordinator: PaneCloseTransitionCoordinator = PaneCloseTransitionCoordinator(),
         paneTabRegistersAsCommandHandler: Bool = true
     ) {
+        self.paneContextReaders = paneContextReaders
         self.store = store
         self.octiconLoader = octiconLoader
         self.workspaceWindowId = workspaceWindowId
         self.workspaceActionExecutor = workspaceActionExecutor
         self.runtimeCommandDispatcher = runtimeCommandDispatcher
+        self.synchronizeRuntimeFocus = synchronizeRuntimeFocus
         self.commandDispatcher = commandDispatcher
+        self.resolveCommandCapabilities = resolveCommandCapabilities
+        self.executionOwnerIdentities = executionOwnerIdentities
         self.applicationLifecycleMonitor = applicationLifecycleMonitor
         sidebarTimeInvalidationConsumerID = workspaceWindowId ?? UUIDv7.generate()
         self.appLifecycleStore = appLifecycleStore
@@ -163,6 +186,7 @@ class MainSplitViewController: NSSplitViewController {
         self.bridgeAttendanceSnapshot = bridgeAttendanceSnapshot
         self.bridgePaneAttendance = bridgePaneAttendance
         self.editorChooser = editorChooser
+        self.sessionsPaneViewedMailbox = sessionsPaneViewedMailbox
         self.performanceTraceRecorder = performanceTraceRecorder
         self.onSidebarVisibleWorktreesChanged = onSidebarVisibleWorktreesChanged
         self.onPerformanceProofReadback = onPerformanceProofReadback
@@ -212,10 +236,14 @@ class MainSplitViewController: NSSplitViewController {
             workspaceWindowId: workspaceWindowId,
             executor: workspaceActionExecutor,
             runtimeCommandDispatcher: runtimeCommandDispatcher,
+            commandDispatcher: commandDispatcher,
+            synchronizeRuntimeFocus: synchronizeRuntimeFocus,
             tabBarAdapter: tabBarAdapter,
             viewRegistry: viewRegistry,
             bridgePaneAttendance: bridgePaneAttendance,
             editorChooser: editorChooser,
+            sessionsPaneViewedMailbox: sessionsPaneViewedMailbox,
+            paneContextReaders: paneContextReaders,
             paneInboxPresentation: nil,
             pinnedPanePreferences: repoExplorerSidebarPrefs,
             closeTransitionCoordinator: closeTransitionCoordinator,
@@ -274,6 +302,10 @@ class MainSplitViewController: NSSplitViewController {
             SidebarRootViewDependencies(
                 store: store,
                 octiconLoader: octiconLoader,
+                paneContextReaders: paneContextReaders,
+                commandDispatcher: commandDispatcher,
+                resolveCommandCapabilities: resolveCommandCapabilities,
+                executionOwnerIdentities: executionOwnerIdentities,
                 paneActivityStatusAtom: atom(\.paneActivityStatus),
                 applicationLifecycleMonitor: applicationLifecycleMonitor,
                 sidebarTimeInvalidationConsumerID: sidebarTimeInvalidationConsumerID,

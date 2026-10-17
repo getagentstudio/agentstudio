@@ -6,7 +6,7 @@ import {
 } from '@pierre/diffs';
 import { act } from 'react';
 import { describe, expect, test } from 'vitest';
-import { render } from 'vitest-browser-react';
+import { cleanup, render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
@@ -17,6 +17,7 @@ import type { BridgeFileViewerSelectedCodeViewItem } from '../file-viewer/bridge
 import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
 import { BridgeCodeViewPanel } from '../review-viewer/code-view/bridge-code-view-panel.js';
 import { worktreeAnnotationMetadataForPierreAnnotation } from '../review-viewer/code-view/worktree-annotation-pierre-adapter.js';
+import { installReviewAnimationFrameClock } from '../review-viewer/code-view/worktree-annotation-pierre-review.browser.test-support.js';
 import { buildBridgeReviewProjection } from '../review-viewer/navigation/review-projection.js';
 import {
 	annotationBaseThreadId,
@@ -26,6 +27,10 @@ import {
 	annotationSessionSummary,
 	RecordingAnnotationBrowserSurface,
 } from './worktree-annotation-browser-test-support.js';
+import {
+	completeCleanup,
+	runWithOwnedCleanup,
+} from './worktree-annotation-click-admission-cleanup.browser.test-support.js';
 import type { WorktreeAnnotationThreadContext } from './worktree-annotation-surface-client.js';
 import { WorktreeAnnotationSurfaceProvider } from './worktree-annotation-surface-provider.js';
 
@@ -33,7 +38,7 @@ const headMessageId = '00000000-0000-7000-8000-000000000021';
 const baseMessageId = '00000000-0000-7000-8000-000000000022';
 
 describe('worktree annotation Pierre Review integration', () => {
-	test('publishes completed Review batches through updateItem without remounting or losing collapse', async () => {
+	test('publishes completed Review batches through updateItem without remounting or losing collapse', async (context) => {
 		const surface = new RecordingAnnotationBrowserSurface('review');
 		const mountedCodeViews: CodeView[] = [];
 		const appliedOptions: CodeViewOptions<undefined>[] = [];
@@ -66,356 +71,385 @@ describe('worktree annotation Pierre Review integration', () => {
 			reviewPackage,
 			request: { facets: [], mode: { kind: 'normalReview' } },
 		});
+		const animationFrames = installReviewAnimationFrameClock(context.signal);
 		const coordinator = createBridgeMainRenderFulfillmentCoordinator({
 			sendDisposition: (): void => {},
 		});
 		const reviewCodeViewItem = makeReviewCodeViewItem();
-		try {
-			const rendered = await render(
-				<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
-					<BridgeCodeViewPanel
-						onAnnotationAttentionItemIdsChange={(itemIds): void => {
-							annotationAttentionSnapshots.push([...itemIds]);
-						}}
-						onAnnotationEditorAttentionItemIdsChange={(itemIds): void => {
-							annotationEditorAttentionSnapshots.push([...itemIds]);
-						}}
-						presentationPositionKey="annotation-browser-review"
-						projection={projection}
-						renderFulfillmentCoordinator={coordinator}
-						reviewPackage={reviewPackage}
-						selectedCodeViewItem={reviewCodeViewItem}
-						selectedItemId="item-source"
-						visibleCodeViewItems={[reviewCodeViewItem]}
-						workerPoolEnabled={false}
-					/>
-				</WorktreeAnnotationSurfaceProvider>,
-			);
-			await settleBrowserCondition(
-				(): boolean => mountedCodeViews[0]?.getItem('item-source') !== undefined,
-				'Expected one mounted Review Pierre item.',
-			);
-			const codeView = requireCodeView(mountedCodeViews[0]);
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				const rendered = await render(
+					<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
+						<BridgeCodeViewPanel
+							onAnnotationAttentionItemIdsChange={(itemIds): void => {
+								annotationAttentionSnapshots.push([...itemIds]);
+							}}
+							onAnnotationEditorAttentionItemIdsChange={(itemIds): void => {
+								annotationEditorAttentionSnapshots.push([...itemIds]);
+							}}
+							presentationPositionKey="annotation-browser-review"
+							projection={projection}
+							renderFulfillmentCoordinator={coordinator}
+							reviewPackage={reviewPackage}
+							selectedCodeViewItem={reviewCodeViewItem}
+							selectedItemId="item-source"
+							visibleCodeViewItems={[reviewCodeViewItem]}
+							workerPoolEnabled={false}
+						/>
+					</WorktreeAnnotationSurfaceProvider>,
+				);
+				await animationFrames.settleCondition(
+					(): boolean => mountedCodeViews[0]?.getItem('item-source') !== undefined,
+					'Expected one mounted Review Pierre item.',
+				);
+				const codeView = requireCodeView(mountedCodeViews[0]);
 
-			await act(async (): Promise<void> => {
-				surface.publishProjectionState({
-					expectedThreadCount: 2,
-					recoveryStatus: 'recovered_degraded',
-					revision: 1,
-					sessions: [annotationSessionSummary({ revision: 1, sessionId: annotationSessionId })],
+				await act(async (): Promise<void> => {
+					surface.publishProjectionState({
+						expectedThreadCount: 2,
+						recoveryStatus: 'recovered_degraded',
+						revision: 1,
+						sessions: [annotationSessionSummary({ revision: 1, sessionId: annotationSessionId })],
+					});
+					await Promise.resolve();
 				});
-				await Promise.resolve();
-			});
-			expect(
-				document.querySelector(
-					'[data-testid="bridge-code-view-panel"] [data-testid="worktree-annotation-session-surface"]',
-				),
-			).toBeNull();
-			const updatesBeforeMessages = updatedItems.length;
-			await act(async (): Promise<void> => {
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'additions',
-						endLine: 2,
-						sourceRole: 'review_head',
-						threadId: annotationHeadThreadId,
-					}),
-					message: annotationMessage({
-						messageId: headMessageId,
-						threadId: annotationHeadThreadId,
-					}),
-				});
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean => (codeView.getItem('item-source')?.annotations ?? []).length === 0,
-				'Expected an incomplete projection to retain the empty annotation publication.',
-			);
-			expect(
-				updatedItems
-					.slice(updatesBeforeMessages)
-					.every((item): boolean => (item.annotations ?? []).length === 0),
-			).toBe(true);
-			expect(codeView.getItem('item-source')?.annotations ?? []).toEqual([]);
-
-			await act(async (): Promise<void> => {
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'deletions',
-						endLine: 2,
-						sourceRole: 'review_base',
-						threadId: annotationBaseThreadId,
-					}),
-					message: annotationMessage({
-						messageId: baseMessageId,
-						threadId: annotationBaseThreadId,
-					}),
-				});
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean =>
-					document.querySelectorAll('[data-testid="worktree-annotation-thread"]').length === 2,
-				'Expected both Review threads to publish atomically into Pierre annotation slots.',
-			);
-			await settleBrowserFrame();
-			await settleBrowserCondition((): boolean => {
-				const threadIdentities = new Set(
-					(codeView.getItem('item-source')?.annotations ?? []).flatMap(
-						(annotation): readonly string[] => {
-							const metadata = worktreeAnnotationMetadataForPierreAnnotation(annotation);
-							return metadata?.kind === 'thread'
-								? [`${metadata.threadId}:${metadata.range.side ?? 'none'}`]
-								: [];
-						},
+				await animationFrames.drain();
+				expect(
+					document.querySelector(
+						'[data-testid="bridge-code-view-panel"] [data-testid="worktree-annotation-session-surface"]',
 					),
+				).toBeNull();
+				const updatesBeforeMessages = updatedItems.length;
+				await act(async (): Promise<void> => {
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'additions',
+							endLine: 2,
+							sourceRole: 'review_head',
+							threadId: annotationHeadThreadId,
+						}),
+						message: annotationMessage({
+							messageId: headMessageId,
+							threadId: annotationHeadThreadId,
+						}),
+					});
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean => (codeView.getItem('item-source')?.annotations ?? []).length === 0,
+					'Expected an incomplete projection to retain the empty annotation publication.',
 				);
-				return (
-					threadIdentities.has(`${annotationHeadThreadId}:additions`) &&
-					threadIdentities.has(`${annotationBaseThreadId}:deletions`)
+				expect(
+					updatedItems
+						.slice(updatesBeforeMessages)
+						.every((item): boolean => (item.annotations ?? []).length === 0),
+				).toBe(true);
+				expect(codeView.getItem('item-source')?.annotations ?? []).toEqual([]);
+
+				await act(async (): Promise<void> => {
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'deletions',
+							endLine: 2,
+							sourceRole: 'review_base',
+							threadId: annotationBaseThreadId,
+						}),
+						message: annotationMessage({
+							messageId: baseMessageId,
+							threadId: annotationBaseThreadId,
+						}),
+					});
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						document.querySelectorAll('[data-testid="worktree-annotation-thread"]').length === 2,
+					'Expected both Review threads to publish atomically into Pierre annotation slots.',
 				);
-			}, 'Expected the live selected CodeView item to apply both exact Review threads.');
-			const updatesBeforeEqualRefresh = updatedItems.length;
-			await act(async (): Promise<void> => {
-				surface.publishRefreshing();
-				surface.publishProjection(1, 2);
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'additions',
-						endLine: 2,
-						sourceRole: 'review_head',
-						threadId: annotationHeadThreadId,
-					}),
-					message: annotationMessage({
-						messageId: headMessageId,
-						threadId: annotationHeadThreadId,
-					}),
+				await animationFrames.settleCondition((): boolean => {
+					const threadIdentities = new Set(
+						(codeView.getItem('item-source')?.annotations ?? []).flatMap(
+							(annotation): readonly string[] => {
+								const metadata = worktreeAnnotationMetadataForPierreAnnotation(annotation);
+								return metadata?.kind === 'thread'
+									? [`${metadata.threadId}:${metadata.range.side ?? 'none'}`]
+									: [];
+							},
+						),
+					);
+					return (
+						threadIdentities.has(`${annotationHeadThreadId}:additions`) &&
+						threadIdentities.has(`${annotationBaseThreadId}:deletions`)
+					);
+				}, 'Expected the live selected CodeView item to apply both exact Review threads.');
+				const updatesBeforeEqualRefresh = updatedItems.length;
+				await act(async (): Promise<void> => {
+					surface.publishRefreshing();
+					surface.publishProjection(1, 2);
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'additions',
+							endLine: 2,
+							sourceRole: 'review_head',
+							threadId: annotationHeadThreadId,
+						}),
+						message: annotationMessage({
+							messageId: headMessageId,
+							threadId: annotationHeadThreadId,
+						}),
+					});
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'deletions',
+							endLine: 2,
+							sourceRole: 'review_base',
+							threadId: annotationBaseThreadId,
+						}),
+						message: annotationMessage({
+							messageId: baseMessageId,
+							threadId: annotationBaseThreadId,
+						}),
+					});
+					await Promise.resolve();
 				});
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'deletions',
-						endLine: 2,
-						sourceRole: 'review_base',
-						threadId: annotationBaseThreadId,
-					}),
-					message: annotationMessage({
-						messageId: baseMessageId,
-						threadId: annotationBaseThreadId,
-					}),
+				await animationFrames.drain();
+				expect(updatedItems.slice(updatesBeforeEqualRefresh)).toEqual([]);
+				await act(async (): Promise<void> => {
+					surface.publishProjection(2, 2);
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'additions',
+							endLine: 2,
+							sourceRole: 'review_head',
+							threadId: annotationHeadThreadId,
+						}),
+						message: annotationMessage({
+							messageId: headMessageId,
+							sessionRevision: 2,
+							threadId: annotationHeadThreadId,
+						}),
+					});
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'deletions',
+							endLine: 2,
+							sourceRole: 'review_base',
+							threadId: annotationBaseThreadId,
+						}),
+						message: annotationMessage({
+							messageId: baseMessageId,
+							sessionRevision: 2,
+							threadId: annotationBaseThreadId,
+						}),
+					});
+					await Promise.resolve();
 				});
-				await Promise.resolve();
-			});
-			await settleBrowserFrame();
-			expect(updatedItems.slice(updatesBeforeEqualRefresh)).toEqual([]);
-			await act(async (): Promise<void> => {
-				surface.publishProjection(2, 2);
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'additions',
-						endLine: 2,
-						sourceRole: 'review_head',
-						threadId: annotationHeadThreadId,
-					}),
-					message: annotationMessage({
-						messageId: headMessageId,
-						sessionRevision: 2,
-						threadId: annotationHeadThreadId,
-					}),
+				await animationFrames.drain();
+				await expect
+					.element(rendered.getByRole('button', { name: 'Reply to annotation thread' }).first())
+					.toBeEnabled();
+				await act(async (): Promise<void> => {
+					await rendered
+						.getByRole('button', { name: 'Reply to annotation thread' })
+						.first()
+						.click();
+					await Promise.resolve();
 				});
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'deletions',
-						endLine: 2,
-						sourceRole: 'review_base',
-						threadId: annotationBaseThreadId,
-					}),
-					message: annotationMessage({
-						messageId: baseMessageId,
-						sessionRevision: 2,
-						threadId: annotationBaseThreadId,
-					}),
+				await animationFrames.settleCondition(
+					(): boolean => annotationEditorAttentionSnapshots.at(-1)?.[0] === 'item-source',
+					'Expected an existing-thread editor to publish its owning Review item.',
+				);
+				expect(annotationEditorAttentionSnapshots.at(-1)).toEqual(['item-source']);
+				await act(async (): Promise<void> => {
+					await userEvent.keyboard('{Escape}');
+					await Promise.resolve();
 				});
-				await Promise.resolve();
-			});
-			await expect
-				.element(rendered.getByRole('button', { name: 'Reply to annotation thread' }).first())
-				.toBeEnabled();
-			await act(async (): Promise<void> => {
-				await rendered.getByRole('button', { name: 'Reply to annotation thread' }).first().click();
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean => annotationEditorAttentionSnapshots.at(-1)?.[0] === 'item-source',
-				'Expected an existing-thread editor to publish its owning Review item.',
-			);
-			expect(annotationEditorAttentionSnapshots.at(-1)).toEqual(['item-source']);
-			await act(async (): Promise<void> => {
-				await userEvent.keyboard('{Escape}');
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean => annotationEditorAttentionSnapshots.at(-1)?.length === 0,
-				'Expected closing the existing-thread editor to clear editor attention.',
-			);
-			expect(codeView.getItem('item-source')?.annotations).toEqual([
-				{
-					lineNumber: 2,
-					metadata: {
-						kind: 'thread',
-						presentationIdentity: expect.any(String),
-						range: { end: 2, endSide: 'additions', side: 'additions', start: 2 },
-						threadId: annotationHeadThreadId,
+				await animationFrames.settleCondition(
+					(): boolean => annotationEditorAttentionSnapshots.at(-1)?.length === 0,
+					'Expected closing the existing-thread editor to clear editor attention.',
+				);
+				expect(codeView.getItem('item-source')?.annotations).toEqual([
+					{
+						lineNumber: 2,
+						metadata: {
+							kind: 'thread',
+							presentationIdentity: expect.any(String),
+							range: { end: 2, endSide: 'additions', side: 'additions', start: 2 },
+							threadId: annotationHeadThreadId,
+						},
+						side: 'additions',
 					},
-					side: 'additions',
-				},
-				{
-					lineNumber: 2,
-					metadata: {
-						kind: 'thread',
-						presentationIdentity: expect.any(String),
-						range: { end: 2, endSide: 'deletions', side: 'deletions', start: 2 },
-						threadId: annotationBaseThreadId,
+					{
+						lineNumber: 2,
+						metadata: {
+							kind: 'thread',
+							presentationIdentity: expect.any(String),
+							range: { end: 2, endSide: 'deletions', side: 'deletions', start: 2 },
+							threadId: annotationBaseThreadId,
+						},
+						side: 'deletions',
 					},
-					side: 'deletions',
-				},
-			]);
-			expect(mountedCodeViews).toHaveLength(1);
+				]);
+				expect(mountedCodeViews).toHaveLength(1);
 
-			const beforeCollapse = requireCodeViewItem(codeView.getItem('item-source'));
-			await act(async (): Promise<void> => {
-				codeView.updateItem({
-					...beforeCollapse,
-					collapsed: true,
-					version: (beforeCollapse.version ?? 0) + 1,
+				const beforeCollapse = requireCodeViewItem(codeView.getItem('item-source'));
+				await act(async (): Promise<void> => {
+					codeView.updateItem({
+						...beforeCollapse,
+						collapsed: true,
+						version: (beforeCollapse.version ?? 0) + 1,
+					});
+					await Promise.resolve();
+					surface.publishProjection(2, 1);
+					await Promise.resolve();
+					surface.publishThread({
+						context: annotationContext({
+							diffSide: 'additions',
+							endLine: 2,
+							sourceRole: 'review_head',
+							threadId: annotationHeadThreadId,
+						}),
+						message: annotationMessage({
+							messageId: headMessageId,
+							sessionRevision: 2,
+							threadId: annotationHeadThreadId,
+						}),
+					});
+					await Promise.resolve();
 				});
-				await Promise.resolve();
-				surface.publishProjection(2, 1);
-				await Promise.resolve();
-				surface.publishThread({
-					context: annotationContext({
-						diffSide: 'additions',
-						endLine: 2,
-						sourceRole: 'review_head',
-						threadId: annotationHeadThreadId,
-					}),
-					message: annotationMessage({
-						messageId: headMessageId,
-						sessionRevision: 2,
-						threadId: annotationHeadThreadId,
-					}),
-				});
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean => codeView.getItem('item-source')?.annotations?.length === 1,
-				'Expected the next annotation projection to settle.',
-			);
-			expect(codeView.getItem('item-source')?.collapsed).toBe(true);
-			expect(mountedCodeViews).toHaveLength(1);
+				await animationFrames.settleCondition(
+					(): boolean => codeView.getItem('item-source')?.annotations?.length === 1,
+					'Expected the next annotation projection to settle.',
+				);
+				expect(codeView.getItem('item-source')?.collapsed).toBe(true);
+				expect(mountedCodeViews).toHaveLength(1);
 
-			await act(async (): Promise<void> => {
-				surface.publishProjection(3, 0);
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean => codeView.getItem('item-source')?.annotations?.length === 0,
-				'Expected the fresh projection to clear the prior thread before composer admission.',
-			);
-			const collapsedItem = requireCodeViewItem(codeView.getItem('item-source'));
-			await act(async (): Promise<void> => {
-				codeView.updateItem({
-					...collapsedItem,
-					collapsed: false,
-					version: (collapsedItem.version ?? 0) + 1,
+				await act(async (): Promise<void> => {
+					surface.publishProjection(3, 0);
+					await Promise.resolve();
 				});
-				await Promise.resolve();
-			});
-			const latestOptions = requireCodeViewOptions(appliedOptions.at(-1));
-			const currentItem = requireCodeViewItem(codeView.getItem('item-source'));
-			await act(async (): Promise<void> => {
-				invokeGutterAdmission(latestOptions, { start: 2, end: 2, side: 'additions' }, currentItem);
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean =>
-					codeView
-						.getItem('item-source')
-						?.annotations?.some(
-							(annotation): boolean =>
-								worktreeAnnotationMetadataForPierreAnnotation(annotation)?.kind === 'composer',
-						) === true,
-				'Expected the Review item to receive the pending composer annotation.',
-			);
-			expect(codeView.getItem('item-source')?.collapsed).toBe(false);
-			const headComposer = rendered.getByRole('textbox', {
-				name: 'Write an annotation in Markdown',
-			});
-			// Wait inside act(): Pierre paints annotation slots from its own frame loop, and a
-			// poll outside act() lets that SlotPortals update raise an act() warning.
-			await settleBrowserCondition(
-				(): boolean => headComposer.query()?.checkVisibility() === true,
-				'Expected the head-side root composer to become visible.',
-			);
-			await expect.element(headComposer).toBeVisible();
-			expect(annotationAttentionSnapshots.at(-1)).toEqual(['item-source']);
-			expect(annotationEditorAttentionSnapshots.at(-1)).toEqual(['item-source']);
-			await act(async (): Promise<void> => {
-				await headComposer.fill('Head-side comment');
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean =>
-					surface.sentOperations.filter((operation) => operation.kind === 'root.create').length ===
-					1,
-				'Expected one Review head-side root operation.',
-			);
-			expect(
-				surface.sentOperations.find((operation) => operation.kind === 'root.create'),
-			).toMatchObject({
-				origin: { diffSide: 'additions', sourceRole: 'reviewHead' },
-			});
-			await act(async (): Promise<void> => {
-				invokeLineSelection(latestOptions, null, currentItem);
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean =>
-					document.querySelector('[aria-label="Write an annotation in Markdown"]') === null,
-				'Expected clearing Pierre selection to close the root composer.',
-			);
-			expect(annotationAttentionSnapshots.at(-1)).toEqual([]);
-			expect(annotationEditorAttentionSnapshots.at(-1)).toEqual([]);
-			await act(async (): Promise<void> => {
-				invokeGutterAdmission(latestOptions, { start: 2, end: 2, side: 'deletions' }, currentItem);
-				await Promise.resolve();
-			});
-			const baseComposer = rendered.getByRole('textbox', {
-				name: 'Write an annotation in Markdown',
-			});
-			await act(async (): Promise<void> => {
-				await baseComposer.fill('Base-side comment');
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean =>
-					surface.sentOperations.filter((operation) => operation.kind === 'root.create').length ===
-					2,
-				'Expected one Review base-side root operation.',
-			);
-			expect(
-				surface.sentOperations.findLast((operation) => operation.kind === 'root.create'),
-			).toMatchObject({
-				origin: { diffSide: 'deletions', sourceRole: 'reviewBase' },
-			});
-		} finally {
-			CodeView.prototype.setup = originalSetup;
-			CodeView.prototype.setOptions = originalSetOptions;
-			CodeView.prototype.updateItem = originalUpdateItem;
-			coordinator.dispose();
-		}
+				await animationFrames.settleCondition(
+					(): boolean => codeView.getItem('item-source')?.annotations?.length === 0,
+					'Expected the fresh projection to clear the prior thread before composer admission.',
+				);
+				const collapsedItem = requireCodeViewItem(codeView.getItem('item-source'));
+				await act(async (): Promise<void> => {
+					codeView.updateItem({
+						...collapsedItem,
+						collapsed: false,
+						version: (collapsedItem.version ?? 0) + 1,
+					});
+					await Promise.resolve();
+				});
+				await animationFrames.drain();
+				const latestOptions = requireCodeViewOptions(appliedOptions.at(-1));
+				const currentItem = requireCodeViewItem(codeView.getItem('item-source'));
+				await act(async (): Promise<void> => {
+					invokeGutterAdmission(
+						latestOptions,
+						{ start: 2, end: 2, side: 'additions' },
+						currentItem,
+					);
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						codeView
+							.getItem('item-source')
+							?.annotations?.some(
+								(annotation): boolean =>
+									worktreeAnnotationMetadataForPierreAnnotation(annotation)?.kind === 'composer',
+							) === true,
+					'Expected the Review item to receive the pending composer annotation.',
+				);
+				expect(codeView.getItem('item-source')?.collapsed).toBe(false);
+				const headComposer = rendered.getByRole('textbox', {
+					name: 'Write an annotation in Markdown',
+				});
+				// Drain Pierre's queued slot publication before reading the composer.
+				await animationFrames.settleCondition(
+					(): boolean => headComposer.query()?.checkVisibility() === true,
+					'Expected the head-side root composer to become visible.',
+				);
+				await expect.element(headComposer).toBeVisible();
+				expect(annotationAttentionSnapshots.at(-1)).toEqual(['item-source']);
+				expect(annotationEditorAttentionSnapshots.at(-1)).toEqual(['item-source']);
+				await act(async (): Promise<void> => {
+					await headComposer.fill('Head-side comment');
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						surface.sentOperations.filter((operation) => operation.kind === 'root.create')
+							.length === 1,
+					'Expected one Review head-side root operation.',
+				);
+				expect(
+					surface.sentOperations.find((operation) => operation.kind === 'root.create'),
+				).toMatchObject({
+					origin: { diffSide: 'additions', sourceRole: 'reviewHead' },
+				});
+				await act(async (): Promise<void> => {
+					invokeLineSelection(latestOptions, null, currentItem);
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						document.querySelector('[aria-label="Write an annotation in Markdown"]') === null,
+					'Expected clearing Pierre selection to close the root composer.',
+				);
+				expect(annotationAttentionSnapshots.at(-1)).toEqual([]);
+				expect(annotationEditorAttentionSnapshots.at(-1)).toEqual([]);
+				await act(async (): Promise<void> => {
+					invokeGutterAdmission(
+						latestOptions,
+						{ start: 2, end: 2, side: 'deletions' },
+						currentItem,
+					);
+					await Promise.resolve();
+				});
+				await animationFrames.drain();
+				const baseComposer = rendered.getByRole('textbox', {
+					name: 'Write an annotation in Markdown',
+				});
+				await act(async (): Promise<void> => {
+					await baseComposer.fill('Base-side comment');
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						surface.sentOperations.filter((operation) => operation.kind === 'root.create')
+							.length === 2,
+					'Expected one Review base-side root operation.',
+				);
+				expect(
+					surface.sentOperations.findLast((operation) => operation.kind === 'root.create'),
+				).toMatchObject({
+					origin: { diffSide: 'deletions', sourceRole: 'reviewBase' },
+				});
+			},
+			async (): Promise<void> => {
+				await completeCleanup([
+					animationFrames.drain,
+					async (): Promise<void> => {
+						await act(async (): Promise<void> => {
+							await cleanup();
+						});
+					},
+					animationFrames.drain,
+					animationFrames.restore,
+					(): void => {
+						CodeView.prototype.setup = originalSetup;
+						CodeView.prototype.setOptions = originalSetOptions;
+						CodeView.prototype.updateItem = originalUpdateItem;
+						coordinator.dispose();
+					},
+				]);
+			},
+		);
 	});
 
-	test('releases a committed Review root draft before projection convergence', async () => {
+	test('releases a committed Review root draft before projection convergence', async (context) => {
 		const surface = new RecordingAnnotationBrowserSurface('review');
 		const mountedCodeViews: CodeView[] = [];
 		const appliedOptions: CodeViewOptions<undefined>[] = [];
@@ -439,89 +473,108 @@ describe('worktree annotation Pierre Review integration', () => {
 			reviewPackage,
 			request: { facets: [], mode: { kind: 'normalReview' } },
 		});
+		const animationFrames = installReviewAnimationFrameClock(context.signal);
 		const coordinator = createBridgeMainRenderFulfillmentCoordinator({
 			sendDisposition: (): void => {},
 		});
 		const reviewCodeViewItem = makeReviewCodeViewItem();
-		try {
-			const rendered = await render(
-				<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
-					<BridgeCodeViewPanel
-						presentationPositionKey="annotation-browser-review-release"
-						projection={projection}
-						renderFulfillmentCoordinator={coordinator}
-						reviewPackage={reviewPackage}
-						selectedCodeViewItem={reviewCodeViewItem}
-						selectedItemId="item-source"
-						visibleCodeViewItems={[reviewCodeViewItem]}
-						workerPoolEnabled={false}
-					/>
-				</WorktreeAnnotationSurfaceProvider>,
-			);
-			await settleBrowserCondition(
-				(): boolean => mountedCodeViews[0]?.getItem('item-source') !== undefined,
-				'Expected one mounted Review Pierre item.',
-			);
-			await act(async (): Promise<void> => {
-				surface.publishProjection(1, 0);
-				await Promise.resolve();
-			});
-			const codeView = requireCodeView(mountedCodeViews[0]);
-			const currentItem = requireCodeViewItem(codeView.getItem('item-source'));
-			await act(async (): Promise<void> => {
-				invokeGutterAdmission(
-					requireCodeViewOptions(appliedOptions.at(-1)),
-					{ end: 2, side: 'additions', start: 2 },
-					currentItem,
+		await runWithOwnedCleanup(
+			async (): Promise<void> => {
+				const rendered = await render(
+					<WorktreeAnnotationSurfaceProvider surfaceClient={surface.client}>
+						<BridgeCodeViewPanel
+							presentationPositionKey="annotation-browser-review-release"
+							projection={projection}
+							renderFulfillmentCoordinator={coordinator}
+							reviewPackage={reviewPackage}
+							selectedCodeViewItem={reviewCodeViewItem}
+							selectedItemId="item-source"
+							visibleCodeViewItems={[reviewCodeViewItem]}
+							workerPoolEnabled={false}
+						/>
+					</WorktreeAnnotationSurfaceProvider>,
 				);
-				await Promise.resolve();
-			});
-			const composer = rendered.getByRole('textbox', {
-				name: 'Write an annotation in Markdown',
-			});
-			await act(async (): Promise<void> => {
-				await composer.fill('Committed Review draft awaiting projection.');
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean => surface.sentOperations.some((operation) => operation.kind === 'root.create'),
-				'Expected the Review root draft command.',
-			);
-			await act(async (): Promise<void> => {
-				surface.settleMostRecentCommittedWithoutProjection(annotationSessionId, 'root.create');
-				await Promise.resolve();
-			});
-			const draftStatus = rendered.getByText('Draft', { exact: true });
-			await settleBrowserCondition(
-				(): boolean => draftStatus.query()?.checkVisibility() === true,
-				'Expected the committed root draft status to become visible.',
-			);
-			await expect.element(draftStatus).toBeVisible();
-			await act(async (): Promise<void> => {
-				await userEvent.keyboard('{Escape}');
-				await Promise.resolve();
-			});
-			await settleBrowserCondition(
-				(): boolean =>
-					surface.sentOperations.some((operation) => operation.kind === 'draft.edit.release'),
-				'Expected collapsed Review root draft to release its edit token.',
-			);
-			expect(
-				surface.sentOperations.filter((operation) => operation.kind === 'draft.edit.release'),
-			).toHaveLength(1);
-			expect(
-				surface.sentOperations.find((operation) => operation.kind === 'draft.edit.release'),
-			).toMatchObject({
-				expectedDraftRevision: 0,
-				expectedMessageRevision: 0,
-				messageId: '00000000-0000-7000-8000-000000000031',
-				sessionId: annotationSessionId,
-			});
-		} finally {
-			CodeView.prototype.setup = originalSetup;
-			CodeView.prototype.setOptions = originalSetOptions;
-			coordinator.dispose();
-		}
+				await animationFrames.settleCondition(
+					(): boolean => mountedCodeViews[0]?.getItem('item-source') !== undefined,
+					'Expected one mounted Review Pierre item.',
+				);
+				await act(async (): Promise<void> => {
+					surface.publishProjection(1, 0);
+					await Promise.resolve();
+				});
+				await animationFrames.drain();
+				const codeView = requireCodeView(mountedCodeViews[0]);
+				const currentItem = requireCodeViewItem(codeView.getItem('item-source'));
+				await act(async (): Promise<void> => {
+					invokeGutterAdmission(
+						requireCodeViewOptions(appliedOptions.at(-1)),
+						{ end: 2, side: 'additions', start: 2 },
+						currentItem,
+					);
+					await Promise.resolve();
+				});
+				await animationFrames.drain();
+				const composer = rendered.getByRole('textbox', {
+					name: 'Write an annotation in Markdown',
+				});
+				await act(async (): Promise<void> => {
+					await composer.fill('Committed Review draft awaiting projection.');
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						surface.sentOperations.some((operation) => operation.kind === 'root.create'),
+					'Expected the Review root draft command.',
+				);
+				await act(async (): Promise<void> => {
+					surface.settleMostRecentCommittedWithoutProjection(annotationSessionId, 'root.create');
+					await Promise.resolve();
+				});
+				const draftStatus = rendered.getByText('Draft', { exact: true });
+				await animationFrames.settleCondition(
+					(): boolean => draftStatus.query()?.checkVisibility() === true,
+					'Expected the committed root draft status to become visible.',
+				);
+				await expect.element(draftStatus).toBeVisible();
+				await act(async (): Promise<void> => {
+					await userEvent.keyboard('{Escape}');
+					await Promise.resolve();
+				});
+				await animationFrames.settleCondition(
+					(): boolean =>
+						surface.sentOperations.some((operation) => operation.kind === 'draft.edit.release'),
+					'Expected collapsed Review root draft to release its edit token.',
+				);
+				expect(
+					surface.sentOperations.filter((operation) => operation.kind === 'draft.edit.release'),
+				).toHaveLength(1);
+				expect(
+					surface.sentOperations.find((operation) => operation.kind === 'draft.edit.release'),
+				).toMatchObject({
+					expectedDraftRevision: 0,
+					expectedMessageRevision: 0,
+					messageId: '00000000-0000-7000-8000-000000000031',
+					sessionId: annotationSessionId,
+				});
+			},
+			async (): Promise<void> => {
+				await completeCleanup([
+					animationFrames.drain,
+					async (): Promise<void> => {
+						await act(async (): Promise<void> => {
+							await cleanup();
+						});
+					},
+					animationFrames.drain,
+					animationFrames.restore,
+					(): void => {
+						CodeView.prototype.setup = originalSetup;
+						CodeView.prototype.setOptions = originalSetOptions;
+						coordinator.dispose();
+					},
+				]);
+			},
+		);
 	});
 });
 
@@ -676,32 +729,6 @@ function requireCodeViewOptions(
 ): CodeViewOptions<undefined> {
 	if (value === undefined) throw new Error('Expected current Pierre options.');
 	return value;
-}
-
-async function settleBrowserCondition(
-	predicate: () => boolean,
-	failureMessage: string,
-	remainingFrames = 60,
-): Promise<void> {
-	await act(async (): Promise<void> => {
-		await Promise.resolve();
-		await new Promise<void>((resolve): void => {
-			requestAnimationFrame((): void => resolve());
-		});
-		await Promise.resolve();
-	});
-	if (predicate()) return;
-	if (remainingFrames <= 0) throw new Error(failureMessage);
-	await settleBrowserCondition(predicate, failureMessage, remainingFrames - 1);
-}
-
-async function settleBrowserFrame(): Promise<void> {
-	await act(async (): Promise<void> => {
-		await new Promise<void>((resolve): void => {
-			requestAnimationFrame((): void => resolve());
-		});
-		await Promise.resolve();
-	});
 }
 
 void makeFileItem;

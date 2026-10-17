@@ -173,8 +173,8 @@ struct IPCClientCorrectionTests {
         #expect(!String(describing: failure).contains(privateValue))
     }
 
-    @Test("received foreign compatibility is definitive protocol rejection")
-    func foreignCompatibilityIsNotDeliveryUncertain() throws {
+    @Test("fetched catalog metadata is trusted without client compatibility revalidation")
+    func fetchedCatalogIsNotRevalidated() throws {
         let endpoint = UnixSocketEndpoint(path: temporaryIPCDescriptorClientSocketPath())
         let listener = UnixSocketListener(endpoint: endpoint)
         let foreignCatalog = IPCMethodCatalogResult(
@@ -204,18 +204,8 @@ struct IPCClientCorrectionTests {
             descriptors: []
         )
 
-        let failure = try captureIPCDescriptorClientFailure {
-            _ = try client.discoverCatalog()
-        }
-
-        #expect(failure.disposition == .protocolRejected)
-        guard case .unsupportedVersion(let correction) = failure.reason else {
-            Issue.record("Expected a typed unsupported-version failure")
-            return
-        }
-        #expect(correction.fieldPath == "$.compatibility")
-        #expect(correction.reason == .invalidValue)
-        #expect(!correction.expected.isEmpty)
+        let catalog = try client.discoverCatalog()
+        #expect(catalog == foreignCatalog)
     }
 }
 
@@ -243,7 +233,6 @@ private func makeClientBuiltInMethodCatalog() throws -> IPCBuiltInMethodCatalog 
 
     return try IPCBuiltInMethodCatalog(
         inputs: IPCBuiltInMethodCatalogInputs(
-            terminalWaitMaximumSeconds: 9,
             relationships: relationships,
             examples: examples
         )

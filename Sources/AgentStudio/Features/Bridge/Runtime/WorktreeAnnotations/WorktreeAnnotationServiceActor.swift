@@ -58,6 +58,7 @@ package actor WorktreeAnnotationServiceActor {
     private var latestSourceRefreshFenceByContextKey:
         [WorktreeAnnotationPlacementContextKey: WorktreeAnnotationSourceRefreshFence] = [:]
     var changeObserverByToken: [UUID: WorktreeAnnotationChangeObserverState] = [:]
+    var catalogInvalidationObserverByToken: [UUID: WorktreeAnnotationCatalogInvalidationObserverState] = [:]
     var projectionRevision = 0
     let editOwnership = WorktreeAnnotationEditOwnershipRegistry()
     var recoveryState: WorktreeAnnotationRecoveryState = .available
@@ -360,9 +361,6 @@ package actor WorktreeAnnotationServiceActor {
         _ props: WorktreeAnnotationSQLiteRepository.PrepareOutputProps
     ) async throws -> WorktreeAnnotationSQLiteRepository.PreparedOutput {
         try requireMutationAllowed()
-        guard props.expectedProjectionRevision == projectionRevision else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
         return try await publishCorrelatedMutation { try await repositoryAccess.prepareOutput(props) }
     }
 
@@ -378,27 +376,6 @@ package actor WorktreeAnnotationServiceActor {
     ) async throws -> WorktreeAnnotationSessionDetail {
         try requireAvailableForReads()
         return try await repositoryAccess.fetchSessionDetail(sessionID: sessionID)
-    }
-
-    func outputSessionDetail(
-        sessionID: WorktreeAnnotationSessionID,
-        expectedSessionRevision: Int,
-        expectedProjectionRevision: Int
-    ) async throws -> WorktreeAnnotationSessionDetail {
-        try requireAvailableForReads()
-        guard projectionRevision == expectedProjectionRevision else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
-        let detail = try await repositoryAccess.fetchSessionDetail(sessionID: sessionID)
-        guard projectionRevision == expectedProjectionRevision else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
-        guard detail.session.semanticRevision == expectedSessionRevision else {
-            throw WorktreeAnnotationRepositoryError.conflict(
-                currentRevision: detail.session.semanticRevision
-            )
-        }
-        return detail
     }
 
     @discardableResult
@@ -450,6 +427,7 @@ package actor WorktreeAnnotationServiceActor {
     func finalizeOutputAttempt(
         attemptID: WorktreeAnnotationOutputAttemptID,
         eventKind: WorktreeAnnotationOutputEventKind,
+        destinationPath: String? = nil,
         now: Date
     ) async throws -> WorktreeAnnotationSQLiteRepository.PreparedOutput {
         try requireMutationAllowed()
@@ -457,6 +435,7 @@ package actor WorktreeAnnotationServiceActor {
             try await repositoryAccess.finalizeOutputAttempt(
                 attemptID: attemptID,
                 eventKind: eventKind,
+                destinationPath: destinationPath,
                 now: now
             )
         }
@@ -466,6 +445,7 @@ package actor WorktreeAnnotationServiceActor {
     func markOutputAttemptFinalizationFailed(
         attemptID: WorktreeAnnotationOutputAttemptID,
         cleanupError: String,
+        destinationPath: String? = nil,
         now: Date
     ) async throws -> WorktreeAnnotationSQLiteRepository.PreparedOutput {
         try requireMutationAllowed()
@@ -473,6 +453,7 @@ package actor WorktreeAnnotationServiceActor {
             try await repositoryAccess.markOutputAttemptFinalizationFailed(
                 attemptID: attemptID,
                 cleanupError: cleanupError,
+                destinationPath: destinationPath,
                 now: now
             )
         }
@@ -546,6 +527,7 @@ package actor WorktreeAnnotationServiceActor {
         )
         do {
             let committedMutation = try await mutation()
+            emitCommittedCatalogInvalidation(committedMutation.change)
             await recordNativeAnnotationWork(
                 operationCorrelationID: operationCorrelationID,
                 result: .success,
@@ -557,6 +539,7 @@ package actor WorktreeAnnotationServiceActor {
             )
             return committedMutation.canonicalResult
         } catch {
+            emitConservativeCatalogInvalidationAfterUnknownOutcome()
             await recordNativeAnnotationWork(
                 operationCorrelationID: operationCorrelationID,
                 result: .failure,

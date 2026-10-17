@@ -1,18 +1,69 @@
 {
   "schemaVersion": 1,
   "wireVersion": 2,
+  "envelopeTranscript": [
+    {
+      "name": "review-open-admitted",
+      "codec": "operationAdmittedResponse",
+      "value": {
+        "kind": "operation.admitted",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-startup-1",
+        "workerInstanceId": "worker-instance-startup-1",
+        "requestId": "request-review-subscription-open-1",
+        "requestSequence": 2,
+        "operationId": "operation-review-open-1",
+        "waitKind": "ordinary"
+      }
+    },
+    {
+      "name": "review-open-result-request",
+      "codec": "operationResultRequest",
+      "value": {
+        "kind": "operation.result",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-startup-1",
+        "workerInstanceId": "worker-instance-startup-1",
+        "operationId": "operation-review-open-1"
+      }
+    },
+    {
+      "name": "review-open-settled",
+      "codec": "operationResultResponse",
+      "value": {
+        "kind": "operation.result",
+        "failureCode": null,
+        "operationId": "operation-review-open-1",
+        "outcome": "succeeded",
+        "result": null
+      }
+    },
+    {
+      "name": "review-open-result-acknowledgement",
+      "codec": "operationResultAcknowledgement",
+      "value": {
+        "kind": "operation.resultAcknowledgement",
+        "wireVersion": 2,
+        "paneSessionId": "pane-session-startup-1",
+        "workerInstanceId": "worker-instance-startup-1",
+        "requestId": "request-review-open-ack-1",
+        "requestSequence": 3,
+        "operationId": "operation-review-open-1"
+      }
+    }
+  ],
   "transcript": [
     {
       "name": "worker-session-open",
       "codec": "controlRequest",
       "value": {
         "kind": "workerSession.open",
+        "request": null,
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "requestId": "request-worker-open-1",
-        "requestSequence": 1,
-        "request": null
+        "requestSequence": 1
       }
     },
     {
@@ -20,12 +71,12 @@
       "codec": "controlResponse",
       "value": {
         "kind": "workerSession.accepted",
+        "result": null,
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "requestId": "request-worker-open-1",
-        "requestSequence": 1,
-        "result": null
+        "requestSequence": 1
       }
     },
     {
@@ -81,9 +132,7 @@
         "requestId": "request-review-subscription-open-1",
         "requestSequence": 2,
         "subscriptionId": "review-subscription-startup-1",
-        "subscriptionKind": "review.metadata",
-        "interestRevision": 0,
-        "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6"
+        "subscriptionKind": "review.metadata"
       }
     },
     {
@@ -99,44 +148,7 @@
         "streamSequence": 1,
         "subscriptionId": "review-subscription-startup-1",
         "subscriptionKind": "review.metadata",
-        "subscriptionSequence": 0,
-        "interestRevision": 0,
-        "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-        "sourceGeneration": 7,
-        "cursor": null
-      }
-    },
-    {
-      "name": "review-source-accepted",
-      "codec": "metadataFrame",
-      "value": {
-        "kind": "subscription.data",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerDerivationEpoch": 7,
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 2,
-        "subscriptionId": "review-subscription-startup-1",
-        "subscriptionKind": "review.metadata",
-        "subscriptionSequence": 1,
-        "interestRevision": 0,
-        "interestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-        "sourceGeneration": 7,
-        "cursor": "review-cursor-startup-1",
-        "operationCorrelationId": null,
-        "data": {
-          "subscriptionKind": "review.metadata",
-          "event": {
-            "eventKind": "review.sourceAccepted",
-            "operationCorrelationId": null,
-            "sourceIdentity": "review-source-startup-1",
-            "packageId": "review-package-startup-1",
-            "publicationId": "11111111-1111-7111-8111-111111111111",
-            "generation": 7,
-            "revision": 1
-          }
-        }
+        "subscriptionSequence": 0
       }
     },
     {
@@ -175,9 +187,7 @@
         "requestId": "request-file-subscription-open-1",
         "requestSequence": 3,
         "subscriptionId": "file-subscription-startup-1",
-        "subscriptionKind": "file.metadata",
-        "interestRevision": 0,
-        "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b"
+        "subscriptionKind": "file.metadata"
       }
     },
     {
@@ -193,119 +203,7 @@
         "streamSequence": 3,
         "subscriptionId": "file-subscription-startup-1",
         "subscriptionKind": "file.metadata",
-        "subscriptionSequence": 0,
-        "interestRevision": 0,
-        "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-        "sourceGeneration": 11,
-        "cursor": null
-      }
-    },
-    {
-      "name": "file-source-accepted",
-      "codec": "metadataFrame",
-      "value": {
-        "kind": "subscription.data",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerDerivationEpoch": 11,
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 4,
-        "subscriptionId": "file-subscription-startup-1",
-        "subscriptionKind": "file.metadata",
-        "subscriptionSequence": 1,
-        "interestRevision": 0,
-        "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-        "sourceGeneration": 11,
-        "cursor": "file-cursor-startup-1",
-        "operationCorrelationId": null,
-        "data": {
-          "subscriptionKind": "file.metadata",
-          "event": {
-            "eventKind": "file.sourceAccepted",
-            "source": {
-              "repoId": "00000000-0000-4000-8000-000000000001",
-              "rootRevisionToken": null,
-              "sourceCursor": "source-cursor-startup-1",
-              "sourceId": "file-source-startup-1",
-              "subscriptionGeneration": 11,
-              "worktreeId": "00000000-0000-4000-8000-000000000002"
-            }
-          }
-        }
-      }
-    },
-    {
-      "name": "review-selection-demand",
-      "codec": "controlRequest",
-      "value": {
-        "kind": "subscription.updateBatch",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerDerivationEpoch": 7,
-        "workerInstanceId": "worker-instance-startup-1",
-        "requestId": "request-review-selection-demand-1",
-        "requestSequence": 4,
-        "subscriptionId": "review-subscription-startup-1",
-        "subscriptionKind": "review.metadata",
-        "updateId": "review-selection-demand-1",
-        "baseInterestRevision": 0,
-        "baseInterestSha256": "1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6",
-        "targetInterestRevision": 1,
-        "targetInterestSha256": "d46adf646b296847386c51414f705b574fd7f727dc5961b449a0ce60b3158730",
-        "batchIndex": 0,
-        "batchCount": 1,
-        "totalDeltaItemCount": 1,
-        "delta": {
-          "subscriptionKind": "review.metadata",
-          "add": [
-            {
-              "itemId": "review-item-startup-1",
-              "lane": "foreground"
-            }
-          ],
-          "removeItemIds": []
-        }
-      }
-    },
-    {
-      "name": "review-selection-demand-accepted",
-      "codec": "controlResponse",
-      "value": {
-        "kind": "subscription.updateBatchAccepted",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "requestId": "request-review-selection-demand-1",
-        "requestSequence": 4,
-        "subscriptionId": "review-subscription-startup-1",
-        "subscriptionKind": "review.metadata",
-        "updateId": "review-selection-demand-1",
-        "batchIndex": 0,
-        "targetInterestRevision": 1,
-        "targetInterestSha256": "d46adf646b296847386c51414f705b574fd7f727dc5961b449a0ce60b3158730",
-        "disposition": "committed"
-      }
-    },
-    {
-      "name": "review-selection-demand-committed",
-      "codec": "metadataFrame",
-      "value": {
-        "kind": "subscription.interestsCommitted",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerDerivationEpoch": 7,
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 5,
-        "subscriptionId": "review-subscription-startup-1",
-        "subscriptionKind": "review.metadata",
-        "subscriptionSequence": 2,
-        "interestRevision": 1,
-        "interestSha256": "d46adf646b296847386c51414f705b574fd7f727dc5961b449a0ce60b3158730",
-        "sourceGeneration": 7,
-        "cursor": "review-cursor-startup-2",
-        "updateId": "review-selection-demand-1"
+        "subscriptionSequence": 0
       }
     },
     {
@@ -331,9 +229,9 @@
           "maximumBytes": 3,
           "source": {
             "repoId": "00000000-0000-4000-8000-000000000001",
-            "rootRevisionToken": null,
             "sourceCursor": "source-cursor-startup-1",
             "sourceId": "file-source-startup-1",
+            "rootRevisionToken": null,
             "subscriptionGeneration": 11,
             "worktreeId": "00000000-0000-4000-8000-000000000002"
           },
@@ -351,13 +249,13 @@
       "codec": "contentHeader",
       "value": {
         "kind": "content.accepted",
+        "operationCorrelationId": null,
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerDerivationEpoch": 11,
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "operationCorrelationId": null,
         "contentSequence": 0,
         "declaredByteLength": 3,
         "expectedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
@@ -368,9 +266,9 @@
           "fileId": "file-startup-1",
           "source": {
             "repoId": "00000000-0000-4000-8000-000000000001",
-            "rootRevisionToken": null,
             "sourceCursor": "source-cursor-startup-1",
             "sourceId": "file-source-startup-1",
+            "rootRevisionToken": null,
             "subscriptionGeneration": 11,
             "worktreeId": "00000000-0000-4000-8000-000000000002"
           },
@@ -389,9 +287,9 @@
       "payloadBase64": "YWJj",
       "value": {
         "kind": "content.data",
+        "operationCorrelationId": null,
         "contentSequence": 1,
-        "offsetBytes": 0,
-        "operationCorrelationId": null
+        "offsetBytes": 0
       }
     },
     {
@@ -399,11 +297,11 @@
       "codec": "contentHeader",
       "value": {
         "kind": "content.end",
+        "operationCorrelationId": null,
         "contentSequence": 2,
         "endOfSource": true,
         "observedByteLength": 3,
-        "observedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
-        "operationCorrelationId": null
+        "observedSha256": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
       }
     },
     {
@@ -448,32 +346,7 @@
         "streamSequence": 6,
         "subscriptionId": "review-subscription-startup-1",
         "subscriptionKind": "review.metadata",
-        "subscriptionSequence": 3,
-        "interestRevision": 1,
-        "interestSha256": "d46adf646b296847386c51414f705b574fd7f727dc5961b449a0ce60b3158730",
-        "sourceGeneration": 7,
-        "cursor": "review-cursor-startup-2"
-      }
-    },
-    {
-      "name": "file-subscription-reset",
-      "codec": "metadataFrame",
-      "value": {
-        "kind": "subscription.reset",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerDerivationEpoch": 11,
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 7,
-        "subscriptionId": "file-subscription-startup-1",
-        "subscriptionKind": "file.metadata",
-        "subscriptionSequence": 2,
-        "interestRevision": 1,
-        "interestSha256": "51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b",
-        "sourceGeneration": 11,
-        "cursor": "file-cursor-startup-2",
-        "reason": "interest_mismatch"
+        "subscriptionSequence": 3
       }
     },
     {
@@ -481,12 +354,12 @@
       "codec": "controlRequest",
       "value": {
         "kind": "workerSession.open",
+        "request": null,
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-2",
         "requestId": "request-worker-open-2",
-        "requestSequence": 1,
-        "request": null
+        "requestSequence": 1
       }
     },
     {
@@ -494,12 +367,12 @@
       "codec": "controlResponse",
       "value": {
         "kind": "workerSession.accepted",
+        "result": null,
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-2",
         "requestId": "request-worker-open-2",
-        "requestSequence": 1,
-        "result": null
+        "requestSequence": 1
       }
     },
     {
@@ -530,221 +403,133 @@
   ],
   "observationCases": [
     {
-      "name": "metadata-sequence-zero",
-      "expectedDisposition": "accepted",
-      "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "metadata",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 0
-      }
-    },
-    {
-      "name": "metadata-exact-replay",
-      "expectedDisposition": "idempotentReplay",
-      "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "metadata",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 0
-      }
-    },
-    {
-      "name": "metadata-skipped-sequence",
-      "expectedDisposition": "rejectedSequenceGap",
-      "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "metadata",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 2
-      }
-    },
-    {
-      "name": "metadata-foreign-stream",
-      "expectedDisposition": "rejectedForeignIdentity",
-      "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "metadata",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-foreign-1",
-        "streamSequence": 1
-      }
-    },
-    {
-      "name": "metadata-stale-worker",
-      "expectedDisposition": "rejectedStaleWorker",
-      "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "metadata",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 7
-      }
-    },
-    {
-      "name": "metadata-post-terminal",
-      "expectedDisposition": "rejectedPostTerminal",
-      "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "metadata",
-        "wireVersion": 2,
-        "paneSessionId": "pane-session-startup-1",
-        "workerInstanceId": "worker-instance-startup-1",
-        "metadataStreamId": "metadata-stream-startup-1",
-        "streamSequence": 8
-      }
-    },
-    {
       "name": "content-accepted-sequence-zero",
       "expectedDisposition": "accepted",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 0
+        "receivedThroughContentSequence": 0
       }
     },
     {
       "name": "content-data-sequence-one",
       "expectedDisposition": "accepted",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 1
+        "receivedThroughContentSequence": 1
       }
     },
     {
       "name": "content-end-sequence-two",
       "expectedDisposition": "accepted",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 2
+        "receivedThroughContentSequence": 2
       }
     },
     {
       "name": "content-exact-replay",
       "expectedDisposition": "idempotentReplay",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 2
+        "receivedThroughContentSequence": 2
       }
     },
     {
       "name": "content-skipped-sequence",
       "expectedDisposition": "rejectedSequenceGap",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 2
+        "receivedThroughContentSequence": 2
       }
     },
     {
       "name": "content-foreign-request",
       "expectedDisposition": "rejectedForeignIdentity",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-foreign-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 1
+        "receivedThroughContentSequence": 1
       }
     },
     {
       "name": "content-foreign-lease",
       "expectedDisposition": "rejectedForeignIdentity",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-foreign-1",
-        "contentSequence": 1
+        "receivedThroughContentSequence": 1
       }
     },
     {
       "name": "content-stale-worker",
       "expectedDisposition": "rejectedStaleWorker",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 1
+        "receivedThroughContentSequence": 1
       }
     },
     {
       "name": "content-changed-reuse",
       "expectedDisposition": "rejectedChangedReuse",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-changed-1",
-        "contentSequence": 1
+        "receivedThroughContentSequence": 1
       }
     },
     {
       "name": "content-post-terminal",
       "expectedDisposition": "rejectedPostTerminal",
       "request": {
-        "kind": "stream.frameObserved",
-        "streamKind": "content",
+        "kind": "content.acknowledge",
         "wireVersion": 2,
         "paneSessionId": "pane-session-startup-1",
         "workerInstanceId": "worker-instance-startup-1",
         "contentRequestId": "content-request-startup-1",
         "leaseId": "lease-startup-1",
-        "contentSequence": 3
+        "receivedThroughContentSequence": 3
       }
     }
   ],
@@ -754,15 +539,10 @@
       "subscriptionId": "review-subscription-startup-1",
       "terminalFrameKind": "subscription.cancelled"
     },
-    "reset": {
-      "subscriptionId": "file-subscription-startup-1",
-      "terminalFrameKind": "subscription.reset",
-      "reason": "interest_mismatch"
-    },
     "replacement": {
       "retiredWorkerInstanceId": "worker-instance-startup-1",
       "replacementWorkerInstanceId": "worker-instance-startup-2",
-      "staleObservationCase": "metadata-stale-worker"
+      "staleObservationCase": "content-stale-worker"
     },
     "zeroResidue": {
       "sessions": 0,

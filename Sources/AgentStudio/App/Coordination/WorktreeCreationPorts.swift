@@ -1,13 +1,12 @@
 import AgentStudioCommandBar
 import AgentStudioCore
 import AgentStudioGit
-import AgentStudioInfrastructure
 import Foundation
 
 /// The SDK reads and writes worktree creation needs, narrowed so the coordinator can be
 /// proven with a fake and the production path stays the SDK's serial writer lane.
 protocol WorktreeCreationGitClient: Sendable {
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation
     /// Copy-on-write fork of the source's current files at its captured HEAD.
     func forkWorktree(_ request: GitForkWorktreeRequest) async throws(GitWorktreeForkError) -> GitForkWorktreeResult
 }
@@ -28,7 +27,7 @@ struct LibGit2WorktreeCreationGitClient: WorktreeCreationGitClient {
         self.client = client
     }
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeSnapshot {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         try await client.createWorktree(request)
     }
 
@@ -37,19 +36,18 @@ struct LibGit2WorktreeCreationGitClient: WorktreeCreationGitClient {
     }
 }
 
-/// Lazy, repository-keyed local branch listing. A newer enrichment revision invalidates
-/// only that repository's entry; one query per revision is shared across callers.
+/// Lazy, repository-keyed branch listing. Each opened level owns one immutable snapshot;
+/// concurrent requests in that opening share its query, and older responses cannot replace it.
 actor WorktreeBranchListingCache: WorktreeBranchListing {
     typealias BranchQuery = @Sendable (URL) async throws -> [GitBranchSnapshot]
 
     private struct CachedListing {
-        let enrichmentRevision: Int
+        let openingToken: UUID
         let snapshots: [GitBranchSnapshot]
     }
 
     private struct InFlightListing {
-        let enrichmentRevision: Int
-        let token: UUID
+        let openingToken: UUID
         let task: Task<[GitBranchSnapshot], Error>
     }
 
@@ -68,36 +66,35 @@ actor WorktreeBranchListingCache: WorktreeBranchListing {
     func branchNames(
         forRepositoryId repositoryId: UUID,
         repositoryPath: URL,
-        enrichmentRevision: Int
+        openingToken: UUID
     ) async throws -> [String] {
         if let cached = cachedListingsByRepositoryId[repositoryId],
-            cached.enrichmentRevision == enrichmentRevision
+            cached.openingToken == openingToken
         {
             return cached.snapshots.map(\.name)
         }
         cachedListingsByRepositoryId.removeValue(forKey: repositoryId)
 
         if let inFlight = inFlightListingsByRepositoryId[repositoryId],
-            inFlight.enrichmentRevision == enrichmentRevision
+            inFlight.openingToken == openingToken
         {
             return try await inFlight.task.value.map(\.name)
         }
 
-        let token = UUIDv7.generate()
         let query = query
         let task = Task { try await query(repositoryPath) }
         inFlightListingsByRepositoryId[repositoryId] = InFlightListing(
-            enrichmentRevision: enrichmentRevision, token: token, task: task)
+            openingToken: openingToken, task: task)
         do {
             let snapshots = try await task.value
-            if inFlightListingsByRepositoryId[repositoryId]?.token == token {
+            if inFlightListingsByRepositoryId[repositoryId]?.openingToken == openingToken {
                 cachedListingsByRepositoryId[repositoryId] = CachedListing(
-                    enrichmentRevision: enrichmentRevision, snapshots: snapshots)
+                    openingToken: openingToken, snapshots: snapshots)
                 inFlightListingsByRepositoryId.removeValue(forKey: repositoryId)
             }
             return snapshots.map(\.name)
         } catch {
-            if inFlightListingsByRepositoryId[repositoryId]?.token == token {
+            if inFlightListingsByRepositoryId[repositoryId]?.openingToken == openingToken {
                 inFlightListingsByRepositoryId.removeValue(forKey: repositoryId)
             }
             throw error
@@ -111,7 +108,11 @@ actor WorktreeBranchListingCache: WorktreeBranchListing {
 /// stays authoritative after `.available`.
 struct SDKWorktreeForkEligibilityChecker: WorktreeForkEligibilityChecking {
     typealias EligibilityQuery =
-        @Sendable (_ sourceWorktreePath: URL, _ destinationPath: URL) async -> GitWorktreeForkEligibility
+        @Sendable (
+            _ sourceWorktreePath: URL,
+            _ destinationPath: URL,
+            _ materialization: GitWorktreeForkMaterialization
+        ) async -> GitWorktreeForkEligibility
 
     /// The branch name is not typed yet when the source is chosen, so the query names a
     /// placeholder leaf in the directory every sibling destination shares.
@@ -120,10 +121,11 @@ struct SDKWorktreeForkEligibilityChecker: WorktreeForkEligibilityChecking {
     private let query: EligibilityQuery
 
     init(
-        query: @escaping EligibilityQuery = { sourceWorktreePath, destinationPath in
+        query: @escaping EligibilityQuery = { sourceWorktreePath, destinationPath, materialization in
             await LibGit2AgentStudioGitLocalClient().forkWorktreeEligibility(
                 sourceWorktreePath: sourceWorktreePath,
-                destinationPath: destinationPath
+                destinationPath: destinationPath,
+                materialization: materialization
             )
         }
     ) {
@@ -134,7 +136,7 @@ struct SDKWorktreeForkEligibilityChecker: WorktreeForkEligibilityChecking {
     func forkEligibility(sourceWorktreePath: URL, destinationDirectory: URL) async -> WorktreeForkEligibility {
         let destinationPath = destinationDirectory.appending(
             path: Self.destinationProbeName, directoryHint: .isDirectory)
-        switch await query(sourceWorktreePath, destinationPath) {
+        switch await query(sourceWorktreePath, destinationPath, .copyOnWrite) {
         case .available:
             return .available
         case .unavailable(let reason):

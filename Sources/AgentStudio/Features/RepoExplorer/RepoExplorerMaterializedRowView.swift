@@ -14,6 +14,7 @@ struct RepoExplorerMaterializedRowView: View {
     let row: RepoExplorerMaterializedRow
     let commandPresentationSnapshot: RepoExplorerCommandPresentationSnapshot
     let octiconLoader: OcticonLoader
+    var paneContextControl: RepoExplorerPaneContextControlFactory = { _, _ in nil }
     var keyboardPresentation = RepoExplorerRowKeyboardPresentation.inactive
     let onCommandRequest: (RepoExplorerCommandPresentationRequest) -> Void
     let onToggleGroup: (String) -> Void
@@ -134,6 +135,7 @@ struct RepoExplorerMaterializedRowView: View {
                 row: pane,
                 octiconLoader: octiconLoader,
                 keyboardPresentation: keyboardPresentation,
+                paneContextControl: paneContextControl,
                 onFocus: { onFocusPane(pane.destination.paneId) }
             )
         case .unassociatedPane(let pane):

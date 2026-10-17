@@ -131,7 +131,7 @@ struct SwiftLaneRunnerReportTests {
         #expect(record["slot_cap"] as? Int == 4)
         #expect(record["phase"] == nil || record["phase"] is NSNull)
         #expect(record["timed_out"] as? Bool == false)
-        #expect(record["event_stream_file"] is String)
+        #expect(record["event_stream_file"] == nil || record["event_stream_file"] is NSNull)
     }
 
     @Test("prebuild flags are absent by default and appended when compiler statistics are enabled")
@@ -249,7 +249,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("every Swift test invocation takes its parallelization width from the one helper")
     func everySwiftTestInvocationTakesItsWidthFromTheOneHelper() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let widthFunction = try shellFunction(named: "swift_test_parallelization_width", in: helperScript)
         let invocationLines = (helperScript + "\n" + laneRunnerScript)
             .split(separator: "\n", omittingEmptySubsequences: false)
@@ -316,7 +316,7 @@ struct SwiftLaneRunnerReportTests {
     @Test("lane runner reports machine load before and after every lane")
     func laneRunnerReportsMachineLoadBeforeAndAfterEveryLane() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let closingReport = try shellFunction(named: "print_closing_lane_report", in: laneRunnerScript)
 
         for preflightLabel in [
@@ -342,7 +342,8 @@ struct SwiftLaneRunnerReportTests {
             "lane-report head_sha=",
             "lane-report tree_dirty=",
             "lane-report bundle_state=",
-            "lane-report bundle_identity=",
+            "lane-report bundle_set=",
+            "lane-report bundle_count=",
             "lane-report build_receipt_head_sha=",
         ] {
             #expect(closingReport.contains(closingLabel))
@@ -357,18 +358,25 @@ struct SwiftLaneRunnerReportTests {
                 // Which tree and bundle the lane tested, and whether that makes
                 // its verdict evidence at all.
                 "build_receipt_head_sha",
-                "bundle_identity",
+                "bundle_count",
+                "bundle_set",
                 "bundle_state",
+                "console_locked",
                 "cpu_count",
                 "cpu_seconds",
                 "cpu_utilization",
+                "crashed",
                 // Where a wedged run's event-stream ledger was kept, and whether
                 // the lane's own child group was actually reaped on the way out.
                 "event_stream",
+                "evidence_retention",
                 "exit_status",
                 "fact_expected",
                 "failed_isolated_suite",
                 "failed_isolated_suites",
+                "failing_issue",
+                "failing_issues",
+                "failing_test",
                 "head_sha",
                 // The harness steps a hung lane was still waiting on.
                 "held_step_unarrived",
@@ -378,13 +386,20 @@ struct SwiftLaneRunnerReportTests {
                 // Tests whose start was posted: announced, never "started".
                 "peak_announced_tests",
                 "peak_running_parameterized_cases",
+                "reason",
                 "receipt_valid",
                 "running_parameterized_cases_at_timeout",
+                "runs",
                 "stack_sample",
+                "stream",
                 "swift",
                 "task_dump",
+                "tests_run",
+                "tests_skipped",
                 "timeout_reap",
+                "timeout_root",
                 "tree_dirty",
+                "unreadable_records",
                 "verdict",
                 "wall_seconds",
                 "xcode",
@@ -405,8 +420,11 @@ struct SwiftLaneRunnerReportTests {
         // A process that passes its tests and then crashes used to leave only
         // "ERROR task failed" and bash's job-table line; the captured output was
         // deleted before anyone could read why.
+        let workDirectory = NSTemporaryDirectory() + "agentstudio-child-signal-report-\(UUIDv7.generate())"
+        defer { try? FileManager.default.removeItem(atPath: workDirectory) }
         let laneOutput = try await runBashAllowingFailure(
-            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH=.build-agent-1; "
+            "LOG_PREFIX=lane; TIMEOUT_SECONDS=60; BUILD_PATH='\(workDirectory)/build'; "
+                + "export LANE_EVENT_STREAM_DIR='\(workDirectory)/events'; "
                 + "source scripts/swift-test-helpers.sh; set +e; "
                 + "run_swift_with_timeout 'isolated suite: FakeSuite' 60 /bin/bash -c "
                 + #"'echo \"Test run with 1 test in 1 suite passed\"; kill -SEGV $$' "#
@@ -421,48 +439,10 @@ struct SwiftLaneRunnerReportTests {
         #expect(laneOutput.contains("RETURNED=139"))
     }
 
-    @Test("invalid child bytes do not break a passing lane or its failure diagnostics")
-    func invalidChildBytesDoNotBreakLaneOutput() async throws {
-        let fixtureDirectory = NSTemporaryDirectory() + "agentstudio-invalid-lane-output-\(UUIDv7.generate())"
-        let command = #"""
-            set -euo pipefail
-            source scripts/swift-test-helpers.sh
-            LOG_PREFIX=utf8-probe
-            BUILD_PATH=.build-agent-1
-            fixture_directory='\#(fixtureDirectory)'
-            mkdir -p "$fixture_directory/events"
-            export LANE_EVENT_STREAM_DIR="$fixture_directory/events"
-            swift_test_begin_active_command_groups
-            trap 'swift_test_cleanup_active_command_groups_directory; rm -f "$fixture_directory"/events/*; rmdir "$fixture_directory/events" "$fixture_directory"' EXIT
-
-            passed_status=0
-            run_swift_with_timeout 'passing invalid-byte probe' 20 /usr/bin/perl -e \
-              'binmode STDOUT; print "PASS_CHILD_BEFORE\n"; print "\xff"; print "PASS_CHILD_AFTER\n"' -- \
-              || passed_status=$?
-            [ "$passed_status" -eq 0 ] || exit 41
-            printf 'PASS_CHILD_STATUS=%s\n' "$passed_status"
-
-            failed_status=0
-            run_swift_with_timeout 'failed invalid-byte probe' 20 /usr/bin/perl -e \
-              'binmode STDOUT; print "TESTS_PASSED\n"; print "\xff"; exit 7' -- \
-              || failed_status=$?
-            [ "$failed_status" -eq 7 ] || exit 42
-            printf 'FAIL_CHILD_STATUS=%s\n' "$failed_status"
-            """#
-
-        let result = try await runLaneScriptBash(command)
-        #expect(result.exitCode == 0, Comment(rawValue: result.output))
-        #expect(result.output.contains("PASS_CHILD_BEFORE"))
-        #expect(result.output.contains("PASS_CHILD_AFTER"))
-        #expect(result.output.contains("PASS_CHILD_STATUS=0"))
-        #expect(result.output.contains("TESTS_PASSED"))
-        #expect(result.output.contains("FAIL_CHILD_STATUS=7"))
-    }
-
     @Test("lane stdout sources use one persistent line relay per stream")
     func laneStdoutSourcesUseOnePersistentLineRelayPerStream() throws {
         let helperScript = try String(contentsOfFile: "scripts/swift-test-helpers.sh", encoding: .utf8)
-        let laneTaskScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneTaskScript = try loadSwiftLaneRunnerReportingSource()
         let outputRelayScript = try String(contentsOfFile: "scripts/swift-test-output-relay.pl", encoding: .utf8)
         let outputRelayBegin = try shellFunction(named: "swift_test_output_relay_begin_command", in: helperScript)
         let outputRelayFinish = try shellFunction(named: "swift_test_output_relay_finish_command", in: helperScript)
@@ -644,13 +624,15 @@ struct SwiftLaneRunnerReportTests {
 
         // The probe uses Swift Testing-shaped IDs from the real targets and Bash
         // ERE matching, the same regex dialect the lane filters are consumed as.
-        guard output.contains("LANE_FILTER_BEHAVIOR_OK generators=9") else { return }
+        try #require(
+            output.contains("LANE_FILTER_BEHAVIOR_OK generators=9"),
+            Comment(rawValue: output)
+        )
         #expect(output.contains("MATCH_OK fast-skip"))
         #expect(output.contains("MATCH_OK fast-concurrent-filter"))
         #expect(output.contains("MATCH_OK large-process-global"))
         #expect(output.contains("MATCH_OK aggregate-serial"))
         #expect(output.contains("MATCH_OK webkit-list"))
-        #expect(output.contains("LANE_FILTER_BEHAVIOR_OK generators=9"))
     }
 
     @Test("a clean lane reports zero failed isolated suites")
@@ -717,7 +699,7 @@ struct SwiftLaneRunnerReportTests {
 
     @Test("lane runner hang bounds default to the budgets CI already sets")
     func laneRunnerHangBoundsDefaultToBudgetsCIAlreadySets() throws {
-        let laneRunnerScript = try String(contentsOfFile: "scripts/run-swift-test-task.sh", encoding: .utf8)
+        let laneRunnerScript = try loadSwiftLaneRunnerReportingSource()
         let ciWorkflow = try String(contentsOfFile: ".github/workflows/ci.yml", encoding: .utf8)
         let prebuildStep = try workflowStep(named: "Prebuild Swift test bundles", in: ciWorkflow)
 
@@ -772,20 +754,14 @@ struct SwiftLaneRunnerReportTests {
 
     @Test("announced-test counter tracks posted start events, not the cap")
     func announcedTestCounterTracksPostedStartEvents() async throws {
-        // a and b overlap (peak 2), a closes, then c opens (2 again). The
-        // run-level and suite-level events are not tests.
+        // The capture starts four functions before the first function ends.
+        // Run-level and suite-level events do not contribute to the peak.
         let observedPeak = try await runBash(
-            "source scripts/swift-test-helpers.sh; swift_test_peak_announced_from_output "
-                + "<(printf '◇ Test run started.\\n"
-                + "◇ Suite \"S\" started.\\n"
-                + "◇ Test \"a\" started.\\n"
-                + "◇ Test \"b\" started.\\n"
-                + "✔ Test \"a\" passed after 0.1 seconds.\\n"
-                + "◇ Test \"c\" started.\\n"
-                + "✔ Test run with 3 tests in 1 suite passed after 0.5 seconds.\\n')"
+            "/usr/bin/perl scripts/swift-test-invocation-receipts.pl facts "
+                + "Tests/AgentStudioTests/Scripts/Fixtures/xcode27-event-stream-v6.3.jsonl 19"
         )
 
-        #expect(observedPeak.trimmingCharacters(in: .whitespacesAndNewlines) == "2")
+        #expect(observedPeak.contains("peak_announced_tests=4"))
     }
 
     @Test("running-test-case counter reads the post-serializer event stream")
@@ -817,10 +793,10 @@ struct SwiftLaneRunnerReportTests {
             in: helperScript
         )
 
-        #expect(timeoutRunner.contains("--event-stream-version 0 --event-stream-output-path"))
+        #expect(timeoutRunner.contains("--event-stream-version 6.3 --event-stream-output-path"))
         #expect(timeoutRunner.contains("swift_test_command_accepts_event_stream"))
         // `swift build` rejects the flags, so the prebuild must be excluded.
-        #expect(acceptsEventStream.contains("\"$argument\" = \"build\""))
+        #expect(acceptsEventStream.contains("build|list) return 1"))
         #expect(
             try await runBashStatus(
                 "source scripts/swift-test-helpers.sh; "

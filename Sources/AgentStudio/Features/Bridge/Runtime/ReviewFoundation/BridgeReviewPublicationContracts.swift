@@ -76,7 +76,7 @@ struct BridgeReviewCommittedPublication: Equatable, Sendable {
 enum BridgeReviewPublicationDeliveryDisposition: Equatable, Sendable {
     case deferred
     case failed
-    case transportAcknowledged
+    case viewBatchSealed
 }
 
 enum BridgeReviewPublicationOutcome: Equatable, Sendable {

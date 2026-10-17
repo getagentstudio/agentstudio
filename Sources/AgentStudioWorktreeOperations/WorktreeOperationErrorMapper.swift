@@ -8,15 +8,18 @@ package enum WorktreeOperationErrorMapper {
         case sourceChanged(relativePath: String, reason: GitWorktreeForkSourceRaceReason)
         case entryFailed(relativePath: String, reason: GitWorktreeForkEntryFailureReason, errorNumber: Int32?)
         case validationFailed(reason: GitWorktreeForkValidationFailureReason, relativePath: String?)
+        case workingStateUnsupported(GitWorktreeWorkingStateRefusal)
         case cleanupIncomplete(primary: GitWorktreeForkError, residue: [GitWorktreeForkResidue])
     }
 
     private enum ForkFailureKindSource {
+        case branchCheckedOutAfterChange(worktreePath: URL)
         case cancelled
         case gitFailure(GitDataPlaneError)
         case sourceChanged(relativePath: String, reason: GitWorktreeForkSourceRaceReason)
         case entryFailed(relativePath: String, reason: GitWorktreeForkEntryFailureReason, errorNumber: Int32?)
         case validationFailed(reason: GitWorktreeForkValidationFailureReason, relativePath: String?)
+        case workingStateUnsupported(GitWorktreeWorkingStateRefusal)
         case rejectedAfterChange(GitWorktreeForkRejectionReason)
     }
 
@@ -33,6 +36,25 @@ package enum WorktreeOperationErrorMapper {
         WorktreeOperationFailure(failure: .createFailed(gitErrorKind(for: error)), leftovers: .unverified)
     }
 
+    /// A plain checkout refuses a branch that moved or is held elsewhere with nothing changed. A fast-forward it
+    /// couldn't undo fails naming the branch and both commits (LR1, D22). Every other error is a failed creation.
+    package static func createOutcome(_ error: GitDataPlaneError) -> WorktreeOperationOutcome {
+        switch error {
+        case .branchMoved:
+            .refused(.creationStopped(.branchMoved))
+        case .branchCheckedOut(let worktreePath):
+            .refused(.creationStopped(.branchCheckedOut(path: worktreePath.standardizedFileURL.path)))
+        case .branchMoveNotUndone(let branchName, let fromOID, let toOID):
+            .failed(
+                WorktreeOperationFailure(
+                    failure: .branchMoveNotUndone(
+                        branch: branchName, move: WorktreeBranchMove(fromCommit: fromOID, toCommit: toOID)),
+                    leftovers: .unverified))
+        default:
+            .failed(createFailure(error))
+        }
+    }
+
     package static func gitErrorKind(for error: GitDataPlaneError) -> WorktreeGitErrorKind {
         switch error {
         case .repositoryNotFound:
@@ -41,6 +63,12 @@ package enum WorktreeOperationErrorMapper {
             .worktreeNotFound
         case .locked:
             .locked
+        case .lockHeld(let fact):
+            .lockHeld(fact)
+        case .lockUnidentified:
+            .lockUnidentified
+        case .permissionDenied(let path):
+            .permissionDenied(path: path)
         case .worktreeNotPrunable:
             .worktreeNotPrunable
         case .unsafeWorktreeRemoval:
@@ -73,6 +101,12 @@ package enum WorktreeOperationErrorMapper {
             .libgit2Failure
         case .unsupported:
             .unsupported
+        case .branchMoved:
+            .branchMoved
+        case .branchCheckedOut:
+            .branchCheckedOut
+        case .branchMoveNotUndone:
+            .branchMoveNotUndone
         }
     }
 
@@ -82,6 +116,10 @@ package enum WorktreeOperationErrorMapper {
         branchName: String
     ) -> WorktreeOperationRefusal {
         switch reason {
+        case .sourceIndexUnreadable:
+            .creationStopped(.sourceIndexUnreadable)
+        case .sourceIndexUnsupported:
+            .creationStopped(.sourceIndexUnsupported)
         case .destinationExists:
             .destinationExists(destinationPath)
         case .destinationParentMissing:
@@ -89,7 +127,10 @@ package enum WorktreeOperationErrorMapper {
         case .invalidBranchName:
             .invalidBranchName(.rejectedByGit)
         case .branchAlreadyExists:
-            .branchAlreadyExists(branchName)
+            .creationStopped(.branchAlreadyExists(branch: branchName))
+        // `branchNotFound` comes only from an existing-branch fork: the branch resolved moments ago is gone.
+        case .branchMoved, .branchNotFound:
+            .creationStopped(.branchMoved)
         case .clientCapabilityUnavailable,
             .unsupportedOperatingSystem,
             .sourceFilesystemNotAPFS,
@@ -102,12 +143,12 @@ package enum WorktreeOperationErrorMapper {
             .invalidDestinationPath,
             .overlappingRoots,
             .linkedWorktreeNameInUse,
-            .branchNotFound,
-            .branchNotAtCapturedHead,
-            .branchCheckedOut,
+            .invalidStart,
+            .fastForwardNotDescendant,
+            .invalidUpstream,
             .fileProviderManagedLocation,
             .datalessContent:
-            .forkUnavailable(reason)
+            .forkUnavailable(reason, offersChangesOnly: false)
         }
     }
 
@@ -119,6 +160,10 @@ package enum WorktreeOperationErrorMapper {
         switch error {
         case .rejected(let reason):
             .refused(forkRejection(reason, destinationPath: destinationPath, branchName: branchName))
+        case .branchCheckedOut(let worktreePath):
+            .refused(.creationStopped(.branchCheckedOut(path: worktreePath.standardizedFileURL.path)))
+        case .workingStateUnsupported(let refusal):
+            .refused(.unsupportedWorkingState(refusal))
         case .cancelled:
             .failed(forkFailure(.cancelled))
         case .gitFailure(let gitError):
@@ -159,6 +204,11 @@ package enum WorktreeOperationErrorMapper {
                 failure: forkFailureKind(.validationFailed(reason: reason, relativePath: relativePath)),
                 leftovers: .noLeftovers
             )
+        case .workingStateUnsupported(let refusal):
+            return WorktreeOperationFailure(
+                failure: forkFailureKind(.workingStateUnsupported(refusal)),
+                leftovers: .noLeftovers
+            )
         case .cleanupIncomplete(let primary, let residue):
             let flattenedPrimary = flattenCleanupPrimary(primary)
             return WorktreeOperationFailure(
@@ -172,6 +222,9 @@ package enum WorktreeOperationErrorMapper {
         switch error {
         case .rejected(let reason):
             return FlattenedCleanupPrimary(failureKind: .rejectedAfterChange(reason), residue: [])
+        case .branchCheckedOut(let worktreePath):
+            return FlattenedCleanupPrimary(
+                failureKind: .branchCheckedOutAfterChange(worktreePath: worktreePath), residue: [])
         case .cleanupIncomplete(let primary, let residue):
             let flattenedPrimary = flattenCleanupPrimary(primary)
             return FlattenedCleanupPrimary(
@@ -197,6 +250,8 @@ package enum WorktreeOperationErrorMapper {
                 failureKind: .validationFailed(reason: reason, relativePath: relativePath),
                 residue: []
             )
+        case .workingStateUnsupported(let refusal):
+            return FlattenedCleanupPrimary(failureKind: .workingStateUnsupported(refusal), residue: [])
         }
     }
 
@@ -212,9 +267,79 @@ package enum WorktreeOperationErrorMapper {
             .cancelled
         case .validationFailed(let reason, let relativePath):
             .validationFailed(reason: reason, relativePath: relativePath)
+        case .workingStateUnsupported(let refusal):
+            .workingStateUnsupported(refusal)
         case .rejectedAfterChange(let reason):
             .rejectedAfterChange(reason)
+        case .branchCheckedOutAfterChange(let worktreePath):
+            .branchCheckedOutAfterChange(path: worktreePath.standardizedFileURL.path)
         }
+    }
+
+    package static func lockedOperationFailure<Reason: Sendable>(
+        _ error: GitLockedOperationFailure<Reason>,
+        mapReason: (Reason) -> WorktreeFailureKind
+    ) -> WorktreeOperationFailure {
+        WorktreeOperationFailure(
+            failure: mapReason(error.reason),
+            leftovers: lockResidueStatus(error.lockResidue)
+        )
+    }
+
+    package static func removalDirectoryEffect(for effect: GitRemovalEffect) -> WorktreeDirectoryEffect {
+        switch effect {
+        case .removed:
+            .removed
+        case .retained:
+            .retained
+        case .partial:
+            .partial
+        case .unknown:
+            .unknown
+        case .notRequested:
+            .notApplicable
+        }
+    }
+
+    package static func removalAdministrationEffect(for effect: GitRemovalEffect) -> WorktreeAdministrationEffect {
+        switch effect {
+        case .removed:
+            .removed
+        case .retained:
+            .retained
+        case .partial:
+            .partial
+        case .unknown:
+            .unknown
+        case .notRequested:
+            .notApplicable
+        }
+    }
+
+    package static func removalFailureKind(
+        for failure: GitWorktreeRemovalFailureKind
+    ) -> WorktreeRemovalFailureKindDocument {
+        switch failure {
+        case .pruneFailed(let code, let klass):
+            .pruneFailed(code: code, klass: klass)
+        case .observationFailed:
+            .observationFailed
+        case .removalIncomplete:
+            .removalIncomplete
+        }
+    }
+
+    private static func lockResidueStatus(_ residue: [URL]?) -> WorktreeLeftoverStatus {
+        guard let residue else { return .unverified }
+        guard !residue.isEmpty else { return .noLeftovers }
+        return .incomplete(
+            residue.map {
+                WorktreeCleanupLeftover(
+                    kind: .lockFile,
+                    location: $0.path,
+                    base: .repositoryGitDirectory
+                )
+            })
     }
 
     private static func cleanupLeftover(_ residue: GitWorktreeForkResidue) -> WorktreeCleanupLeftover {
@@ -224,7 +349,9 @@ package enum WorktreeOperationErrorMapper {
             base = .destination
         case .linkedWorktreeAdministration, .nestedAdministration:
             base = .repositoryGitDirectory
-        case .createdBranch:
+        case .lockFile:
+            base = .repositoryGitDirectory
+        case .createdBranch, .branchMoveNotUndone:
             base = .branchReference
         case .temporaryArtifact:
             base = .temporary

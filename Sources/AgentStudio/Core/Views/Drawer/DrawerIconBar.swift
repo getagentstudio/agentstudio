@@ -329,6 +329,9 @@ struct DrawerIconBar: View {
                                         }
                                     }
 
+                                    if let paneContextContent = trailingActions.paneContextContent {
+                                        paneContextContent
+                                    }
                                     if !paneContextActions.isEmpty {
                                         if hasPrimaryTrailingActions(trailingActions) {
                                             trailingActionDivider
@@ -622,9 +625,7 @@ struct DrawerIconBar: View {
             VStack {
                 Spacer()
                 DrawerIconBar(
-                    octiconLoader: OcticonLoader(
-                        resourceRootURL: URL(fileURLWithPath: "/dev/null")
-                    ),
+                    octiconLoader: OcticonLoader(resourceBundle: .main),
                     leadingControls: .hidden,
                     trailingActions: nil
                 )

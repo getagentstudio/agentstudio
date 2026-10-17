@@ -96,6 +96,8 @@ extension RepoExplorerProjectionInputCapture {
             _ = latestPaneMessageSnapshot(paneID)
             _ = bridgeAttendanceSnapshot(paneID)
             if request?.snapshot.surface == .panes {
+                _ = sessionStatusForPane(PaneId(existingUUID: paneID))
+                _ = contextDisplayForPane(PaneId(existingUUID: paneID))
                 _ = coreAtoms.paneActivityTime.value(for: paneID)
             } else {
                 _ = coreAtoms.workspaceEntityRecency.recency(for: .pane(paneID: paneID))

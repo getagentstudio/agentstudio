@@ -5,6 +5,7 @@ import { render } from 'vitest-browser-react';
 
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import './bridge-app.css';
+import { buildBridgeWorkerViewRecoveryStatusEvent } from '../core/comm-worker/bridge-comm-worker-protocol.js';
 import { createBridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
 import type { BridgeProductReviewTreeRow } from '../core/comm-worker/bridge-product-review-metadata-contracts.js';
 import type {
@@ -45,6 +46,70 @@ const TEST_REVIEW_PUBLICATION_IDENTITY = {
 } as const;
 
 describe('useBridgeReviewRenderSnapshotController lifecycle Browser Mode', () => {
+	test('render failure status preserves an installed Review CodeView and semantic item', async () => {
+		const harness = makeReviewSurfaceHarness();
+		let resolvePainted: (() => void) | undefined;
+		const painted = new Promise<void>((resolve): void => {
+			resolvePainted = resolve;
+		});
+		const coordinator = createBridgeMainRenderFulfillmentCoordinator({
+			sendDisposition: (receipt): void => {
+				if (receipt.disposition === 'painted') resolvePainted?.();
+			},
+		});
+		const rendered = await render(
+			<BridgeReviewViewerMode
+				codeViewWorkerPoolEnabled={false}
+				isActive
+				isNavigationCommandStillEligible={bridgeReviewNavigationCommandIsAlwaysEligible}
+				onActiveSourceChange={vi.fn()}
+				onNavigationSourceChange={vi.fn()}
+				reviewClient={{ ...harness.reviewClient, renderFulfillmentCoordinator: coordinator }}
+				telemetryRecorderRef={{ current: createBridgeTelemetryRecorder(null) }}
+				viewerContextSwitcher={<div />}
+			/>,
+		);
+		try {
+			await act(async (): Promise<void> => {
+				harness.publish(hierarchicalReviewDisplayEvent());
+				await import('../review-viewer/shell/review-viewer-shell.js');
+			});
+			await act(async (): Promise<void> => {
+				for (const message of reviewContentReadyEvents()) harness.publish(message);
+			});
+			await act(async (): Promise<void> => painted);
+			const panel = document.querySelector('[data-testid="bridge-code-view-panel"]');
+			const item = harness.reviewClient.renderStore.getReviewCodeViewItemSnapshot('item-1');
+			expect(panel).not.toBeNull();
+			expect(item?.bridgeMetadata.itemId).toBe('item-1');
+			await act(async (): Promise<void> => {
+				harness.reviewClient.renderStore.applyViewRecoveryStatusEvent(
+					buildBridgeWorkerViewRecoveryStatusEvent({
+						status: 'failedRetryable',
+						view: { kind: 'review.metadata', subscriptionId: 'affected-render-view' },
+					}),
+				);
+			});
+			expect(document.querySelector('[data-testid="bridge-code-view-panel"]')).toBe(panel);
+			expect(harness.reviewClient.renderStore.getReviewCodeViewItemSnapshot('item-1')).toBe(item);
+			expect(
+				document
+					.querySelector('[data-testid="review-viewer-shell"]')
+					?.getAttribute('data-selected-content-state'),
+			).toBe('ready');
+			expect(document.querySelectorAll('[data-testid="bridge-pane-failure-summary"]')).toHaveLength(
+				1,
+			);
+			expect(rendered.getByRole('button', { name: 'Retry', exact: true }).all()).toHaveLength(1);
+		} finally {
+			await act(async (): Promise<void> => rendered.unmount());
+			coordinator.dispose();
+			harness.reviewClient.renderFulfillmentCoordinator.dispose();
+			harness.reviewClient.renderStore.dispose();
+			harness.lifecycleStore.dispose();
+		}
+	});
+
 	test('settles a late existing-item publication after Review becomes inactive', async () => {
 		// Arrange: establish an already-rendered item before the surface switch.
 		const harness = makeReviewSurfaceHarness();

@@ -7,6 +7,12 @@ import Testing
 @testable import AgentStudioBridge
 
 actor RefreshAdmissionTrackingFileMetadataSource: BridgePaneProductFileMetadataProducing {
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     private let failsChangesetPublication: Bool
     private var retryableChangesetFailuresRemaining: Int
     private let changesetPublicationGate: RefreshAdmissionCancellationIgnoringProducerGate?
@@ -41,16 +47,18 @@ actor RefreshAdmissionTrackingFileMetadataSource: BridgePaneProductFileMetadataP
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         await metadataProducerGate?.holdIgnoringCancellation()
     }
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {}
 
     func cancel(subscriptionId _: String) {}
@@ -325,26 +333,18 @@ actor RefreshAdmissionGatedReviewMetadataSource: BridgePaneProductReviewMetadata
 
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission: BridgeProductAdmissionContext
     ) async throws {
         try await source.open(
             subscription: subscription,
-            productAdmission: productAdmission,
-            emit: emit
+            productAdmission: productAdmission
         )
     }
 
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
-        productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {
-        try await source.update(
-            subscription: subscription,
-            productAdmission: productAdmission,
-            emit: emit
-        )
+    func applyViewDemand(_ request: BridgePaneProductReviewViewDemandRequest) async throws
+        -> BridgePaneProductReviewViewCapture?
+    {
+        try await source.applyViewDemand(request)
     }
 
     func reserve(

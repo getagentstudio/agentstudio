@@ -128,7 +128,7 @@ export class BridgeProductMetadataStreamDecoder {
 			}
 			throw error;
 		}
-		return frames;
+		return frames.filter((frame): boolean => frame.kind !== 'stream.keepalive');
 	}
 
 	finish(): void {
@@ -179,6 +179,15 @@ export class BridgeProductMetadataStreamDecoder {
 					'stream_acceptance_required',
 					'Bridge product metadata stream requires acceptance as its first frame.',
 				);
+			}
+			if (frame.kind === 'stream.keepalive') {
+				if (frame.streamSequence !== expectedNextStreamSequence - 1) {
+					throw new BridgeProductMetadataStreamDecoderFailure(
+						'stream_sequence_mismatch',
+						'Bridge product keepalive did not identify the last emitted sequence.',
+					);
+				}
+				continue;
 			}
 			if (acceptedStream && frame.kind === 'metadataStream.accepted') {
 				throw new BridgeProductMetadataStreamDecoderFailure(

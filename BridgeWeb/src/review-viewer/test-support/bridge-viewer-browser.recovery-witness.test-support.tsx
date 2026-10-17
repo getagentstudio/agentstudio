@@ -1,6 +1,7 @@
 import { act, type ReactElement } from 'react';
 import { render } from 'vitest-browser-react';
 
+import { BridgeTestFactRecorder } from '../../../tests/test-support/bridge-test-fact-recorder.ts';
 import { BridgeReviewViewerMode } from '../../app/bridge-app-review-viewer-mode.js';
 import {
 	buildBridgeWorkerReviewCandidateReadyEvent,
@@ -10,6 +11,7 @@ import {
 import { createBridgeMainRenderFulfillmentCoordinator } from '../../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
 import { createBridgeMainRenderSnapshotStore } from '../../core/comm-worker/bridge-main-render-snapshot-store.js';
 import type { BridgePaneSurfaceClient } from '../../core/comm-worker/bridge-pane-runtime.js';
+import { createBridgeProductDeferred } from '../../core/comm-worker/bridge-product-async-queue.js';
 import type { BridgeProductNavigationCommand } from '../../core/comm-worker/bridge-product-session-contracts.js';
 import type {
 	BridgeWorkerReviewDisplayItem,
@@ -111,6 +113,10 @@ export interface BridgeReviewRecoveryWitnessWorkerEventSeam {
 	readonly activeReviewPublicationIdentity: () => BridgeWorkerReviewPublicationIdentity;
 	readonly publish: (message: BridgeWorkerServerToMainMessage) => void;
 	readonly sentRequests: () => readonly BridgeReviewRecoveryWitnessWorkerRequest[];
+	readonly waitForSentRequest: (
+		matches: (request: BridgeReviewRecoveryWitnessWorkerRequest) => boolean,
+		label: string,
+	) => Promise<BridgeReviewRecoveryWitnessWorkerRequest>;
 }
 
 export interface BridgeReviewRecoveryWitnessWorkerRequest {
@@ -163,6 +169,8 @@ export async function renderBridgeReviewRecoveryWitness(
 	const lifecycleStore = createBridgeWorkerRpcLifecycleStore();
 	const sentCommands: BridgeWorkerRpcCommandInput[] = [];
 	const sentRequests: BridgeReviewRecoveryWitnessWorkerRequest[] = [];
+	const requestFacts = new BridgeTestFactRecorder<BridgeReviewRecoveryWitnessWorkerRequest>();
+	const messageSubscriptionReady = createBridgeProductDeferred<void>();
 	const telemetrySamples: BridgeTelemetrySample[] = [];
 	const telemetryRecorder: BridgeTelemetryRecorder = {
 		flush: (): boolean => true,
@@ -237,6 +245,7 @@ export async function renderBridgeReviewRecoveryWitness(
 				reviewProjectionRouter.publishQuery(command);
 			const requestId = `review-recovery-witness-request-${sentCommands.length}`;
 			sentRequests.push({ command, requestId });
+			requestFacts.record({ command, requestId });
 			lifecycleStore.startRequest({ command: command.command, requestId, surface: 'review' });
 			if (command.command === 'reviewPublicationInstallAdmit') {
 				queueMicrotask((): void => {
@@ -257,6 +266,7 @@ export async function renderBridgeReviewRecoveryWitness(
 		},
 		subscribeMessages: (listener): (() => void) => {
 			messageListeners.add(listener);
+			messageSubscriptionReady.resolve();
 			reviewProjectionRouter.setListener(publishWorkerMessage);
 			return (): void => {
 				messageListeners.delete(listener);
@@ -286,6 +296,9 @@ export async function renderBridgeReviewRecoveryWitness(
 		</div>
 	);
 	const renderResult = await render(renderWitnessRoot(true));
+	await act(async (): Promise<void> => {
+		await messageSubscriptionReady.promise;
+	});
 	const requireMessageListener = (): ((message: BridgeWorkerServerToMainMessage) => void) => {
 		if (messageListeners.size === 0) {
 			throw new Error(
@@ -298,6 +311,7 @@ export async function renderBridgeReviewRecoveryWitness(
 		dispose: (): void => {
 			if (isDisposed) return;
 			isDisposed = true;
+			requestFacts.close(new Error('Review recovery witness disposed'));
 			messageListeners.clear();
 			reviewProjectionRouter.clearListener(publishWorkerMessage);
 			renderFulfillmentCoordinator.dispose();
@@ -611,6 +625,7 @@ export async function renderBridgeReviewRecoveryWitness(
 				requireActiveReviewPublicationIdentity(activeReviewPublicationIdentity),
 			publish: (message): void => requireMessageListener()(message),
 			sentRequests: (): readonly BridgeReviewRecoveryWitnessWorkerRequest[] => sentRequests,
+			waitForSentRequest: (matches, label) => requestFacts.waitFor(matches, label),
 		},
 	};
 }

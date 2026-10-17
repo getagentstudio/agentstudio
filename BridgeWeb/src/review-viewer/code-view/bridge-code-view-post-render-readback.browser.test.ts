@@ -413,10 +413,24 @@ describe('Bridge CodeView post-render readback', () => {
 				dispositions.push(receipt);
 			},
 		});
+		const sourceCorrelation = {
+			descriptorId: 'descriptor-content-equal-retry-lineage',
+			itemId: 'content-equal-retry-lineage',
+			observedSha256: 'c'.repeat(64),
+			position: 'whole',
+			requestId: 'request-content-equal-retry-lineage',
+			role: 'head',
+			sourceGeneration: 1,
+			sourceIdentity: 'source-content-equal-retry-lineage',
+		} satisfies BridgeWorkerRenderSourceCorrelation;
 		const priorPublication = makeReviewPublication({
 			itemId: 'content-equal-retry-lineage',
 			publicationSequence: 4,
+			sourceCorrelations: [sourceCorrelation],
 		});
+		if (priorPublication.job.payload.kind !== 'codeViewDiffItem') {
+			throw new Error('Expected a Review diff publication payload.');
+		}
 		const priorExactItem = bridgeCodeViewItemFromWorkerPreparedItem(
 			priorPublication.job.payload.item,
 		);
@@ -442,6 +456,36 @@ describe('Bridge CodeView post-render readback', () => {
 		};
 		const renderedElement = document.createElement('div');
 		document.body.append(renderedElement);
+		// Rendering can precede the coordinator's paint receipt; a retry in that window
+		// takes the replaced path and may render once more. Establish the painted record
+		// here to prove the zero-apply path after the receipt has settled.
+		const paintedPublication = {
+			...priorPublication,
+			job: {
+				...priorPublication.job,
+				payload: { ...priorPublication.job.payload, item: currentPresentationItem },
+			},
+		};
+		renderFulfillmentCoordinator.acceptPublication(paintedPublication);
+		renderFulfillmentCoordinator.bindPublicationItem({
+			finalItem: currentPresentationItem,
+			publicationItem: currentPresentationItem,
+			residency: 'reusedPainted',
+		});
+		renderFulfillmentCoordinator.markPublicationQueued(paintedPublication);
+		renderFulfillmentCoordinator.reconcilePublication({
+			itemId: currentPresentationItem.id,
+			readCurrentItem: () => currentPresentationItem,
+			readRenderedItem: () => ({
+				element: renderedElement,
+				item: currentPresentationItem,
+				readableContentMatchesItem: true,
+			}),
+		});
+		pendingAnimationFrames[0]?.(2_999);
+		expect(renderFulfillmentCoordinator.isBoundFinalItem(currentPresentationItem)).toBe(true);
+		dispositions.length = 0;
+		pendingAnimationFrames.length = 0;
 		const codeViewHandle = {
 			getInstance: () => ({
 				getRenderedItems: () => [
@@ -459,6 +503,7 @@ describe('Bridge CodeView post-render readback', () => {
 		const retryPublication = makeReviewPublication({
 			itemId: priorExactItem.id,
 			publicationSequence: 5,
+			sourceCorrelations: [sourceCorrelation],
 		});
 		const retryItem = bridgeCodeViewItemFromWorkerPreparedItem(retryPublication.job.payload.item);
 		if (retryItem?.type !== 'diff') {

@@ -167,13 +167,9 @@ struct BridgeProductFileDescriptorReadyPayload: Codable, Equatable, Sendable {
     }
 
     init(from decoder: Decoder) throws {
-        try self.init(from: decoder, additionalAllowedKeys: [])
-    }
-
-    init(from decoder: Decoder, additionalAllowedKeys: Set<String>) throws {
         try BridgeProductContractDecoding.rejectUnknownKeys(
             from: decoder,
-            allowedKeys: Self.codingKeyNames.union(additionalAllowedKeys),
+            allowedKeys: Self.codingKeyNames,
             contract: "File metadata descriptor-ready payload"
         )
         let container = try decoder.container(keyedBy: CodingKeys.self)

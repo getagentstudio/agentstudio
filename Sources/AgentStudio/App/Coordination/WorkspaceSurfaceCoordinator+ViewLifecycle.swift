@@ -223,6 +223,7 @@ extension WorkspaceSurfaceCoordinator {
             installRestorePhaseLatchIfPending(onto: managed.surface, for: pane.id)
 
             let view = TerminalPaneMountView(
+                surfaceOperations: terminalSurfaceOperations,
                 worktree: worktree,
                 repo: repo,
                 restoredSurfaceId: managed.id,
@@ -230,13 +231,7 @@ extension WorkspaceSurfaceCoordinator {
                 showsRestorePresentationDuringStartup: startupPreparation.showsRestorePresentationDuringStartup,
                 performanceTraceRecorder: performanceTraceRecorder
             )
-            view.onRepairRequested = { [weak self] paneId in
-                self?.submitWorkspaceAction(.repair(.recreateSurface(paneId: paneId)))
-            }
-            view.displaySurface(managed.surface)
-            if let runtime = preparedRuntime?.runtime {
-                view.bind(runtime: runtime)
-            }
+            connectMountedTerminalView(view, displaying: managed.surface, preparedRuntime: preparedRuntime)
 
             registerHostedView(mountedView: view, for: pane.id)
             traceSurfaceDisplayed(pane: pane, surfaceID: managed.id)
@@ -360,19 +355,14 @@ extension WorkspaceSurfaceCoordinator {
                 onto: attachedSurface, for: pane.id, armedRestoreGeneration: armedRestoreGeneration)
 
             let view = TerminalPaneMountView(
+                surfaceOperations: terminalSurfaceOperations,
                 restoredSurfaceId: managed.id,
                 paneId: pane.id,
                 title: pane.metadata.title,
                 showsRestorePresentationDuringStartup: startupPreparation.showsRestorePresentationDuringStartup,
                 performanceTraceRecorder: performanceTraceRecorder
             )
-            view.onRepairRequested = { [weak self] paneId in
-                self?.submitWorkspaceAction(.repair(.recreateSurface(paneId: paneId)))
-            }
-            view.displaySurface(attachedSurface)
-            if let runtime = preparedRuntime?.runtime {
-                view.bind(runtime: runtime)
-            }
+            connectMountedTerminalView(view, displaying: attachedSurface, preparedRuntime: preparedRuntime)
 
             registerHostedView(mountedView: view, for: pane.id)
             traceSurfaceDisplayed(pane: pane, surfaceID: managed.id)
@@ -669,6 +659,7 @@ extension WorkspaceSurfaceCoordinator {
     ) -> TerminalPaneMountView {
         if let worktree, let repo {
             return TerminalPaneMountView(
+                surfaceOperations: terminalSurfaceOperations,
                 worktree: worktree,
                 repo: repo,
                 restoredSurfaceId: restoredSurfaceId,
@@ -677,6 +668,7 @@ extension WorkspaceSurfaceCoordinator {
             )
         }
         return TerminalPaneMountView(
+            surfaceOperations: terminalSurfaceOperations,
             restoredSurfaceId: restoredSurfaceId,
             paneId: pane.id,
             title: pane.metadata.title,

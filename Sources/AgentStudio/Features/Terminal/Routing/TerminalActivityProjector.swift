@@ -768,6 +768,8 @@ package actor TerminalActivityProjector {
         surfaceID: UUID,
         paneID: UUID
     ) async -> String? {
+        // SR6b gates the persisted activity path too: activitySink feeds PaneActivityClock,
+        // whose live admissions take precedence over the activity restored at boot.
         guard !Task.isCancelled, !isRestorePhaseActive(paneID: paneID) else { return nil }
         guard let lastOutputLineReader else { return nil }
         let readResult = await lastOutputLineReader(surfaceID)

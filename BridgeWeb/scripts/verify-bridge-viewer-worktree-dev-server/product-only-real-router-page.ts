@@ -6,8 +6,9 @@ import type {
 	Request as PlaywrightRequest,
 	Response as PlaywrightResponse,
 } from 'playwright';
-import { chromium, errors } from 'playwright';
 
+import { currentBridgeWebLaunchScope } from '../dev-server/bridge-web-test-launch-scope.ts';
+import type { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
 import {
 	bridgeViewerProductOnlySelectors,
 	summarizeBridgeProductRequestBody,
@@ -29,11 +30,18 @@ import {
 	type BridgeViewerDocumentGenerations,
 	installBridgeViewerDocumentGenerations,
 } from './product-only-real-router-document-generations.ts';
+import { BridgeViewerProductOnlyJourneyFailure } from './product-only-real-router-failure.ts';
 import {
-	bridgeViewerJourneyFailureCode,
-	BridgeViewerProductOnlyJourneyFailure,
-} from './product-only-real-router-failure.ts';
+	readPaintedFileMarkdown,
+	selectFileProofPath,
+	waitForFileProductTerminalState,
+} from './product-only-real-router-file-proof.ts';
+import {
+	createOwnedProductJourneyDeadline,
+	type OwnedProductJourneyDeadline,
+} from './product-only-real-router-journey-deadline.ts';
 import { BridgeViewerLegacyMetadataCompletion } from './product-only-real-router-legacy-completion.ts';
+import { BridgeViewerProductOpenSettlementCorrelator } from './product-only-real-router-operation-settlements.ts';
 import { installBridgeViewerBrowserErrorCapture } from './product-only-real-router-page-error.ts';
 import {
 	BridgeViewerReloadJoinDiagnosticRecorder,
@@ -41,9 +49,16 @@ import {
 } from './product-only-real-router-reload-join-diagnostics.ts';
 import { GenerationScopedResponseParsers } from './product-only-real-router-response-parsers.ts';
 import {
+	correlatedContentUnknownReadRefusal,
+	integerValue,
+	parseJSONOrNull,
+	stringValue,
+	unknownRecord,
+} from './product-only-real-router-response-parsing.ts';
+import { captureBridgeViewerProductOnlyJourneyFailure } from './product-only-real-router-review-failure.ts';
+import {
 	proveFreshReviewRoute,
 	proveReviewTreeSelection,
-	readFreshReviewFailureSnapshot,
 	waitForReviewProductTerminalState,
 } from './product-only-real-router-review-proof.ts';
 import { waitForProductBrowserFrameSettlement } from './product-only-real-router-settlement.ts';
@@ -57,11 +72,11 @@ export { bridgeViewerProductOnlyJourneyFailureFromError } from './product-only-r
 
 const productJourneyTimeoutMilliseconds = 120_000;
 const productCompositionSettleTimeoutMilliseconds = 10_000;
-const productJourneyOwnedDeadlineMilliseconds = 120_000;
 const maximumCapturedConsoleErrors = 32;
 const maximumCapturedConsoleErrorCharacters = 500;
 
 interface MutableProductRouteTranscriptEntry {
+	contentUnknownReadRefusalCorrelated?: boolean;
 	contentKind: string | null;
 	documentGeneration: number;
 	httpStatus: number | null;
@@ -74,6 +89,8 @@ interface MutableProductRouteTranscriptEntry {
 	requestSequence: number | null;
 	responseCode: string | null;
 	responseKind: string | null;
+	resultAcknowledged: boolean;
+	settledResponseKind: string | null;
 	streamKind: string | null;
 	subscriptionKind: string | null;
 	workerInstanceId: string | null;
@@ -94,11 +111,26 @@ interface MutableLegacyRouteTranscriptEntry {
 	sequence: number | null;
 }
 
+export interface BridgeViewerFileProofTargets {
+	readonly codePath: string;
+	readonly markdownPath: string;
+	readonly markdownRenderedText?: string;
+}
+
 export async function runBridgeViewerProductOnlyJourney(props: {
+	readonly launch: BridgeWebTestLaunch;
+	readonly browser?: Browser;
 	readonly baseUrl: string;
 	readonly expectedReviewItemIds: readonly string[];
+	readonly fileProofTargets: BridgeViewerFileProofTargets;
 }): Promise<BridgeViewerProductOnlyJourneyProof> {
-	const browser = await chromium.launch({ channel: 'chrome', headless: true });
+	const browser =
+		props.browser ?? (await props.launch.launchBrowser({ channel: 'chrome', headless: true }));
+	if (props.browser === undefined)
+		browser.on('context', (context): void => {
+			context.setDefaultTimeout(0);
+			context.setDefaultNavigationTimeout(0);
+		});
 	const observedWorkers: MutableObservedWorker[] = [];
 	const observedWorkerClosePromises: Promise<void>[] = [];
 	let closedWorkerCount = 0;
@@ -109,10 +141,22 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		deviceScaleFactor: 1,
 		viewport: { height: 980, width: 1728 },
 	});
-	const ownedJourneyDeadline = createOwnedProductJourneyDeadline({ browser, page });
+	let deadlineObserver: BridgeViewerRealRouterObserver | null = null;
+	const ownedJourneyDeadline = createOwnedProductJourneyDeadline({
+		signal: currentBridgeWebLaunchScope()?.signal ?? props.launch.signal,
+		observeWait: (promise, label) => props.launch.observeStep(label, promise).value(),
+		browser,
+		page,
+		onDeadline: (reason): void => deadlineObserver?.close(reason),
+	});
 	let journeyCompleted = false;
 	const documentGenerations = await installBridgeViewerDocumentGenerations(page);
-	const routeObserver = new BridgeViewerRealRouterObserver(page, documentGenerations);
+	const routeObserver = new BridgeViewerRealRouterObserver(
+		page,
+		documentGenerations,
+		ownedJourneyDeadline,
+	);
+	deadlineObserver = routeObserver;
 	page.on('worker', (worker): void => {
 		const workerOrigin = documentGenerations.observedWorker(worker.url());
 		const observedWorker = classifyObservedWorker(
@@ -170,6 +214,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		});
 		const reviewFreshRoute = await proveFreshReviewRoute({
 			expectedItemIds: props.expectedReviewItemIds,
+			observeWait: (promise, label) => ownedJourneyDeadline.waitFor(promise, label),
 			page,
 		});
 		const reviewTreeSelection = await proveReviewTreeSelection({
@@ -180,7 +225,27 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			timeout: productJourneyTimeoutMilliseconds,
 		});
 		await waitForViewerMode(page, 'file');
-		await waitForFileProductTerminalState(page);
+		await selectFileProofPath({
+			page,
+			path: props.fileProofTargets.markdownPath,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
+		const fileMarkdownAtReviewFirstSwitch = await readPaintedFileMarkdown({
+			page,
+			...(props.fileProofTargets.markdownRenderedText === undefined
+				? {}
+				: { expectedRenderedText: props.fileProofTargets.markdownRenderedText }),
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
+		await selectFileProofPath({
+			page,
+			path: props.fileProofTargets.codePath,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
+		await waitForFileProductTerminalState({
+			page,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
 		const fileAfterReviewFirstSwitch = await readFileProductState(page);
 
 		pageUrl.searchParams.set('viewer', 'file');
@@ -192,17 +257,25 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		await page.waitForSelector(bridgeViewerProductOnlySelectors.fileShell, {
 			timeout: productJourneyTimeoutMilliseconds,
 		});
-		const [acknowledgementResponse, fileOpenResponse, reviewOpenResponse] = await Promise.all([
-			reloadJoinResponses.frameAcknowledgement,
+		const [receiptResponse, fileOpenResponse, reviewOpenResponse] = await Promise.all([
+			reloadJoinResponses.subscriptionReceipt,
 			reloadJoinResponses.fileMetadataOpen,
 			reloadJoinResponses.reviewMetadataOpen,
 		]);
 		if (
-			acknowledgementResponse.status() === 204 &&
+			receiptResponse.status() === 200 &&
 			fileOpenResponse.status() === 200 &&
 			reviewOpenResponse.status() === 200
 		) {
-			await waitForFileProductTerminalState(page);
+			await selectFileProofPath({
+				page,
+				path: props.fileProofTargets.codePath,
+				settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+			});
+			await waitForFileProductTerminalState({
+				page,
+				settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+			});
 		}
 		const fileAfterFirstAcknowledgement = await readFileProductState(page);
 		const journeyDocumentGenerationAtStart = documentGenerations.currentGeneration();
@@ -218,7 +291,10 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			timeout: productJourneyTimeoutMilliseconds,
 		});
 		await waitForViewerMode(page, 'file');
-		await waitForFileProductTerminalState(page);
+		await waitForFileProductTerminalState({
+			page,
+			settleTimeoutMilliseconds: productCompositionSettleTimeoutMilliseconds,
+		});
 		await routeObserver.waitForObservedLegacyMetadataCompletion();
 		await routeObserver.waitForAllProductResponses();
 		await routeObserver.flushResponseParsers();
@@ -240,6 +316,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			fileAfterReviewFirstSwitch,
 			fileAfterFirstAcknowledgement,
 			fileAtCompletion: await readFileProductState(page),
+			fileMarkdownAtReviewFirstSwitch,
 			legacyIntakeTranscript: await readLegacyIntakeTranscript(page),
 			legacyRouteTranscript: routeObserver.legacyRouteTranscript(),
 			mainWindowProductRouteTranscript: await readMainWindowProductRouteTranscript(page),
@@ -275,16 +352,16 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			routeObserver,
 		});
 	} finally {
-		await ownedJourneyDeadline.dispose();
-		await page.close();
-		await browser.close();
-		try {
-			await withBoundedTimeout(
-				Promise.all(observedWorkerClosePromises),
-				productCompositionSettleTimeoutMilliseconds,
-				'observed worker closure',
+		await Promise.allSettled([page.close(), browser.close()]);
+		await ownedJourneyDeadline
+			.waitFor(Promise.all(observedWorkerClosePromises), 'observed-worker-closure')
+			.then(
+				(): void => {},
+				(error: unknown): void => {
+					console.info(`Worker closure incomplete: ${String(error)}`);
+				},
 			);
-		} catch {}
+		await ownedJourneyDeadline.dispose();
 	}
 	const browserCleanup: BridgeViewerProductOnlyJourneyProof['browserCleanup'] = {
 		browserConnectedAfterClose: browser.isConnected(),
@@ -313,35 +390,6 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		browserCleanup,
 		legacyRouteTranscript: routeObserver.legacyRouteTranscript(),
 		productRouteTranscript: routeObserver.productRouteTranscript(),
-	};
-}
-
-async function captureBridgeViewerProductOnlyJourneyFailure(props: {
-	readonly browserDiagnostics: readonly BridgeViewerConsoleDiagnostic[];
-	readonly documentGeneration: number;
-	readonly error: unknown;
-	readonly failedResponses: readonly BridgeViewerFailedResponse[];
-	readonly page: Page;
-	readonly routeObserver: BridgeViewerRealRouterObserver;
-}): Promise<Omit<BridgeViewerProductOnlyJourneyFailureCheckpoint, 'browserCleanup' | 'workers'>> {
-	try {
-		await props.routeObserver.flushResponseParsers();
-	} catch {}
-	let review: BridgeViewerProductOnlyJourneyFailureCheckpoint['review'] = null;
-	let captureStatus: BridgeViewerProductOnlyJourneyFailureCheckpoint['captureStatus'] =
-		'unavailable';
-	try {
-		review = await readFreshReviewFailureSnapshot(props.page);
-		captureStatus = 'captured';
-	} catch {}
-	return {
-		browserDiagnostics: props.browserDiagnostics,
-		captureStatus,
-		documentGeneration: props.documentGeneration,
-		failureCode: bridgeViewerJourneyFailureCode(props.error),
-		failedResponses: props.failedResponses,
-		review,
-		transport: props.routeObserver.failureTransportSnapshot(),
 	};
 }
 
@@ -412,6 +460,7 @@ async function readMainWindowProductRouteTranscript(
 export class BridgeViewerRealRouterObserver {
 	readonly #documentGenerations: BridgeViewerDocumentGenerations;
 	readonly #page: Page;
+	readonly #journeyDeadline: Pick<OwnedProductJourneyDeadline, 'waitFor'> | undefined;
 	readonly #legacyCompletion = new BridgeViewerLegacyMetadataCompletion();
 	readonly #legacyEntries: MutableLegacyRouteTranscriptEntry[] = [];
 	readonly #productEntries: MutableProductRouteTranscriptEntry[] = [];
@@ -424,19 +473,45 @@ export class BridgeViewerRealRouterObserver {
 		MutableLegacyRouteTranscriptEntry
 	>();
 	readonly #responseParsers = new GenerationScopedResponseParsers();
-	readonly #productResponseClosureWaiters = new Set<() => void>();
+	readonly #openSettlements = new BridgeViewerProductOpenSettlementCorrelator();
+	readonly #productResponseClosureWaiters = new Set<{
+		readonly resolve: () => void;
+		readonly reject: (error: Error) => void;
+	}>();
+	#closedError: Error | null = null;
+	#terminatedWaiters: BridgeViewerProductFailureTransportSnapshot['unresolvedWaiters'] = [];
 	readonly #unfinishedProductRequests = new Set<PlaywrightRequest>();
 	readonly #reloadJoinDiagnostics = new BridgeViewerReloadJoinDiagnosticRecorder();
 	#productActivityRevision = 0;
 	#nextOrdinal = 1;
 
-	constructor(page: Page, documentGenerations: BridgeViewerDocumentGenerations) {
+	constructor(
+		page: Page,
+		documentGenerations: BridgeViewerDocumentGenerations,
+		journeyDeadline?: Pick<OwnedProductJourneyDeadline, 'waitFor'>,
+	) {
+		this.#journeyDeadline = journeyDeadline;
 		this.#documentGenerations = documentGenerations;
 		this.#page = page;
 		page.on('request', (request): void => this.#observeRequest(request));
 		page.on('requestfailed', (request): void => this.#observeRequestSettled(request));
 		page.on('requestfinished', (request): void => this.#observeRequestSettled(request));
 		page.on('response', (response): void => this.#observeResponse(response));
+	}
+
+	close(reason: Error): void {
+		if (this.#closedError !== null) return;
+		this.#terminatedWaiters = this.failureTransportSnapshot().unresolvedWaiters;
+		this.#closedError = reason;
+		this.#legacyCompletion.close(reason);
+		for (const waiter of this.#productResponseClosureWaiters) {
+			waiter.reject(
+				new Error(
+					`${reason.message}: awaiting product-response-quiescence:g${this.#documentGenerations.currentGeneration()}`,
+					{ cause: reason },
+				),
+			);
+		}
 	}
 
 	productRouteTranscript(): readonly BridgeViewerProductRouteTranscriptEntry[] {
@@ -472,6 +547,7 @@ export class BridgeViewerRealRouterObserver {
 				})
 				.toSorted((left, right): number => left - right),
 			unresolvedWaiters: [
+				...this.#terminatedWaiters,
 				...this.#reloadJoinDiagnostics.unresolvedWaiters(),
 				...this.#legacyCompletion.unresolvedWaiters(),
 				...(this.#productResponseClosureWaiters.size > 0
@@ -493,30 +569,29 @@ export class BridgeViewerRealRouterObserver {
 	}
 
 	async flushResponseParsers(): Promise<void> {
-		await this.#responseParsers.flush(this.#documentGenerations.currentGeneration());
+		const parsing = this.#responseParsers.flush(this.#documentGenerations.currentGeneration());
+		await (this.#journeyDeadline === undefined
+			? parsing
+			: this.#journeyDeadline.waitFor(parsing, 'active-response-parsers'));
 	}
 
 	async waitForObservedLegacyMetadataCompletion(): Promise<void> {
+		if (this.#closedError !== null)
+			throw new Error(`${this.#closedError.message}: awaiting legacy-metadata-completion`, {
+				cause: this.#closedError,
+			});
 		await this.#legacyCompletion.waitForGeneration(
 			this.#documentGenerations.currentGeneration(),
 			async (completion: Promise<void>): Promise<void> => {
 				// A final window already received may still be parsing.
 				await this.flushResponseParsers();
-				await withBoundedTimeout(
-					completion,
-					productJourneyTimeoutMilliseconds,
-					'legacy Review metadata completion',
-				);
+				await completion;
 			},
 		);
 	}
 
 	async waitForAllProductResponses(): Promise<void> {
-		await withBoundedTimeout(
-			this.#waitForStableProductRequestQuiescence(),
-			productCompositionSettleTimeoutMilliseconds,
-			'all issued product request responses',
-		);
+		await this.#waitForStableProductRequestQuiescence();
 	}
 
 	#observeRequest(request: PlaywrightRequest): void {
@@ -533,6 +608,8 @@ export class BridgeViewerRealRouterObserver {
 				path: requestUrl.pathname,
 				responseCode: null,
 				responseKind: null,
+				resultAcknowledged: false,
+				settledResponseKind: null,
 				requestSettled: false,
 			};
 			this.#productEntries.push(entry);
@@ -618,16 +695,20 @@ export class BridgeViewerRealRouterObserver {
 	}
 
 	async #waitForProductRequestQuiescence(): Promise<void> {
+		if (this.#closedError !== null)
+			throw new Error(`${this.#closedError.message}: awaiting product-response-quiescence`, {
+				cause: this.#closedError,
+			});
 		if (this.#productRequestsAreQuiescent()) return;
-		let resolveClosure: (() => void) | null = null;
-		const closure = new Promise<void>((resolve): void => {
-			resolveClosure = resolve;
-			this.#productResponseClosureWaiters.add(resolveClosure);
+		let waiter!: { readonly resolve: () => void; readonly reject: (error: Error) => void };
+		const closure = new Promise<void>((resolve, reject): void => {
+			waiter = { resolve, reject };
+			this.#productResponseClosureWaiters.add(waiter);
 		});
 		try {
 			await closure;
 		} finally {
-			if (resolveClosure !== null) this.#productResponseClosureWaiters.delete(resolveClosure);
+			this.#productResponseClosureWaiters.delete(waiter);
 		}
 	}
 
@@ -649,7 +730,7 @@ export class BridgeViewerRealRouterObserver {
 
 	#resolveProductResponseClosureWaitersIfQuiescent(): void {
 		if (!this.#productRequestsAreQuiescent()) return;
-		for (const resolveClosure of this.#productResponseClosureWaiters) resolveClosure();
+		for (const waiter of this.#productResponseClosureWaiters) waiter.resolve();
 		this.#productResponseClosureWaiters.clear();
 	}
 
@@ -657,10 +738,19 @@ export class BridgeViewerRealRouterObserver {
 		response: PlaywrightResponse,
 		entry: MutableProductRouteTranscriptEntry,
 	): Promise<void> {
-		const body = parseJSONOrNull(await response.text());
-		const summary = summarizeBridgeProductResponseBody(body);
-		entry.responseCode = summary.responseCode;
-		entry.responseKind = summary.responseKind;
+		let body: unknown;
+		if (entry.requestKind === 'content.acknowledge' && response.status() === 404) {
+			const responseBytes = await response.body();
+			body = parseJSONOrNull(new TextDecoder().decode(responseBytes));
+			entry.contentUnknownReadRefusalCorrelated = correlatedContentUnknownReadRefusal(
+				response.request().postData(),
+				responseBytes,
+			);
+		} else {
+			body = parseJSONOrNull(await response.text());
+		}
+		Object.assign(entry, summarizeBridgeProductResponseBody(body));
+		this.#openSettlements.observe(entry, parseJSONOrNull(response.request().postData()), body);
 	}
 
 	async #parseLegacyMetadataResponse(
@@ -674,42 +764,6 @@ export class BridgeViewerRealRouterObserver {
 		entry.finalWindow = responseBody?.['nextWindowCursor'] === null;
 		if (entry.finalWindow) this.#legacyCompletion.observeFinalWindow(entry.documentGeneration);
 	}
-}
-
-interface OwnedProductJourneyDeadline {
-	readonly dispose: () => Promise<void>;
-}
-
-function createOwnedProductJourneyDeadline(props: {
-	readonly browser: Browser;
-	readonly page: Page;
-}): OwnedProductJourneyDeadline {
-	let deadlineCleanup: Promise<void> | null = null;
-	const deadlineReason = 'BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED';
-	const timeout = setTimeout((): void => {
-		deadlineCleanup = closeOwnedProductJourneyBrowser({
-			browser: props.browser,
-			page: props.page,
-			reason: deadlineReason,
-		});
-	}, productJourneyOwnedDeadlineMilliseconds);
-	return {
-		dispose: async (): Promise<void> => {
-			clearTimeout(timeout);
-			await deadlineCleanup;
-		},
-	};
-}
-
-async function closeOwnedProductJourneyBrowser(props: {
-	readonly browser: Browser;
-	readonly page: Page;
-	readonly reason: string;
-}): Promise<void> {
-	await Promise.allSettled([
-		props.page.close({ reason: props.reason }),
-		props.browser.close({ reason: props.reason }),
-	]);
 }
 
 async function installLegacyIntakeObserver(page: Page): Promise<void> {
@@ -772,54 +826,6 @@ async function readLegacyIntakeTranscript(
 		};
 		return (window as ProofWindow).bridgeViewerProductOnlyLegacyIntakeTranscript ?? [];
 	});
-}
-
-async function waitForFileProductTerminalState(page: Page): Promise<boolean> {
-	return await waitForProductCompositionState(async (): Promise<void> => {
-		await page.waitForFunction(
-			(selectors): boolean => {
-				const shell = document.querySelector(selectors.fileShell);
-				const codeCanvas = document.querySelector(selectors.fileCodeCanvas);
-				const selectedContentState = shell?.getAttribute('data-worktree-open-file-state');
-				const selectedPath = shell?.getAttribute('data-worktree-open-file-path');
-				const renderedPath = codeCanvas?.getAttribute('data-worktree-rendered-file-path');
-				const bodyPreview = codeCanvas?.getAttribute('data-worktree-open-file-body-preview');
-				return (
-					Number(shell?.getAttribute('data-worktree-metadata-tree-row-count') ?? '0') > 0 &&
-					selectedContentState === 'ready' &&
-					selectedPath !== null &&
-					renderedPath === selectedPath &&
-					typeof bodyPreview === 'string' &&
-					bodyPreview.length > 0 &&
-					isVisibleInPage(codeCanvas)
-				);
-
-				// oxlint-disable-next-line unicorn/consistent-function-scoping -- Playwright serializes this browser callback without outer helpers.
-				function isVisibleInPage(element: Element | null): boolean {
-					if (!(element instanceof HTMLElement) || element.closest('[hidden]') !== null)
-						return false;
-					const style = getComputedStyle(element);
-					return (
-						style.display !== 'none' &&
-						style.visibility !== 'hidden' &&
-						element.getClientRects().length > 0
-					);
-				}
-			},
-			bridgeViewerProductOnlySelectors,
-			{ timeout: productCompositionSettleTimeoutMilliseconds },
-		);
-	});
-}
-
-async function waitForProductCompositionState(wait: () => Promise<void>): Promise<boolean> {
-	try {
-		await wait();
-		return true;
-	} catch (error: unknown) {
-		if (error instanceof errors.TimeoutError) return false;
-		throw error;
-	}
 }
 
 async function readFileProductState(page: Page): Promise<BridgeViewerFileProductStateSnapshot> {
@@ -943,50 +949,4 @@ function classifyObservedWorker(url: string, documentGeneration: number): Mutabl
 function safeWorkerUrl(url: string): string {
 	const parsedUrl = new URL(url);
 	return `${parsedUrl.pathname}${parsedUrl.search}`;
-}
-
-function parseJSONOrNull(value: string | null): unknown {
-	if (value === null || value.length === 0) return null;
-	try {
-		return JSON.parse(value) as unknown;
-	} catch {
-		return null;
-	}
-}
-
-function unknownRecord(value: unknown): Readonly<Record<string, unknown>> | null {
-	return isUnknownRecord(value) ? value : null;
-}
-
-function isUnknownRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-	return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function stringValue(value: unknown): string | null {
-	return typeof value === 'string' ? value : null;
-}
-
-function integerValue(value: unknown): number | null {
-	return typeof value === 'number' && Number.isSafeInteger(value) ? value : null;
-}
-
-async function withBoundedTimeout<TValue>(
-	promise: Promise<TValue>,
-	timeoutMilliseconds: number,
-	label: string,
-): Promise<TValue> {
-	let timeout: ReturnType<typeof setTimeout> | null = null;
-	try {
-		return await Promise.race([
-			promise,
-			new Promise<TValue>((_resolve, reject): void => {
-				timeout = setTimeout(
-					(): void => reject(new Error(`Timed out waiting for ${label}`)),
-					timeoutMilliseconds,
-				);
-			}),
-		]);
-	} finally {
-		if (timeout !== null) clearTimeout(timeout);
-	}
 }

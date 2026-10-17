@@ -5,10 +5,8 @@ import type { BridgeCommWorkerPort } from './bridge-comm-worker-entry.js';
 import { makeReviewPublicationIdentity } from './bridge-comm-worker-entry.test-support.js';
 import { encodeBridgeWorkerSelectCommand } from './bridge-comm-worker-protocol.js';
 import { enqueueSelectedBridgeWorkerReviewContentReadyPreparation } from './bridge-comm-worker-review-preparation.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerReviewViewerMode,
 	assertBridgeCommWorkerPreparationDrain,
@@ -42,6 +40,11 @@ describe('Bridge comm worker review preparation', () => {
 		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',

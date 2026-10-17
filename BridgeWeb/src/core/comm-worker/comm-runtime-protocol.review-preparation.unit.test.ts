@@ -1,53 +1,109 @@
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import {
-	encodeBridgeWorkerRenderDispositionCommand,
 	encodeBridgeWorkerSelectCommand,
 	encodeBridgeWorkerViewportCommand,
 } from './bridge-comm-worker-protocol.js';
-import {
-	registerBridgeCommWorkerRuntimePortProtocol,
-	type BridgeCommWorkerPreparationDrain,
-} from './bridge-comm-worker-runtime-protocol.js';
+import { registerTestBridgeCommWorkerRuntimePortProtocol as registerBridgeCommWorkerRuntimePortProtocol } from './bridge-comm-worker-runtime-protocol.fixture.test-support.js';
+import { type BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
 import {
 	activateBridgeCommWorkerReviewViewerMode,
 	assertBridgeCommWorkerPreparationDrain,
 	createBridgeWorkerSequenceCounter,
-	createBridgeCommWorkerReviewProductTestSource,
+	createBridgeCommWorkerReviewProductTestSource as makeReviewProductTestSource,
 	createRecordingBridgeCommWorkerPort,
-	flushBridgeWorkerRuntimeContinuations,
 	makeContentRequestDescriptor,
 	makeRenderSemantics,
 	makeWorkerReviewContentMetadata,
 	openReviewContentFromDescriptorMap,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
-import type { BridgeProductContentStream } from './bridge-product-transport-contract.js';
 import { createWorkerContentPreparationPump } from './bridge-worker-content-preparation-pump.js';
-import { bridgeWorkerRenderDispositionReceiptSchema } from './bridge-worker-render-fulfillment.js';
+import {
+	createReviewPreparationObservations as makeReviewPreparationObservations,
+	cleanupReviewPreparationFixtures,
+	type ReviewPreparationObservations,
+	driveReviewPreparationUntil,
+	requirePreparationContinuationBeforeDrainCompletion,
+	queueLatestReviewPublication,
+	unexpectedEOFReviewContentStream,
+} from './comm-runtime-protocol.review-preparation.test-support.js';
+import { BridgeProductTestFactRecorder } from './test-fixtures/bridge-product-test-fact-recorder.js';
 
-afterEach((): void => {
-	vi.useRealTimers();
+const activeSources: ReturnType<typeof makeReviewProductTestSource>[] = [];
+const activeObservations: ReviewPreparationObservations[] = [];
+
+afterEach(async (): Promise<void> => {
+	await cleanupReviewPreparationFixtures({
+		sources: activeSources,
+		observations: activeObservations,
+		restore: (): void => {
+			activeSources.length = 0;
+			activeObservations.length = 0;
+			try {
+				vi.restoreAllMocks();
+			} finally {
+				vi.useRealTimers();
+			}
+		},
+	});
 });
+
+function createBridgeCommWorkerReviewProductTestSource(): ReturnType<
+	typeof makeReviewProductTestSource
+> {
+	const source = makeReviewProductTestSource();
+	activeSources.push(source);
+	return source;
+}
+
+function createReviewPreparationObservations(): ReviewPreparationObservations {
+	const observations = makeReviewPreparationObservations();
+	activeObservations.push(observations);
+	return observations;
+}
 
 describe('Bridge comm worker runtime protocol Review preparation', () => {
 	test('reissues selected Review preparation once after unexpected EOF', async () => {
 		vi.useFakeTimers();
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		let retryWasRegistered = false;
+		const retryDeadlineFacts = new BridgeProductTestFactRecorder<'registered' | 'fired'>();
+		const scheduleTimer = globalThis.setTimeout;
+		const timerSpy = vi
+			.spyOn(globalThis, 'setTimeout')
+			.mockImplementation((callback, delay, ...arguments_) => {
+				if (delay !== 500) return scheduleTimer(callback, delay, ...arguments_);
+				retryWasRegistered = true;
+				retryDeadlineFacts.record('registered');
+				observations.retryDeadlineRegistered();
+				return scheduleTimer((): void => {
+					callback(...arguments_);
+					retryDeadlineFacts.record('fired');
+				}, delay);
+			});
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 		let openCount = 0;
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 50 },
 			openReviewContent: (descriptor, abortSignal) => {
 				openCount += 1;
+				observations.contentOpened(descriptor.descriptorId);
 				return openCount <= 2
 					? unexpectedEOFReviewContentStream(descriptor.descriptorId)
 					: openReviewContentFromDescriptorMap(descriptor, abortSignal);
 			},
 			productTransport: reviewProductSource.productTransport,
 			schedulePreparationDrain: (drain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'selected-unexpected-eof');
@@ -60,8 +116,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			renderSemantics: [makeRenderSemantics({ itemId: 'item-1' })],
 			rows: [{ id: 'item-1', index: 0, parentId: null }],
 		});
-		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains.shift())();
+		await reviewProductSource.waitForSourceInstallation();
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
 				epoch: 1,
@@ -71,31 +126,38 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				surface: 'review',
 			}),
 		);
-		for (let round = 0; round < 8 && scheduledDrains.length > 0; round += 1) {
-			for (const drain of scheduledDrains.splice(0)) void drain();
-			// oxlint-disable-next-line no-await-in-loop -- Each bounded round exposes event-scheduled follow-up drains.
-			await flushBridgeWorkerRuntimeContinuations();
-		}
+		await driveReviewPreparationUntil({
+			label: 'reissues selected Review preparation once after unexpected EOF',
+			hasExpectedEvent: (): boolean => retryWasRegistered,
+			observations,
+			startIndex: 0,
+		});
+		await retryDeadlineFacts.waitFor((fact): boolean => fact === 'registered');
 		expect(openCount).toBe(2);
+		const retryDrainStartIndex = observations.scheduledDrains.length;
 		await vi.advanceTimersByTimeAsync(499);
-		await flushBridgeWorkerRuntimeContinuations();
 		expect(openCount).toBe(2);
-		await vi.runOnlyPendingTimersAsync();
-		await flushBridgeWorkerRuntimeContinuations();
-		for (let round = 0; round < 8; round += 1) {
-			for (const drain of scheduledDrains.splice(0)) void drain();
-			// oxlint-disable-next-line no-await-in-loop -- Each bounded round exposes retry-scheduled follow-up drains.
-			await flushBridgeWorkerRuntimeContinuations();
-			if (openCount >= 4) break;
-		}
+		await vi.advanceTimersByTimeAsync(1);
+		await retryDeadlineFacts.waitFor((fact): boolean => fact === 'fired');
+		await driveReviewPreparationUntil({
+			label: 'reissues selected Review preparation once after unexpected EOF',
+			hasExpectedEvent: (): boolean =>
+				postedMessages.some(({ message }): boolean => message.kind === 'reviewPierreRenderJob'),
+			observations,
+			startIndex: retryDrainStartIndex,
+		});
 		expect(openCount).toBe(4);
 		reviewProductSource.close();
+		timerSpy.mockRestore();
+		retryDeadlineFacts.close(new Error('Review retry clock observation closed.'));
 	});
 
-	test('selected Review demand preempts an in-progress source reset and uses the newest generation only', async () => {
+	test('selects the last item after an atomic 130-row Review bank', async () => {
 		const clockMs = 0;
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const sourceRows = Array.from({ length: 130 }, (_unused, index) => ({
 			id: `item-${index + 1}`,
 			parentId: null,
@@ -122,6 +184,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -136,7 +203,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				now: () => clockMs,
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'selected-preempts-source-reset');
@@ -150,10 +217,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			6,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
+		await reviewProductSource.waitForSourceInstallation();
 
-		expect(scheduledDrains).toHaveLength(1);
-		const firstResetDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
+		expect(postedMessages.some(({ message }) => message.kind === 'reviewPierreRenderJob')).toBe(
+			false,
+		);
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
 				requestId: 'request-select-during-source-reset',
@@ -163,17 +231,17 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				selectedSource: 'user',
 			}),
 		);
-		await drainBridgeWorkerRuntimeUntil({
+		await driveReviewPreparationUntil({
+			label: 'selects the last item after an atomic 130-row Review bank',
 			hasExpectedEvent: () =>
 				postedMessages.some(
 					(postedMessage) =>
 						postedMessage.message.kind === 'reviewPierreRenderJob' &&
 						postedMessage.message.job.itemId === 'item-130',
 				),
-			scheduledDrains,
-			startIndex: 1,
+			observations,
+			startIndex: 0,
 		});
-		await firstResetDrain;
 
 		const pierreJobs = postedMessages.flatMap((postedMessage) =>
 			postedMessage.message.kind === 'reviewPierreRenderJob' &&
@@ -186,10 +254,12 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(pierreJobs[0]?.contentHash).toContain('generation-6');
 	});
 
-	test('newer Review source reset prevents older continuation from overwriting later chunks', async () => {
+	test('newer certified Review bank supplies selected content without an older continuation', async () => {
 		const clockMs = 0;
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const sourceRows = Array.from({ length: 130 }, (_unused, index) => ({
 			id: `item-${index + 1}`,
 			parentId: null,
@@ -210,6 +280,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -224,7 +299,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				now: () => clockMs,
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'newer-source-reset');
@@ -251,8 +326,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			6,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		const staleResetDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
+		await reviewProductSource.waitForSourceInstallation();
 		reviewProductSource.publishSource(
 			{
 				contentItems: freshContentItems,
@@ -275,6 +349,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			7,
 		);
+		await reviewProductSource.waitForSourceInstallation();
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
 				requestId: 'request-select-after-overlap',
@@ -284,17 +359,17 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				selectedSource: 'user',
 			}),
 		);
-		await drainBridgeWorkerRuntimeUntil({
+		await driveReviewPreparationUntil({
+			label: 'newer certified Review bank supplies selected content without an older continuation',
 			hasExpectedEvent: () =>
 				postedMessages.some(
 					(postedMessage) =>
 						postedMessage.message.kind === 'reviewPierreRenderJob' &&
 						postedMessage.message.job.itemId === 'item-130',
 				),
-			scheduledDrains,
-			startIndex: 1,
+			observations,
+			startIndex: 0,
 		});
-		await staleResetDrain;
 
 		const pierreJobs = postedMessages.flatMap((postedMessage) =>
 			postedMessage.message.kind === 'reviewPierreRenderJob' &&
@@ -309,8 +384,10 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 
 	test('later source reset chunk prepares selected demand that began without metadata', async () => {
 		const clockMs = 0;
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const sourceRows = Array.from({ length: 130 }, (_unused, index) => ({
 			id: `item-${index + 1}`,
 			parentId: null,
@@ -319,6 +396,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -333,7 +415,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				now: () => clockMs,
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'late-source-reset-chunk');
@@ -369,15 +451,16 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			8,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		await drainBridgeWorkerRuntimeUntil({
+		await reviewProductSource.waitForSourceInstallation();
+		await driveReviewPreparationUntil({
+			label: 'later source reset chunk prepares selected demand that began without metadata',
 			hasExpectedEvent: () =>
 				postedMessages.some(
 					(postedMessage) =>
 						postedMessage.message.kind === 'reviewPierreRenderJob' &&
 						postedMessage.message.job.itemId === 'item-130',
 				),
-			scheduledDrains,
+			observations,
 			startIndex: 0,
 		});
 
@@ -405,11 +488,19 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 
 	test('source rollover re-demands already-ready selected content outside the viewport', async () => {
 		const clockMs = 0;
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const scheduledDrains = observations.scheduledDrains;
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -424,7 +515,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				now: () => clockMs,
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'source-rollover');
@@ -450,10 +541,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			7,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
+		await reviewProductSource.waitForSourceInstallation();
 
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
@@ -464,15 +552,16 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				selectedSource: 'user',
 			}),
 		);
-		await drainBridgeWorkerRuntimeUntil({
+		await driveReviewPreparationUntil({
+			label: 'source rollover re-demands already-ready selected content outside the viewport',
 			hasExpectedEvent: () =>
 				postedMessages.filter((message) => message.message.kind === 'reviewPierreRenderJob')
 					.length === 1,
-			scheduledDrains,
+			observations,
 			startIndex: 0,
 		});
 		queueLatestReviewPublication(dispatch, postedMessages, 'selected-before-source-rollover');
-		await flushBridgeWorkerRuntimeContinuations();
+		// Render-disposition admission is synchronous; no source was published here.
 		const rolloverDrainStartIndex = scheduledDrains.length;
 
 		reviewProductSource.publishSource(
@@ -497,12 +586,13 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			8,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		await drainBridgeWorkerRuntimeUntil({
+		await reviewProductSource.waitForSourceInstallation();
+		await driveReviewPreparationUntil({
+			label: 'source rollover re-demands already-ready selected content outside the viewport',
 			hasExpectedEvent: () =>
 				postedMessages.filter((message) => message.message.kind === 'reviewPierreRenderJob')
 					.length === 2,
-			scheduledDrains,
+			observations,
 			startIndex: rolloverDrainStartIndex,
 		});
 
@@ -529,8 +619,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 
 	test('later source reset chunks schedule visible demand for newly eligible visible rows', async () => {
 		const clockMs = 0;
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const scheduledDrains = observations.scheduledDrains;
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const sourceRows = Array.from({ length: 130 }, (_unused, index) => ({
 			id: `item-${index + 1}`,
 			parentId: null,
@@ -542,6 +635,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -556,7 +654,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				now: () => clockMs,
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'late-visible-source-row');
@@ -582,10 +680,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			4,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
+		await reviewProductSource.waitForSourceInstallation();
 		postedMessages.length = 0;
 
 		dispatch.message(
@@ -599,7 +694,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				phase: 'settled',
 			}),
 		);
-		await flushBridgeWorkerRuntimeContinuations();
+		// Viewport admission is synchronous; this stimulus does not install a source.
 		expect(scheduledDrains).toHaveLength(1);
 
 		reviewProductSource.publishSource(
@@ -624,15 +719,16 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			6,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		await drainBridgeWorkerRuntimeUntil({
+		await reviewProductSource.waitForSourceInstallation();
+		await driveReviewPreparationUntil({
+			label: 'later source reset chunks schedule visible demand for newly eligible visible rows',
 			hasExpectedEvent: () =>
 				postedMessages.some(
 					(postedMessage) =>
 						postedMessage.message.kind === 'reviewPierreRenderJob' &&
 						postedMessage.message.job.itemId === 'item-130',
 				),
-			scheduledDrains,
+			observations,
 			startIndex: 0,
 		});
 
@@ -645,15 +741,25 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(pierreJobItemIds).toContain('item-130');
 	});
 
-	test('reschedules yielded selected review preparation before awaiting its completion', async () => {
+	test('schedules selected Review continuation before awaiting its completion', async () => {
+		let firstDrainSettled = false;
+		let settledAtContinuationSchedule: boolean | undefined;
 		let clockMs = 0;
 		let advanceClockPerRead = false;
 		let createSequence = createBridgeWorkerSequenceCounter(41);
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages, waitForMessage } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const scheduledDrains = observations.scheduledDrains;
+		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
+			expectedRetainedRenderWakes: {
+				count: 1,
+				reason:
+					'This worker-content case retains its Review publication or queued position without a terminal renderer receipt.',
+			},
 			bridgeDemandRank: { lane: 'selected', priority: 0 },
 			budget: {
 				className: 'interactive',
@@ -672,13 +778,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 				},
 			}),
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				if (scheduledDrains.length === 1) settledAtContinuationSchedule = firstDrainSettled;
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'yielded-selected-preparation');
-		const candidateReady = waitForMessage(
-			(message): boolean => message.kind === 'reviewCandidateReady' && message.revision === 6,
-		);
 		reviewProductSource.publishSource(
 			{
 				contentItems: [makeWorkerReviewContentMetadata()],
@@ -691,12 +795,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			6,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
-		await candidateReady;
-		await flushBridgeWorkerRuntimeContinuations();
-		await assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		await flushBridgeWorkerRuntimeContinuations();
-		scheduledDrains.splice(0, 1);
+		await reviewProductSource.waitForSourceInstallation();
 		postedMessages.length = 0;
 		createSequence = createBridgeWorkerSequenceCounter(41);
 
@@ -719,17 +818,41 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(postedMessages[1]?.transferList).toBeUndefined();
 		advanceClockPerRead = true;
 		const firstDrainCompletion = assertBridgeCommWorkerPreparationDrain(scheduledDrains[0])();
-		const continuationScheduledBeforeAwait = scheduledDrains.length === 2;
+		const firstDrainObservation = firstDrainCompletion.then(
+			(): void => {
+				firstDrainSettled = true;
+			},
+			(error: unknown): void => {
+				observations.close(error instanceof Error ? error : new Error(String(error)));
+			},
+		);
 		advanceClockPerRead = false;
+		await requirePreparationContinuationBeforeDrainCompletion({
+			firstDrainCompletion,
+			observations,
+			isContinuationScheduled: (fact): boolean =>
+				fact.kind === 'drainScheduled' && fact.index === 1,
+		});
+
 		const continuationDrain = assertBridgeCommWorkerPreparationDrain(scheduledDrains[1]);
 		const continuationDrainResult = await continuationDrain();
 		const firstDrainResult = await firstDrainCompletion;
+		await firstDrainObservation;
+		const publishedReviewJob = postedMessages.find(
+			({ message }) => message.kind === 'reviewPierreRenderJob' && message.job.itemId === 'item-1',
+		)?.message;
+		if (publishedReviewJob?.kind !== 'reviewPierreRenderJob') {
+			throw new Error('Expected the selected Review render job.');
+		}
 
-		expect(continuationScheduledBeforeAwait).toBe(true);
+		expect(
+			settledAtContinuationSchedule,
+			'Continuation must be scheduled before first drain settles.',
+		).toBe(false);
 		expect(firstDrainResult.completedIds).toEqual([]);
-		expect(firstDrainResult.yielded).toBe(true);
+		expect(firstDrainResult.yielded).toBe(false);
 		expect(continuationDrainResult.completedIds).toEqual([
-			'review-content-ready:item-1:review-ledger:item-1:45',
+			`review-content-ready:item-1:review-ledger:item-1:${publishedReviewJob.renderReceiptIdentity.publicationSequence}`,
 		]);
 		expect(continuationDrainResult.yielded).toBe(false);
 		expect(postedMessages.map((postedMessage) => postedMessage.message.kind)).toEqual([
@@ -763,7 +886,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		]);
 		expect(postedMessages[3]?.message).toMatchObject({
 			kind: 'reviewRenderPatch',
-			publicationSequence: 45,
+			publicationSequence: publishedReviewJob.renderReceiptIdentity.publicationSequence,
 			workerDerivationEpoch: 1,
 			patches: [
 				{
@@ -783,8 +906,11 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 
 	test('applies source update before first select when the runtime boots empty', async () => {
 		let createSequence = createBridgeWorkerSequenceCounter(11);
-		const scheduledDrains: BridgeCommWorkerPreparationDrain[] = [];
-		const { dispatch, postedMessages } = createRecordingBridgeCommWorkerPort();
+		const observations = createReviewPreparationObservations();
+		const scheduledDrains = observations.scheduledDrains;
+		const { dispatch, postedMessages, waitForMessage } = createRecordingBridgeCommWorkerPort({
+			beforePostMessage: observations.beforePostMessage,
+		});
 		const reviewProductSource = createBridgeCommWorkerReviewProductTestSource();
 
 		registerBridgeCommWorkerRuntimePortProtocol(dispatch.port, {
@@ -797,10 +923,15 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			createSequence: (): number => createSequence(),
 			productTransport: reviewProductSource.productTransport,
 			schedulePreparationDrain: (drain: BridgeCommWorkerPreparationDrain): void => {
-				scheduledDrains.push(drain);
+				observations.schedule(drain);
 			},
 		});
 		activateBridgeCommWorkerReviewViewerMode(dispatch, 'empty-runtime-source-update');
+		await waitForMessage(
+			(message): boolean =>
+				message.kind === 'health' &&
+				message.requestId === 'request-review-mode-empty-runtime-source-update',
+		);
 		postedMessages.length = 0;
 
 		reviewProductSource.publishSource(
@@ -815,7 +946,7 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			},
 			1,
 		);
-		await flushBridgeWorkerRuntimeContinuations();
+		await reviewProductSource.waitForSourceInstallation();
 		createSequence = createBridgeWorkerSequenceCounter(11);
 		dispatch.message(
 			encodeBridgeWorkerSelectCommand({
@@ -831,11 +962,14 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 			'reviewCandidateStarted',
 			'reviewDisplayPatch',
 			'reviewCandidateReady',
-			'health',
+			'fileDisplayPatch',
 			'slicePatch',
 			'health',
 		]);
-		expect(postedMessages[4]?.message).toMatchObject({
+		const selectionPatch = postedMessages.find(
+			({ message }) => message.kind === 'slicePatch',
+		)?.message;
+		expect(selectionPatch).toMatchObject({
 			kind: 'slicePatch',
 			epoch: 2,
 			sequence: 11,
@@ -856,89 +990,3 @@ describe('Bridge comm worker runtime protocol Review preparation', () => {
 		expect(scheduledDrains).toHaveLength(1);
 	});
 });
-
-function queueLatestReviewPublication(
-	dispatch: ReturnType<typeof createRecordingBridgeCommWorkerPort>['dispatch'],
-	postedMessages: ReturnType<typeof createRecordingBridgeCommWorkerPort>['postedMessages'],
-	requestLabel: string,
-): void {
-	const publication = postedMessages
-		.flatMap((postedMessage) =>
-			postedMessage.message.kind === 'reviewPierreRenderJob' ? [postedMessage.message] : [],
-		)
-		.at(-1);
-	if (publication === undefined) throw new Error('Expected a Review publication to queue.');
-	dispatch.message(
-		encodeBridgeWorkerRenderDispositionCommand({
-			epoch: publication.workerDerivationEpoch,
-			receipts: [
-				bridgeWorkerRenderDispositionReceiptSchema.parse({
-					...publication.renderReceiptIdentity,
-					disposition: 'queued',
-					kind: 'render.disposition',
-					receivedAtMilliseconds: 0,
-				}),
-			],
-			requestId: `request-queue-${requestLabel}`,
-		}),
-	);
-}
-
-function unexpectedEOFReviewContentStream(
-	descriptorId: string,
-): BridgeProductContentStream<'review.content'> {
-	return {
-		contentKind: 'review.content',
-		contentRequestId: `unexpected-eof-${descriptorId}`,
-		frames: emptyReviewContentFrames(),
-		terminal: Promise.resolve({
-			code: 'internal',
-			contentKind: 'review.content',
-			descriptorId,
-			kind: 'error',
-			retryable: true,
-			safeMessage: 'Unexpected EOF while reading Review content.',
-		}),
-	};
-}
-
-async function* emptyReviewContentFrames(): AsyncIterable<never> {}
-
-async function waitBridgeWorkerRuntimeTaskBoundary(): Promise<void> {
-	await new Promise<void>((resolve) => {
-		setTimeout(resolve, 0);
-	});
-}
-
-async function drainBridgeWorkerRuntimeUntil(props: {
-	readonly hasExpectedEvent: () => boolean;
-	readonly scheduledDrains: readonly BridgeCommWorkerPreparationDrain[];
-	readonly startIndex: number;
-}): Promise<void> {
-	return drainBridgeWorkerRuntimeUntilAttempt({ ...props, attempt: 0 });
-}
-
-async function drainBridgeWorkerRuntimeUntilAttempt(props: {
-	readonly attempt: number;
-	readonly hasExpectedEvent: () => boolean;
-	readonly scheduledDrains: readonly BridgeCommWorkerPreparationDrain[];
-	readonly startIndex: number;
-}): Promise<void> {
-	if (props.hasExpectedEvent() || props.attempt >= 64) {
-		return;
-	}
-	await flushBridgeWorkerRuntimeContinuations();
-	if (props.startIndex >= props.scheduledDrains.length) {
-		await waitBridgeWorkerRuntimeTaskBoundary();
-		return drainBridgeWorkerRuntimeUntilAttempt({
-			...props,
-			attempt: props.attempt + 1,
-		});
-	}
-	void assertBridgeCommWorkerPreparationDrain(props.scheduledDrains[props.startIndex])();
-	return drainBridgeWorkerRuntimeUntilAttempt({
-		...props,
-		attempt: props.attempt + 1,
-		startIndex: props.startIndex + 1,
-	});
-}

@@ -193,7 +193,13 @@ export interface BridgeReviewSelectionCommitTelemetrySampleProps {
 }
 
 export interface BridgeReviewComparisonPaneTelemetrySampleProps {
-	readonly attemptStatus: 'absent' | 'pending' | 'selection_required' | 'settled' | 'unavailable';
+	readonly attemptStatus:
+		| 'absent'
+		| 'no_source'
+		| 'pending'
+		| 'selection_required'
+		| 'settled'
+		| 'unavailable';
 	readonly packageMatch:
 		| 'matched'
 		| 'snapshot_not_current'

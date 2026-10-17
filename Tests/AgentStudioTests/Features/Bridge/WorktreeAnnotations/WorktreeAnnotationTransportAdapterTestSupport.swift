@@ -60,22 +60,24 @@ func executeOutputScope(
     requestID: String
 ) async throws {
     let sessionIDString = sessionID.rawValue.uuidString.lowercased()
-    let projection = try await harness.store.captureProjection(
-        worktreeID: "worktree-1",
-        demandedSessionIDs: [sessionID]
-    )
-    let sessionRevision = try #require(
-        projection.repositorySnapshot.details.first?.session.semanticRevision
-    )
+    let detail = try await persistedDetail(sessionID: sessionID, harness: harness)
+    let messages = detail.threads.flatMap { thread in
+        thread.messages.filter { message in
+            message.savedBody != nil && message.savedRevision != nil && message.draft == nil
+                && (scope == .all
+                    || (thread.thread.resolution == .open
+                        && message.authorKind == .human && !message.handled))
+        }
+    }
+    let selectionJSON = try outputSelectionJSON(messages)
     _ = await harness.adapter.apply(
         try decodeAnnotationCommand(
             """
             { "operation": {
-              "displayedProjectionRevision": \(projection.revision),
-              "expectedSessionRevision": \(sessionRevision),
+              "messages": \(selectionJSON),
               "kind": "output.scope.commit", "outputKind": "jsonFile",
-              "scope": "\(scope.rawValue)", "sessionId": "\(sessionIDString)",
-              "sourceGeneration": 7
+              "destination": "remembered",
+              "scope": "\(scope.rawValue)", "sessionId": "\(sessionIDString)"
             } }
             """
         ),
@@ -118,10 +120,6 @@ func prepareTransportOutputHistoryFixture(
         worktreeLabel: "worktree-1",
         comparisonLabel: nil
     )
-    let projection = try await harness.store.captureProjection(
-        worktreeID: "worktree-1",
-        demandedSessionIDs: [savedMessage.detail.session.id]
-    )
     _ = try await harness.store.prepareOutput(
         .init(
             attemptID: attemptID,
@@ -138,8 +136,6 @@ func prepareTransportOutputHistoryFixture(
             destinationPath: nil,
             repeatedFromAttemptID: nil,
             selectedMessages: selectedMessages,
-            expectedSessionRevision: savedMessage.detail.session.semanticRevision,
-            expectedProjectionRevision: projection.revision,
             now: Date(timeIntervalSince1970: 102)
         )
     )
@@ -231,7 +227,10 @@ func persistedDetail(
 
 @MainActor
 func makeTransportAdapterHarness(
-    outputEffect: (any WorktreeAnnotationOutputEffect)? = nil
+    outputEffect: (any WorktreeAnnotationOutputEffect)? = nil,
+    sourceRefresh: (@Sendable () async throws -> Void)? = nil,
+    sourceGeneration: @escaping @Sendable () async throws -> Int = { 7 },
+    sourceBody: String = "1 │ func example() {\n2 │ let value = 1\n3 │ return value\n4 │ }"
 ) async throws -> WorktreeAnnotationTransportAdapterHarness {
     let root = FileManager.default.temporaryDirectory.appending(
         path: "annotation-transport-adapter-\(UUIDv7.generate().uuidString)"
@@ -274,19 +273,20 @@ func makeTransportAdapterHarness(
         },
         currentFingerprint: { _, _, _ in fingerprint },
         refresh: { _, _, _, _ in
-            .init(
+            try await sourceRefresh?()
+            return .init(
                 fingerprint: fingerprint,
                 material: .available([
                     .init(
                         path: "Sources/Example.swift",
                         sourceRole: .file,
                         sourceIdentity: "file-source-1",
-                        body: "1 │ func example() {\n2 │ let value = 1\n3 │ return value\n4 │ }"
+                        body: sourceBody
                     )
                 ])
             )
         },
-        currentSourceGeneration: { _, _, _ in 7 }
+        currentSourceGeneration: { _, _, _ in try await sourceGeneration() }
     )
     let outputCoordinator = outputEffect.map {
         WorktreeAnnotationOutputCoordinatorActor(
@@ -318,18 +318,26 @@ func makeTransportAdapterHarness(
 
 actor TransportTestOutputEffect: WorktreeAnnotationOutputEffect {
     private let outcome: WorktreeAnnotationOutputEffectOutcome
+    private let revealSucceeds: Bool
     private(set) var requests: [WorktreeAnnotationOutputEffectRequest] = []
     var lastRequest: WorktreeAnnotationOutputEffectRequest? { requests.last }
 
-    init(outcome: WorktreeAnnotationOutputEffectOutcome) {
+    init(outcome: WorktreeAnnotationOutputEffectOutcome, revealSucceeds: Bool = true) {
         self.outcome = outcome
+        self.revealSucceeds = revealSucceeds
     }
 
-    func chooseJSONDestination(
-        suggestedFilename: String
-    ) -> WorktreeAnnotationOutputDestinationOutcome {
-        _ = suggestedFilename
-        return .selected(path: "/tmp/transport-output.json")
+    func rememberedJSONFolder() -> String { "/tmp" }
+
+    func chooseJSONDestination(productAdmission: BridgeProductAdmissionContext)
+        -> WorktreeAnnotationOutputDestinationOutcome
+    {
+        .selected(path: "/tmp")
+    }
+
+    func revealJSONFile(path: String, productAdmission: BridgeProductAdmissionContext) -> Bool {
+        _ = path
+        return revealSucceeds
     }
 
     func perform(
@@ -356,4 +364,14 @@ func makeAnnotationCorrelation(requestID: String) throws -> BridgeProductControl
         requestSequence: 1,
         workerInstanceId: "00000000-0000-7000-8000-000000000002"
     )
+}
+
+func outputSelectionJSON(_ messages: [WorktreeAnnotationMessage]) throws -> String {
+    let selections = try messages.map { message in
+        [
+            "messageId": message.id.rawValue.uuidString.lowercased(),
+            "savedRevision": try #require(message.savedRevision),
+        ] as [String: Any]
+    }
+    return try #require(String(data: JSONSerialization.data(withJSONObject: selections), encoding: .utf8))
 }

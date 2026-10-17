@@ -2,53 +2,45 @@ extension BridgePaneProductFileMetadataSource {
     func authoritativePath(
         for request: BridgeProductFileContentRequest,
         productAdmission: BridgeProductAdmissionContext
-    ) -> String? {
-        productAdmission.withValidAdmission { () -> String? in
-            let descriptor = request.descriptor
-            for subscriptionId in contextBySubscriptionId.keys.sorted() {
-                guard let context = contextBySubscriptionId[subscriptionId],
-                    context.productSource == descriptor.source,
-                    context.productAdmission.matches(productAdmission)
-                else { continue }
-                return context.descriptorByPath.values.first(where: {
-                    if case .available(let issuedDescriptor) = $0.availability {
-                        issuedDescriptor == descriptor
-                    } else {
-                        false
-                    }
-                })?.path
+    ) async -> String? {
+        guard productAdmission.withValidAdmission({ true }) == true else { return nil }
+        for subscriptionId in contextBySubscriptionId.keys.sorted() {
+            guard let context = contextBySubscriptionId[subscriptionId],
+                context.productSource == request.descriptor.source,
+                context.productAdmission.matches(productAdmission)
+            else { continue }
+            if let issued = await context.manifestIndex.issuedDescriptorOutcome(
+                matching: request.descriptor,
+                productAdmission: productAdmission
+            ) {
+                return issued.path
             }
-            return nil
-        }.flatMap({ $0 })
+        }
+        return nil
     }
 
     func contentReadPlan(
         for request: BridgeProductFileContentRequest,
         productAdmission: BridgeProductAdmissionContext
-    ) -> BridgePaneProductFileContentReadPlan? {
-        productAdmission.withValidAdmission { () -> BridgePaneProductFileContentReadPlan? in
-            let descriptor = request.descriptor
-            for subscriptionId in contextBySubscriptionId.keys.sorted() {
-                guard let context = contextBySubscriptionId[subscriptionId],
-                    context.productSource == descriptor.source,
-                    context.productAdmission.matches(productAdmission)
-                else { continue }
-                guard
-                    let issuedPayload = context.descriptorByPath.values.first(where: {
-                        if case .available(let issuedDescriptor) = $0.availability {
-                            issuedDescriptor == descriptor
-                        } else {
-                            false
-                        }
-                    })
-                else { return nil }
-                return BridgePaneProductFileContentReadPlan(
-                    descriptor: descriptor,
-                    relativePath: issuedPayload.path,
-                    rootURL: authority.worktree.path
+    ) async -> BridgePaneProductFileContentReadPlan? {
+        guard productAdmission.withValidAdmission({ true }) == true else { return nil }
+        for subscriptionId in contextBySubscriptionId.keys.sorted() {
+            guard let context = contextBySubscriptionId[subscriptionId],
+                context.productSource == request.descriptor.source,
+                context.productAdmission.matches(productAdmission)
+            else { continue }
+            guard
+                let issued = await context.manifestIndex.issuedDescriptorOutcome(
+                    matching: request.descriptor,
+                    productAdmission: productAdmission
                 )
-            }
-            return nil
-        }.flatMap({ $0 })
+            else { continue }
+            return BridgePaneProductFileContentReadPlan(
+                descriptor: request.descriptor,
+                relativePath: issued.path,
+                rootURL: authority.worktree.path
+            )
+        }
+        return nil
     }
 }

@@ -918,7 +918,6 @@ private func verifyLaterSuccessHandlesClearedRevision(
             selectedMessages: [
                 .init(messageID: savedMessage.id, expectedSavedRevision: savedRevision)
             ],
-            expectedSessionRevision: repeatedClearDetail.canonicalResult.session.semanticRevision,
             now: Date(timeIntervalSince1970: 11)
         )
     )

@@ -1,5 +1,5 @@
+import type { BridgeCommWorkerAnnotationCatalog } from './bridge-comm-worker-annotation-catalog-applicator.js';
 import type { BridgeWorkerAnnotationProjectionSnapshot } from './bridge-comm-worker-annotation-projection-decoder.js';
-import type { BridgeCommWorkerAnnotationCatalogPublication } from './bridge-comm-worker-annotation-projection-query-controller.js';
 import { packBridgeMetadataCatalogTransfer } from './bridge-metadata-catalog-transfer-packer.js';
 import { bridgeProductWorktreeAnnotationDecodedCommandResultSchema } from './bridge-product-call-contracts.js';
 import type { BridgeProductControlCommand } from './bridge-product-control-contracts.js';
@@ -15,9 +15,10 @@ import { bridgeWorkerAnnotationCatalogStagingEventSchema } from './bridge-worker
 
 const annotationCatalogStagingEncoder = new TextEncoder();
 
-export function bridgeCommWorkerAnnotationCatalogStagingEvents(
-	publication: BridgeCommWorkerAnnotationCatalogPublication,
-): readonly BridgeWorkerAnnotationCatalogStagingEvent[] {
+export function bridgeCommWorkerAnnotationCatalogStagingEvents(publication: {
+	readonly catalog: BridgeCommWorkerAnnotationCatalog;
+	readonly surface: 'file' | 'review';
+}): readonly BridgeWorkerAnnotationCatalogStagingEvent[] {
 	const buildEvent = (
 		transfer: BridgeWorkerAnnotationCatalogStagingEvent['transfer'],
 	): BridgeWorkerAnnotationCatalogStagingEvent =>
@@ -25,7 +26,6 @@ export function bridgeCommWorkerAnnotationCatalogStagingEvents(
 			authority: publication.catalog.authority,
 			direction: 'serverWorkerToMain',
 			kind: 'annotationCatalogStaging',
-			operationCorrelationId: publication.operationCorrelationId,
 			surface: publication.surface === 'file' ? 'fileView' : 'review',
 			transfer,
 			transferDescriptors: [],
@@ -74,6 +74,7 @@ export function bridgeCommWorkerAnnotationProjectionConvergenceEvent(props: {
 		| {
 				readonly contentSessionIds: readonly string[];
 				readonly kind: 'ready';
+				readonly stageAttempt: number;
 				readonly reviewPublicationIdentity?:
 					| BridgeProductReviewAnnotationPublicationIdentity
 					| undefined;
@@ -84,7 +85,7 @@ export function bridgeCommWorkerAnnotationProjectionConvergenceEvent(props: {
 				readonly error: unknown;
 				readonly kind: 'unavailable';
 		  }
-		| { readonly kind: 'refreshing' };
+		| { readonly catalogAuthorityRetired: boolean; readonly kind: 'refreshing' };
 	readonly surface: 'file' | 'review';
 }): BridgeWorkerAnnotationProjectionConvergenceEvent {
 	const state =

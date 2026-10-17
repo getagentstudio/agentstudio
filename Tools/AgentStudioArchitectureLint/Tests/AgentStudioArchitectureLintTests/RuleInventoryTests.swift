@@ -48,11 +48,13 @@ enum ExpectedRuleInventory {
         ExpectedRule(id: "agentstudio_no_task_sleep_in_tests", severity: .error),
         ExpectedRule(id: "agentstudio_no_polling_wait_in_tests", severity: .error),
         ExpectedRule(id: "agentstudio_no_forbidden_test_wait", severity: .error),
+        ExpectedRule(id: "agentstudio_no_silent_test_return", severity: .error),
         ExpectedRule(id: "agentstudio_no_adhoc_continuation_wait", severity: .error),
         ExpectedRule(id: "agentstudio_no_blocking_socket_io_in_tests", severity: .error),
         ExpectedRule(id: "agentstudio_test_blocking_wait_off_cooperative_pool", severity: .error),
         ExpectedRule(id: "agentstudio_no_expectation_off_test_task", severity: .error),
         ExpectedRule(id: "agentstudio_no_new_process_singletons", severity: .error),
+        ExpectedRule(id: "agentstudio_composition_root_construction", severity: .error),
         ExpectedRule(id: "agentstudio_no_test_elapsed_time_budget", severity: .error),
         ExpectedRule(id: "agentstudio_test_core_atom_fallback_ownership", severity: .error),
         ExpectedRule(id: "agentstudio_completion_handle_not_discardable", severity: .error),
@@ -71,6 +73,7 @@ enum ExpectedRuleInventory {
         ExpectedRule(id: "agentstudio_probe_reports_off_main", severity: .error),
         ExpectedRule(id: "agentstudio_test_ad_hoc_gate", severity: .error),
         ExpectedRule(id: "agentstudio_test_wait_helper_returns_observation", severity: .error),
+        ExpectedRule(id: "agentstudio_owner_fact_sink_boundary", severity: .error),
         ExpectedRule(id: "agentstudio_agent_doc_reference_resolves", severity: .error),
     ]
 }

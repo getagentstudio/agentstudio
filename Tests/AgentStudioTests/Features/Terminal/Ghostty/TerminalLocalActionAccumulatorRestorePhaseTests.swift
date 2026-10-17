@@ -202,7 +202,9 @@ private final class RestorePhaseDrainRequestRecorder: @unchecked Sendable {
         lock.withLock { storage }
     }
 
-    func record(_ surfaceID: UUID, _ request: TerminalLocalDrainRequest) {
+    func record(
+        _ surfaceID: UUID, _ request: TerminalLocalDrainRequest, _ accumulator: TerminalLocalActionAccumulator
+    ) {
         lock.withLock {
             storage.append((surfaceID: surfaceID, request: request))
         }

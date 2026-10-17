@@ -13,23 +13,27 @@ import {
 	startBridgeViewerOwnedViteProductServer,
 	type BridgeViewerOwnedViteProductServer,
 } from './bridge-viewer-vite-product-fixture.ts';
+import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 import { bridgeViewerViteProductFileUrl } from './bridge-viewer-vite-product-url.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const journeyTimeoutMilliseconds = 120_000;
-const testTimeoutMilliseconds = 600_000;
 
-test(
-	'keeps one File annotation stable through repeated edit, reply, resolve, and reopen',
-	async () => {
+test('keeps one File annotation stable through repeated edit, reply, resolve, and reopen', async (context) => {
+	return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 		const fixture = await createBridgeViewerViteProductFixture();
 		let browser: Browser | null = null;
 		let page: Page | null = null;
 		let server: BridgeViewerOwnedViteProductServer | null = null;
 		let phase = 'fixture-ready';
 		let commandObservation: AnnotationCommandObservation | null = null;
+		const retireStep = <TValue>(name: string, operation: Promise<TValue>): Promise<TValue> =>
+			server === null
+				? operation
+				: server.testLaunch.observeRetirementStep(name, operation).value();
 		try {
 			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
+			browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
 			commandObservation = observeAnnotationCommandOutcomes(page, (): string => phase);
 
@@ -107,23 +111,22 @@ test(
 			);
 		} finally {
 			try {
-				await page?.close();
-				await browser?.close();
+				await retireStep('page close', page?.close() ?? Promise.resolve());
+				await retireStep('browser close', browser?.close() ?? Promise.resolve());
 			} finally {
 				try {
 					if (server !== null) {
-						const cleanup = await server.stop();
+						const cleanup = await retireStep('server stop', server.stop());
 						expect(cleanup.forcedTerminationRequired).toBe(false);
 						expect(cleanup.ownedProcessAliveAfterStop).toBe(false);
 					}
 				} finally {
-					await fixture.dispose();
+					await retireStep('fixture dispose', fixture.dispose());
 				}
 			}
 		}
-	},
-	testTimeoutMilliseconds,
-);
+	});
+});
 
 interface AnnotationCommandObservation {
 	readonly drain: () => Promise<void>;
@@ -275,11 +278,10 @@ async function waitForCommittedResolutionOutcome(
 	page: Page,
 	resolution: 'open' | 'resolved',
 ): Promise<void> {
-	const response = await page.waitForResponse(
-		(candidate): boolean => resolutionCommandResponseMatches(candidate, resolution),
-		{ timeout: journeyTimeoutMilliseconds },
+	const settled = await waitForProductCallSettlement(page, (candidate): boolean =>
+		resolutionCommandResponseMatches(candidate, resolution),
 	);
-	const responseBody: unknown = await response.json();
+	const responseBody: unknown = settled.result;
 	if (
 		!isRecord(responseBody) ||
 		responseBody['kind'] !== 'call.completed' ||

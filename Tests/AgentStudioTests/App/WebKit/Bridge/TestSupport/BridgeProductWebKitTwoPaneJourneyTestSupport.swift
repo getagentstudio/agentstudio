@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
 import Foundation
@@ -15,6 +16,7 @@ struct BridgeProductWebKitTwoPanePositionSnapshot: Decodable, Equatable, Sendabl
     let fileRenderedPath: String?
     let fileSelectedPath: String?
     let fileStatusText: String?
+    let fileTreePresentationState: String?
     let fileTreeScrollTop: Double
     let hasAppRoot: Bool
     let reviewCodeScrollTop: Double
@@ -37,27 +39,28 @@ struct BridgeProductWebKitTwoPaneJourneyProof: Sendable {
     let hiddenStatus: BridgeProductWebKitTwoPanePositionSnapshot
     let hiddenStormProductDeltas: BridgeProductWebKitHiddenStormProductDeltas
     let initialReviewState: BridgeProductWebKitTwoPanePositionSnapshot
-    let paneOneFinalRefreshPassCount: Int
-    let paneOneForegroundRefreshPassCount: Int
     let paneOneWorkerIdAfterReturn: String?
     let paneOneWorkerIdBeforeHide: String?
+    let paneOneWorkerReplacementFacts: String
     let paneTwoActivityAfterJourney: BridgePaneActivity
     let paneTwoStateAfterJourney: BridgeProductWebKitTwoPanePositionSnapshot
     let paneTwoStateBeforeJourney: BridgeProductWebKitTwoPanePositionSnapshot
     let paneTwoWorkerIdAfterJourney: String?
     let paneTwoWorkerIdBeforeJourney: String?
+    let paneTwoWorkerReplacementFacts: String
     let reviewStateAfterReturn: BridgeProductWebKitTwoPanePositionSnapshot
     let staleForegroundAdmissionWasRejected: Bool
     let updatingFileStatus: BridgeProductWebKitTwoPanePositionSnapshot
     let updatingReviewStatus: BridgeProductWebKitTwoPanePositionSnapshot
 }
 
-private actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourceProvider {
+actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourceProvider {
     private let base: any BridgeReviewSourceProvider
     private var blockedComparisonCount = 0
     private var comparisonCount = 0
     private var isNextComparisonArmed = false
-    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
+    private var blockedSteps: [HeldStep<Void>] = []
+    private var blockedCountWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
     init(base: any BridgeReviewSourceProvider) {
         self.base = base
@@ -84,16 +87,25 @@ private actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourcePr
         isNextComparisonArmed = true
     }
 
-    func releaseBlockedComparisons() {
-        let continuations = releaseContinuations
-        releaseContinuations.removeAll()
-        for continuation in continuations {
-            continuation.resume()
-        }
+    @discardableResult
+    func releaseBlockedComparisons() -> Int {
+        let steps = blockedSteps
+        blockedSteps.removeAll()
+        for step in steps { step.release() }
+        return steps.count
     }
 
     func snapshot() -> (comparisonCount: Int, blockedComparisonCount: Int) {
         (comparisonCount, blockedComparisonCount)
+    }
+
+    func waitForBlockedComparisonCount(_ count: Int) async -> Int {
+        if blockedComparisonCount < count {
+            await withCheckedContinuation { continuation in
+                blockedCountWaiters.append((count: count, continuation: continuation))
+            }
+        }
+        return blockedComparisonCount
     }
 
     func resolveEndpoint(_ request: BridgeEndpointResolutionRequest) async throws
@@ -113,10 +125,13 @@ private actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourcePr
         comparisonCount += 1
         if isNextComparisonArmed {
             isNextComparisonArmed = false
+            let step = HeldStep<Void>("blocked review comparison", cancellation: .holdThroughCancellation)
+            blockedSteps.append(step)
             blockedComparisonCount += 1
-            await withCheckedContinuation { continuation in
-                releaseContinuations.append(continuation)
-            }
+            let readyWaiters = blockedCountWaiters.filter { blockedComparisonCount >= $0.count }
+            blockedCountWaiters.removeAll { blockedComparisonCount >= $0.count }
+            for waiter in readyWaiters { waiter.continuation.resume() }
+            try? await step.arrive(())
         }
     }
 
@@ -152,6 +167,7 @@ private actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourcePr
 @MainActor
 enum BridgeProductWebKitTwoPaneJourneyTestSupport {
     private struct ControllerInput {
+        let closingSource: WebPageDocumentWaitClosingSource
         let gitReadContext: BridgeGitReadContext
         let initialActivity: BridgePaneActivity
         let gitWorkingTreeStatusProvider: any GitWorkingTreeStatusProvider
@@ -162,12 +178,15 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         let worktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator
     }
 
-    private struct JourneyInput {
+    struct JourneyInput {
         let paneOne: BridgePaneController
+        let paneOneClosingSource: WebPageDocumentWaitClosingSource
+        let paneOneGitStatusProvider: BridgeProductWebKitGatedGitStatusProvider
         let paneOneRepoURL: URL
         let paneOneReviewProvider: BridgeProductWebKitGatedReviewSourceProvider
         let paneOneTrace: BridgeProductWebKitCarrierTraceRecorder
         let paneTwo: BridgePaneController
+        let paneTwoClosingSource: WebPageDocumentWaitClosingSource
         let paneTwoReviewProvider: BridgeProductWebKitGatedReviewSourceProvider
         let paneTwoTrace: BridgeProductWebKitCarrierTraceRecorder
     }
@@ -181,9 +200,10 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         let staleForegroundAdmission: BridgePaneRefreshWorkAdmission?
     }
 
-    private struct JourneyUpdatingState {
-        let foregroundRefreshPassCount: Int
+    struct JourneyUpdatingState {
         let fileStatus: BridgeProductWebKitTwoPanePositionSnapshot
+        let heldHiddenReviewOperationID: String
+        let reviewModeIdentity: BridgeProductWebKitActiveViewerModeIdentity
         let reviewStatus: BridgeProductWebKitTwoPanePositionSnapshot
     }
 
@@ -202,10 +222,15 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
         let paneOneTrace = BridgeProductWebKitCarrierTraceRecorder()
         let paneTwoTrace = BridgeProductWebKitCarrierTraceRecorder()
+        let paneOneClosingSource = try WebPageDocumentWaitClosingSource(pane: "Hosted Pane One")
+        let paneTwoClosingSource = try WebPageDocumentWaitClosingSource(pane: "Hosted Pane Two")
         let worktreeProductConstructionCoordinator =
             BridgeWorktreeProductConstructionCoordinator()
         let gitWorkingTreeStatusProvider = AgentStudioGitWorkingTreeStatusProvider(
             physicalGate: AgentStudioGitStatusPhysicalGate()
+        )
+        let paneOneGitStatusProvider = BridgeProductWebKitGatedGitStatusProvider(
+            base: gitWorkingTreeStatusProvider
         )
         let paneOneGitReadContext = makeBridgeGitReadContext(rootURL: paneOneRepoURL)
         let paneTwoGitReadContext = makeBridgeGitReadContext(rootURL: paneTwoRepoURL)
@@ -223,9 +248,10 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         )
         let paneOne = makeController(
             ControllerInput(
+                closingSource: paneOneClosingSource,
                 gitReadContext: paneOneGitReadContext,
                 initialActivity: .foreground,
-                gitWorkingTreeStatusProvider: gitWorkingTreeStatusProvider,
+                gitWorkingTreeStatusProvider: paneOneGitStatusProvider,
                 repoURL: paneOneRepoURL,
                 reviewProvider: paneOneReviewProvider,
                 title: "Hosted Pane One",
@@ -235,6 +261,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         )
         let paneTwo = makeController(
             ControllerInput(
+                closingSource: paneTwoClosingSource,
                 gitReadContext: paneTwoGitReadContext,
                 initialActivity: .dormant,
                 gitWorkingTreeStatusProvider: gitWorkingTreeStatusProvider,
@@ -246,26 +273,39 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             )
         )
 
-        return try await withHostedControllers([paneOne, paneTwo]) {
-            try await exerciseJourney(
-                JourneyInput(
-                    paneOne: paneOne,
-                    paneOneRepoURL: paneOneRepoURL,
-                    paneOneReviewProvider: paneOneReviewProvider,
-                    paneOneTrace: paneOneTrace,
-                    paneTwo: paneTwo,
-                    paneTwoReviewProvider: paneTwoReviewProvider,
-                    paneTwoTrace: paneTwoTrace
-                )
-            )
+        do {
+            let proof = try await withHostedControllers([paneOne, paneTwo]) {
+                try await exerciseJourney(
+                    JourneyInput(
+                        paneOne: paneOne,
+                        paneOneClosingSource: paneOneClosingSource,
+                        paneOneGitStatusProvider: paneOneGitStatusProvider,
+                        paneOneRepoURL: paneOneRepoURL,
+                        paneOneReviewProvider: paneOneReviewProvider,
+                        paneOneTrace: paneOneTrace,
+                        paneTwo: paneTwo,
+                        paneTwoClosingSource: paneTwoClosingSource,
+                        paneTwoReviewProvider: paneTwoReviewProvider,
+                        paneTwoTrace: paneTwoTrace
+                    ))
+            }
+            try await paneOneClosingSource.finish()
+            try await paneTwoClosingSource.finish()
+            return proof
+        } catch {
+            try? await paneOneClosingSource.finish()
+            try? await paneTwoClosingSource.finish()
+            throw error
         }
     }
 
     private static func prepareJourney(_ input: JourneyInput) async throws -> JourneyPreparation {
+        input.paneOneClosingSource.observePage(input.paneOne.page)
+        input.paneTwoClosingSource.observePage(input.paneTwo.page)
         input.paneOne.loadApp()
         input.paneTwo.loadApp()
-        try await requireMountedApp(input.paneOne)
-        try await requireMountedApp(input.paneTwo)
+        _ = try await input.paneOneClosingSource.requireMountedApp(input.paneOne)
+        _ = try await input.paneTwoClosingSource.requireMountedApp(input.paneTwo)
 
         let dormantDefaults = try await requirePositionSnapshot(input.paneTwo.page)
         let dormantNative = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneTwo)
@@ -279,29 +319,29 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
         let paneTwoForegroundTransition = input.paneTwo.applyBridgePaneActivity(.foreground)
         await paneTwoForegroundTransition?.value
-        try await requireReadyReview(
+        _ = try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one",
+            closingSource: input.paneOneClosingSource,
             reviewProvider: input.paneOneReviewProvider,
             traceRecorder: input.paneOneTrace
         )
-        try await requireReadyReview(
+        _ = try await requireReadyReview(
             input.paneTwo,
             paneLabel: "pane two",
+            closingSource: input.paneTwoClosingSource,
             reviewProvider: input.paneTwoReviewProvider,
             traceRecorder: input.paneTwoTrace
         )
 
         let initialReviewState = try await requirePositionSnapshot(input.paneOne.page)
-        guard await BridgeProductWebKitCarrierTestSupport.activateFileMode(input.paneOne.page) else {
-            throw JourneyError.conditionFailed("pane one File mode did not activate")
-        }
-        guard await activateReviewMode(input.paneOne.page) else {
-            throw JourneyError.conditionFailed("pane one Review mode did not reactivate")
-        }
-        try await requireReadyReview(
+        try await input.paneOneClosingSource.activateReadyFileMode(
+            input.paneOne, failure: "pane one File mode did not activate")
+        _ = try await activateReviewMode(input.paneOne)
+        _ = try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one after mode round-trip",
+            closingSource: input.paneOneClosingSource,
             reviewProvider: input.paneOneReviewProvider,
             traceRecorder: input.paneOneTrace
         )
@@ -323,9 +363,13 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         _ input: JourneyInput
     ) async throws -> BridgeProductWebKitTwoPaneJourneyProof {
         do {
-            return try await exercisePreparedJourney(input)
+            let proof = try await exercisePreparedJourney(input)
+            try await input.paneOneTrace.finishForegroundCatchUp()
+            return proof
         } catch {
             await input.paneOneReviewProvider.releaseBlockedComparisons()
+            await input.paneOneGitStatusProvider.releaseBlockedStatusRead()
+            try await input.paneOneTrace.finishForegroundCatchUp()
             throw error
         }
     }
@@ -340,8 +384,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         await hiddenTransition?.value
         try await requireHiddenFileRetirementBoundary(input.paneOne)
         let hiddenStatus = try await requireNoUpdatingStatus(input.paneOne.page)
-        let staleForegroundAdmissionWasRejected =
-            preparation.staleForegroundAdmission?.withValidAdmission { true } == nil
+        let staleForegroundAdmissionWasRejected = hasRejectedStaleForegroundAdmission(preparation)
         let hiddenBeforeStorm = input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot
         let hiddenNativeBeforeStorm =
             await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneOne)
@@ -349,24 +392,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         let hiddenComparisonCountBeforeStorm =
             await input.paneOneReviewProvider.snapshot().comparisonCount
 
-        await input.paneOne.handleWorktreeProductInvalidation(
-            .filesChanged(
-                try makeChangeset(
-                    for: input.paneOne,
-                    paths: ["tracked.txt"],
-                    batchSequence: 702
-                )
-            )
-        )
-        await input.paneOne.handleWorktreeProductInvalidation(
-            .filesChanged(
-                try makeChangeset(
-                    for: input.paneOne,
-                    paths: ["tracked.txt"],
-                    batchSequence: 703
-                )
-            )
-        )
+        try await publishHiddenFileStorm(input.paneOne)
         let hiddenAfterStorm = input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot
         let hiddenNativeAfterStorm =
             await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneOne)
@@ -378,22 +404,38 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             throw JourneyError.conditionFailed("loaded-hidden invalidation started Review work")
         }
 
-        await input.paneOneReviewProvider.releaseBlockedComparisons()
-        try await requireHiddenRefreshSettled(input.paneOne)
+        try await releaseHeldReviewWhileHidden(
+            input,
+            heldOperationID: updatingState.heldHiddenReviewOperationID
+        )
         let hiddenTraceAfterLateRelease = await input.paneOneTrace.scrubbedTrace()
+        guard let catchUpDirtyFact = input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.dirtyFact,
+            catchUpDirtyFact.requiresReviewRefresh,
+            catchUpDirtyFact.latestBatchSequence == 707
+        else {
+            throw JourneyError.conditionFailed(
+                "foreground recovery did not retain Review dirty batch 707"
+            )
+        }
+        let catchUpTerminal = await input.paneOneTrace.prepareForegroundCatchUp(
+            dirtyFact: catchUpDirtyFact,
+            reviewModeIdentity: updatingState.reviewModeIdentity
+        )
         let paneOneForegroundTransition = input.paneOne.applyBridgePaneActivity(.foreground)
         await paneOneForegroundTransition?.value
-        try await requireRefreshIdle(input.paneOne)
-        try await requireReadyReview(
+        try await requireRefreshIdle(input.paneOne, terminalExpectation: catchUpTerminal)
+        _ = try await requireReadyReview(
             input.paneOne,
             paneLabel: "pane one after foreground return",
+            closingSource: input.paneOneClosingSource,
             reviewProvider: input.paneOneReviewProvider,
             traceRecorder: input.paneOneTrace
         )
         let reviewStateAfterReturn = try await requirePositionSnapshot(input.paneOne.page)
-        guard await BridgeProductWebKitCarrierTestSupport.activateFileMode(input.paneOne.page) else {
-            throw JourneyError.conditionFailed("File mode did not reactivate after foreground return")
-        }
+        try await input.paneOneClosingSource.activateReadyFileMode(
+            input.paneOne,
+            failure: "File mode did not reactivate after foreground return"
+        )
         let fileStateAfterReturn = try await requirePositionSnapshot(input.paneOne.page)
         let paneOneNativeAfterReturn =
             await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneOne)
@@ -402,7 +444,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         let paneTwoStateAfterJourney = try await requirePositionSnapshot(input.paneTwo.page)
         // One reading of the hidden-pane traces feeds both the assertable product
         // deltas and the printed diagnostic, so the two can never disagree.
-        let hiddenStorm = BridgeProductWebKitMetadataStormDiagnostic.summarize(
+        let hiddenStorm = summarizeHiddenStorm(
             nativeBefore: hiddenNativeBeforeStorm,
             nativeAfter: hiddenNativeAfterStorm,
             traceBefore: hiddenTraceBeforeLateRelease,
@@ -423,22 +465,57 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             hiddenStatus: hiddenStatus,
             hiddenStormProductDeltas: hiddenStorm.productDeltas,
             initialReviewState: preparation.initialReviewState,
-            paneOneFinalRefreshPassCount:
-                input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.refreshPassCount,
-            paneOneForegroundRefreshPassCount: updatingState.foregroundRefreshPassCount,
             paneOneWorkerIdAfterReturn: paneOneNativeAfterReturn.workerInstanceId,
             paneOneWorkerIdBeforeHide: preparation.paneOneNativeBeforeHide.workerInstanceId,
+            paneOneWorkerReplacementFacts:
+                await BridgeProductWebKitReplacementFactTestSupport.read(input.paneOne.page),
             paneTwoActivityAfterJourney:
                 input.paneTwo.refreshAdmissionCoordinator.diagnosticSnapshot.activity,
             paneTwoStateAfterJourney: paneTwoStateAfterJourney,
             paneTwoStateBeforeJourney: preparation.paneTwoStateBeforeJourney,
             paneTwoWorkerIdAfterJourney: paneTwoNativeAfterJourney.workerInstanceId,
             paneTwoWorkerIdBeforeJourney: preparation.paneTwoNativeBeforeJourney.workerInstanceId,
+            paneTwoWorkerReplacementFacts:
+                await BridgeProductWebKitReplacementFactTestSupport.read(input.paneTwo.page),
             reviewStateAfterReturn: reviewStateAfterReturn,
             staleForegroundAdmissionWasRejected: staleForegroundAdmissionWasRejected,
             updatingFileStatus: updatingState.fileStatus,
             updatingReviewStatus: updatingState.reviewStatus
         )
+    }
+
+    private static func summarizeHiddenStorm(
+        nativeBefore: BridgeProductWebKitCarrierNativeSnapshot,
+        nativeAfter: BridgeProductWebKitCarrierNativeSnapshot,
+        traceBefore: BridgeProductWebKitCarrierTrace,
+        traceAfter: BridgeProductWebKitCarrierTrace
+    ) -> BridgeProductWebKitHiddenStormSummary {
+        BridgeProductWebKitMetadataStormDiagnostic.summarize(
+            nativeBefore: nativeBefore,
+            nativeAfter: nativeAfter,
+            traceBefore: traceBefore,
+            traceAfter: traceAfter
+        )
+    }
+
+    private static func hasRejectedStaleForegroundAdmission(
+        _ preparation: JourneyPreparation
+    ) -> Bool {
+        preparation.staleForegroundAdmission?.withValidAdmission { true } == nil
+    }
+
+    private static func publishHiddenFileStorm(_ controller: BridgePaneController) async throws {
+        for batchSequence in [UInt64(706), 707] {
+            await controller.handleWorktreeProductInvalidation(
+                .filesChanged(
+                    try makeChangeset(
+                        for: controller,
+                        paths: ["tracked.txt"],
+                        batchSequence: batchSequence
+                    )
+                )
+            )
+        }
     }
 
     private static func beginBlockedRefresh(
@@ -455,9 +532,17 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 )
             )
         )
-        try await requireBlockedComparison(input.paneOneReviewProvider, expectedCount: 1)
-        let paneOneForegroundRefreshPassCount =
-            input.paneOne.refreshAdmissionCoordinator.diagnosticSnapshot.refreshPassCount
+        guard let heldReviewTask = input.paneOne.activeReviewRefreshTask else {
+            throw JourneyError.conditionFailed(
+                "batch 701 Review invalidation did not admit a catch-up task before its comparison wait"
+            )
+        }
+        _ = try await requireBlockedComparison(
+            input.paneOneReviewProvider,
+            expectedCount: 1,
+            milestone: "batch 701 Review comparison hold"
+        )
+        let heldReviewAttempt = try await requireHeldReviewAttempt(input.paneOneTrace)
         let updatingReviewStatus = try await requireNoUpdatingStatus(input.paneOne.page)
         guard updatingReviewStatus.activeMode == "review" else {
             let observedActiveMode = updatingReviewStatus.activeMode ?? "nil"
@@ -466,42 +551,33 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                     + "(observedActiveMode: \(observedActiveMode))"
             )
         }
-        guard await BridgeProductWebKitCarrierTestSupport.activateFileMode(input.paneOne.page) else {
-            throw JourneyError.conditionFailed("File mode did not activate during refresh")
-        }
-        try appendTrackedChange(at: input.paneOneRepoURL)
-        let fileChangeset = try makeChangeset(
-            for: input.paneOne,
-            paths: ["tracked.txt"],
-            batchSequence: 704
-        )
-        _ = input.paneOne.worktreeRefreshDriver.recordInvalidation(
-            fileChangeset: fileChangeset,
-            requiresReviewRefresh: false
-        )
-        input.paneOne.worktreeRefreshDriver.scheduleFileCatchUpIfPossible()
-        let updatingFileStatus = try await requireStatus(
-            input.paneOne.page,
-            activeMode: "file",
-            expectedText: "Updating files…"
-        )
-        let nativeBeforeReviewActivation =
-            await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(input.paneOne)
-        guard await activateReviewMode(input.paneOne.page) else {
-            throw JourneyError.conditionFailed("Review mode did not reactivate during refresh")
-        }
-        try await requireNativeControlQuiescence(
+        let precedingModeSignal = input.paneOne.activeViewerModeSignalState
+        try await input.paneOneClosingSource.activateReadyFileMode(
             input.paneOne,
-            afterRequestSequence: nativeBeforeReviewActivation.nextControlRequestSequence
+            failure: "File mode did not activate during refresh"
         )
+        let fileModeAcceptance = try await requireNativeFileModeAcceptance(
+            input.paneOne,
+            after: precedingModeSignal
+        )
+        try requireFencedReviewBuild(fileModeAcceptance, batchSequence: 701)
+        await input.paneOneReviewProvider.releaseBlockedComparisons()
+        await heldReviewTask.value
+        let updatingFileStatus = try await performBatch704FileCatchUp(input)
+        let reviewModeIdentity = try await requireSingleReviewReactivation(
+            input,
+            previousOperationID: heldReviewAttempt.operationCorrelationID
+        )
+        let heldHiddenReviewOperationID = try await beginHeldReviewAttempt(input, batchSequence: 705)
         return JourneyUpdatingState(
-            foregroundRefreshPassCount: paneOneForegroundRefreshPassCount,
             fileStatus: updatingFileStatus,
+            heldHiddenReviewOperationID: heldHiddenReviewOperationID,
+            reviewModeIdentity: reviewModeIdentity,
             reviewStatus: updatingReviewStatus
         )
     }
 
-    private static func withHostedControllers<Value>(
+    static func withHostedControllers<Value>(
         _ controllers: [BridgePaneController],
         operation: @MainActor () async throws -> Value
     ) async throws -> Value {
@@ -587,7 +663,12 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             telemetryRuntimePolicy: .live,
             telemetryScopeGate: BridgeTelemetryScopeGate(enabledScopes: []),
             telemetryRecorder: input.traceRecorder,
-            initialPaneActivity: input.initialActivity
+            initialPaneActivity: input.initialActivity,
+            productSessionBootstrapFailureSink: { page, requestId, reason, contentWorld in
+                input.closingSource.recordBootstrapFailure(reason)
+                try await BridgePaneController.dispatchProductSessionBootstrapFailure(
+                    page: page, requestId: requestId, reason: reason, contentWorld: contentWorld)
+            }
         )
     }
 
@@ -611,7 +692,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         )
     }
 
-    private static func appendTrackedChange(at repoURL: URL) throws {
+    static func appendTrackedChange(at repoURL: URL) throws {
         let trackedURL = repoURL.appending(path: "tracked.txt")
         let current = try String(contentsOf: trackedURL, encoding: .utf8)
         try "\(current)hosted hidden refresh\n".write(
@@ -621,10 +702,11 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         )
     }
 
-    private static func makeChangeset(
+    static func makeChangeset(
         for controller: BridgePaneController,
         paths: [String],
-        batchSequence: UInt64
+        batchSequence: UInt64,
+        containsGitInternalChanges: Bool = false
     ) throws -> FileChangeset {
         let worktreeId = try #require(controller.runtime.metadata.worktreeId)
         let rootPath = try #require(controller.runtime.metadata.cwd)
@@ -633,84 +715,102 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             repoId: controller.runtime.metadata.repoId,
             rootPath: rootPath,
             paths: paths,
+            containsGitInternalChanges: containsGitInternalChanges,
             timestamp: .now,
             batchSeq: batchSequence
         )
     }
 
-    private static func requireMountedApp(_ controller: BridgePaneController) async throws {
-        let mounted = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(15)) {
-            let dom = await BridgeProductWebKitCarrierTestSupport.domSnapshot(controller.page)
-            let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
-            return dom?.hasAppRoot == true && native.lifecycle == "active"
-        }
-        guard mounted else { throw JourneyError.conditionFailed("bundled app did not mount") }
-    }
-
     private static func requireReadyReview(
         _ controller: BridgePaneController,
         paneLabel: String,
+        closingSource: WebPageDocumentWaitClosingSource,
         reviewProvider: BridgeProductWebKitGatedReviewSourceProvider,
         traceRecorder: BridgeProductWebKitCarrierTraceRecorder
-    ) async throws {
-        let ready = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-            let dom = await BridgeProductWebKitCarrierTestSupport.domSnapshot(controller.page)
-            let trace = await traceRecorder.scrubbedTrace()
-            return trace.hasCanonicalEagerSubscriptions
-                && trace.hasFileMetadataWindow
-                && trace.hasReviewMetadataPublication
-                && dom?.reviewSelectedContentState == "ready"
-        }
-        guard ready else {
+    ) async throws -> BridgeProductWebKitCarrierTrace {
+        _ = try await WebPageEventWaits.waitForDocumentValue(
+            controller.page,
+            reader: """
+                const reviewShell = document.querySelector('[data-testid="review-viewer-shell"]');
+                return reviewShell?.getAttribute('data-selected-content-state') === 'ready' ? true : null;
+                """, milestone: "\(paneLabel) Review selected content ready", closingSource: closingSource
+        )
+        let trace = await traceRecorder.waitForTrace(.canonicalSubscriptionsAndReviewPublication)
+        guard let trace, trace.hasCanonicalEagerSubscriptions,
+            trace.hasReviewMetadataPublication
+        else {
             let dom = await BridgeProductWebKitCarrierTestSupport.domSnapshot(controller.page)
             let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
             let providerSnapshot = await reviewProvider.snapshot()
-            let trace = await traceRecorder.scrubbedTrace()
             throw JourneyError.conditionFailed(
-                "\(paneLabel) real-git Review did not become ready; appRoot=\(dom?.hasAppRoot == true), canonicalSubscriptions=\(trace.hasCanonicalEagerSubscriptions), fileMetadata=\(trace.hasFileMetadataWindow), reviewPublication=\(trace.hasReviewMetadataPublication), reviewState=\(dom?.reviewSelectedContentState ?? "missing"), comparisons=\(providerSnapshot.comparisonCount), blockedComparisons=\(providerSnapshot.blockedComparisonCount), native=\(native)"
+                "\(paneLabel) real-git Review did not become ready; appRoot=\(dom?.hasAppRoot == true), canonicalSubscriptions=\(trace?.hasCanonicalEagerSubscriptions == true), reviewPublication=\(trace?.hasReviewMetadataPublication == true), reviewState=\(dom?.reviewSelectedContentState ?? "missing"), comparisons=\(providerSnapshot.comparisonCount), blockedComparisons=\(providerSnapshot.blockedComparisonCount), native=\(native)"
             )
         }
+        return trace
     }
 
-    private static func requireBlockedComparison(
+    static func requireBlockedComparison(
         _ provider: BridgeProductWebKitGatedReviewSourceProvider,
-        expectedCount: Int
-    ) async throws {
-        let blocked = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(10)) {
-            await provider.snapshot().blockedComparisonCount == expectedCount
+        expectedCount: Int,
+        milestone: String
+    ) async throws -> Int {
+        try await awaitBridgeWebKitMilestone(milestone) {
+            let blockedComparisonCount = await provider.waitForBlockedComparisonCount(expectedCount)
+            guard blockedComparisonCount == expectedCount else {
+                throw JourneyError.conditionFailed(
+                    "\(milestone) observed comparison count \(blockedComparisonCount), expected \(expectedCount)"
+                )
+            }
+            return blockedComparisonCount
         }
-        guard blocked else { throw JourneyError.conditionFailed("real-git comparison did not block") }
     }
 
-    private static func requireNativeControlQuiescence(
+    static func requireNativeControlQuiescence(
         _ controller: BridgePaneController,
         afterRequestSequence: Int
     ) async throws {
-        let settled = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(10)) {
-            let native = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
-            return native.nextControlRequestSequence > afterRequestSequence
-                && native.inFlightControlRequestSequence == nil
-                && native.inFlightFrameReceiptCount == 0
-                && native.queuedFrameCount == 0
-        }
-        guard settled else {
+        await controller.worktreeRefreshDriver.awaitActiveFileOperations()
+        guard let installation = await controller.productSessionOwner.activeInstallation,
+            await installation.session.waitUntilControlReplayIdle(
+                afterRequestSequence: afterRequestSequence
+            )
+        else {
             throw JourneyError.conditionFailed(
-                "native Review activation did not reach a quiescent control boundary"
+                "native Review activation did not settle its control admission"
+            )
+        }
+        guard await installation.session.waitUntilProducerFramesQuiescent() else {
+            throw JourneyError.conditionFailed("native Review activation lost its producer session")
+        }
+        var owner = await controller.productSessionOwner.snapshot()
+        if owner.queuedFrameCount > 0 || owner.inFlightFrameReceiptCount > 0 {
+            // A Review publication admitted after the first idle observation is still in flight.
+            guard await installation.session.waitUntilProducerFramesQuiescent() else {
+                throw JourneyError.conditionFailed("native Review activation lost its producer session")
+            }
+            owner = await controller.productSessionOwner.snapshot()
+        }
+        guard owner.queuedFrameCount == 0, owner.inFlightFrameReceiptCount == 0 else {
+            throw JourneyError.conditionFailed(
+                "native Review activation left frame delivery queued after producer quiescence "
+                    + "(ownerQueued=\(owner.queuedFrameCount), "
+                    + "ownerReceipts=\(owner.inFlightFrameReceiptCount), "
+                    + "retiring=\(owner.retiringInstallationCount))"
             )
         }
     }
 
-    private static func requireHiddenRefreshSettled(
+    static func requireHiddenRefreshSettled(
         _ controller: BridgePaneController
     ) async throws {
-        let settled = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(10)) {
-            let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
-            return snapshot.activity == .loadedHidden
-                && snapshot.activeRefreshPass == nil
-                && snapshot.dirtyFact != nil
-                && controller.activeReviewRefreshTask == nil
-        }
-        guard settled else { throw JourneyError.conditionFailed("hidden refresh did not settle") }
+        let retiringTasks = Array(controller.retiringReviewRefreshTaskById.values)
+        for task in retiringTasks { await task.value }
+        let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
+        guard snapshot.activity == .loadedHidden,
+            snapshot.activeRefreshPass == nil,
+            snapshot.dirtyFact != nil,
+            controller.activeReviewRefreshTask == nil
+        else { throw JourneyError.conditionFailed("hidden refresh did not settle") }
     }
 
     private static func requireHiddenFileRetirementBoundary(
@@ -726,165 +826,106 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         await presentationBarrier?.value
     }
 
-    private static func requireRefreshIdle(_ controller: BridgePaneController) async throws {
-        let idle = await BridgeProductWebKitCarrierTestSupport.waitUntil(timeout: .seconds(20)) {
-            let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
-            return snapshot.activity == .foreground
-                && snapshot.activeRefreshPass == nil
-                && snapshot.dirtyFact == nil
-                && controller.activeReviewRefreshTask == nil
+    private static func requireRefreshIdle(
+        _ controller: BridgePaneController,
+        terminalExpectation: BridgeProductWebKitCatchUpTerminalExpectation
+    ) async throws {
+        let terminalObservations = try await terminalExpectation.wait()
+        while let activeReviewTask = controller.activeReviewRefreshTask {
+            await activeReviewTask.value
         }
-        guard idle else { throw JourneyError.conditionFailed("foreground catch-up did not settle") }
-    }
-
-    /// Suspends until the active surface shows `expectedText` and the inactive one
-    /// shows no status at all.
-    ///
-    /// Both the active-mode marker and the two status texts live in the light DOM,
-    /// so the arrival of this state IS a mutation the observer sees. A deadline here
-    /// would be a verdict about machine speed on a page that renders no frames.
-    private static func requireStatus(
-        _ page: WebPage,
-        activeMode: String,
-        expectedText: String
-    ) async throws -> BridgeProductWebKitTwoPanePositionSnapshot {
-        do {
-            let encoded = try await WebPageEventWaits.waitForDocumentValue(
-                page,
-                reader: """
-                    const encodedSnapshot = (() => { \(positionSnapshotReaderBody) })();
-                    const snapshot = JSON.parse(encodedSnapshot);
-                    if (snapshot.activeMode !== activeMode) { return null; }
-                    const inactiveMode = activeMode === 'file' ? 'review' : 'file';
-                    const activeStatusText = activeMode === 'file'
-                      ? snapshot.fileStatusText
-                      : snapshot.reviewStatusText;
-                    const inactiveStatusText = inactiveMode === 'file'
-                      ? snapshot.fileStatusText
-                      : snapshot.reviewStatusText;
-                    if (activeStatusText !== expectedText) { return null; }
-                    if (inactiveStatusText !== null) { return null; }
-                    return encodedSnapshot;
-                    """,
-                arguments: ["activeMode": activeMode, "expectedText": expectedText]
-            )
-            guard let encoded = encoded as? String,
-                let data = encoded.data(using: .utf8)
-            else {
-                throw JourneyError.conditionFailed(
-                    "matching active-surface status did not return its position snapshot"
-                )
-            }
-            return try JSONDecoder().decode(
-                BridgeProductWebKitTwoPanePositionSnapshot.self,
-                from: data
-            )
-        } catch {
-            throw JourneyError.conditionFailed(
-                "active-surface updating chrome could not be read "
-                    + "(expectedActiveMode: \(activeMode), expectedText: \(expectedText)): \(error)"
-            )
-        }
-    }
-
-    /// Asserts, with one read, that neither surface is showing updating chrome.
-    ///
-    /// Every caller reaches this only after the owner's own barrier has been awaited
-    /// (`requireHiddenFileRetirementBoundary`, `requireBlockedComparison`). This is a
-    /// NEGATIVE claim, so it is read once: polling until the chrome disappears would
-    /// accept a pane that showed "Updating…" it was never supposed to show.
-    private static func requireNoUpdatingStatus(
-        _ page: WebPage
-    ) async throws -> BridgeProductWebKitTwoPanePositionSnapshot {
-        let observed = try await requirePositionSnapshot(page)
-        guard observed.fileStatusText == nil, observed.reviewStatusText == nil else {
-            let observedFileStatusText = observed.fileStatusText ?? "nil"
-            let observedReviewStatusText = observed.reviewStatusText ?? "nil"
-            throw JourneyError.conditionFailed(
-                "loaded-hidden pane retained updating chrome "
-                    + "(fileStatusText: \(observedFileStatusText), "
-                    + "reviewStatusText: \(observedReviewStatusText))"
-            )
-        }
-        return observed
-    }
-
-    private static func requirePositionSnapshot(
-        _ page: WebPage
-    ) async throws -> BridgeProductWebKitTwoPanePositionSnapshot {
-        guard let snapshot = try await positionSnapshot(page) else {
-            throw JourneyError.conditionFailed("WebKit position snapshot was unavailable")
-        }
-        return snapshot
-    }
-
-    private static func positionSnapshot(
-        _ page: WebPage
-    ) async throws -> BridgeProductWebKitTwoPanePositionSnapshot? {
-        let encoded = try await page.callJavaScript(
-            "return (() => { \(positionSnapshotReaderBody) })();"
+        await controller.worktreeRefreshDriver.awaitActiveFileOperations()
+        let snapshot = controller.refreshAdmissionCoordinator.diagnosticSnapshot
+        let terminalResultsDescription = terminalExpectation.describeTerminalResults(
+            terminalObservations, snapshot: snapshot,
+            reviewAttemptDescription: String(
+                describing: controller.refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison?.attempt
+            ))
+        print("Bridge native catch-up terminals: \(terminalResultsDescription)")
+        let allCurrentAttemptsSucceeded =
+            terminalExpectation.currentAttemptsSucceeded(terminalObservations)
+        #expect(
+            allCurrentAttemptsSucceeded,
+            Comment(rawValue: terminalResultsDescription)
         )
-        guard let encoded = encoded as? String,
-            let data = encoded.data(using: .utf8)
-        else { return nil }
-        return try JSONDecoder().decode(BridgeProductWebKitTwoPanePositionSnapshot.self, from: data)
+        let currentModeSignal = controller.activeViewerModeSignalState
+        let acceptedExpectedReviewMode =
+            terminalExpectation.reviewModeIdentity.map { expectedIdentity in
+                currentModeSignal.sessionId == expectedIdentity.sessionId
+                    && currentModeSignal.acceptedMode == .review
+                    && (currentModeSignal.lastSequence ?? 0) >= expectedIdentity.sequence
+            } == true
+        #expect(
+            acceptedExpectedReviewMode,
+            Comment(rawValue: "nativeReviewMode=\(currentModeSignal)")
+        )
+        guard snapshot.activity == .foreground,
+            snapshot.activeRefreshPass == nil,
+            snapshot.dirtyFact == nil,
+            controller.activeReviewRefreshTask == nil,
+            allCurrentAttemptsSucceeded,
+            acceptedExpectedReviewMode
+        else {
+            throw JourneyError.conditionFailed(
+                terminalExpectation.describeUnsettledCatchUp(
+                    snapshot: snapshot,
+                    reviewTaskPresent: controller.activeReviewRefreshTask != nil,
+                    terminalResultsDescription: terminalResultsDescription
+                )
+            )
+        }
     }
 
-    private static let positionSnapshotReaderBody =
-        """
-        const queryOpen = (root, selector) => {
-          const direct = root.querySelector(selector);
-          if (direct !== null) return direct;
-          for (const element of root.querySelectorAll('*')) {
-            if (element.shadowRoot === null) continue;
-            const nested = queryOpen(element.shadowRoot, selector);
-            if (nested !== null) return nested;
-          }
-          return null;
-        };
-        const fileHost = document.querySelector('[data-testid="bridge-viewer-mode-host-file"]');
-        const reviewHost = document.querySelector('[data-testid="bridge-viewer-mode-host-review"]');
-        const fileShell = fileHost?.querySelector('[data-testid="bridge-file-viewer-shell"]');
-        const fileCanvas = fileHost?.querySelector('[data-testid="bridge-file-viewer-code-canvas"]');
-        const reviewShell = reviewHost?.querySelector('[data-testid="review-viewer-shell"]');
-        const fileTreeScroll = fileHost === null ? null : queryOpen(fileHost, '[data-file-tree-virtualized-scroll="true"]');
-        const reviewTreeScroll = reviewHost === null ? null : queryOpen(reviewHost, '[data-file-tree-virtualized-scroll="true"]');
-        const fileCodeScroll = fileHost?.querySelector('.bridge-code-view-scroll-owner');
-        const reviewCodeScroll = reviewHost?.querySelector('.bridge-code-view-scroll-owner');
-        const collapsedDirectory = reviewHost === null
-          ? null
-          : queryOpen(reviewHost, '[data-item-path="Sources/Group00"][aria-expanded]');
-        const activeHost = document.querySelector('[data-bridge-viewer-mode-active="true"]');
-        return JSON.stringify({
-          activeMode: activeHost?.getAttribute('data-bridge-viewer-mode-host') ?? null,
-          comparisonStatusText: reviewHost?.querySelector('[data-testid="bridge-review-comparison-status-banner"]')?.textContent ?? null,
-          fileCodeScrollTop: fileCodeScroll?.scrollTop ?? 0,
-          fileRenderedPath: fileCanvas?.getAttribute('data-worktree-rendered-file-path') ?? null,
-          fileSelectedPath: fileShell?.getAttribute('data-selected-display-path') ?? null,
-          fileStatusText: fileHost?.querySelector('[data-testid="bridge-viewer-content-status"]')?.textContent ?? null,
-          fileTreeScrollTop: fileTreeScroll?.scrollTop ?? 0,
-          hasAppRoot: document.querySelector('[data-testid="bridge-app-root"]') !== null,
-          reviewCodeScrollTop: reviewCodeScroll?.scrollTop ?? 0,
-          reviewCollapsedDirectoryExpansion: collapsedDirectory?.getAttribute('aria-expanded') ?? null,
-          reviewSelectedItemId: reviewHost?.querySelector('[data-testid="bridge-code-view-panel"]')?.getAttribute('data-selected-item-id') ?? null,
-          reviewSelectedPath: reviewShell?.getAttribute('data-selected-display-path') ?? null,
-          reviewStatusText: reviewHost?.querySelector('[data-testid="bridge-viewer-content-status"]')?.textContent ?? null,
-          reviewTreeScrollTop: reviewTreeScroll?.scrollTop ?? 0
-        });
-        """
-
-    private static func activateReviewMode(_ page: WebPage) async -> Bool {
-        (try? await page.callJavaScript(
-            """
-            const button = document.querySelector('[data-testid="bridge-viewer-context-review"]');
-            if (!(button instanceof HTMLElement)) return false;
-            button.click();
-            return true;
-            """
-        )) as? Bool ?? false
+    static func activateReviewMode(
+        _ controller: BridgePaneController
+    ) async throws -> BridgeProductWebKitActiveViewerModeIdentity {
+        let precedingSignal = controller.activeViewerModeSignalState
+        guard let sessionId = precedingSignal.sessionId,
+            let precedingSequence = precedingSignal.lastSequence
+        else {
+            throw JourneyError.conditionFailed(
+                "Review activation had no preceding native mode session and sequence"
+            )
+        }
+        guard
+            (try? await controller.page.callJavaScript(
+                """
+                const button = document.querySelector('[data-testid="bridge-viewer-context-review"]');
+                if (!(button instanceof HTMLElement)) return false;
+                button.click();
+                return true;
+                """
+            )) as? Bool == true
+        else {
+            throw JourneyError.conditionFailed("Review mode control could not be activated")
+        }
+        let acceptedSequence: Int = try await BridgePaneControllerEventWaits.waitForValue(
+            {
+                let currentSignal = controller.activeViewerModeSignalState
+                guard currentSignal.sessionId == sessionId,
+                    currentSignal.acceptedMode == .review,
+                    let currentSequence = currentSignal.lastSequence,
+                    currentSequence > precedingSequence
+                else { return nil }
+                return currentSequence
+            },
+            milestone:
+                "native Review mode acceptance for session \(sessionId) "
+                + "after sequence \(precedingSequence)",
+            lastObservation: {
+                let signal = controller.activeViewerModeSignalState
+                return "session=\(signal.sessionId ?? "nil"),"
+                    + "sequence=\(signal.lastSequence.map { String($0) } ?? "nil"),"
+                    + "mode=\(signal.acceptedMode?.rawValue ?? "nil")"
+            }
+        )
+        return BridgeProductWebKitActiveViewerModeIdentity(
+            sessionId: sessionId,
+            sequence: acceptedSequence
+        )
     }
 
-    private enum JourneyError: Error {
+    enum JourneyError: Error {
         case conditionFailed(String)
     }
 }

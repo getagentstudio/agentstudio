@@ -169,7 +169,9 @@ struct CoordinationPlaneArchitectureTests {
         #expect(FileManager.default.fileExists(atPath: windowLifecycleStorePath.path))
         #expect(sources.appDelegateSource.contains("ApplicationLifecycleMonitor"))
         #expect(sources.appDelegateSource.contains("var applicationLifecycleMonitor: ApplicationLifecycleMonitor"))
-        #expect(sources.appDelegateRoutingSource.contains("Ghostty.bindApplicationLifecycleStore(appLifecycleStore)"))
+        #expect(
+            sources.appDelegateRoutingSource.contains("if case .available(let engine) = engineAvailabilityForBoot()"))
+        #expect(sources.appDelegateRoutingSource.contains("engine.bindApplicationLifecycleStore(appLifecycleStore)"))
         #expect(
             sources.paneTabViewControllerSource.contains("private let appLifecycleStore: AppLifecycleAtom")
         )

@@ -77,6 +77,36 @@ export function createWorkerContentPreparationPump(
 	const pendingWorkById = new Map<string, BridgeWorkerContentPreparationWork>();
 	const enqueuedAtMillisecondsByWorkId = new Map<string, number>();
 	const priorityBypassesByWorkId = new Map<string, number>();
+	const taskTelemetryByWorkId = new Map<
+		string,
+		{
+			durationMilliseconds: number;
+			queueWaitMilliseconds: number;
+			work: BridgeWorkerContentPreparationWork;
+		}
+	>();
+	const finishTaskTelemetry = (
+		work: BridgeWorkerContentPreparationWork,
+		durationMilliseconds: number,
+		queueWaitMilliseconds: number,
+		result: 'cancelled' | 'failed' | 'success',
+	): void => {
+		recordBridgeCommWorkerTaskTelemetry({
+			durationMilliseconds,
+			lane: work.rank,
+			queueWaitMilliseconds,
+			result,
+			taskKind: 'content_preparation',
+			...(work.telemetry?.payloadClass === undefined
+				? {}
+				: { payloadClass: work.telemetry.payloadClass }),
+			...(work.telemetry?.sourceEpoch === undefined
+				? {}
+				: { sourceEpoch: work.telemetry.sourceEpoch }),
+			...(props.telemetryClient === undefined ? {} : { telemetryClient: props.telemetryClient }),
+			...(work.telemetry?.workKind === undefined ? {} : { workKind: work.telemetry.workKind }),
+		});
+	};
 
 	return {
 		enqueue: (work: BridgeWorkerContentPreparationWork): void => {
@@ -98,6 +128,24 @@ export function createWorkerContentPreparationPump(
 			});
 		},
 		cancel: (workId: string): void => {
+			const taskTelemetry = taskTelemetryByWorkId.get(workId);
+			const pendingWork = pendingWorkById.get(workId);
+			if (taskTelemetry !== undefined) {
+				finishTaskTelemetry(
+					taskTelemetry.work,
+					taskTelemetry.durationMilliseconds,
+					taskTelemetry.queueWaitMilliseconds,
+					'cancelled',
+				);
+			} else if (pendingWork !== undefined) {
+				finishTaskTelemetry(
+					pendingWork,
+					0,
+					Math.max(0, now() - (enqueuedAtMillisecondsByWorkId.get(workId) ?? now())),
+					'cancelled',
+				);
+			}
+			taskTelemetryByWorkId.delete(workId);
 			pendingWorkById.delete(workId);
 			enqueuedAtMillisecondsByWorkId.delete(workId);
 			priorityBypassesByWorkId.delete(workId);
@@ -117,31 +165,42 @@ export function createWorkerContentPreparationPump(
 					sliceStartedAtMilliseconds -
 					(enqueuedAtMillisecondsByWorkId.get(work.id) ?? sliceStartedAtMilliseconds);
 				enqueuedAtMillisecondsByWorkId.delete(work.id);
-				const result = work.runSlice({
-					elapsedMs,
-					maxSliceMs: remainingBudgetMs,
-					remainingBudgetMs,
-					shouldYield: (): boolean => now() - sliceStartedAtMilliseconds >= remainingBudgetMs,
-				});
-				const sliceDurationMilliseconds = now() - sliceStartedAtMilliseconds;
-				recordBridgeCommWorkerTaskTelemetry({
-					durationMilliseconds: sliceDurationMilliseconds,
-					lane: work.rank,
+				const taskTelemetry = taskTelemetryByWorkId.get(work.id) ?? {
+					durationMilliseconds: 0,
 					queueWaitMilliseconds,
-					taskKind: 'content_preparation',
-					...(work.telemetry?.payloadClass === undefined
-						? {}
-						: { payloadClass: work.telemetry.payloadClass }),
-					...(work.telemetry?.sourceEpoch === undefined
-						? {}
-						: { sourceEpoch: work.telemetry.sourceEpoch }),
-					...(props.telemetryClient === undefined
-						? {}
-						: { telemetryClient: props.telemetryClient }),
-					...(work.telemetry?.workKind === undefined ? {} : { workKind: work.telemetry.workKind }),
-				});
+					work,
+				};
+				taskTelemetry.work = work;
+				taskTelemetryByWorkId.set(work.id, taskTelemetry);
+				let result: BridgeWorkerContentPreparationResult;
+				try {
+					result = work.runSlice({
+						elapsedMs,
+						maxSliceMs: remainingBudgetMs,
+						remainingBudgetMs,
+						shouldYield: (): boolean => now() - sliceStartedAtMilliseconds >= remainingBudgetMs,
+					});
+				} catch (error) {
+					taskTelemetry.durationMilliseconds += now() - sliceStartedAtMilliseconds;
+					finishTaskTelemetry(
+						work,
+						taskTelemetry.durationMilliseconds,
+						taskTelemetry.queueWaitMilliseconds,
+						'failed',
+					);
+					taskTelemetryByWorkId.delete(work.id);
+					throw error;
+				}
+				taskTelemetry.durationMilliseconds += now() - sliceStartedAtMilliseconds;
 				if (result.complete) {
 					completedIds.push(work.id);
+					finishTaskTelemetry(
+						work,
+						taskTelemetry.durationMilliseconds,
+						taskTelemetry.queueWaitMilliseconds,
+						'success',
+					);
+					taskTelemetryByWorkId.delete(work.id);
 				} else if (result.continuation !== 'external') {
 					enqueueOrPromoteBridgeWorkerPreparationWork({
 						enqueuedAtMillisecondsByWorkId,

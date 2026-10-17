@@ -1,4 +1,5 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -7,6 +8,224 @@ import Testing
 
 @Suite(.serialized)
 struct FilesystemActorFilteringTests {
+    @Test("Unicode prefix spellings retain their distinct batch changeset outcomes", arguments: [true, false])
+    func unicodePrefixSpellingsRetainChangesetOutcomes(composedFirst: Bool) async throws {
+        // Arrange
+        let bus = EventBus<RuntimeEnvelope>()
+        let actor = makeActor(bus: bus)
+        let worktreeId = UUIDv7.generate()
+        let rootPath = FileManager.default.temporaryDirectory.appending(path: "unicode-prefix-batch-\(worktreeId)")
+        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try "caf?\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        let composedPath = "caf\u{00E9}/first.swift"
+        let decomposedPath = "cafe\u{0301}/second.swift"
+        let closingPath = "Sources/unicode-close-\(UUIDv7.generate()).swift"
+        let projectedPaths = [closingPath, decomposedPath]
+        let batchPaths = composedFirst ? [composedPath, decomposedPath] : [decomposedPath, composedPath]
+        // Native ingress supplies absolute strings. Avoid the relative-path URL
+        // append, which can decompose Unicode before the lexical routing path.
+        let rawPaths = (batchPaths + [closingPath]).map { rootPath.path + "/" + $0 }
+        let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        let recorder = EventBusFactSource.attach(
+            subscription: subscription,
+            vocabulary: FactVocabulary<UUID, FileChangeset>(
+                describeScope: { $0.uuidString }, describeFact: { "changeset \($0.batchSeq): \($0.paths)" },
+                isClosing: { _, fact in fact.paths.contains(closingPath) }),
+            replayWasTruncated: {
+                if case .possiblyTruncated = subscription.replayStatus { return true }
+                return false
+            },
+            classify: { envelope in
+                guard case .worktree(let worktree) = envelope,
+                    case .filesystem(.filesChanged(let changeset)) = worktree.event
+                else { return nil }
+                return (changeset.worktreeId, changeset)
+            })
+        let opening = await recorder.mark(worktreeId)
+
+        do {
+            // Act
+            await actor.enqueueRawPaths(worktreeId: worktreeId, paths: rawPaths)
+
+            // Assert: caf? excludes only the composed ancestor. Distinct leaves
+            // prevent full-path set equality from concealing a prefix-cache error.
+            let closingChangeset = try await recorder.expectNext(
+                in: worktreeId, where: { $0.paths.contains(closingPath) }, "Unicode batch changeset close")
+            #expect(closingChangeset.paths == projectedPaths)
+            #expect(closingChangeset.suppressedIgnoredPathCount == 1)
+            try await recorder.expectNone(
+                of: {
+                    $0.paths != projectedPaths || $0.containsGitInternalChanges || $0.suppressedGitInternalPathCount > 0
+                },
+                "incorrect Unicode projected paths or Git invalidation", from: opening,
+                closedBy: { $0.paths.contains(closingPath) })
+        } catch {
+            await actor.shutdown()
+            try? await recorder.finish()
+            throw error
+        }
+        await actor.shutdown()
+        try await recorder.finish()
+    }
+
+    @Test("ignored build burst closes with only its projected path")
+    func ignoredBuildBurstClosesWithOnlyProjectedPath() async throws {
+        // Arrange
+        let bus = EventBus<RuntimeEnvelope>()
+        let actor = makeActor(bus: bus)
+        let worktreeId = UUIDv7.generate()
+        let rootPath = FileManager.default.temporaryDirectory.appending(path: "ignored-build-burst-\(worktreeId)")
+        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try ".build-*/\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        let closingPath = "Sources/burst-close-\(UUIDv7.generate()).swift"
+        let ignoredPaths = (0..<512).map { ".build-agent-1/checkouts/dep/Sources/file-\($0).swift" }
+        let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        let recorder = EventBusFactSource.attach(
+            subscription: subscription,
+            vocabulary: FactVocabulary<UUID, FileChangeset>(
+                describeScope: { $0.uuidString }, describeFact: { "changeset \($0.batchSeq): \($0.paths)" },
+                isClosing: { _, fact in fact.paths.contains(closingPath) }),
+            replayWasTruncated: {
+                if case .possiblyTruncated = subscription.replayStatus { return true }
+                return false
+            },
+            classify: { envelope in
+                guard case .worktree(let worktree) = envelope,
+                    case .filesystem(.filesChanged(let changeset)) = worktree.event
+                else { return nil }
+                return (changeset.worktreeId, changeset)
+            })
+        let opening = await recorder.mark(worktreeId)
+
+        do {
+            // Act
+            await actor.enqueueRawPaths(worktreeId: worktreeId, paths: ignoredPaths + [closingPath])
+
+            // Assert: consume all facts through the correlated real flush, so
+            // ignored-only or Git-internal changesets cannot precede the close.
+            let closingChangeset = try await recorder.expectNext(
+                in: worktreeId, where: { $0.paths.contains(closingPath) }, "build burst changeset close")
+            #expect(closingChangeset.paths == [closingPath])
+            #expect(closingChangeset.suppressedIgnoredPathCount == ignoredPaths.count)
+            try await recorder.expectNone(
+                of: {
+                    $0.paths != [closingPath] || $0.containsGitInternalChanges || $0.suppressedGitInternalPathCount > 0
+                },
+                "extra projected paths or Git invalidation in build burst", from: opening,
+                closedBy: { $0.paths.contains(closingPath) })
+        } catch {
+            await actor.shutdown()
+            try? await recorder.finish()
+            throw error
+        }
+        await actor.shutdown()
+        try await recorder.finish()
+    }
+
+    @Test("ignored nested Git ingress emits no Git invalidation through its correlated changeset close")
+    func ignoredNestedGitIngressDoesNotInvalidateOwningWorktree() async throws {
+        // Arrange
+        let bus = EventBus<RuntimeEnvelope>()
+        let actor = makeActor(bus: bus)
+        let worktreeId = UUIDv7.generate()
+        let rootPath = FileManager.default.temporaryDirectory.appending(
+            path: "ignored-nested-git-\(worktreeId)")
+        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try ".build-*\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        let closingPath = "Sources/ingress-close-\(UUIDv7.generate()).swift"
+        let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        let recorder = EventBusFactSource.attach(
+            subscription: subscription,
+            vocabulary: FactVocabulary<UUID, FileChangeset>(
+                describeScope: { $0.uuidString },
+                describeFact: {
+                    "changeset \($0.batchSeq): \($0.paths), Git internal: \($0.containsGitInternalChanges)"
+                },
+                isClosing: { _, fact in fact.paths.contains(closingPath) }),
+            replayWasTruncated: {
+                if case .possiblyTruncated = subscription.replayStatus { return true }
+                return false
+            },
+            classify: { envelope in
+                guard case .worktree(let worktree) = envelope,
+                    case .filesystem(.filesChanged(let changeset)) = worktree.event
+                else { return nil }
+                return (changeset.worktreeId, changeset)
+            })
+        let opening = await recorder.mark(worktreeId)
+
+        do {
+            // Act: the included path closes this batch through the owner's real flush.
+            await actor.enqueueRawPaths(
+                worktreeId: worktreeId,
+                paths: [rootPath.appending(path: ".build-agent-1/checkouts/dep/.git/index").path, closingPath])
+
+            // Assert
+            try await recorder.expectNone(
+                of: { $0.containsGitInternalChanges || $0.suppressedGitInternalPathCount > 0 },
+                "Git-internal invalidation from an ignored build checkout", from: opening,
+                closedBy: { $0.paths.contains(closingPath) })
+        } catch {
+            await actor.shutdown()
+            try? await recorder.finish()
+            throw error
+        }
+        await actor.shutdown()
+        try await recorder.finish()
+    }
+
+    @Test("own Git index ingress remains a Git-internal invalidation under build ignore rules")
+    func ownGitIndexIngressStillInvalidatesOwningWorktree() async throws {
+        // Arrange
+        let bus = EventBus<RuntimeEnvelope>()
+        let actor = makeActor(bus: bus)
+        let worktreeId = UUIDv7.generate()
+        let rootPath = FileManager.default.temporaryDirectory.appending(path: "own-git-index-\(worktreeId)")
+        try FileManager.default.createDirectory(at: rootPath, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: rootPath) }
+        try ".build-*\n".write(to: rootPath.appending(path: ".gitignore"), atomically: true, encoding: .utf8)
+        await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
+        let subscription = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
+        let recorder = EventBusFactSource.attach(
+            subscription: subscription,
+            vocabulary: FactVocabulary<UUID, FileChangeset>(
+                describeScope: { $0.uuidString }, describeFact: { "changeset \($0.batchSeq)" },
+                isClosing: { _, _ in true }),
+            replayWasTruncated: {
+                if case .possiblyTruncated = subscription.replayStatus { return true }
+                return false
+            },
+            classify: { envelope in
+                guard case .worktree(let worktree) = envelope,
+                    case .filesystem(.filesChanged(let changeset)) = worktree.event
+                else { return nil }
+                return (changeset.worktreeId, changeset)
+            })
+
+        do {
+            // Act
+            await actor.enqueueRawPaths(worktreeId: worktreeId, paths: [rootPath.appending(path: ".git/index").path])
+
+            // Assert
+            _ = try await recorder.expectNext(
+                in: worktreeId,
+                where: { $0.containsGitInternalChanges && $0.suppressedGitInternalPathCount == 1 },
+                "own Git index changeset")
+        } catch {
+            await actor.shutdown()
+            try? await recorder.finish()
+            throw error
+        }
+        await actor.shutdown()
+        try await recorder.finish()
+    }
+
     @Test("path-free full Git invalidation reaches the existing debounced changeset path")
     func pathFreeFullGitInvalidationReachesExistingDebounce() async throws {
         let bus = EventBus<RuntimeEnvelope>()
@@ -209,7 +428,9 @@ struct FilesystemActorFilteringTests {
     @Test("ignored-only changes do not emit filesChanged envelope")
     func ignoredOnlyChangesDoNotEmitFilesChangedEnvelope() async throws {
         let bus = EventBus<RuntimeEnvelope>()
-        let actor = makeActor(bus: bus)
+        let actor = FilesystemActor(
+            bus: bus, fseventStreamClient: ControllableFSEventStreamClient(), sleepClock: TestPushClock(),
+            debounceWindow: .zero, maxFlushLatency: .zero)
 
         let rootPath = FileManager.default.temporaryDirectory
             .appending(path: "ignored-only-\(UUIDv7.generate().uuidString)")
@@ -224,26 +445,18 @@ struct FilesystemActorFilteringTests {
         let worktreeId = UUIDv7.generate()
         await actor.register(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
 
-        let observed = FilteringObservedFilesystemChanges()
-        let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
-        let collectionTask = Task {
-            for await envelope in stream {
-                await observed.record(envelope)
-            }
-        }
-        defer { collectionTask.cancel() }
+        let probe = await FilesystemPublicationProbe(bus: bus)
+        _ = await probe.begin()
 
         await actor.enqueueRawPaths(
             worktreeId: worktreeId,
             paths: ["cache.tmp", ".git/FETCH_HEAD"]
         )
-        for _ in 0..<300 {
-            await Task.yield()
-        }
-
-        #expect(await observed.filesChangedCount(for: worktreeId) == 0)
+        #expect(await actor.pendingWorktreeLogicalDebtCount == 0)
 
         await actor.shutdown()
+        try await probe.closeAfterProducerReturn()
+        #expect(probe.changesets.isEmpty)
     }
 
     @Test("gitignore modification reloads filter for subsequent batches")

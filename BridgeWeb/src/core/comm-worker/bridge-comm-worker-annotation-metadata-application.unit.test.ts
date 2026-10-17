@@ -1,211 +1,122 @@
 import { describe, expect, test } from 'vitest';
 
-import { BridgeCommWorkerAnnotationMetadataApplication } from './bridge-comm-worker-annotation-metadata-application.js';
-import type { BridgeProductMetadataDataFrame } from './bridge-product-metadata-application-protocol.js';
-import { bridgeProductReviewAnnotationMetadataApplicationProtocol } from './bridge-product-metadata-application-registry.js';
-import type {
-	BridgeProductWorktreeAnnotationCatalogEntry,
-	BridgeProductWorktreeAnnotationEvent,
-} from './bridge-product-worktree-annotation-contracts.js';
+import { installBridgeProductCommentBatch } from './bridge-product-comment-batch-installer.js';
+import type { BridgeProductWorktreeAnnotationCatalogEntry } from './bridge-product-worktree-annotation-contracts.js';
+import {
+	createHarness,
+	makeCommentCatalogInstallation,
+	makeProjectionPages,
+	sessionId,
+	uuidv7,
+	worktreeId,
+} from './test-fixtures/bridge-comm-worker-annotation-projection.test-support.js';
 
-const sessionId = '01890abc-def0-7abc-8def-0123456789ab';
-const threadId = '01890abc-def0-7abc-8def-0123456789ac';
-const firstWorktreeId = 'worktree-1';
+const firstSubscriptionId = 'file-annotation-notifications';
+const replacementSubscriptionId = 'file-annotation-replacement';
 const replacementWorktreeId = 'worktree-2';
+const threadId = uuidv7(2);
 
-type AnnotationMetadataFrame = BridgeProductMetadataDataFrame<BridgeProductWorktreeAnnotationEvent>;
+function sessionScopedEntries(
+	semanticRevision: number,
+): readonly BridgeProductWorktreeAnnotationCatalogEntry[] {
+	return [
+		{ kind: 'session' as const, semanticRevision, sessionId },
+		{ createdOrdinal: 0, kind: 'thread' as const, scope: 'session' as const, sessionId, threadId },
+	];
+}
 
-describe('Bridge communication worker annotation metadata application authority', () => {
-	test('commits a registered session-scoped thread into the normalized worker catalog', () => {
-		const application = new BridgeCommWorkerAnnotationMetadataApplication();
-		const catalogActions = commitCatalog(application, {
-			catalogRevision: 1,
-			subscriptionId: 'annotation-subscription-session-scope',
-			worktreeId: firstWorktreeId,
-			workerDerivationEpoch: 1,
-		});
-		const committedCatalogAction = catalogActions.at(-1);
-
-		expect(committedCatalogAction?.kind).toBe('catalog');
-		if (committedCatalogAction?.kind !== 'catalog') return;
-		expect(committedCatalogAction.catalog.threadsById.get(threadId)).toMatchObject({
+describe('Bridge communication worker certified Comment catalog authority', () => {
+	test('commits a session-scoped thread and admits a current demanded body read', async () => {
+		const catalog = installBridgeProductCommentBatch(
+			makeCommentCatalogInstallation({
+				snapshotCause: 'open',
+				entries: sessionScopedEntries(3),
+				revision: 3,
+				subscriptionId: firstSubscriptionId,
+				subscriptionKind: 'file.annotations',
+				worktreeId,
+			}),
+			{ subscriptionId: firstSubscriptionId, workerDerivationEpoch: 1, worktreeId },
+		);
+		expect(catalog.threadsById.get(threadId)).toMatchObject({
 			scope: 'session',
 			sessionId,
 			threadId,
 		});
+
+		const harness = await createHarness({ pages: await makeProjectionPages(1, 3) });
+		try {
+			harness.controller.ensureSubscription();
+			harness.controller.setDemand({ active: true, sessionIds: [sessionId], sourceGeneration: 3 });
+			harness.controller.acceptInstalledCatalog(catalog);
+			await harness.controller.waitForIdle();
+
+			expect(harness.failures).toEqual([]);
+			expect(harness.querySessionIds).toEqual([[], [sessionId]]);
+			expect(harness.publications.at(-1)?.snapshot.sessions).toEqual(
+				expect.arrayContaining([expect.objectContaining({ sessionId, semanticRevision: 3 })]),
+			);
+		} finally {
+			await harness.controller.dispose();
+		}
 	});
 
-	test('ignores noncatalog events before a lifecycle catalog establishes authority', () => {
-		const application = new BridgeCommWorkerAnnotationMetadataApplication();
-
-		expect(
-			application.accept(
-				frame({
-					event: {
-						authority: { applicationSourceGeneration: 1, worktreeId: firstWorktreeId },
-						kind: 'annotation.controlChanged',
-						reason: 'discovery',
-					},
-				}),
-				[],
-			),
-		).toEqual({ kind: 'none' });
-	});
-
-	test('rejects a same-lifecycle worktree replacement and admits a new lifecycle catalog', () => {
-		const application = new BridgeCommWorkerAnnotationMetadataApplication();
-		const firstCatalogActions = commitCatalog(application, {
-			catalogRevision: 20,
-			subscriptionId: 'annotation-subscription-1',
-			worktreeId: firstWorktreeId,
-			workerDerivationEpoch: 1,
+	test('rejects a same-lifecycle worktree substitution and admits a new certified lifecycle', () => {
+		const firstInstallation = makeCommentCatalogInstallation({
+			snapshotCause: 'open',
+			entries: sessionScopedEntries(1),
+			revision: 1,
+			subscriptionId: firstSubscriptionId,
+			subscriptionKind: 'file.annotations',
+			worktreeId,
 		});
-		expect(firstCatalogActions.at(-1)?.kind).toBe('catalog');
-		expect(
-			application.accept(
-				frame({
-					event: {
-						authority: { applicationSourceGeneration: 21, worktreeId: replacementWorktreeId },
-						kind: 'annotation.controlChanged',
-						reason: 'discovery',
-					},
-				}),
-				[],
-			),
-		).toEqual({ kind: 'none' });
-		expect(
-			application.accept(
-				frame({
-					event: {
-						authority: { applicationSourceGeneration: 21, worktreeId: replacementWorktreeId },
-						kind: 'annotation.sessionChanged',
-						semanticRevision: 4,
-						sessionId,
-					},
-				}),
-				[sessionId],
-			),
-		).toEqual({ kind: 'none' });
-
-		const sameLifecycleReplacementActions = commitCatalog(application, {
-			catalogRevision: 21,
-			subscriptionId: 'annotation-subscription-1',
-			worktreeId: replacementWorktreeId,
+		const firstCatalog = installBridgeProductCommentBatch(firstInstallation, {
+			subscriptionId: firstSubscriptionId,
 			workerDerivationEpoch: 1,
+			worktreeId,
 		});
-		expect(sameLifecycleReplacementActions).toEqual([
-			{ kind: 'none' },
-			{ kind: 'none' },
-			{ kind: 'none' },
-		]);
+		expect(firstCatalog.authority.worktreeId).toBe(worktreeId);
 
-		const replacementCatalogActions = commitCatalog(application, {
-			catalogRevision: 1,
-			subscriptionId: 'annotation-subscription-2',
+		const replacementInstallation = makeCommentCatalogInstallation({
+			snapshotCause: 'open',
+			entries: sessionScopedEntries(1),
+			revision: 1,
+			subscriptionId: replacementSubscriptionId,
+			subscriptionKind: 'file.annotations',
 			worktreeId: replacementWorktreeId,
+		});
+		expect(() =>
+			installBridgeProductCommentBatch(replacementInstallation, {
+				subscriptionId: firstSubscriptionId,
+				workerDerivationEpoch: 1,
+				worktreeId,
+			}),
+		).toThrow(/subscription/u);
+		const sameLifecycleWrongWorktree = makeCommentCatalogInstallation({
+			snapshotCause: 'open',
+			entries: sessionScopedEntries(1),
+			revision: 2,
+			subscriptionId: firstSubscriptionId,
+			subscriptionKind: 'file.annotations',
+			worktreeId: replacementWorktreeId,
+		});
+		expect(() =>
+			installBridgeProductCommentBatch(sameLifecycleWrongWorktree, {
+				subscriptionId: firstSubscriptionId,
+				workerDerivationEpoch: 1,
+				worktreeId,
+			}),
+		).toThrow(/worktree/u);
+
+		const replacementCatalog = installBridgeProductCommentBatch(replacementInstallation, {
+			subscriptionId: replacementSubscriptionId,
 			workerDerivationEpoch: 2,
+			worktreeId: replacementWorktreeId,
 		});
-		expect(replacementCatalogActions.at(-1)).toMatchObject({ kind: 'catalog' });
+		expect(replacementCatalog.authority).toEqual({
+			subscriptionId: replacementSubscriptionId,
+			workerDerivationEpoch: 2,
+			worktreeId: replacementWorktreeId,
+		});
 	});
 });
-
-function commitCatalog(
-	application: BridgeCommWorkerAnnotationMetadataApplication,
-	props: {
-		readonly catalogRevision: number;
-		readonly subscriptionId: string;
-		readonly worktreeId: string;
-		readonly workerDerivationEpoch: number;
-	},
-): readonly ReturnType<BridgeCommWorkerAnnotationMetadataApplication['accept']>[] {
-	const transferId = `${props.subscriptionId}-${props.catalogRevision}`;
-	const entries = validCatalogEntries();
-	const events: readonly BridgeProductWorktreeAnnotationEvent[] = [
-		{
-			authority: {
-				applicationSourceGeneration: props.catalogRevision,
-				worktreeId: props.worktreeId,
-			},
-			kind: 'annotation.catalog',
-			transfer: {
-				catalogRevision: props.catalogRevision,
-				expectedEntryCount: entries.length,
-				kind: 'catalog.begin',
-				transferId,
-			},
-		},
-		{
-			authority: {
-				applicationSourceGeneration: props.catalogRevision,
-				worktreeId: props.worktreeId,
-			},
-			kind: 'annotation.catalog',
-			transfer: {
-				catalogRevision: props.catalogRevision,
-				entries,
-				kind: 'catalog.window',
-				transferId,
-				windowOrdinal: 0,
-			},
-		},
-		{
-			authority: {
-				applicationSourceGeneration: props.catalogRevision,
-				worktreeId: props.worktreeId,
-			},
-			kind: 'annotation.catalog',
-			transfer: {
-				catalogRevision: props.catalogRevision,
-				entryCount: entries.length,
-				kind: 'catalog.commit',
-				transferId,
-				windowCount: 1,
-			},
-		},
-	];
-
-	return events.map((event, index) => {
-		const registeredData =
-			bridgeProductReviewAnnotationMetadataApplicationProtocol.dataSchema.parse({
-				event,
-				subscriptionKind: 'review.annotations',
-			});
-		return application.accept(
-			frame({
-				event: registeredData.event,
-				streamSequence: index + 1,
-				subscriptionId: props.subscriptionId,
-				subscriptionSequence: index + 1,
-				workerDerivationEpoch: props.workerDerivationEpoch,
-			}),
-			[],
-		);
-	});
-}
-
-function frame(props: {
-	readonly event: BridgeProductWorktreeAnnotationEvent;
-	readonly streamSequence?: number;
-	readonly subscriptionId?: string;
-	readonly subscriptionSequence?: number;
-	readonly workerDerivationEpoch?: number;
-}): AnnotationMetadataFrame {
-	return {
-		data: props.event,
-		metadataStreamId: 'annotation-metadata-stream',
-		operationCorrelationId: null,
-		sourceGeneration: props.event.authority.applicationSourceGeneration,
-		streamSequence: props.streamSequence ?? 1,
-		subscriptionId: props.subscriptionId ?? 'annotation-subscription-1',
-		subscriptionKind: 'review.annotations',
-		subscriptionSequence: props.subscriptionSequence ?? 1,
-		workerDerivationEpoch: props.workerDerivationEpoch ?? 1,
-	};
-}
-
-function validCatalogEntries(): readonly BridgeProductWorktreeAnnotationCatalogEntry[] {
-	return [
-		{ kind: 'session', semanticRevision: 3, sessionId },
-		{ createdOrdinal: 0, kind: 'thread', scope: 'session', sessionId, threadId },
-	];
-}

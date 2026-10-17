@@ -99,7 +99,7 @@ struct VendorWorktreeScriptTests {
         // Assert — the preflight names the exact missing path.
         #expect(setup.exitCode != 0)
         #expect(setup.stderr.contains("GhosttyKit XCFramework has no slice header"))
-        #expect(setup.stderr.contains("Headers/ghostty.h"))
+        #expect(setup.stderr.contains("Headers/GhosttyKit/ghostty.h"))
     }
 
     @Test("invalid primary source types fail without replacing linked collisions")

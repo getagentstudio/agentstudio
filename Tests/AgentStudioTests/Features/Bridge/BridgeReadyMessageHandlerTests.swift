@@ -1,3 +1,4 @@
+import AgentStudioCore
 import Foundation
 import Testing
 
@@ -5,6 +6,43 @@ import Testing
 
 @Suite(.serialized)
 final class BridgeReadyMessageHandlerTests {
+    @Test
+    func acceptsPaneReloadBeforeProductSessionBootstrap() {
+        let json =
+            #"{"jsonrpc":"2.0","id":"reload-1","method":"bridge.pageCommand.run","params":{"command":"reloadBridgeWebView"}}"#
+        #expect(
+            BridgeReadyMessageHandler.decodeBootstrapMessage(from: json)
+                == .runPageCommand(requestId: "reload-1", command: .reloadBridgeWebView))
+    }
+
+    @Test
+    func pageCommandCannotSupplyAPaneOrExtraAuthority() {
+        for params in [
+            #"{"command":"reloadBridgeWebView","paneId":"other-pane"}"#,
+            #"{"command":"reloadBridgeWebView","extra":true}"#, #"{}"#, #"{"command":false}"#,
+        ] {
+            let json =
+                "{\"jsonrpc\":\"2.0\",\"id\":\"reload-1\",\"method\":\"bridge.pageCommand.run\",\"params\":\(params)}"
+            #expect(
+                BridgeReadyMessageHandler.decodeBootstrapMessage(from: json)
+                    == .invalid(id: "reload-1", message: "Invalid request"))
+        }
+    }
+
+    @Test
+    func refusesEveryOtherAppCommandOnThePreSessionChannel() throws {
+        for command in AppCommand.allCases where command != .reloadBridgeWebView {
+            let data = try JSONSerialization.data(withJSONObject: [
+                "jsonrpc": "2.0", "id": "refused-1", "method": "bridge.pageCommand.run",
+                "params": ["command": command.rawValue],
+            ])
+            let json = try #require(String(data: data, encoding: .utf8))
+            #expect(
+                BridgeReadyMessageHandler.decodeBootstrapMessage(from: json)
+                    == .invalid(id: "refused-1", message: "Invalid request"))
+        }
+    }
+
     @Test
     func acceptsReadyBootstrapRequestOnly() {
         let json = #"{"jsonrpc":"2.0","id":"ready-1","method":"bridge.ready","params":{}}"#

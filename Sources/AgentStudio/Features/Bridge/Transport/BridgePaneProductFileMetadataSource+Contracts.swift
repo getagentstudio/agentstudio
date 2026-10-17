@@ -11,12 +11,19 @@ struct BridgePaneProductFileSourceAuthority: Sendable {
 }
 
 struct BridgePaneProductFileMetadataEmission: Sendable {
-    let event: BridgeProductFileMetadataEvent
+    let fact: BridgePaneProductFileSourceFact
     let subscriptionId: String
 }
 
-typealias BridgePaneProductFileMetadataEventSink =
-    @Sendable (BridgeProductFileMetadataEvent) async throws -> Void
+struct BridgePaneProductFileViewDemand: Equatable, Sendable {
+    let admissionSequence: Int
+    let handle: String
+    let scopeRevision: Int
+    let state: BridgeProductFileMetadataInterestState
+}
+
+typealias BridgePaneProductFileSourceFactSink =
+    @Sendable (BridgePaneProductFileSourceFact) async throws -> Void
 
 typealias BridgePaneProductFileSourceAcceptedObserver =
     @Sendable (BridgeProductFileSourceIdentity) async -> Void
@@ -45,18 +52,25 @@ struct BridgeFileMetadataSourceDiagnostics: Equatable, Sendable {
 }
 
 protocol BridgePaneProductFileMetadataProducing: Sendable {
-    func currentSource() async -> BridgeProductFileSourceCurrentResult
+    func currentSource() async throws(BridgeWorktreeFileRootAccessError) -> BridgeProductFileSourceCurrentResult
+    func captureKeyedSnapshot(
+        subscriptionId: String,
+        demand: BridgePaneProductFileViewDemand,
+        productAdmission: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot?
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId: String,
+        demand: BridgePaneProductFileViewDemand,
         productAdmission: BridgeProductAdmissionContext,
         foregroundWorkAdmission: BridgePaneRefreshWorkAdmission,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture: Bool,
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws
     func cancel(subscriptionId: String) async
     func publish(
@@ -136,20 +150,28 @@ actor BridgeUnavailablePaneProductFileMetadataSource: BridgePaneProductFileMetad
         .unavailable(.noFileSourceAuthority)
     }
 
+    func captureKeyedSnapshot(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
+        productAdmission _: BridgeProductAdmissionContext
+    ) async -> BridgeWorktreeFileKeyedSnapshot? { nil }
+
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         throw BridgePaneProductFileMetadataSourceError.unavailableAuthority
     }
 
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId _: String,
+        demand _: BridgePaneProductFileViewDemand,
         productAdmission _: BridgeProductAdmissionContext,
         foregroundWorkAdmission _: BridgePaneRefreshWorkAdmission,
-        emit _: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture _: Bool,
+        emit _: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         throw BridgePaneProductFileMetadataSourceError.unavailableAuthority
     }

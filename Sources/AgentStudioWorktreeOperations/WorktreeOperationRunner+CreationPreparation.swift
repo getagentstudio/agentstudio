@@ -1,0 +1,94 @@
+import AgentStudioGit
+import Foundation
+
+extension WorktreeOperationRunner {
+    func preflightCreation(
+        start: URL,
+        branch: String,
+        forkSource: Bool
+    ) async -> WorktreeCreationPreparation {
+        let discovery: WorktreeDiscovery
+        switch await discover(start: start, forkSource: forkSource) {
+        case .outcome(let outcome):
+            return .outcome(outcome)
+        case .found(let value):
+            discovery = value
+        }
+
+        guard let mainWorktreePath = discovery.identity.mainWorktreePath?.standardizedFileURL else {
+            return .outcome(.refused(.unsupportedRepositoryLayout(discovery.sourceWorktreePath)))
+        }
+
+        let branchName: WorktreeBranchName
+        switch WorktreeBranchName.validated(branch) {
+        case .success(let value):
+            branchName = value
+        case .failure(let rejection):
+            return .outcome(.refused(.invalidBranchName(.local(rejection))))
+        }
+
+        // LR1 step (1), first and before any network: a re-run of `new feat` whose `<repo>.feat` already
+        // holds the branch is told where it is, not that the destination exists.
+        do throws(GitDataPlaneError) {
+            if let holder = try await WorktreeCreationBranchResolver(client: client).branchHolder(
+                repositoryPath: discovery.repositoryPath, branch: branchName.rawValue)
+            {
+                return .outcome(.refused(.creationStopped(.branchCheckedOut(path: holder.standardizedFileURL.path))))
+            }
+        } catch {
+            return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
+        }
+
+        guard
+            let destinationPath = WorktreeDestinationNaming.siblingPath(
+                repositoryPath: mainWorktreePath,
+                branchName: branchName
+            )
+        else {
+            return .outcome(.refused(.emptyBranchSlug))
+        }
+
+        if FileManager.default.fileExists(atPath: destinationPath.path) {
+            return .outcome(.refused(.destinationExists(destinationPath)))
+        }
+
+        let destinationParent = destinationPath.deletingLastPathComponent()
+        var parentIsDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: destinationParent.path, isDirectory: &parentIsDirectory),
+            parentIsDirectory.boolValue
+        else {
+            return .outcome(.refused(.destinationParentMissing(destinationParent)))
+        }
+
+        // An existing branch no longer refuses here: LR1's resolver decides what it means.
+        let branches: [GitBranchSnapshot]
+        do {
+            branches = try await client.branches(for: discovery.repositoryPath)
+        } catch {
+            return .outcome(.failed(WorktreeOperationErrorMapper.readFailure(error)))
+        }
+
+        return .ready(
+            PreparedWorktreeCreation(
+                branchName: branchName,
+                sourceWorktreePath: discovery.sourceWorktreePath,
+                repositoryPath: discovery.repositoryPath,
+                destinationPath: destinationPath,
+                branches: branches
+            ))
+    }
+
+}
+
+struct PreparedWorktreeCreation {
+    let branchName: WorktreeBranchName
+    let sourceWorktreePath: URL
+    let repositoryPath: URL
+    let destinationPath: URL
+    let branches: [GitBranchSnapshot]
+}
+
+enum WorktreeCreationPreparation {
+    case ready(PreparedWorktreeCreation)
+    case outcome(WorktreeOperationOutcome)
+}

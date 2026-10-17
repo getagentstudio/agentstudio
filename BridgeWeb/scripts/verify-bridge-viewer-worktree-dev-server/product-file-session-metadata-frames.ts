@@ -32,7 +32,12 @@ export class BridgeVerifierMetadataFrames {
 				// oxlint-disable-next-line no-await-in-loop -- Physical observations preserve stream order.
 				await this.#observe(frame);
 			}
-			this.#frames.push(...frames);
+			this.#frames.push(
+				...frames.filter(
+					(frame) =>
+						frame.kind !== 'subscription.batchBegin' && frame.kind !== 'subscription.batchPart',
+				),
+			);
 		}
 	}
 

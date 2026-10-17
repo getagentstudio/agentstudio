@@ -100,6 +100,7 @@ export function bridgeWorkerRuntimeProductControlCommandForMessage(
 		case 'reviewComparisonTargetsQueryCancel':
 		case 'annotationOutputInspect':
 		case 'annotationProjectionRetry':
+		case 'viewRecoveryRetry':
 		case 'hover':
 		case 'metadataInterestUpdate':
 		case 'fileQueryUpdate':
@@ -132,6 +133,7 @@ export function bridgeCommWorkerTelemetryLaneForMessage(
 		case 'annotationCommand':
 		case 'annotationOutputInspect':
 		case 'annotationProjectionRetry':
+		case 'viewRecoveryRetry':
 			return 'selected';
 		case 'select':
 			return 'selected';
@@ -187,6 +189,7 @@ export function bridgeCommWorkerSemanticClassForMessage(
 		case 'annotationProjectionRetry':
 		case 'fileDisplayResync':
 		case 'fileRefreshRetry':
+		case 'viewRecoveryRetry':
 		case 'mode':
 		case 'reviewComparisonTargetsQueryCancel':
 		case 'reviewIntakeReady':
@@ -210,6 +213,8 @@ function bridgeCommWorkerAnnotationOperationSemanticClass(
 		case 'draft.save':
 		case 'message.viewed.mark':
 		case 'output.handled.clear':
+		case 'output.preference.changeFolder':
+		case 'output.reveal':
 		case 'output.scope.commit':
 		case 'recovery.acknowledge':
 		case 'reply.create':

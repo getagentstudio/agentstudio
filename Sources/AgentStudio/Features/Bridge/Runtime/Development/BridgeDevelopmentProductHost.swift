@@ -3,33 +3,48 @@ import AgentStudioInfrastructure
 import Foundation
 import WebKit
 
+package enum BridgeDevelopmentProductHostShutdownResult: Equatable, Sendable {
+    case completed
+    case quiescenceDeadlineExceeded(unfinishedExecutionCount: Int)
+}
+
+package struct BridgeDevelopmentProductHostShutdownSnapshot: Equatable, Sendable {
+    package let unfinishedDrainCount: Int
+    package let cleanupCompleted: Bool
+}
+
 package actor BridgeDevelopmentProductHost {
     struct FileNavigationPublication: Equatable {
         let bindingRevision: Int
         let source: BridgeProductFileSourceIdentity
     }
 
-    private let constructionCoordinator: BridgeWorktreeProductConstructionCoordinator
+    let constructionCoordinator: BridgeWorktreeProductConstructionCoordinator
     let contributionTargetCommit:
         @MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult
     private let committedCallTarget: BridgeDevelopmentProductCommittedCallTarget
     var activeReviewComparisonTask: Task<Void, Never>?
     var activeReviewComparisonTaskAttempt: UInt64?
     var retiringReviewComparisonTasks: [UInt64: Task<Void, Never>] = [:]
-    private var bootstrapTransitionTail: Task<Void, Never>?
-    private let gitReadScheduler: BridgeGitReadScheduler
-    private var navigationBindingRevision = 0
-    private var navigationIntent: BridgeDevelopmentProductBootstrapRequest.NavigationIntent?
+    var bootstrapTransitionTail: Task<Void, Never>?
+    let gitReadScheduler: BridgeGitReadScheduler
+    private var navigationBindingRevision = 0 { didSet { publishBootstrapAuthorization() } }
+    private var navigationIntent: BridgeDevelopmentProductBootstrapRequest.NavigationIntent? {
+        didSet { publishBootstrapAuthorization() }
+    }
+    private var owningTabId: String? { didSet { publishBootstrapAuthorization() } }
+    private let bootstrapAuthorizationProjection: BridgeDevelopmentBootstrapAuthorizationProjection
     private let paneSessionId: String
+    let retirementDelay: AsyncDelay
     let productAdmission: BridgeProductAdmissionContext
     let productAdmissionGate: BridgeProductAdmissionGate
     let productProvider: BridgePaneProductSchemeProvider
-    private let productSessionOwner: BridgePaneProductSessionOwner
+    let productSessionOwner: BridgePaneProductSessionOwner
     let refreshAdmissionCoordinator: BridgePaneRefreshAdmissionCoordinator
     let worktreeRefreshDriver: BridgePaneWorktreeRefreshDriver
     private let repoId: UUID
     private let reviewedSubjectLabel: String?
-    private let reviewContentLoaderCache: BridgeReviewContentLoaderCache
+    let reviewContentLoaderCache: BridgeReviewContentLoaderCache
     var paneState: BridgePaneState
     private let reviewPipeline: BridgeReviewPipeline
     let reviewProvider: any BridgeReviewSourceProvider
@@ -38,18 +53,30 @@ package actor BridgeDevelopmentProductHost {
     let reviewPublicationCoordinator: BridgeReviewPublicationCoordinator
     private let reviewSharedConstructionBinder: BridgePaneReviewSharedConstructionBinder?
     private let schemeHandler: BridgeSchemeHandler
-    var isShutdown = false
+    var isShutdown = false { didSet { publishBootstrapAuthorization() } }
+    var shutdownCompletion: AsyncStream<BridgeDevelopmentProductHostShutdownResult>.Continuation?
+    var shutdownDeadlineTask: Task<Void, Never>?
+    var unfinishedShutdownDrains: Set<String> = []
+    var shutdownResult: BridgeDevelopmentProductHostShutdownResult?
+    var shutdownWaiters: [CheckedContinuation<BridgeDevelopmentProductHostShutdownResult, Never>] = []
+    var cleanupWaiters: [CheckedContinuation<Void, Never>] = []
     private var nextReviewComparisonTaskAttempt: UInt64 = 0
     var nextReviewGeneration: BridgeReviewGeneration = 1
     private var publishedFileNavigation: FileNavigationPublication?
     private let worktreeId: UUID
     private let worktreeRoot: URL
+    /// Built only when a test installs a sink, so production keeps no fact-only state.
+    let shutdownFactScope: BridgeDevelopmentProductHostFactScope?
+    let shutdownFactSink: BridgeDevelopmentProductHostFactSink?
 
     package init(
         source: BridgeDevelopmentProductSource,
         worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
         worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
         statusPhysicalGate: AgentStudioGitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate(),
+        operationDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
+        retirementClock: (any Clock<Duration> & Sendable)? = nil,
+        shutdownFactSink: BridgeDevelopmentProductHostFactSink? = nil,
         contributionTargetCommit:
             @escaping @MainActor @Sendable (WorkspaceReviewContributionTarget) ->
             BridgePaneStateMutationResult
@@ -58,6 +85,9 @@ package actor BridgeDevelopmentProductHost {
             source: source,
             worktreeAnnotationStore: worktreeAnnotationStore,
             worktreeAnnotationOutputCoordinator: worktreeAnnotationOutputCoordinator,
+            operationDeadlineClock: operationDeadlineClock,
+            retirementClock: retirementClock,
+            shutdownFactSink: shutdownFactSink,
             contributionTargetCommit: contributionTargetCommit,
             statusPhysicalGate: statusPhysicalGate,
             makeReviewProvider: { repositoryPath, gitReadContext in
@@ -70,10 +100,13 @@ package actor BridgeDevelopmentProductHost {
         )
     }
 
-    package init(
+    init(
         source: BridgeDevelopmentProductSource,
         worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
         worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
+        operationDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
+        retirementClock: (any Clock<Duration> & Sendable)? = nil,
+        shutdownFactSink: BridgeDevelopmentProductHostFactSink? = nil,
         contributionTargetCommit:
             @escaping @MainActor @Sendable (WorkspaceReviewContributionTarget) ->
             BridgePaneStateMutationResult,
@@ -82,14 +115,10 @@ package actor BridgeDevelopmentProductHost {
         // Production passes nothing. A test supplies a census with a termination
         // observer to pin the window this host's bootstrap gate now handles.
         schemeTaskCensus: BridgeProductSchemeTaskCensus = BridgeProductSchemeTaskCensus(),
-        // Production passes nothing. A test supplies an observer of the Review commit,
-        // which is the only moment the publication's existence is published rather than
-        // merely readable, so the test can await it instead of sampling. It carries no
-        // payload because this initializer is `package` while
-        // `BridgeReviewCommittedPublication` is internal, and widening that type's
-        // visibility is not worth a signal that only says "a commit happened"; a caller
-        // that needs the publication reads it back from the host.
-        didCommitReviewPublication: (@MainActor @Sendable () -> Void)? = nil
+        // Internal observation keeps lifecycle and committed-publication types at
+        // their existing module visibility. Package construction keeps the recorder nil.
+        didCommitReviewPublication: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)? = nil,
+        lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     ) async throws {
         let source = try Self.validatedFilesystemSource(source)
         let paneId = source.paneID
@@ -106,17 +135,12 @@ package actor BridgeDevelopmentProductHost {
             provider: reviewProvider
         )
 
-        // Adapts the payload-free `package` signal to the coordinator-level hook, which
-        // carries the committed publication for callers that can see that internal type.
-        var reviewCommitObservation: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
-        if let observeCommit = didCommitReviewPublication {
-            reviewCommitObservation = { _ in observeCommit() }
-        }
-
         let productPreparation = try await Self.makeProductProviderPreparation(
             .init(
-                didCommitReviewPublication: reviewCommitObservation,
+                didCommitReviewPublication: didCommitReviewPublication,
+                lifecycleTraceRecorder: lifecycleTraceRecorder,
                 gitReadContext: gitReadContext,
+                operationDeadlineClock: operationDeadlineClock,
                 reviewInitialization: reviewInitialization,
                 reviewProvider: reviewProvider,
                 schemeTaskCensus: schemeTaskCensus,
@@ -132,6 +156,11 @@ package actor BridgeDevelopmentProductHost {
         self.committedCallTarget = productPreparation.committedCallTarget
         self.gitReadScheduler = gitReadScheduler
         self.paneSessionId = paneId.uuidString
+        self.shutdownFactScope = shutdownFactSink.map { _ in BridgeDevelopmentProductHostFactScope(paneID: paneId) }
+        self.shutdownFactSink = shutdownFactSink
+        self.bootstrapAuthorizationProjection = BridgeDevelopmentBootstrapAuthorizationProjection(
+            paneSessionId: paneId.uuidString)
+        self.retirementDelay = retirementClock.map(AsyncDelay.clock) ?? .taskSleep
         self.productAdmission = productPreparation.productAdmission
         self.productAdmissionGate = productPreparation.productAdmissionGate
         self.productProvider = productPreparation.productProvider
@@ -188,6 +217,13 @@ package actor BridgeDevelopmentProductHost {
         for request: BridgeDevelopmentProductBootstrapRequest
     ) async throws -> Data {
         guard !isShutdown else { throw BridgeDevelopmentProductHostError.shutdown }
+        let predecessor = productSessionOwner.installationFenceProjection.snapshot
+        let authorization = bootstrapAuthorizationProjection.snapshot
+        try await validateBootstrapTransition(request, predecessor: predecessor, authorization: authorization)
+        guard !isShutdown, bootstrapAuthorizationProjection.snapshot == authorization,
+            productSessionOwner.installationFenceProjection.snapshot == predecessor
+        else { throw BridgeDevelopmentProductHostError.sessionAlreadyOpen }
+        predecessor.close()
         let precedingTransition = bootstrapTransitionTail
         let transition = Task { [weak self] () throws -> Data in
             if let precedingTransition {
@@ -195,7 +231,7 @@ package actor BridgeDevelopmentProductHost {
             }
             try Task.checkCancellation()
             guard let self else { throw BridgeDevelopmentProductHostError.shutdown }
-            return try await self.performBootstrapTransition(for: request)
+            return try await self.performBootstrapTransition(for: request, predecessor: predecessor)
         }
         bootstrapTransitionTail = Task {
             _ = try? await transition.value
@@ -207,11 +243,17 @@ package actor BridgeDevelopmentProductHost {
         }
     }
 
+    private func publishBootstrapAuthorization() {
+        bootstrapAuthorizationProjection.publish(
+            tabId: owningTabId,
+            navigationBindingRevision: navigationBindingRevision, isShutdown: isShutdown)
+    }
+
     private func performBootstrapTransition(
-        for request: BridgeDevelopmentProductBootstrapRequest
+        for request: BridgeDevelopmentProductBootstrapRequest,
+        predecessor: BridgeProductInstallationFenceSnapshot
     ) async throws -> Data {
         guard !isShutdown else { throw BridgeDevelopmentProductHostError.shutdown }
-        try await validateBootstrapTransition(request)
         try Task.checkCancellation()
         guard !isShutdown else { throw BridgeDevelopmentProductHostError.shutdown }
         let candidate = try await productSessionOwner.prepareCandidate(
@@ -220,7 +262,8 @@ package actor BridgeDevelopmentProductHost {
         guard
             await productSessionOwner.activatePreparedCandidate(
                 candidate,
-                productAdmission: productAdmission
+                productAdmission: productAdmission,
+                replacing: predecessor
             ) == .activated
         else {
             throw BridgeDevelopmentProductHostError.sessionActivationFailed
@@ -229,6 +272,7 @@ package actor BridgeDevelopmentProductHost {
             for: request.navigationIntent
         )
         navigationIntent = request.navigationIntent
+        if request.reason == .initial { owningTabId = request.tabId }
         navigationBindingRevision += 1
         await publishNavigation(
             request.navigationIntent,
@@ -277,53 +321,6 @@ package actor BridgeDevelopmentProductHost {
         if affectedLanes.contains(.review) {
             await scheduleObservedReviewRefreshIfPossible()
         }
-    }
-
-    package func shutdown() async {
-        guard !isShutdown else { return }
-        isShutdown = true
-        let transitionTail = bootstrapTransitionTail
-        await transitionTail?.value
-        bootstrapTransitionTail = nil
-        let reviewComparisonTask = activeReviewComparisonTask
-        reviewComparisonTask?.cancel()
-        let retiringReviewComparisonTasks = Array(retiringReviewComparisonTasks.values)
-        for retiringReviewComparisonTask in retiringReviewComparisonTasks {
-            retiringReviewComparisonTask.cancel()
-        }
-        await reviewComparisonTask?.value
-        for retiringReviewComparisonTask in retiringReviewComparisonTasks {
-            await retiringReviewComparisonTask.value
-        }
-        activeReviewComparisonTask = nil
-        activeReviewComparisonTaskAttempt = nil
-        self.retiringReviewComparisonTasks.removeAll()
-        reviewGitRefreshSeedHolder.retire()
-        await MainActor.run {
-            // Drained cancelled tasks cannot publish over a successor; shutdown settles its own pending state.
-            if let comparison = refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison,
-                case .pending(let generation) = comparison.attempt
-            {
-                refreshAdmissionCoordinator.failReviewComparisonAttempt(
-                    reviewGeneration: generation,
-                    failureKind: "publication_failed",
-                    retryable: true
-                )
-            }
-            refreshAdmissionCoordinator.close()
-            productAdmissionGate.close()
-        }
-        await worktreeRefreshDriver.closeAndDrain()
-        let publicationDrain = await MainActor.run {
-            reviewPublicationCoordinator.close()
-        }
-        _ = await productSessionOwner.retire(reason: .paneDisposal)
-        async let providerDrain: Void = productProvider.closeAndDrain()
-        await reviewContentLoaderCache.closeAndDrain()
-        await providerDrain
-        await publicationDrain.releaseAndWait()
-        await constructionCoordinator.shutdown()
-        await gitReadScheduler.shutdown()
     }
 
     private var worktreeConstructionIdentity: BridgeWorktreeIdentityKey {
@@ -842,17 +839,19 @@ final class BridgeDevelopmentProductCommittedCallTarget {
 
     func applyReviewComparisonUpdate(
         _ request: BridgeProductReviewComparisonUpdateRequest,
+        workerDerivationEpoch: Int,
         productAdmission: BridgeProductAdmissionContext
     ) async {
-        await host?.applyCommittedReviewComparisonUpdate(
+        _ = await host?.applyCommittedReviewComparisonUpdate(
             request,
+            workerDerivationEpoch: workerDerivationEpoch,
             productAdmission: productAdmission
         )
     }
 
     func applyFileRefreshRetry(productAdmission: BridgeProductAdmissionContext) async {
         guard (productAdmission.withValidAdmission { true }) == true else { return }
-        await host?.retryUnavailableFileRefresh()
+        await host?.retryUnavailableFileRefresh(productAdmission: productAdmission)
     }
 
     func applyActiveViewerModeUpdate(
@@ -865,69 +864,27 @@ final class BridgeDevelopmentProductCommittedCallTarget {
 }
 
 extension BridgeDevelopmentProductHost {
-    /// Waits out an in-flight metadata retirement and requires it to have finished.
-    ///
-    /// One place, used by both `.initial` arms: the arm that found retirement
-    /// already recorded, and the arm that had to drain a torn-down transport
-    /// first. A retirement that FAILS still refuses — the session is still held.
-    private func awaitRetirementBarriers(
-        _ retirementBarriers: [BridgeProductProducerRetirementBarrier],
-        of installation: BridgeProductSessionInstallation
-    ) async throws {
-        for retirementBarrier in retirementBarriers {
-            guard await retirementBarrier.wait() else {
-                throw BridgeDevelopmentProductHostError.sessionAlreadyOpen
-            }
-            try Task.checkCancellation()
-        }
-        guard
-            await installation.session.metadataRetirementBarriersForReload()?.isEmpty == true
-        else {
-            throw BridgeDevelopmentProductHostError.sessionAlreadyOpen
-        }
-    }
-
     private func validateBootstrapTransition(
-        _ request: BridgeDevelopmentProductBootstrapRequest
+        _ request: BridgeDevelopmentProductBootstrapRequest,
+        predecessor: BridgeProductInstallationFenceSnapshot,
+        authorization: BridgeDevelopmentBootstrapAuthorizationSnapshot
     ) async throws {
         switch request.reason {
         case .initial:
-            if let installation = await productSessionOwner.activeInstallation {
+            if let owningTabId, owningTabId != request.tabId,
+                let installation = predecessor.installation
+            {
                 guard
-                    let retirementBarriers = await installation.session
-                        .metadataRetirementBarriersForReload()
+                    await productSessionOwner.schemeRouter.closeTerminatedInstallation(
+                        installation, authorization: authorization, projection: bootstrapAuthorizationProjection)
                 else {
-                    // A lease exists with no retirement recorded. That is either a
-                    // genuinely live stream, which is refused immediately and
-                    // without waiting, or a stream whose transport has already
-                    // torn down and whose retirement write is still in flight —
-                    // the app's own reload path retires and drains rather than
-                    // refusing, and so must this one.
-                    guard
-                        productSessionOwner.schemeRouter.schemeTaskCensus
-                            .everyStartedStreamTaskTerminated
-                    else {
-                        throw BridgeDevelopmentProductHostError.sessionAlreadyOpen
-                    }
-                    await productSessionOwner.schemeRouter.waitForStreamClaimDrain()
-                    try Task.checkCancellation()
-                    // The drain proves the transport is gone, not that retirement
-                    // has COMPLETED. A non-empty barrier set here means retirement
-                    // is in flight, which is the same legitimate state the outer
-                    // arm waits on — refusing it would reinstate exactly the
-                    // terminal refusal this path exists to remove.
-                    guard
-                        let drainedBarriers = await installation.session
-                            .metadataRetirementBarriersForReload()
-                    else {
-                        throw BridgeDevelopmentProductHostError.sessionAlreadyOpen
-                    }
-                    try await awaitRetirementBarriers(drainedBarriers, of: installation)
-                    return
+                    throw BridgeDevelopmentProductHostError.sessionAlreadyOpen
                 }
-                try await awaitRetirementBarriers(retirementBarriers, of: installation)
             }
         case .workerReplacement:
+            guard owningTabId == request.tabId else {
+                throw BridgeDevelopmentProductHostError.sessionAlreadyOpen
+            }
             guard request.paneSessionId == paneSessionId else {
                 throw BridgeDevelopmentProductHostError.replacementPaneNotFound
             }
@@ -937,10 +894,10 @@ extension BridgeDevelopmentProductHost {
         }
     }
 
-    func retryUnavailableFileRefresh() async {
+    func retryUnavailableFileRefresh(productAdmission: BridgeProductAdmissionContext) async {
         guard !isShutdown else { return }
         await MainActor.run {
-            worktreeRefreshDriver.retryUnavailableFileRefresh()
+            worktreeRefreshDriver.retryUnavailableFileRefresh(ifAdmittedBy: productAdmission)
         }
     }
 }

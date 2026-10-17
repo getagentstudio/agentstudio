@@ -17,14 +17,10 @@ import { prepareBridgeMainPierreItemForPresentation } from '../core/comm-worker/
 import {
 	createBridgeMainRenderFulfillmentCoordinator,
 	type BridgeMainRenderPublicationItem,
+	type BridgeMainRenderFulfillmentCoordinator,
 } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
-import type { BridgeWorkerFilePierreRenderJobEvent } from '../core/comm-worker/bridge-worker-contracts.js';
-import {
-	buildBridgeWorkerPierreRenderJob,
-	type BridgeWorkerRenderSourceCorrelation,
-} from '../core/comm-worker/bridge-worker-pierre-render-job.js';
 import type { BridgeWorkerRenderDispositionReceipt } from '../core/comm-worker/bridge-worker-render-fulfillment.js';
-import { makeBridgeWorkerRenderReceiptIdentity } from '../core/comm-worker/bridge-worker-render-fulfillment.test-support.js';
+import { BridgeProductTestFactRecorder } from '../core/comm-worker/test-fixtures/bridge-product-test-fact-recorder.js';
 import { bridgePierreOptionalHighlightLanguage } from '../review-viewer/workers/pierre/bridge-pierre-language-normalization.js';
 import { createWorktreeAnnotationBrowserProviderHarness } from '../worktree-annotations/worktree-annotation-browser-test-support.js';
 import {
@@ -35,6 +31,7 @@ import {
 	bridgeFileViewerCodeViewOptions,
 	deriveBridgeFilesCodeViewOptions,
 } from './bridge-file-viewer-code-view-options.js';
+import { makeFilePublication } from './bridge-file-viewer-render-fulfillment.test-support.js';
 
 type ExactFilePierreItem = Extract<BridgeMainRenderPublicationItem, { readonly type: 'file' }> &
 	CodeViewFileItem;
@@ -53,6 +50,22 @@ interface PendingAnimationFrame {
 }
 
 describe('BridgeFileViewerCodePanel render fulfillment', () => {
+	test('retires a held exact-item post-render observation through its owner close', async (): Promise<void> => {
+		const capture = new BridgeFilePostRenderCapture();
+		const item = requireExactFilePierreItem(
+			makeFilePublication({
+				contentsMarker: 'held-observation',
+				publicationSequence: 1,
+				version: 1,
+			}).job.payload.item,
+		);
+		const outcome = capture.waitForItem(item).then(
+			(): string => 'unexpected callback',
+			(error: unknown): string => String(error),
+		);
+		capture.close(new Error('Exact File post-render owner retired.'));
+		expect(await outcome).toContain('Exact File post-render owner retired');
+	});
 	test('applies Files view settings on the same mounted Pierre owner without changing selection', async () => {
 		const annotationHarness = createWorktreeAnnotationBrowserProviderHarness('fileView');
 		// Arrange: capture the public CodeView owner and option updates from the production React bridge.
@@ -107,10 +120,7 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				),
 			);
 			const initialOwner = mountedInstances.at(-1);
-			await settleBridgeCodeViewState(
-				(): boolean => initialOwner?.getItem(selectedCodeViewItem.id) === selectedCodeViewItem,
-				'Expected the initial Files selection to be owned by the mounted Pierre CodeView.',
-			);
+			expect(initialOwner?.getItem(selectedCodeViewItem.id)).toBe(selectedCodeViewItem);
 			// Act
 			const changedOptions = deriveBridgeFilesCodeViewOptions({
 				compatibilityOptions: bridgeFileViewerCodeViewOptions,
@@ -154,7 +164,7 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 		}
 	});
 
-	test('settles File fulfillment only from exact main-adapted public Pierre items', async () => {
+	test('settles File fulfillment only from exact main-adapted public Pierre items', async (context) => {
 		const annotationHarness = createWorktreeAnnotationBrowserProviderHarness('fileView');
 		// Arrange: capture Pierre's public callback while retaining a real mounted CodeView and its
 		// public current-item and rendered-membership readback APIs.
@@ -189,6 +199,20 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 		};
 
 		const dispositions: BridgeWorkerRenderDispositionReceipt[] = [];
+		const dispositionFacts =
+			new BridgeProductTestFactRecorder<BridgeWorkerRenderDispositionReceipt>();
+		let observationIsOpen = true;
+		let lastWait = 'File fulfillment setup';
+		const closeObservations = (): void => {
+			observationIsOpen = false;
+			postRenderCapture.close(new Error(`File fulfillment ended while awaiting ${lastWait}.`));
+			dispositionFacts.close(new Error(`File fulfillment ended while awaiting ${lastWait}.`));
+		};
+		context.signal.addEventListener('abort', closeObservations, { once: true });
+		context.onTestFinished((): void => {
+			if (context.signal.aborted || context.task.result?.state === 'fail')
+				console.info(`A11 failed/aborted at ${lastWait}.`);
+		});
 		const pendingAnimationFrames: PendingAnimationFrame[] = [];
 		let nextFrameHandle = 1;
 		let nowMilliseconds = 1_000;
@@ -211,6 +235,7 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 			},
 			sendDisposition: (receipt): void => {
 				dispositions.push(receipt);
+				if (observationIsOpen) dispositionFacts.record(receipt);
 			},
 		});
 
@@ -257,24 +282,11 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				annotationHarness.wrap(<BridgeFileViewerCodePanel {...panelProps} />),
 			);
 
-			await settleBridgeCodeViewState(
-				(): boolean => mountedCodeView.current?.getItem(firstFinalItem.id) === firstFinalItem,
-				'Expected Pierre current item to become the exact first main-adapted File object.',
-			);
-			const firstCodeView = requireMountedCodeView(mountedCodeView.current);
-			await settleBridgeCodeViewState(
-				(): boolean =>
-					firstCodeView
-						.getRenderedItems()
-						.some(
-							(renderedItem): boolean =>
-								renderedItem.id === firstFinalItem.id &&
-								renderedItem.item === firstFinalItem &&
-								renderedItem.element.isConnected,
-						),
-				'Expected Pierre rendered membership to carry the exact main-adapted File object.',
-			);
+			lastWait = `first File postRender ${firstFinalItem.id} version ${firstFinalItem.version}`;
+			console.info(`A11 awaiting ${lastWait}.`);
 			const firstPostRender = await waitForBridgeFilePostRender(postRenderCapture, firstFinalItem);
+			const firstCodeView = requireMountedCodeView(mountedCodeView.current);
+			assertFileRenderedMembership(firstCodeView, firstFinalItem);
 
 			expect(firstCodeView.getItem(firstFinalItem.id)).toBe(firstFinalItem);
 			expect(
@@ -317,10 +329,7 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				firstCodeView.setItems([firstFinalItem]);
 				await Promise.resolve();
 			});
-			await settleBridgeCodeViewState(
-				(): boolean => firstCodeView.getItem(firstFinalItem.id) === firstFinalItem,
-				'Expected Pierre current File item identity to restore after wrong-current readback.',
-			);
+			expect(firstCodeView.getItem(firstFinalItem.id)).toBe(firstFinalItem);
 
 			const originalGetRenderedItems = firstCodeView.getRenderedItems.bind(firstCodeView);
 			firstCodeView.getRenderedItems = (): [] => [];
@@ -420,26 +429,14 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				);
 				await Promise.resolve();
 			});
-			await settleBridgeCodeViewState(
-				(): boolean => firstCodeView.getItem(secondFinalItem.id) === secondFinalItem,
-				'Expected Pierre current File item to become the exact second main-adapted object.',
-			);
-			await settleBridgeCodeViewState(
-				(): boolean =>
-					firstCodeView
-						.getRenderedItems()
-						.some(
-							(renderedItem): boolean =>
-								renderedItem.id === secondFinalItem.id &&
-								renderedItem.item === secondFinalItem &&
-								renderedItem.element.isConnected,
-						),
-				'Expected Pierre rendered membership to carry the exact second main-adapted File object.',
-			);
+			lastWait = `second File postRender ${secondFinalItem.id} version ${secondFinalItem.version}`;
+			console.info(`A11 awaiting ${lastWait}.`);
 			const secondPostRender = await waitForBridgeFilePostRender(
 				postRenderCapture,
 				secondFinalItem,
 			);
+			expect(firstCodeView.getItem(secondFinalItem.id)).toBe(secondFinalItem);
+			assertFileRenderedMembership(firstCodeView, secondFinalItem);
 			await invokeCapturedPostRenderWithinAct({ invocation: firstPostRender, phase: 'update' });
 			expect([
 				['queued', 'applied', 'painted', 'queued'],
@@ -447,10 +444,14 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 			]).toContainEqual(dispositionKinds(dispositions));
 			await invokeCapturedPostRenderWithinAct({ invocation: secondPostRender, phase: 'update' });
 			const secondAppliedKinds = ['queued', 'applied', 'painted', 'queued', 'applied'];
-			await settleBridgeCodeViewState(
-				(): boolean => dispositionKinds(dispositions).length === secondAppliedKinds.length,
-				'Expected the second exact File attempt to reach applied.',
-			);
+			await act(async (): Promise<void> => {
+				lastWait = `applied File publication ${secondPublication.renderReceiptIdentity.publicationId}`;
+				await dispositionFacts.waitFor(
+					(receipt): boolean =>
+						receipt.publicationId === secondPublication.renderReceiptIdentity.publicationId &&
+						receipt.disposition === 'applied',
+				);
+			});
 			expect(dispositionKinds(dispositions)).toEqual(secondAppliedKinds);
 			expect(pendingAnimationFrames).toHaveLength(1);
 			const secondPendingPaintFrame = pendingAnimationFrames.shift();
@@ -463,11 +464,13 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 		} finally {
 			CodeView.prototype.setup = originalSetup;
 			CodeView.prototype.setOptions = originalSetOptions;
+			context.signal.removeEventListener('abort', closeObservations);
 			renderFulfillmentCoordinator.dispose();
+			closeObservations();
 		}
 	});
 
-	test('lets stable same-file items preserve scroll without app-owned retargeting', async () => {
+	test('lets stable same-file items preserve scroll without app-owned retargeting', async (context) => {
 		const annotationHarness = createWorktreeAnnotationBrowserProviderHarness('fileView');
 		const mountedCodeView: { current: CodeView | null } = { current: null };
 		const mountedCodeViewRoot: { current: HTMLElement | null } = { current: null };
@@ -498,8 +501,20 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 			scrollToReceipts.push(target);
 		};
 
+		const postRenderFacts = new BridgeProductTestFactRecorder<BridgeMainRenderPublicationItem>();
+		let observationIsOpen = true;
+		const closeObservation = (): void => {
+			observationIsOpen = false;
+			postRenderFacts.close(new Error('File scroll-retention post-render observation closed.'));
+		};
+		context.signal.addEventListener('abort', closeObservation, { once: true });
 		const renderFulfillmentCoordinator = {
-			observePostRender: (): void => {},
+			observePostRender: (
+				event: Parameters<BridgeMainRenderFulfillmentCoordinator['observePostRender']>[0],
+			): void => {
+				if (observationIsOpen && event.phase !== 'unmount')
+					postRenderFacts.record(event.contextItem);
+			},
 			reconcilePublication: (): void => {},
 		};
 		const initialItem = requireExactFilePierreItem(
@@ -536,9 +551,7 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				),
 			);
 			await act(async (): Promise<void> => {
-				await new Promise<void>((resolve): void => {
-					requestAnimationFrame((): void => resolve());
-				});
+				await postRenderFacts.waitFor((item): boolean => item === initialItem);
 			});
 			setItemReceipts.length = 0;
 			scrollToReceipts.length = 0;
@@ -566,8 +579,13 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				),
 			);
 			expect(
-				document.querySelector('[data-testid="bridge-file-viewer-content-state"]')?.textContent,
-			).toContain('Loading file');
+				document
+					.querySelector('[data-bridge-region="file-content"]')
+					?.getAttribute('data-presentation-state'),
+			).toBe('updating');
+			expect(
+				document.querySelector('[data-bridge-region="file-content"] [data-slot="skeleton"]'),
+			).toBeNull();
 			const retainedView = rendered.getByTestId('bridge-file-viewer-code-view').element();
 			expect(getComputedStyle(retainedView).visibility).toBe('visible');
 			expect(mountedCodeView.current).toBe(capturedCodeView);
@@ -590,9 +608,7 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 				),
 			);
 			await act(async (): Promise<void> => {
-				await new Promise<void>((resolve): void => {
-					requestAnimationFrame((): void => resolve());
-				});
+				await postRenderFacts.waitFor((item): boolean => item === refreshedItem);
 			});
 
 			expect(setItemReceipts.map((items) => items.map((item) => item.id))).toEqual([
@@ -615,84 +631,11 @@ describe('BridgeFileViewerCodePanel render fulfillment', () => {
 			CodeView.prototype.setup = originalSetup;
 			CodeView.prototype.setItems = originalSetItems;
 			CodeView.prototype.scrollTo = originalScrollTo;
+			context.signal.removeEventListener('abort', closeObservation);
+			closeObservation();
 		}
 	});
 });
-
-function makeFilePublication(props: {
-	readonly contentsMarker: string;
-	readonly publicationSequence: number;
-	readonly version: number;
-}): BridgeWorkerFilePierreRenderJobEvent {
-	const itemId = 'file-1';
-	const cacheKey = `cache-${props.contentsMarker}`;
-	const sourceCorrelation = {
-		descriptorId: `descriptor-${props.contentsMarker}`,
-		itemId,
-		observedSha256: 'd'.repeat(64),
-		position: 'whole',
-		requestId: `request-${props.contentsMarker}`,
-		role: 'file',
-		sourceGeneration: props.publicationSequence,
-		sourceIdentity: `source-${props.contentsMarker}`,
-	} satisfies BridgeWorkerRenderSourceCorrelation;
-	const job = buildBridgeWorkerPierreRenderJob({
-		bridgeDemandRank: { lane: 'selected', priority: props.publicationSequence },
-		budget: { className: 'interactive', maxBytes: 512 * 1024, maxWindowLines: 400 },
-		contentCacheKey: cacheKey,
-		contentHash: `sha256:${props.contentsMarker}`,
-		itemId,
-		language: 'swift',
-		payload: {
-			item: {
-				bridgeMetadata: {
-					cacheKey,
-					contentRoles: ['file'],
-					contentState: 'hydrated',
-					displayPath: 'Sources/App/View.swift',
-					itemId,
-					lineCount: 1,
-				},
-				file: {
-					cacheKey,
-					contents: `let value = "${props.contentsMarker}"\n`,
-					lang: 'swift',
-					name: 'Sources/App/View.swift',
-				},
-				id: `file:${itemId}`,
-				type: 'file',
-				version: props.version,
-			},
-			kind: 'codeViewFileItem',
-		},
-		renderKind: 'fileText',
-		sourceCorrelations: [sourceCorrelation],
-		window: { endLine: 1, startLine: 1, totalLineCount: 1 },
-	});
-	return {
-		direction: 'serverWorkerToMain',
-		job,
-		kind: 'filePierreRenderJob',
-		publicationSequence: props.publicationSequence,
-		renderReceiptIdentity: makeBridgeWorkerRenderReceiptIdentity({
-			itemId,
-			publicationSequence: props.publicationSequence,
-			surface: 'file',
-			workerDerivationEpoch: 1,
-		}),
-		surface: 'file',
-		transferDescriptors: [
-			{
-				byteLength: job.payloadByteLength,
-				fieldPath: ['job', 'payload'],
-				messageKind: 'filePierreRenderJob',
-				mode: 'clone',
-			},
-		],
-		wireVersion: 1,
-		workerDerivationEpoch: 1,
-	};
-}
 
 function dispositionKinds(
 	dispositions: readonly BridgeWorkerRenderDispositionReceipt[],
@@ -748,32 +691,23 @@ function captureBridgeFilePostRender(props: {
 }
 
 class BridgeFilePostRenderCapture {
-	private readonly invocationByItem = new Map<CodeViewItem, CapturedBridgeFilePostRender>();
-	private readonly waiterByItem = new Map<
-		CodeViewItem,
-		(invocation: CapturedBridgeFilePostRender) => void
-	>();
+	private readonly facts = new BridgeProductTestFactRecorder<CapturedBridgeFilePostRender>();
+	private isClosed = false;
 
 	capture(props: {
 		readonly callback: NonNullable<CodeViewOptions<undefined>['onPostRender']>;
 		readonly callbackArguments: readonly unknown[];
 	}): void {
-		const invocation = captureBridgeFilePostRender(props);
-		if (!this.invocationByItem.has(invocation.contextItem)) {
-			this.invocationByItem.set(invocation.contextItem, invocation);
-		}
-		const waiter = this.waiterByItem.get(invocation.contextItem);
-		if (waiter === undefined) return;
-		this.waiterByItem.delete(invocation.contextItem);
-		waiter(invocation);
+		if (!this.isClosed) this.facts.record(captureBridgeFilePostRender(props));
 	}
 
 	waitForItem(item: CodeViewItem): Promise<CapturedBridgeFilePostRender> {
-		const invocation = this.invocationByItem.get(item);
-		if (invocation !== undefined) return Promise.resolve(invocation);
-		return new Promise((resolve): void => {
-			this.waiterByItem.set(item, resolve);
-		});
+		return this.facts.waitFor((invocation): boolean => invocation.contextItem === item);
+	}
+
+	close(error: Error): void {
+		this.isClosed = true;
+		this.facts.close(error);
 	}
 }
 
@@ -857,22 +791,15 @@ function isExactFilePierreItem(item: BridgeMainRenderPublicationItem): item is E
 		: bridgePierreOptionalHighlightLanguage(language) === language;
 }
 
-async function settleBridgeCodeViewState(
-	isSettled: () => boolean,
-	failureMessage: string,
-): Promise<void> {
-	for (let frameIndex = 0; frameIndex < 8; frameIndex += 1) {
-		if (isSettled()) return;
-		// oxlint-disable-next-line no-await-in-loop -- Each iteration is a bounded observable render boundary.
-		await act(async (): Promise<void> => {
-			await new Promise<void>((resolve): void => {
-				setTimeout(resolve, 0);
-			});
-			await new Promise<void>((resolve): void => {
-				requestAnimationFrame((): void => resolve());
-			});
-			await Promise.resolve();
-		});
-	}
-	if (!isSettled()) throw new Error(failureMessage);
+function assertFileRenderedMembership(codeView: CodeView, item: CodeViewItem): void {
+	expect(
+		codeView
+			.getRenderedItems()
+			.some(
+				(renderedItem): boolean =>
+					renderedItem.id === item.id &&
+					renderedItem.item === item &&
+					renderedItem.element.isConnected,
+			),
+	).toBe(true);
 }

@@ -19,7 +19,11 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             harness.controller
         ) { controller in
             controller.loadApp()
-            try await waitForMetadataSubscriptions(harness)
+            _ = try await BridgeProductWebKitReplayStartup.prepare(
+                .init(
+                    controller: controller, controllerTarget: harness.controllerTarget,
+                    fileSource: harness.fileMetadataSource, reviewSource: harness.reviewMetadataSource,
+                    traceRecorder: harness.traceRecorder))
             let checkpoint = try await prepareFirstPublicationCheckpoint(controller: controller, harness: harness)
             let before = controller.reviewPublicationCoordinator.diagnosticSnapshot
             let receiptCountBefore = harness.controllerTarget.applicationReceipts.count

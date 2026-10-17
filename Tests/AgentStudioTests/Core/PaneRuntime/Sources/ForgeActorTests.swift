@@ -510,8 +510,12 @@ struct ForgeActorTests {
         )
 
         await fixture.actor.setDemand(worktreeIds: [])
+        let remainingDemand = await fixture.actor.demandedRepoIds()
+        #expect(remainingDemand.isEmpty)
+        if remainingDemand.isEmpty {
+            await fixture.clock.waitForPendingSleepCount(exactly: 0)
+        }
         fixture.advance(by: .seconds(600))
-        await Task.yield()
 
         #expect(await fixture.provider.callCount == 1)
         await fixture.actor.shutdown()
@@ -530,9 +534,9 @@ struct ForgeActorTests {
         await fixture.provider.resolve(callAt: 0, with: .rateLimited(retryAfterSeconds: 300))
         #expect(await fixture.events.waitForRateLimit(repoId: repoId, retryAfterSeconds: 300))
         await fixture.clock.waitForPendingSleepCount(atLeast: 1)
+        #expect(await fixture.actor.refreshStateByRepoId[repoId]?.backoffUntil == Duration.seconds(300))
 
         fixture.advance(by: .seconds(299))
-        await Task.yield()
         #expect(await fixture.provider.callCount == 1)
 
         fixture.advance(by: .seconds(1))
@@ -581,8 +585,9 @@ struct ForgeActorTests {
     }
 
     @Test("only final live membership removal invalidates a shared branch")
-    func finalMembershipRemovalInvalidatesSharedBranch() async {
-        let fixture = await ForgeActorFixture.make()
+    func finalMembershipRemovalInvalidatesSharedBranch() async throws {
+        let probe = try ForgePublicationProbe()
+        let fixture = await ForgeActorFixture.make(beforeEventEmission: { probe.record($0) })
         let repoId = UUIDv7.generate()
         let firstWorktreeId = UUIDv7.generate()
         let secondWorktreeId = UUIDv7.generate()
@@ -594,14 +599,22 @@ struct ForgeActorTests {
                 (secondWorktreeId, "feature/shared"),
             ]
         )
+        _ = await probe.begin()
         await fixture.actor.unregister(worktreeId: firstWorktreeId)
-        #expect(await fixture.events.invalidatedBranches(for: repoId).isEmpty)
+        #expect(
+            probe.outputs.allSatisfy { event in
+                if case .pullRequestRepositoryProjectionChanged(_, _, let branches) = event {
+                    return !branches.contains("feature/shared")
+                }
+                return true
+            })
 
         await fixture.actor.unregister(worktreeId: secondWorktreeId)
 
         #expect(await fixture.events.waitForBranchInvalidation(repoId: repoId, branch: "feature/shared"))
         await fixture.actor.shutdown()
         await fixture.stopObserving()
+        try await probe.finish()
     }
 
 }

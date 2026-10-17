@@ -252,6 +252,44 @@ struct BridgeTelemetryWireSchemaTests {
     }
 
     @Test
+    func workerHeldRenderPublicationAcceptsOnlyBoundedState() {
+        let stringAttributes = [
+            "agentstudio.bridge.phase": "render_disposition_response_posted_before_owner_effect",
+            "agentstudio.bridge.plane": "data",
+            "agentstudio.bridge.priority": "warm",
+            "agentstudio.bridge.render_publication.outcome": "held",
+            "agentstudio.bridge.result": "success",
+            "agentstudio.bridge.slice": "command_acks",
+            "agentstudio.bridge.transport": "worker",
+            "agentstudio.bridge.viewer": "review",
+        ]
+        let numericAttributes = [
+            "agentstudio.bridge.render_publication.current_count": 1.0,
+            "agentstudio.bridge.render_publication.high_water_mark": 1.0,
+            "agentstudio.bridge.render_publication.oldest_age_ms": 25.0,
+        ]
+        let accepted = BridgeTelemetryWireSchema.dropReason(
+            eventName: "performance.bridge.worker.render_publication_outstanding",
+            durationMilliseconds: nil,
+            stringAttributes: stringAttributes,
+            numericAttributes: numericAttributes,
+            booleanAttributes: [:]
+        )
+        let rejectedUnknownOutcome = BridgeTelemetryWireSchema.dropReason(
+            eventName: "performance.bridge.worker.render_publication_outstanding",
+            durationMilliseconds: nil,
+            stringAttributes: stringAttributes.merging([
+                "agentstudio.bridge.render_publication.outcome": "unknown-held-state"
+            ]) { _, newValue in newValue },
+            numericAttributes: numericAttributes,
+            booleanAttributes: [:]
+        )
+
+        #expect(accepted == nil)
+        #expect(rejectedUnknownOutcome == .unsafeAttribute)
+    }
+
+    @Test
     func workerOutstandingRenderPublicationAcceptsOnlyBoundedState() {
         let stringAttributes = [
             "agentstudio.bridge.phase": "render_disposition_response_posted_before_owner_effect",

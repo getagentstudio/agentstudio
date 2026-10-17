@@ -6,7 +6,9 @@ struct BridgeDevelopmentProductProviderPreparationInput {
     // Production passes nothing. A test supplies an observer so it can await the commit
     // instead of sampling the host's diagnostic read.
     let didCommitReviewPublication: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
+    let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     let gitReadContext: BridgeGitReadContext
+    let operationDeadlineClock: (any Clock<Duration> & Sendable)?
     let reviewInitialization: BridgeDevelopmentProductReviewInitialization
     let reviewProvider: any BridgeReviewSourceProvider
     let schemeTaskCensus: BridgeProductSchemeTaskCensus
@@ -31,6 +33,7 @@ struct BridgeDevelopmentProductProviderPreparation {
 }
 
 private struct BridgeDevelopmentProductProviderDependencies {
+    let lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)?
     let annotationOutputSource: BridgePaneProductWorktreeAnnotationOutputSource
     let annotationProjectionSource: BridgeAnnotationProjectionSource
     let annotationSource: BridgePaneAnnotationNotificationSource
@@ -44,9 +47,11 @@ private struct BridgeDevelopmentProductProviderDependencies {
     let applyReviewComparisonUpdate:
         @MainActor @Sendable (
             BridgeProductReviewComparisonUpdateRequest,
+            Int,
             BridgeProductAdmissionContext
         ) async -> Void
     let applyFileRefreshRetry: @MainActor @Sendable (BridgeProductAdmissionContext) async -> Void
+    let refreshAdmissionCoordinator: BridgePaneRefreshAdmissionCoordinator
     let applyActiveViewerModeUpdate:
         @MainActor @Sendable (
             BridgeProductCallRequest,
@@ -64,6 +69,45 @@ private struct BridgeDevelopmentProductProviderDependencies {
 }
 
 extension BridgeDevelopmentProductHost {
+    package init(
+        source: BridgeDevelopmentProductSource,
+        worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
+        worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
+        operationDeadlineClock: (any Clock<Duration> & Sendable)? = nil,
+        retirementClock: (any Clock<Duration> & Sendable)? = nil,
+        shutdownFactSink: BridgeDevelopmentProductHostFactSink? = nil,
+        contributionTargetCommit:
+            @escaping @MainActor @Sendable (WorkspaceReviewContributionTarget) ->
+            BridgePaneStateMutationResult,
+        statusPhysicalGate: AgentStudioGitStatusPhysicalGate = AgentStudioGitStatusPhysicalGate(),
+        makeReviewProvider: @Sendable (URL, BridgeGitReadContext) -> any BridgeReviewSourceProvider,
+        // Production passes nothing. A test supplies a census with a termination
+        // observer to pin the window this host's bootstrap gate now handles.
+        schemeTaskCensus: BridgeProductSchemeTaskCensus = BridgeProductSchemeTaskCensus(),
+        // Keep the package observer payload-free without widening the publication type.
+        // Tests receive the exact payload through the internal recorder-aware constructor.
+        didCommitReviewPublication: (@MainActor @Sendable () -> Void)? = nil
+    ) async throws {
+        var commitObservation: (@MainActor @Sendable (BridgeReviewCommittedPublication) -> Void)?
+        if let observeCommit = didCommitReviewPublication {
+            commitObservation = { _ in observeCommit() }
+        }
+        try await self.init(
+            source: source,
+            worktreeAnnotationStore: worktreeAnnotationStore,
+            worktreeAnnotationOutputCoordinator: worktreeAnnotationOutputCoordinator,
+            operationDeadlineClock: operationDeadlineClock,
+            retirementClock: retirementClock,
+            shutdownFactSink: shutdownFactSink,
+            contributionTargetCommit: contributionTargetCommit,
+            statusPhysicalGate: statusPhysicalGate,
+            makeReviewProvider: makeReviewProvider,
+            schemeTaskCensus: schemeTaskCensus,
+            didCommitReviewPublication: commitObservation,
+            lifecycleTraceRecorder: nil
+        )
+    }
+
     static func makeProductProviderPreparation(
         _ input: BridgeDevelopmentProductProviderPreparationInput
     ) async throws -> BridgeDevelopmentProductProviderPreparation {
@@ -110,6 +154,7 @@ extension BridgeDevelopmentProductHost {
         }
         let productProvider = makeProductProvider(
             dependencies: BridgeDevelopmentProductProviderDependencies(
+                lifecycleTraceRecorder: input.lifecycleTraceRecorder,
                 annotationOutputSource: BridgePaneProductWorktreeAnnotationOutputSource(
                     store: input.worktreeAnnotationStore
                 ),
@@ -121,13 +166,15 @@ extension BridgeDevelopmentProductHost {
                     worktreeID: input.source.worktreeID.uuidString.lowercased()
                 ),
                 applyWorktreeAnnotationCommand: annotationCommandHandler,
-                applyReviewComparisonUpdate: { request, productAdmission in
+                applyReviewComparisonUpdate: { request, workerDerivationEpoch, productAdmission in
                     await committedCallTarget.applyReviewComparisonUpdate(
                         request,
+                        workerDerivationEpoch: workerDerivationEpoch,
                         productAdmission: productAdmission
                     )
                 },
                 applyFileRefreshRetry: committedCallTarget.applyFileRefreshRetry,
+                refreshAdmissionCoordinator: refreshAdmissionCoordinator,
                 applyActiveViewerModeUpdate: committedCallTarget.applyActiveViewerModeUpdate,
                 fileMetadataSource: fileMetadataSource,
                 initialPresentation: initialPresentation,
@@ -178,6 +225,7 @@ extension BridgeDevelopmentProductHost {
             paneSessionId: input.source.paneID.uuidString,
             provider: productProvider,
             productAdmissionGate: productAdmissionGate,
+            operationDeadlineClock: input.operationDeadlineClock,
             didRetireWorkerInstance: { workerInstanceId in
                 await reviewPublicationCoordinator.retireDisplayWorker(
                     workerInstanceId: workerInstanceId
@@ -268,7 +316,7 @@ extension BridgeDevelopmentProductHost {
                 )
             },
             isReviewPublicationCurrent: { publicationId, productAdmission in
-                dependencies.reviewPublicationCoordinator.isCurrentPublication(
+                dependencies.reviewPublicationCoordinator.isCurrentCanonicalPublication(
                     publicationId: publicationId,
                     productAdmission: productAdmission
                 )
@@ -292,6 +340,9 @@ extension BridgeDevelopmentProductHost {
             applyActiveViewerModeUpdate: dependencies.applyActiveViewerModeUpdate,
             applyReviewComparisonUpdate: dependencies.applyReviewComparisonUpdate,
             applyFileRefreshRetry: dependencies.applyFileRefreshRetry,
+            recordCurrentFileRefreshFailure: { failure in
+                failure.apply { dependencies.refreshAdmissionCoordinator.recordCurrentFileRefreshFailure($0) }
+            },
             applyWorktreeAnnotationCommand: dependencies.applyWorktreeAnnotationCommand,
             authorizeReviewComparisonTargets:
                 BridgePaneProductComparisonTargetQuerySource.makeAuthorization(
@@ -302,7 +353,8 @@ extension BridgeDevelopmentProductHost {
                 reviewSourceProvider: dependencies.reviewSourceProvider
             ),
             initialPanePresentation: dependencies.initialPresentation,
-            refreshWorkAdmissionSource: dependencies.refreshWorkAdmissionSource
+            refreshWorkAdmissionSource: dependencies.refreshWorkAdmissionSource,
+            lifecycleTraceRecorder: dependencies.lifecycleTraceRecorder
         )
     }
 

@@ -80,14 +80,20 @@ struct RefreshAdmissionIntegrationFixture {
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
             productInstallation.capabilityBytes
         )
-        guard
-            case .response(let responseBytes) = try await dispatcher.dispatch(
+        let openResult = try await awaitRefreshAdmissionControlResult(
+            try await dispatcher.dispatch(
                 exactRequestBytes: try JSONEncoder().encode(request),
                 presentedCapability: capabilityHeader
             ),
+            session: productInstallation.session,
+            productAdmission: productAdmission
+        )
+        guard
+            openResult.outcome == .succeeded,
+            let response = openResult.result,
             case .subscriptionOpenAccepted = try BridgeProductStrictJSON.decode(
                 BridgeProductControlResponse.self,
-                from: responseBytes
+                from: JSONEncoder().encode(response)
             )
         else {
             throw RefreshAdmissionIntegrationError.fileSubscriptionDidNotOpen
@@ -109,14 +115,20 @@ struct RefreshAdmissionIntegrationFixture {
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(
             productInstallation.capabilityBytes
         )
-        guard
-            case .response(let responseBytes) = try await dispatcher.dispatch(
+        let openResult = try await awaitRefreshAdmissionControlResult(
+            try await dispatcher.dispatch(
                 exactRequestBytes: try JSONEncoder().encode(request),
                 presentedCapability: capabilityHeader
             ),
+            session: productInstallation.session,
+            productAdmission: productAdmission
+        )
+        guard
+            openResult.outcome == .succeeded,
+            let response = openResult.result,
             case .subscriptionOpenAccepted = try BridgeProductStrictJSON.decode(
                 BridgeProductControlResponse.self,
-                from: responseBytes
+                from: JSONEncoder().encode(response)
             )
         else {
             throw RefreshAdmissionIntegrationError.reviewSubscriptionDidNotOpen
@@ -131,6 +143,33 @@ struct RefreshAdmissionIntegrationFixture {
     }
 }
 
+private func awaitRefreshAdmissionControlResult(
+    _ dispatchResult: BridgeProductSchemeControlDispatchResult,
+    session: BridgeProductSession,
+    productAdmission: BridgeProductAdmissionContext
+) async throws -> BridgeProductOperationResultResponse {
+    guard case .response(let admissionBytes) = dispatchResult else {
+        throw RefreshAdmissionIntegrationError.expectedWorkerSessionExecution
+    }
+    let admitted = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationAdmittedResponse.self,
+        from: admissionBytes
+    )
+    await session.waitForOperationExecution(operationId: admitted.operationId)
+    let resultRequestBytes = try JSONSerialization.data(withJSONObject: [
+        "kind": "operation.result",
+        "operationId": admitted.operationId,
+        "paneSessionId": admitted.correlation.paneSessionId,
+        "wireVersion": BridgeProductWireContract.version,
+        "workerInstanceId": admitted.correlation.workerInstanceId,
+    ])
+    let resultRequest = try BridgeProductStrictJSON.decode(
+        BridgeProductOperationResultRequest.self,
+        from: resultRequestBytes
+    )
+    return try #require(await session.readOperationResult(resultRequest, productAdmission: productAdmission))
+}
+
 @MainActor
 func makeRefreshAdmissionIntegrationFixture(
     comparisonGate: BridgeComparisonGate? = nil,
@@ -142,6 +181,10 @@ func makeRefreshAdmissionIntegrationFixture(
     fileMetadataProducerGate: RefreshAdmissionCancellationIgnoringProducerGate? = nil,
     reviewMetadataReservationGate: RefreshAdmissionReviewReservationGate? = nil,
     initialContributionTarget: WorkspaceReviewContributionTarget? = nil,
+    lifecycleTraceRecorder: (any BridgeProductMetadataLifecycleTraceRecording)? = nil,
+    constructionCoordinator: BridgeWorktreeProductConstructionCoordinator? = nil,
+    reviewConstructionProgress: BridgeReviewConstructionProgressWaitOwner = .init(),
+    reviewProviderTransform: (@MainActor (BridgeReviewSourceProviderFake) -> any BridgeReviewSourceProvider)? = nil,
     contributionTargetCommit:
         (@MainActor @Sendable (WorkspaceReviewContributionTarget) -> BridgePaneStateMutationResult)? = nil
 ) async throws -> RefreshAdmissionIntegrationFixture {
@@ -150,11 +193,6 @@ func makeRefreshAdmissionIntegrationFixture(
     let initialFile = makeBridgeEndpointChangedFile(
         fileId: "initial",
         path: "Sources/App/Initial.swift",
-        sizeBytes: 100
-    )
-    let refreshedFile = makeBridgeEndpointChangedFile(
-        fileId: "refreshed",
-        path: "Sources/App/Refreshed.swift",
         sizeBytes: 100
     )
     let reviewProvider = makeRefreshAdmissionReviewProvider(
@@ -181,7 +219,8 @@ func makeRefreshAdmissionIntegrationFixture(
         reviewMetadataSource: reviewMetadataSource,
         reviewContentSource: BridgeUnavailablePaneProductReviewContentSource(),
         markReviewItemViewed: { _, _ in },
-        refreshWorkAdmissionSource: refreshWorkAdmission.source
+        refreshWorkAdmissionSource: refreshWorkAdmission.source,
+        lifecycleTraceRecorder: lifecycleTraceRecorder
     )
     let paneId = UUIDv7.generate()
     let productAdmissionGate = BridgeProductAdmissionGate()
@@ -203,7 +242,8 @@ func makeRefreshAdmissionIntegrationFixture(
                 cwd: URL(fileURLWithPath: "/tmp/bridge-refresh-admission")
             )
         ),
-        reviewSourceProvider: reviewProvider,
+        reviewSourceProvider: reviewProviderTransform?(reviewProvider) ?? reviewProvider,
+        worktreeProductConstructionCoordinator: constructionCoordinator,
         initialPaneActivity: .dormant,
         productSessionDependencies: BridgePaneProductSessionDependencies(
             installation: installation,
@@ -215,24 +255,26 @@ func makeRefreshAdmissionIntegrationFixture(
             ),
             productProvider: productProvider
         ),
+        reviewConstructionProgress: reviewConstructionProgress,
         contributionTargetCommit: contributionTargetCommit
     )
-    // These tests exercise refresh after explicit Review intake. Foreground
-    // activity alone does not request the initial package.
-    controller.scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
-    let productAdmission = try #require(productAdmissionGate.acquire())
+    let productAdmission = try #require(installation.productAdapter.acquireAdmission())
     let metadataProducerLease = try await installRefreshAdmissionMetadataProducer(
         installation: installation,
         productProvider: productProvider,
         productAdmission: productAdmission
     )
+    // G2's accepted page Review mode queues initial intake, even while dormant.
+    // The real foreground transition starts it; a prior-failure catch-up fixture
+    // must settle that initial attempt rather than suppressing it.
+    await sendPageActiveViewerMode(
+        .review, controller: controller, productAdmission: productAdmission, sequence: 1)
     return RefreshAdmissionIntegrationFixture(
         baseEndpoint: baseEndpoint,
         headEndpoint: headEndpoint,
-        refreshedComparison: BridgeEndpointComparison(
+        refreshedComparison: makeRefreshAdmissionSuccessorComparison(
             baseEndpoint: baseEndpoint,
-            headEndpoint: headEndpoint,
-            changedFiles: [refreshedFile]
+            headEndpoint: headEndpoint
         ),
         reviewProvider: reviewProvider,
         fileMetadataSource: fileMetadataSource,
@@ -241,6 +283,19 @@ func makeRefreshAdmissionIntegrationFixture(
         productAdmission: productAdmission,
         productProvider: productProvider,
         controller: controller
+    )
+}
+
+private func makeRefreshAdmissionSuccessorComparison(
+    baseEndpoint: BridgeSourceEndpoint,
+    headEndpoint: BridgeSourceEndpoint
+) -> BridgeEndpointComparison {
+    let refreshedFile = makeBridgeEndpointChangedFile(
+        fileId: "refreshed", path: "Sources/App/Refreshed.swift", sizeBytes: 100)
+    return BridgeEndpointComparison(
+        baseEndpoint: baseEndpoint,
+        headEndpoint: headEndpoint,
+        changedFiles: [refreshedFile]
     )
 }
 

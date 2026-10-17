@@ -8,9 +8,10 @@ import Testing
 @testable import AgentStudioTestSupport
 
 extension WebKitSerializedTests.BridgePaneControllerTests {
-    @Test("File invalidation does not admit initial Review before File warm-up")
+    @Test("hidden page mode defers initial Review build during File invalidation")
     func fileInvalidationDoesNotAdmitInitialReview() async {
         // Arrange
+        // Hidden behavior: this controller receives no accepted page Review mode.
         let worktreeId = UUIDv7.generate()
         let provider = BridgeReviewSourceProviderFake(
             comparison: BridgeEndpointComparison(
@@ -187,15 +188,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         }
         await waitForActiveReviewRefreshTaskToFinish(fixture.controller)
         let resetFrame = try await fixture.consumeNextMetadataFrame()
-        let fileDataResult = try await fixture.productInstallation.session.enqueueSubscriptionData(
-            subscriptionId: "file-subscription-refresh-admission",
-            data: .fileMetadata(try refreshAdmissionFileSourceAcceptedEvent()),
-            productAdmission: fixture.productAdmission,
-            foregroundWorkAdmission: try #require(
-                fixture.controller.refreshAdmissionCoordinator.acquireForegroundWork()
-            )
-        )
-        let fileDataFrame = try await fixture.consumeNextMetadataFrame()
+        let fileComplete = try await sealRefreshAdmissionFileProofBatch(fixture)
 
         // Assert
         guard case .subscriptionReset(let reset) = resetFrame else {
@@ -208,16 +201,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 == "review-subscription-refresh-admission"
         )
         #expect(reset.reason == .staleSource)
-        guard case .enqueued = fileDataResult,
-            case .subscriptionData(let fileData) = fileDataFrame,
-            fileData.data.subscriptionKind == .fileMetadata
-        else {
-            Issue.record("Expected File to accept data after the Review reset")
-            await fixture.finish()
-            return
-        }
         #expect(
-            fileData.subscriptionIdentity.subscriptionId
+            fileComplete.identity.subscriptionId
                 == "file-subscription-refresh-admission"
         )
         #expect(
@@ -304,15 +289,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             return
         }
         let resetFrame = try await fixture.consumeNextMetadataFrame()
-        let fileDataResult = try await fixture.productInstallation.session.enqueueSubscriptionData(
-            subscriptionId: "file-subscription-refresh-admission",
-            data: .fileMetadata(try refreshAdmissionFileSourceAcceptedEvent()),
-            productAdmission: fixture.productAdmission,
-            foregroundWorkAdmission: try #require(
-                fixture.controller.refreshAdmissionCoordinator.acquireForegroundWork()
-            )
-        )
-        let fileDataFrame = try await fixture.consumeNextMetadataFrame()
+        let fileComplete = try await sealRefreshAdmissionFileProofBatch(fixture)
 
         // Assert
         #expect(fixture.controller.paneState.diff.status == .error)
@@ -330,16 +307,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 == "review-subscription-refresh-admission"
         )
         #expect(reset.reason == .staleSource)
-        guard case .enqueued = fileDataResult,
-            case .subscriptionData(let fileData) = fileDataFrame,
-            fileData.data.subscriptionKind == .fileMetadata
-        else {
-            Issue.record("Expected File to accept data after the Review reset")
-            await fixture.finish()
-            return
-        }
         #expect(
-            fileData.subscriptionIdentity.subscriptionId
+            fileComplete.identity.subscriptionId
                 == "file-subscription-refresh-admission"
         )
         #expect(

@@ -1,5 +1,7 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
+import Synchronization
 import Testing
 
 @testable import AgentStudioCore
@@ -108,11 +110,10 @@ struct PaneRuntimeEventChannelTests {
         #expect(finishingSnapshot.totalPendingCount == 1)
 
         await outboundPostGate.allowPostToFinish()
-        await assertEventuallyAsync("completed in-flight post should leave no retired debt") {
-            let snapshot = reporter.snapshot()
-            return snapshot.runtimeChannelOutboundPendingCount == 0
-                && snapshot.runtimeChannelRetiredUndeliveredCount == 0
-        }
+        await channel.finishAndJoinOutboundDelivery()
+        let completedSnapshot = reporter.snapshot()
+        #expect(completedSnapshot.runtimeChannelOutboundPendingCount == 0)
+        #expect(completedSnapshot.runtimeChannelRetiredUndeliveredCount == 0)
     }
 
     @Test("finish retires only buffered envelopes after an in-flight post completes")
@@ -136,11 +137,42 @@ struct PaneRuntimeEventChannelTests {
         #expect(reporter.snapshot().runtimeChannelOutboundPendingCount == 2)
 
         await outboundPostGate.allowPostToFinish()
-        await assertEventuallyAsync("only the cancelled buffered envelope should retire") {
-            let snapshot = reporter.snapshot()
-            return snapshot.runtimeChannelOutboundPendingCount == 0
-                && snapshot.runtimeChannelRetiredUndeliveredCount == 1
-        }
+        await channel.finishAndJoinOutboundDelivery()
+        let completedSnapshot = reporter.snapshot()
+        #expect(completedSnapshot.runtimeChannelOutboundPendingCount == 0)
+        #expect(completedSnapshot.runtimeChannelRetiredUndeliveredCount == 1)
+    }
+
+    @Test("outbound completion observes the accepted post's outcome and retirement", arguments: [0, 1])
+    func outboundCompletionObservesAcceptedPostAndRetirement(bufferedEnvelopeCount: Int) async throws {
+        try await proveReplyDependsOnStep(
+            makeScenario: {
+                let fixture = OwnedChannelCompletionFixture(bufferedEnvelopeCount: bufferedEnvelopeCount)
+                return HeldReplyScenario(
+                    context: fixture,
+                    step: fixture.postCompletion,
+                    produceReply: { @MainActor in await fixture.finishAfterAcceptedPost() }
+                )
+            },
+            replyReportsFailure: { reply, _ in
+                #expect(reply.snapshot.runtimeChannelOutboundPendingCount == 0)
+                #expect(reply.snapshot.runtimeChannelRetiredUndeliveredCount == UInt64(bufferedEnvelopeCount))
+                #expect(reply.didObserveEntryCancellation)
+                #expect(reply.didObserveOutcomeCancellation)
+                return reply.outcome == .failed
+            },
+            assertCommitted: { reply, fixture in
+                #expect(reply.outcome == .posted)
+                #expect(reply.snapshot.runtimeChannelOutboundPendingCount == 0)
+                #expect(reply.snapshot.runtimeChannelRetiredUndeliveredCount == UInt64(bufferedEnvelopeCount))
+                #expect(reply.snapshot.totalPendingCount == 0)
+                #expect(reply.didObserveEntryCancellation)
+                #expect(reply.didObserveOutcomeCancellation)
+                await fixture.channel.finishAndJoinOutboundDelivery()
+                await fixture.channel.finishAndJoinOutboundDelivery()
+                #expect(fixture.reporter.snapshot() == reply.snapshot)
+            }
+        )
     }
 
     private func makeChannel(
@@ -216,5 +248,111 @@ private actor RuntimeEnvelopeOutboundPostGate {
         for releaseWaiter in releaseWaiters {
             releaseWaiter.resume()
         }
+    }
+}
+
+private enum OwnedChannelPostOutcome: Sendable, Equatable {
+    case pending
+    case posted
+    case failed
+}
+
+private struct OwnedChannelCompletionReply: Sendable {
+    let outcome: OwnedChannelPostOutcome
+    let snapshot: RuntimeDeliveryPerformanceSnapshot
+    let didObserveEntryCancellation: Bool
+    let didObserveOutcomeCancellation: Bool
+}
+
+private final class OwnedChannelPostOutcomeRecorder: Sendable {
+    private let state = Mutex(OwnedChannelPostOutcome.pending)
+
+    func record(_ outcome: OwnedChannelPostOutcome) {
+        state.withLock { $0 = outcome }
+    }
+
+    func snapshot() -> OwnedChannelPostOutcome {
+        state.withLock { $0 }
+    }
+}
+
+@MainActor
+private final class OwnedChannelCompletionFixture {
+    let channel: PaneRuntimeEventChannel
+    let reporter: RuntimeDeliveryPerformanceReporter
+    let postCompletion: HeldStep<RuntimeEnvelope>
+    private let postEntry: HeldStep<RuntimeEnvelope>
+    private let outcomeRecorder: OwnedChannelPostOutcomeRecorder
+    private let bufferedEnvelopeCount: Int
+    private let paneID = PaneId.generateUUIDv7()
+
+    init(bufferedEnvelopeCount: Int) {
+        let reporter = RuntimeDeliveryPerformanceReporter()
+        reporter.enable()
+        let bus = EventBus<RuntimeEnvelope>(performanceReporter: reporter)
+        let postEntry = HeldStep<RuntimeEnvelope>(
+            "accepted outbound post before channel finish", cancellation: .holdThroughCancellation)
+        let postCompletion = HeldStep<RuntimeEnvelope>(
+            "accepted outbound post outcome after channel finish", cancellation: .holdThroughCancellation)
+        let outcomeRecorder = OwnedChannelPostOutcomeRecorder()
+        self.reporter = reporter
+        self.postEntry = postEntry
+        self.postCompletion = postCompletion
+        self.outcomeRecorder = outcomeRecorder
+        self.bufferedEnvelopeCount = bufferedEnvelopeCount
+        self.channel = PaneRuntimeEventChannel(
+            paneEventBus: bus,
+            performanceReporter: reporter,
+            outboundPost: { envelope in
+                do {
+                    try await postEntry.arrive(envelope)
+                    try await postCompletion.arrive(envelope)
+                    let result = await bus.post(envelope)
+                    outcomeRecorder.record(.posted)
+                    return result
+                } catch {
+                    outcomeRecorder.record(.failed)
+                    return .init(subscriberCount: 0, droppedCount: 0, terminatedCount: 0)
+                }
+            }
+        )
+    }
+
+    func finishAfterAcceptedPost() async -> OwnedChannelCompletionReply {
+        emitBell()
+        do {
+            _ = try await postEntry.firstArrival()
+        } catch {
+            postEntry.retire()
+            postCompletion.retire()
+            await channel.finishAndJoinOutboundDelivery()
+            return completionReply(outcome: .failed)
+        }
+        for _ in 0..<bufferedEnvelopeCount { emitBell() }
+        // Finish stays synchronous. Release the entry only after cancellation,
+        // so the dependency proof observes the post's outcome after finish.
+        channel.finishSubscribers()
+        postEntry.release()
+        await channel.finishAndJoinOutboundDelivery()
+        return completionReply(outcome: outcomeRecorder.snapshot())
+    }
+
+    private func completionReply(outcome: OwnedChannelPostOutcome) -> OwnedChannelCompletionReply {
+        OwnedChannelCompletionReply(
+            outcome: outcome,
+            snapshot: reporter.snapshot(),
+            didObserveEntryCancellation: postEntry.hasObservedCancellation,
+            didObserveOutcomeCancellation: postCompletion.hasObservedCancellation
+        )
+    }
+
+    private func emitBell() {
+        channel.emit(
+            paneId: paneID,
+            metadata: PaneMetadata(paneId: paneID, contentType: .terminal, title: "Owned channel completion"),
+            paneKind: .terminal,
+            event: .terminal(.bellRang),
+            persistForReplay: false
+        )
     }
 }

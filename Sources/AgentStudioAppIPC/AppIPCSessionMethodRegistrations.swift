@@ -7,6 +7,7 @@ package struct AppIPCSessionsError: Error, Equatable, Sendable {
         case bindingRequired
         case correlationConflict
         case ingestionUnavailable
+        case queueFull
         case validationRejected
     }
 
@@ -26,21 +27,21 @@ package enum IPCSessionEventProvenance: Sendable, Equatable {
 /// App composition owns the mapping to Sessions mutations; this boundary never
 /// sees a domain mutation or a SQLite row.
 package protocol AppIPCSessionsPort: Sendable {
-    func recordDeliberateReport(
-        paneId: UUID,
-        params: IPCSessionReportParams
-    ) async throws -> IPCSessionReportResult
-
-    func recordAgentMessage(
-        paneId: UUID,
-        params: IPCSessionMessageParams
-    ) async throws -> IPCSessionMessageResult
+    func recordUnverifiedStatus(
+        paneId: UUID, params: IPCSessionStatusParams,
+        revalidateClaim: @escaping @Sendable () throws -> Void
+    ) async throws -> IPCSessionEventResult
 
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
         provenance: IPCSessionEventProvenance
     ) async throws -> IPCSessionEventResult
+
+    func recordRefusal(
+        paneId: UUID, params: IPCSessionRefusalParams,
+        provenance: IPCSessionEventProvenance
+    ) async throws -> IPCSessionRefusalResult
 
     func readSessionState(
         paneId: UUID,
@@ -56,52 +57,31 @@ extension AppIPCBuiltInMethodRegistrations {
         let port = inputs.ports.sessionsPort
         return try [
             AppIPCTypedMethodRegistration(
-                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionReport),
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionStatus),
                 correlation: .required(\.correlationId),
-                resolveTarget: { parameters, _, tools in
-                    try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
-                        parameters,
-                        rawHandle: parameters.handle,
-                        tools: tools,
-                        replacingHandle: { original, canonicalHandle in
-                            IPCSessionReportParams(
-                                handle: canonicalHandle,
-                                kind: original.kind,
-                                explanation: original.explanation,
-                                correlationId: original.correlationId
-                            )
+                resolveTarget: { parameters, context, _ in
+                    let claim = parameters.paneClaim
+                    switch context.principal?.kind {
+                    case .paneClaim(let paneId, let workspaceId):
+                        guard paneId == claim.paneId, workspaceId == claim.workspaceId else {
+                            throw AppIPCPaneClaimError(reason: .otherWorkspace)
                         }
-                    )
+                    case .spawnedPaneAgent(let paneId, let workspaceId):
+                        guard UUID(uuidString: paneId) == claim.paneId, workspaceId == claim.workspaceId else {
+                            throw AppIPCSessionsError(reason: .validationRejected)
+                        }
+                    default: throw AppIPCPaneClaimError(reason: .intentRequiresToken)
+                    }
+                    try inputs.ports.paneClaimAdmission.validate(claim)
+                    return AppIPCTargetResolution(
+                        parameters: parameters,
+                        canonicalHandle: IPCHandle(kind: .pane, reference: .canonicalUUID(claim.paneId)),
+                        target: .pane(claim.paneId.uuidString))
                 },
                 connectionHandler: { parameters, _, target in
-                    try await port.recordDeliberateReport(
-                        paneId: AppIPCSessionTargetSupport.paneId(from: target),
-                        params: parameters
-                    )
-                }
-            ).erase(),
-            AppIPCTypedMethodRegistration(
-                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionMessage),
-                correlation: .required(\.correlationId),
-                resolveTarget: { parameters, _, tools in
-                    try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
-                        parameters,
-                        rawHandle: parameters.handle,
-                        tools: tools,
-                        replacingHandle: { original, canonicalHandle in
-                            IPCSessionMessageParams(
-                                handle: canonicalHandle,
-                                text: original.text,
-                                correlationId: original.correlationId
-                            )
-                        }
-                    )
-                },
-                connectionHandler: { parameters, _, target in
-                    try await port.recordAgentMessage(
-                        paneId: AppIPCSessionTargetSupport.paneId(from: target),
-                        params: parameters
-                    )
+                    try await port.recordUnverifiedStatus(
+                        paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters,
+                        revalidateClaim: { try inputs.ports.paneClaimAdmission.validate(parameters.paneClaim) })
                 }
             ).erase(),
             AppIPCTypedMethodRegistration(
@@ -124,6 +104,10 @@ extension AppIPCBuiltInMethodRegistrations {
                 },
                 connectionHandler: { parameters, context, target in
                     let paneId = try AppIPCSessionTargetSupport.paneId(from: target)
+                    guard
+                        AppIPCSessionTargetSupport.provenance(principal: context.principal, paneId: paneId)
+                            == .matchingPane
+                    else { throw AppIPCSessionsError(reason: .validationRejected) }
                     return try await port.recordProviderEvent(
                         paneId: paneId,
                         params: parameters,
@@ -132,6 +116,29 @@ extension AppIPCBuiltInMethodRegistrations {
                             paneId: paneId
                         )
                     )
+                }
+            ).erase(),
+            AppIPCTypedMethodRegistration(
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.sessionRefusal),
+                correlation: .required(\.correlationId),
+                resolveTarget: { parameters, _, tools in
+                    try await AppIPCBuiltInRegistrationSupport.canonicalPaneTarget(
+                        parameters, rawHandle: parameters.handle, tools: tools,
+                        replacingHandle: { original, handle in
+                            IPCSessionRefusalParams(
+                                handle: handle, reason: original.reason, event: original.event,
+                                correlationId: original.correlationId)
+                        })
+                },
+                connectionHandler: { parameters, context, target in
+                    let paneId = try AppIPCSessionTargetSupport.paneId(from: target)
+                    guard
+                        AppIPCSessionTargetSupport.provenance(principal: context.principal, paneId: paneId)
+                            == .matchingPane
+                    else { throw AppIPCSessionsError(reason: .validationRejected) }
+                    return try await port.recordRefusal(
+                        paneId: paneId, params: parameters,
+                        provenance: AppIPCSessionTargetSupport.provenance(principal: context.principal, paneId: paneId))
                 }
             ).erase(),
             sessionQueryRegistration(inputs: inputs),

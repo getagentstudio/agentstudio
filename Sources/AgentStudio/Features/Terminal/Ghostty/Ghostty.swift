@@ -10,46 +10,14 @@ package let ghosttyLogger = Logger(subsystem: "com.agentstudio", category: "Ghos
 
 /// Namespace for all Ghostty-related types
 package enum Ghostty {
-    /// The shared Ghostty app instance
-    @MainActor private static var sharedApp: App?
 
-    /// Access the shared Ghostty app
-    @MainActor
-    static var shared: App {
-        guard let app = sharedApp else {
-            fatalError("Ghostty not initialized. Call Ghostty.initialize() first.")
-        }
-        return app
-    }
-
-    /// Check if Ghostty has been initialized
-    @MainActor
-    static var isInitialized: Bool {
-        sharedApp != nil
-    }
-
-    /// Initialize the shared Ghostty app. @MainActor-isolated.
-    @MainActor
-    @discardableResult
-    package static func initialize() -> Bool {
-        if let sharedApp {
-            return sharedApp.app != nil
-        }
-        let app = App()
-        guard app.app != nil else { return false }
-        sharedApp = app
-        return true
-    }
-
-    @MainActor
-    package static func bindApplicationLifecycleStore(_ appLifecycleStore: AppLifecycleAtom) {
-        sharedApp?.bindApplicationLifecycleStore(appLifecycleStore)
-    }
 }
 
 extension Ghostty {
     /// Thin composition root for the embedded Ghostty host subsystem.
-    package final class App: @unchecked Sendable {
+    @MainActor
+    package final class App {
+        let callbackContext: GhosttyCallbackContext
         /// The raw Ghostty app lifetime owner.
         private var appHandle: AppHandle?
         private let focusSynchronizer: AppFocusSynchronizer
@@ -59,16 +27,21 @@ extension Ghostty {
             appHandle?.app
         }
 
+        package var nativeHandleIsAvailable: Bool { appHandle != nil }
+
         @MainActor
-        init() {
+        package init(callbackHandling: ActionRouter) {
             self.focusSynchronizer = AppFocusSynchronizer()
+            self.callbackContext = GhosttyCallbackContext(handling: callbackHandling)
+            self.callbackContext.installEngineTarget(self)
 
             // Create runtime config with callbacks
-            let userdataPointer = Unmanaged.passUnretained(self).toOpaque()
+            let userdataPointer = Unmanaged.passUnretained(callbackContext).toOpaque()
             let runtimeConfig = CallbackRouter.runtimeConfig(userdataPointer: userdataPointer)
 
             self.appHandle = AppHandle(
-                runtimeConfig: runtimeConfig
+                runtimeConfig: runtimeConfig,
+                callbackContext: callbackContext
             )
 
             guard let appHandle else {
@@ -84,8 +57,19 @@ extension Ghostty {
             ghosttyLogger.info("Ghostty app initialized successfully")
         }
 
-        deinit {
+        isolated deinit {
+            // Native views retain this wrapper until after their per-surface free.
+            // Conditional wrapper release therefore has no remaining native surfaces.
+            let context = callbackContext
+            context.handling.closeAdmission()
             focusSynchronizer.clearAppHandleForDeinit()
+            let handleToRelease = appHandle
+            Task { @MainActor in
+                await context.handling.retire()
+                context.clearEngineTarget()
+                // AppHandle retains the context through both native frees.
+                withExtendedLifetime(handleToRelease) {}
+            }
         }
 
         /// Process pending ghostty events.
@@ -100,18 +84,9 @@ extension Ghostty {
         }
 
         @MainActor
-        func bindApplicationLifecycleStore(_ appLifecycleStore: AppLifecycleAtom) {
+        package func bindApplicationLifecycleStore(_ appLifecycleStore: AppLifecycleAtom) {
             focusSynchronizer.bindApplicationLifecycleStore(appLifecycleStore)
         }
 
-        @MainActor
-        package static func setRuntimeRegistry(_ runtimeRegistry: RuntimeRegistry) {
-            ActionRouter.setRuntimeRegistry(runtimeRegistry)
-        }
-
-        @MainActor
-        static var runtimeRegistryForActionRouting: RuntimeRegistry {
-            ActionRouter.runtimeRegistryForActionRouting
-        }
     }
 }

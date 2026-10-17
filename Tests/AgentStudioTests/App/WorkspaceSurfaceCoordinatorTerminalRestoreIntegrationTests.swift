@@ -53,7 +53,9 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             viewRegistry: viewRegistry,
             runtime: runtime,
             surfaceManager: surfaceManager,
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: ipcLifecycle,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
@@ -98,6 +100,8 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
         let store = try makeWorkspaceJournalTestStore()
         let viewRegistry = ViewRegistry()
         let surfaceManager = SurfaceManager(
+            appCommandDispatcher: AppTerminalFixtureCommandDispatcher(), engineAccess: { .unavailable },
+            callbackHandlingAccess: { nil },
             maxCreationRetries: 0,
             healthCheckInterval: 3600,
             nativeSurfaceRetirement: { _ in }
@@ -108,7 +112,9 @@ struct WorkspaceSurfaceTerminalRestoreIntegrationTests {
             viewRegistry: viewRegistry,
             runtime: SessionRuntime(store: store),
             surfaceManager: surfaceManager,
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: windowLifecycleStore,
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()

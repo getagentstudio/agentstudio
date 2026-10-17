@@ -1,7 +1,14 @@
 // oxlint-disable unicorn/require-post-message-target-origin -- MessagePort postMessage has no target origin.
 import type { BridgeTelemetrySample } from '../../foundation/telemetry/bridge-telemetry-event.js';
 import type { BridgeTelemetryScope } from '../../foundation/telemetry/bridge-telemetry-scope.js';
-import type { BridgeTelemetryCompactSample } from './bridge-telemetry-worker-contracts.js';
+import type {
+	BridgeTelemetryCompactSample,
+	BridgeTelemetryLossReason,
+} from './bridge-telemetry-worker-contracts.js';
+export type BridgeTelemetryEventCompactSample = Extract<
+	BridgeTelemetryCompactSample,
+	{ readonly type: 'event.required' | 'event.optional' }
+>;
 import {
 	createBridgeTelemetryWorkerProducer,
 	type BridgeTelemetryWorkerProducer,
@@ -10,6 +17,12 @@ import {
 export interface BridgeTelemetryWorkerEventProducer {
 	readonly isEnabled: (scope: BridgeTelemetryScope) => boolean;
 	readonly record: (sample: BridgeTelemetrySample) => void;
+	readonly recordCompact: (sample: BridgeTelemetryEventCompactSample) => void;
+	readonly recordPriorLoss: (input: {
+		readonly requiredCount: number;
+		readonly optionalCount: number;
+		readonly reason: BridgeTelemetryLossReason;
+	}) => void;
 	readonly close: () => void;
 }
 
@@ -41,6 +54,10 @@ export function createBridgeTelemetryWorkerEventProducer(
 			}
 			producer.record(bridgeTelemetryCompactSampleForEvent(sample, now()));
 		},
+		recordCompact: (sample): void => {
+			if (props.enabledScopes.has(sample.sample.scope)) producer.record(sample);
+		},
+		recordPriorLoss: (input): void => producer.recordPriorLoss(input),
 		close: (): void => {
 			producer.close();
 			props.port.close();
@@ -51,7 +68,7 @@ export function createBridgeTelemetryWorkerEventProducer(
 export function bridgeTelemetryCompactSampleForEvent(
 	sample: BridgeTelemetrySample,
 	timestampMilliseconds: number,
-): BridgeTelemetryCompactSample {
+): BridgeTelemetryEventCompactSample {
 	const priority = sample.stringAttributes['agentstudio.bridge.priority'];
 	return {
 		type: priority === 'best_effort' ? 'event.optional' : 'event.required',

@@ -11,7 +11,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("unchanged contribution refresh commits successor seed without publication")
     func unchangedContributionRefreshCommitsSuccessorSeedWithoutPublication() async throws {
-        let fixture = makeContributionRefreshFixture()
+        let fixture = try await makeContributionRefreshFixture()
         defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
         guard
             case .success = await fixture.controller.handleDiffCommand(
@@ -29,7 +29,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             Issue.record("Expected initial contribution load")
             return
         }
-        let productAdmission = try #require(fixture.controller.productAdmissionGate.acquire())
+        let installation = try #require(await fixture.controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let initialPublication = try #require(
             fixture.controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -63,7 +64,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("contribution refresh captures fresh truth under stable lineage without endpoint replay")
     func contributionRefreshCapturesFreshTruthUnderStableLineageWithoutEndpointReplay() async throws {
-        let fixture = makeContributionRefreshFixture()
+        let fixture = try await makeContributionRefreshFixture()
         let controller = fixture.controller
         let provider = fixture.provider
         let paneId = fixture.paneId
@@ -79,7 +80,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             commandId: initialCommandId,
             correlationId: nil
         )
-        let productAdmission = try #require(controller.productAdmissionGate.acquire())
+        let installation = try #require(await controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let predecessor = try #require(
             controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -135,95 +137,9 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         )
     }
 
-    @Test("superseded contribution refresh retains lineage until its successor settles")
-    func supersededContributionRefreshRetainsLineageUntilSuccessorSettles() async throws {
-        // Arrange
-        let fixture = makeContributionRefreshFixture()
-        let controller = fixture.controller
-        defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
-        guard
-            case .success = await controller.handleDiffCommand(
-                .loadDiff(
-                    DiffArtifact(
-                        diffId: UUIDv7.generate(),
-                        worktreeId: fixture.worktreeId,
-                        patchData: Data()
-                    )
-                ),
-                commandId: UUIDv7.generate(),
-                correlationId: nil
-            )
-        else {
-            Issue.record("Expected the initial contribution load to succeed")
-            return
-        }
-        let pendingGeneration = controller.nextReviewGeneration
-        controller.refreshAdmissionCoordinator.beginReviewComparisonAttempt(
-            activeTarget: .ref(name: "target"),
-            reviewGeneration: pendingGeneration.rawValue
-        )
-        try #require(
-            controller.pendingComparisonReviewGeneration == nil,
-            "Same-lineage refresh must not be blocked by a fabricated comparison replacement"
-        )
-        let captureGate = BridgeContributionCaptureGate()
-        await fixture.provider.setContributionCaptureGate(captureGate)
-
-        // Act — the predecessor attempt remains blocked while its successor
-        // becomes current under the same public Review generation.
-        await controller.handlePaneFilesystemContextEvent(
-            .cwdSubtreeChanged(
-                context: PaneFilesystemContext(
-                    paneId: PaneId(existingUUID: fixture.paneId),
-                    repoId: fixture.repoId,
-                    cwd: URL(fileURLWithPath: "/tmp/contribution-refresh"),
-                    worktreeId: fixture.worktreeId
-                ),
-                paths: ["Sources/App/Generation2.swift"],
-                batchSeq: 1
-            )
-        )
-        await captureGate.waitForStartedCaptureCount(1)
-        await controller.handlePaneFilesystemContextEvent(
-            .cwdSubtreeChanged(
-                context: PaneFilesystemContext(
-                    paneId: PaneId(existingUUID: fixture.paneId),
-                    repoId: fixture.repoId,
-                    cwd: URL(fileURLWithPath: "/tmp/contribution-refresh"),
-                    worktreeId: fixture.worktreeId
-                ),
-                paths: ["Sources/App/Generation3.swift"],
-                batchSeq: 2
-            )
-        )
-        await captureGate.waitForStartedCaptureCount(2)
-        let refreshRequests = await fixture.provider.recordedContributionRequests()
-        try #require(refreshRequests.count == 3)
-        #expect(refreshRequests.map { $0.reviewGenerationValue } == [1, 1, 1])
-        #expect(
-            refreshRequests[2].reviewAttemptAuthorityGeneration
-                > refreshRequests[1].reviewAttemptAuthorityGeneration
-        )
-        await captureGate.releaseFirst()
-        #expect(await waitForRetiringReviewRefreshTasksToDrain(controller))
-
-        // Assert — stale cleanup cannot manufacture a failure for the live successor.
-        #expect(
-            controller.refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison?
-                .attempt == .pending(reviewGeneration: pendingGeneration.rawValue)
-        )
-
-        await captureGate.releaseAll()
-        await waitForActiveReviewRefreshTaskToFinish(controller)
-        #expect(
-            controller.refreshAdmissionCoordinator.productPresentationSnapshot.reviewComparison?
-                .attempt == .settled(reviewGeneration: controller.nextReviewGeneration.rawValue)
-        )
-    }
-
     @Test("filesystem context refresh preserves revisions across changed and no-op packages")
     func filesystemContextRefreshPreservesRevisionsAcrossChangedAndNoOpPackages() async throws {
-        let fixture = makeRefreshRevisionFixture()
+        let fixture = try await makeRefreshRevisionFixture()
         defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
 
         let loadResult = await fixture.controller.handleDiffCommand(
@@ -252,7 +168,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             addedItemIds: ["item-new"],
             removedItemIds: ["item-old"]
         )
-        let productAdmission = try #require(fixture.controller.productAdmissionGate.acquire())
+        let installation = try #require(await fixture.controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
         let changedPublication = try #require(
             fixture.controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -290,7 +207,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
 
     @Test("filesystem context refresh coalesces overlapping refresh events")
     func filesystemContextRefreshCoalescesOverlappingRefreshEvents() async throws {
-        let fixture = makeRefreshRevisionFixture()
+        let fixture = try await makeRefreshRevisionFixture()
         defer { _ = fixture.controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
         let loadResult = await fixture.controller.handleDiffCommand(
             .loadDiff(
@@ -379,6 +296,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             reviewSourceProvider: provider
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let firstCommandId = UUID()
         let secondCommandId = UUID()
 
@@ -434,10 +352,11 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         )
         let paneId = UUIDv7.generate()
         let productAdmissionGate = BridgeProductAdmissionGate()
-        let installation = BridgePaneController.makeInitialProductSessionInstallation(
+        let installation = try BridgeProductSessionInstallation.make(
             paneSessionId: paneId.uuidString,
             provider: productProvider,
-            productAdmissionGate: productAdmissionGate
+            productAdmissionGate: productAdmissionGate,
+            deadlineClock: TestPushClock()
         )
         let controller = BridgePaneController(
             paneId: paneId,
@@ -461,12 +380,13 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
                 productProvider: productProvider
             )
         )
-        let productAdmission = try #require(productAdmissionGate.acquire())
-        _ = try await installDiffLoadMetadataProducer(
+        let productAdmission = try #require(installation.productAdapter.acquireAdmission())
+        let metadataProducerLease = try await installDiffLoadMetadataProducer(
             installation: installation,
             productProvider: productProvider,
             productAdmission: productAdmission
         )
+        try await showReviewInNativeFixture(controller, metadataProducerLease: metadataProducerLease)
         let commandId = UUIDv7.generate()
 
         // Act
@@ -491,10 +411,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         let retirementTask = controller.beginTeardown()
         await reviewMetadataSource.releaseReadyPublication()
 
-        #expect(
-            await commandResult
-                == .failure(.invalidPayload(description: "Bridge pane is closed"))
-        )
+        let completedResult = await commandResult
+        #expect(completedResult == .failure(.invalidPayload(description: "Bridge pane is closed")))
         #expect(controller.runtime.snapshot().lastSeq == 0)
         let replay = await controller.runtime.eventsSince(seq: 0)
         #expect(!replay.events.contains(where: isDiffLoadWitnessEvent))
@@ -567,6 +485,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             )
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let commandId = UUIDv7.generate()
         async let commandResult = controller.handleDiffCommand(
             .loadDiff(
@@ -585,7 +504,8 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
         await reservationGate.releaseReservation()
 
         #expect(await commandResult != .success(commandId: commandId))
-        let productAdmission = try #require(productAdmissionGate.acquire())
+        let currentInstallation = try #require(await controller.productSessionOwner.activeInstallation)
+        let productAdmission = try #require(currentInstallation.productAdapter.acquireAdmission())
         #expect(
             controller.reviewPublicationCoordinator.committedPublicationForReplay(
                 productAdmission: productAdmission
@@ -622,6 +542,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             reviewSourceProvider: provider
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let commandId = UUID()
 
         let result = await controller.handleDiffCommand(
@@ -641,7 +562,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
     }
 
     @Test("loadDiff publishes typed provider unavailable failure")
-    func loadDiff_publishes_typed_provider_unavailable_failure() async {
+    func loadDiff_publishes_typed_provider_unavailable_failure() async throws {
         let controller = BridgePaneController(
             paneId: UUIDv7.generate(),
             state: BridgePaneState(
@@ -654,6 +575,7 @@ extension WebKitSerializedTests.BridgePaneControllerTests {
             initialPaneActivity: .foreground
         )
         defer { _ = controller.beginTeardown() }  // fire-and-forget: defer cannot await; cleanup only
+        try await showReviewInNativeFixture(controller)
         let commandId = UUID()
         let artifact = DiffArtifact(
             diffId: UUIDv7.generate(),
@@ -746,14 +668,7 @@ private actor DiffLoadReadyPublicationGate: BridgePaneProductReviewMetadataProdu
 
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {}
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {}
 
     func reserve(
@@ -821,14 +736,7 @@ private actor DiffLoadReviewReservationGate: BridgePaneProductReviewMetadataProd
 
     func open(
         subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
-    ) async throws {}
-
-    func update(
-        subscription _: BridgeProductSubscriptionSnapshot,
-        productAdmission _: BridgeProductAdmissionContext,
-        emit _: @escaping BridgePaneProductReviewMetadataEventSink
+        productAdmission _: BridgeProductAdmissionContext
     ) async throws {}
 
     func reserve(
@@ -911,12 +819,19 @@ private func installDiffLoadMetadataProducer(
     guard case .execute(let workerOpenToken, _) = workerOpenAdmission else {
         throw DiffLoadWitnessError.expectedWorkerSessionExecution
     }
+    let admitted = try await installation.session.admitControlOperation(token: workerOpenToken) { _ in }
+    let workerOpenResponse = try BridgeProductControlResponse.workerSessionAccepted(
+        correlating: workerOpenRequest
+    )
     _ = try await installation.session.completeControl(
         token: workerOpenToken,
-        exactResponseBytes: try JSONEncoder().encode(
-            BridgeProductControlResponse.workerSessionAccepted(correlating: workerOpenRequest)
-        )
+        exactResponseBytes: try JSONEncoder().encode(workerOpenResponse)
     )
+    await installation.session.settleOperation(
+        operationId: admitted.operationId,
+        response: workerOpenResponse
+    )
+    await installation.session.waitForOperationExecution(operationId: admitted.operationId)
 
     let metadataRequest = try diffLoadWitnessMetadataRequest(installation: installation)
     let registration = await installation.session.registerMetadataProducer(

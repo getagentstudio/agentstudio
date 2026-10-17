@@ -1,0 +1,12 @@
+{
+  "session_id": "3cfd7cc2-3549-4d1f-8df4-5ba156588ebb",
+  "transcript_path": "/recorded/transcript_path",
+  "cwd": "/recorded/cwd",
+  "prompt_id": "b42ea46e-ecc4-411e-9bdb-b498b0341720",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "StopFailure",
+  "error": "authentication_failed",
+  "last_assistant_message": "Fixture text."
+}

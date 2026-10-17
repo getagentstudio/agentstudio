@@ -4,6 +4,24 @@ import Testing
 
 @Suite("Bridge worktree product construction coordinator shutdown")
 struct BridgeConstructionShutdownTests {
+    @Test("shutdown releases the failed build error even when issued leases remain")
+    func shutdownReleasesFailedFileBuild() async throws {
+        let eventProbe = BridgeWorktreeProductConstructionEventProbe()
+        let coordinator = BridgeWorktreeProductConstructionCoordinator(eventSink: eventProbe.eventSink)
+        let gate = BridgeProgressiveFileConstructionGate()
+        let lease = try await coordinator.acquireProgressiveFile(
+            key: makeBridgeProgressiveFileConstructionKey(), build: gate.run)
+        await gate.waitUntilStarted()
+        await gate.fail(BridgeWorktreeFileRootAccessError.missingRoot)
+        _ = await eventProbe.waitFor(.buildFailed)
+        #expect(await coordinator.snapshot().leaseCount == 1)
+        await coordinator.shutdown()
+        await assertBridgeConstructionCoordinatorDrained(coordinator)
+        await #expect(throws: BridgeWorktreeProductConstructionError.coordinatorClosed) {
+            try await coordinator.readFileSnapshotPreparation(for: lease)
+        }
+    }
+
     @Test("closed coordinator rejects completion and progressive acquisitions")
     func closedCoordinatorRejectsAcquisitions() async {
         // Arrange

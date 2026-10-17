@@ -6,7 +6,7 @@ import Testing
 @testable import AgentStudioCore
 
 @MainActor
-@Suite("DrawerOverlay icon bar visibility")
+@Suite("DrawerOverlay icon bar visibility", .serialized)
 struct DrawerOverlayIconBarVisibilityTests {
     @Test("hidden icon bar is structurally absent while visible icon bar is mounted")
     func iconBarVisibilityControlsStructure() throws {

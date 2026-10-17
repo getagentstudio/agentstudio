@@ -1,51 +1,90 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
 /// Delivers one projected provider event to the running app.
 ///
 /// The live value is the ordinary authenticated client path: discover the
-/// method catalog, then call `session.event` with the pane credential the pane
+/// selected compiled contract, then call `session.event` with the pane credential the pane
 /// environment already carries. It is a value rather than a direct call so the
 /// hook runner can be proven without a socket.
 package struct ProviderHookDelivery: Sendable {
-    package let deliver: @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws -> Void
+    package let deliver:
+        @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
+    package let recordRefusal:
+        @Sendable (IPCSessionRefusalParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
+
+    package let reportStatus:
+        @Sendable (IPCSessionStatusParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
 
     package init(
         deliver:
-            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration) throws
-            -> Void
+            @escaping @Sendable (IPCSessionEventParams, AgentStudioIPCClientConfiguration, CallDeadline) throws
+            -> Void,
+        recordRefusal:
+            @escaping @Sendable (IPCSessionRefusalParams, AgentStudioIPCClientConfiguration, CallDeadline) throws ->
+            Void,
+        reportStatus:
+            @escaping @Sendable (IPCSessionStatusParams, AgentStudioIPCClientConfiguration, CallDeadline) throws -> Void
     ) {
         self.deliver = deliver
+        self.recordRefusal = recordRefusal
+        self.reportStatus = reportStatus
     }
 
     package static func liveIPC(
         exampleIdentifierProvider: @escaping @Sendable () -> UUID
     ) -> Self {
-        Self { params, configuration in
-            let examples = IPCBuiltInMethodExampleContext(
-                illustrativeIdentifier: exampleIdentifierProvider()
-            )
-            // A hook fires several times a turn under a short provider timeout,
-            // so it resolves session.event from its own compiled contract rather
-            // than fetching the whole catalog first.
-            let descriptors = try IPCBuiltInMethodCatalog.locallyResolvableDescriptors(examples: examples)
-            guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" })
-            else {
-                throw ProviderHookFailure.methodUnavailable
-            }
-            let invocation = try IPCDescriptorInvocation(
-                descriptor: descriptor,
-                normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
-                presentation: .tooling
-            )
-            let client = AgentStudioIPCClient(configuration: configuration, descriptors: descriptors)
-            switch try client.call(invocation) {
-            case .success:
-                return
-            case .remoteFailure(let failure):
-                throw ProviderHookFailure.rejected(failure.documentedReason ?? "requestRejected")
-            }
-        }
+        Self(
+            deliver: { params, configuration, deadline in
+                let examples = IPCBuiltInMethodExampleContext(
+                    illustrativeIdentifier: exampleIdentifierProvider()
+                )
+                let descriptors = try IPCCompiledInvocationResolver().resolve(
+                    arguments: ["session.event"], authenticated: configuration.authToken != nil,
+                    inputs: .init(examples: examples))
+                guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.event" })
+                else {
+                    throw ProviderHookFailure.methodUnavailable
+                }
+                let invocation = try IPCDescriptorInvocation(
+                    descriptor: descriptor,
+                    normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
+                    presentation: .tooling
+                )
+                let client = AgentStudioIPCClient(
+                    configuration: configuration, descriptors: descriptors, deadline: deadline)
+                switch try client.call(invocation) {
+                case .success:
+                    return
+                case .remoteFailure(let failure):
+                    throw ProviderHookFailure.rejected(failure.documentedReason ?? "requestRejected")
+                }
+            },
+            recordRefusal: { params, configuration, deadline in
+                try ProviderHookRefusalInvocation.send(params: params, configuration: configuration, deadline: deadline)
+            },
+            reportStatus: { params, configuration, deadline in
+                let descriptors = try IPCCompiledInvocationResolver().resolve(
+                    arguments: ["session.status"], authenticated: false,
+                    inputs: .init(examples: .init(illustrativeIdentifier: params.correlationId)))
+                guard let descriptor = descriptors.first(where: { $0.metadata.name == "session.status" }) else {
+                    throw ProviderHookFailure.methodUnavailable
+                }
+                let invocation = try IPCDescriptorInvocation(
+                    descriptor: descriptor,
+                    normalizedParameters: descriptor.normalizeParameters(JSONEncoder().encode(params)),
+                    presentation: .tooling)
+                let client = AgentStudioIPCClient(
+                    configuration: configuration.withAuthToken(nil), descriptors: descriptors, deadline: deadline)
+                if case .remoteFailure(let failure) = try client.call(invocation) { throw failure }
+            })
+    }
+
+    /// Only Codex SessionEnd is provider-forced synchronous. Interrupt stays
+    /// async despite sharing the provider's lifecycle timeout cap.
+    package static func codexCallLimit(for event: CodexHookEventName) -> Duration {
+        event == .sessionEnd ? CLIPolicy.synchronousLifecycleHookLimit : CLIPolicy.hookCallLimit
     }
 }
 
@@ -64,8 +103,7 @@ package enum ProviderHookFailure: Error, Equatable, Sendable {
 /// Runs one provider hook end to end: guard, read, project, deliver.
 ///
 /// Every path returns `0`. A hook that fails must never block the provider, so
-/// a failure is one line on standard error naming the stage and the reason —
-/// never the payload, which carries the user's prompts and tool arguments.
+/// diagnostics go only to the CLI's private log, never the provider's streams.
 package enum ProviderHookInvocation {
     package static let paneTokenVariable = "AGENTSTUDIO_PANE_TOKEN"
     package static let socketVariable = "AGENTSTUDIO_IPC_SOCKET"
@@ -77,6 +115,7 @@ package enum ProviderHookInvocation {
         package let correlationIdProvider: @Sendable () -> UUID
         package let delivery: ProviderHookDelivery
         package let standardErrorSink: @Sendable (String) -> Void
+        package let deadline: CallDeadline?
 
         package init(
             eventName: String,
@@ -84,7 +123,8 @@ package enum ProviderHookInvocation {
             standardInput: @escaping @Sendable () throws -> Data,
             correlationIdProvider: @escaping @Sendable () -> UUID,
             delivery: ProviderHookDelivery,
-            standardErrorSink: @escaping @Sendable (String) -> Void
+            standardErrorSink: @escaping @Sendable (String) -> Void,
+            deadline: CallDeadline? = nil
         ) {
             self.eventName = eventName
             self.environment = environment
@@ -92,58 +132,61 @@ package enum ProviderHookInvocation {
             self.correlationIdProvider = correlationIdProvider
             self.delivery = delivery
             self.standardErrorSink = standardErrorSink
+            self.deadline = deadline
         }
     }
 
     @discardableResult
     package static func runCodexHook(_ props: Props) -> Int32 {
         guard let eventName = CodexHookEventName(rawValue: props.eventName) else {
-            props.standardErrorSink("agentstudio hook codex: unknown event \(props.eventName)")
+            props.standardErrorSink(IPCAgentConnectionRefusalReason.undecodablePayload.rawValue)
             return 0
         }
-        // No pane credential means this Codex process was not started by an
-        // Agent Studio pane. That is ordinary, not a failure, so it stays silent.
-        guard let configuration = paneConfiguration(environment: props.environment) else { return 0 }
+        let eventLimit = ProviderHookDelivery.codexCallLimit(for: eventName)
+        let ingressDeadline = props.deadline ?? CallDeadline(limit: eventLimit)
+        let deadline = ingressDeadline.capped(to: eventLimit)
+        guard let configuration = ProviderHookStatusReporting.configuration(environment: props.environment) else {
+            return 0
+        }
         // The event may carry no Sessions meaning; then read nothing, say nothing.
         guard CodexHookProjection.isProjected(eventName) else { return 0 }
         let payload: CodexHookPayload
         do {
             payload = try JSONDecoder().decode(CodexHookPayload.self, from: try props.standardInput())
         } catch {
-            props.standardErrorSink(
-                "agentstudio hook codex \(eventName.rawValue): unreadable hook payload")
+            recordPayloadRefusal(
+                ProviderHookRefusalInvocation.reason(for: error), props: props, configuration: configuration,
+                deadline: deadline)
             return 0
         }
-        guard let projected = CodexHookProjection.project(eventName: eventName, payload: payload) else {
+        guard !payload.sessionId.isEmpty else {
+            recordPayloadRefusal(.noSessionId, props: props, configuration: configuration, deadline: deadline)
             return 0
         }
-        do {
-            try props.delivery.deliver(
-                IPCSessionEventParams(
-                    handle: "self",
-                    provider: projected.provider,
-                    event: projected.event,
-                    correlationId: props.correlationIdProvider()
-                ),
-                configuration
-            )
-        } catch let failure as ProviderHookFailure {
-            props.standardErrorSink(
-                "agentstudio hook codex \(eventName.rawValue): \(failure.reasonLabel)")
-        } catch {
-            props.standardErrorSink("agentstudio hook codex \(eventName.rawValue): not delivered")
+        guard
+            let projected = CodexHookProjection.project(
+                eventName: eventName, payload: payload, freshOccurrenceIdentifier: props.correlationIdProvider)
+        else {
+            return 0
         }
+        ProviderHookStatusReporting(
+            environment: props.environment, configuration: configuration, delivery: props.delivery,
+            deadline: deadline, diagnosticSink: props.standardErrorSink
+        ).event(
+            IPCSessionEventParams(
+                handle: "self", provider: projected.provider, event: projected.event,
+                correlationId: props.correlationIdProvider()))
         return 0
     }
 
-    private static func paneConfiguration(
-        environment: [String: String]
-    ) -> AgentStudioIPCClientConfiguration? {
-        guard let token = environment[paneTokenVariable], !token.isEmpty,
-            let socketPath = environment[socketVariable], !socketPath.isEmpty
-        else {
-            return nil
-        }
-        return AgentStudioIPCClientConfiguration(socketPath: socketPath, authToken: token)
+    private static func recordPayloadRefusal(
+        _ reason: IPCSessionRefusalReason, props: Props,
+        configuration: AgentStudioIPCClientConfiguration, deadline: CallDeadline
+    ) {
+        ProviderHookStatusReporting(
+            environment: props.environment, configuration: configuration, delivery: props.delivery,
+            deadline: deadline, diagnosticSink: props.standardErrorSink
+        ).refusal(
+            .init(handle: "self", reason: reason, event: props.eventName, correlationId: props.correlationIdProvider()))
     }
 }

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-// oxlint-disable unicorn/require-post-message-target-origin -- MessagePort postMessage does not accept target origins.
 
+import pageConfigurationFixture from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-page-configuration.json' with { type: 'json' };
+// oxlint-disable unicorn/require-post-message-target-origin -- MessagePort postMessage does not accept target origins.
 import { createWorktreeAnnotationSurfaceClient } from '../../worktree-annotations/worktree-annotation-surface-client.js';
 import {
 	createBridgeMainRenderSnapshotStore,
@@ -192,7 +193,12 @@ describe('Bridge pane runtime', () => {
 			if (worker === undefined) throw new Error('unexpected worker factory call');
 			return worker;
 		});
-		const runtime = createBridgePaneRuntime({ sessionProps: { workerFactory } });
+		const runtime = createBridgePaneRuntime({
+			sessionProps: {
+				bootstrapTimeoutMilliseconds: pageConfigurationFixture.workerBootstrapDeadlineMilliseconds,
+				workerFactory,
+			},
+		});
 		const replacementReasons: string[] = [];
 		runtime.setNativeBootstrapRequester((reason): void => {
 			replacementReasons.push(reason);
@@ -754,6 +760,19 @@ function makeNativeBootstrap(workerInstanceId: string): BridgePaneCommWorkerNati
 				maximumContentBytes: BRIDGE_PRODUCT_MAXIMUM_CONTENT_BYTES,
 				maximumMetadataFrameBytes: BRIDGE_PRODUCT_MAXIMUM_METADATA_FRAME_BYTES,
 				maximumQueuedStreamBytes: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_BYTES,
+				admissionRetryCount: 2,
+				contentAcknowledgementDeadlineMilliseconds: 5_000,
+				contentProgressDeadlineMilliseconds: 5_000,
+				viewBatchProgressDeadlineMilliseconds: 5_000,
+				streamKeepaliveIntervalMilliseconds: 350,
+				telemetryPreReadyBufferMaxBytes: 64 * 1024,
+				telemetryPreReadyBufferMaxSamples: 128,
+				workerSettlementDeadlineMilliseconds: 5_000,
+				viewAcknowledgementDeadlineMilliseconds: 4_000,
+				viewCreditBytes: 524_288,
+				viewCreditParts: 8,
+				viewMaximumConsecutiveResnapshots: 3,
+				viewMaximumDirtyKeys: 4_096,
 				maximumQueuedStreamFrames: BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES,
 				maximumRequestBodyBytes: BRIDGE_PRODUCT_MAXIMUM_REQUEST_BODY_BYTES,
 				terminalFrameReserve: BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE,

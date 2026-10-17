@@ -43,7 +43,7 @@ struct AgentStudioAppIPCServiceTests {
 
         #expect(service.configuration.runtimeId == runtimeId)
         #expect(service.configuration.accessMode == .agentStudioOnly)
-        #expect(service.methodRegistry.capabilities.methods.count == 48)
+        #expect(service.methodRegistry.capabilities.methods.count == 56)
         #expect(
             service.methodRegistry.capabilities.methods.filter { $0.name == "system.capabilities" }.count == 1
         )
@@ -299,14 +299,17 @@ struct AgentStudioAppIPCServiceTests {
                 #expect(response.error == nil)
                 #expect(runtimePort.lastAfterSequence == 41)
                 #expect(runtimePort.lastHandle == IPCHandle(kind: .pane, reference: .canonicalUUID(paneId)))
-                let result = try decodeResponseResult(IPCTerminalWaitResult.self, from: response)
+                let receipt = try decodeResponseResult(IPCTerminalWaitResponse.self, from: response)
+                let result = receipt.observation
+                #expect(receipt.timeoutSeconds == 1)
+                #expect(receipt.wasClamped == false)
                 #expect(result.paneId == paneId)
                 #expect(result.condition == .commandFinished)
             })
     }
 
-    @Test("terminal wait rejects out-of-range timeout before runtime dispatch")
-    func terminalWaitRejectsOutOfRangeTimeoutBeforeRuntimeDispatch() async throws {
+    @Test("terminal wait rejects negative timeout before runtime dispatch")
+    func terminalWaitRejectsNegativeTimeoutBeforeRuntimeDispatch() async throws {
         let paneId = UUID()
         let runtimePort = RecordingWaitRuntimePort(successfulPaneId: paneId)
         try await withLiveServer(
@@ -329,7 +332,7 @@ struct AgentStudioAppIPCServiceTests {
                         params: .object([
                             "handle": .string("pane:1"),
                             "condition": .string(IPCTerminalWaitCondition.commandFinished.rawValue),
-                            "timeoutSeconds": .number(86_400.001),
+                            "timeoutSeconds": .number(-1),
                         ])
                     )
                 )
@@ -577,7 +580,7 @@ struct AgentStudioAppIPCServiceTests {
                     reader: &reader
                 )
 
-                fixture.stop()
+                await fixture.stop()
 
                 do {
                     try await sendRequestWithoutBlockingCooperativePool(
@@ -587,13 +590,9 @@ struct AgentStudioAppIPCServiceTests {
                     let responseData = try await withoutBlockingCooperativePool {
                         try connection.receive(maxBytes: 4096)
                     }
-                    if responseData.isEmpty {
-                        return
-                    }
-                    var decoder = NDJSONFrameDecoder(maxFrameBytes: 65_536)
-                    let frames = try decoder.append(responseData)
-                    let response = try JSONRPCCodec.decodeResponse(try #require(frames.first))
-                    #expect(response.error?.code == -32_001)
+                    // Authentication rejection is still traffic on a live socket.
+                    // Only EOF (or the transport error below) proves physical close.
+                    #expect(responseData.isEmpty, "stopped session must reach EOF, not return a JSON-RPC error")
                 } catch let error as UnixSocketTransportError {
                     #expect(error.reason == .writeFailed || error.reason == .readFailed)
                 }
@@ -676,33 +675,6 @@ struct AgentStudioAppIPCServiceTests {
             })
     }
 
-    @Test("pane authentication uses canonical fixture credential metadata")
-    func paneAuthenticationUsesCanonicalFixtureCredentialMetadata() async throws {
-        try await withLiveServer(
-            makeFixture: { try LiveServerFixture() },
-            body: { fixture in
-                try fixture.server.start()
-                let token = try fixture.issueTestCredential(
-                    for: .pane(
-                        paneId: fixture.boundPaneId,
-                        credentialRecordId: UUIDv7.generate(),
-                        status: .registered
-                    )
-                )
-                let connection = try await connectWithoutBlockingCooperativePool(
-                    socketPath: fixture.paths.socketURL.path)
-                defer { connection.close() }
-                var reader = TestFrameReader()
-                try await loginWithoutBlockingMainActor(
-                    connection: connection, token: token, requestId: 67, reader: &reader)
-                try await sendRequestWithoutBlockingCooperativePool(
-                    connection: connection,
-                    request: JSONRPCClientRequest(id: .number(68), method: "system.identify", params: .object([:]))
-                )
-                let response = try await reader.receiveResponseWithoutBlockingMainActor(connection: connection)
-                #expect(response.error == nil)
-            })
-    }
 }
 
 private final class PaneMembershipGate: @unchecked Sendable {
@@ -730,10 +702,10 @@ private final class PreparedCommandRecordingPort: AppIPCCommandPort, @unchecked 
     }
 
     func prepareCommand(
-        _ params: IPCCommandExecutionRequest,
+        _ params: IPCRawCommandExecutionRequest,
         principal: IPCPrincipal,
         tools: AppIPCTargetResolutionTools
-    ) async throws -> AppIPCPreparedCommand {
+    ) async throws(AgentStudioAppIPCRequestError) -> AppIPCPreparedCommand {
         let prepared = try await underlying.prepareCommand(params, principal: principal, tools: tools)
         lock.withLock { preparedRequestsStorage.append(prepared.request) }
         return prepared

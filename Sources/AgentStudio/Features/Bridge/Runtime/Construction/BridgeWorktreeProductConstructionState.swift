@@ -33,6 +33,7 @@ struct BridgeConstructionWaiter {
     let leaseNonce: UInt64
     let cancellationState: BridgeConstructionCancellationState
     let continuation: CheckedContinuation<BridgeWorktreeProductConstructionLease, any Error>
+    let reviewProgress: BridgeReviewConstructionProgressSink?
 }
 
 struct BridgeConstructionEntry {
@@ -46,4 +47,6 @@ struct BridgeConstructionEntry {
     var preparedFileLeaseNonces: Set<UInt64>
     var progressiveFileState: BridgeProgressiveFileConstructionState?
     var progressiveBuildTask: Task<Void, Never>?
+    var terminalFileBuildError: (any Error)?
+    var completedReviewPhases: Set<BridgeReviewConstructionPhase> = []
 }

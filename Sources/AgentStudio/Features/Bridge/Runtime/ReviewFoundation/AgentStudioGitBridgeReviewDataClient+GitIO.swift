@@ -308,7 +308,7 @@ extension AgentStudioGitBridgeReviewDataClient {
         } catch BridgeGitReadSchedulerError.timedOut {
             throw BridgeProviderFailure.providerFailed(message: BridgeGitReadFailure.timeoutMessage)
         } catch BridgeGitReadSchedulerError.capacityReached {
-            throw BridgeProviderFailure.providerFailed(message: BridgeGitReadFailure.capacityMessage)
+            throw BridgeProviderFailure.sourceCapacityDeferred
         } catch is CancellationError {
             throw CancellationError()
         } catch let error as BridgeSharedReviewContentBackingError {
@@ -434,6 +434,10 @@ extension AgentStudioGitBridgeReviewDataClient {
             return .providerFailed(message: "gitDataPlane:unsupported")
         case .locked:
             return .providerFailed(message: "gitDataPlane:locked")
+        case .lockHeld, .lockUnidentified:
+            return .providerFailed(message: "gitDataPlane:locked")
+        case .permissionDenied:
+            return .providerFailed(message: "gitDataPlane:permissionDenied")
         case .worktreeNotFound:
             return .providerFailed(message: "gitDataPlane:worktreeNotFound")
         case .worktreeNotPrunable:
@@ -450,6 +454,12 @@ extension AgentStudioGitBridgeReviewDataClient {
             return .providerFailed(message: "gitDataPlane:processOutputTooLarge")
         case .remoteRefTransactionIndeterminate:
             return .providerFailed(message: "gitDataPlane:remoteRefTransactionIndeterminate")
+        case .branchMoved:
+            return .providerFailed(message: "gitDataPlane:branchMoved")
+        case .branchCheckedOut:
+            return .providerFailed(message: "gitDataPlane:branchCheckedOut")
+        case .branchMoveNotUndone:
+            return .providerFailed(message: "gitDataPlane:branchMoveNotUndone")
         }
     }
 

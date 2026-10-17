@@ -64,11 +64,13 @@ enum ArchitectureRuleRegistry {
         TestTaskSleepRule(),
         TestPollingWaitRule(),
         ForbiddenTestWaitRule(),
+        TestSilentReturnRule(),
         AdHocContinuationWaitRule(),
         TestBlockingSocketIORule(),
         TestBlockingWaitOffCooperativePoolRule(),
         TestExpectationOffTestTaskRule(),
         ProcessSingletonRule(),
+        CompositionRootConstructionRule(),
         TestElapsedTimeBudgetRule(),
         TestCoreAtomFallbackOwnershipRule(),
         CompletionHandleNotDiscardableRule(),
@@ -87,6 +89,7 @@ enum ArchitectureRuleRegistry {
         ProbeReportsOffMainRule(),
         TestAdHocGateRule(),
         TestWaitHelperReturnsObservationRule(),
+        OwnerFactSinkBoundaryRule(),
     ]
 
     static let documentRules: [any ArchitectureDocumentRule] = [

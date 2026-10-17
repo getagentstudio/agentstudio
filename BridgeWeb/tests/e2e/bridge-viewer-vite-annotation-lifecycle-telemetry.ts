@@ -41,24 +41,27 @@ export async function drainAnnotationLifecycleTelemetry(page: Page): Promise<unk
 }
 
 export async function waitForCompleteAnnotationLifecycleTelemetry(props: {
-	readonly operationCorrelationId: string;
+	readonly operationCorrelationIds: () => readonly string[];
 	readonly page: Page;
 }): Promise<number> {
 	const statusUrl = new URL('/__bridge-dev-telemetry/status', props.page.url()).toString();
 	let completedStageCount: number | null = null;
 	let latestDiagnostic: Readonly<Record<string, unknown>> = {
 		kind: 'status-unavailable',
-		operationCorrelationId: props.operationCorrelationId,
+		operationCorrelationIds: props.operationCorrelationIds(),
 	};
 	try {
 		await expect
 			.poll(
 				async (): Promise<boolean> => {
+					const operationCorrelationIds = [...new Set(props.operationCorrelationIds())];
+					const latestOperationCorrelationId = operationCorrelationIds.at(-1);
+					if (latestOperationCorrelationId === undefined) return false;
 					const response = await fetch(statusUrl, { cache: 'no-store' });
 					if (!response.ok) {
 						latestDiagnostic = {
 							kind: 'status-http-error',
-							operationCorrelationId: props.operationCorrelationId,
+							operationCorrelationIds,
 							status: response.status,
 						};
 						return false;
@@ -67,7 +70,7 @@ export async function waitForCompleteAnnotationLifecycleTelemetry(props: {
 					if (typeof body !== 'object' || body === null || !('recentSamples' in body)) {
 						latestDiagnostic = {
 							kind: 'status-malformed',
-							operationCorrelationId: props.operationCorrelationId,
+							operationCorrelationIds,
 						};
 						return false;
 					}
@@ -75,6 +78,11 @@ export async function waitForCompleteAnnotationLifecycleTelemetry(props: {
 					const operationLifecycle = Reflect.get(body, 'operationLifecycle');
 					if (!Array.isArray(recentSamples)) return false;
 					const observedStages = new Set<string>();
+					const observedStageResults: Array<{
+						readonly phase: string;
+						readonly result: string | null;
+						readonly reason: string | null;
+					}> = [];
 					for (const sample of recentSamples) {
 						if (typeof sample !== 'object' || sample === null || !('stringAttributes' in sample)) {
 							continue;
@@ -83,8 +91,15 @@ export async function waitForCompleteAnnotationLifecycleTelemetry(props: {
 						if (typeof attributes !== 'object' || attributes === null) continue;
 						const operationId = Reflect.get(attributes, 'agentstudio.bridge.operation.id');
 						const phase = Reflect.get(attributes, 'agentstudio.bridge.phase');
-						if (operationId !== props.operationCorrelationId || typeof phase !== 'string') continue;
+						if (operationId !== latestOperationCorrelationId || typeof phase !== 'string') continue;
 						observedStages.add(phase);
+						const result = Reflect.get(attributes, 'agentstudio.bridge.result');
+						const reason = Reflect.get(attributes, 'agentstudio.bridge.result_reason');
+						observedStageResults.push({
+							phase,
+							result: typeof result === 'string' ? result : null,
+							reason: typeof reason === 'string' ? reason : null,
+						});
 					}
 					const completedOperationIds =
 						typeof operationLifecycle === 'object' && operationLifecycle !== null
@@ -98,33 +113,50 @@ export async function waitForCompleteAnnotationLifecycleTelemetry(props: {
 						typeof operationLifecycle === 'object' && operationLifecycle !== null
 							? Reflect.get(operationLifecycle, 'missingTerminals')
 							: null;
-					const matchingMalformed = matchingLifecycleEntries(
-						malformed,
-						props.operationCorrelationId,
+					const matchingMalformed = operationCorrelationIds.flatMap(
+						(operationCorrelationId) =>
+							matchingLifecycleEntries(malformed, operationCorrelationId) ?? [],
 					);
-					const matchingMissingTerminals = matchingLifecycleEntries(
-						missingTerminals,
-						props.operationCorrelationId,
+					const matchingMissingTerminals = operationCorrelationIds.flatMap(
+						(operationCorrelationId) =>
+							matchingLifecycleEntries(missingTerminals, operationCorrelationId) ?? [],
 					);
+					const everyOperationCompleted =
+						Array.isArray(completedOperationIds) &&
+						operationCorrelationIds.every((operationCorrelationId) =>
+							completedOperationIds.includes(operationCorrelationId),
+						);
 					const missingStages = requiredAnnotationLifecycleStages.filter(
 						(stage) => !observedStages.has(stage),
 					);
+					const latestTerminalSucceeded = [
+						'content_transfer_terminal',
+						'projection_validation_terminal',
+						'projection_query_terminal',
+						'projection_convergence_terminal',
+						'worker_application_terminal',
+					].every((phase) =>
+						observedStageResults.some(
+							(stage) => stage.phase === phase && stage.result === 'success',
+						),
+					);
 					latestDiagnostic = {
-						completed: Array.isArray(completedOperationIds)
-							? completedOperationIds.includes(props.operationCorrelationId)
-							: false,
+						completed: everyOperationCompleted,
+						latestTerminalSucceeded,
 						matchingMalformed,
 						matchingMissingTerminals,
 						missingStages,
+						observedStageResults: observedStageResults.slice(-32),
 						observedStages: [...observedStages],
-						operationCorrelationId: props.operationCorrelationId,
+						operationCorrelationIds,
 					};
 					if (
 						missingStages.length === 0 &&
-						Array.isArray(completedOperationIds) &&
-						completedOperationIds.includes(props.operationCorrelationId) &&
-						matchingMalformed?.length === 0 &&
-						matchingMissingTerminals?.length === 0
+						latestTerminalSucceeded &&
+						everyOperationCompleted &&
+						matchingMalformed.length === 0 &&
+						matchingMissingTerminals.length === 0 &&
+						props.operationCorrelationIds().at(-1) === latestOperationCorrelationId
 					) {
 						completedStageCount = requiredAnnotationLifecycleStageCount;
 						return true;

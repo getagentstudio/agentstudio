@@ -99,12 +99,18 @@ private func createHTTPSavedLocatedAnnotationBeforeRestart(
                 ],
             ],
             requestID: "annotation-create-located-before-restart",
-            requestSequence: 6
         )
         #expect(createOutcome.status == .committed)
         let sessionID = try #require(createOutcome.sessionId)
         let createReceipt = try requireHTTPAnnotationMessage(createOutcome)
         let draftRevision = try #require(createReceipt.draft?.revision)
+        try await acceptHTTPCommentViewScope(
+            client: client,
+            connection: connection,
+            openResponse: context.commentSubscription,
+            scopeRevision: 2,
+            sessionIDs: [sessionID]
+        )
         _ = try await waitForHTTPAnnotationCatalogCommit(
             client: client,
             connection: connection,
@@ -122,7 +128,6 @@ private func createHTTPSavedLocatedAnnotationBeforeRestart(
                 "sessionId": sessionID.uuidString.lowercased(),
             ],
             requestID: "annotation-save-located-before-restart",
-            requestSequence: 7
         )
         try #require(saveOutcome.status == .committed)
         _ = try await waitForHTTPAnnotationSessionChange(
@@ -137,7 +142,7 @@ private func createHTTPSavedLocatedAnnotationBeforeRestart(
             connection: connection,
             demandedSessionIDs: [sessionID],
             sourceGeneration: context.fileSourceGeneration,
-            requestSequence: 8
+            queryOrdinal: 10
         )
         let savedRecord = try #require(savedProjection.messages.first)
         let savedMessage = savedRecord.message
@@ -167,7 +172,8 @@ private func restoreHTTPLocatedAnnotationBeforeDescriptorMaterialization(
     try await withBridgeDevelopmentHTTPRouterTestClient(host: runtime.host) { client in
         let context = try await prepareHTTPAnnotationLocatedRestore(
             client: client,
-            runtime: runtime
+            runtime: runtime,
+            sessionID: savedAnnotation.sessionID
         )
         let initialProjection = try await fetchHTTPFileAnnotationProjection(
             client: client,
@@ -175,7 +181,7 @@ private func restoreHTTPLocatedAnnotationBeforeDescriptorMaterialization(
             connection: context.connection,
             demandedSessionIDs: [savedAnnotation.sessionID],
             sourceGeneration: context.fileSourceGeneration,
-            requestSequence: 5
+            queryOrdinal: 7
         )
         #expect(initialProjection.messages.first?.message.messageId == savedAnnotation.messageID)
         let demandOutcome = try await executeHTTPAnnotationCommand(
@@ -186,7 +192,6 @@ private func restoreHTTPLocatedAnnotationBeforeDescriptorMaterialization(
                 "sessionId": savedAnnotation.sessionID.uuidString.lowercased(),
             ],
             requestID: "annotation-demand-located-after-restart",
-            requestSequence: 6
         )
         try #require(demandOutcome.status == .committed)
         let refreshOutcome = try await executeHTTPAnnotationCommand(
@@ -198,7 +203,6 @@ private func restoreHTTPLocatedAnnotationBeforeDescriptorMaterialization(
                 "sourceEpoch": 1,
             ],
             requestID: "annotation-refresh-located-after-restart",
-            requestSequence: 7
         )
         try #require(refreshOutcome.status == .committed)
         let refreshedProjection = try await fetchHTTPFileAnnotationProjection(
@@ -207,7 +211,7 @@ private func restoreHTTPLocatedAnnotationBeforeDescriptorMaterialization(
             connection: context.connection,
             demandedSessionIDs: [savedAnnotation.sessionID],
             sourceGeneration: context.fileSourceGeneration,
-            requestSequence: 8
+            queryOrdinal: 10
         )
         try await shutdownHTTPHostAndDrainMetadataStream(
             host: runtime.host,

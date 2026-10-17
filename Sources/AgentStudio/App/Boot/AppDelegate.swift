@@ -7,6 +7,7 @@ import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioTerminal
 import AppKit
+import Observation
 import SwiftUI
 import os.log
 
@@ -24,13 +25,120 @@ enum WorkspacePreparedContentMountBootState {
     case installed(InstalledWorkspacePreparedContentMountOwners)
 }
 
+private enum ShellRuntimeOwnerInstallation {
+    case awaitingShellInstall
+    case installed
+}
+
 @MainActor
-class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
-    var mainWindowController: MainWindowController?
+class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observable {
+    private let commandOwnerObservation = ObservationRegistrar()
+    private var selectedMainWindowController: MainWindowController?
+    var mainWindowController: MainWindowController? {
+        get {
+            commandOwnerObservation.access(self, keyPath: \.mainWindowController)
+            return selectedMainWindowController
+        }
+        set {
+            guard selectedMainWindowController !== newValue else { return }
+            commandOwnerObservation.withMutation(of: self, keyPath: \.mainWindowController) {
+                selectedMainWindowController = newValue
+            }
+        }
+    }
     #if DEBUG
         var sidebarPerformanceProofSession: SidebarPerformanceProofSession?
     #endif
     let octiconLoader: OcticonLoader
+    private var selectedShellRuntimeOwnerInstallation = ShellRuntimeOwnerInstallation.awaitingShellInstall
+    private var shellRuntimeOwnerInstallation: ShellRuntimeOwnerInstallation {
+        get {
+            commandOwnerObservation.access(self, keyPath: \.shellRuntimeOwnerInstallation)
+            return selectedShellRuntimeOwnerInstallation
+        }
+        set {
+            commandOwnerObservation.withMutation(of: self, keyPath: \.shellRuntimeOwnerInstallation) {
+                selectedShellRuntimeOwnerInstallation = newValue
+            }
+        }
+    }
+    private let commandInteractionProbe: AgentStudioInteractionPerformanceProbe
+    private let suppliedCommandDispatcher: AppCommandDispatcher?
+    private lazy var startupCommandDispatcher: AppCommandDispatcher = {
+        if let suppliedCommandDispatcher { return suppliedCommandDispatcher }
+        return AppCommandDispatcher(
+            dependencies: .init(
+                shellOwnerAccess: { [weak self] in
+                    guard let self, case .installed = self.shellRuntimeOwnerInstallation else { return nil }
+                    return self
+                },
+                workspaceOwnerAccess: { [weak self] in
+                    guard let controller = self?.paneTabViewController(), controller.isEligibleCommandHandler else {
+                        return nil
+                    }
+                    return controller
+                },
+                interactionProbeAccess: { [weak self] in self?.commandInteractionProbe },
+                commandRefreshAccepted: { [weak self] correlationID in
+                    self?.managementLayerMonitor?.prepareCommandRefreshSettlement(correlationId: correlationID)
+                }
+            ))
+    }()
+
+    func commandDispatcherForBoot() -> AppCommandDispatcher {
+        startupCommandDispatcher
+    }
+
+    func commandInteractionProbeForBoot() -> AgentStudioInteractionPerformanceProbe {
+        commandInteractionProbe
+    }
+
+    func markShellRuntimeOwnersInstalled() {
+        shellRuntimeOwnerInstallation = .installed
+    }
+
+    let startupRuntimeRegistry = RuntimeRegistry()
+    private var nativeEngineWasConstructed = false
+    private lazy var startupTerminalLookup: SurfaceManager = .init(
+        appCommandDispatcher: startupCommandDispatcher,
+        engineAccess: { [weak self] in self?.engineAvailabilityForBoot() ?? .unavailable },
+        callbackHandlingAccess: { [weak self] in self?.startupCallbackHandling },
+        performanceTraceRecorder: performanceTraceRecorder
+    )
+    private lazy var startupNativeEngine: Ghostty.App = .init(callbackHandling: startupCallbackHandling)
+
+    func terminalLookupForBoot() -> SurfaceManager {
+        startupTerminalLookup
+    }
+
+    func initializeNativeEngineForBoot() -> Bool {
+        let engine = startupNativeEngine
+        nativeEngineWasConstructed = true
+        return engine.nativeHandleIsAvailable
+    }
+
+    func engineAvailabilityForBoot() -> GhosttyEngineAvailability {
+        guard nativeEngineWasConstructed, startupNativeEngine.nativeHandleIsAvailable else { return .unavailable }
+        return .available(startupNativeEngine)
+    }
+
+    private lazy var startupCallbackHandling: Ghostty.ActionRouter = {
+        let host = startupTerminalLookup.makeActionRoutingHost(
+            runtimeRegistry: startupRuntimeRegistry,
+            startupTraceRecorder: startupTraceRecorder,
+            traceRuntime: traceRuntime,
+            engineAccess: { @MainActor [weak self] in self?.engineAvailabilityForBoot() ?? .unavailable },
+            activityRouterAccess: { @MainActor [weak self] in self?.terminalActivityRouter },
+            reportColdStartAttachClientExited: { [weak self] paneID in
+                self?.workspaceSurfaceCoordinator?.coldStartAttachExitBinding.reportAttachClientExited(paneID: paneID)
+            }
+        )
+        return Ghostty.ActionRouter(host: host)
+    }()
+
+    func callbackHandlingForBoot() -> Ghostty.ActionRouter {
+        startupCallbackHandling
+    }
     // MARK: - Shared Services (created once at launch)
     // Module-internal to support focused same-type AppDelegate extensions.
     var atomStore: AtomRegistry!
@@ -61,7 +169,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     var paneActivityClock: PaneActivityClock?
     var traceRuntime: AgentStudioTraceRuntime!
     var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder!
-    var startupTraceRecorder: AgentStudioStartupTraceRecorder!
+    let startupTraceRecorder: AgentStudioStartupTraceRecorder
     var repoCacheStore: RepoCacheStore!
     var entityRecencyStore: EntityRecencyStore!
     var repositoryLocalActivityStore: RepositoryLocalActivityStore!
@@ -103,14 +211,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// registry and exposure rules.
     var appIPCServerChannel: AgentStudioIPCChannel = AppDelegate.compiledAppIPCChannel()
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
-    var appIPCSessionsIngestion: SessionsIngestion?
-    var paneReportSpoolDrainTask: Task<Void, Never>?
-    /// Exact provider profiles are composition input. Only the releases listed
-    /// here grant provider-reported authority; every other provider, version or
-    /// mode reports as unqualified. Composition happens here because the
-    /// Claude Code profile is App-owned and the shipped list is Feature-owned.
-    var appIPCSessionsProviderProfiles: [SessionsProviderProfile] =
-        SessionsProviderProfile.shippedProfiles + [.claudeCodeCommandLine, .cursorCommandLine]
+    var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
+    var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
+    var paneCLIOutboxDrainTask: Task<Void, Never>?
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!
     var applicationLifecycleMonitor: ApplicationLifecycleMonitor!
@@ -164,18 +267,20 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     init(
         traceRuntime: AgentStudioTraceRuntime,
-        startupTraceRecorder: AgentStudioStartupTraceRecorder
+        startupTraceRecorder: AgentStudioStartupTraceRecorder,
+        commandDispatcher: AppCommandDispatcher? = nil
     ) {
-        self.octiconLoader = OcticonLoader(resourceRootURL: Bundle.appResourceRootURL)
+        self.suppliedCommandDispatcher = commandDispatcher
+        self.octiconLoader = OcticonLoader(resourceBundle: Bundle.appResources)
         self.traceRuntime = traceRuntime
-        self.performanceTraceRecorder = AgentStudioPerformanceTraceRecorder(
+        let performanceTraceRecorder = AgentStudioPerformanceTraceRecorder(
             traceRuntime: traceRuntime,
             runtimeDeliveryPerformanceReporter: PaneRuntimeEventBus.performanceReporter
         )
+        self.performanceTraceRecorder = performanceTraceRecorder
+        self.commandInteractionProbe = AgentStudioInteractionPerformanceProbe(recorder: performanceTraceRecorder)
         self.startupTraceRecorder = startupTraceRecorder
         super.init()
-        Ghostty.ActionRouter.bindTraceRuntime(traceRuntime)
-        Ghostty.ActionRouter.bindStartupTraceRecorder(startupTraceRecorder)
     }
 
     func applicationWillFinishLaunching(_: Notification) {
@@ -352,7 +457,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     /// Create an NSMenuItem whose shortcut is read from AppCommandDispatcher (single source of truth).
     /// Called from setupMainMenu() which runs on the main thread during app launch.
     private func menuItem(command: AppCommand, action: Selector) -> NSMenuItem {
-        let definition = AppCommandDispatcher.shared.definition(for: command)
+        let definition = self.commandDispatcherForBoot().definition(for: command)
         let item = NSMenuItem(title: definition.actionSpec.label, action: action, keyEquivalent: "")
         item.target = self
         item.representedObject = command.rawValue
@@ -378,7 +483,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return true
         }
 
-        let definition = AppCommandDispatcher.shared.definition(for: command)
+        let definition = self.commandDispatcherForBoot().definition(for: command)
         let workspaceTab = WorkspaceTabLayoutDerived(
             shellAtom: store.tabShellAtom,
             arrangementAtom: store.tabArrangementAtom
@@ -402,7 +507,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         )
         menuItem.isHidden = !shouldPresent
         guard shouldPresent else { return false }
-        return AppCommandDispatcher.shared.canDispatch(command)
+        return self.commandDispatcherForBoot().canDispatch(command)
     }
 
     // swiftlint:disable:next function_body_length
@@ -551,19 +656,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func dispatchNewWindowMenuCommand() {
-        AppCommandDispatcher.shared.dispatch(.newWindow)
+        self.commandDispatcherForBoot().dispatch(.newWindow)
     }
 
     @objc private func newTab() {
-        AppCommandDispatcher.shared.dispatch(.newTab)
+        self.commandDispatcherForBoot().dispatch(.newTab)
     }
 
     @objc private func closeTab() {
-        AppCommandDispatcher.shared.dispatch(.closeTab)
+        self.commandDispatcherForBoot().dispatch(.closeTab)
     }
 
     @objc private func undoCloseTab() {
-        AppCommandDispatcher.shared.dispatch(.undoCloseTab)
+        self.commandDispatcherForBoot().dispatch(.undoCloseTab)
     }
 
     @objc func closeWindow() {
@@ -571,7 +676,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc func dispatchCloseWindowMenuCommand() {
-        AppCommandDispatcher.shared.dispatch(.closeWindow)
+        self.commandDispatcherForBoot().dispatch(.closeWindow)
     }
 
     // MARK: - Repo/Folder Intake
@@ -682,18 +787,18 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     }
 
     @objc private func filterSidebar() {
-        AppCommandDispatcher.shared.dispatch(.filterSidebar)
+        self.commandDispatcherForBoot().dispatch(.filterSidebar)
     }
 
     @objc private func selectTab(_ sender: NSMenuItem) {
         guard sender.tag >= 0, sender.tag < AppCommand.selectTabCommands.count else { return }
-        AppCommandDispatcher.shared.dispatch(AppCommand.selectTabCommands[sender.tag])
+        self.commandDispatcherForBoot().dispatch(AppCommand.selectTabCommands[sender.tag])
     }
 
     // MARK: - Webview Actions
 
     @objc private func openWebviewAction() {
-        AppCommandDispatcher.shared.dispatch(.openWebview)
+        self.commandDispatcherForBoot().dispatch(.openWebview)
     }
 
     func handleSignInRequested(provider: OAuthProvider) {
@@ -719,15 +824,19 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     // MARK: - Command Bar Actions
 
     @objc private func showCommandBarEverything() {
-        AppCommandDispatcher.shared.dispatch(.showCommandBarEverything)
+        self.commandDispatcherForBoot().dispatch(.showCommandBarEverything)
     }
 
     @objc private func showCommandBarCommands() {
-        AppCommandDispatcher.shared.dispatch(.showCommandBarCommands)
+        self.commandDispatcherForBoot().dispatch(.showCommandBarCommands)
     }
 
     @objc private func showCommandBarPanes() {
-        AppCommandDispatcher.shared.dispatch(.showCommandBarPanes)
+        self.commandDispatcherForBoot().dispatch(.showCommandBarPanes)
     }
 
 }
+
+// Declared here, not in AppDelegate+IPC.swift: the protocol refines Sendable,
+// and Swift 6.4 requires an implied Sendable conformance in the class's own file.
+extension AppDelegate: PaneFocusAppControlling {}

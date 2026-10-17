@@ -84,10 +84,10 @@ extension AppDelegate {
             switch action.kind {
             case .newTab:
                 await Task.yield()
-                AppCommandDispatcher.shared.dispatch(.newTab)
+                self.commandDispatcherForBoot().dispatch(.newTab)
             case .commandBarRepoFilter:
                 await Task.yield()
-                AppCommandDispatcher.shared.dispatch(.showCommandBarEverything)
+                self.commandDispatcherForBoot().dispatch(.showCommandBarEverything)
                 await Task.yield()
                 self.commandBarController.setQueryText("# repo")
                 self.startupTraceRecorder.recordAppStartup(
@@ -168,7 +168,7 @@ extension AppDelegate {
         )
         try? await recorder.drain()
 
-        let probesGranted = probePair.documents.result == .granted && probePair.messagesData.result == .granted
+        let probesGranted = probePair.messagesData.result == .granted
         let outcome = probesGranted ? "succeeded" : "blocked"
         startupTraceRecorder.recordAppStartup(
             "app.startup_diagnostic_action.command_exercised",
@@ -240,14 +240,6 @@ extension AppDelegate {
         Self.recordTCCUpgradeAccessProbe(
             recorder: recorder,
             bundleKind: bundleKind,
-            target: .documents,
-            outcome: probePair.documents,
-            actionRawValue: actionRawValue,
-            probeSequence: probeSequence
-        )
-        Self.recordTCCUpgradeAccessProbe(
-            recorder: recorder,
-            bundleKind: bundleKind,
             target: .messagesData,
             outcome: probePair.messagesData,
             actionRawValue: actionRawValue,
@@ -258,7 +250,6 @@ extension AppDelegate {
 
     nonisolated private static func runTCCUpgradeAccessProbePair() -> TCCUpgradeProbePair {
         TCCUpgradeProbePair(
-            documents: AgentStudioTCCDiagnosticRecorder.shellChildDocumentsDirectoryProbe(),
             messagesData: AgentStudioTCCDiagnosticRecorder.shellChildMessagesDataDirectoryProbe()
         )
     }
@@ -286,7 +277,6 @@ extension AppDelegate {
     }
 
     private struct TCCUpgradeProbePair {
-        let documents: AgentStudioTCCAccessProbeOutcome
         let messagesData: AgentStudioTCCAccessProbeOutcome
     }
 

@@ -12,6 +12,18 @@ Architecture](bridge_web_runtime_architecture.md) at the worker boundary. The
 route-level contract is [Bridge Product Transport
 Architecture](bridge_product_transport_architecture.md).
 
+**Updated 2026-10-09 for Bridge PR1 (#463).** The native owners below follow the
+[Bridge Stability Program
+Design](../../specs/2026-09-24-bridge-stability-redesign/2026-09-24-bridge-stability-program-design.md#components-and-ownership)
+(N1 pane session, N2 operation table, N3 view sender, N4 subscription state,
+N5 surface reconcilers, N10 view publishers). One known gap: the native
+per-subscription lifecycle is spread over loose containers in
+`BridgePaneProductMetadataCoordinator` and is not yet modeled as a state machine
+(Linear LUNA-408; see [Bridge after
+PR1](../../specs/2026-10-09-bridge-after-pr1/2026-10-09-bridge-after-pr1.md) §5).
+Until then, every multi-step transition in that coordinator must change state
+and register its effect in one actor turn, before any `await`.
+
 ## Ownership Map
 
 ```mermaid
@@ -122,6 +134,17 @@ Every abandoned or stale path releases its artifact pin. Content handles are
 served only through a committed or retiring publication lease, so a body cannot
 outlive its publication authority accidentally.
 
+**Review builds only while shown (R15).** Accepting a Review→File viewer-mode
+signal fences the building Review attempt in the same MainActor turn as the
+acceptance, before any receipt or telemetry `await`: it advances Review
+authority, retains the attempt's build reason, and retires the task. An
+attempt whose publication has already started (Publishing or AwaitingInstall)
+is not fenced; it keeps its own lifecycle. A hidden failure therefore ends as
+superseded, never Failed, and the retained input builds when Review is shown
+again. Known residual: an explicitly triggered Review load (refresh command or
+IPC) does not run in the scheduled-task slot and is not fenced yet; main had
+the same behavior before PR1.
+
 ## File Metadata And Content
 
 File mode has two related but separate native products:
@@ -135,6 +158,18 @@ Tree metadata can advance incrementally without pushing complete file bodies.
 Content requests are checked against the current subscription, authoritative
 path or Review item, demand lane, generation, capability, and source
 containment before a byte stream is opened.
+
+Since PR1 the File source publishes **keyed state**: `BridgeWorktreeFileManifestIndex`
+keeps one record per tracked path (symlink rows included; only the worktree root
+is resolved), and row, newest descriptor outcome and wire revision change
+together in one non-suspending index update. First paint is progressive
+(`coverage` batches) followed by one certifying `snapshot`.
+
+The File surface reconciler (`BridgeFileSurfaceReconciler`) owns build attempts
+and outcomes. An interrupted File source restarts in place on the same handle
+without user action (C5, R14). When a source context retires, its revision floor
+moves to its successor in one actor turn, so a Retry's smaller repaired snapshot
+still advances the page's revisions instead of being discarded as older.
 
 ## Git Scheduling
 
@@ -174,9 +209,23 @@ The native/web product transport has three physical routes:
 | Content | Swift to worker | Finite requested application data referenced by an authorized descriptor |
 
 The session capability is pane-scoped. Request admission validates capability,
-route, body budget, sequence, stream/session state, and revocation. Metadata
-and content frames are acknowledged so native producers can apply backpressure
-and release resources.
+route, body budget, sequence, stream/session state, and revocation. Since PR1:
+
+- **N1 pane session (`BridgeProductSession`)** owns each page installation's
+  authority (E1), set once at ingress; nothing from an ended installation
+  applies to a newer one. Exact replay covers admission only.
+- **N2 operation table (`BridgeProductSession+Operations`)** answers a control
+  request when it is admitted and settles its result separately, with
+  deadlines from `AppPolicies`. An effectful operation whose result is unknown
+  settles as `outcomeUnknown`.
+- **N3 view sender (`BridgeProductViewSenderState`)** seals keyed batches,
+  coalesces dirty keys, paces delivery with per-view credits and cumulative
+  acknowledgements, and owns each view's owed snapshot cause
+  (`BridgeProductSession+SnapshotCause`).
+- The product bootstrap reply to the page is bounded by
+  `AppPolicies.Bridge.productBootstrapDeliveryProgressDeadline`
+  (`BridgeProductBootstrapDelivery`), so an unresponsive page fails visibly
+  instead of hanging.
 
 Application queries compose the existing command and content routes: a typed
 call returns a descriptor, then `content.open` returns the actual result. Native
@@ -232,6 +281,16 @@ the resolved `BridgePaneController` implementation:
 5. drain frame pumps, content admission, scheduler consumers, and cleanup;
 6. release WebKit handlers and pane resources.
 
+For the product session itself, PR1's rule is **fence, then release**: ending
+an installation (E1) synchronously advances the epoch, refuses admissions,
+rejects late publications and settles pending operations as cancelled; a new
+installation may start immediately; each owner (producer, carrier, credits)
+releases its own resources when its task stops, and an uncooperative task is a
+diagnostic, never a blocker for the next installation. Pane disposal is bounded
+as a whole from entry. Known follow-up (final review D1): some successor and
+disposal paths still wait for an ended installation's physical tasks; logical
+completion must not wait for physical drain.
+
 Expected failures are converted into bounded product failure/reset state and
 telemetry at the owner boundary. A WebView, worker, Git read, or content stream
 failure must not crash the application. Replacement sessions request a fresh
@@ -267,3 +326,8 @@ native bootstrap; they do not reuse a revoked capability.
 | Product session | [`Transport/BridgePaneProductSessionOwner.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSessionOwner.swift), [`BridgeProductSession+ProtocolLifecycle.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+ProtocolLifecycle.swift), [`BridgeProductSession+Resync.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Resync.swift), [`BridgeProductSession.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession.swift), [`BridgeProductSessionControlTransition.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSessionControlTransition.swift), [`BridgeProductSessionRevocationBarrier.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSessionRevocationBarrier.swift), [`BridgeProductSessionState.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSessionState.swift) |
 | Metadata producers | [`BridgePaneProductMetadataCoordinator+ProducerLifecycle.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductMetadataCoordinator+ProducerLifecycle.swift), [`BridgePaneProductMetadataCoordinator+ProducerOutcomes.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductMetadataCoordinator+ProducerOutcomes.swift), [`BridgePaneProductMetadataCoordinator+ReviewPublication.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductMetadataCoordinator+ReviewPublication.swift), [`BridgePaneProductMetadataCoordinator.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductMetadataCoordinator.swift) |
 | Content demand/admission | [`Transport/BridgePaneProductContentDemandAuthority.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductContentDemandAuthority.swift), [`BridgeContentDemandAdmission.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeContentDemandAdmission.swift) |
+| Operations (N2) and view sender (N3) | [`BridgeProductSession+Operations.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift), [`BridgeProductViewSenderState.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductViewSenderState.swift), [`BridgeProductSession+ViewDelivery.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+ViewDelivery.swift), [`BridgeProductSession+SnapshotCause.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+SnapshotCause.swift) |
+| File keyed index and source | [`BridgeWorktreeFileManifestIndex.swift`](../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeFileSurface/BridgeWorktreeFileManifestIndex.swift), [`BridgePaneProductFileMetadataSource.swift`](../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileMetadataSource.swift) |
+| File surface reconciler (C5) | [`BridgeFileSurfaceReconciler.swift`](../../../Sources/AgentStudio/Features/Bridge/Runtime/SurfaceReconciliation/BridgeFileSurfaceReconciler.swift) |
+| Review hide fence (R15) | [`BridgePaneController+ActiveViewerMode.swift`](../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+ActiveViewerMode.swift), [`BridgePaneController+RefreshAdmission.swift`](../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+RefreshAdmission.swift) |
+| Bounded bootstrap reply | [`BridgeProductBootstrapDelivery.swift`](../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgeProductBootstrapDelivery.swift) |

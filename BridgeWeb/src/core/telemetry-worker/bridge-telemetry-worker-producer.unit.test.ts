@@ -19,6 +19,70 @@ const diagnosticSample = {
 } as const;
 
 describe('BridgeTelemetryWorkerProducer', () => {
+	it('labels active retention overflow as credit exhaustion after producer ready', () => {
+		const send = vi.fn();
+		const producer = createBridgeTelemetryWorkerProducer({
+			initialControlCredits: 0,
+			initialSampleCredits: 0,
+			preReadyRequiredSampleCapacity: 1,
+			preReadyRequiredSampleMaxEncodedBytes: 16 * 1024,
+			send,
+		});
+		producer.acceptWorkerCommand({
+			type: 'producer.ready',
+			generation: 1,
+			initialSampleCredits: 0,
+			initialControlCredits: 1,
+		});
+		expect(producer.record(lifecycleSample).disposition).toBe('retained');
+		expect(producer.record({ ...lifecycleSample, attemptId: 'second' }).disposition).toBe(
+			'loss_recorded',
+		);
+		producer.grantSampleCredits(1);
+		expect(send.mock.calls.map(([message]) => message)).toEqual([
+			{ type: 'sample', sequence: 1, sample: lifecycleSample },
+			{
+				type: 'loss.summary',
+				controlSequence: 1,
+				lostSequenceStart: 2,
+				lostSequenceEnd: 2,
+				requiredCount: 1,
+				optionalCount: 0,
+				reason: 'credit_exhausted',
+			},
+		]);
+	});
+
+	it('reports worker-entry overflow before the producer existed without inventing sample bodies', () => {
+		const send = vi.fn();
+		const producer = createBridgeTelemetryWorkerProducer({
+			initialSampleCredits: 0,
+			initialControlCredits: 0,
+			preReadyRequiredSampleCapacity: 2,
+			preReadyRequiredSampleMaxEncodedBytes: 16 * 1024,
+			send,
+		});
+		producer.record(lifecycleSample);
+		producer.recordPriorLoss({ requiredCount: 2, optionalCount: 1, reason: 'queue_saturated' });
+		producer.acceptWorkerCommand({
+			type: 'producer.ready',
+			generation: 1,
+			initialSampleCredits: 1,
+			initialControlCredits: 1,
+		});
+		expect(send.mock.calls.map(([message]) => message)).toEqual([
+			{ type: 'sample', sequence: 1, sample: lifecycleSample },
+			{
+				type: 'loss.summary',
+				controlSequence: 1,
+				lostSequenceStart: 2,
+				lostSequenceEnd: 4,
+				requiredCount: 2,
+				optionalCount: 1,
+				reason: 'queue_saturated',
+			},
+		]);
+	});
 	it('retains required startup samples until producer ready and preserves their sequence', () => {
 		const send = vi.fn();
 		const producer = createBridgeTelemetryWorkerProducer({
@@ -419,7 +483,7 @@ describe('BridgeTelemetryWorkerProducer', () => {
 		]);
 	});
 
-	it('accounts required overflow bodylessly behind a full retained queue', () => {
+	it('accounts active required overflow as credit exhaustion behind a full retained queue', () => {
 		const send = vi.fn();
 		const laterRequiredSample = {
 			...lifecycleSample,
@@ -459,7 +523,7 @@ describe('BridgeTelemetryWorkerProducer', () => {
 				lostSequenceEnd: 2,
 				requiredCount: 1,
 				optionalCount: 0,
-				reason: 'queue_saturated',
+				reason: 'credit_exhausted',
 			},
 		]);
 		expect(JSON.stringify(send.mock.calls)).not.toContain('attempt-later');

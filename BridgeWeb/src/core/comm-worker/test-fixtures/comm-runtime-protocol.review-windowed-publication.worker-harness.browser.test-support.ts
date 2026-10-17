@@ -4,8 +4,8 @@ import {
 	type BridgeWorkerServerToMainMessage,
 } from '../bridge-worker-contracts.js';
 import type {
-	WindowedReviewMetadataFrame,
-	WindowedReviewMetadataInterestUpdate,
+	WindowedReviewBatchPart,
+	WindowedReviewViewScopeRequest,
 	WindowedReviewWorkerControlMessage,
 	WindowedReviewWorkerControlReceipt,
 } from './comm-runtime-protocol.review-windowed-publication.worker-test-fixture.js';
@@ -13,15 +13,15 @@ import type {
 export class WindowedReviewWorkerHarness {
 	readonly #controlPort: MessagePort;
 	readonly #installed = harnessDeferred<void>();
-	readonly #interestUpdateReceived = harnessDeferred<void>();
+	readonly #viewScopeReceived = harnessDeferred<void>();
 	readonly #messageWaiters: Array<{
 		readonly deferred: ReturnType<typeof harnessDeferred<BridgeWorkerServerToMainMessage>>;
 		readonly predicate: (message: BridgeWorkerServerToMainMessage) => boolean;
 	}> = [];
-	readonly #processedByStreamSequence = new Map<number, ReturnType<typeof harnessDeferred<void>>>();
+	readonly #processedByPartIndex = new Map<number, ReturnType<typeof harnessDeferred<void>>>();
 	#failure: Error | null = null;
 	#terminated = false;
-	onInterestUpdate: (update: WindowedReviewMetadataInterestUpdate) => void = (): void => {};
+	onViewScope: (request: WindowedReviewViewScopeRequest) => void = (): void => {};
 	readonly observedMessages: BridgeWorkerServerToMainMessage[] = [];
 	readonly worker: Worker;
 
@@ -80,22 +80,22 @@ export class WindowedReviewWorkerHarness {
 		return this.#installed.promise;
 	}
 
-	publishMetadata(frame: WindowedReviewMetadataFrame): void {
+	publishBatchPart(part: WindowedReviewBatchPart): void {
 		if (this.#failure !== null) throw this.#failure;
 		if (this.#terminated) throw new Error('Windowed Review worker is terminated.');
-		if (this.#processedByStreamSequence.has(frame.streamSequence)) {
-			throw new Error(`Review metadata sequence ${frame.streamSequence} was already published.`);
+		if (this.#processedByPartIndex.has(part.partIndex)) {
+			throw new Error(`Review batch part ${part.partIndex} was already published.`);
 		}
-		this.#processedByStreamSequence.set(frame.streamSequence, harnessDeferred<void>());
+		this.#processedByPartIndex.set(part.partIndex, harnessDeferred<void>());
 		this.#controlPort.postMessage({
-			frame,
-			kind: 'windowedReview.metadata.publish',
+			part,
+			kind: 'windowedReview.batchPart.publish',
 		} satisfies WindowedReviewWorkerControlMessage);
 	}
 
-	waitForInterestUpdate(): Promise<void> {
+	waitForViewScope(): Promise<void> {
 		if (this.#failure !== null) return Promise.reject(this.#failure);
-		return this.#interestUpdateReceived.promise;
+		return this.#viewScopeReceived.promise;
 	}
 
 	waitForMessage(
@@ -109,11 +109,11 @@ export class WindowedReviewWorkerHarness {
 		return deferred.promise;
 	}
 
-	waitUntilProcessed(streamSequence: number): Promise<void> {
+	waitUntilPartProcessed(partIndex: number): Promise<void> {
 		if (this.#failure !== null) return Promise.reject(this.#failure);
-		const processed = this.#processedByStreamSequence.get(streamSequence);
+		const processed = this.#processedByPartIndex.get(partIndex);
 		if (processed === undefined) {
-			throw new Error(`Review metadata sequence ${streamSequence} was not published.`);
+			throw new Error(`Review batch part ${partIndex} was not published.`);
 		}
 		return processed.promise;
 	}
@@ -131,20 +131,20 @@ export class WindowedReviewWorkerHarness {
 			case 'windowedReview.installed':
 				this.#installed.resolve();
 				return;
-			case 'windowedReview.metadata.processed': {
-				const processed = this.#processedByStreamSequence.get(value.streamSequence);
+			case 'windowedReview.batchPart.processed': {
+				const processed = this.#processedByPartIndex.get(value.partIndex);
 				if (processed === undefined) {
 					this.#fail(
-						new Error(`Worker acknowledged unknown Review sequence ${value.streamSequence}.`),
+						new Error(`Worker acknowledged unknown Review batch part ${value.partIndex}.`),
 					);
 					return;
 				}
 				processed.resolve();
 				return;
 			}
-			case 'windowedReview.metadata.interests':
-				this.onInterestUpdate(value.update);
-				this.#interestUpdateReceived.resolve();
+			case 'windowedReview.viewScope':
+				this.onViewScope(value.request);
+				this.#viewScopeReceived.resolve();
 				return;
 			case 'windowedReview.failed':
 				this.#fail(new Error(value.message));
@@ -156,11 +156,11 @@ export class WindowedReviewWorkerHarness {
 		if (this.#failure !== null) return;
 		this.#failure = failure;
 		this.#installed.reject(failure);
-		this.#interestUpdateReceived.reject(failure);
+		this.#viewScopeReceived.reject(failure);
 		for (const waiter of this.#messageWaiters.splice(0, this.#messageWaiters.length)) {
 			waiter.deferred.reject(failure);
 		}
-		for (const processed of this.#processedByStreamSequence.values()) processed.reject(failure);
+		for (const processed of this.#processedByPartIndex.values()) processed.reject(failure);
 	}
 }
 
@@ -177,10 +177,10 @@ function isWindowedReviewWorkerControlReceipt(
 	switch (value.kind) {
 		case 'windowedReview.installed':
 			return true;
-		case 'windowedReview.metadata.processed':
-			return 'streamSequence' in value && typeof value.streamSequence === 'number';
-		case 'windowedReview.metadata.interests':
-			return 'update' in value;
+		case 'windowedReview.batchPart.processed':
+			return 'partIndex' in value && typeof value.partIndex === 'number';
+		case 'windowedReview.viewScope':
+			return 'request' in value;
 		case 'windowedReview.failed':
 			return 'message' in value && typeof value.message === 'string';
 		default:

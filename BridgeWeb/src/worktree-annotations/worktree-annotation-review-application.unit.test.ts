@@ -292,6 +292,7 @@ function createReviewApplicationHarness(): ReviewApplicationHarness {
 				state: {
 					contentSessionIds,
 					kind: 'ready',
+					stageAttempt: 0,
 					reviewPublicationIdentity: identity,
 					snapshot,
 				},

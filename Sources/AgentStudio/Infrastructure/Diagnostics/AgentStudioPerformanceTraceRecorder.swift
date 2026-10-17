@@ -189,6 +189,8 @@ package final class AgentStudioPerformanceTraceRecorder: @unchecked Sendable {
     }
 
     package enum Event: String, Sendable {
+        case sessionsStatusApply = "sessions.status_apply"
+        case paneContextPresentationApply = "pane_context.presentation_apply"
         case atomDerived = "performance.atom.derived"
         case atomMutation = "performance.atom.mutation"
         case atomRead = "performance.atom.read"
@@ -219,6 +221,9 @@ package final class AgentStudioPerformanceTraceRecorder: @unchecked Sendable {
         case gitTick = "performance.git.tick"
         case interactionLatency = "performance.interaction.latency"
         case ipcAgentAuthorization = "performance.ipc.agent_authorization"
+        case ipcPaneContextRead = "performance.ipc.pane_context_read"
+        case ipcSessionEvent = "performance.ipc.session_event"
+        case ipcOutboxRefusal = "performance.ipc.outbox_refusal"
         case ipcAgentAuthorizationMainActorHeld = "performance.ipc.agent_authorization.main_actor_held"
         case managementLayerAppKitState = "performance.management_layer.appkit_state"
         case managementLayerCommand = "performance.management_layer.command"

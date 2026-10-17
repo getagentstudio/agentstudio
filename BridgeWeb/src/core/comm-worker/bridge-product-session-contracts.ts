@@ -1,5 +1,6 @@
 import { z } from 'zod';
 
+import { bridgeProductBatchFrameSchema } from './bridge-product-batch-wire-contracts.js';
 import {
 	bridgeProductCallRequestSchema,
 	bridgeProductCallResultSchema,
@@ -20,7 +21,6 @@ import {
 	bridgeProductDisplayPathSchema,
 	bridgeProductIdentifierSchema,
 	bridgeProductNonnegativeSequenceSchema,
-	bridgeProductOpaqueReferenceSchema,
 	bridgeProductPositiveSequenceSchema,
 	bridgeProductRequestErrorCodeSchema,
 	bridgeProductResetReasonSchema,
@@ -30,7 +30,11 @@ import {
 } from './bridge-product-contract-primitives.js';
 import { bridgeProductMetadataApplicationKindSchema } from './bridge-product-metadata-application-protocol.js';
 import { bridgeProductReviewComparisonPresentationSchema } from './bridge-product-review-comparison-presentation-contracts.js';
-import { BRIDGE_PRODUCT_MAXIMUM_SUBSCRIPTION_DELTA_ITEM_COUNT } from './bridge-product-subscription-contracts.js';
+import {
+	bridgeProductViewAcceptedResponseSchema,
+	bridgeProductViewResnapshotRequestSchema,
+	bridgeProductViewScopeRequestSchema,
+} from './bridge-product-view-control-wire-contracts.js';
 
 export { bridgeProductReviewComparisonPresentationSchema } from './bridge-product-review-comparison-presentation-contracts.js';
 
@@ -53,6 +57,26 @@ const bridgeProductSubscriptionControlIdentityShape = {
 	subscriptionId: bridgeProductIdentifierSchema,
 	subscriptionKind: bridgeProductMetadataApplicationKindSchema,
 } as const;
+
+const bridgeProductSubscriptionOpenAcceptedSchema = z.discriminatedUnion('subscriptionKind', [
+	z
+		.object({
+			...bridgeProductControlIdentityShape,
+			...bridgeProductSubscriptionControlIdentityShape,
+			kind: z.literal('subscription.openAccepted'),
+			subscriptionKind: z.enum(['file.annotations', 'review.annotations']),
+			worktreeId: bridgeProductIdentifierSchema,
+		})
+		.strict(),
+	z
+		.object({
+			...bridgeProductControlIdentityShape,
+			...bridgeProductSubscriptionControlIdentityShape,
+			kind: z.literal('subscription.openAccepted'),
+			subscriptionKind: z.enum(['file.metadata', 'review.metadata']),
+		})
+		.strict(),
+]);
 
 const bridgeProductNavigationFileSourceSchema = z
 	.object({
@@ -142,8 +166,6 @@ export type BridgeProductNavigationCommand = z.infer<typeof bridgeProductNavigat
 const bridgeProductActiveSubscriptionSchema = z
 	.object({
 		...bridgeProductSubscriptionControlIdentityShape,
-		interestRevision: bridgeProductNonnegativeSequenceSchema,
-		interestSha256: bridgeProductSha256Schema,
 		workerDerivationEpoch: bridgeProductNonnegativeSequenceSchema,
 	})
 	.strict();
@@ -158,8 +180,6 @@ export const bridgeProductResyncReconciliationOutcomeSchema = z.discriminatedUni
 		.object({
 			...bridgeProductResyncReconciliationCommonShape,
 			disposition: z.literal('retained'),
-			interestRevision: bridgeProductNonnegativeSequenceSchema,
-			interestSha256: bridgeProductSha256Schema,
 			workerDerivationEpoch: bridgeProductNonnegativeSequenceSchema,
 		})
 		.strict(),
@@ -169,16 +189,6 @@ export const bridgeProductResyncReconciliationOutcomeSchema = z.discriminatedUni
 			disposition: z.literal('cancelled'),
 			priorWorkerDerivationEpoch: bridgeProductNonnegativeSequenceSchema,
 			reason: z.enum(['native_revoked', 'source_unavailable']),
-		})
-		.strict(),
-	z
-		.object({
-			...bridgeProductResyncReconciliationCommonShape,
-			disposition: z.literal('reset'),
-			interestRevision: bridgeProductPositiveSequenceSchema,
-			interestSha256: bridgeProductSha256Schema,
-			reason: bridgeProductResetReasonSchema,
-			workerDerivationEpoch: bridgeProductNonnegativeSequenceSchema,
 		})
 		.strict(),
 	z
@@ -196,45 +206,9 @@ export const bridgeProductResyncReconciliationOutcomeSchema = z.discriminatedUni
 		.strict(),
 ]);
 
-const bridgeProductSubscriptionUpdateBatchBaseShape = {
-	...bridgeProductSurfaceRequestIdentityShape,
-	baseInterestRevision: bridgeProductNonnegativeSequenceSchema,
-	baseInterestSha256: bridgeProductSha256Schema,
-	batchCount: bridgeProductPositiveSequenceSchema.max(
-		BRIDGE_PRODUCT_MAXIMUM_SUBSCRIPTION_DELTA_ITEM_COUNT,
-	),
-	batchIndex: bridgeProductNonnegativeSequenceSchema,
-	kind: z.literal('subscription.updateBatch'),
-	subscriptionId: bridgeProductIdentifierSchema,
-	targetInterestRevision: bridgeProductPositiveSequenceSchema,
-	targetInterestSha256: bridgeProductSha256Schema,
-	totalDeltaItemCount: bridgeProductPositiveSequenceSchema.max(
-		BRIDGE_PRODUCT_MAXIMUM_SUBSCRIPTION_DELTA_ITEM_COUNT,
-	),
-	updateId: bridgeProductIdentifierSchema,
-} as const;
-
 const bridgeProductRawApplicationObjectSchema = z
 	.object({ subscriptionKind: bridgeProductMetadataApplicationKindSchema })
 	.catchall(z.unknown());
-
-const bridgeProductSubscriptionUpdateBatchRequestSchema = z
-	.object({
-		...bridgeProductSubscriptionUpdateBatchBaseShape,
-		delta: bridgeProductRawApplicationObjectSchema,
-		subscriptionKind: bridgeProductMetadataApplicationKindSchema,
-	})
-	.strict()
-	.superRefine((request, context): void => {
-		validateBridgeProductSubscriptionUpdateBatch(request, context);
-		if (request.subscriptionKind !== request.delta.subscriptionKind) {
-			context.addIssue({
-				code: 'custom',
-				message: 'Subscription update delta kind must match its envelope.',
-				path: ['delta', 'subscriptionKind'],
-			});
-		}
-	});
 
 export const bridgeProductControlRequestSchema = z.discriminatedUnion('kind', [
 	z
@@ -259,7 +233,8 @@ export const bridgeProductControlRequestSchema = z.discriminatedUnion('kind', [
 			subscriptionId: bridgeProductIdentifierSchema,
 		})
 		.strict(),
-	bridgeProductSubscriptionUpdateBatchRequestSchema,
+	bridgeProductViewScopeRequestSchema,
+	bridgeProductViewResnapshotRequestSchema,
 	z
 		.object({
 			...bridgeProductSurfaceRequestIdentityShape,
@@ -292,6 +267,7 @@ export const bridgeProductControlRequestSchema = z.discriminatedUnion('kind', [
 ]);
 
 export const bridgeProductControlResponseSchema = z.discriminatedUnion('kind', [
+	...bridgeProductViewAcceptedResponseSchema.options,
 	z
 		.object({
 			...bridgeProductControlIdentityShape,
@@ -306,27 +282,7 @@ export const bridgeProductControlResponseSchema = z.discriminatedUnion('kind', [
 			kind: z.literal('call.completed'),
 		})
 		.strict(),
-	z
-		.object({
-			...bridgeProductControlIdentityShape,
-			...bridgeProductSubscriptionControlIdentityShape,
-			interestRevision: z.literal(0),
-			interestSha256: bridgeProductSha256Schema,
-			kind: z.literal('subscription.openAccepted'),
-		})
-		.strict(),
-	z
-		.object({
-			...bridgeProductControlIdentityShape,
-			...bridgeProductSubscriptionControlIdentityShape,
-			batchIndex: bridgeProductNonnegativeSequenceSchema,
-			disposition: z.enum(['staged', 'committed']),
-			kind: z.literal('subscription.updateBatchAccepted'),
-			targetInterestRevision: bridgeProductPositiveSequenceSchema,
-			targetInterestSha256: bridgeProductSha256Schema,
-			updateId: bridgeProductIdentifierSchema,
-		})
-		.strict(),
+	bridgeProductSubscriptionOpenAcceptedSchema,
 	z
 		.object({
 			...bridgeProductControlIdentityShape,
@@ -383,6 +339,8 @@ const bridgeProductMetadataFrameIdentityShape = {
 } as const;
 
 export const bridgeProductFileRefreshFailureSchema = z.discriminatedUnion('failureKind', [
+	z.object({ failureKind: z.literal('missingRoot'), retryable: z.literal(true) }).strict(),
+	z.object({ failureKind: z.literal('unreadableRoot'), retryable: z.literal(true) }).strict(),
 	z.object({ failureKind: z.literal('fileRefreshFailed'), retryable: z.literal(false) }).strict(),
 	z
 		.object({ failureKind: z.literal('fileSourceUnavailable'), retryable: z.literal(true) })
@@ -391,40 +349,20 @@ export const bridgeProductFileRefreshFailureSchema = z.discriminatedUnion('failu
 ]);
 
 const bridgeProductSubscriptionFrameIdentityShape = {
-	cursor: bridgeProductOpaqueReferenceSchema.nullable(),
-	interestRevision: bridgeProductNonnegativeSequenceSchema,
-	interestSha256: bridgeProductSha256Schema,
-	sourceGeneration: bridgeProductNonnegativeSequenceSchema,
 	subscriptionId: bridgeProductIdentifierSchema,
 	subscriptionKind: bridgeProductMetadataApplicationKindSchema,
 	subscriptionSequence: bridgeProductNonnegativeSequenceSchema,
 	workerDerivationEpoch: bridgeProductNonnegativeSequenceSchema,
 } as const;
 
-const bridgeProductSubscriptionDataFrameBaseShape = {
-	...bridgeProductMetadataFrameIdentityShape,
-	...bridgeProductSubscriptionFrameIdentityShape,
-	kind: z.literal('subscription.data'),
-	operationCorrelationId: bridgeProductSha256Schema.nullable(),
-	streamSequence: bridgeProductPositiveSequenceSchema,
-	subscriptionSequence: bridgeProductPositiveSequenceSchema,
-} as const;
-
-const bridgeProductRequiredRawApplicationDataSchema = z
-	.unknown()
-	.refine(
-		(data): boolean => data !== undefined,
-		'Subscription data requires an application payload.',
-	);
-
-const bridgeProductSubscriptionDataFrameSchema = z
-	.object({
-		...bridgeProductSubscriptionDataFrameBaseShape,
-		data: bridgeProductRequiredRawApplicationDataSchema,
-	})
-	.strict();
-
 const bridgeProductMetadataFrameStructuralSchema = z.discriminatedUnion('kind', [
+	...bridgeProductBatchFrameSchema.options,
+	z
+		.object({
+			...bridgeProductMetadataFrameIdentityShape,
+			kind: z.literal('stream.keepalive'),
+		})
+		.strict(),
 	z
 		.object({
 			...bridgeProductMetadataFrameIdentityShape,
@@ -471,23 +409,11 @@ const bridgeProductMetadataFrameStructuralSchema = z.discriminatedUnion('kind', 
 		.object({
 			...bridgeProductMetadataFrameIdentityShape,
 			...bridgeProductSubscriptionFrameIdentityShape,
-			interestRevision: z.literal(0),
 			kind: z.literal('subscription.accepted'),
 			streamSequence: bridgeProductPositiveSequenceSchema,
 			subscriptionSequence: z.literal(0),
 		})
 		.strict(),
-	z
-		.object({
-			...bridgeProductMetadataFrameIdentityShape,
-			...bridgeProductSubscriptionFrameIdentityShape,
-			kind: z.literal('subscription.interestsCommitted'),
-			streamSequence: bridgeProductPositiveSequenceSchema,
-			subscriptionSequence: bridgeProductPositiveSequenceSchema,
-			updateId: bridgeProductIdentifierSchema,
-		})
-		.strict(),
-	bridgeProductSubscriptionDataFrameSchema,
 	z
 		.object({
 			...bridgeProductMetadataFrameIdentityShape,
@@ -563,6 +489,10 @@ const bridgeProductCapabilityBytesSchema = z
 
 export const bridgeProductBootstrapPolicySchema = z
 	.object({
+		admissionRetryCount: bridgeProductNonnegativeSequenceSchema,
+		contentProgressDeadlineMilliseconds: bridgeProductPositiveSequenceSchema,
+		contentAcknowledgementDeadlineMilliseconds: bridgeProductPositiveSequenceSchema,
+		viewBatchProgressDeadlineMilliseconds: bridgeProductPositiveSequenceSchema,
 		maximumContentBytes: z
 			.number()
 			.int()
@@ -589,6 +519,15 @@ export const bridgeProductBootstrapPolicySchema = z
 			.positive()
 			.max(BRIDGE_PRODUCT_MAXIMUM_QUEUED_STREAM_FRAMES),
 		terminalFrameReserve: z.literal(BRIDGE_PRODUCT_TERMINAL_FRAME_RESERVE),
+		streamKeepaliveIntervalMilliseconds: bridgeProductPositiveSequenceSchema,
+		telemetryPreReadyBufferMaxBytes: bridgeProductPositiveSequenceSchema,
+		telemetryPreReadyBufferMaxSamples: bridgeProductPositiveSequenceSchema,
+		viewAcknowledgementDeadlineMilliseconds: bridgeProductPositiveSequenceSchema,
+		viewCreditBytes: bridgeProductPositiveSequenceSchema,
+		viewCreditParts: bridgeProductPositiveSequenceSchema,
+		viewMaximumConsecutiveResnapshots: bridgeProductPositiveSequenceSchema,
+		viewMaximumDirtyKeys: bridgeProductPositiveSequenceSchema,
+		workerSettlementDeadlineMilliseconds: bridgeProductPositiveSequenceSchema,
 	})
 	.strict();
 
@@ -660,12 +599,10 @@ export function assertBridgeProductResyncReconciliationMatchesRequest(props: {
 		}
 		switch (outcome.disposition) {
 			case 'retained':
-				if (
-					outcome.workerDerivationEpoch !== activeSubscription.workerDerivationEpoch ||
-					outcome.interestRevision !== activeSubscription.interestRevision ||
-					outcome.interestSha256 !== activeSubscription.interestSha256
-				) {
-					throw new Error('Bridge product retained reconciliation does not echo its request.');
+				if (outcome.workerDerivationEpoch !== activeSubscription.workerDerivationEpoch) {
+					throw new Error(
+						'Bridge product retained reconciliation epoch does not match its request.',
+					);
 				}
 				break;
 			case 'cancelled':
@@ -673,11 +610,6 @@ export function assertBridgeProductResyncReconciliationMatchesRequest(props: {
 					throw new Error(
 						'Bridge product cancelled reconciliation epoch does not match its request.',
 					);
-				}
-				break;
-			case 'reset':
-				if (outcome.workerDerivationEpoch !== activeSubscription.workerDerivationEpoch) {
-					throw new Error('Bridge product reset reconciliation epoch does not match its request.');
 				}
 				break;
 			case 'reopenRequired':
@@ -737,37 +669,4 @@ export function encodeBridgeProductCapabilityHeader(
 		binaryValue += String.fromCharCode(byte);
 	}
 	return globalThis.btoa(binaryValue).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/u, '');
-}
-
-function validateBridgeProductSubscriptionUpdateBatch(
-	request: {
-		readonly baseInterestRevision: number;
-		readonly batchCount: number;
-		readonly batchIndex: number;
-		readonly targetInterestRevision: number;
-		readonly totalDeltaItemCount: number;
-	},
-	context: z.RefinementCtx,
-): void {
-	if (request.targetInterestRevision !== request.baseInterestRevision + 1) {
-		context.addIssue({
-			code: 'custom',
-			message: 'Subscription update must advance exactly one interest revision.',
-			path: ['targetInterestRevision'],
-		});
-	}
-	if (request.batchIndex >= request.batchCount) {
-		context.addIssue({
-			code: 'custom',
-			message: 'Subscription update batch index must be below its batch count.',
-			path: ['batchIndex'],
-		});
-	}
-	if (request.batchCount > request.totalDeltaItemCount) {
-		context.addIssue({
-			code: 'custom',
-			message: 'Subscription update cannot declare more nonempty batches than items.',
-			path: ['batchCount'],
-		});
-	}
 }

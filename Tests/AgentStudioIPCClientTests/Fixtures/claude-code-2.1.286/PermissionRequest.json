@@ -1,0 +1,39 @@
+{
+  "session_id": "6f31f520-d7fa-4e37-90e4-16c5e296caa0",
+  "transcript_path": "/recorded/transcript_path",
+  "cwd": "/recorded/cwd",
+  "prompt_id": "bd0b4d19-f9ce-4f8d-b2a6-60ceeec905eb",
+  "permission_mode": "default",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PermissionRequest",
+  "tool_name": "Read",
+  "tool_input": {
+    "file_path": "/recorded/file_path"
+  },
+  "permission_suggestions": [
+    {
+      "type": "addRules",
+      "rules": [
+        {
+          "toolName": "Read",
+          "ruleContent": "//recorded/**"
+        }
+      ],
+      "behavior": "allow",
+      "destination": "session"
+    },
+    {
+      "type": "addRules",
+      "rules": [
+        {
+          "toolName": "Read",
+          "ruleContent": "//recorded/private/**"
+        }
+      ],
+      "behavior": "allow",
+      "destination": "session"
+    }
+  ]
+}

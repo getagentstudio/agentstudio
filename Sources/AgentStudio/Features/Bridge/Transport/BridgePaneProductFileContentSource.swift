@@ -549,7 +549,7 @@ private struct BridgeStrictIncrementalUTF8Validator {
     }
 }
 
-private enum BridgePaneProductFileContentSourceError: Error {
+enum BridgePaneProductFileContentSourceError: Error {
     case invalidReadRequest
     case sourceChanged
     case sourceTooLarge

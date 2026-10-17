@@ -14,6 +14,21 @@ extension WebKitSerializedTests {
             installTestCoreAtomsIfNeeded()
         }
 
+        @Test("debug Review smoke without a real worktree retains no-source context")
+        func debugReviewSmokeUsesNoSourceContext() async throws {
+            let harness = makeBridgePaneActivityTestHarness()
+            let pane = try #require(harness.coordinator.openBridgeReviewObservabilitySmoke())
+            guard case .bridgePanel(let smokeState) = pane.content else {
+                Issue.record("Expected a Bridge smoke pane")
+                await harness.finish()
+                return
+            }
+            #expect(pane.metadata.facets.worktreeId == nil)
+            #expect(pane.metadata.facets.repoId == nil)
+            #expect(smokeState.source == nil)
+            await harness.finish()
+        }
+
         @Test("actual Bridge view factory gives two panes File authority from one application coordinator")
         func bridgeViewFactoryInjectsOneApplicationCoordinator() async throws {
             // Arrange
@@ -407,14 +422,21 @@ extension WebKitSerializedTests {
         @Test("one worktree freshness advance precedes invalidation fan-out to both panes")
         func freshnessAdvancesOnceBeforePaneFanOut() async throws {
             // Arrange
+            let terminalExpectation = BridgeProductWebKitCatchUpTerminalExpectation(
+                lanes: [.file, .review], batchSequence: 1)
+            let traceSink = BridgeNativeCatchUpTraceSink(expectation: terminalExpectation)
             let eventProbe = BridgeWorktreeProductConstructionEventProbe()
             let constructionCoordinator = BridgeWorktreeProductConstructionCoordinator(
                 eventSink: eventProbe.eventSink
             )
             let harness = makeBridgePaneActivityTestHarness(
+                traceRuntime: traceSink.makeRuntime(),
                 worktreeProductConstructionCoordinator: constructionCoordinator
             )
             let setup = try makeTwoPaneWorktreeSetup(in: harness)
+            // The real factory selects a Git Review provider; a directory alone
+            // fails that provider after reservation and leaves the dirty fact.
+            try await initializeBridgeReviewGitFixture(at: setup.worktree.path)
             enterForegroundNativeEnvironment(harness)
             let firstView = harness.coordinator.createBridgePaneView(
                 for: setup.firstPane,
@@ -428,6 +450,8 @@ extension WebKitSerializedTests {
                 for: [setup.firstPane, setup.secondPane],
                 in: harness
             )
+            // G2 retains hidden Review invalidations; only the foreground native fixture shows Review.
+            try await showReviewInNativeFixture(secondView.controller)
             await waitForActiveReviewRefreshTaskToFinish(secondView.controller)
             let owner = BridgeWorktreeProductOwnerKey(
                 repoIdentity: setup.repoId.uuidString,
@@ -469,6 +493,17 @@ extension WebKitSerializedTests {
             await gate.waitUntilStarted(count: 2)
             await gate.release(invocation: 2)
             let currentLease = try await currentAcquisition.value
+            let terminalObservations = try await terminalExpectation.wait()
+            await waitForActiveReviewRefreshTaskToFinish(secondView.controller)
+            await secondView.controller.worktreeRefreshDriver.awaitActiveFileOperations()
+            let allTerminalsSucceeded = terminalObservations.allSatisfy { $0.result == "success" }
+            let terminalResultsDescription = terminalExpectation.describeTerminalResults(
+                terminalObservations, snapshot: secondView.controller.refreshAdmissionCoordinator.diagnosticSnapshot,
+                reviewAttemptDescription: String(
+                    describing: secondView.controller.refreshAdmissionCoordinator.productPresentationSnapshot
+                        .reviewComparison?.attempt))
+            print("Bridge freshness fan-out terminals: \(terminalResultsDescription)")
+            #expect(allTerminalsSucceeded, Comment(rawValue: terminalResultsDescription))
 
             // Assert
             guard case .failure(let oldError) = oldResult else {
@@ -489,6 +524,8 @@ extension WebKitSerializedTests {
 
             await constructionCoordinator.release(currentLease)
             await harness.finish()
+            try await secondView.controller.telemetryRecorder?.drain()
+            try await traceSink.finish()
         }
 
         @Test("workspace shutdown closes and physically drains shared construction")
@@ -680,9 +717,10 @@ private struct TwoPaneWorktreeSetup {
 private func makeTwoPaneWorktreeSetup(
     in harness: BridgePaneActivityTestHarness
 ) throws -> TwoPaneWorktreeSetup {
-    let repo = harness.store.addRepo(
-        at: harness.tempDirectory.appending(path: "shared-construction-repo")
-    )
+    let repositoryURL = harness.tempDirectory.appending(path: "shared-construction-repo")
+    // C2 validates File roots before minting source authority; this fixture owns a healthy root.
+    try FileManager.default.createDirectory(at: repositoryURL, withIntermediateDirectories: true)
+    let repo = harness.store.addRepo(at: repositoryURL)
     let worktree = try #require(
         harness.store.repo(repo.id)?.worktrees.first(where: { $0.isMainWorktree })
     )
@@ -753,10 +791,18 @@ private func expectAvailableFileSource(
 ) async throws {
     let provider = try #require(controller.productSchemeProvider)
     let request = try bridgeFileSourceCurrentRequest(paneId: controller.paneId)
-    guard case .callCompleted(let response) = await provider.response(for: request),
+    let fileSourceResponse = await provider.response(for: request)
+    let hasAvailableFileSource =
+        if case .callCompleted(let response) = fileSourceResponse,
+            case .fileSourceCurrent(.available) = response.call
+        { true } else { false }
+    #expect(
+        hasAvailableFileSource,
+        Comment(rawValue: "Expected production-injected File source authority; actual: \(fileSourceResponse)")
+    )
+    guard case .callCompleted(let response) = fileSourceResponse,
         case .fileSourceCurrent(.available(let source)) = response.call
     else {
-        Issue.record("Expected production-injected File source authority")
         return
     }
     #expect(source.repoId == repoId.uuidString)

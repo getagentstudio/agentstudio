@@ -70,13 +70,20 @@ extension WorkspaceCacheCoordinator {
         }
 
         guard case .scanned(let linkedPaths) = linkedWorktrees else {
+            let initialDelta =
+                existingRepo == nil
+                ? initialDiscoveryDelta(repoId: repoId, eventId: eventId)
+                : nil
             if shouldInitializeRepoEnrichment {
                 initializeRepoEnrichment(repoId: repoId, envelopeID: eventId, envelopeSequence: envelopeSequence)
+            }
+            if shouldApplyTopologyEffects, let initialDelta {
+                topologyEffectHandler?.topologyDidChange(initialDelta)
             }
             if shouldRefreshTraceIdentity {
                 refreshTraceIdentity()
             }
-            return nil
+            return initialDelta
         }
         guard let repo = repositoryTopology.repos.first(where: { $0.id == repoId }) else {
             Self.logger.error(
@@ -94,18 +101,10 @@ extension WorkspaceCacheCoordinator {
             eventId: eventId
         ) {
         case .accepted(let acceptedDelta):
-            if existingRepo == nil, !acceptedDelta.didChange {
-                delta = WorktreeTopologyDelta(
-                    repoId: repoId,
-                    addedWorktreeIds: repo.worktrees.map(\.id),
-                    removedWorktrees: [],
-                    preservedWorktreeIds: [],
-                    didChange: true,
-                    traceId: eventId
-                )
-            } else {
-                delta = acceptedDelta
-            }
+            delta =
+                existingRepo == nil
+                ? initialDiscoveryDelta(repoId: repoId, eventId: eventId)
+                : acceptedDelta
         case .rejected(let rejection):
             Self.logger.error(
                 "Rejecting scanned repo discovery for repoId=\(repo.id.uuidString, privacy: .public): \(String(describing: rejection), privacy: .public)"
@@ -140,6 +139,17 @@ extension WorkspaceCacheCoordinator {
             refreshTraceIdentity()
         }
         return delta
+    }
+
+    private func initialDiscoveryDelta(repoId: UUID, eventId: UUID) -> WorktreeTopologyDelta {
+        WorktreeTopologyDelta(
+            repoId: repoId,
+            addedWorktreeIds: workspaceStore.repositoryTopologyAtom.repo(repoId)?.worktrees.map(\.id) ?? [],
+            removedWorktrees: [],
+            preservedWorktreeIds: [],
+            didChange: true,
+            traceId: eventId
+        )
     }
 
     private func initializeRepoEnrichment(repoId: UUID, envelopeID: UUID, envelopeSequence: UInt64) {

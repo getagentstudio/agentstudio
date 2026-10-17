@@ -1,5 +1,6 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -76,8 +77,8 @@ struct RemoteReferenceRepositoryCardinalityTests {
         await actor.shutdown()
     }
 
-    @Test("one promoted repository token recomputes every represented worktree")
-    func onePromotedRepositoryTokenRecomputesEveryRepresentedWorktree() async {
+    @Test("repository aggregate depends on the second represented worktree", arguments: [true, false])
+    func onePromotedRepositoryTokenRecomputesEveryRepresentedWorktree(failSecondRead: Bool) async throws {
         let repoId = UUIDv7.generate()
         let primaryWorktreeId = UUIDv7.generate()
         let linkedWorktreeId = UUIDv7.generate()
@@ -91,12 +92,17 @@ struct RemoteReferenceRepositoryCardinalityTests {
         )
         let origin = "https://example.com/owner/repository.git"
         let statusGate = RepositoryCardinalityStatusGate()
+        let source = GitProjectorFactSource()
+        let facts = try source.attach()
         let actor = GitWorkingDirectoryProjector(
             bus: EventBus<RuntimeEnvelope>(),
             gitWorkingTreeProvider: StubGitWorkingTreeStatusProvider { rootPath in
                 await statusGate.status(for: rootPath, origin: origin)
             },
-            coalescingWindow: .zero
+            coalescingWindow: .zero,
+            sleepClock: TestPushClock(),
+            refreshPolicy: .init(minimumAutomaticStartInterval: .zero),
+            factSink: source.sink
         )
         await actor.assertTopology(
             FilesystemTopologyAssertion(
@@ -128,24 +134,10 @@ struct RemoteReferenceRepositoryCardinalityTests {
                 )
             )
         }
-        let acceptance = RemoteReferenceAcceptance(
-            repoId: repoId,
-            expectedOrigin: origin,
-            topologyGeneration: 1,
-            authorityRevision: 1,
-            snapshot: GitRemoteTrackingSnapshot(
-                repositoryPath: primaryRoot,
-                repositoryCommonDirectory: primaryRoot.appending(
-                    path: ".git",
-                    directoryHint: .isDirectory
-                ),
-                remoteName: "origin",
-                configuredRemoteURL: origin,
-                effectiveFetchURL: origin,
-                references: []
-            )
-        )
+        let acceptance = makeRemoteReferenceAcceptance(repoId: repoId, origin: origin, rootPath: primaryRoot)
 
+        // Release before arrival is sticky; each step owns the entire provider hold.
+        statusGate.firstStatusRead.release()
         let recomputationTask = Task {
             await actor.applyRemoteReferenceAuthorityUpdate(
                 .promoted(
@@ -156,76 +148,86 @@ struct RemoteReferenceRepositoryCardinalityTests {
             let outcome = await actor.waitForRemoteReferenceRecomputation(
                 authorityRevision: acceptance.authorityRevision
             )
-            await statusGate.recordAggregateOutcome(outcome)
             return outcome
         }
-        await statusGate.waitForStartedCount(1)
-
-        #expect(await statusGate.completedCount == 0)
-
-        await statusGate.releaseAll()
-        await statusGate.waitForCompletedCount(1)
-        #expect(await statusGate.aggregateOutcome == nil)
-        await statusGate.waitForStartedCount(2)
-        await statusGate.releaseAll()
-        #expect(await recomputationTask.value == .completed)
+        let firstRoot = try await statusGate.firstStatusRead.firstArrival()
+        _ = try await statusGate.secondStatusRead.firstArrival()
+        let firstWorktreeId = firstRoot == primaryRoot ? primaryWorktreeId : linkedWorktreeId
+        #expect(
+            try await source.expectNextRefreshClosed(facts: facts, worktreeId: firstWorktreeId)
+                == .completed(snapshotChanged: true, branchChanged: false))
+        let providerTasks = await actor.outstandingDrainTasks.values.map { $0 }
+        if failSecondRead {
+            statusGate.secondStatusRead.fail(RepositoryCardinalityReadFailure.unavailable)
+        } else {
+            statusGate.secondStatusRead.release()
+        }
+        let aggregateOutcome = await recomputationTask.value
+        for providerTask in providerTasks { await providerTask.value }
+        await actor.shutdown()
+        #expect(try await facts.expectShutdownCompleted(lifetime: 0) == 0)
+        #expect(aggregateOutcome == (failSecondRead ? .failed : .completed))
         #expect(await statusGate.completedCount == 2)
         #expect(await statusGate.startedRootPaths == [primaryRoot, linkedRoot])
-        await actor.shutdown()
     }
+
+    private func makeRemoteReferenceAcceptance(
+        repoId: UUID, origin: String, rootPath: URL
+    ) -> RemoteReferenceAcceptance {
+        RemoteReferenceAcceptance(
+            repoId: repoId,
+            expectedOrigin: origin,
+            topologyGeneration: 1,
+            authorityRevision: 1,
+            snapshot: GitRemoteTrackingSnapshot(
+                repositoryPath: rootPath,
+                repositoryCommonDirectory: rootPath.appending(
+                    path: ".git",
+                    directoryHint: .isDirectory
+                ),
+                remoteName: "origin",
+                configuredRemoteURL: origin,
+                effectiveFetchURL: origin,
+                references: []
+            )
+        )
+    }
+
+}
+
+private enum RepositoryCardinalityReadFailure: Error {
+    case unavailable
 }
 
 private actor RepositoryCardinalityStatusGate {
-    private var startedCount = 0
+    nonisolated let firstStatusRead = HeldStep<URL>(
+        "repository cardinality first status read", cancellation: .holdThroughCancellation
+    )
+    nonisolated let secondStatusRead = HeldStep<Void>(
+        "repository cardinality second status read", cancellation: .holdThroughCancellation
+    )
     private(set) var startedRootPaths: Set<URL> = []
     private(set) var completedCount = 0
-    private(set) var aggregateOutcome: RepositoryFactSourceUpdateOutcome?
-    private var startedCountWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
-    private var completedCountWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
-    private var releaseContinuations: [CheckedContinuation<Void, Never>] = []
 
     func status(for rootPath: URL, origin: String) async -> GitWorkingTreeStatus? {
-        startedCount += 1
         startedRootPaths.insert(rootPath)
-        let readyWaiters = startedCountWaiters.filter { $0.count <= startedCount }
-        startedCountWaiters.removeAll { $0.count <= startedCount }
-        for waiter in readyWaiters { waiter.continuation.resume() }
-        await withCheckedContinuation { continuation in
-            releaseContinuations.append(continuation)
+        let isFirstRead = startedRootPaths.count == 1
+        do {
+            if isFirstRead {
+                try await firstStatusRead.arrive(rootPath)
+            } else {
+                try await secondStatusRead.arrive(())
+            }
+        } catch {
+            completedCount += 1
+            return nil
         }
         completedCount += 1
-        let readyCompletionWaiters = completedCountWaiters.filter { $0.count <= completedCount }
-        completedCountWaiters.removeAll { $0.count <= completedCount }
-        for waiter in readyCompletionWaiters { waiter.continuation.resume() }
         return GitWorkingTreeStatus(
             summary: GitWorkingTreeSummary(changed: 0, staged: 0, untracked: 0),
             branch: "main",
             origin: origin
         )
-    }
-
-    func waitForStartedCount(_ count: Int) async {
-        guard startedCount < count else { return }
-        await withCheckedContinuation { continuation in
-            startedCountWaiters.append((count, continuation))
-        }
-    }
-
-    func releaseAll() {
-        let continuations = releaseContinuations
-        releaseContinuations.removeAll()
-        for continuation in continuations { continuation.resume() }
-    }
-
-    func waitForCompletedCount(_ count: Int) async {
-        guard completedCount < count else { return }
-        await withCheckedContinuation { continuation in
-            completedCountWaiters.append((count, continuation))
-        }
-    }
-
-    func recordAggregateOutcome(_ outcome: RepositoryFactSourceUpdateOutcome) {
-        aggregateOutcome = outcome
     }
 }
 

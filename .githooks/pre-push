@@ -1,15 +1,30 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-while read -r _local_ref local_sha remote_ref _remote_sha; do
-  [[ "$remote_ref" == refs/tags/* ]] || continue
-  [[ "$local_sha" =~ ^0+$ ]] && continue
-  tag="${remote_ref#refs/tags/}"
-  if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-    echo "pre-push: refusing to push bare version tag '$tag'." >&2
-    echo "pre-push: release workflow triggers on 'v*' — use 'v$tag' instead." >&2
-    exit 1
-  fi
-done
+refs="$(cat)"
+
+if [[ -n "$refs" ]]; then
+  while read -r _local_ref local_sha remote_ref _remote_sha; do
+    [[ "$remote_ref" == refs/tags/* ]] || continue
+    [[ "$local_sha" =~ ^0+$ ]] && continue
+    tag="${remote_ref#refs/tags/}"
+    if [[ "$tag" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+      echo "pre-push: refusing to push bare version tag '$tag'." >&2
+      echo "pre-push: release workflow triggers on 'v*' — use 'v$tag' instead." >&2
+      exit 1
+    fi
+  done <<< "$refs"
+fi
+
+if ! command -v git-lfs >/dev/null 2>&1; then
+  echo "This repository is configured for Git LFS but 'git-lfs' was not found on your path." >&2
+  exit 2
+fi
+
+if [[ -n "$refs" ]]; then
+  git lfs pre-push "$@" <<< "$refs"
+else
+  git lfs pre-push "$@" </dev/null
+fi
 
 exit 0

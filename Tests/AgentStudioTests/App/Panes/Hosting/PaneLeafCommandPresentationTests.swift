@@ -226,6 +226,9 @@ private struct PaneLeafMoveRequest: Equatable {
 
 @MainActor
 private final class RecordingPaneLeafCommandDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     var enabledTargets: Set<PaneLeafTargetedCommand> = []
     private(set) var dispatchedTargets: [PaneLeafTargetedCommand] = []
     private(set) var moveRequests: [PaneLeafMoveRequest] = []

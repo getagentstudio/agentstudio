@@ -17,347 +17,402 @@ import {
 	startBridgeViewerOwnedViteProductServer,
 	type BridgeViewerOwnedViteProductServer,
 } from './bridge-viewer-vite-product-fixture.ts';
+import { waitForProductCallSettlement } from './bridge-viewer-vite-product-operation-response.ts';
 import {
 	bridgeViewerViteProductFileUrl,
 	bridgeViewerViteProductReviewUrl,
+	requireBridgeViewerVitePrimaryReviewPath,
 } from './bridge-viewer-vite-product-url.ts';
 import {
 	observeBrowserRuntimeDiagnostics,
 	waitForSettledReviewComparisonWithDiagnostics,
 } from './bridge-viewer-vite-review-comparison-observation.ts';
+import { registerReviewMountRefusalJourneyTests } from './bridge-viewer-vite-review-mount-refusal-journey.ts';
+import { registerReviewResetReopenJourney } from './bridge-viewer-vite-review-reset-reopen-journey.ts';
+import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 const annotationRestartJourneyTimeoutMilliseconds = 120_000;
 const annotationComposedConvergenceTimeoutMilliseconds = 30_000;
 
 export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
-	test('restores distinct File and Review annotations after a cold Vite and Swift restart', async () => {
-		const fixture = await createBridgeViewerViteProductFixture();
-		let serverA: BridgeViewerOwnedViteProductServer | null = null;
-		let serverB: BridgeViewerOwnedViteProductServer | null = null;
-		let browser: Browser | null = null;
-		let page: Page | null = null;
-		let primaryFailure: { readonly error: unknown } | null = null;
-		try {
-			serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			const fileBeforeRestart = await runAnnotationSaveJourney({
-				oracle: fixture.oracle,
-				server: serverA,
-				surface: 'file',
-			});
-			const reviewBeforeRestart = await runAnnotationSaveJourney({
-				oracle: fixture.oracle,
-				server: serverA,
-				surface: 'review',
-			});
+	registerReviewMountRefusalJourneyTests();
+	registerReviewResetReopenJourney();
+	test('restores distinct File and Review annotations after a cold Vite and Swift restart', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const fixture = await createBridgeViewerViteProductFixture();
+			let serverA: BridgeViewerOwnedViteProductServer | null = null;
+			let serverB: BridgeViewerOwnedViteProductServer | null = null;
+			let browser: Browser | null = null;
+			let page: Page | null = null;
+			let primaryFailure: { readonly error: unknown } | null = null;
+			try {
+				serverA = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+				const fileBeforeRestart = await runAnnotationSaveJourney({
+					testSignal: context.signal,
+					oracle: fixture.oracle,
+					server: serverA,
+					surface: 'file',
+				});
+				const reviewBeforeRestart = await runAnnotationSaveJourney({
+					testSignal: context.signal,
+					oracle: fixture.oracle,
+					server: serverA,
+					surface: 'review',
+				});
 
-			const backendPidA = serverA.backendPid;
-			const cleanupA = await serverA.stop();
-			expect(cleanupA.forcedTerminationRequired).toBe(false);
-			expect(cleanupA.ownedProcessAliveAfterStop).toBe(false);
-			serverA = null;
+				const backendPidA = serverA.backendPid;
+				const cleanupA = await serverA.stop();
+				expect(cleanupA.forcedTerminationRequired).toBe(false);
+				expect(cleanupA.ownedProcessAliveAfterStop).toBe(false);
+				serverA = null;
 
-			serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
-			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			await page.goto(bridgeViewerViteProductFileUrl(serverB.origin), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
-			await waitForSelectedFileReady({ oracle: fixture.oracle, page });
-			await page
-				.getByText('File Save must settle from its exact command receipt.', { exact: true })
-				.waitFor({ state: 'visible', timeout: annotationRestartJourneyTimeoutMilliseconds });
-			const fileAfterRestart = await verifyAnnotationOutputCaptures({
-				dataRootPath: fixture.oracle.dataRootPath,
-				page,
-				savedBody: 'File Save must settle from its exact command receipt.',
-				timeoutMilliseconds: annotationComposedConvergenceTimeoutMilliseconds,
-				worktreeRoot: fixture.oracle.worktreeRoot,
-			});
-			expect(fileAfterRestart).toEqual(fileBeforeRestart.outputIdentity);
+				serverB = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				await page.goto(
+					bridgeViewerViteProductFileUrl(serverB.origin, fixture.oracle.largeFilePath),
+					{
+						timeout: annotationRestartJourneyTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
+					},
+				);
+				await waitForSelectedFileReady({ oracle: fixture.oracle, page });
+				await page
+					.getByText('File Save must settle from its exact command receipt.', { exact: true })
+					.waitFor({ state: 'visible', timeout: annotationRestartJourneyTimeoutMilliseconds });
+				const fileAfterRestart = await verifyAnnotationOutputCaptures({
+					dataRootPath: fixture.oracle.dataRootPath,
+					page,
+					savedBody: 'File Save must settle from its exact command receipt.',
+					timeoutMilliseconds: annotationComposedConvergenceTimeoutMilliseconds,
+					worktreeRoot: fixture.oracle.worktreeRoot,
+				});
+				expect(fileAfterRestart).toEqual(fileBeforeRestart.outputIdentity);
 
-			await page.goto(bridgeViewerViteProductReviewUrl(serverB.origin), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
-			const reviewOriginFile = fixture.oracle.reviewFiles[0];
-			if (reviewOriginFile === undefined) {
-				throw new Error('Restart journey requires a Review-origin file.');
+				await page.goto(
+					bridgeViewerViteProductReviewUrl(
+						serverB.origin,
+						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+					),
+					{
+						timeout: annotationRestartJourneyTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
+					},
+				);
+				const reviewOriginFile = fixture.oracle.reviewFiles[0];
+				if (reviewOriginFile === undefined) {
+					throw new Error('Restart journey requires a Review-origin file.');
+				}
+				await selectReviewFile({
+					page,
+					path: reviewOriginFile.path,
+					testLaunch: serverB.testLaunch,
+				});
+				await waitForSelectedReviewReady({ itemId: reviewOriginFile.itemId, page });
+				await page
+					.getByText('Review Save must settle from its exact command receipt.', { exact: true })
+					.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
+				const reviewAfterRestart = await verifyAnnotationOutputCaptures({
+					dataRootPath: fixture.oracle.dataRootPath,
+					page,
+					savedBody: 'Review Save must settle from its exact command receipt.',
+					timeoutMilliseconds: annotationComposedConvergenceTimeoutMilliseconds,
+					worktreeRoot: fixture.oracle.worktreeRoot,
+				});
+				expect(reviewAfterRestart).toEqual(reviewBeforeRestart.outputIdentity);
+
+				await page.goto(bridgeViewerViteProductFileUrl(serverB.origin, reviewOriginFile.path), {
+					timeout: annotationRestartJourneyTimeoutMilliseconds,
+					waitUntil: 'domcontentloaded',
+				});
+				await waitForFilePathReady({ page, path: reviewOriginFile.path });
+				await page
+					.getByText('Review Save must settle from its exact command receipt.', { exact: true })
+					.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
+				expect(serverB.backendPid).not.toBe(backendPidA);
+			} catch (error: unknown) {
+				primaryFailure = { error };
+			} finally {
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'cold-restart page',
+							run: async (): Promise<void> => {
+								await page?.close();
+							},
+						},
+						{
+							name: 'cold-restart browser',
+							run: async (): Promise<void> => {
+								await browser?.close();
+							},
+						},
+						{
+							name: 'cold-restart first product server',
+							run: async (): Promise<void> => {
+								if (serverA !== null) await stopOwnedProductServer(serverA);
+							},
+						},
+						{
+							name: 'cold-restart second product server',
+							run: async (): Promise<void> => {
+								if (serverB !== null) await stopOwnedProductServer(serverB);
+							},
+						},
+						{ name: 'cold-restart fixture', run: fixture.dispose },
+					],
+					...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
+				});
 			}
-			await selectReviewFile({ page, path: reviewOriginFile.path });
-			await waitForSelectedReviewReady({ itemId: reviewOriginFile.itemId, page });
-			await page
-				.getByText('Review Save must settle from its exact command receipt.', { exact: true })
-				.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
-			const reviewAfterRestart = await verifyAnnotationOutputCaptures({
-				dataRootPath: fixture.oracle.dataRootPath,
-				page,
-				savedBody: 'Review Save must settle from its exact command receipt.',
-				timeoutMilliseconds: annotationComposedConvergenceTimeoutMilliseconds,
-				worktreeRoot: fixture.oracle.worktreeRoot,
-			});
-			expect(reviewAfterRestart).toEqual(reviewBeforeRestart.outputIdentity);
-
-			await page.goto(bridgeViewerViteProductFileUrl(serverB.origin, reviewOriginFile.path), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
-			await waitForFilePathReady({ page, path: reviewOriginFile.path });
-			await page
-				.getByText('Review Save must settle from its exact command receipt.', { exact: true })
-				.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
-			expect(serverB.backendPid).not.toBe(backendPidA);
-		} catch (error: unknown) {
-			primaryFailure = { error };
-		} finally {
-			await runAllOwnedCleanupOperations({
-				operations: [
-					{
-						name: 'cold-restart page',
-						run: async (): Promise<void> => {
-							await page?.close();
-						},
-					},
-					{
-						name: 'cold-restart browser',
-						run: async (): Promise<void> => {
-							await browser?.close();
-						},
-					},
-					{
-						name: 'cold-restart first product server',
-						run: async (): Promise<void> => {
-							if (serverA !== null) await stopOwnedProductServer(serverA);
-						},
-					},
-					{
-						name: 'cold-restart second product server',
-						run: async (): Promise<void> => {
-							if (serverB !== null) await stopOwnedProductServer(serverB);
-						},
-					},
-					{ name: 'cold-restart fixture', run: fixture.dispose },
-				],
-				...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
-			});
-		}
-		// Named gap: this cold-stack journey does not prove a Swift-only restart while the
-		// same Vite page and production comm worker reconnect. The current dev host recovers
-		// backend health by reloading the document, which replaces that worker.
+			// Named gap: this cold-stack journey does not prove a Swift-only restart while the
+			// same Vite page and production comm worker reconnect. The current dev host recovers
+			// backend health by reloading the document, which replaces that worker.
+		});
 	});
 
-	test('holds a promoted Review update for Apply now and auto-installs after focus leaves', async () => {
-		const fixture = await createBridgeViewerViteProductFixture();
-		let server: BridgeViewerOwnedViteProductServer | null = null;
-		let browser: Browser | null = null;
-		let page: Page | null = null;
-		let primaryFailure: { readonly error: unknown } | null = null;
-		try {
-			server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
-			browser = await launchBridgeViewerE2EChromium();
-			page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-			const runtimeDiagnostics = observeBrowserRuntimeDiagnostics(page);
-			const annotationCommandTrace = observeReviewAnnotationCommandTrace(page);
-			await page.goto(bridgeViewerViteProductReviewUrl(server.origin), {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-				waitUntil: 'domcontentloaded',
-			});
-			const affectedFile = fixture.oracle.reviewFiles[0];
-			const unaffectedFile = fixture.oracle.reviewFiles[1];
-			if (affectedFile === undefined || unaffectedFile === undefined) {
-				throw new Error('Promoted refresh journey requires two Review files.');
-			}
-			await selectReviewFile({ page, path: affectedFile.path });
-			await waitForSelectedReviewReady({ itemId: affectedFile.itemId, page });
-			const initialPackage = await requireReviewPackageIdentity(page);
-
-			const firstAdvance = await fixture.advanceReviewedHeadByCommitCount(10);
-			expect(firstAdvance.importedCommitCount).toBe(10);
-			const promotedOutcome = await waitForPromotedReadyOrUnexpectedInstall({
-				expectedTargetOID: firstAdvance.finalHeadOID,
-				initialPackageId: initialPackage.packageId,
-				page,
-			});
-			expect(promotedOutcome).toBe('updateReady');
-			await page
-				.getByText('Update ready', { exact: true })
-				.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
-			const firstHeldCandidate = await waitForHeldCommitPromotionTelemetry({
-				expectedReviewGeneration: initialPackage.reviewGeneration,
-				page,
-			});
-			const heldPackage = await requireReviewPackageIdentity(page);
-			if (
-				heldPackage.packageId !== initialPackage.packageId ||
-				heldPackage.reviewGeneration !== initialPackage.reviewGeneration
-			) {
-				throw new Error(
-					`Promoted Review candidate was presented as held after display advanced: ${JSON.stringify(
-						{
-							heldPackage,
-							initialPackage,
-							refreshLifecycle: await reviewRefreshLifecycleDiagnostic(page),
-							server: server.diagnostics(),
-						},
-					)}`,
-				);
-			}
-			await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: 'review' });
-			const rootCreateCommitted = waitForCommittedAnnotationCommand(page, 'root.create', 'review');
-			const savedDuringHoldBody = 'A new root comment saved while the promoted refresh was held.';
-			await page
-				.getByRole('textbox', { name: 'Write an annotation in Markdown' })
-				.fill(savedDuringHoldBody);
-			await rootCreateCommitted;
-			await page
-				.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
-				.waitFor({
-					state: 'visible',
-					timeout: annotationComposedConvergenceTimeoutMilliseconds,
-				});
-			await page.waitForFunction(
-				(): boolean => {
-					const saveButton = document.querySelector<HTMLButtonElement>(
-						'[aria-label="Save annotation"]',
-					);
-					return saveButton !== null && !saveButton.disabled;
-				},
-				undefined,
-				{ timeout: annotationComposedConvergenceTimeoutMilliseconds },
-			);
-			const appliedReceiptResponse = page.waitForResponse(isReviewPublicationAppliedResponse, {
-				timeout: annotationRestartJourneyTimeoutMilliseconds,
-			});
-			const applyNowButton = page.getByRole('button', { name: 'Apply now' });
-			await expect
-				.poll(async (): Promise<boolean> => applyNowButton.isEnabled(), {
-					timeout: annotationComposedConvergenceTimeoutMilliseconds,
-				})
-				.toBe(true);
-			await applyNowButton.press('Enter');
-			await requireCompletedReviewPublicationAppliedResponse(await appliedReceiptResponse);
-			const appliedComparison = await waitForInstalledReviewPackage({
-				expectedTargetLabel: 'HEAD',
-				page,
-				predecessor: initialPackage,
-				timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
-			});
-			expect(appliedComparison.packageId).toBe(initialPackage.packageId);
-			expect(appliedComparison.reviewGeneration).toBe(firstHeldCandidate.reviewGeneration);
-			expect(appliedComparison.revision).toBeGreaterThan(initialPackage.revision);
-			await waitForSelectedReviewPathReady({ page, path: affectedFile.path });
-			const retainedComposer = page.getByRole('textbox', {
-				name: 'Write an annotation in Markdown',
-			});
+	test('holds a promoted Review update for Apply now and auto-installs after focus leaves', async (context) => {
+		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
+			const fixture = await createBridgeViewerViteProductFixture();
+			let server: BridgeViewerOwnedViteProductServer | null = null;
+			let browser: Browser | null = null;
+			let page: Page | null = null;
+			let primaryFailure: { readonly error: unknown } | null = null;
 			try {
-				await retainedComposer.waitFor({
-					state: 'visible',
-					timeout: annotationComposedConvergenceTimeoutMilliseconds,
-				});
-			} catch (error: unknown) {
-				throw new Error(
-					`Applied Review did not retain the active root composer: ${JSON.stringify({
-						annotationDom: await annotationContinuityDomDiagnostic(page),
-						annotationCommandTrace,
-						refreshLifecycle: await reviewRefreshLifecycleDiagnostic(page),
-						runtime: await runtimeDiagnostics.describe(),
-						server: server.diagnostics(),
-					})}`,
-					{ cause: error },
+				server = await startBridgeViewerOwnedViteProductServer(fixture.oracle);
+				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
+				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				const runtimeDiagnostics = observeBrowserRuntimeDiagnostics(page);
+				const annotationCommandTrace = observeReviewAnnotationCommandTrace(page);
+				await page.goto(
+					bridgeViewerViteProductReviewUrl(
+						server.origin,
+						requireBridgeViewerVitePrimaryReviewPath(fixture.oracle),
+					),
+					{
+						timeout: annotationRestartJourneyTimeoutMilliseconds,
+						waitUntil: 'domcontentloaded',
+					},
 				);
-			}
-			expect(await retainedComposer.inputValue()).toBe(savedDuringHoldBody);
-			await page
-				.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
-				.waitFor({
+				const affectedFile = fixture.oracle.reviewFiles[0];
+				const unaffectedFile = fixture.oracle.reviewFiles[1];
+				if (affectedFile === undefined || unaffectedFile === undefined) {
+					throw new Error('Promoted refresh journey requires two Review files.');
+				}
+				try {
+					await selectReviewFile({ page, path: affectedFile.path, testLaunch: server.testLaunch });
+				} catch (error: unknown) {
+					throw new Error(
+						`Initial Review shell mount did not settle: server=${server.diagnostics()} runtime=${await runtimeDiagnostics.describe()}`,
+						{ cause: error },
+					);
+				}
+				await waitForSelectedReviewReady({ itemId: affectedFile.itemId, page });
+				const initialPackage = await requireReviewPackageIdentity(page);
+
+				const firstAdvance = await fixture.advanceReviewedHeadByCommitCount(10);
+				expect(firstAdvance.importedCommitCount).toBe(10);
+				const promotedOutcome = await waitForPromotedReadyOrUnexpectedInstall({
+					expectedTargetOID: firstAdvance.finalHeadOID,
+					initialPackageId: initialPackage.packageId,
+					page,
+				});
+				expect(promotedOutcome).toBe('updateReady');
+				await page
+					.getByText('Update ready', { exact: true })
+					.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
+				const firstHeldCandidate = await waitForHeldCommitPromotionTelemetry({
+					expectedReviewGeneration: initialPackage.reviewGeneration,
+					page,
+				});
+				const heldPackage = await requireReviewPackageIdentity(page);
+				if (
+					heldPackage.packageId !== initialPackage.packageId ||
+					heldPackage.reviewGeneration !== initialPackage.reviewGeneration
+				) {
+					throw new Error(
+						`Promoted Review candidate was presented as held after display advanced: ${JSON.stringify(
+							{
+								heldPackage,
+								initialPackage,
+								refreshLifecycle: await reviewRefreshLifecycleDiagnostic(page),
+								server: server.diagnostics(),
+							},
+						)}`,
+					);
+				}
+				await selectRangeForAnnotation({ endLine: 5, page, startLine: 2, surface: 'review' });
+				const rootCreateCommitted = waitForCommittedAnnotationCommand(
+					page,
+					'root.create',
+					'review',
+				);
+				const savedDuringHoldBody = 'A new root comment saved while the promoted refresh was held.';
+				await page
+					.getByRole('textbox', { name: 'Write an annotation in Markdown' })
+					.fill(savedDuringHoldBody);
+				await rootCreateCommitted;
+				await page
+					.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
+					.waitFor({
+						state: 'visible',
+						timeout: annotationComposedConvergenceTimeoutMilliseconds,
+					});
+				await page.waitForFunction(
+					(): boolean => {
+						const saveButton = document.querySelector<HTMLButtonElement>(
+							'[aria-label="Save annotation"]',
+						);
+						return saveButton !== null && !saveButton.disabled;
+					},
+					undefined,
+					{ timeout: annotationComposedConvergenceTimeoutMilliseconds },
+				);
+				const appliedReceiptResponse = waitForProductCallSettlement(
+					page,
+					isReviewPublicationAppliedResponse,
+				);
+				const applyNowButton = page.getByRole('button', { name: 'Apply now' });
+				await expect
+					.poll(async (): Promise<boolean> => applyNowButton.isEnabled(), {
+						timeout: annotationComposedConvergenceTimeoutMilliseconds,
+					})
+					.toBe(true);
+				await applyNowButton.press('Enter');
+				requireCompletedReviewPublicationAppliedResponse((await appliedReceiptResponse).result);
+				const appliedComparison = await waitForInstalledReviewPackage({
+					expectedTargetLabel: 'HEAD',
+					page,
+					predecessor: initialPackage,
+					timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
+				});
+				expect(appliedComparison.packageId).toBe(initialPackage.packageId);
+				expect(appliedComparison.reviewGeneration).toBe(firstHeldCandidate.reviewGeneration);
+				expect(appliedComparison.revision).toBeGreaterThan(initialPackage.revision);
+				await waitForSelectedReviewPathReady({ page, path: affectedFile.path });
+				const retainedComposer = page.getByRole('textbox', {
+					name: 'Write an annotation in Markdown',
+				});
+				try {
+					await retainedComposer.waitFor({
+						state: 'visible',
+						timeout: annotationComposedConvergenceTimeoutMilliseconds,
+					});
+				} catch (error: unknown) {
+					throw new Error(
+						`Applied Review did not retain the active root composer: ${JSON.stringify({
+							annotationDom: await annotationContinuityDomDiagnostic(page),
+							annotationCommandTrace,
+							refreshLifecycle: await reviewRefreshLifecycleDiagnostic(page),
+							runtime: await runtimeDiagnostics.describe(),
+							server: server.diagnostics(),
+						})}`,
+						{ cause: error },
+					);
+				}
+				expect(await retainedComposer.inputValue()).toBe(savedDuringHoldBody);
+				await page
+					.locator('[data-testid="worktree-annotation-message"][data-annotation-draft="present"]')
+					.waitFor({
+						state: 'visible',
+						timeout: annotationComposedConvergenceTimeoutMilliseconds,
+					});
+				const draftSaveCommitted = waitForCommittedAnnotationCommand(page, 'draft.save', 'review');
+				try {
+					await Promise.all([
+						draftSaveCommitted,
+						page.getByRole('button', { name: 'Save annotation' }).click(),
+					]);
+				} catch (error: unknown) {
+					throw new Error(
+						`Review draft save failed after apply: ${JSON.stringify({ annotationCommandTrace })}`,
+						{ cause: error },
+					);
+				}
+				expect(
+					new Set(annotationCommandTrace.filter((kind) => kind.startsWith('draft.save@'))).size,
+				).toBe(1);
+				await page.getByText(savedDuringHoldBody, { exact: true }).waitFor({
 					state: 'visible',
 					timeout: annotationComposedConvergenceTimeoutMilliseconds,
 				});
-			const draftSaveCommitted = waitForCommittedAnnotationCommand(page, 'draft.save', 'review');
-			await Promise.all([
-				draftSaveCommitted,
-				page.getByRole('button', { name: 'Save annotation' }).click(),
-			]);
-			await page.getByText(savedDuringHoldBody, { exact: true }).waitFor({
-				state: 'visible',
-				timeout: annotationComposedConvergenceTimeoutMilliseconds,
-			});
-			await page.keyboard.press('Escape');
-			await page
-				.getByText('Update ready', { exact: true })
-				.waitFor({ state: 'hidden', timeout: annotationRestartJourneyTimeoutMilliseconds });
-			const verifiedAppliedComparison = await waitForSettledReviewComparisonWithDiagnostics({
-				diagnostics: runtimeDiagnostics,
-				expectedTargetLabel: 'HEAD',
-				expectedTargetOID: firstAdvance.finalHeadOID,
-				failureContext: (): string => server?.diagnostics() ?? 'server unavailable',
-				page,
-				timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
-			});
-			expect(verifiedAppliedComparison.reviewGeneration).toBeGreaterThanOrEqual(
-				appliedComparison.reviewGeneration,
-			);
+				await page.keyboard.press('Escape');
+				await page
+					.getByText('Update ready', { exact: true })
+					.waitFor({ state: 'hidden', timeout: annotationRestartJourneyTimeoutMilliseconds });
+				const verifiedAppliedComparison = await waitForSettledReviewComparisonWithDiagnostics({
+					diagnostics: runtimeDiagnostics,
+					expectedTargetLabel: 'HEAD',
+					expectedTargetOID: firstAdvance.finalHeadOID,
+					failureContext: (): string => server?.diagnostics() ?? 'server unavailable',
+					page,
+					timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
+				});
+				expect(verifiedAppliedComparison.reviewGeneration).toBeGreaterThanOrEqual(
+					appliedComparison.reviewGeneration,
+				);
 
-			const secondAdvance = await fixture.advanceReviewedHeadByCommitCount(10);
-			expect(secondAdvance).toMatchObject({
-				importedCommitCount: 10,
-				previousHeadOID: firstAdvance.finalHeadOID,
-			});
-			const secondPromotedOutcome = await waitForPromotedReadyOrUnexpectedInstall({
-				expectedTargetOID: secondAdvance.finalHeadOID,
-				initialPackageId: verifiedAppliedComparison.packageId,
-				page,
-			});
-			expect(secondPromotedOutcome).toBe('updateReady');
-			await page
-				.getByText('Update ready', { exact: true })
-				.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
-			const secondHeldCandidate = await waitForHeldCommitPromotionTelemetry({
-				expectedReviewGeneration: verifiedAppliedComparison.reviewGeneration,
-				page,
-			});
-			await selectReviewFile({ page, path: unaffectedFile.path });
-			await waitForSelectedReviewReady({ itemId: unaffectedFile.itemId, page });
-			const automaticallyInstalledComparison = await waitForSettledReviewComparisonWithDiagnostics({
-				diagnostics: runtimeDiagnostics,
-				expectedTargetLabel: 'HEAD',
-				expectedTargetOID: secondAdvance.finalHeadOID,
-				failureContext: (): string => server?.diagnostics() ?? 'server unavailable',
-				page,
-				timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
-			});
-			expect(automaticallyInstalledComparison.reviewGeneration).toBeGreaterThanOrEqual(
-				secondHeldCandidate.reviewGeneration,
-			);
-			expect(await page.getByText('Update ready', { exact: true }).count()).toBe(0);
-		} catch (error: unknown) {
-			primaryFailure = { error };
-		} finally {
-			await runAllOwnedCleanupOperations({
-				operations: [
-					{
-						name: 'promoted-refresh page',
-						run: async (): Promise<void> => {
-							await page?.close();
+				const secondAdvance = await fixture.advanceReviewedHeadByCommitCount(10);
+				expect(secondAdvance).toMatchObject({
+					importedCommitCount: 10,
+					previousHeadOID: firstAdvance.finalHeadOID,
+				});
+				const secondPromotedOutcome = await waitForPromotedReadyOrUnexpectedInstall({
+					expectedTargetOID: secondAdvance.finalHeadOID,
+					initialPackageId: verifiedAppliedComparison.packageId,
+					page,
+				});
+				expect(secondPromotedOutcome).toBe('updateReady');
+				await page
+					.getByText('Update ready', { exact: true })
+					.waitFor({ state: 'visible', timeout: annotationComposedConvergenceTimeoutMilliseconds });
+				const secondHeldCandidate = await waitForHeldCommitPromotionTelemetry({
+					expectedReviewGeneration: verifiedAppliedComparison.reviewGeneration,
+					page,
+				});
+				await selectReviewFile({ page, path: unaffectedFile.path, testLaunch: server.testLaunch });
+				await waitForSelectedReviewReady({ itemId: unaffectedFile.itemId, page });
+				const automaticallyInstalledComparison =
+					await waitForSettledReviewComparisonWithDiagnostics({
+						diagnostics: runtimeDiagnostics,
+						expectedTargetLabel: 'HEAD',
+						expectedTargetOID: secondAdvance.finalHeadOID,
+						failureContext: (): string => server?.diagnostics() ?? 'server unavailable',
+						page,
+						timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
+					});
+				expect(automaticallyInstalledComparison.reviewGeneration).toBeGreaterThanOrEqual(
+					secondHeldCandidate.reviewGeneration,
+				);
+				expect(await page.getByText('Update ready', { exact: true }).count()).toBe(0);
+			} catch (error: unknown) {
+				primaryFailure = { error };
+			} finally {
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'promoted-refresh page',
+							run: async (): Promise<void> => {
+								await page?.close();
+							},
 						},
-					},
-					{
-						name: 'promoted-refresh browser',
-						run: async (): Promise<void> => {
-							await browser?.close();
+						{
+							name: 'promoted-refresh browser',
+							run: async (): Promise<void> => {
+								await browser?.close();
+							},
 						},
-					},
-					{
-						name: 'promoted-refresh product server',
-						run: async (): Promise<void> => {
-							if (server !== null) await stopOwnedProductServer(server);
+						{
+							name: 'promoted-refresh product server',
+							run: async (): Promise<void> => {
+								if (server !== null) await stopOwnedProductServer(server);
+							},
 						},
-					},
-					{ name: 'promoted-refresh fixture', run: fixture.dispose },
-				],
-				...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
-			});
-		}
+						{ name: 'promoted-refresh fixture', run: fixture.dispose },
+					],
+					...(primaryFailure === null ? {} : { primaryError: primaryFailure.error }),
+				});
+			}
+		});
 	});
 }
 
@@ -413,7 +468,7 @@ function observeReviewAnnotationCommandTrace(page: Page): string[] {
 		}
 		const operation = call['request']['operation'];
 		if (!isUnknownRecord(operation) || typeof operation['kind'] !== 'string') return;
-		operationKinds.push(operation['kind']);
+		operationKinds.push(`${operation['kind']}@${String(body['requestSequence'])}`);
 	});
 	return operationKinds;
 }
@@ -509,11 +564,9 @@ function isReviewPublicationAppliedResponse(response: Response): boolean {
 	);
 }
 
-async function requireCompletedReviewPublicationAppliedResponse(response: Response): Promise<void> {
-	const body: unknown = await response.json();
+function requireCompletedReviewPublicationAppliedResponse(body: unknown): void {
 	const call = typeof body === 'object' && body !== null ? Reflect.get(body, 'call') : null;
 	if (
-		!response.ok() ||
 		typeof body !== 'object' ||
 		body === null ||
 		Reflect.get(body, 'kind') !== 'call.completed' ||

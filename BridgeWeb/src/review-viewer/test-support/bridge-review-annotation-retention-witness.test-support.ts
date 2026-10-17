@@ -13,7 +13,10 @@ import type {
 	WorktreeAnnotationMessageEntry,
 	WorktreeAnnotationThreadContext,
 } from '../../worktree-annotations/worktree-annotation-surface-client.js';
-import type { BridgeReviewRecoveryWitnessHarness } from './bridge-viewer-browser.recovery-witness.test-support.js';
+import type {
+	BridgeReviewRecoveryWitnessWorkerRequest,
+	BridgeReviewRecoveryWitnessHarness,
+} from './bridge-viewer-browser.recovery-witness.test-support.js';
 
 type AnnotationCommandInput = Extract<
 	BridgeWorkerRpcCommandInput,
@@ -28,6 +31,9 @@ type AnnotationMessageReceipt = Extract<
 	{ readonly kind: 'message' }
 >;
 export interface BridgeReviewAnnotationRetentionWitness {
+	readonly waitForPendingCommand: (
+		operationKind: BridgeProductWorktreeAnnotationOperation['kind'],
+	) => Promise<BridgeReviewRecoveryWitnessWorkerRequest>;
 	readonly pendingCommandCount: (
 		operationKind: BridgeProductWorktreeAnnotationOperation['kind'],
 	) => number;
@@ -129,6 +135,14 @@ export function createBridgeReviewAnnotationRetentionWitness(
 	};
 
 	return {
+		waitForPendingCommand: (operationKind) =>
+			workerEventSeam.waitForSentRequest(
+				(request): boolean =>
+					request.command.command === 'annotationCommand' &&
+					request.command.operation.kind === operationKind &&
+					!settledRequestIds.has(request.requestId),
+				`Review annotation pending ${operationKind}`,
+			),
 		pendingCommandCount: (operationKind): number =>
 			workerEventSeam
 				.sentRequests()
@@ -150,6 +164,7 @@ export function createBridgeReviewAnnotationRetentionWitness(
 				state: {
 					contentSessionIds: [annotationSessionId],
 					kind: 'ready',
+					stageAttempt: 0,
 					reviewPublicationIdentity: {
 						packageId: publicationIdentity.packageId,
 						publicationId: publicationIdentity.publicationId,

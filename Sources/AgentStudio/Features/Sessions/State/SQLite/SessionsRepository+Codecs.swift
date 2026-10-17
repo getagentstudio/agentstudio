@@ -14,7 +14,9 @@ extension SessionsRepositoryStorage {
             origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
             status: try decodeEnum(row["status"], as: SessionsBindingStatus.self),
             startedAt: Date(timeIntervalSince1970: row["started_at"]),
-            endedAt: decodeDate(row["ended_at"])
+            endedAt: decodeDate(row["ended_at"]),
+            resumeHint: row["resume_hint"],
+            ownerPaneId: try decodeOptionalUuid(row["owner_pane_id"])
         )
     }
 
@@ -35,26 +37,20 @@ extension SessionsRepositoryStorage {
         )
     }
 
-    static func decodeEvidence(_ row: Row) throws -> SessionsEvidenceRecord {
+    static func decodeEvidence(_ row: Row, database: Database) throws -> SessionsEvidenceRecord {
         let evidenceKind: String = row["evidence_kind"]
-        let requestId: String? = row["evidence_request_id"]
-        let explanation: String? = row["evidence_explanation_text"]
         let kind: SessionsEvidenceKind
         switch evidenceKind {
         case "activityStarted": kind = .activityStarted
         case "completed": kind = .completed
         case "aborted": kind = .aborted
-        case "needsYouOpened":
-            guard let requestId else { throw SessionsRepositoryError.invalidStoredValue(evidenceKind) }
-            kind = .needsYouOpened(requestId: requestId, explanation: explanation)
-        case "needsYouResolved":
-            guard let requestId else { throw SessionsRepositoryError.invalidStoredValue(evidenceKind) }
-            kind = .needsYouResolved(requestId: requestId)
+        case "needsYouOpened": kind = .needsYouOpened
+        case "needsYouResolved": kind = .needsYouResolved
         default:
             throw SessionsRepositoryError.invalidStoredValue(evidenceKind)
         }
         return SessionsEvidenceRecord(
-            occurrenceId: try decodeUuid(row["occurrence_id"]),
+            recordId: try decodeUuid(row["occurrence_id"]),
             conversationId: try decodeUuid(row["conversation_id"]),
             bindingGenerationId: try decodeUuid(row["binding_generation_id"]),
             sourceGenerationId: try decodeUuid(row["source_generation_id"]),
@@ -62,66 +58,10 @@ extension SessionsRepositoryStorage {
             subject: try decodeSubject(kind: row["subject_kind"], identifier: row["subject_identifier"]),
             kind: kind,
             origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
-            occurredAt: Date(timeIntervalSince1970: row["occurred_at"])
-        )
-    }
-
-    static func decodeMessage(_ row: Row) throws -> SessionsMessageRecord {
-        let isSeen: Int = row["is_seen"]
-        return SessionsMessageRecord(
-            occurrenceId: try decodeUuid(row["occurrence_id"]),
-            paneId: try decodeUuid(row["pane_id"]),
-            conversationId: try decodeOptionalUuid(row["conversation_id"]),
-            bindingGenerationId: try decodeOptionalUuid(row["binding_generation_id"]),
-            sourceGenerationId: try decodeOptionalUuid(row["source_generation_id"]),
-            text: row["exact_text"] ?? "",
-            attribution: try decodeEnum(row["attribution"], as: SessionsMessageAttribution.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
-            disposition: isSeen == 0 ? .unseen : .seen,
-            reportedAt: Date(timeIntervalSince1970: row["reported_at"])
-        )
-    }
-
-    static func decodeAttention(_ row: Row) throws -> SessionsStoredAttentionRecord {
-        SessionsStoredAttentionRecord(
-            id: try decodeUuid(row["id"]),
-            conversationId: try decodeUuid(row["conversation_id"]),
-            bindingGenerationId: try decodeUuid(row["binding_generation_id"]),
-            sourceId: try decodeOptionalUuid(row["source_id"]),
-            sourceGenerationId: try decodeUuid(row["source_generation_id"]),
-            sourceKind: row["source_kind"],
-            turnId: row["turn_id"],
-            subject: try decodeSubjectKey(row["subject_key"]),
-            requestId: row["request_id"],
-            attentionKind: row["attention_kind"],
-            origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
-            explanation: row["explanation_text"],
-            disposition: try decodeEnum(row["disposition"], as: SessionsAttentionDisposition.self),
-            openedOccurrenceId: try decodeUuid(row["opened_occurrence_id"]),
-            resolutionOccurrenceId: try decodeOptionalUuid(row["resolution_occurrence_id"]),
-            openedAt: Date(timeIntervalSince1970: row["opened_at"]),
-            resolvedAt: decodeDate(row["resolved_at"])
-        )
-    }
-
-    static func decodeResult(_ row: Row) throws -> SessionsResultRecord {
-        let isSeen: Int = row["is_seen"]
-        return SessionsResultRecord(
-            id: try decodeUuid(row["id"]),
-            conversationId: try decodeUuid(row["conversation_id"]),
-            bindingGenerationId: try decodeUuid(row["binding_generation_id"]),
-            sourceGenerationId: try decodeUuid(row["source_generation_id"]),
-            turnId: row["turn_id"],
-            subject: try decodeSubjectKey(row["subject_key"]),
-            completionOccurrenceId: try decodeUuid(row["completion_occurrence_id"]),
-            origin: try decodeEnum(row["origin"], as: SessionsEvidenceOrigin.self),
-            freshness: try decodeEnum(row["freshness"], as: SessionsEvidenceFreshness.self),
-            disposition: isSeen == 0 ? .unseen : .seen,
-            seenAt: decodeDate(row["seen_at"]),
-            createdAt: Date(timeIntervalSince1970: row["created_at"]),
-            updatedAt: Date(timeIntervalSince1970: row["updated_at"])
+            statusEffect: try decodeEnum(row["status_effect"], as: SessionsEvidenceStatusEffect.self),
+            occurredAt: Date(timeIntervalSince1970: row["occurred_at"]),
+            admissionSequence: row["admission_sequence"],
+            providerSignal: try decodeProviderSignal(row, database: database)
         )
     }
 
@@ -158,12 +98,5 @@ extension SessionsRepositoryStorage {
         case ("subagent", .some(let identifier)): .subagent(identifier)
         default: throw SessionsRepositoryError.invalidStoredValue("\(kind):\(identifier ?? "nil")")
         }
-    }
-
-    static func decodeSubjectKey(_ key: String) throws -> SessionsEvidenceSubject {
-        if key == "root" { return .root }
-        if key.hasPrefix("tool:") { return .tool(String(key.dropFirst("tool:".count))) }
-        if key.hasPrefix("subagent:") { return .subagent(String(key.dropFirst("subagent:".count))) }
-        throw SessionsRepositoryError.invalidStoredValue(key)
     }
 }

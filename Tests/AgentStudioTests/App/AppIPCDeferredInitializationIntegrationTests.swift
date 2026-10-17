@@ -231,7 +231,7 @@ struct AppIPCDeferredInitializationIntegrationTests {
         let windowLifecycleStore = WindowLifecycleAtom(
             deferralDelay: releaseWaitEntry.deferralDelay
         )
-        let harness = try makeServerCapableAppIPCTestHarness(
+        let harness = try await makeServerCapableAppIPCTestHarness(
             windowLifecycleStore: windowLifecycleStore
         )
         do {

@@ -3,6 +3,9 @@ import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
 	observeBridgePaneCommWorkerSessionDiagnosticSnapshots,
 	readBridgeReviewSelectionDiagnostic,
+	recordBridgeReviewInstallationGateDiagnostic,
+	recordBridgeReviewCandidateSourceDiagnostic,
+	recordBridgeReviewDisplayPatchDiagnostic,
 	recordBridgePaneCommWorkerSessionDiagnosticSnapshot,
 	recordBridgePaneRuntimeDiagnosticSnapshot,
 	recordBridgeFileModeSendAttempt,
@@ -19,6 +22,64 @@ afterEach(() => {
 });
 
 describe('Bridge Review selection diagnostic', () => {
+	test('retains the latest installation gate decision and native admission without clearing prior admission', () => {
+		ensureTestWindow();
+		recordBridgeReviewInstallationGateDiagnostic({
+			activeIdentity: { publicationId: 'active-publication' },
+			confirmedDisplayedPublicationId: null,
+			pendingCandidate: { publicationId: 'first-candidate', role: 'installing' },
+			lastGateDecision: { kind: 'rejected', reason: 'nativeAdmissionRejected' },
+			lastNativeAdmissionResult: {
+				candidatePublicationId: 'first-candidate',
+				status: 'rejected',
+			},
+		});
+		recordBridgeReviewInstallationGateDiagnostic({
+			activeIdentity: { publicationId: 'active-publication' },
+			confirmedDisplayedPublicationId: null,
+			pendingCandidate: { publicationId: 'successor', role: 'updateReady' },
+			lastGateDecision: { kind: 'held', reason: 'attention' },
+			lastNativeAdmissionResult: {
+				candidatePublicationId: 'first-candidate',
+				status: 'rejected',
+			},
+		});
+		recordBridgeReviewDisplayPatchDiagnostic({
+			publicationId: 'successor',
+			sourceStatus: 'stale',
+			targetCandidatePublicationId: 'successor',
+			stageOutcome: 'accepted',
+			reason: 'stagedCandidate',
+		});
+		recordBridgeReviewCandidateSourceDiagnostic({ publicationId: 'successor', status: 'stale' });
+
+		expect(readBridgeReviewSelectionDiagnostic()?.reviewInstallationGate).toEqual({
+			activeIdentity: { publicationId: 'active-publication' },
+			confirmedDisplayedPublicationId: null,
+			pendingCandidate: { publicationId: 'successor', role: 'updateReady' },
+			lastGateDecision: { kind: 'held', reason: 'attention' },
+			lastNativeAdmissionResult: {
+				candidatePublicationId: 'first-candidate',
+				status: 'rejected',
+			},
+		});
+		expect(readBridgeReviewSelectionDiagnostic()).toMatchObject({
+			lastReviewDisplayPatch: {
+				publicationId: 'successor',
+				sourceStatus: 'stale',
+				targetCandidatePublicationId: 'successor',
+				stageOutcome: 'accepted',
+				reason: 'stagedCandidate',
+			},
+			reviewCandidateSource: { publicationId: 'successor', status: 'stale' },
+		});
+		recordBridgeReviewCandidateSourceDiagnostic({ publicationId: 'successor', status: 'ready' });
+		expect(readBridgeReviewSelectionDiagnostic()?.reviewCandidateSource).toEqual({
+			publicationId: 'successor',
+			status: 'ready',
+		});
+	});
+
 	test('records only scrub-safe cumulative selection boundary counts', () => {
 		// Arrange
 		ensureTestWindow();
@@ -135,9 +196,17 @@ describe('Bridge Review selection diagnostic', () => {
 			snapshots.push(snapshot);
 		});
 		const snapshot = {
+			failureReason: null,
 			latestFileModeDispatchDisposition: 'posted',
 			latestFileSelectDispatchDisposition: 'queued_not_ready',
 			latestReviewSelectDispatchDisposition: null,
+			lastReplacementReason: {
+				ackAttemptOutcomes: [],
+				droppedPriorControlRequestCount: 0,
+				priorControlRequests: [],
+				kind: 'sessionSuspect',
+				reason: 'admissionReplyExhausted',
+			},
 			nativeBootstrapInstallCount: 1,
 			queuedCommandCount: 2,
 			replacementRequestCount: 1,
@@ -149,6 +218,34 @@ describe('Bridge Review selection diagnostic', () => {
 		recordBridgePaneCommWorkerSessionDiagnosticSnapshot({ ...snapshot, state: 'bootstrapping' });
 
 		expect(snapshots).toEqual([snapshot]);
+		expect(readBridgeReviewSelectionDiagnostic()?.lastWorkerReplacementReason).toEqual(
+			snapshot.lastReplacementReason,
+		);
+		recordBridgePaneCommWorkerSessionDiagnosticSnapshot({
+			...snapshot,
+			lastReplacementReason: {
+				kind: 'runtimeRecovery',
+				source: 'renderDispositionProbeExhausted',
+			},
+			replacementRequestCount: 2,
+		});
+		expect(readBridgeReviewSelectionDiagnostic()?.workerReplacementFacts).toEqual([
+			{ requestCount: 1, reason: snapshot.lastReplacementReason },
+			{
+				requestCount: 2,
+				reason: { kind: 'runtimeRecovery', source: 'renderDispositionProbeExhausted' },
+			},
+		]);
+		for (let requestCount = 3; requestCount <= 129; requestCount += 1) {
+			recordBridgePaneCommWorkerSessionDiagnosticSnapshot({
+				...snapshot,
+				replacementRequestCount: requestCount,
+			});
+		}
+		const diagnostic = readBridgeReviewSelectionDiagnostic();
+		expect(diagnostic?.workerReplacementFacts).toHaveLength(128);
+		expect(diagnostic?.workerReplacementFacts?.[0]?.requestCount).toBe(2);
+		expect(diagnostic?.droppedWorkerReplacementFactCount).toBe(1);
 	});
 
 	test('records each readiness timestamp once until the diagnostic lifecycle resets', () => {
@@ -156,9 +253,11 @@ describe('Bridge Review selection diagnostic', () => {
 		ensureTestWindow();
 		const dateNow = vi.spyOn(Date, 'now');
 		const sessionSnapshot = {
+			failureReason: null,
 			latestFileModeDispatchDisposition: null,
 			latestFileSelectDispatchDisposition: null,
 			latestReviewSelectDispatchDisposition: null,
+			lastReplacementReason: null,
 			nativeBootstrapInstallCount: 0,
 			queuedCommandCount: 0,
 			replacementRequestCount: 0,

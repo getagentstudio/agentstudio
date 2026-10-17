@@ -2,7 +2,8 @@ import { readFile, realpath, writeFile } from 'node:fs/promises';
 
 import type { Page } from 'playwright';
 
-import { bridgeProductFileMetadataEventSchema } from '../../src/core/comm-worker/bridge-product-subscription-contracts.ts';
+import { installBridgeProductFileBatch } from '../../src/core/comm-worker/bridge-product-file-batch-installer.ts';
+import type { BridgeProductViewInstallation } from '../../src/core/comm-worker/bridge-product-view-batch-receiver.ts';
 import { resolveBridgeWorktreeVerifierWritePath } from '../verify-bridge-viewer-worktree-dev-server-paths.ts';
 import { requireVerifierBrowser } from './browser-session.ts';
 import {
@@ -38,20 +39,21 @@ const productFileSessionByDescriptor = new WeakMap<
 >();
 const liveProductFileSurfaces = new Set<WorktreeFileSurface>();
 
-export async function fetchWorktreeSurface(): Promise<WorktreeFileSurface> {
-	await closeAllWorktreeFileSurfaces();
-	const session = new BridgeVerifierProductFileSession({
+export function makeWorktreeProductDataClient(): BridgeVerifierProductFileSession {
+	return new BridgeVerifierProductFileSession({
 		baseUrl: new URL(worktreeDevServerUrl).origin,
 		scenarioName: scenarioNameFromDevServerUrl(worktreeDevServerUrl),
 	});
+}
+
+export async function fetchWorktreeSurface(
+	session: BridgeVerifierProductFileSession = makeWorktreeProductDataClient(),
+): Promise<WorktreeFileSurface> {
+	await closeAllWorktreeFileSurfaces();
 	const productSource = await session.open();
-	const treeRows = productSource.treeWindows.flatMap((treeWindow) => treeWindow.rows);
-	const finalTreeWindow = productSource.treeWindows.findLast(
-		(treeWindow) => treeWindow.finalWindow,
-	);
-	const pathCount = finalTreeWindow?.totalRowCount ?? treeRows.length;
+	const pathCount = worktreeFileTreeRows(productSource.installations).length;
 	const surface: WorktreeFileSurface = {
-		frames: productSource.treeWindows,
+		frames: productSource.installations,
 		provenance: {
 			baseRef: 'HEAD',
 			scenarioName: scenarioNameFromDevServerUrl(worktreeDevServerUrl),
@@ -122,15 +124,13 @@ export async function bridgeWorktreeDevRootTokenForPath(path: string): Promise<s
 	return `root-${hashText(await realpath(path)).slice(0, 32)}`;
 }
 
-export function worktreeFileTreeRows(frames: readonly unknown[]): readonly WorktreeFileTreeRow[] {
-	const rows: WorktreeFileTreeRow[] = [];
-	for (const frame of frames) {
-		const parsedEvent = bridgeProductFileMetadataEventSchema.safeParse(frame);
-		if (parsedEvent.success && parsedEvent.data.eventKind === 'file.treeWindow') {
-			rows.push(...parsedEvent.data.rows);
-		}
-	}
-	return rows;
+export function worktreeFileTreeRows(
+	frames: readonly BridgeProductViewInstallation[],
+): readonly WorktreeFileTreeRow[] {
+	const latestInstallation = frames.at(-1);
+	return latestInstallation === undefined
+		? []
+		: installBridgeProductFileBatch(latestInstallation).displayTreeRows;
 }
 
 export function worktreeFileDemandCandidatePaths(surface: WorktreeFileSurface): readonly string[] {

@@ -1,24 +1,20 @@
-import { describe, expect, test, vi } from 'vitest';
+import { describe, expect, test } from 'vitest';
 
-import type {
-	BridgeMainReviewCandidateRole,
-	BridgeMainReviewCandidateStore,
-	BridgeMainReviewPublicationIdentity,
-	BridgeMainReviewRefreshPresentation,
-} from './bridge-main-review-candidate-bank.js';
+import {
+	FakeCandidateStore,
+	ImmediateInstallationPort,
+	DeferredInstallationPort,
+	identity,
+	candidateReady,
+	candidateFailed,
+	attention,
+	sameSourceStart,
+} from './bridge-main-review-installation-gate.test-support.js';
 import {
 	createBridgeMainReviewPresentationInstallationGate as createBridgeMainReviewPresentationInstallationGateImpl,
-	type BridgeMainReviewInstallAdmissionRequest,
-	type BridgeMainReviewInstallAdmissionResult,
-	type BridgeMainReviewPresentationInstallationPort,
 	type BridgeMainReviewRefreshLifecycleEvent,
-	type BridgeMainReviewSemanticAttention,
 } from './bridge-main-review-presentation-installation-gate.js';
-import type {
-	BridgeWorkerReviewCandidateReadyEvent,
-	BridgeWorkerReviewCandidateFailedEvent,
-	BridgeWorkerReviewCandidateStartDisposition,
-} from './bridge-worker-review-publication-contracts.js';
+import { createBridgeProductDeferred } from './bridge-product-async-queue.js';
 
 const ACTIVE = identity(1, '11');
 const CANDIDATE = identity(2, '12');
@@ -399,6 +395,116 @@ describe('Bridge main Review presentation installation gate', () => {
 		expect(store.presentation.candidate).toBeNull();
 	});
 
+	test('a rejected predecessor admission cannot leave a ready successor held without a displayed bank', async () => {
+		const store = new FakeCandidateStore(ACTIVE, CANDIDATE);
+		store.presentation = { ...store.presentation, activeIdentity: null };
+		const port = new ImmediateInstallationPort(['rejected', 'admitted']);
+		const gate = createBridgeMainReviewPresentationInstallationGate({
+			installationPort: port,
+			store,
+		});
+		await gate.handleCandidateReady(candidateReady(CANDIDATE, 'ordinary', []), attention([]));
+		expect(port.requests.map(({ candidatePublicationId }) => candidatePublicationId)).toEqual([
+			CANDIDATE.publicationId,
+		]);
+		store.replaceCandidate(
+			SUCCESSOR,
+			sameSourceStart({ kind: 'promoted', reason: 'files' }, ['file-c']),
+		);
+		await gate.handleCandidateReady(
+			candidateReady(SUCCESSOR, 'promoted', ['file-c']),
+			attention(['file-c']),
+		);
+		expect(port.requests.map(({ candidatePublicationId }) => candidatePublicationId)).toEqual([
+			CANDIDATE.publicationId,
+			SUCCESSOR.publicationId,
+		]);
+		expect(store.promotions).toEqual([SUCCESSOR.publicationId]);
+		expect(port.receipts).toEqual([SUCCESSOR.publicationId]);
+	});
+	test('a displayed Review bank still holds an attention-affecting promoted successor', async () => {
+		const store = new FakeCandidateStore(
+			ACTIVE,
+			SUCCESSOR,
+			sameSourceStart({ kind: 'promoted', reason: 'files' }, ['file-c']),
+		);
+		const port = new ImmediateInstallationPort(['admitted']);
+		const gate = createBridgeMainReviewPresentationInstallationGate({
+			installationPort: port,
+			store,
+		});
+
+		await gate.handleCandidateReady(
+			candidateReady(SUCCESSOR, 'promoted', ['file-c']),
+			attention(['file-c']),
+		);
+		expect(port.requests).toEqual([]);
+		expect(store.presentation.activeIdentity).toEqual(ACTIVE);
+		expect(store.presentation.candidate?.role).toBe('updateReady');
+	});
+
+	test('a retained active identity without confirmed display cannot hold the successor', async () => {
+		const store = new FakeCandidateStore(
+			ACTIVE,
+			SUCCESSOR,
+			sameSourceStart({ kind: 'promoted', reason: 'files' }, ['file-c']),
+		);
+		store.presentation = { ...store.presentation, activeIdentity: null };
+		const port = new ImmediateInstallationPort(['admitted']);
+		const gate = createBridgeMainReviewPresentationInstallationGate({
+			installationPort: port,
+			store,
+		});
+		store.presentation = { ...store.presentation, activeIdentity: ACTIVE };
+
+		await gate.handleCandidateReady(
+			candidateReady(SUCCESSOR, 'promoted', ['file-c']),
+			attention(['file-c']),
+		);
+		expect(port.requests.map(({ candidatePublicationId }) => candidatePublicationId)).toEqual([
+			SUCCESSOR.publicationId,
+		]);
+		expect(store.promotions).toEqual([SUCCESSOR.publicationId]);
+	});
+	test('a rejected successor after a rejected predecessor reaches an install terminal', async () => {
+		const store = new FakeCandidateStore(ACTIVE, CANDIDATE);
+		store.presentation = { ...store.presentation, activeIdentity: null };
+		const port = new ImmediateInstallationPort(['rejected', 'rejected']);
+		const events: BridgeMainReviewRefreshLifecycleEvent[] = [];
+		const gate = createBridgeMainReviewPresentationInstallationGate({
+			installationPort: port,
+			onLifecycleEvent: (event): void => {
+				events.push(event);
+			},
+			store,
+		});
+		await gate.handleCandidateReady(candidateReady(CANDIDATE, 'ordinary', []), attention([]));
+		store.replaceCandidate(
+			SUCCESSOR,
+			sameSourceStart({ kind: 'promoted', reason: 'files' }, ['file-c']),
+		);
+
+		await gate.handleCandidateReady(
+			candidateReady(SUCCESSOR, 'promoted', ['file-c']),
+			attention(['file-c']),
+		);
+		expect(port.requests.map(({ candidatePublicationId }) => candidatePublicationId)).toEqual([
+			CANDIDATE.publicationId,
+			SUCCESSOR.publicationId,
+		]);
+		expect(events).toContainEqual({
+			affectedStableFileCount: 1,
+			generation: SUCCESSOR.generation,
+			phase: 'installTerminal',
+			presentationClass: { kind: 'promoted', reason: 'files' },
+			result: 'stale',
+			resultReason: 'admissionRejected',
+			trigger: 'automatic',
+		});
+		expect(store.presentation.candidate).toBeNull();
+		expect(port.receipts).toEqual([]);
+	});
+
 	test('pins an admitted identity until it promotes despite successor arrival', async () => {
 		// Arrange
 		const store = new FakeCandidateStore(ACTIVE, CANDIDATE);
@@ -511,7 +617,49 @@ describe('Bridge main Review presentation installation gate', () => {
 		// Assert — bounded attempts retain the displayed bank and delegate recovery to the pane service.
 		expect(port.receiptAttempts).toEqual([CANDIDATE.publicationId, CANDIDATE.publicationId]);
 		expect(port.replacementRequestCount).toBe(1);
+		expect(port.replacementSource).toBe('reviewInstalledReceiptFailed');
 		expect(store.presentation.activeIdentity).toEqual(CANDIDATE);
+	});
+
+	test('page that applied B blocks C admission until the B receipt settles', async () => {
+		const store = new FakeCandidateStore(ACTIVE, CANDIDATE);
+		const port = new ImmediateInstallationPort(['admitted', 'admitted']);
+		const receiptEntered = createBridgeProductDeferred<void>();
+		const receiptSettlement = createBridgeProductDeferred<void>();
+		const sendReceipt = port.sendInstalledReceipt;
+		port.sendInstalledReceipt = async (installedIdentity): Promise<void> => {
+			if (installedIdentity.publicationId === CANDIDATE.publicationId) {
+				receiptEntered.resolve();
+				await receiptSettlement.promise;
+			}
+			await sendReceipt(installedIdentity);
+		};
+		const gate = createBridgeMainReviewPresentationInstallationGate({
+			installationPort: port,
+			store,
+		});
+		try {
+			const firstInstall = gate.handleCandidateReady(
+				candidateReady(CANDIDATE, 'ordinary', []),
+				attention([]),
+			);
+			await receiptEntered.promise;
+			expect(store.presentation.activeIdentity).toEqual(CANDIDATE);
+			store.replaceCandidate(SUCCESSOR);
+			await gate.handleCandidateReady(candidateReady(SUCCESSOR, 'ordinary', []), attention([]));
+			expect(port.requests).toHaveLength(1);
+			expect(store.presentation.activeIdentity).toEqual(CANDIDATE);
+			receiptSettlement.resolve();
+			await firstInstall;
+			expect(port.requests[1]).toEqual({
+				candidatePublicationId: SUCCESSOR.publicationId,
+				expectedDisplayedPublicationId: CANDIDATE.publicationId,
+			});
+			expect(store.presentation.activeIdentity).toEqual(SUCCESSOR);
+		} finally {
+			receiptSettlement.resolve();
+			gate.close();
+		}
 	});
 
 	test('retains only affected promoted failure and ignores stale B failure after C starts', async () => {
@@ -558,320 +706,3 @@ describe('Bridge main Review presentation installation gate', () => {
 		}
 	});
 });
-
-class FakeCandidateStore implements BridgeMainReviewCandidateStore {
-	presentation: BridgeMainReviewRefreshPresentation;
-	readonly discards: string[] = [];
-	readonly promotions: string[] = [];
-	readonly roles: BridgeMainReviewCandidateRole[] = [];
-
-	constructor(
-		activeIdentity: BridgeMainReviewPublicationIdentity,
-		candidateIdentity: BridgeMainReviewPublicationIdentity,
-		startDisposition: BridgeWorkerReviewCandidateStartDisposition = sameSourceStart(
-			{ kind: 'ordinary' },
-			[],
-		),
-	) {
-		this.presentation = candidatePresentation(activeIdentity, candidateIdentity, startDisposition);
-	}
-
-	getReviewRefreshPresentation = (): BridgeMainReviewRefreshPresentation => this.presentation;
-	subscribeReviewRefreshPresentation = (): (() => void) => (): void => {};
-	setReviewCandidateCodeViewItem = (): boolean => false;
-	startReviewCandidate = (): boolean => false;
-	escalateReviewCandidatePresentation: BridgeMainReviewCandidateStore['escalateReviewCandidatePresentation'] =
-		(props): boolean => {
-			const candidate = this.presentation.candidate;
-			if (candidate === null || !sameIdentity(candidate.identity, props.identity)) return false;
-			this.presentation = {
-				...this.presentation,
-				candidate: { ...candidate, effectivePresentationClass: props.presentationClass },
-			};
-			return true;
-		};
-	failReviewCandidate = (props: {
-		readonly identity: BridgeMainReviewPublicationIdentity;
-		readonly retryable: boolean;
-	}): boolean => {
-		const candidate = this.presentation.candidate;
-		if (
-			candidate === null ||
-			!sameIdentity(candidate.identity, props.identity) ||
-			candidate.role === 'installing'
-		)
-			return false;
-		const start = candidate.startDisposition;
-		this.presentation = {
-			...this.presentation,
-			candidate: null,
-			failure:
-				start?.kind === 'sameSource' && candidate.effectivePresentationClass.kind === 'promoted'
-					? {
-							affectedStableFileIdentities: start.affectedStableFileIdentities,
-							identity: candidate.identity,
-							presentationClass: candidate.effectivePresentationClass,
-							retryable: props.retryable,
-						}
-					: null,
-		};
-		return true;
-	};
-	clearReviewCandidateFailure = (): boolean => {
-		if (this.presentation.failure === null || this.presentation.failure === undefined) return false;
-		this.presentation = { ...this.presentation, failure: null };
-		return true;
-	};
-	stageReviewCandidateDisplayEvent = (): boolean => false;
-	applyReviewCandidateSnapshotUpdate = (): boolean => false;
-	markReviewCandidateReady = (props: {
-		readonly identity: BridgeMainReviewPublicationIdentity;
-		readonly role: BridgeMainReviewCandidateRole;
-	}): boolean => {
-		if (!this.candidateIs(props.identity)) return false;
-		const startDisposition = this.presentation.candidate?.startDisposition;
-		if (startDisposition === undefined) return false;
-		this.roles.push(props.role);
-		this.presentation = {
-			...this.presentation,
-			candidate: {
-				affectedStableFileIdentities:
-					this.presentation.candidate?.affectedStableFileIdentities ?? [],
-				effectivePresentationClass: this.presentation.candidate?.effectivePresentationClass ?? {
-					kind: 'ordinary',
-				},
-				identity: props.identity,
-				role: props.role,
-				startDisposition,
-			},
-		};
-		return true;
-	};
-	promoteReviewCandidate = (candidateIdentity: BridgeMainReviewPublicationIdentity): boolean => {
-		if (!this.candidateIs(candidateIdentity)) return false;
-		this.promotions.push(candidateIdentity.publicationId);
-		this.presentation = { activeIdentity: candidateIdentity, candidate: null, failure: null };
-		return true;
-	};
-	discardReviewCandidate = (candidateIdentity?: BridgeMainReviewPublicationIdentity): boolean => {
-		const candidate = this.presentation.candidate;
-		if (
-			candidate === null ||
-			(candidateIdentity !== undefined && !sameIdentity(candidate.identity, candidateIdentity))
-		)
-			return false;
-		this.discards.push(candidate.identity.publicationId);
-		this.presentation = { ...this.presentation, candidate: null };
-		return true;
-	};
-
-	replaceCandidate(
-		candidateIdentity: BridgeMainReviewPublicationIdentity,
-		startDisposition: BridgeWorkerReviewCandidateStartDisposition = sameSourceStart(
-			{ kind: 'ordinary' },
-			[],
-		),
-	): boolean {
-		if (this.presentation.candidate?.role === 'installing') return false;
-		this.presentation = candidatePresentation(
-			this.presentation.activeIdentity,
-			candidateIdentity,
-			startDisposition,
-		);
-		return true;
-	}
-
-	private candidateIs(identityToMatch: BridgeMainReviewPublicationIdentity): boolean {
-		const candidate = this.presentation.candidate;
-		return candidate !== null && sameIdentity(candidate.identity, identityToMatch);
-	}
-}
-
-class ImmediateInstallationPort implements BridgeMainReviewPresentationInstallationPort {
-	replacementRequestCount = 0;
-	requestWorkerReplacement = (): void => {
-		this.replacementRequestCount += 1;
-	};
-	readonly receiptAttempts: string[] = [];
-	readonly receipts: string[] = [];
-	readonly requests: BridgeMainReviewInstallAdmissionRequest[] = [];
-	private readonly admissionStatuses: Array<'admitted' | 'rejected'>;
-	private remainingReceiptFailures: number;
-
-	constructor(statuses: readonly ('admitted' | 'rejected')[], receiptFailures = 0) {
-		this.admissionStatuses = [...statuses];
-		this.remainingReceiptFailures = receiptFailures;
-	}
-
-	requestInstallAdmission = async (
-		request: BridgeMainReviewInstallAdmissionRequest,
-	): Promise<BridgeMainReviewInstallAdmissionResult> => {
-		this.requests.push(request);
-		return {
-			candidatePublicationId: request.candidatePublicationId,
-			status: this.admissionStatuses.shift() ?? 'rejected',
-		};
-	};
-
-	sendInstalledReceipt = async (
-		installedIdentity: BridgeMainReviewPublicationIdentity,
-	): Promise<void> => {
-		const publicationId = installedIdentity.publicationId;
-		this.receiptAttempts.push(publicationId);
-		if (this.remainingReceiptFailures > 0) {
-			this.remainingReceiptFailures -= 1;
-			throw new Error('injected receipt failure');
-		}
-		this.receipts.push(publicationId);
-	};
-}
-
-class DeferredInstallationPort implements BridgeMainReviewPresentationInstallationPort {
-	requestWorkerReplacement = vi.fn<() => void>();
-	readonly receipts: string[] = [];
-	private readonly pendingRequests: DeferredAdmission[] = [];
-	private readonly requestWaiters: Array<(request: DeferredAdmission) => void> = [];
-
-	requestInstallAdmission = (
-		request: BridgeMainReviewInstallAdmissionRequest,
-	): Promise<BridgeMainReviewInstallAdmissionResult> => {
-		const deferred = new DeferredAdmission(request);
-		const waiter = this.requestWaiters.shift();
-		if (waiter === undefined) this.pendingRequests.push(deferred);
-		else waiter(deferred);
-		return deferred.promise;
-	};
-
-	sendInstalledReceipt = async (
-		installedIdentity: BridgeMainReviewPublicationIdentity,
-	): Promise<void> => {
-		this.receipts.push(installedIdentity.publicationId);
-	};
-
-	nextRequest(): Promise<DeferredAdmission> {
-		const pending = this.pendingRequests.shift();
-		if (pending !== undefined) return Promise.resolve(pending);
-		return new Promise((resolve) => this.requestWaiters.push(resolve));
-	}
-}
-
-class DeferredAdmission {
-	readonly promise: Promise<BridgeMainReviewInstallAdmissionResult>;
-	private rejectPromise!: (error: Error) => void;
-	private resolvePromise!: (result: BridgeMainReviewInstallAdmissionResult) => void;
-
-	constructor(readonly request: BridgeMainReviewInstallAdmissionRequest) {
-		this.promise = new Promise((resolve, reject) => {
-			this.rejectPromise = reject;
-			this.resolvePromise = resolve;
-		});
-	}
-
-	reject(): void {
-		this.rejectPromise(new Error('injected admission failure'));
-	}
-
-	resolve(status: 'admitted' | 'rejected'): void {
-		this.resolvePromise({ candidatePublicationId: this.request.candidatePublicationId, status });
-	}
-}
-
-function identity(generation: number, suffix: string): BridgeMainReviewPublicationIdentity {
-	return {
-		generation,
-		packageId: `package-${generation}`,
-		publicationId: `00000000-0000-7000-8000-${suffix.padStart(12, '0')}`,
-		revision: 1,
-		sourceIdentity: 'same-source',
-	};
-}
-
-function candidateReady(
-	candidateIdentity: BridgeMainReviewPublicationIdentity,
-	_presentationClass: 'ordinary' | 'promoted',
-	_affectedStableFileIdentities: readonly string[],
-): BridgeWorkerReviewCandidateReadyEvent {
-	return {
-		direction: 'serverWorkerToMain',
-		epoch: candidateIdentity.generation,
-		kind: 'reviewCandidateReady',
-		packageId: candidateIdentity.packageId,
-		publicationId: candidateIdentity.publicationId,
-		reviewGeneration: candidateIdentity.generation,
-		revision: candidateIdentity.revision,
-		sequence: candidateIdentity.generation,
-		sourceIdentity: candidateIdentity.sourceIdentity,
-		surface: 'review',
-		transferDescriptors: [],
-		wireVersion: 1,
-	};
-}
-
-function candidateFailed(
-	candidateIdentity: BridgeMainReviewPublicationIdentity,
-	retryable: boolean,
-): BridgeWorkerReviewCandidateFailedEvent {
-	return {
-		direction: 'serverWorkerToMain',
-		epoch: candidateIdentity.generation,
-		kind: 'reviewCandidateFailed',
-		packageId: candidateIdentity.packageId,
-		publicationId: candidateIdentity.publicationId,
-		retryable,
-		reviewGeneration: candidateIdentity.generation,
-		revision: candidateIdentity.revision,
-		sequence: candidateIdentity.generation,
-		sourceIdentity: candidateIdentity.sourceIdentity,
-		surface: 'review',
-		transferDescriptors: [],
-		wireVersion: 1,
-	};
-}
-
-function attention(
-	stableFileIdentities: readonly string[],
-	activeEditorStableFileIdentities: readonly string[] = [],
-): BridgeMainReviewSemanticAttention {
-	return { activeEditorStableFileIdentities, stableFileIdentities };
-}
-
-function candidatePresentation(
-	activeIdentity: BridgeMainReviewPublicationIdentity | null,
-	candidateIdentity: BridgeMainReviewPublicationIdentity,
-	startDisposition: BridgeWorkerReviewCandidateStartDisposition,
-): BridgeMainReviewRefreshPresentation {
-	return {
-		activeIdentity,
-		candidate: {
-			affectedStableFileIdentities:
-				startDisposition.kind === 'sameSource' ? startDisposition.affectedStableFileIdentities : [],
-			effectivePresentationClass:
-				startDisposition.kind === 'sameSource'
-					? startDisposition.presentationClass
-					: { kind: 'ordinary' },
-			identity: candidateIdentity,
-			role: 'provisional',
-			startDisposition,
-		},
-		failure: null,
-	};
-}
-
-function sameSourceStart(
-	presentationClass:
-		| { readonly kind: 'ordinary' }
-		| {
-				readonly kind: 'promoted';
-				readonly reason: 'commits' | 'files' | 'lines' | 'unknown';
-		  },
-	affectedStableFileIdentities: readonly string[],
-): BridgeWorkerReviewCandidateStartDisposition {
-	return { affectedStableFileIdentities, kind: 'sameSource', presentationClass };
-}
-
-function sameIdentity(
-	left: BridgeMainReviewPublicationIdentity,
-	right: BridgeMainReviewPublicationIdentity,
-): boolean {
-	return JSON.stringify(left) === JSON.stringify(right);
-}

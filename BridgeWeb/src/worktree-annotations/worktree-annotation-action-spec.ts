@@ -1,8 +1,27 @@
-import { Check, ChevronDown, Pencil, Reply, RotateCcw, Undo2, type LucideIcon } from 'lucide-react';
+import {
+	Check,
+	ChevronDown,
+	Copy,
+	FileJson2,
+	FolderOpen,
+	MoreHorizontal,
+	Pencil,
+	Reply,
+	RotateCcw,
+	Undo2,
+	type LucideIcon,
+} from 'lucide-react';
 
 export type WorktreeAnnotationActionId =
 	| 'collapseThread'
 	| 'editAnnotation'
+	| 'copyAnnotations'
+	| 'exportJSON'
+	| 'exportJSONToFolder'
+	| 'changeExportFolder'
+	| 'chooseExportFolder'
+	| 'revealExport'
+	| 'exportOptions'
 	| 'expandThread'
 	| 'reopenThread'
 	| 'replyToThread'
@@ -18,6 +37,41 @@ export interface WorktreeAnnotationActionSpec {
 }
 
 const staticActionSpecs = {
+	copyAnnotations: {
+		accessibleName: 'Copy Markdown',
+		icon: Copy,
+		shortcutKeycap: null,
+	},
+	exportJSON: {
+		accessibleName: 'Export JSON',
+		icon: FileJson2,
+		shortcutKeycap: null,
+	},
+	exportJSONToFolder: {
+		accessibleName: 'Export to…',
+		icon: FolderOpen,
+		shortcutKeycap: null,
+	},
+	changeExportFolder: {
+		accessibleName: 'Change folder…',
+		icon: FolderOpen,
+		shortcutKeycap: null,
+	},
+	chooseExportFolder: {
+		accessibleName: 'Choose folder…',
+		icon: FolderOpen,
+		shortcutKeycap: null,
+	},
+	revealExport: {
+		accessibleName: 'Reveal in Finder',
+		icon: FolderOpen,
+		shortcutKeycap: null,
+	},
+	exportOptions: {
+		accessibleName: 'Export options',
+		icon: MoreHorizontal,
+		shortcutKeycap: null,
+	},
 	editAnnotation: {
 		accessibleName: 'Edit annotation',
 		icon: Pencil,

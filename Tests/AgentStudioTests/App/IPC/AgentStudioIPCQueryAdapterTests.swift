@@ -171,6 +171,7 @@ private struct QueryAdapterHarness {
             accessMode: .agentStudioOnly,
             appVersion: "test",
             workspaceStore: store,
+            paneActivityTime: PaneActivityTimeAtom(),
             windowLifecycleReader: FakeWorkspaceWindowLifecycleReader(snapshot: windowSnapshot)
         )
     }

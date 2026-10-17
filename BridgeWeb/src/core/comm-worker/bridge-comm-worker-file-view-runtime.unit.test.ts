@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 
 import { bridgeWorkerPierreRenderPolicy } from '../demand/bridge-content-demand-policy.js';
 import type { BridgeCommWorkerPort } from './bridge-comm-worker-entry.js';
-import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-metadata-projection.js';
+import type { BridgeCommWorkerFileViewContentRequest } from './bridge-comm-worker-file-view-runtime-mutation.js';
 import {
 	dispatchSelectedBridgeWorkerFileViewContentReady,
 	type BridgeWorkerFileViewContentPreparationOutcome,

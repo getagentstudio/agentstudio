@@ -15,7 +15,7 @@ permissions:
 jobs:
   swift-width-comparison:
     name: Swift width comparison
-    runs-on: macos-26
+    runs-on: xcode-27
     env:
       SWIFT_BUILD_DIR: .build-ci
       XCB_EXTRA_ARGS: "--renderer github-actions"
@@ -68,7 +68,7 @@ jobs:
         id: select-xcode
         uses: maxim-lobanov/setup-xcode@v1
         with:
-          xcode-version: "26.6"
+          xcode-version: "27.0"
 
       - name: Setup mise
         uses: jdx/mise-action@v3

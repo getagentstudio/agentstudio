@@ -3,6 +3,7 @@ import Testing
 
 @testable import AgentStudioSharedComponents
 
+@MainActor
 @Suite(.serialized)
 struct EditorChooserKeyboardRouterTests {
     private let items = [

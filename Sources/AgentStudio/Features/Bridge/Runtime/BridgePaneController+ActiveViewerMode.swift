@@ -3,6 +3,10 @@ import Foundation
 
 @MainActor
 extension BridgePaneController {
+    var isReviewShownByPage: Bool {
+        activeViewerModeSignalState.acceptedMode == .review
+    }
+
     func handleCommittedProductActiveViewerModeUpdate(
         sessionId: String,
         sequence: Int,
@@ -14,6 +18,7 @@ extension BridgePaneController {
     ) async {
         var rejectionReasons: [BridgeActiveViewerModeSignalRejectionReason] = []
         var didAcceptSequence = false
+        let previousAcceptedMode = activeViewerModeSignalState.acceptedMode
         let previousAcceptedSignal = activeViewerModeSignalState.acceptedSignal
         let isActiveSourceAccepted = activeSource.map { source in
             isCommittedProductActiveViewerSourceAccepted(
@@ -31,6 +36,7 @@ extension BridgePaneController {
                     activeViewerModeSignalState = BridgeActiveViewerModeSignalState(
                         sessionId: sessionId,
                         lastSequence: nil,
+                        acceptedMode: nil,
                         acceptedSignal: nil
                     )
                 }
@@ -42,6 +48,7 @@ extension BridgePaneController {
                 }
 
                 activeViewerModeSignalState.lastSequence = sequence
+                activeViewerModeSignalState.acceptedMode = mode
                 didAcceptSequence = true
                 guard let activeSource else {
                     activeViewerModeSignalState.acceptedSignal = nil
@@ -60,6 +67,11 @@ extension BridgePaneController {
             }) != nil
         else {
             return
+        }
+        // File acceptance fences the attempt owned in this MainActor turn.
+        // Receipt settlement and telemetry may suspend and admit a newer show.
+        if didAcceptSequence, previousAcceptedMode == .review, mode == .file {
+            fenceHiddenReviewBuildIfNeeded()
         }
         var surfaceSelectionReceiptDisposition: BridgePaneSurfaceSelectionReceiptDisposition?
         if didAcceptSequence,
@@ -104,8 +116,20 @@ extension BridgePaneController {
                 activeSource: activeSource
             )
         }
-        if rejectionReasons.isEmpty, didAcceptSequence, mode == .review {
+        handleAcceptedActiveViewerModeTransition(
+            didAcceptSequence: didAcceptSequence
+        )
+    }
+
+    private func handleAcceptedActiveViewerModeTransition(
+        didAcceptSequence: Bool
+    ) {
+        guard didAcceptSequence else { return }
+        guard activeViewerModeSignalState.acceptedMode == .review else { return }
+        if !resumePendingExplicitReviewCommandIfPossible() {
             scheduleInitialReviewPackageLoadIfPossible(reason: .initialIntake)
+            scheduleRetainedReviewPackageBuildIfPossible()
+            scheduleWorktreeProductCatchUpIfPossible()
         }
     }
 

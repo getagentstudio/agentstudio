@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -25,17 +26,14 @@ extension WebKitSerializedTests {
             let trace: BridgeProductWebKitCarrierTrace
         }
 
-        struct LiveReviewMetadataDOMSnapshot: Decodable {
-            let itemCount: Int
-            let reviewGeneration: Int
-        }
-
         struct LiveSourceOracle {
             let canaryText: String
             let path: String
         }
 
         enum LiveProofError: Error {
+            case appDidNotMount
+            case workerReinstalledDuringHappyPath(String)
             case initialReviewPublicationMissing
             case successorReviewPublicationMissing
         }
@@ -90,7 +88,6 @@ extension WebKitSerializedTests {
 
         private enum TransactionalPublicationTestError: Error {
             case initialPublicationDidNotApply
-            case metadataSubscriptionsDidNotOpen
             case publicationFailureDidNotReopenReview
             case replayDidNotApply
         }
@@ -123,19 +120,30 @@ extension WebKitSerializedTests {
             assertProof(run)
         }
 
-        @Test("Review publication failure replays committed B without replacing File or the pane worker")
-        func reviewPublicationFailureReplaysCommittedBWithoutReplacingFileOrWorker() async throws {
+        @Test(
+            "Review publication failure replays committed B without replacing File or the pane worker",
+            arguments: [false, true]
+        )
+        func reviewPublicationFailureReplaysCommittedBWithoutReplacingFileOrWorker(
+            holdsCompletedTraceWrite: Bool
+        ) async throws {
             // Arrange
             let repoURL = try await FilesystemTestGitRepo.create(named: "bridge-product-review-replay-webkit")
             defer { FilesystemTestGitRepo.destroy(repoURL) }
             try await FilesystemTestGitRepo.seedTrackedAndUntrackedChanges(at: repoURL)
             try seedMultiWindowReviewChanges(at: repoURL)
             let harness = makeTransactionalPublicationHarness(repoURL: repoURL)
+            let completedTraceWrite =
+                holdsCompletedTraceWrite
+                ? HeldStep<Void>("native B completed publication trace write", cancellation: .holdThroughCancellation)
+                : nil
+            defer { completedTraceWrite?.release() }
 
             // Act
             let run = try await collectTransactionalPublicationProof(
                 harness: harness,
-                repoURL: repoURL
+                repoURL: repoURL,
+                completedTraceWrite: completedTraceWrite
             )
 
             // Assert
@@ -160,7 +168,7 @@ extension WebKitSerializedTests {
             // subscription.update() promise strands. So the isolation invariant is
             // stated on the product frames a hidden pane must not admit.
             #expect(
-                proof.hiddenStormProductDeltas.panePresentationEventCount == 0,
+                proof.hiddenStormProductDeltas.admittedPanePresentationCount == 0,
                 Comment(rawValue: proof.hiddenMetadataStormDiagnostic)
             )
             #expect(
@@ -175,17 +183,21 @@ extension WebKitSerializedTests {
                 proof.hiddenReviewPublicationCountAfterLateRelease
                     == proof.hiddenReviewPublicationCountBeforeLateRelease
             )
-            // The causal File-only invalidation after switching surfaces contributes one
-            // additional pass beyond the initial Review + hidden/foreground recovery.
-            #expect(proof.paneOneFinalRefreshPassCount == proof.paneOneForegroundRefreshPassCount + 3)
             #expect(proof.updatingReviewStatus.comparisonStatusText == nil)
             #expect(proof.updatingReviewStatus.reviewStatusText == nil)
             #expect(proof.updatingReviewStatus.fileStatusText == nil)
-            #expect(proof.updatingFileStatus.fileStatusText == "Updating files…")
+            #expect(proof.updatingFileStatus.fileTreePresentationState == "updating")
+            #expect(proof.updatingFileStatus.fileStatusText == nil)
             #expect(proof.updatingFileStatus.reviewStatusText == nil)
-            #expect(proof.paneOneWorkerIdBeforeHide == proof.paneOneWorkerIdAfterReturn)
+            #expect(
+                proof.paneOneWorkerIdBeforeHide == proof.paneOneWorkerIdAfterReturn,
+                Comment(rawValue: "pane one replacement facts: \(proof.paneOneWorkerReplacementFacts)")
+            )
             #expect(proof.paneOneWorkerIdAfterReturn != proof.paneTwoWorkerIdAfterJourney)
-            #expect(proof.paneTwoWorkerIdBeforeJourney == proof.paneTwoWorkerIdAfterJourney)
+            #expect(
+                proof.paneTwoWorkerIdBeforeJourney == proof.paneTwoWorkerIdAfterJourney,
+                Comment(rawValue: "pane two replacement facts: \(proof.paneTwoWorkerReplacementFacts)")
+            )
             #expect(proof.paneTwoActivityAfterJourney == .foreground)
             #expect(proof.paneTwoStateAfterJourney.activeMode == proof.paneTwoStateBeforeJourney.activeMode)
             #expect(
@@ -222,8 +234,9 @@ extension WebKitSerializedTests {
             let paneId = UUIDv7.generate()
             let repoId = UUIDv7.generate()
             let worktreeId = UUIDv7.generate()
-            let traceRecorder = BridgeProductWebKitCarrierTraceRecorder()
             let controllerTarget = BridgeProductWebKitCarrierControllerTarget()
+            let traceRecorder = BridgeProductWebKitCarrierTraceRecorder(
+                firstApplication: controllerTarget.firstApplication)
             let fileMetadataSource = makeTrackingFileMetadataSource(
                 paneId: paneId,
                 repoId: repoId,
@@ -317,7 +330,7 @@ extension WebKitSerializedTests {
                     controllerTarget.committedPublication(productAdmission: productAdmission)
                 },
                 isReviewPublicationCurrent: { publicationId, productAdmission in
-                    controllerTarget.isCurrentPublication(
+                    controllerTarget.isCurrentCanonicalPublication(
                         publicationId,
                         productAdmission: productAdmission
                     )
@@ -396,7 +409,7 @@ extension WebKitSerializedTests {
                 ),
                 gitReadContext: gitReadContext,
                 telemetryRuntimePolicy: .live,
-                telemetryScopeGate: BridgeTelemetryScopeGate(enabledScopes: []),
+                telemetryScopeGate: BridgeTelemetryScopeGate(enabledScopes: [.web]),
                 telemetryRecorder: input.traceRecorder,
                 initialPaneActivity: .foreground,
                 productSessionDependencies: BridgePaneProductSessionDependencies(
@@ -415,13 +428,20 @@ extension WebKitSerializedTests {
 
         private func collectTransactionalPublicationProof(
             harness: TransactionalPublicationHarness,
-            repoURL: URL
+            repoURL: URL,
+            completedTraceWrite: HeldStep<Void>? = nil
         ) async throws -> BridgeProductWebKitCarrierRunResult<TransactionalPublicationProof> {
             try await BridgeProductWebKitCarrierTestSupport.withHostedController(
                 harness.controller
             ) { controller in
                 controller.loadApp()
-                try await waitForMetadataSubscriptions(harness)
+                let openedSubscriptions = try await BridgeProductWebKitReplayStartup.prepare(
+                    .init(
+                        controller: controller, controllerTarget: harness.controllerTarget,
+                        fileSource: harness.fileMetadataSource, reviewSource: harness.reviewMetadataSource,
+                        traceRecorder: harness.traceRecorder))
+                #expect(!openedSubscriptions.file.subscriptionId.isEmpty)
+                #expect(!openedSubscriptions.review.subscriptionId.isEmpty)
                 let firstCheckpoint = try await prepareFirstPublicationCheckpoint(
                     controller: controller,
                     harness: harness
@@ -430,25 +450,9 @@ extension WebKitSerializedTests {
                     controller: controller,
                     firstCheckpoint: firstCheckpoint,
                     harness: harness,
-                    repoURL: repoURL
+                    repoURL: repoURL,
+                    completedTraceWrite: completedTraceWrite
                 )
-            }
-        }
-
-        func waitForMetadataSubscriptions(
-            _ harness: TransactionalPublicationHarness
-        ) async throws {
-            guard
-                await BridgeProductWebKitCarrierTestSupport.waitUntil(
-                    timeout: .seconds(15),
-                    condition: {
-                        let fileSnapshot = await harness.fileMetadataSource.snapshot()
-                        let reviewSnapshot = await harness.reviewMetadataSource.snapshot()
-                        return !fileSnapshot.openedSubscriptions.isEmpty
-                            && !reviewSnapshot.openedSubscriptions.isEmpty
-                    })
-            else {
-                throw TransactionalPublicationTestError.metadataSubscriptionsDidNotOpen
             }
         }
 
@@ -457,13 +461,9 @@ extension WebKitSerializedTests {
             harness: TransactionalPublicationHarness
         ) async throws -> FirstPublicationCheckpoint {
             guard
-                await BridgeProductWebKitCarrierTestSupport.waitUntil(
-                    timeout: .seconds(15),
-                    condition: {
-                        harness.controllerTarget.applicationReceipts.filter {
-                            $0.applicationResult == .advanced
-                        }.count == 1
-                    }),
+                let firstReceipt = harness.controllerTarget.applicationReceipts.first,
+                firstReceipt.applicationResult == .advanced,
+                harness.controllerTarget.applicationReceipts.filter({ $0.applicationResult == .advanced }).count == 1,
                 let publication = harness.controllerTarget.committedPublication(
                     productAdmission: harness.productAdmission
                 ),
@@ -478,6 +478,7 @@ extension WebKitSerializedTests {
             else {
                 throw TransactionalPublicationTestError.initialPublicationDidNotApply
             }
+            let initialTrace = try #require(await harness.traceRecorder.waitForTrace(.reviewPublication))
             await harness.reviewMetadataSource.armFailure(after: publication.publicationId)
             return FirstPublicationCheckpoint(
                 fileSnapshot: await harness.fileMetadataSource.snapshot(),
@@ -487,7 +488,7 @@ extension WebKitSerializedTests {
                 publication: publication,
                 retiringLease: retiringLease,
                 reviewSnapshot: await harness.reviewMetadataSource.snapshot(),
-                trace: await harness.traceRecorder.scrubbedTrace()
+                trace: initialTrace
             )
         }
 
@@ -495,21 +496,25 @@ extension WebKitSerializedTests {
             controller: BridgePaneController,
             firstCheckpoint: FirstPublicationCheckpoint,
             harness: TransactionalPublicationHarness,
-            repoURL: URL
+            repoURL: URL,
+            completedTraceWrite: HeldStep<Void>?
         ) async throws -> TransactionalPublicationProof {
             try "publication B\n".write(
                 to: repoURL.appending(path: "bridge-window-000.txt"),
                 atomically: true,
                 encoding: .utf8
             )
+            if let completedTraceWrite {
+                await harness.traceRecorder.holdNextCompletedPublicationWrite(at: completedTraceWrite)
+            }
             controller.scheduleReviewPackageReloadForProductResync(reason: .productResync)
-            guard await harness.reviewMetadataSource.waitForReplayFailureState(timeout: .seconds(15)) else {
+            guard await harness.reviewMetadataSource.waitForReplayFailureState() else {
                 let reviewFailure = await harness.reviewMetadataSource.snapshot()
                 let nativeFailure = await BridgeProductWebKitCarrierTestSupport.nativeSnapshot(controller)
                 Issue.record(
                     """
                     Review replay wait failed: status=\(controller.paneState.diff.status), \
-                    corrupted=\(reviewFailure.didCorruptFinalWindow), held=\(reviewFailure.replayIsBlocked), \
+                    corrupted=\(reviewFailure.didCorruptViewCapture), held=\(reviewFailure.replayIsBlocked), \
                     opens=\(reviewFailure.openedSubscriptions.count), cancels=\(reviewFailure.cancelledSubscriptionIds.count), \
                     deliveryGenerations=\(reviewFailure.deliveryAttempts.map { $0.package.reviewGeneration.rawValue }), \
                     successorEvents=\(reviewFailure.successorEventKinds), native=\(nativeFailure)
@@ -534,14 +539,39 @@ extension WebKitSerializedTests {
                 controller
             )
             let retiringState = controller.reviewPublicationCoordinator.diagnosticSnapshot
-            let traceAfterFailure = await harness.traceRecorder.scrubbedTrace()
+            if let completedTraceWrite { _ = try await completedTraceWrite.firstArrival() }
+            if let completedTraceWrite {
+                let beforeCompletedWrite = await harness.traceRecorder.scrubbedTrace()
+                // The replay owner has announced failure, but the recorder has not
+                // appended B's completed phase. This is the CI sampling interleaving.
+                #expect(
+                    beforeCompletedWrite.completedReviewPublicationCount
+                        == firstCheckpoint.trace.completedReviewPublicationCount)
+                completedTraceWrite.release()
+            }
+            let traceAfterFailure = try await harness.traceRecorder.waitForCompletedReviewPublicationCount(
+                firstCheckpoint.trace.completedReviewPublicationCount + 1
+            )
             await harness.reviewMetadataSource.releaseReplay()
+            let pendingReplayReadback = await reviewReplayPendingReadback(
+                controller: controller,
+                receipts: harness.controllerTarget.applicationReceipts
+            )
             guard
-                await harness.controllerTarget.waitForAcceptedApplication(
-                    publicationId: secondPublication.publicationId,
-                    timeout: .seconds(15)
+                try await awaitBridgeWebKitMilestone(
+                    "committed B accepted application \(secondPublication.publicationId); \(pendingReplayReadback)",
+                    operation: {
+                        await harness.controllerTarget.waitForAcceptedApplication(
+                            publicationId: secondPublication.publicationId
+                        )
+                    }
                 )
             else {
+                Issue.record(
+                    BridgeWebKitMilestoneHang(
+                        milestone: "committed B accepted application",
+                        lastObservation: pendingReplayReadback
+                    ))
                 throw TransactionalPublicationTestError.replayDidNotApply
             }
             let receiptsAfterReplay = harness.controllerTarget.applicationReceipts
@@ -567,6 +597,24 @@ extension WebKitSerializedTests {
             )
         }
 
+        private func reviewReplayPendingReadback(
+            controller: BridgePaneController,
+            receipts: [BridgeProductWebKitCarrierApplicationReceipt]
+        ) async -> String {
+            let pageReadback =
+                (try? await controller.page.callJavaScript(
+                    """
+                    const diagnostic = window.__bridgeReviewSelectionDiagnostic;
+                    return JSON.stringify({
+                      reviewInstallationGate: diagnostic?.reviewInstallationGate ?? null,
+                      reviewCandidateSource: diagnostic?.reviewCandidateSource ?? null,
+                      lastReviewDisplayPatch: diagnostic?.lastReviewDisplayPatch ?? null
+                    });
+                    """
+                )) as? String ?? "unavailable"
+            return "page=\(pageReadback),postReleaseReceipts=\(receipts)"
+        }
+
         private func assertTransactionalPublicationProof(
             _ run: BridgeProductWebKitCarrierRunResult<TransactionalPublicationProof>
         ) {
@@ -585,23 +633,22 @@ extension WebKitSerializedTests {
                 proof.applicationReceiptsAfterReplay,
                 expectedPublicationIds: [firstPublicationId, secondPublicationId]
             )
-            #expect(proof.reviewAfterFailure.didCorruptFinalWindow)
+            #expect(proof.reviewAfterFailure.didCorruptViewCapture)
             #expect(proof.reviewAfterFailure.corruptedPublicationId == secondPublicationId)
             #expect(
                 proof.reviewAfterFailure.openedSubscriptions.count
-                    == proof.reviewBeforeFailure.openedSubscriptions.count + 1
+                    == proof.reviewBeforeFailure.openedSubscriptions.count
             )
             #expect(
                 proof.reviewAfterFailure.cancelledSubscriptionIds.count
-                    == proof.reviewBeforeFailure.cancelledSubscriptionIds.count + 1
+                    == proof.reviewBeforeFailure.cancelledSubscriptionIds.count
             )
             #expect(
-                proof.reviewAfterFailure.deliveryAttempts.suffix(2).allSatisfy {
-                    $0.publicationId == secondPublicationId
-                        && $0.package == proof.secondPublication.package
-                },
-                "Review reopen must replay the exact committed B publication and payload"
+                proof.reviewAfterFailure.deliveryAttempts.last?.publicationId == secondPublicationId
+                    && proof.reviewAfterFailure.deliveryAttempts.last?.package == proof.secondPublication.package,
+                "Review must retain the exact committed B publication and payload"
             )
+            #expect(proof.reviewAfterFailure.successorEventKinds == ["corruptedCapture", "recoveryCapture"])
             #expect(proof.fileAfterFailure == proof.fileBeforeFailure)
             #expect(
                 proof.nativeAfterFailure.fileWorkerDerivationEpoch
@@ -614,7 +661,7 @@ extension WebKitSerializedTests {
             #expect(
                 proof.traceAfterFailure.completedReviewPublicationCount
                     == proof.traceBeforeFailure.completedReviewPublicationCount + 1,
-                "the invalid first B delivery must be transport-observed before worker application fails"
+                "B's native publication transport completion must be recorded despite worker application failure"
             )
             #expect(
                 proof.retiringPublicationState.active?.publicationId == secondPublicationId
@@ -639,7 +686,7 @@ extension WebKitSerializedTests {
             }
         }
 
-        private func seedHeavyReviewChanges(
+        func seedHeavyReviewChanges(
             at repoURL: URL,
             trackedFileCount: Int
         ) async throws {
@@ -678,11 +725,13 @@ extension WebKitSerializedTests {
         func makeController(
             repoURL: URL,
             traceRecorder: BridgeProductWebKitCarrierTraceRecorder,
+            reviewSourceProviderTransform: (any BridgeReviewSourceProvider) -> any BridgeReviewSourceProvider = { $0 },
             worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
-            worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil
+            worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
+            gitReadContext suppliedGitReadContext: BridgeGitReadContext? = nil
         ) -> BridgePaneController {
             let paneId = UUIDv7.generate()
-            let gitReadContext = makeBridgeGitReadContext(rootURL: repoURL)
+            let gitReadContext = suppliedGitReadContext ?? makeBridgeGitReadContext(rootURL: repoURL)
             let statusPhysicalGate = AgentStudioGitStatusPhysicalGate()
             return BridgePaneController(
                 paneId: paneId,
@@ -706,11 +755,12 @@ extension WebKitSerializedTests {
                         cwd: repoURL
                     )
                 ),
-                reviewSourceProvider: BridgeReviewSourceProviderFactory.gitProvider(
-                    repositoryPath: repoURL,
-                    gitReadContext: gitReadContext,
-                    statusPhysicalGate: statusPhysicalGate
-                ),
+                reviewSourceProvider: reviewSourceProviderTransform(
+                    BridgeReviewSourceProviderFactory.gitProvider(
+                        repositoryPath: repoURL,
+                        gitReadContext: gitReadContext,
+                        statusPhysicalGate: statusPhysicalGate
+                    )),
                 gitReadContext: gitReadContext,
                 worktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator(),
                 worktreeAnnotationStore: worktreeAnnotationStore,
@@ -723,33 +773,6 @@ extension WebKitSerializedTests {
                 telemetryRecorder: traceRecorder,
                 initialPaneActivity: .foreground
             )
-        }
-
-        func reviewMetadataDOMSnapshot(
-            _ controller: BridgePaneController
-        ) async -> LiveReviewMetadataDOMSnapshot? {
-            do {
-                let encodedSnapshot = try await controller.page.callJavaScript(
-                    """
-                    const shell = document.querySelector('[data-testid="review-viewer-shell"]');
-                    return JSON.stringify({
-                      itemCount: Number(shell?.getAttribute('data-review-metadata-item-count') ?? '0'),
-                      reviewGeneration: Number(shell?.getAttribute('data-review-metadata-generation') ?? '0')
-                    });
-                    """
-                )
-                guard let encodedSnapshot = encodedSnapshot as? String,
-                    let snapshotData = encodedSnapshot.data(using: .utf8)
-                else {
-                    return nil
-                }
-                return try JSONDecoder().decode(
-                    LiveReviewMetadataDOMSnapshot.self,
-                    from: snapshotData
-                )
-            } catch {
-                return nil
-            }
         }
 
         private func assertProof(
@@ -768,10 +791,6 @@ extension WebKitSerializedTests {
             #expect(
                 run.value.trace.hasCanonicalEagerSubscriptions,
                 "W0 product seam: the worker did not open canonical eager File+Review subscriptions; trace=\(run.value.trace)"
-            )
-            #expect(
-                run.value.trace.hasFileMetadataWindow,
-                "W0 product seam: production agentstudio-git File metadata did not reach the worker stream; trace=\(run.value.trace)"
             )
             #expect(
                 run.value.trace.hasReviewMetadataPublication,

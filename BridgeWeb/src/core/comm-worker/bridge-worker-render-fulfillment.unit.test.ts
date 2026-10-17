@@ -450,7 +450,7 @@ type RenderDispositionReceipt = Extract<
 >;
 type PositiveRenderDispositionReceipt = Extract<
 	RenderDispositionReceipt,
-	{ disposition: 'queued' | 'applied' | 'painted' }
+	{ disposition: 'held' | 'queued' | 'applied' | 'painted' }
 >;
 type NegativeRenderDispositionReceipt = Extract<
 	RenderDispositionReceipt,
@@ -458,7 +458,7 @@ type NegativeRenderDispositionReceipt = Extract<
 >;
 
 function disposition(
-	dispositionKind: 'queued' | 'applied' | 'painted',
+	dispositionKind: 'held' | 'queued' | 'applied' | 'painted',
 ): PositiveRenderDispositionReceipt;
 function disposition(dispositionKind: 'rejected' | 'superseded'): NegativeRenderDispositionReceipt;
 function disposition(dispositionKind: BridgeWorkerRenderDisposition): RenderDispositionReceipt {
@@ -468,6 +468,7 @@ function disposition(dispositionKind: BridgeWorkerRenderDisposition): RenderDisp
 		receivedAtMilliseconds: 50,
 	};
 	switch (dispositionKind) {
+		case 'held':
 		case 'queued':
 		case 'applied':
 		case 'painted':

@@ -8,52 +8,27 @@ package enum IPCSessionFailureReason {
     package static let correlationConflict = "correlationConflict"
 }
 
-/// Deliberate model vocabulary. The model never types a request identifier: the
-/// app derives and coalesces the assertion identity behind these three verbs.
-package enum IPCSessionReportKind: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case needsYou
-    case clearNeedsYou
-    case done
-}
-
-/// Wire projection of the Sessions agent state. It mirrors the domain states
-/// without exporting the domain type across the protocol boundary.
-package enum IPCSessionAgentState: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case unknown
-    case running
-    case needsYou
-    case done
-}
-
-/// Server-assigned evidence origin. `unknown` reports the absence of a state
-/// origin rather than inventing a weaker one.
-package enum IPCSessionEvidenceOrigin: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
-    case unknown
-    case estimated
-    case agentReported
-    case reported
-}
-
-/// Lifecycle capability a provider hook claims for one projected event.
+/// Typed lifecycle fact reported by a provider hook.
 package enum IPCSessionEventName: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
     case sessionStart
     case sessionEnd
     case turnStart
     case turnDone
     case turnAbort
+    case turnFailed
     case permission
     case question
     case elicitation
+    case elicitationResult
+    case toolCompleted
+    case toolFailed
     case toolActivity
     case subagentActivity
 }
 
-/// Admission disposition for one projected provider event. Only an exactly
-/// qualified provider/version/mode/capability is admitted.
+/// The pane-authenticated hook was recorded. Version is descriptive only.
 package enum IPCSessionEventDisposition: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
     case admitted
-    case unknownCapability
-    case unqualified
 }
 
 /// Liveness of the pane's current binding and source generation.
@@ -61,68 +36,6 @@ package enum IPCSessionSourceHealth: String, Codable, CaseIterable, Equatable, S
     case unbound
     case live
     case ended
-}
-
-package struct IPCSessionReportParams: Codable, Equatable, Sendable {
-    package let handle: String
-    package let kind: IPCSessionReportKind
-    package let explanation: String?
-    package let correlationId: UUID
-
-    package init(handle: String, kind: IPCSessionReportKind, explanation: String?, correlationId: UUID) {
-        self.handle = handle
-        self.kind = kind
-        self.explanation = explanation
-        self.correlationId = correlationId
-    }
-}
-
-package struct IPCSessionReportResult: Codable, Equatable, Sendable {
-    package let paneId: UUID
-    package let state: IPCSessionAgentState
-    package let origin: IPCSessionEvidenceOrigin
-    package let requestId: String?
-    package let correlationId: UUID
-
-    package init(
-        paneId: UUID,
-        state: IPCSessionAgentState,
-        origin: IPCSessionEvidenceOrigin,
-        requestId: String?,
-        correlationId: UUID
-    ) {
-        self.paneId = paneId
-        self.state = state
-        self.origin = origin
-        self.requestId = requestId
-        self.correlationId = correlationId
-    }
-}
-
-package struct IPCSessionMessageParams: Codable, Equatable, Sendable {
-    package let handle: String
-    package let text: String
-    package let correlationId: UUID
-
-    package init(handle: String, text: String, correlationId: UUID) {
-        self.handle = handle
-        self.text = text
-        self.correlationId = correlationId
-    }
-}
-
-package struct IPCSessionMessageResult: Codable, Equatable, Sendable {
-    package let paneId: UUID
-    package let occurrenceId: UUID
-    package let attributed: Bool
-    package let correlationId: UUID
-
-    package init(paneId: UUID, occurrenceId: UUID, attributed: Bool, correlationId: UUID) {
-        self.paneId = paneId
-        self.occurrenceId = occurrenceId
-        self.attributed = attributed
-        self.correlationId = correlationId
-    }
 }
 
 package struct IPCSessionProviderIdentity: Codable, Equatable, Sendable {
@@ -145,6 +58,12 @@ package struct IPCSessionEventIdentity: Codable, Equatable, Sendable {
     package let toolId: String?
     package let subagentId: String?
     package let occurrenceId: UUID
+    package let providerFields: IPCSessionProviderEventFields
+
+    package var toolName: String? { providerFields.toolName }
+    package var questions: [IPCSessionQuestion]? { providerFields.questions }
+    package var failureSummary: String? { providerFields.failureSummary }
+    package var elicitationId: String? { providerFields.elicitationId }
 
     package init(
         name: IPCSessionEventName,
@@ -153,7 +72,8 @@ package struct IPCSessionEventIdentity: Codable, Equatable, Sendable {
         requestId: String?,
         toolId: String?,
         subagentId: String?,
-        occurrenceId: UUID
+        occurrenceId: UUID,
+        providerFields: IPCSessionProviderEventFields = .init()
     ) {
         self.name = name
         self.conversationId = conversationId
@@ -162,7 +82,61 @@ package struct IPCSessionEventIdentity: Codable, Equatable, Sendable {
         self.toolId = toolId
         self.subagentId = subagentId
         self.occurrenceId = occurrenceId
+        self.providerFields = providerFields
     }
+
+    private enum CodingKeys: String, CodingKey, CaseIterable {
+        case name, conversationId, turnId, requestId, toolId, subagentId, occurrenceId
+        case toolName, questions, failureSummary, elicitationId, message
+        case resumeHint
+    }
+
+    package init(from decoder: Decoder) throws {
+        let fields = try decoder.container(keyedBy: CodingKeys.self)
+        name = try fields.decode(IPCSessionEventName.self, forKey: .name)
+        conversationId = try fields.decode(String.self, forKey: .conversationId)
+        turnId = try fields.decodeIfPresent(String.self, forKey: .turnId)
+        requestId = try fields.decodeIfPresent(String.self, forKey: .requestId)
+        toolId = try fields.decodeIfPresent(String.self, forKey: .toolId)
+        subagentId = try fields.decodeIfPresent(String.self, forKey: .subagentId)
+        occurrenceId = try fields.decode(UUID.self, forKey: .occurrenceId)
+        providerFields = try IPCSessionProviderEventFields(from: decoder)
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        var fields = encoder.container(keyedBy: CodingKeys.self)
+        try fields.encode(name, forKey: .name)
+        try fields.encode(conversationId, forKey: .conversationId)
+        try fields.encodeIfPresent(turnId, forKey: .turnId)
+        try fields.encodeIfPresent(requestId, forKey: .requestId)
+        try fields.encodeIfPresent(toolId, forKey: .toolId)
+        try fields.encodeIfPresent(subagentId, forKey: .subagentId)
+        try fields.encode(occurrenceId, forKey: .occurrenceId)
+        try providerFields.encode(to: encoder)
+    }
+}
+
+package struct IPCSessionProviderEventFields: Codable, Equatable, Sendable {
+    package var toolName: String?
+    package var questions: [IPCSessionQuestion]?
+    package var failureSummary: String?
+    package var elicitationId: String?
+    package var message: String?
+    package var resumeHint: String?
+
+    package init() {}
+}
+
+package struct IPCSessionQuestion: Codable, Equatable, Sendable {
+    package let question: String
+    package let header: String
+    package let options: [IPCSessionQuestionOption]
+    package let multiSelect: Bool
+}
+
+package struct IPCSessionQuestionOption: Codable, Equatable, Sendable {
+    package let label: String
+    package let description: String
 }
 
 package struct IPCSessionEventParams: Codable, Equatable, Sendable {
@@ -204,51 +178,66 @@ package struct IPCSessionQueryParams: Codable, Equatable, Sendable {
     }
 }
 
-package struct IPCSessionAttentionProjection: Codable, Equatable, Sendable {
-    package let requestId: String
-    package let explanation: String?
-
-    package init(requestId: String, explanation: String?) {
-        self.requestId = requestId
-        self.explanation = explanation
-    }
-}
-
-package struct IPCSessionMessageProjection: Codable, Equatable, Sendable {
-    package let occurrenceId: UUID
-    package let text: String
-    package let seen: Bool
-    package let receivedAt: Date
-
-    package init(occurrenceId: UUID, text: String, seen: Bool, receivedAt: Date) {
-        self.occurrenceId = occurrenceId
-        self.text = text
-        self.seen = seen
-        self.receivedAt = receivedAt
-    }
-}
-
 package struct IPCSessionQueryResult: Codable, Equatable, Sendable {
     package let paneId: UUID
-    package let state: IPCSessionAgentState
-    package let origin: IPCSessionEvidenceOrigin
-    package let needsYou: IPCSessionAttentionProjection?
-    package let messages: [IPCSessionMessageProjection]
     package let sourceHealth: IPCSessionSourceHealth
-
+    package let session: IPCPaneSessionSummary?
+    package let lastRefusal: IPCSessionLastRefusal?
     package init(
-        paneId: UUID,
-        state: IPCSessionAgentState,
-        origin: IPCSessionEvidenceOrigin,
-        needsYou: IPCSessionAttentionProjection?,
-        messages: [IPCSessionMessageProjection],
-        sourceHealth: IPCSessionSourceHealth
+        paneId: UUID, sourceHealth: IPCSessionSourceHealth, session: IPCPaneSessionSummary?,
+        lastRefusal: IPCSessionLastRefusal? = nil
     ) {
         self.paneId = paneId
-        self.state = state
-        self.origin = origin
-        self.needsYou = needsYou
-        self.messages = messages
         self.sourceHealth = sourceHealth
+        self.session = session
+        self.lastRefusal = lastRefusal
+    }
+    private enum CodingKeys: String, CodingKey { case paneId, sourceHealth, session, lastRefusal }
+    package init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        paneId = try container.decode(UUID.self, forKey: .paneId)
+        sourceHealth = try container.decode(IPCSessionSourceHealth.self, forKey: .sourceHealth)
+        session = try container.decode(IPCPaneSessionSummary?.self, forKey: .session)
+        lastRefusal = try container.decode(IPCSessionLastRefusal?.self, forKey: .lastRefusal)
+        guard (sourceHealth == .unbound) == (session == nil) else {
+            throw DecodingError.dataCorruptedError(
+                forKey: .session, in: container, debugDescription: "Session is null exactly when unbound")
+        }
+    }
+    package func encode(to encoder: any Encoder) throws {
+        guard (sourceHealth == .unbound) == (session == nil) else {
+            throw EncodingError.invalidValue(
+                self, .init(codingPath: encoder.codingPath, debugDescription: "Session is null exactly when unbound"))
+        }
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(paneId, forKey: .paneId)
+        try container.encode(sourceHealth, forKey: .sourceHealth)
+        try container.encode(session, forKey: .session)
+        try container.encode(lastRefusal, forKey: .lastRefusal)
+    }
+}
+
+package enum IPCSessionRefusalReason: String, Codable, CaseIterable, Equatable, Sendable, IPCSchemaProviding {
+    case noSessionId, undecodablePayload
+}
+
+package struct IPCSessionRefusalParams: Codable, Equatable, Sendable {
+    package let handle: String
+    package let reason: IPCSessionRefusalReason
+    package let event: String?
+    package let correlationId: UUID
+    package init(handle: String, reason: IPCSessionRefusalReason, event: String? = nil, correlationId: UUID) {
+        self.handle = handle
+        self.reason = reason
+        self.event = event
+        self.correlationId = correlationId
+    }
+}
+
+package struct IPCSessionRefusalResult: Codable, Equatable, Sendable, IPCSchemaProviding {
+    package let paneId: UUID
+    package init(paneId: UUID) { self.paneId = paneId }
+    package static func ipcSchema() throws -> IPCJSONSchema {
+        .object(fields: [IPCSessionSchemaFields.pane])
     }
 }

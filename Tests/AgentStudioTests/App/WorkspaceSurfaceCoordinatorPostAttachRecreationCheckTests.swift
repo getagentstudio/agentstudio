@@ -63,7 +63,9 @@ struct PostAttachRecreationCheckWiringTests {
             viewRegistry: ViewRegistry(),
             runtime: SessionRuntime(store: store),
             surfaceManager: TerminalRestoreCapturingSurfaceManager(),
-            runtimeRegistry: .shared,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable,
             bridgePaneAttendance: BridgePaneAttendanceAtom()
@@ -294,11 +296,12 @@ struct PostAttachRecreationCheckWiringTests {
         coordinator.postAttachRecreationProbe = probe
         let pane = makeZmxPane(sessionIDText: "as-post-attach-child-exit")
         let mountedHost = PaneHostView(paneId: pane.id)
-        let mountedTerminal = TerminalPaneMountView(paneId: pane.id, title: "Process Exited")
+        let mountedTerminal = TerminalPaneMountView(
+            surfaceOperations: makeAppTerminalFixtureMountOperations(), paneId: pane.id, title: "Process Exited")
         mountedHost.mountContentView(mountedTerminal)
         coordinator.viewRegistry.register(mountedHost, for: pane.id)
-        defer { Ghostty.ActionRouter.bindAttachClientExitedHandler(nil) }
-        Ghostty.ActionRouter.bindAttachClientExitedHandler { paneID in
+        defer { coordinator.coldStartAttachExitBinding.bindAttachClientExitedHandler(nil) }
+        coordinator.coldStartAttachExitBinding.bindAttachClientExitedHandler { paneID in
             coordinator.receivePostAttachChildExited(paneID: paneID)
         }
 
@@ -310,7 +313,7 @@ struct PostAttachRecreationCheckWiringTests {
                 identity: Data([1, 2, 3]),
                 fallback: makeFallbackPlan(sessionIDText: "as-post-attach-child-exit")))
         #expect(coordinator.pendingPostAttachRecreationChecksByPaneID[pane.id] != nil)
-        Ghostty.ActionRouter.reportColdStartAttachClientExited(paneID: pane.id)
+        coordinator.coldStartAttachExitBinding.reportAttachClientExited(paneID: pane.id)
 
         // Assert the exact unavailable disposition, no probe, no pending
         // entry, and the same Process Exited view still mounted.

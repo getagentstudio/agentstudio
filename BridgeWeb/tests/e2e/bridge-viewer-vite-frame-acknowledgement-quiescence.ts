@@ -1,8 +1,6 @@
 import type { Frame, Page, Request } from 'playwright';
 
-import { settleBrowserFrames } from './bridge-viewer-vite-annotation-catalog-performance.ts';
-
-export function observeFrameAcknowledgementQuiescence(page: Page): {
+export function observeSubscriptionReceiptQuiescence(page: Page): {
 	readonly pendingAcknowledgementCount: () => number;
 	readonly wait: () => Promise<void>;
 } {
@@ -15,21 +13,21 @@ export function observeFrameAcknowledgementQuiescence(page: Page): {
 		}
 		return count;
 	};
-	const isFrameAcknowledgement = (request: Request): boolean => {
+	const isSubscriptionReceipt = (request: Request): boolean => {
 		if (new URL(request.url()).pathname !== '/__bridge-product/command') return false;
 		try {
 			const body: unknown = request.postDataJSON();
 			return (
 				typeof body === 'object' &&
 				body !== null &&
-				Reflect.get(body, 'kind') === 'stream.frameObserved'
+				Reflect.get(body, 'kind') === 'subscription.acknowledge'
 			);
 		} catch {
 			return false;
 		}
 	};
 	page.on('request', (request: Request): void => {
-		if (isFrameAcknowledgement(request)) {
+		if (isSubscriptionReceipt(request)) {
 			pendingRequestDocumentEpochs.set(request, currentDocumentEpoch);
 		}
 	});
@@ -76,4 +74,15 @@ export function observeFrameAcknowledgementQuiescence(page: Page): {
 			await whenQuiescent();
 		},
 	};
+}
+
+async function settleBrowserFrames(page: Page, frameCount: number): Promise<void> {
+	for (let frameIndex = 0; frameIndex < frameCount; frameIndex += 1) {
+		// oxlint-disable-next-line no-await-in-loop -- Frame settlement is an ordered observation boundary.
+		await page.evaluate(async (): Promise<void> => {
+			await new Promise<void>((resolve): void => {
+				requestAnimationFrame((): void => resolve());
+			});
+		});
+	}
 }

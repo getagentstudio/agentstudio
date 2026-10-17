@@ -115,7 +115,8 @@ export class BridgeTelemetryWorkerRuntimeCore implements BridgeTelemetryWorkerRu
 		) {
 			if (
 				decodedMessage.data.type === 'sample' &&
-				isRequiredBridgeTelemetrySample(decodedMessage.data.sample)
+				(producer.barrierHighWatermark !== null ||
+					isRequiredBridgeTelemetrySample(decodedMessage.data.sample))
 			) {
 				this.markProofFailure();
 			}
@@ -319,6 +320,10 @@ export class BridgeTelemetryWorkerRuntimeCore implements BridgeTelemetryWorkerRu
 		sequence: number,
 		sample: BridgeTelemetryCompactSample,
 	): BridgeTelemetryWorkerIngressResult {
+		if (producer.barrierHighWatermark !== null) {
+			this.markProofFailure();
+			return { type: 'rejected', reason: 'closed' };
+		}
 		const sequenceRejection = this.validateSampleSequence(producer, sequence, sample);
 		if (sequenceRejection !== null) {
 			return sequenceRejection;
@@ -430,6 +435,12 @@ export class BridgeTelemetryWorkerRuntimeCore implements BridgeTelemetryWorkerRu
 		if (!this.acceptReceiptLossRange(producer, message.preSealLossRange)) {
 			return { type: 'rejected', reason: 'sequence_gap' };
 		}
+		if (message.preSealLossRange !== null) {
+			this.recordLossCounts(
+				message.preSealLossRange.requiredCount,
+				message.preSealLossRange.optionalCount,
+			);
+		}
 		if (message.producerSequenceHighWatermark !== producer.nextExpectedSequence - 1) {
 			this.sequenceGapCount += 1;
 			this.markProofFailure();
@@ -494,7 +505,6 @@ export class BridgeTelemetryWorkerRuntimeCore implements BridgeTelemetryWorkerRu
 			return false;
 		}
 		producer.nextExpectedSequence = range.lostSequenceEnd + 1;
-		this.recordLossCounts(range.requiredCount, range.optionalCount);
 		return true;
 	}
 

@@ -70,7 +70,93 @@ struct WorktreeAnnotationChangeObserverState {
     let worktreeID: String
 }
 
+struct WorktreeAnnotationCatalogInvalidation: Equatable, Sendable {
+    let worktreeID: String
+    let ranges: Set<WorktreeAnnotationCatalogRange>
+
+    func merging(displaced: Self) -> Self {
+        precondition(worktreeID == displaced.worktreeID)
+        return .init(worktreeID: worktreeID, ranges: ranges.union(displaced.ranges))
+    }
+}
+
+struct WorktreeAnnotationCatalogInvalidationObserver: Sendable {
+    let stream: AsyncStream<WorktreeAnnotationCatalogInvalidation>
+    let token: UUID
+}
+
+struct WorktreeAnnotationCatalogInvalidationObserverState {
+    let continuation: AsyncStream<WorktreeAnnotationCatalogInvalidation>.Continuation
+    let worktreeID: String
+}
+
 extension WorktreeAnnotationServiceActor {
+    func registerCatalogInvalidationObserver(
+        worktreeID: String
+    ) -> WorktreeAnnotationCatalogInvalidationObserver {
+        let token = UUIDv7.generate()
+        let stream = AsyncStream<WorktreeAnnotationCatalogInvalidation>(
+            bufferingPolicy: .bufferingNewest(1)
+        ) { continuation in
+            catalogInvalidationObserverByToken[token] = .init(
+                continuation: continuation,
+                worktreeID: worktreeID
+            )
+            continuation.onTermination = { [weak self] _ in
+                Task { await self?.removeCatalogInvalidationObserver(token: token) }
+            }
+        }
+        return .init(stream: stream, token: token)
+    }
+
+    func removeCatalogInvalidationObserver(token: UUID) {
+        catalogInvalidationObserverByToken.removeValue(forKey: token)?.continuation.finish()
+    }
+
+    func catalogInvalidationObserverCount() -> Int {
+        catalogInvalidationObserverByToken.count
+    }
+
+    func emitCommittedCatalogInvalidation(_ committedChange: WorktreeAnnotationCommittedChange) {
+        guard committedChange != .noChange else { return }
+        let publication = Self.publicationComponents(for: committedChange)
+        for worktreeID in publication.worktreeIDs {
+            let sessionRanges = Set(
+                publication.sessionChanges.compactMap { change in
+                    change.worktreeID == worktreeID
+                        ? WorktreeAnnotationCatalogRange.session(change.sessionID)
+                        : nil
+                })
+            emitCatalogInvalidation(
+                worktreeID: worktreeID,
+                ranges: sessionRanges.isEmpty ? [.worktree] : sessionRanges
+            )
+        }
+    }
+
+    func emitConservativeCatalogInvalidationAfterUnknownOutcome() {
+        let worktreeIDs = Set(catalogInvalidationObserverByToken.values.map(\.worktreeID))
+        for worktreeID in worktreeIDs {
+            emitCatalogInvalidation(worktreeID: worktreeID, ranges: [.worktree])
+        }
+    }
+
+    private func emitCatalogInvalidation(
+        worktreeID: String,
+        ranges: Set<WorktreeAnnotationCatalogRange>
+    ) {
+        guard !ranges.isEmpty else { return }
+        let invalidation = WorktreeAnnotationCatalogInvalidation(
+            worktreeID: worktreeID,
+            ranges: ranges
+        )
+        for observer in catalogInvalidationObserverByToken.values where observer.worktreeID == worktreeID {
+            if case .dropped(let displaced) = observer.continuation.yield(invalidation) {
+                _ = observer.continuation.yield(invalidation.merging(displaced: displaced))
+            }
+        }
+    }
+
     func registerChangeObserver(worktreeID: String) -> WorktreeAnnotationChangeObserver {
         let token = UUIDv7.generate()
         let stream = AsyncStream<WorktreeAnnotationChange>(
@@ -156,6 +242,21 @@ extension WorktreeAnnotationServiceActor {
         )
     }
 
+    /// N10 reads one coherent current range. A concurrent newer commit remains
+    /// dirty; it does not invalidate this successful read or turn it into absence.
+    func captureCurrentCatalogRange(
+        worktreeID: String,
+        range: WorktreeAnnotationCatalogRange
+    ) async throws -> [WorktreeAnnotationCatalogKey: WorktreeAnnotationCatalogEntry] {
+        try requireAvailableForReads()
+        let entries = try await repositoryAccess.fetchCatalogRange(
+            worktreeID: worktreeID,
+            range: range
+        )
+        try requireAvailableForReads()
+        return entries
+    }
+
     func applyCommittedChange(
         _ committedChange: WorktreeAnnotationCommittedChange,
         operationCorrelationID: String
@@ -180,6 +281,10 @@ extension WorktreeAnnotationServiceActor {
 
     func publishRecoveryCatalogChangeForObservedWorktrees() async {
         let observedWorktreeIDs = Set(changeObserverByToken.values.map(\.worktreeID))
+            .union(catalogInvalidationObserverByToken.values.map(\.worktreeID))
+        emitCommittedCatalogInvalidation(
+            .catalog(worktreeIDs: observedWorktreeIDs, sessionChanges: [])
+        )
         let operationCorrelationID = BridgeOperationCorrelation.mintScrubbedID()
         await recordNativeAnnotationWork(
             operationCorrelationID: operationCorrelationID,
@@ -199,6 +304,10 @@ extension WorktreeAnnotationServiceActor {
 
     func publishRecoveryControlChangeForObservedWorktrees() async {
         let observedWorktreeIDs = Set(changeObserverByToken.values.map(\.worktreeID))
+            .union(catalogInvalidationObserverByToken.values.map(\.worktreeID))
+        emitCommittedCatalogInvalidation(
+            .control(worktreeIDs: observedWorktreeIDs, reason: .recovery, sessionChanges: [])
+        )
         let operationCorrelationID = BridgeOperationCorrelation.mintScrubbedID()
         await recordNativeAnnotationWork(
             operationCorrelationID: operationCorrelationID,

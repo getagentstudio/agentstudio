@@ -5,35 +5,36 @@ import Testing
 @MainActor
 @Suite("Bridge pane product Review metadata bootstrap")
 struct BridgePaneProductReviewMetadataBootstrapTests {
-    @Test("reopened subscriber bootstraps the complete current package without reset")
-    func reopenedSubscriberBootstrapsCompleteCurrentPackageWithoutReset() async throws {
+    @Test("reopened subscriber captures the complete current package as one keyed snapshot")
+    func reopenedSubscriberCapturesCompleteCurrentPackage() async throws {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let source = BridgePaneProductReviewMetadataSource()
-        let collector = ReviewMetadataEventCollector()
-        let subscription = try reviewSubscription()
+        let subscription = reviewSubscription()
         let package = makeReviewPackage(itemCount: 4)
         try await source.open(
             subscription: subscription,
             productAdmission: productAdmission.context
-        ) { event, _ in
-            try await collector.append(event.event)
-        }
+        )
         _ = try await deliverReviewPackage(
             package,
             through: source,
             productAdmission: productAdmission.context
         )
         await source.cancel(subscriptionId: subscription.subscriptionId)
-        await collector.removeAll()
 
         // Act
         try await source.open(
             subscription: subscription,
             productAdmission: productAdmission.context
-        ) { event, _ in
-            try await collector.append(event.event)
-        }
+        )
+        #expect(
+            try await applyReviewViewDemand(
+                through: source,
+                itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            ) == nil
+        )
         let outcome = try await deliverReviewPackage(
             package,
             through: source,
@@ -41,23 +42,99 @@ struct BridgePaneProductReviewMetadataBootstrapTests {
         )
 
         // Assert
-        let events = await collector.events
         let receipt = try deliveredReviewReceipt(outcome)
-        #expect(receipt.emittedEvents == 2)
-        guard events.count == 2,
-            case .sourceAccepted(let accepted) = events[0],
-            case .snapshot(let snapshot) = events[1]
-        else {
-            Issue.record("Expected reopened sourceAccepted followed by one complete snapshot")
-            return
-        }
-        #expect(accepted.identity == reviewIdentity(for: package))
-        #expect(snapshot.identity == reviewIdentity(for: package))
-        #expect(snapshot.itemMetadata.map(\.itemId) == package.orderedItemIds)
+        #expect(receipt.publishedSubscriptions == 1)
+        #expect(receipt.emittedEvents == 0)
+        let capture = try #require(
+            try await applyReviewViewDemand(
+                through: source,
+                itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            )
+        )
+        #expect(capture.publicationId == reviewMetadataTestPublicationId)
+        #expect(capture.snapshot.publication.displayed?.packageId == package.packageId)
+        #expect(capture.snapshot.items.map(\.record.itemId) == package.orderedItemIds)
+    }
+
+    @Test("open before publication stays pending until a committed package is delivered")
+    func openBeforePublicationCapturesOnlyAfterDelivery() async throws {
+        let productAdmission = try BridgeProductAdmissionTestContext.make()
+        let source = BridgePaneProductReviewMetadataSource()
+        let package = makeReviewPackage(itemCount: 4)
+        try await source.open(
+            subscription: reviewSubscription(), productAdmission: productAdmission.context
+        )
         #expect(
-            events.allSatisfy { event in
-                if case .reset = event { return false }
-                return true
-            })
+            try await applyReviewViewDemand(
+                through: source, itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            ) == nil
+        )
+        let outcome = try await deliverReviewPackage(
+            package, through: source, productAdmission: productAdmission.context
+        )
+        let capture = try #require(
+            try await applyReviewViewDemand(
+                through: source, scopeRevision: 2, itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            )
+        )
+        #expect(try deliveredReviewReceipt(outcome).publishedSubscriptions == 1)
+        #expect(capture.snapshot.items.map(\.record.itemId) == package.orderedItemIds)
+    }
+
+    @Test("cancelling a pending open leaves no package capture")
+    func cancellationBeforePackagePublicationLeavesNoPendingResidue() async throws {
+        let productAdmission = try BridgeProductAdmissionTestContext.make()
+        let source = BridgePaneProductReviewMetadataSource()
+        let subscription = reviewSubscription()
+        let package = makeReviewPackage(itemCount: 4)
+        try await source.open(subscription: subscription, productAdmission: productAdmission.context)
+        await source.cancel(subscriptionId: subscription.subscriptionId)
+        let outcome = try await deliverReviewPackage(
+            package, through: source, productAdmission: productAdmission.context
+        )
+        #expect(outcome == .deferred(retained: 0))
+        #expect(
+            try await applyReviewViewDemand(
+                through: source, itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            ) == nil
+        )
+    }
+
+    @Test("reopening the same subscription discards its prior package capture")
+    func reopenedSubscriptionNeedsFreshDelivery() async throws {
+        let productAdmission = try BridgeProductAdmissionTestContext.make()
+        let source = BridgePaneProductReviewMetadataSource()
+        let subscription = reviewSubscription()
+        let package = makeReviewPackage(itemCount: 4)
+        try await source.open(subscription: subscription, productAdmission: productAdmission.context)
+        _ = try await deliverReviewPackage(
+            package, through: source, productAdmission: productAdmission.context
+        )
+        #expect(
+            try await applyReviewViewDemand(
+                through: source, itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            ) != nil
+        )
+        try await source.open(subscription: subscription, productAdmission: productAdmission.context)
+        #expect(
+            try await applyReviewViewDemand(
+                through: source, scopeRevision: 2, itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            ) == nil
+        )
+        _ = try await deliverReviewPackage(
+            package, through: source, productAdmission: productAdmission.context
+        )
+        #expect(
+            try await applyReviewViewDemand(
+                through: source, scopeRevision: 3, itemIds: package.orderedItemIds,
+                productAdmission: productAdmission.context
+            ) != nil
+        )
     }
 }

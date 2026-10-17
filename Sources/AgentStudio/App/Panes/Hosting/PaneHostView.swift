@@ -44,6 +44,10 @@ class PaneHostView: NSView, Identifiable {
     nonisolated var id: UUID { paneId }
     var onAttachedToWindow: ((UUID) -> Void)?
 
+    private var pendingFocusWindowToken: UUID?
+    private var pendingFocusResponderIdentity: ObjectIdentifier?
+    private var pendingFocusGeneration: UInt64?
+
     /// Stable identity for this specific host instance. Changes when the host
     /// is replaced (repair, placeholder retry), forcing SwiftUI to recreate
     /// the NSViewRepresentable and remount the new view.
@@ -76,8 +80,70 @@ class PaneHostView: NSView, Identifiable {
             "PaneHostView.viewDidMoveToWindow paneId=\(paneId) window=\(window != nil) id=\(ObjectIdentifier(self)) superview=\(superview != nil)"
         )
         if window != nil {
+            restoreFocusAfterSameWindowRemountIfNeeded()
             onAttachedToWindow?(paneId)
         }
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        guard newWindow == nil else {
+            super.viewWillMove(toWindow: newWindow)
+            return
+        }
+
+        clearPendingFocusRestoration()
+        if let currentWindow = window as? PaneResponderTrackingWindow,
+            currentWindow.isVisible,
+            let responderView = currentWindow.firstResponder as? NSView,
+            responderView === self || responderView.isDescendant(of: self)
+        {
+            pendingFocusWindowToken = currentWindow.responderTrackingToken
+            pendingFocusResponderIdentity = ObjectIdentifier(responderView)
+            pendingFocusGeneration = currentWindow.responderChangeGeneration
+        }
+        super.viewWillMove(toWindow: newWindow)
+    }
+
+    private func restoreFocusAfterSameWindowRemountIfNeeded() {
+        guard let pendingWindowToken = pendingFocusWindowToken,
+            let currentWindow = window,
+            let trackingWindow = currentWindow as? PaneResponderTrackingWindow,
+            pendingWindowToken == trackingWindow.responderTrackingToken,
+            pendingFocusGeneration == trackingWindow.responderChangeGeneration
+        else {
+            clearPendingFocusRestoration()
+            return
+        }
+
+        let responderIdentity = pendingFocusResponderIdentity
+        clearPendingFocusRestoration()
+
+        guard currentWindow.firstResponder === currentWindow,
+            !isHiddenOrHasHiddenAncestor,
+            let responderView = viewInPaneHostSubtree(with: responderIdentity)
+        else {
+            return
+        }
+
+        _ = currentWindow.makeFirstResponder(responderView)
+    }
+
+    private func clearPendingFocusRestoration() {
+        pendingFocusWindowToken = nil
+        pendingFocusResponderIdentity = nil
+        pendingFocusGeneration = nil
+    }
+
+    private func viewInPaneHostSubtree(with identity: ObjectIdentifier?) -> NSView? {
+        guard let identity else { return nil }
+        var pendingViews: [NSView] = [self]
+        while let candidate = pendingViews.popLast() {
+            if ObjectIdentifier(candidate) == identity {
+                return candidate
+            }
+            pendingViews.append(contentsOf: candidate.subviews)
+        }
+        return nil
     }
 
     override func layout() {
@@ -107,6 +173,7 @@ class PaneHostView: NSView, Identifiable {
     func retire() {
         (mountedContentView as? PaneMountedContent)?.paneHostWillRetire()
         unmountContentView()
+        clearPendingFocusRestoration()
         onAttachedToWindow = nil
         removeFromSuperview()
     }

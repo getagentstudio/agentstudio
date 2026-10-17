@@ -2,22 +2,29 @@ import AgentStudioTestHarness
 import AgentStudioTestSupport
 import CryptoKit
 import Foundation
+import Synchronization
 
 @testable import AgentStudioBridge
 
 struct BridgeProductSchemeTranscriptFixture {
     static let expectedSHA256 =
-        "a5556acd203621f3be1d48881b96a198385744cf85cb729832d3929a6688f4c3"
+        "29ddcc6601f7b531f637cf9a3c57a1dbdeee6dcc9e60087218ea951c7edc4498"
 
     let bytes: Data
     let root: [String: Any]
 
     static func load() throws -> Self {
+        try loadFixture(relativePath: "Tests/BridgeContractFixtures/valid/bridge-product-startup-transcript.json")
+    }
+
+    static func loadInvalid() throws -> Self {
+        try loadFixture(relativePath: "Tests/BridgeContractFixtures/invalid/bridge-product-startup-transcript.json")
+    }
+
+    private static func loadFixture(relativePath: String) throws -> Self {
         let projectRoot = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
         let bytes = try Data(
-            contentsOf: projectRoot.appending(
-                path: "Tests/BridgeContractFixtures/valid/bridge-product-startup-transcript.json"
-            )
+            contentsOf: projectRoot.appending(path: relativePath)
         )
         let root = try JSONSerialization.jsonObject(with: bytes) as? [String: Any]
         guard let root else { throw BridgeProductSchemeTranscriptFixtureError.invalidRoot }
@@ -52,6 +59,21 @@ struct BridgeProductSchemeTranscriptFixture {
         return try JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])
     }
 
+    func invalidRequestData(named name: String) throws -> Data {
+        let entry = try namedEntry(name, collection: "cases")
+        guard let request = entry["request"] as? [String: Any] else {
+            throw BridgeProductSchemeTranscriptFixtureError.missingValue(name)
+        }
+        return try JSONSerialization.data(withJSONObject: request, options: [.sortedKeys])
+    }
+
+    func decodeInvalidRequest<DecodedValue: Decodable>(
+        _ type: DecodedValue.Type,
+        named name: String
+    ) throws -> DecodedValue {
+        try BridgeProductStrictJSON.decode(type, from: invalidRequestData(named: name))
+    }
+
     func decodeTranscriptValue<DecodedValue: Decodable>(
         _ type: DecodedValue.Type,
         named name: String
@@ -64,14 +86,6 @@ struct BridgeProductSchemeTranscriptFixture {
         named name: String
     ) throws -> DecodedValue {
         try BridgeProductStrictJSON.decode(type, from: observationRequestData(named: name))
-    }
-
-    func subscriptionData(named name: String) throws -> BridgeProductSubscriptionData {
-        let frame = try decodeTranscriptValue(BridgeProductMetadataFrame.self, named: name)
-        guard case .subscriptionData(let dataFrame) = frame else {
-            throw BridgeProductSchemeTranscriptFixtureError.unexpectedFrameKind(name)
-        }
-        return dataFrame.data
     }
 
     private func namedEntry(
@@ -105,34 +119,52 @@ struct BridgeProductSchemeAdapterTranscriptHarness {
     let capabilityHeader: String
     let provider: BridgeProductSchemeTranscriptProvider
     let session: BridgeProductSession
+    let frameWaiterFacts: FactRecorder<BridgeProductTranscriptPullScope, BridgeProductTranscriptPullFact>
+    let releaseObservedSession: @Sendable () -> Void
 
     static func make(
         paneSessionId: String,
-        workerInstanceId: String,
-        reviewSourceData: BridgeProductSubscriptionData,
-        fileSourceData: BridgeProductSubscriptionData
+        workerInstanceId: String
     ) throws -> Self {
         let capabilityBytes = (0..<BridgeProductWireContract.capabilityByteLength).map(UInt8.init)
         let capabilityHeader = try BridgeProductCapabilityHeaderEncoding.encode(capabilityBytes)
+        let sessionHolder = Mutex<BridgeProductSession?>(nil)
+        let facts = FactRecorder<BridgeProductTranscriptPullScope, BridgeProductTranscriptPullFact>(
+            vocabulary: .init(
+                describeScope: { "producer \($0.lease.id), next frame \($0.nextSequence)" },
+                describeFact: { String(describing: $0) }, isClosing: { _, _ in false }))
         let session = try BridgeProductSession(
             paneSessionId: paneSessionId,
             workerInstanceId: workerInstanceId,
-            capabilityBytes: capabilityBytes
+            capabilityBytes: capabilityBytes,
+            deadlineClock: TestPushClock(),
+            producerFrameWaiterRegistrationObserver: { lease in
+                guard let owner = sessionHolder.withLock({ $0 }) else {
+                    preconditionFailure("Transcript observer was not bound before stream startup")
+                }
+                // The owner invokes this callback synchronously on its actor after registering the pull.
+                owner.assumeIsolated { isolatedOwner in
+                    if let observation = isolatedOwner.transcriptPendingPull(for: lease) {
+                        facts.append(scope: observation.scope, fact: observation.fact)
+                    }
+                }
+            }
         )
-        let provider = BridgeProductSchemeTranscriptProvider(
-            reviewSourceData: reviewSourceData,
-            fileSourceData: fileSourceData
-        )
+        sessionHolder.withLock { $0 = session }
+        let provider = BridgeProductSchemeTranscriptProvider()
         let productAdmissionGate = BridgeProductAdmissionGate()
         return .init(
             adapter: .init(
                 session: session,
                 provider: provider,
-                productAdmissionGate: productAdmissionGate
+                productAdmissionGate: productAdmissionGate,
+                installationAdmissionGate: BridgeProductAdmissionGate()
             ),
             capabilityHeader: capabilityHeader,
             provider: provider,
-            session: session
+            session: session,
+            frameWaiterFacts: facts,
+            releaseObservedSession: { sessionHolder.withLock { $0 = nil } }
         )
     }
 
@@ -150,13 +182,15 @@ struct BridgeProductSchemeAdapterTranscriptHarness {
         )
     }
 
-    func teardown(routingTasks: [Task<Void, Never>]) async -> TeardownResult {
+    func teardown(routingTasks: [Task<Void, Never>]) async throws -> TeardownResult {
         for routingTask in routingTasks { routingTask.cancel() }
         for routingTask in routingTasks { await routingTask.value }
         let revocation = await session.revoke { acknowledgement in
             await provider.acknowledgeLifecycle(acknowledgement)
         }
         let revoked = await revocation.wait()
+        releaseObservedSession()
+        try await frameWaiterFacts.finish()
         return .init(
             producerSnapshot: await session.producerSnapshot(),
             providerSnapshot: await provider.snapshot,
@@ -178,20 +212,9 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
     private let contentOperationGate = HeldStep<BridgeProductProducerLease>("contentOperationGate")
     private var contentRequestCount = 0
     private var controlRequestKinds: [String] = []
-    private let fileSourceData: BridgeProductSubscriptionData
     private var metadataRequestCount = 0
     private let metadataOperationGate = HeldStep<BridgeProductProducerLease>("metadataOperationGate")
-    private var metadataSession: BridgeProductSession?
     private var producerFailures: [String] = []
-    private let reviewSourceData: BridgeProductSubscriptionData
-
-    init(
-        reviewSourceData: BridgeProductSubscriptionData,
-        fileSourceData: BridgeProductSubscriptionData
-    ) {
-        self.reviewSourceData = reviewSourceData
-        self.fileSourceData = fileSourceData
-    }
 
     func response(
         for request: BridgeProductControlRequest,
@@ -202,22 +225,16 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
             switch request {
             case .workerSessionOpen:
                 return try .workerSessionAccepted(correlating: request)
-            case .subscriptionOpen(let openRequest):
-                let emptyInterestState = try openRequest.subscription.initialInterestState()
+            case .subscriptionOpen:
                 return try .subscriptionOpenAccepted(
                     correlating: request,
-                    interestSha256: emptyInterestState.sha256Hex()
-                )
-            case .subscriptionUpdateBatch(let updateRequest):
-                let disposition: BridgeProductSubscriptionUpdateBatchDisposition =
-                    updateRequest.batchIndex + 1 == updateRequest.batchCount ? .committed : .staged
-                return try .subscriptionUpdateBatchAccepted(
-                    correlating: request,
-                    disposition: disposition
+                    worktreeId: nil
                 )
             case .subscriptionCancel:
                 return try .subscriptionCancelAccepted(correlating: request)
-            case .productCall, .workerSessionResync:
+            case .viewScope:
+                return try .viewAccepted(correlating: request)
+            case .productCall, .viewResnapshot, .workerSessionResync:
                 preconditionFailure("Unexpected transcript control request")
             }
         } catch {
@@ -232,7 +249,6 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
         session: BridgeProductSession
     ) async {
         metadataRequestCount += 1
-        metadataSession = session
         do {
             let result = try await session.enqueueRequiredProducerOpeningFrame(
                 for: lease,
@@ -278,6 +294,14 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
         }
     }
 
+    func metadataProducerLease() async throws -> BridgeProductProducerLease {
+        try await metadataOperationGate.firstArrival()
+    }
+
+    func contentProducerLease() async throws -> BridgeProductProducerLease {
+        try await contentOperationGate.firstArrival()
+    }
+
     func acknowledgeLifecycle(
         _ acknowledgement: BridgeProductProducerLifecycleAcknowledgement
     ) async -> Bool {
@@ -291,37 +315,7 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
         for request: BridgeProductControlRequest,
         productAdmission: BridgeProductAdmissionContext
     ) async {
-        _ = request
-        guard case .subscriptionOpened(let subscription) = effect,
-            let metadataSession
-        else { return }
-        let data: BridgeProductSubscriptionData
-        switch subscription.subscriptionKind {
-        case .fileAnnotations, .reviewAnnotations:
-            return
-        case .reviewMetadata:
-            data = reviewSourceData
-        case .fileMetadata:
-            data = fileSourceData
-        default:
-            return
-        }
-        do {
-            let foregroundWorkAdmission =
-                await BridgePaneRefreshWorkAdmissionTestContext.foreground().admission
-            let result = try await metadataSession.enqueueSubscriptionData(
-                subscriptionId: subscription.subscriptionId,
-                data: data,
-                productAdmission: productAdmission,
-                foregroundWorkAdmission: foregroundWorkAdmission
-            )
-            guard case .enqueued = result else {
-                producerFailures.append("subscription source frame rejected")
-                return
-            }
-        } catch {
-            producerFailures.append("subscription source frame failed")
-        }
+        _ = (effect, request, productAdmission)
     }
 
     var snapshot: Snapshot {
@@ -332,5 +326,40 @@ actor BridgeProductSchemeTranscriptProvider: BridgeProductSchemeProvider {
             metadataRequestCount: metadataRequestCount,
             producerFailureCount: producerFailures.count
         )
+    }
+}
+
+struct BridgeProductTranscriptPullScope: Hashable, Sendable {
+    let lease: BridgeProductProducerLease
+    let nextSequence: Int
+}
+
+enum BridgeProductTranscriptPullFact: Sendable {
+    case registered(waiterToken: UUID)
+    case missingRegistration
+}
+
+extension BridgeProductSession {
+    /// Capture the semantic pull announced by the observer, rather than an earlier opening-frame wait.
+    func transcriptPendingPull(for lease: BridgeProductProducerLease)
+        -> (scope: BridgeProductTranscriptPullScope, fact: BridgeProductTranscriptPullFact)?
+    {
+        guard let state = producerRegistry.producersByLeaseId[lease.id],
+            state.openingFrameState == .delivered,
+            state.inFlightFrameReceipt == nil, state.queuedFrames.isEmpty
+        else { return nil }
+        let nextSequence: Int
+        switch state.key {
+        case .metadata:
+            guard let sequence = state.nextMetadataStreamSequence else { return nil }
+            nextSequence = sequence
+        case .content:
+            nextSequence = state.nextContentSequence
+        }
+        let fact: BridgeProductTranscriptPullFact =
+            state.frameWaiterToken.map {
+                .registered(waiterToken: $0)
+            } ?? .missingRegistration
+        return (.init(lease: lease, nextSequence: nextSequence), fact)
     }
 }

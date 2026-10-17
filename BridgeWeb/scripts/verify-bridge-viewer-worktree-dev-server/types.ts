@@ -1,7 +1,10 @@
 import { z } from 'zod';
 
-import type { BridgeProductSubscriptionEvent } from '../../src/core/comm-worker/bridge-product-subscription-contracts.ts';
+import type { BridgeProductFileBatchRow } from '../../src/core/comm-worker/bridge-product-file-batch-row-contracts.ts';
+import type { BridgeProductFileMemberStatusRecord } from '../../src/core/comm-worker/bridge-product-file-member-status-contracts.ts';
+import type { BridgeProductViewInstallation } from '../../src/core/comm-worker/bridge-product-view-batch-receiver.ts';
 import type { BridgeWorktreeDevFileContentRouteRequest } from '../bridge-worktree-dev-reload-diagnostics.ts';
+import { bridgeOperationLifecyclePhaseFamilies } from '../dev-server/bridge-dev-operation-lifecycle-reducer.js';
 import type {
 	ReviewCollapseControlProof,
 	ReviewContentRouteDeltaProof,
@@ -28,6 +31,49 @@ export const bridgeDevTelemetryStatusSampleSchema = z
 
 export type BridgeDevTelemetryStatusSample = z.infer<typeof bridgeDevTelemetryStatusSampleSchema>;
 
+const bridgeOperationLifecycleMalformedKindSchema = z.enum([
+	'duplicate_start',
+	'duplicate_terminal',
+	'capacity_exceeded',
+	'invalid_stage_attempt',
+	'invalid_operation_correlation',
+	'late_terminal',
+	'noncontiguous_stage_attempt',
+	'terminal_without_start',
+	'unknown_phase',
+]);
+
+const bridgeOperationLifecyclePhaseFamilySchema = z.enum(bridgeOperationLifecyclePhaseFamilies);
+
+const bridgeOperationLifecycleSchema = z
+	.object({
+		completedOperationIds: z.array(z.string()).readonly(),
+		malformed: z
+			.array(
+				z
+					.object({
+						kind: bridgeOperationLifecycleMalformedKindSchema,
+						operationCorrelationId: z.string(),
+						phaseFamily: z.string(),
+						stageAttempt: z.number().int(),
+					})
+					.strict(),
+			)
+			.readonly(),
+		missingTerminals: z
+			.array(
+				z
+					.object({
+						operationCorrelationId: z.string(),
+						phaseFamily: bridgeOperationLifecyclePhaseFamilySchema,
+						stageAttempt: z.number().int(),
+					})
+					.strict(),
+			)
+			.readonly(),
+	})
+	.strict();
+
 export const bridgeDevTelemetryStatusSchema = z
 	.object({
 		acceptedBatchCount: z.number().int().nonnegative(),
@@ -35,6 +81,7 @@ export const bridgeDevTelemetryStatusSchema = z
 		failedBatchCount: z.number().int().nonnegative(),
 		lastError: z.string().nullable(),
 		marker: z.string().min(1),
+		operationLifecycle: bridgeOperationLifecycleSchema,
 		recentSamples: z.array(bridgeDevTelemetryStatusSampleSchema).readonly(),
 		serviceVersion: z.string().min(1),
 		worktreeHash: z.string().min(1),
@@ -155,28 +202,27 @@ export const worktreeReviewMetadataFrameResponseSchema = z
 	})
 	.strict();
 
-type WorktreeProductFileMetadataEvent = BridgeProductSubscriptionEvent<'file.metadata'>;
-
-export type WorktreeProductFileTreeWindow = Extract<
-	WorktreeProductFileMetadataEvent,
-	{ readonly eventKind: 'file.treeWindow' }
+export type WorktreeProductFileDescriptor = NonNullable<
+	BridgeProductFileBatchRow['descriptorOutcome']
 >;
 
-export type WorktreeProductFileDescriptor = Extract<
-	WorktreeProductFileMetadataEvent,
-	{ readonly eventKind: 'file.descriptorReady' }
->;
-
-export type WorktreeFileTreeRow = WorktreeProductFileTreeWindow['rows'][number];
+export type WorktreeFileTreeRow = Pick<
+	BridgeProductFileBatchRow,
+	'changeStatus' | 'depth' | 'fileClass' | 'fileId' | 'lineCount' | 'name' | 'rowId' | 'sizeBytes'
+> & {
+	readonly isDirectory: boolean;
+	readonly parentPath: string | null;
+	readonly path: string;
+};
 
 export interface WorktreeFileSurface {
-	readonly frames: readonly WorktreeProductFileTreeWindow[];
+	readonly frames: readonly BridgeProductViewInstallation[];
 	readonly provenance: {
 		readonly baseRef: string;
 		readonly scenarioName: string;
 		readonly worktreeRootToken: string;
 	};
-	readonly source: WorktreeProductFileTreeWindow['source'];
+	readonly source: BridgeProductFileMemberStatusRecord['source'];
 	readonly treeSizeFacts: {
 		readonly estimatedTotalHeightPixels: number;
 		readonly pathCount: number;
@@ -415,19 +461,9 @@ export interface WorktreeFileProductControlsProof {
 	readonly allRenderedPathSample: readonly string[];
 	readonly allTreeSizePixels: number | null;
 	readonly allTreeSizeSource: WorktreeFileTreeExtentSource | null;
-	readonly expectedFetchableTreeSizePixels: number | null;
 	readonly expectedInvalidRegexTreeSizePixels: number;
 	readonly expectedRegexTreeSizePixels: number;
 	readonly expectedSearchTreeSizePixels: number;
-	readonly expectedUnavailableTreeSizePixels: number | null;
-	readonly fetchableFilterActive: boolean;
-	readonly fetchableFilterVisibleCount: number;
-	readonly fetchableRenderedPathSample: readonly string[];
-	readonly fetchableTreeSizePixels: number | null;
-	readonly fetchableTreeSizeSource: WorktreeFileTreeExtentSource | null;
-	readonly expectedFetchableFilterCount: number;
-	readonly expectedUnavailableFilterCount: number;
-	readonly expectedUnavailablePath: string | null;
 	readonly initialVisibleCount: number;
 	readonly initialRenderedPathSample: readonly string[];
 	readonly initialTreeSizeSource: WorktreeFileTreeExtentSource | null;
@@ -451,12 +487,7 @@ export interface WorktreeFileProductControlsProof {
 	readonly searchVisibleCount: number;
 	readonly targetPath: string;
 	readonly totalTreeRowCount: number;
-	readonly unavailableFilterActive: boolean;
-	readonly unavailableFilterVisibleCount: number;
 	readonly unavailableOpenProof: WorktreeFileUnavailableOpenProof | null;
-	readonly unavailableRenderedPathSample: readonly string[];
-	readonly unavailableTreeSizePixels: number | null;
-	readonly unavailableTreeSizeSource: WorktreeFileTreeExtentSource | null;
 }
 
 export interface WorktreeFileSharedShellProof {
@@ -703,6 +734,10 @@ export interface WorktreeFileOpenLoadTelemetryProof {
 export interface ReviewRouteProbe {
 	readonly contentHitCount: () => number;
 	readonly contentHitUrls: () => readonly string[];
+	readonly waitForContentHits: (
+		matches: (hitUrls: readonly string[]) => boolean,
+		label?: string,
+	) => Promise<void>;
 	readonly dispose: () => Promise<void>;
 	readonly metadataHitCount: () => number;
 	readonly metadataHitUrls: () => readonly string[];

@@ -85,7 +85,13 @@ struct BridgeProductSchemeRequestAdmission: Sendable {
         else {
             return rejected(statusCode: 401, url: url)
         }
-        guard await session.authorizes(presentedCapability: presentedCapability) else {
+        let isAuthorized: Bool
+        if route == .command {
+            isAuthorized = await session.authenticatesControlCapability(presentedCapability)
+        } else {
+            isAuthorized = await session.authorizes(presentedCapability: presentedCapability)
+        }
+        guard isAuthorized else {
             return rejected(statusCode: 403, url: url)
         }
         guard

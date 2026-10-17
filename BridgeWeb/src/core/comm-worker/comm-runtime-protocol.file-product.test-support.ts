@@ -1,22 +1,106 @@
+import { uuidv7 } from 'uuidv7';
 import { expect } from 'vitest';
 
+import fileCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-file-batch-row-corpus.json' with { type: 'json' };
+import reviewCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-batch-record-corpus.json' with { type: 'json' };
+import sessionCorpus from '../../test-fixtures/bridge-contract-fixtures/valid/bridge-product-session-corpus.json' with { type: 'json' };
 import type { BridgeCommWorkerPreparationDrain } from './bridge-comm-worker-runtime-protocol.js';
-import {
-	makeReviewMetadataDataFrame,
-	type ReviewMetadataSubscription,
-} from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
+import type { ReviewMetadataSubscription } from './bridge-comm-worker-runtime-protocol.review-product-transport.test-support.js';
 import {
 	createIdleWorktreeAnnotationSubscription,
 	flushBridgeWorkerRuntimeContinuations,
-	makeFileMetadataDataFrame,
 	type FileMetadataSubscription,
 } from './bridge-comm-worker-runtime-protocol.test-support.js';
 import { BridgeProductBoundedAsyncQueue } from './bridge-product-async-queue.js';
+import type { BridgeProductBatchFrameSinks } from './bridge-product-batch-frame-router.js';
+import { bridgeProductBatchFrameSchema } from './bridge-product-batch-wire-contracts.js';
 import type { BridgeProductMetadataApplicationProtocolIdentity } from './bridge-product-metadata-application-protocol.js';
 import type {
 	BridgeProductPanePresentationFrame,
 	BridgeProductTransportSession,
 } from './bridge-product-transport.js';
+import type { BridgeProductViewInstallation } from './bridge-product-view-batch-receiver.js';
+import { createTestMetadataReopenPort } from './bridge-product-view-reopen.test-support.js';
+
+export function makeFileBatchInstallation(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
+	subscriptionId: string,
+	options: {
+		readonly emptyTree?: boolean;
+		readonly revision?: number;
+		readonly withDescriptor?: boolean;
+	} = {},
+): BridgeProductViewInstallation {
+	const revision = options.revision ?? 4;
+	const begin = bridgeProductBatchFrameSchema.parse({
+		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
+		batchId: uuidv7(),
+		publicationId: undefined,
+		scope: { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] },
+		subscriptionId,
+		subscriptionKind: 'file.metadata',
+		targetRevision: revision,
+	});
+	if (begin.kind !== 'subscription.batchBegin') throw new Error('File batch begin missing.');
+	return {
+		certified: true,
+		staleRecords: [],
+		begin,
+		domain: 'default',
+		records: [
+			...(options.emptyTree === true ? [] : fileCorpus.rows).map(({ recordKey, row }) => ({
+				key: recordKey,
+				revision,
+				value:
+					options.withDescriptor === false
+						? { ...row, descriptorOutcome: null, readDescriptor: null }
+						: row,
+			})),
+			{ key: 'member-status', revision, value: fileCorpus.memberStatuses[0]?.record },
+		],
+	};
+}
+
+export function makeReviewBatchInstallation(
+	snapshotCause: import('./bridge-product-batch-wire-contracts.js').BridgeProductSnapshotCause,
+	subscriptionId: string,
+): BridgeProductViewInstallation {
+	const publication = reviewCorpus.records[2];
+	const item = reviewCorpus.records[0];
+	if (
+		publication?.record.recordKind !== 'publication' ||
+		publication.record.revision === undefined ||
+		item?.record.recordKind !== 'item'
+	) {
+		throw new Error('Review batch fixture is incomplete.');
+	}
+	const begin = bridgeProductBatchFrameSchema.parse({
+		...sessionCorpus.transportV2.batchFrames[0],
+		snapshotCause,
+		batchId: uuidv7(),
+		publicationId: publication.record.publicationId,
+		scope: { kind: 'review', interests: [] },
+		subscriptionId,
+		subscriptionKind: 'review.metadata',
+		targetRevision: publication.record.revision,
+	});
+	if (begin.kind !== 'subscription.batchBegin') throw new Error('Review batch begin missing.');
+	return {
+		certified: true,
+		staleRecords: [],
+		begin,
+		domain: 'default',
+		records: [
+			{ key: item.recordKey, revision: publication.record.revision, value: item.record },
+			{
+				key: publication.recordKey,
+				revision: publication.record.revision,
+				value: publication.record,
+			},
+		],
+	};
+}
 
 export const fileProductTestSource = {
 	repoId: '00000000-0000-4000-8000-000000000001',
@@ -36,31 +120,32 @@ export const fileViewProductTestBudget = {
 export function makeFileProductTestTransport(props: {
 	readonly discoveryError?: Error;
 	readonly onDiscoverSource: () => void;
+	readonly onBatchFrameSinks?: (sinks: BridgeProductBatchFrameSinks) => void;
+	readonly onFileScope?: (scope: {
+		readonly interests: readonly { readonly lane: string; readonly paths: readonly string[] }[];
+		readonly pathScope: readonly string[];
+	}) => void;
 	readonly onOpenDescriptor: (descriptorId: string) => void;
 	readonly onPanePresentationSink?: (
 		sink: (frame: BridgeProductPanePresentationFrame) => void,
 	) => void;
 	readonly onSubscribe?: () => void;
 	readonly onReviewWarmup?: () => void;
-	readonly reviewEvents?: BridgeProductBoundedAsyncQueue<
-		ReturnType<typeof makeReviewMetadataDataFrame>
-	>;
 	readonly subscription: FileMetadataSubscription;
 }): BridgeProductTransportSession {
 	let fileEpoch = 0;
 	let reviewEpoch = 0;
-	const reviewEvents =
-		props.reviewEvents ??
-		new BridgeProductBoundedAsyncQueue<ReturnType<typeof makeReviewMetadataDataFrame>>(64);
+	let nextScopeRevision = 0;
+	const reviewEvents = new BridgeProductBoundedAsyncQueue<never>(64);
 	const reviewSubscription: ReviewMetadataSubscription = {
 		cancel: async (): Promise<void> => {},
 		events: reviewEvents,
 		subscriptionId: 'review-subscription-for-file-runtime-test',
 		subscriptionKind: 'review.metadata',
-		update: async (): Promise<void> => {},
 	};
 	return {
-		bumpWorkerDerivationEpoch: (surface): number => {
+		...createTestMetadataReopenPort(),
+		advanceWorkerDerivationEpoch: (surface): number => {
 			if (surface === 'file') fileEpoch += 1;
 			if (surface === 'review') reviewEpoch += 1;
 			return surface === 'file' ? fileEpoch : reviewEpoch;
@@ -83,7 +168,12 @@ export function makeFileProductTestTransport(props: {
 		},
 		openContent: (descriptor): never => {
 			props.onOpenDescriptor(descriptor.descriptorId);
-			const bytes = new TextEncoder().encode('file body\n').buffer;
+			const isBatchFixtureDescriptor =
+				descriptor.descriptorId === 'file-descriptor-1' ||
+				descriptor.descriptorId === 'file-descriptor-successor';
+			const bytes = new TextEncoder().encode(
+				isBatchFixtureDescriptor ? 'abc' : 'file body\n',
+			).buffer;
 			// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The fixture returns the exact File content stream requested above.
 			return {
 				contentKind: 'file.content',
@@ -94,7 +184,9 @@ export function makeFileProductTestTransport(props: {
 					contentKind: 'file.content',
 					descriptorId: descriptor.descriptorId,
 					kind: 'complete',
-					observedSha256: 'a'.repeat(64),
+					observedSha256: isBatchFixtureDescriptor
+						? 'ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad'
+						: '94dda0ed4b1c44a08e3ef62b978ddd97258b6e3016696ea645e176730091e885',
 				}),
 			} as never;
 		},
@@ -103,6 +195,11 @@ export function makeFileProductTestTransport(props: {
 		): void => {
 			props.onPanePresentationSink?.(sink);
 			sink(makeFilePanePresentationFrame(1, 'foreground'));
+		},
+		setBatchFrameSinks: (sinks): void => props.onBatchFrameSinks?.(sinks),
+		setViewScopeForSubscription: async ({ scope }) => {
+			if (scope.kind === 'file') props.onFileScope?.(scope);
+			return { kind: 'accepted', scopeRevision: ++nextScopeRevision };
 		},
 		// oxlint-disable-next-line typescript/no-unsafe-type-assertion -- The fixture closes over the supported File/Review subscription variants.
 		subscribe: ((protocol: BridgeProductMetadataApplicationProtocolIdentity): never => {
@@ -177,74 +274,5 @@ const currentFileSourceConfiguration = {
 	rootPathToken: 'root-token-1',
 	worktreeId: fileProductTestSource.worktreeId,
 } as const;
-
-export function makeTreeWindowEvent(): Parameters<typeof makeFileMetadataDataFrame>[0] {
-	return {
-		eventKind: 'file.treeWindow',
-		finalWindow: true,
-		lineage: { lane: 'visible', loadedBy: 'startup_window' },
-		pathScope: [],
-		rows: [
-			{
-				changeStatus: 'modified',
-				depth: 0,
-				fileId: 'file-1',
-				fileClass: 'source',
-				isDirectory: false,
-				lineCount: 1,
-				name: 'File.swift',
-				parentPath: null,
-				path: 'Sources/File.swift',
-				rowId: 'row-file-1',
-				sizeBytes: 10,
-			},
-		],
-		source: fileProductTestSource,
-		startIndex: 0,
-		totalRowCount: 1,
-	};
-}
-
-export function makeDescriptorReadyEvent(): Parameters<typeof makeFileMetadataDataFrame>[0] {
-	return {
-		availability: {
-			availabilityKind: 'available',
-			contentDescriptor: {
-				contentKind: 'file.content',
-				declaredByteLength: 10,
-				descriptorId: 'descriptor-file-1',
-				encoding: 'utf-8',
-				expectedSha256: 'a'.repeat(64),
-				fileId: 'file-1',
-				maximumBytes: 10,
-				source: fileProductTestSource,
-				window: {
-					kind: 'prefix',
-					maximumBytes: 10,
-					maximumLines: 1,
-					startByte: 0,
-				},
-			},
-		},
-		encoding: 'utf-8',
-		endsMidLine: false,
-		endsWithNewline: true,
-		estimatedContentHeightPixels: null,
-		eventKind: 'file.descriptorReady',
-		fileExtension: 'swift',
-		fileId: 'file-1',
-		language: 'swift',
-		modifiedAtUnixMilliseconds: 1,
-		path: 'Sources/File.swift',
-		payloadByteCount: 10,
-		payloadLineCount: 1,
-		rowId: 'row-file-1',
-		sizeBytes: 10,
-		source: fileProductTestSource,
-		totalLineCount: 1,
-		truncationKind: 'none',
-		virtualizedExtentKind: 'exactLineCount',
-	};
-}
 
 async function* emptyFrames(): AsyncIterable<never> {}

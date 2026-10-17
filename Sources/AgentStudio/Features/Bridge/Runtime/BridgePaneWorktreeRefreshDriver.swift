@@ -105,6 +105,12 @@ final class BridgePaneWorktreeRefreshDriver {
         }
     }
 
+    func awaitActiveFileOperations() async {
+        while let activeFileTask {
+            await activeFileTask.value
+        }
+    }
+
     @discardableResult
     func recordInvalidation(
         fileChangeset: FileChangeset?,
@@ -186,7 +192,7 @@ final class BridgePaneWorktreeRefreshDriver {
                         surface: .file
                     )
                 )
-                coordinator.completeRefreshPass(
+                let didCompleteRefreshPass = coordinator.completeRefreshPass(
                     currentReservation,
                     outcome: outcome
                 )
@@ -201,8 +207,8 @@ final class BridgePaneWorktreeRefreshDriver {
                     reservation = coordinator.reserveForegroundRefreshPass(for: .file)
                 } else {
                     reservation = nil
-                    if outcome == .failed, let failure {
-                        coordinator.recordFileRefreshFailure(failure)
+                    if didCompleteRefreshPass, outcome == .failed, let failure {
+                        coordinator.recordCurrentFileRefreshFailure(failure)
                     }
                 }
                 // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it
@@ -245,10 +251,36 @@ final class BridgePaneWorktreeRefreshDriver {
     }
 
     func retryUnavailableFileRefresh() {
-        guard !isClosed, coordinator.beginExplicitFileRefreshRetry() else { return }
+        guard let admission = acquireProductAdmission() else { return }
+        retryUnavailableFileRefresh(ifAdmittedBy: admission)
+    }
+
+    func retryUnavailableFileRefresh(ifAdmittedBy admission: BridgeProductAdmissionContext) {
+        guard !isClosed, admission.withValidAdmission({ coordinator.beginExplicitFileRefreshRetry() }) == true else {
+            return
+        }
         // fire-and-forget: publication joins the presentation tail; closeAndDrain awaits it
         _ = schedulePresentationPublication()
         scheduleFileCatchUpIfPossible()
+    }
+
+    func retryUnavailableFileRefreshAndWait(ifAdmittedBy admission: BridgeProductAdmissionContext) async {
+        guard !isClosed,
+            admission.withValidAdmission({ true }) == true,
+            coordinator.hasPendingFileRefreshWork
+        else { return }
+
+        if admission.withValidAdmission({ coordinator.beginExplicitFileRefreshRetry() }) == true {
+            scheduleFileCatchUpIfPossible()
+        }
+
+        while coordinator.hasPendingFileRefreshWork,
+            let task = activeFileTask,
+            let taskID = activeFileTaskID
+        {
+            await task.value
+            if activeFileTaskID == taskID { return }
+        }
     }
 
     func retireActiveFileOperation() {

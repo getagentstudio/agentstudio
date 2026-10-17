@@ -35,6 +35,33 @@ struct IPCResultSchemaTests {
         #expect(decoded == result)
     }
 
+    @Test(
+        "pane activity is a closed source with Foundation wall time or explicit null",
+        arguments: [
+            IPCPaneActivity?.none,
+            .some(.init(at: Date(timeIntervalSinceReferenceDate: 12_345.5), source: .hook)),
+            .some(.init(at: Date(timeIntervalSinceReferenceDate: 12_345.5), source: .terminal)),
+        ])
+    func paneActivityRoundTrips(activity: IPCPaneActivity?) throws {
+        let pane = IPCPaneSummary(
+            id: UUIDv7.generate(), ordinal: 1, contentKind: .terminal, residency: .active,
+            tabId: nil, repoId: nil, worktreeId: nil, isActive: true, isDrawerChild: false, activity: activity)
+        let data = try JSONEncoder().encode(pane)
+        #expect(try IPCPaneSummary.ipcSchema().decode(IPCPaneSummary.self, from: data) == pane)
+        let object = try #require(JSONSerialization.jsonObject(with: data) as? [String: NSObject])
+        if let activity {
+            let encoded = try #require(object["activity"] as? [String: NSObject])
+            #expect(Set(encoded.keys) == ["at", "source"])
+            #expect((encoded["at"] as? NSNumber)?.doubleValue == activity.at.timeIntervalSinceReferenceDate)
+            #expect(encoded["source"] as? String == activity.source.rawValue)
+        } else {
+            #expect(object["activity"] is NSNull)
+        }
+        let invalid = Data(#"{"at":12345.5,"source":"other"}"#.utf8)
+        #expect(throws: DecodingError.self) { try JSONDecoder().decode(IPCPaneActivity.self, from: invalid) }
+        #expect(throws: IPCSchemaValidationError.self) { try IPCPaneActivity.ipcSchema().normalize(invalid) }
+    }
+
     @Test("result schemas reject fields synthesized Codable would ignore")
     func resultSchemaRejectsIgnoredFields() throws {
         let paneId = UUIDv7.generate()

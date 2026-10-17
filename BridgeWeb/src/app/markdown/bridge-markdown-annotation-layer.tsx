@@ -262,7 +262,7 @@ export function BridgeMarkdownAnnotationLayer(props: {
 					candidate.context.threadId === thread.context.threadId &&
 					candidate.context.sourceIdentity === displayedIdentity,
 			);
-			return predecessor === undefined ? [] : [predecessor];
+			return predecessor === undefined ? [] : [{ ...predecessor, messages: thread.messages }];
 		});
 	const expansion = interaction.threadExpansion;
 	const editingThreadId =

@@ -123,9 +123,7 @@ struct CommandBarCommandTargetingTests {
         )
         let controller = CommandBarPanelController(
             store: fixture.store,
-            octiconLoader: OcticonLoader(
-                resourceRootURL: testAgentStudioResourceRootURL(from: #filePath)
-            ),
+            octiconLoader: makeCommandBarTestOcticonLoader(),
             repoCache: RepoCacheAtom(),
             dispatcher: targetingAwareDispatcher,
             quickOpenDirectoryHandler: { _, _ in },
@@ -250,6 +248,9 @@ struct CommandBarCommandTargetingTests {
 
 @MainActor
 private final class TargetingAwareCommandBarDispatcher: AppCommandDispatching {
+    func dispatchKeyboardShortcut(_: AppShortcut) {}
+    func dispatchExtractPaneToTab(tabId _: UUID, paneId _: UUID, targetTabInsertionIndex _: Int?) {}
+
     private let blockedTargetIDs: Set<UUID>
 
     init(blockedTargetIDs: Set<UUID> = []) {

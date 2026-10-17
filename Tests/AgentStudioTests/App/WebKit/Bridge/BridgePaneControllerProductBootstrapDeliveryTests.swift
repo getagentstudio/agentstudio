@@ -39,6 +39,17 @@ extension WebKitSerializedTests {
                     }
                 }
             )
+            let visibleInstallation = try #require(await controller.productSessionOwner.activeInstallation)
+            let visibleAdmission = try #require(controller.productAdmissionGate.acquire())
+            let visibleMetadataProducer = try await installRefreshAdmissionMetadataProducer(
+                installation: visibleInstallation,
+                productProvider: try #require(controller.productSchemeProvider),
+                productAdmission: visibleAdmission
+            )
+            // G2 uses the page's accepted mode after the worker and metadata stream open.
+            await sendPageActiveViewerMode(
+                .review, controller: controller, productAdmission: visibleAdmission, sequence: 1
+            )
             let commandId = UUIDv7.generate()
             let loadResult = await controller.handleDiffCommand(
                 .loadDiff(
@@ -54,6 +65,7 @@ extension WebKitSerializedTests {
             #expect(loadResult == .success(commandId: commandId))
             let committedPackage = try #require(controller.paneState.diff.packageMetadata)
             let committedDelta = controller.paneState.diff.packageDelta
+            try await closeBridgeProductSessionProducer(visibleMetadataProducer, in: visibleInstallation.session)
 
             // Act
             await controller.enqueueProductSessionBootstrapRequest(
@@ -61,32 +73,34 @@ extension WebKitSerializedTests {
                 reason: .initial
             )
             let initialInstallation = try #require(deliveredInstallations.first)
-            let staleReply = try await collectStaleBootstrapReply(from: initialInstallation)
             await controller.enqueueProductSessionBootstrapRequest(
                 requestId: "retry-initial-bootstrap",
                 reason: .initial
             )
             let replacementInstallation = try #require(deliveredInstallations.last)
+            #expect(
+                (await controller.productSessionOwner.activeInstallation)?.bootstrap.workerInstanceId
+                    == replacementInstallation.bootstrap.workerInstanceId
+            )
+            _ = try await assertRetiredPaneProductCommandRefusal(
+                installation: initialInstallation,
+                handler: BridgeSchemeHandler(
+                    paneId: paneId, appRootURL: testBridgeAppRootURL(),
+                    productSessionRouter: await controller.productSessionOwner.schemeRouter
+                )
+            )
             let productProvider = try #require(controller.productSchemeProvider)
             let replaySubscription = try await openBootstrapReviewReplaySubscription(
                 controller: controller,
                 installation: replacementInstallation,
                 productProvider: productProvider
             )
-            let replayEvent = try bootstrapReviewEvent(
-                from: try bootstrapReviewMetadataFrame(
-                    from: try #require(
-                        await consumeNextBridgeProductProducerFrame(
-                            for: replaySubscription.lease,
-                            from: replacementInstallation.session,
-                            productAdmission: replaySubscription.productAdmission
-                        )
-                    )
-                )
+            let replayPublication = try await consumeBootstrapReviewPublication(
+                subscription: replaySubscription,
+                installation: replacementInstallation
             )
 
             // Assert
-            #expect(staleReply.response?.statusCode == 403)
             #expect(deliveredInstallations.count == 2)
             #expect(
                 replacementInstallation.bootstrap.workerInstanceId
@@ -101,13 +115,8 @@ extension WebKitSerializedTests {
                     reviewGeneration: reviewFixture.committedHandle.reviewGeneration.rawValue
                 )
             }
-            switch replayEvent {
-            case .sourceAccepted:
-                #expect(replayEvent.packageId == committedPackage.packageId)
-                #expect(replayEvent.generation == committedPackage.reviewGeneration.rawValue)
-            default:
-                Issue.record("Expected replacement worker replay to begin with Review sourceAccepted")
-            }
+            #expect(replayPublication.displayed?.packageId == committedPackage.packageId)
+            #expect(replayPublication.displayed?.generation == committedPackage.reviewGeneration.rawValue)
             try await closeBridgeProductSessionProducer(
                 replaySubscription.lease,
                 in: replacementInstallation.session
@@ -389,10 +398,11 @@ extension WebKitSerializedTests {
             await bootstrapTask.value
             let replacementInstallation = try #require(overlapState.deliveredInstallations.last)
             let metadataProducer = try #require(overlapState.replacementMetadataProducer)
+            // E1 composes the producer claim with the replacement installation's admission.
             let publishedRequest = try await consumeBootstrapSurfaceSelectionRequest(
                 producerLease: metadataProducer,
                 installation: replacementInstallation,
-                productAdmission: try #require(controller.productAdmissionGate.acquire())
+                productAdmission: try #require(replacementInstallation.productAdapter.acquireAdmission())
             )
 
             // Assert
@@ -517,183 +527,106 @@ extension WebKitSerializedTests {
             #expect(await controller.beginTeardown().value)
         }
 
-        @Test(
-            "explicit cold Review intake admits nil or current stream and rejects stale stream",
-            arguments: ["background-warmup", "sequence_gap"]
-        )
-        func coldReviewIntakeAdmitsNilOrCurrentStreamAndRejectsStaleStream(reason: String) async throws {
-            // Arrange
-            let nilStreamController = makeColdReviewIntakeController()
-            let currentStreamController = makeColdReviewIntakeController()
-            let staleStreamController = makeColdReviewIntakeController()
+        @Test("hidden Review intake never builds", arguments: ["background-warmup", "sequence_gap"])
+        func hiddenReviewIntakeKeepsListenerReadinessAndExplicitRequestsInert(reason: String) async throws {
+            let nilStream = try await makeBootstrapColdReviewIntakeFixture()
+            let currentStream = try await makeBootstrapColdReviewIntakeFixture()
+            let staleStream = try await makeBootstrapColdReviewIntakeFixture()
+            let fixtures = [nilStream, currentStream, staleStream]
             defer {
-                // fire-and-forget: defer cannot await; cleanup only
-                _ = nilStreamController.beginTeardown()
-                // fire-and-forget: defer cannot await; cleanup only
-                _ = currentStreamController.beginTeardown()
-                // fire-and-forget: defer cannot await; cleanup only
-                _ = staleStreamController.beginTeardown()
+                for fixture in fixtures {
+                    // fire-and-forget: defer cannot await; cleanup only
+                    _ = fixture.controller.beginTeardown()
+                }
             }
-            let nilStreamAdmission = try #require(nilStreamController.productAdmissionGate.acquire())
-            let currentStreamAdmission = try #require(
-                currentStreamController.productAdmissionGate.acquire()
-            )
-            let staleStreamAdmission = try #require(
-                staleStreamController.productAdmissionGate.acquire()
-            )
-
-            // Listener readiness alone must not start initial Review construction.
+            // G2 takes visibility from page mode; File mode keeps all Review intake hidden.
+            for fixture in fixtures {
+                await sendPageActiveViewerMode(
+                    .file, controller: fixture.controller, productAdmission: fixture.productAdmission, sequence: 1
+                )
+            }
+            let nilStreamController = nilStream.controller
             await nilStreamController.handleCommittedProductReviewIntakeReady(
                 BridgeProductReviewIntakeReadyRequest(reason: nil, streamId: nil),
-                productAdmission: nilStreamAdmission
+                productAdmission: nilStream.productAdmission
             )
             #expect(nilStreamController.activeReviewRefreshTask == nil)
             #expect(nilStreamController.paneState.diff.packageMetadata == nil)
 
-            // Act
             await nilStreamController.handleCommittedProductReviewIntakeReady(
                 BridgeProductReviewIntakeReadyRequest(reason: reason, streamId: nil),
-                productAdmission: nilStreamAdmission
+                productAdmission: nilStream.productAdmission
             )
-            await currentStreamController.handleCommittedProductReviewIntakeReady(
+            await currentStream.controller.handleCommittedProductReviewIntakeReady(
                 BridgeProductReviewIntakeReadyRequest(
-                    reason: reason,
-                    streamId: currentStreamController.reviewProtocolStreamId()
-                ),
-                productAdmission: currentStreamAdmission
+                    reason: reason, streamId: currentStream.controller.reviewProtocolStreamId()
+                ), productAdmission: currentStream.productAdmission
             )
-            await staleStreamController.handleCommittedProductReviewIntakeReady(
-                BridgeProductReviewIntakeReadyRequest(
-                    reason: reason,
-                    streamId: "review:stale-stream"
-                ),
-                productAdmission: staleStreamAdmission
+            await staleStream.controller.handleCommittedProductReviewIntakeReady(
+                BridgeProductReviewIntakeReadyRequest(reason: reason, streamId: "review:stale-stream"),
+                productAdmission: staleStream.productAdmission
             )
-
-            // Assert
-            let nilStreamLoadTask = nilStreamController.activeReviewRefreshTask
-            let currentStreamLoadTask = currentStreamController.activeReviewRefreshTask
-            #expect(staleStreamController.activeReviewRefreshTask == nil)
-            #expect(staleStreamController.paneState.diff.packageMetadata == nil)
-            // A fast admitted load may already be complete; its published result is the contract.
-            await nilStreamLoadTask?.value
-            await currentStreamLoadTask?.value
-            #expect(nilStreamController.paneState.diff.status == .ready)
-            #expect(nilStreamController.paneState.diff.packageMetadata != nil)
-            #expect(currentStreamController.paneState.diff.status == .ready)
-            #expect(currentStreamController.paneState.diff.packageMetadata != nil)
-            #expect(await nilStreamController.beginTeardown().value)
-            #expect(await currentStreamController.beginTeardown().value)
-            #expect(await staleStreamController.beginTeardown().value)
-        }
-
-        private func makeColdReviewIntakeController() -> BridgePaneController {
-            let paneId = UUIDv7.generate()
-            let reviewFixture = makeBootstrapCommittedReviewFixture()
-            return BridgePaneController(
-                paneId: paneId,
-                state: BridgePaneState(
-                    panelKind: .diffViewer,
-                    source: .workspace(
-                        rootPath: "Sources",
-                        baseline: .unstaged)
-                ),
-                appRootURL: testBridgeAppRootURL(),
-                metadata: PaneMetadata(
-                    paneId: PaneId(existingUUID: paneId),
-                    contentType: .diff,
-                    launchDirectory: URL(fileURLWithPath: "Sources"),
-                    title: "Cold Review Intake",
-                    facets: PaneContextFacets(
-                        repoId: reviewFixture.headEndpoint.repoId,
-                        worktreeId: reviewFixture.headEndpoint.worktreeId,
-                        worktreeName: "cold-review-intake",
-                        cwd: URL(fileURLWithPath: "Sources")
-                    )
-                ),
-                reviewSourceProvider: reviewFixture.sourceProvider,
-                initialPaneActivity: .foreground
-            )
-        }
-    }
-}
-
-private struct BootstrapCommittedReviewFixture {
-    let committedHandle: BridgeContentHandle
-    let headEndpoint: BridgeSourceEndpoint
-    let sourceProvider: BridgeReviewSourceProviderFake
-}
-
-private func makeBootstrapCommittedReviewFixture() -> BootstrapCommittedReviewFixture {
-    let baseEndpoint = makeBridgeEndpoint(endpointId: "baseline-headMinusOne", kind: .gitRef)
-    let headEndpoint = makeBridgeEndpoint(endpointId: "working-tree", kind: .workingTree)
-    let changedFile = makeBridgeEndpointChangedFile(
-        fileId: "committed-review",
-        path: "Sources/App/CommittedReview.swift",
-        sizeBytes: 100
-    )
-    let committedHandle = BridgeReviewPackageBuilder.contentHandle(
-        for: changedFile,
-        endpoint: headEndpoint,
-        role: .head,
-        reviewGeneration: 1
-    )
-    return BootstrapCommittedReviewFixture(
-        committedHandle: committedHandle,
-        headEndpoint: headEndpoint,
-        sourceProvider: BridgeReviewSourceProviderFake(
-            comparison: BridgeEndpointComparison(
-                baseEndpoint: baseEndpoint,
-                headEndpoint: headEndpoint,
-                changedFiles: [changedFile]
-            ),
-            contentByHandleId: [:]
-        )
-    )
-}
-
-private func collectStaleBootstrapReply(
-    from installation: BridgeProductSessionInstallation
-) async throws -> BridgeProductSchemeReplyObservation {
-    let capability = try BridgeProductCapabilityHeaderEncoding.encode(installation.capabilityBytes)
-    return try await collectBridgeProductSchemeReply(
-        adapter: installation.productAdapter,
-        request: bridgeProductSchemeRequest(
-            route: BridgeProductWireContract.commandRoute,
-            capability: capability,
-            body: Data("{}".utf8)
-        )
-    )
-}
-
-private enum BootstrapSurfaceSelectionReplayError: Error {
-    case expectedSurfaceSelectionFrame
-}
-
-private func consumeBootstrapSurfaceSelectionRequest(
-    producerLease: BridgeProductProducerLease,
-    installation: BridgeProductSessionInstallation,
-    productAdmission: BridgeProductAdmissionContext
-) async throws -> BridgeProductPaneSurfaceSelectionRequestedFrame {
-    let decoder = try BridgeProductMetadataFrameDecoder()
-    for _ in 0..<8 {
-        guard (await installation.session.producerSnapshot()).queuedFrameCount > 0 else {
-            break
-        }
-        let queuedFrame = try #require(
-            await consumeNextBridgeProductProducerFrame(
-                for: producerLease,
-                from: installation.session,
-                productAdmission: productAdmission
-            )
-        )
-        for frame in try decoder.append(queuedFrame.data) {
-            if case .paneSurfaceSelectionRequested(let request) = frame {
-                return request
+            for fixture in fixtures {
+                #expect(fixture.controller.activeReviewRefreshTask == nil)
+                #expect(fixture.controller.paneState.diff.packageMetadata == nil)
+                #expect(await fixture.sourceProvider.recordedComparisonRequestsCount() == 0)
+                #expect(await fixture.controller.beginTeardown().value)
             }
         }
+
+        @Test(
+            "shown Review accepts nil or current intake and drops stale intake without another build",
+            arguments: ["background-warmup", "sequence_gap"]
+        )
+        func coldReviewIntakeAdmitsNilOrCurrentStreamAndRejectsStaleStream(reason: String) async throws {
+            let droppedIntake = BootstrapReviewIntakeTelemetryRecorder()
+            let nilStream = try await makeBootstrapColdReviewIntakeFixture()
+            let currentStream = try await makeBootstrapColdReviewIntakeFixture()
+            let staleStream = try await makeBootstrapColdReviewIntakeFixture(telemetryRecorder: droppedIntake)
+            let fixtures = [nilStream, currentStream, staleStream]
+            defer {
+                for fixture in fixtures {
+                    // fire-and-forget: defer cannot await; cleanup only
+                    _ = fixture.controller.beginTeardown()
+                }
+            }
+            // G2's accepted Review mode starts the one initial build before intake.
+            for fixture in fixtures {
+                await sendPageActiveViewerMode(
+                    .review, controller: fixture.controller, productAdmission: fixture.productAdmission, sequence: 1
+                )
+                await fixture.controller.activeReviewRefreshTask?.value
+                #expect(await fixture.sourceProvider.recordedComparisonRequestsCount() == 1)
+            }
+            let stalePackage = try #require(staleStream.controller.paneState.diff.packageMetadata)
+            await nilStream.controller.handleCommittedProductReviewIntakeReady(
+                BridgeProductReviewIntakeReadyRequest(reason: reason, streamId: nil),
+                productAdmission: nilStream.productAdmission
+            )
+            await currentStream.controller.handleCommittedProductReviewIntakeReady(
+                BridgeProductReviewIntakeReadyRequest(
+                    reason: reason, streamId: currentStream.controller.reviewProtocolStreamId()
+                ), productAdmission: currentStream.productAdmission
+            )
+            await staleStream.controller.handleCommittedProductReviewIntakeReady(
+                BridgeProductReviewIntakeReadyRequest(reason: reason, streamId: "review:stale-stream"),
+                productAdmission: staleStream.productAdmission
+            )
+            let staleIntakeWasDropped = try await droppedIntake.waitForDroppedIntake()
+            #expect(staleIntakeWasDropped)
+            #expect(staleStream.controller.activeReviewRefreshTask == nil)
+            #expect(await staleStream.sourceProvider.recordedComparisonRequestsCount() == 1)
+            #expect(staleStream.controller.paneState.diff.packageMetadata == stalePackage)
+            await nilStream.controller.activeReviewRefreshTask?.value
+            await currentStream.controller.activeReviewRefreshTask?.value
+            #expect(nilStream.controller.paneState.diff.status == .ready)
+            #expect(nilStream.controller.paneState.diff.packageMetadata != nil)
+            #expect(currentStream.controller.paneState.diff.status == .ready)
+            #expect(currentStream.controller.paneState.diff.packageMetadata != nil)
+            for fixture in fixtures { #expect(await fixture.controller.beginTeardown().value) }
+            try await droppedIntake.finish()
+        }
     }
-    throw BootstrapSurfaceSelectionReplayError.expectedSurfaceSelectionFrame
 }
 
 private actor BridgeProductBootstrapDeliverySuspension {
@@ -725,26 +658,6 @@ private actor BridgeProductBootstrapDeliverySuspension {
 }
 
 @MainActor
-private final class BootstrapReplacementOverlapState {
-    weak var controller: BridgePaneController?
-    var deliveredInstallations: [BridgeProductSessionInstallation] = []
-    var replacementMetadataProducer: BridgeProductProducerLease?
-}
-
-private struct BootstrapReviewReplaySubscription {
-    let lease: BridgeProductProducerLease
-    let productAdmission: BridgeProductAdmissionContext
-}
-
-private enum BootstrapReviewReplayError: Error {
-    case expectedMetadataStreamAccepted
-    case expectedReviewSubscriptionAccepted
-    case expectedReviewMetadataEvent
-    case expectedSingleMetadataFrame
-    case expectedWorkerSessionAccepted
-}
-
-@MainActor
 private func openBootstrapReviewReplaySubscription(
     controller: BridgePaneController,
     installation: BridgeProductSessionInstallation,
@@ -760,12 +673,15 @@ private func openBootstrapReviewReplaySubscription(
         productAdmission: productAdmission
     )
     let workerOpenRequest = try bootstrapReviewWorkerOpenRequest(installation: installation)
-    guard
-        case .response = try await controlDispatcher.dispatch(
+    let workerOpenResponse = try await readAdmittedBridgeProductControlResponse(
+        try await controlDispatcher.dispatch(
             exactRequestBytes: try bootstrapReviewControlRequestBytes(workerOpenRequest),
             presentedCapability: capabilityHeader
-        )
-    else {
+        ),
+        installation: installation,
+        capabilityHeader: capabilityHeader
+    )
+    guard case .workerSessionAccepted = workerOpenResponse else {
         throw BootstrapReviewReplayError.expectedWorkerSessionAccepted
     }
 
@@ -807,17 +723,13 @@ private func openBootstrapReviewReplaySubscription(
         await Task.yield()
     }
     #expect(metadataStreamIsReady)
-    let reviewOpenDispatch = try await controlDispatcher.dispatch(
-        exactRequestBytes: try bootstrapReviewControlRequestBytes(reviewOpenRequest),
-        presentedCapability: capabilityHeader
-    )
-    guard case .response(let reviewOpenResponseBytes) = reviewOpenDispatch else {
-        Issue.record("Expected Review open response, received \(String(describing: reviewOpenDispatch))")
-        throw BootstrapReviewReplayError.expectedReviewSubscriptionAccepted
-    }
-    let reviewOpenResponse = try BridgeProductStrictJSON.decode(
-        BridgeProductControlResponse.self,
-        from: reviewOpenResponseBytes
+    let reviewOpenResponse = try await readAdmittedBridgeProductControlResponse(
+        try await controlDispatcher.dispatch(
+            exactRequestBytes: try bootstrapReviewControlRequestBytes(reviewOpenRequest),
+            presentedCapability: capabilityHeader
+        ),
+        installation: installation,
+        capabilityHeader: capabilityHeader
     )
     guard case .subscriptionOpenAccepted = reviewOpenResponse else {
         Issue.record("Expected Review open acceptance, received \(String(describing: reviewOpenResponse))")
@@ -828,115 +740,11 @@ private func openBootstrapReviewReplaySubscription(
         installation: installation,
         productAdmission: productAdmission
     )
+    try await admitBootstrapReviewViewScope(
+        dispatcher: controlDispatcher, installation: installation, capabilityHeader: capabilityHeader
+    )
     return BootstrapReviewReplaySubscription(
         lease: metadataLease,
         productAdmission: productAdmission
     )
-}
-
-private func consumeBootstrapReviewSubscriptionAcceptance(
-    metadataLease: BridgeProductProducerLease,
-    installation: BridgeProductSessionInstallation,
-    productAdmission: BridgeProductAdmissionContext
-) async throws {
-    for _ in 0..<16 {
-        guard
-            let producerFrame = await consumeNextBridgeProductProducerFrame(
-                for: metadataLease,
-                from: installation.session,
-                productAdmission: productAdmission
-            )
-        else { break }
-        let metadataFrame = try bootstrapReviewMetadataFrame(from: producerFrame)
-        if case .subscriptionAccepted = metadataFrame { return }
-    }
-    throw BootstrapReviewReplayError.expectedReviewSubscriptionAccepted
-}
-
-private func bootstrapReviewWorkerOpenRequest(
-    installation: BridgeProductSessionInstallation
-) throws -> BridgeProductControlRequest {
-    try bootstrapReviewControlRequest([
-        "kind": "workerSession.open",
-        "paneSessionId": installation.bootstrap.paneSessionId,
-        "request": NSNull(),
-        "requestId": "request-open-bootstrap-review-replay",
-        "requestSequence": 1,
-        "wireVersion": BridgeProductWireContract.version,
-        "workerInstanceId": installation.bootstrap.workerInstanceId,
-    ])
-}
-
-private func bootstrapReviewSubscriptionOpenRequest(
-    installation: BridgeProductSessionInstallation
-) throws -> BridgeProductControlRequest {
-    try bootstrapReviewControlRequest([
-        "kind": "subscription.open",
-        "paneSessionId": installation.bootstrap.paneSessionId,
-        "requestId": "request-open-bootstrap-review-subscription",
-        "requestSequence": 2,
-        "subscription": ["subscriptionKind": "review.metadata"],
-        "subscriptionId": "bootstrap-review-replay-subscription",
-        "wireVersion": BridgeProductWireContract.version,
-        "workerDerivationEpoch": 1,
-        "workerInstanceId": installation.bootstrap.workerInstanceId,
-    ])
-}
-
-private func bootstrapReviewMetadataRequest(
-    installation: BridgeProductSessionInstallation
-) throws -> BridgeProductMetadataStreamRequest {
-    try BridgeProductStrictJSON.decode(
-        BridgeProductMetadataStreamRequest.self,
-        from: JSONSerialization.data(
-            withJSONObject: [
-                "kind": "metadataStream.open",
-                "metadataStreamId": "bootstrap-review-replay-stream",
-                "paneSessionId": installation.bootstrap.paneSessionId,
-                "resumeFromStreamSequence": NSNull(),
-                "wireVersion": BridgeProductWireContract.version,
-                "workerInstanceId": installation.bootstrap.workerInstanceId,
-            ],
-            options: [.sortedKeys]
-        )
-    )
-}
-
-private func bootstrapReviewControlRequest(
-    _ object: [String: Any]
-) throws -> BridgeProductControlRequest {
-    try BridgeProductStrictJSON.decode(
-        BridgeProductControlRequest.self,
-        from: JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
-    )
-}
-
-private func bootstrapReviewControlRequestBytes(
-    _ request: BridgeProductControlRequest
-) throws -> Data {
-    let encoder = JSONEncoder()
-    encoder.outputFormatting = [.sortedKeys]
-    return try encoder.encode(request)
-}
-
-private func bootstrapReviewMetadataFrame(
-    from queuedFrame: BridgeProductQueuedProducerFrame
-) throws -> BridgeProductMetadataFrame {
-    let decoder = try BridgeProductMetadataFrameDecoder()
-    let frames = try decoder.append(queuedFrame.data)
-    guard frames.count == 1, let frame = frames.first else {
-        throw BootstrapReviewReplayError.expectedSingleMetadataFrame
-    }
-    return frame
-}
-
-private func bootstrapReviewEvent(
-    from frame: BridgeProductMetadataFrame
-) throws -> BridgeProductReviewMetadataEvent {
-    guard case .subscriptionData(let dataFrame) = frame,
-        let event = dataFrame.data.reviewMetadataEvent
-    else {
-        throw BootstrapReviewReplayError.expectedReviewMetadataEvent
-    }
-    return event
 }

@@ -454,6 +454,8 @@ struct GitWorkingDirectoryProjectorFactTests {
     @Test("accepted intake and refresh close only after held status reaches the bus")
     func heldStatusClosesAfterPublication() async throws {
         let bus = EventBus<RuntimeEnvelope>()
+        let witness = GitProjectorCompletionWitness()
+        let publication = HeldStep<RuntimeEnvelope>("snapshot bus handoff")
         let statusGate = HeldStep<Void>("projector status provider")
         let provider = StubGitWorkingTreeStatusProvider { _ in
             try? await statusGate.arrive(())
@@ -471,7 +473,16 @@ struct GitWorkingDirectoryProjectorFactTests {
             bus: bus,
             gitWorkingTreeProvider: provider,
             coalescingWindow: .zero,
-            factSink: source.sink
+            sleepClock: TestPushClock(),
+            factSink: { scope, fact in
+                if case .refresh(let worktreeID, let request) = scope,
+                    case .refreshClosed(.completed) = fact
+                {
+                    witness.append(.refreshClosed(worktreeID, request))
+                }
+                source.sink(scope, fact)
+            },
+            runtimeEnvelopePoster: GitProjectorHeldSnapshotPoster(bus: bus, step: publication, witness: witness)
         )
         await projector.start()
 
@@ -482,6 +493,14 @@ struct GitWorkingDirectoryProjectorFactTests {
         #expect(await projector.lastEmittedSnapshotByWorktreeId[worktreeId] == nil)
 
         statusGate.release()
+        let handoff = try await publication.firstArrival()
+        if case .worktree(let envelope) = handoff {
+            #expect(envelope.worktreeId == worktreeId)
+            #expect(envelope.repoId == worktreeId)
+        } else {
+            Issue.record("Expected worktree snapshot handoff")
+        }
+        publication.release()
         var publishedSnapshot: GitWorkingTreeSnapshot?
         while let event = await outputIterator.next() {
             guard case .worktree(let worktreeEnvelope) = event,
@@ -495,6 +514,7 @@ struct GitWorkingDirectoryProjectorFactTests {
         #expect(await projector.lastEmittedSnapshotByWorktreeId[worktreeId]?.summary.changed == 1)
         await projector.shutdown()
         source.end()
+        #expect(witness.values == [.snapshotPosted(worktreeId), .refreshClosed(worktreeId, 1)])
 
         try await facts.expectNext(
             in: .intake(worktreeId: worktreeId, registration: 0, batchSeq: 1), .changesetAccepted

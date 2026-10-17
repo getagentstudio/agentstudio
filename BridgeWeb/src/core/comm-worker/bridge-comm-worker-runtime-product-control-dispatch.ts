@@ -5,7 +5,7 @@ import {
 } from './bridge-comm-worker-product-control-completion.js';
 import type { BridgeCommWorkerProductController } from './bridge-comm-worker-product-controller.js';
 import type { BridgeWorkerComparisonTargetsQueryRunner } from './bridge-comm-worker-review-comparison-target-query.js';
-import type { BridgeCommWorkerReviewMetadataApplicator } from './bridge-comm-worker-review-metadata-applicator.js';
+import type { BridgeCommWorkerReviewSuccessorReExposureSettlement } from './bridge-comm-worker-review-publication-types.js';
 import { bridgeWorkerRuntimeProductControlCommandForMessage } from './bridge-comm-worker-runtime-command-routing.js';
 import {
 	bridgeCommWorkerProductControlFailureMessage,
@@ -18,11 +18,16 @@ import {
 } from './bridge-comm-worker-runtime-health.js';
 import type { BridgeCommWorkerProductControlSender } from './bridge-comm-worker-runtime-protocol-contracts.js';
 import { sendBridgeCommWorkerActionWithTimeout } from './bridge-comm-worker-runtime-support.js';
-import type { BridgeProductControlCommand } from './bridge-product-control-contracts.js';
+import { BridgeProductRequestTransportError } from './bridge-product-command-post.js';
+import {
+	BridgeProductControlRequestError,
+	BridgeProductSessionSuspectError,
+} from './bridge-product-session-authority.js';
 import type { BridgeProductTransportSession } from './bridge-product-transport.js';
 import type {
 	BridgeWorkerMainToServerMessage,
 	BridgeWorkerServerToMainMessage,
+	BridgeWorkerSessionSuspectEvent,
 } from './bridge-worker-contracts.js';
 
 export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
@@ -36,12 +41,22 @@ export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
 		message: BridgeWorkerServerToMainMessage,
 		transfer?: readonly Transferable[],
 	) => void;
+	readonly publishSessionSuspect?: (message: BridgeWorkerSessionSuspectEvent) => void;
 	readonly productControlTimeoutMilliseconds: number;
 	readonly productController: BridgeCommWorkerProductController | null;
 	readonly productTransport: BridgeProductTransportSession | undefined;
 	readonly publishReviewMetadataInterests: () => Promise<void>;
-	readonly reviewMetadataApplicator: BridgeCommWorkerReviewMetadataApplicator | null;
+	readonly reviewSuccessorSettlementOwner: {
+		handleSuccessorReExposureSettlement: (
+			settlement: BridgeCommWorkerReviewSuccessorReExposureSettlement,
+			workerDerivationEpoch: number | null,
+		) => boolean;
+	} | null;
 	readonly sendProductControl: BridgeCommWorkerProductControlSender;
+	readonly sessionIdentity?: {
+		readonly paneSessionId: string;
+		readonly workerInstanceId: string;
+	};
 	readonly setActiveComparisonTargetsRequestId: (requestId: string | null) => void;
 }): void {
 	const productControlCommand = bridgeWorkerRuntimeProductControlCommandForMessage(
@@ -92,14 +107,9 @@ export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
 			props.setActiveComparisonTargetsRequestId(productControlCommand.requestId);
 		}
 		const send = (): Promise<unknown> => props.sendProductControl(productControlCommand.command);
-		// A native Save panel has a user-controlled lifetime. Timing it out does not
-		// cancel the native effect, and would discard a later successful save.
-		const completion = annotationOutputMayOpenSavePanel(productControlCommand.command)
-			? Promise.resolve().then(send)
-			: sendBridgeCommWorkerActionWithTimeout({
-					send,
-					timeoutMilliseconds: props.productControlTimeoutMilliseconds,
-				});
+		// W1 owns result and admission deadlines. A declared human wait has no
+		// result deadline; only its admission reply remains bounded.
+		const completion = Promise.resolve().then(send);
 		void completion
 			.then((actionResult): void => {
 				if (
@@ -117,11 +127,80 @@ export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
 					messages: props.messages,
 					publish: props.publish,
 					requestId: productControlCommand.requestId,
-					reviewSuccessorSettlementOwner: props.reviewMetadataApplicator,
+					reviewSuccessorSettlementOwner: props.reviewSuccessorSettlementOwner,
 					reviewWorkerDerivationEpoch: props.activeReviewWorkerDerivationEpoch,
 				});
 			})
-			.catch((): void => {
+			.catch((error: unknown): void => {
+				if (
+					error instanceof BridgeProductSessionSuspectError &&
+					error.shouldNotify &&
+					props.sessionIdentity !== undefined &&
+					props.publishSessionSuspect !== undefined
+				) {
+					props.publishSessionSuspect({
+						ackAttemptOutcomes: [],
+						droppedPriorControlRequestCount: 0,
+						direction: 'serverWorkerToMain',
+						kind: 'sessionSuspect',
+						paneSessionId: props.sessionIdentity.paneSessionId,
+						priorControlRequests: [],
+						reason:
+							error.phase === 'admission' ? 'admissionReplyExhausted' : 'resultDeadlineExhausted',
+						transferDescriptors: [],
+						wireVersion: 1,
+						workerInstanceId: props.sessionIdentity.workerInstanceId,
+					});
+				}
+				if (
+					error instanceof BridgeProductSessionSuspectError ||
+					(error instanceof BridgeProductControlRequestError && error.outcome === 'outcomeUnknown')
+				) {
+					props.publish(
+						buildBridgeWorkerRuntimeCommandFailedHealthEvent({
+							deliveryStatus: 'unknownAfterDispatch',
+							message: `Bridge comm worker has not received the outcome of ${productControlCommand.command.method}.`,
+							requestId: productControlCommand.requestId,
+						}),
+					);
+					if (
+						error instanceof BridgeProductControlRequestError &&
+						error.outcome === 'outcomeUnknown' &&
+						error.observeLateOutcome !== undefined
+					) {
+						void error
+							.observeLateOutcome()
+							.then(async (observation): Promise<void> => {
+								if (
+									observation.evidence.outcome === 'succeeded' &&
+									observation.actionResult !== null
+								) {
+									completeBridgeCommWorkerProductControlSuccess({
+										actionResult: observation.actionResult,
+										command: productControlCommand.command,
+										mainCommand: props.mainCommand,
+										messages: props.messages,
+										publish: props.publish,
+										requestId: productControlCommand.requestId,
+										reviewSuccessorSettlementOwner: props.reviewSuccessorSettlementOwner,
+										reviewWorkerDerivationEpoch: props.activeReviewWorkerDerivationEpoch,
+									});
+								} else {
+									props.publish(
+										buildBridgeWorkerRuntimeCommandFailedHealthEvent({
+											requestId: productControlCommand.requestId,
+											message: `Bridge product operation later settled as ${observation.evidence.outcome}.`,
+										}),
+									);
+								}
+								await observation.acknowledge();
+							})
+							.catch((): void => {
+								// The initial unknown report remains authoritative if observation is lost.
+							});
+					}
+					return;
+				}
 				if (
 					productControlCommand.command.method === 'review.comparisonTargets.query' &&
 					props.getActiveComparisonTargetsRequestId() === productControlCommand.requestId
@@ -133,6 +212,7 @@ export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
 				props.publish(
 					buildBridgeWorkerRuntimeCommandFailedHealthEvent({
 						requestId: productControlCommand.requestId,
+						errorKind: classifyProductControlForwardingError(error),
 						message: bridgeCommWorkerProductControlFailureMessage({
 							command: productControlCommand.command,
 						}),
@@ -143,7 +223,7 @@ export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
 				);
 				notifyBridgeCommWorkerProductControlFailure({
 					command: productControlCommand.command,
-					reviewSuccessorSettlementOwner: props.reviewMetadataApplicator,
+					reviewSuccessorSettlementOwner: props.reviewSuccessorSettlementOwner,
 					reviewWorkerDerivationEpoch: props.activeReviewWorkerDerivationEpoch,
 				});
 			});
@@ -177,15 +257,13 @@ export function dispatchBridgeCommWorkerRuntimeProductControl(props: {
 	}
 }
 
-function annotationOutputMayOpenSavePanel(command: BridgeProductControlCommand): boolean {
-	if (
-		command.method !== 'file.annotations.command' &&
-		command.method !== 'review.annotations.command'
-	)
-		return false;
-	const operation = command.params.operation;
-	return (
-		operation.kind === 'output.repeat' ||
-		(operation.kind === 'output.scope.commit' && operation.outputKind === 'jsonFile')
-	);
+function classifyProductControlForwardingError(
+	error: unknown,
+): 'transport' | 'requestRefused' | 'invalidResult' | 'unexpected' {
+	if (error instanceof BridgeProductRequestTransportError) return 'transport';
+	if (error instanceof BridgeProductControlRequestError) return 'requestRefused';
+	if (error instanceof SyntaxError || (error instanceof Error && error.name === 'ZodError')) {
+		return 'invalidResult';
+	}
+	return 'unexpected';
 }

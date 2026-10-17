@@ -37,17 +37,17 @@ struct BridgeAppCommandContractTests {
         )
 
         // Act
-        let definition = AppCommandDispatcher.shared.definition(for: reloadBridgeWebView)
+        let definition = reloadBridgeWebView.definition
 
         // Assert
-        #expect(definition.label == "Reload Bridge Web View")
+        #expect(definition.label == "Reload Bridge")
         #expect(definition.icon == .system(.arrowClockwise))
         #expect(
             definition.helpText
                 == "Reload the Bridge browser page and discard browser presentation state without refreshing worktree source data"
         )
-        #expect(definition.surfacePolicy == .exposed([.commandBar]))
-        #expect(definition.targeting == .contextual)
+        #expect(definition.surfacePolicy == .exposed([.commandBar, .bridgePage]))
+        #expect(definition.targeting == .contextualAndTargeted([.pane], preferredInvocation: .contextual))
         #expect(definition.visibleWhen == [.hasActivePane, .paneIsBridge])
         #expect(definition.shortcut == nil)
         #expect(definition.globalKeyBinding == nil)
@@ -81,7 +81,7 @@ struct BridgeAppCommandContractTests {
         let showReview = try #require(AppCommand(rawValue: "showBridgeReview"))
 
         // Act
-        let definition = AppCommandDispatcher.shared.definition(for: showReview)
+        let definition = showReview.definition
 
         // Assert
         #expect(definition.surfacePolicy == .exposed([.commandBar, .contextMenu]))

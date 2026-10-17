@@ -99,22 +99,34 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
     }
 
     @Test("coalesced provider work and a later input settle after the provider exits")
-    func coalescedProviderAndLaterInput() async throws {
+    func coalescedProviderAndLaterInputEmitsAfterProviderExit() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let providerStep = HeldStep<Void>("coalesced status provider")
+        let providerResultReady = Mutex(false)
+        let prematureRefreshCloses = Mutex<[GitProjectorScope]>([])
         let provider = StubGitWorkingTreeStatusProvider { _ in
             try? await providerStep.arrive(())
-            return cleanStatus()
+            let status = cleanStatus()
+            providerResultReady.withLock { $0 = true }
+            return status
+        }
+        let factSink: GitProjectorFactSink = { scope, fact in
+            if case .refresh = scope, case .refreshClosed = fact,
+                !providerResultReady.withLock({ $0 })
+            {
+                prematureRefreshCloses.withLock { $0.append(scope) }
+            }
+            source.sink(scope, fact)
         }
         let projector = GitWorkingDirectoryProjector(
             bus: bus,
             gitWorkingTreeProvider: provider,
             coalescingWindow: .milliseconds(20),
             sleepClock: clock,
-            factSink: source.sink
+            factSink: factSink
         )
         await projector.start()
         let worktreeID = UUIDv7.generate()
@@ -129,12 +141,16 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
         _ = try await providerStep.firstArrival()
         _ = await bus.post(ignoredTopologyEnvelope(seq: 2))
         #expect(try await facts.expectHandledEnvelope(seq: 2) == .ignored)
+        let refreshTask = try #require(await projector.worktreeTasks[worktreeID])
         providerStep.release()
+        await refreshTask.value
 
-        _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeID)
+        let refreshOutcome = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeID)
+        #expect(refreshOutcome == .completed(snapshotChanged: true, branchChanged: false))
         #expect(await projector.worktreeTasks.isEmpty)
         await projector.shutdown()
         #expect(try await facts.expectShutdownCompleted() == 0)
+        #expect(prematureRefreshCloses.withLock { $0 }.isEmpty)
     }
 
     @Test("cancelled retired provider remains outstanding until it actually exits")
@@ -252,15 +268,26 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let providerStep = HeldStep<Void>("shutdown provider", cancellation: .holdThroughCancellation)
+        let providerReturned = Mutex(false)
+        let shutdownClosedBeforeProviderReturn = Mutex(false)
         let provider = StubGitWorkingTreeStatusProvider { _ in
             try? await providerStep.arrive(())
+            providerReturned.withLock { $0 = true }
             return cleanStatus()
+        }
+        let factSink: GitProjectorFactSink = { scope, fact in
+            if case .lifetime(1) = scope, fact == .shutdownCompleted,
+                !providerReturned.withLock({ $0 })
+            {
+                shutdownClosedBeforeProviderReturn.withLock { $0 = true }
+            }
+            source.sink(scope, fact)
         }
         let projector = GitWorkingDirectoryProjector(
             bus: bus,
             gitWorkingTreeProvider: provider,
             coalescingWindow: .zero,
-            factSink: source.sink
+            factSink: factSink
         )
         await projector.start()
         let worktreeID = UUIDv7.generate()
@@ -275,6 +302,7 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
         await shutdownTask.value
         #expect(try await facts.expectShutdownCompleted() == 0)
         #expect(await projector.outstandingDrainTasks.isEmpty)
+        #expect(!shutdownClosedBeforeProviderReturn.withLock { $0 })
     }
 
     @Test("status failure debt remains outstanding until controlled backoff retries it")
@@ -389,12 +417,23 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
     }
 
     @Test("a due periodic deadline stays active through exact-clean renewal")
-    func activeDeadlineRenewal() async throws {
+    func activeDeadlineRenewalSettlesAfterControlledRenewal() async throws {
         let source = GitProjectorFactSource()
         let facts = try source.attach()
         let bus = EventBus<RuntimeEnvelope>()
         let clock = TestPushClock()
         let renewalStep = HeldStep<Void>("exact-clean deadline renewal")
+        let renewalResultReady = Mutex(false)
+        let observedDeadlineScope = Mutex<GitProjectorScope?>(nil)
+        let prematureDeadlineDispositions = Mutex<[GitProjectorScope]>([])
+        let factSink: GitProjectorFactSink = { scope, fact in
+            if scope == observedDeadlineScope.withLock({ $0 }), case .deadlineDisposition = fact,
+                !renewalResultReady.withLock({ $0 })
+            {
+                prematureDeadlineDispositions.withLock { $0.append(scope) }
+            }
+            source.sink(scope, fact)
+        }
         let authority = GitCleanContinuityAuthority(
             registrationId: UUIDv7.generate(),
             observationIdentity: GitStatusObservationIdentity(rawValue: "quiescence-renewal"),
@@ -406,12 +445,13 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
             bus: bus,
             gitWorkingTreeProvider: HeldExactCleanRenewalProvider(
                 authority: authority,
-                renewalStep: renewalStep
+                renewalStep: renewalStep,
+                resultReady: { renewalResultReady.withLock { $0 = true } }
             ),
             coalescingWindow: .zero,
             sleepClock: clock,
             refreshPolicy: .init(activePaneCadence: .milliseconds(10)),
-            factSink: source.sink
+            factSink: factSink
         )
         await projector.start()
         let worktreeID = UUIDv7.generate()
@@ -423,10 +463,13 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
         )
         await clock.waitForPendingSleepCount(exactly: 1)
 
+        observedDeadlineScope.withLock { $0 = periodicDeadline }
+        let deadlineTask = try #require(await projector.deadlineTask)
         #expect(clock.advanceToNextPendingSleep())
         _ = try await renewalStep.firstArrival()
         renewalStep.release()
-        _ = try await facts.expectNext(
+        await deadlineTask.value
+        let disposition = try await facts.expectNext(
             in: periodicDeadline,
             where: {
                 if case .deadlineDisposition = $0 { return true }
@@ -434,6 +477,8 @@ struct GitWorkingDirectoryProjectorQuiescenceTests {
             },
             "periodic deadline closed after renewal"
         )
+        #expect(disposition == .deadlineDisposition(.deferred))
+        #expect(prematureDeadlineDispositions.withLock { $0 }.isEmpty)
         await projector.shutdown()
         #expect(try await facts.expectShutdownCompleted() == 0)
     }
@@ -573,6 +618,7 @@ private actor StatusAttemptSequence {
 private struct HeldExactCleanRenewalProvider: GitExactCleanStatusProviding {
     let authority: GitCleanContinuityAuthority
     let renewalStep: HeldStep<Void>
+    let resultReady: @Sendable () -> Void
 
     func statusResult(for _: URL, pathspecs _: [String]?) async -> GitWorkingTreeStatusResult {
         .available(cleanStatus())
@@ -584,7 +630,9 @@ private struct HeldExactCleanRenewalProvider: GitExactCleanStatusProviding {
 
     func renewExactCleanAuthority(_: GitCleanContinuityAuthority) async -> GitExactCleanRenewalResult {
         try? await renewalStep.arrive(())
-        return .renewed(authority)
+        let result = GitExactCleanRenewalResult.renewed(authority)
+        resultReady()
+        return result
     }
 
     func retireExactCleanAuthority(worktreeId _: UUID, rootPath _: URL) {}

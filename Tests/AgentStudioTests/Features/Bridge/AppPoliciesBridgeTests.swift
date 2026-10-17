@@ -6,6 +6,71 @@ import Testing
 
 @Suite(.serialized)
 final class AppPoliciesBridgeTests {
+    @Test("Page deadlines are projected from AppPolicies with lockstep fixtures and no inline fallbacks")
+    func pageDeadlinesFollowNativePolicy() throws {
+        let fixture = try JSONDecoder().decode(
+            BridgePageConfiguration.self,
+            from: Data(
+                contentsOf: URL(fileURLWithPath: "Tests/BridgeContractFixtures/valid/bridge-page-configuration.json"))
+        )
+        #expect(fixture == .live)
+        #expect(
+            fixture.readyAcknowledgementDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.productPageReadyAcknowledgementDeadline.components.seconds * 1000))
+        #expect(
+            fixture.workerBootstrapDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.productPageBootstrapDeadline.components.seconds * 1000))
+        #expect(
+            BridgeProductBootstrapPolicy.productContract.contentAcknowledgementDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.productContentAcknowledgementDeadline.components.seconds * 1000))
+        let script = BridgeBootstrap.generateScript()
+        #expect(script.contains("pageConfiguration: PAGE_CONFIGURATION"))
+        #expect(
+            script.contains("\"workerBootstrapDeadlineMilliseconds\":\(fixture.workerBootstrapDeadlineMilliseconds)"))
+        for path in [
+            "BridgeWeb/src/core/comm-worker/bridge-pane-comm-worker-session.ts",
+            "BridgeWeb/src/core/comm-worker/bridge-product-transport.ts",
+            "BridgeWeb/src/bridge/bridge-page-handshake.ts",
+        ] {
+            let source = try String(contentsOfFile: path, encoding: .utf8).replacingOccurrences(of: "_", with: "")
+            let hasInlineDeadlineFallback = source.contains("?? 5000")
+            #expect(!hasInlineDeadlineFallback, "Inline page deadline fallback remains in \(path)")
+        }
+    }
+    @Test("Bridge bootstrap carries control and view delivery policies")
+    func bridgeBootstrapCarriesOperationPolicies() {
+        let bootstrapPolicy = BridgeProductBootstrapPolicy.productContract
+        #expect(bootstrapPolicy.admissionRetryCount == AppPolicies.Bridge.productAdmissionRetryCount)
+        #expect(
+            bootstrapPolicy.contentProgressDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.contentProgressDeadline.components.seconds * 1000)
+        )
+        #expect(
+            bootstrapPolicy.workerSettlementDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.productWorkerSettlementDeadline.components.seconds * 1000)
+        )
+        #expect(bootstrapPolicy.viewCreditParts == AppPolicies.Bridge.productViewCreditParts)
+        #expect(bootstrapPolicy.viewCreditBytes == AppPolicies.Bridge.productViewCreditBytes)
+        #expect(bootstrapPolicy.streamKeepaliveIntervalMilliseconds == 350)
+        #expect(bootstrapPolicy.viewMaximumDirtyKeys == AppPolicies.Bridge.productViewMaximumDirtyKeys)
+        #expect(
+            bootstrapPolicy.viewAcknowledgementDeadlineMilliseconds
+                == Int(AppPolicies.Bridge.productViewAcknowledgementDeadline.components.seconds * 1000)
+        )
+        #expect(
+            bootstrapPolicy.viewMaximumConsecutiveResnapshots
+                == AppPolicies.Bridge.productViewMaximumConsecutiveResnapshots
+        )
+    }
+
+    @Test("product and telemetry bootstraps use the same native pre-ready bounds")
+    func bridgeBootstrapCarriesTelemetryPreReadyBounds() {
+        let productPolicy = BridgeProductBootstrapPolicy.productContract
+        let telemetryPolicy = BridgeTelemetryWorkerPolicy.live
+        #expect(productPolicy.telemetryPreReadyBufferMaxBytes == telemetryPolicy.producerPreReadyBufferMaxBytes)
+        #expect(productPolicy.telemetryPreReadyBufferMaxSamples == telemetryPolicy.producerPreReadyBufferMaxSamples)
+    }
+
     @Test("Bridge lifecycle diagnostics use a bounded observability-only window")
     func bridgeLifecycleDiagnosticsUseBoundedPolicy() {
         #expect(AppPolicies.Bridge.operationLifecycleTerminalWindow == .seconds(30))

@@ -411,7 +411,7 @@ struct DraggableTabBarWindowDragTests {
         )
         let hostingView = DraggableTabBarHostingView(
             rootView: tabBar,
-            performanceTraceRecorder: performanceTraceRecorder
+            commandDispatcher: AppTerminalFixtureCommandDispatcher(), performanceTraceRecorder: performanceTraceRecorder
         )
         hostingView.configure(adapter: adapter) { _, _, _ in }
         let boundsHeight: CGFloat = AppStyles.Shell.TabBar.height

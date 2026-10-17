@@ -520,7 +520,7 @@ extension AgentStudioGitBridgeReviewDataClient {
             )
         } catch BridgeProviderFailure.providerUnavailable, BridgeProviderFailure.missingContent,
             BridgeProviderFailure.oversizedContent, BridgeProviderFailure.binaryContent,
-            BridgeProviderFailure.providerFailed
+            BridgeProviderFailure.providerFailed, BridgeProviderFailure.sourceCapacityDeferred
         {
             return nil
         }

@@ -126,13 +126,18 @@ struct ZmxSessionInventoryParserTests {
         // the probe produces directly, never derived from stdout content, so
         // there is nothing for this parser to prove about them beyond: it
         // never produces those two cases itself.
-        let stdout = "name=\(Self.aliveID.rawValue)\tpid=1\tclients=0\tcreated=1\n"
+        let wellFormed = "name=\(Self.aliveID.rawValue)\tpid=1\tclients=0\tcreated=1\n"
+        let malformed = "garbage\n"
 
         // Act
-        let inventory = ZmxSessionInventoryParser.parse(stdout: stdout)
+        let parsed = ZmxSessionInventoryParser.parse(stdout: wellFormed)
+        let refused = ZmxSessionInventoryParser.parse(stdout: malformed)
 
-        // Assert
-        guard case .unavailable(let failure) = inventory else { return }
-        #expect(failure == .unparsable, "the parser's own failure vocabulary is limited to .unparsable")
+        // Assert: the parser's only failure is .unparsable; process outcomes stay with the probe.
+        #expect(refused == .unavailable(.unparsable))
+        guard case .complete = parsed else {
+            Issue.record("a well-formed inventory line must parse as complete, got \(parsed)")
+            return
+        }
     }
 }

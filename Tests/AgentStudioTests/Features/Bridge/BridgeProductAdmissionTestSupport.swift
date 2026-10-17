@@ -57,7 +57,7 @@ extension BridgePaneProductFileMetadataSource {
     func open(
         subscription: BridgeProductSubscriptionSnapshot,
         productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         let foregroundWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
             .admission
@@ -69,17 +69,21 @@ extension BridgePaneProductFileMetadataSource {
         )
     }
 
-    func update(
-        subscription: BridgeProductSubscriptionSnapshot,
+    func applyViewDemand(
+        subscriptionId: String,
+        demand: BridgePaneProductFileViewDemand,
         productAdmission: BridgeProductAdmissionContext,
-        emit: @escaping BridgePaneProductFileMetadataEventSink
+        forceRecapture: Bool,
+        emit: @escaping BridgePaneProductFileSourceFactSink
     ) async throws {
         let foregroundWorkAdmission = await BridgePaneRefreshWorkAdmissionTestContext.foreground()
             .admission
-        try await update(
-            subscription: subscription,
+        try await applyViewDemand(
+            subscriptionId: subscriptionId,
+            demand: demand,
             productAdmission: productAdmission,
             foregroundWorkAdmission: foregroundWorkAdmission,
+            forceRecapture: forceRecapture,
             emit: emit
         )
     }

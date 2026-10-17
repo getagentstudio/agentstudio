@@ -10,6 +10,7 @@ package enum AppCommandSurface: Hashable, Sendable {
     case contextMenu
     case toolbar(AppCommandToolbarSurface)
     case inlineControl
+    case bridgePage
 }
 
 package enum AppCommandSurfacePolicy: Equatable, Sendable {

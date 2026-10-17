@@ -77,9 +77,10 @@ struct IPCSystemCapabilitiesCompositionTests {
         let names = composition.result.methods.map(\.name)
 
         #expect(names == names.sorted())
-        #expect(names.count == 48)
+        #expect(names.count == 56)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
         #expect(composition.erasedDescriptor.metadata.name == "system.capabilities")
+        #expect(composition.erasedDescriptor.metadata.callIntent == .control)
         _ = try composition.descriptor.encodeResult(composition.result)
         _ = try composition.erasedDescriptor.catalogEntrySchema.decode(
             IPCMethodCatalogEntry.self,
@@ -167,7 +168,7 @@ struct IPCSystemCapabilitiesCompositionTests {
         }
     }
 
-    @Test("the actual 47-method catalog response fits the existing one MiB frame budget")
+    @Test("the actual composed catalog response fits the existing one MiB frame budget")
     func actualCatalogFitsExistingFrameBudget() throws {
         let composition = try makeComposition()
         let resultObject = try JSONSerialization.jsonObject(
@@ -235,7 +236,6 @@ struct IPCSystemCapabilitiesCompositionTests {
         )
         return try IPCBuiltInMethodCatalog(
             inputs: IPCBuiltInMethodCatalogInputs(
-                terminalWaitMaximumSeconds: 5,
                 relationships: relationships,
                 examples: context
             )

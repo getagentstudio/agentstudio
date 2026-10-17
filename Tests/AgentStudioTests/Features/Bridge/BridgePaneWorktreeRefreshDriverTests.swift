@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -12,7 +13,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [.notRequired]
         )
         let driver = makeRefreshDriver(
@@ -28,7 +29,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
             requiresReviewRefresh: true
         )
         await probe.waitForChangesetAttemptCount(1)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         #expect(affectedLanes == [.file, .review])
@@ -36,6 +37,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         #expect(coordinator.diagnosticSnapshot.dirtyFact?.requiresReviewRefresh == true)
         #expect(coordinator.productPresentationSnapshot.refreshingLanes.isEmpty)
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         productAdmission.close()
     }
 
@@ -44,7 +46,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [
                 .failed(.init(failureKind: .fileSourceUnavailable)),
                 .notRequired,
@@ -63,13 +65,44 @@ struct BridgePaneWorktreeRefreshDriverTests {
             requiresReviewRefresh: false
         )
         await probe.waitForChangesetAttemptCount(2)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         #expect(await probe.changesetAttemptCount == 2)
         #expect(coordinator.diagnosticSnapshot.dirtyFact == nil)
         #expect(coordinator.productPresentationSnapshot.fileRefreshFailure == nil)
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
+        productAdmission.close()
+    }
+
+    @Test("terminal current File failure is recorded by the driver")
+    func terminalCurrentFileFailureIsRecorded() async throws {
+        let productAdmission = try BridgeProductAdmissionTestContext.make()
+        let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
+            dispositions: [.failed(.init(failureKind: .fileRefreshFailed))]
+        )
+        let driver = makeRefreshDriver(
+            coordinator: coordinator,
+            productAdmission: productAdmission,
+            probe: probe
+        )
+
+        _ = driver.recordInvalidation(
+            fileChangeset: makeRefreshDriverChangeset(batchSequence: 72),
+            latestFileStatus: nil,
+            requiresReviewRefresh: false
+        )
+        await probe.waitForChangesetAttemptCount(1)
+        try await probe.waitForSettledFilePresentation()
+
+        #expect(
+            coordinator.productPresentationSnapshot.fileRefreshFailure?.failureKind
+                == .fileRefreshFailed
+        )
+        await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         productAdmission.close()
     }
 
@@ -78,7 +111,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [.streamResetRequired, .notRequired]
         )
         let driver = makeRefreshDriver(
@@ -95,7 +128,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
             requiresReviewRefresh: false
         )
         await probe.waitForChangesetAttemptCount(1)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         #expect(driver.hasPendingFileStreamRecovery)
@@ -106,7 +139,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Act
         driver.recordFileSourceAccepted(try makeRefreshDriverSource(generation: 11))
         await probe.waitForChangesetAttemptCount(2)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         #expect(!driver.hasPendingFileStreamRecovery)
@@ -128,6 +161,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         #expect(coordinator.diagnosticSnapshot.dirtyFact == nil)
         #expect(coordinator.productPresentationSnapshot.fileRefreshFailure == nil)
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         productAdmission.close()
     }
 
@@ -136,7 +170,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [.notRequired],
             blocksFirstChangesetAttempt: true
         )
@@ -157,7 +191,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         driver.recordFileSourceAccepted(try makeRefreshDriverSource(generation: 21))
         await probe.releaseBlockedChangeset(with: .streamResetRequired)
         await probe.waitForChangesetAttemptCount(2)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         #expect(!driver.hasPendingFileStreamRecovery)
@@ -165,6 +199,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         #expect(coordinator.diagnosticSnapshot.dirtyFact == nil)
         #expect(coordinator.productPresentationSnapshot.fileRefreshFailure == nil)
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         productAdmission.close()
     }
 
@@ -173,7 +208,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [.streamResetRequired, .notRequired]
         )
         let driver = makeRefreshDriver(
@@ -188,7 +223,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
             requiresReviewRefresh: false
         )
         await probe.waitForChangesetAttemptCount(1)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Act
         driver.recordFileSourceAccepted(try makeRefreshDriverSource(generation: 30))
@@ -214,12 +249,13 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Act
         driver.recordFileSourceAccepted(try makeRefreshDriverSource(generation: 31))
         await probe.waitForChangesetAttemptCount(2)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         #expect(!driver.hasPendingFileStreamRecovery)
         #expect(await probe.changesetAttemptCount == 2)
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         productAdmission.close()
     }
 
@@ -228,7 +264,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [.streamResetRequired, .notRequired]
         )
         let driver = makeRefreshDriver(
@@ -246,7 +282,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
             requiresReviewRefresh: false
         )
         await probe.waitForChangesetAttemptCount(1)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Act
         _ = driver.recordInvalidation(
@@ -266,7 +302,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Act
         driver.recordFileSourceAccepted(try makeRefreshDriverSource(generation: 41))
         await probe.waitForChangesetAttemptCount(2)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Assert
         let replayedChangeset = try #require(await probe.changesets.last)
@@ -274,6 +310,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         #expect(replayedChangeset.paths == ["Sources/First.swift", "Sources/Second.swift"])
         #expect(coordinator.diagnosticSnapshot.dirtyFact == nil)
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         productAdmission.close()
     }
 
@@ -282,7 +319,7 @@ struct BridgePaneWorktreeRefreshDriverTests {
         // Arrange
         let productAdmission = try BridgeProductAdmissionTestContext.make()
         let coordinator = BridgePaneRefreshAdmissionCoordinator(initialActivity: .foreground)
-        let probe = BridgePaneWorktreeRefreshDriverProbe(
+        let probe = try BridgePaneWorktreeRefreshDriverProbe(
             dispositions: [.streamResetRequired]
         )
         let driver = makeRefreshDriver(
@@ -297,10 +334,11 @@ struct BridgePaneWorktreeRefreshDriverTests {
             requiresReviewRefresh: false
         )
         await probe.waitForChangesetAttemptCount(1)
-        try await waitForRefreshDriverFileIdle(driver)
+        try await probe.waitForSettledFilePresentation()
 
         // Act
         await driver.closeAndDrain()
+        try await probe.finishPresentationObservation()
         driver.recordFileSourceAccepted(try makeRefreshDriverSource(generation: 51))
         await Task.yield()
 
@@ -312,6 +350,14 @@ struct BridgePaneWorktreeRefreshDriverTests {
 }
 
 private actor BridgePaneWorktreeRefreshDriverProbe {
+    private let presentationFacts = LocalFactSource<Int, BridgePaneProductPresentationSnapshot>(
+        vocabulary: .init(
+            describeScope: { "File publication attempt \($0)" },
+            describeFact: { "presentation \($0.presentationRevision), refreshing \($0.refreshingLanes)" },
+            isClosing: { _, _ in false }
+        )
+    )
+    private let presentationRecorder: FactRecorder<Int, BridgePaneProductPresentationSnapshot>
     private var dispositions: [BridgePaneProductFileRefreshPublicationDisposition]
     private let blocksFirstChangesetAttempt: Bool
     private var blockedChangesetContinuation:
@@ -327,7 +373,8 @@ private actor BridgePaneWorktreeRefreshDriverProbe {
     init(
         dispositions: [BridgePaneProductFileRefreshPublicationDisposition],
         blocksFirstChangesetAttempt: Bool = false
-    ) {
+    ) throws {
+        presentationRecorder = try presentationFacts.attach()
         self.dispositions = dispositions
         self.blocksFirstChangesetAttempt = blocksFirstChangesetAttempt
     }
@@ -372,9 +419,26 @@ private actor BridgePaneWorktreeRefreshDriverProbe {
 
     func publishPresentation(
         _ snapshot: BridgePaneProductPresentationSnapshot,
-        _: BridgeTraceContext?
+        _: BridgeTraceContext?,
+        isCurrentPresentation: Bool
     ) {
         presentations.append(snapshot)
+        if isCurrentPresentation, !snapshot.refreshingLanes.contains(.file) {
+            presentationFacts.sink(changesetAttemptCount, snapshot)
+        }
+    }
+
+    func waitForSettledFilePresentation() async throws {
+        _ = try await presentationRecorder.expectNext(
+            in: changesetAttemptCount,
+            where: { !$0.refreshingLanes.contains(.file) },
+            "File pass has completed and published its settled presentation"
+        )
+    }
+
+    func finishPresentationObservation() async throws {
+        presentationFacts.end()
+        try await presentationRecorder.finish()
     }
 
     func publishOperationLifecycle(_ event: BridgeOperationLifecycleTraceEvent) {
@@ -429,24 +493,17 @@ private func makeRefreshDriver(
             )
         },
         publishPresentation: { snapshot, traceContext in
-            await probe.publishPresentation(snapshot, traceContext)
+            let isCurrentPresentation = await MainActor.run {
+                coordinator.productPresentationSnapshot == snapshot
+            }
+            await probe.publishPresentation(
+                snapshot, traceContext, isCurrentPresentation: isCurrentPresentation
+            )
         },
         publishOperationLifecycle: { event in
             await probe.publishOperationLifecycle(event)
         }
     )
-}
-
-@MainActor
-private func waitForRefreshDriverFileIdle(
-    _ driver: BridgePaneWorktreeRefreshDriver,
-    maximumTurns: Int = 200
-) async throws {
-    for _ in 0..<maximumTurns {
-        if !driver.hasActiveFileOperation { return }
-        await Task.yield()
-    }
-    throw BridgePaneWorktreeRefreshDriverTestError.fileOperationDidNotSettle
 }
 
 private func makeRefreshDriverChangeset(
@@ -477,8 +534,4 @@ private func makeRefreshDriverSource(
         subscriptionGeneration: generation,
         worktreeId: worktreeId
     )
-}
-
-private enum BridgePaneWorktreeRefreshDriverTestError: Error {
-    case fileOperationDidNotSettle
 }

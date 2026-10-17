@@ -1,14 +1,32 @@
 import { describe, expect, test } from 'vitest';
 
+import {
+	bridgeMainReviewComparisonPresentationSchema,
+	type BridgeMainReviewComparisonPresentation,
+} from '../core/comm-worker/bridge-main-review-comparison-presentation.js';
 import type { BridgeWorkerPanelChromePatchPayload } from '../core/comm-worker/bridge-worker-contracts.js';
 import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
 import type { BridgeReviewPackage } from '../foundation/review-package/bridge-review-package.js';
+import noSourceAttempt from '../test-fixtures/bridge-contract-fixtures/valid/bridge-product-review-comparison-attempt-no-source.json' with { type: 'json' };
 import {
 	bridgeReviewComparisonPackageMatch,
 	bridgeReviewComparisonPaneState,
 } from './bridge-review-comparison-pane-state.js';
 
 describe('bridgeReviewComparisonPaneState', () => {
+	test('no-source has no pending target or comparison work', (): void => {
+		expect(
+			bridgeReviewComparisonPaneState({
+				comparisonPresentation: bridgeMainReviewComparisonPresentationSchema.parse({
+					activeTarget: null,
+					attempt: noSourceAttempt,
+					displayedSnapshot: { status: 'none' },
+					repositoryDefaultTarget: null,
+				}),
+				displayedReviewPackage: null,
+			}),
+		).toEqual({ kind: 'settled' });
+	});
 	test('distinguishes a pending replacement from an initial comparison load', () => {
 		const previousPackage = comparisonPackage('package-previous', 'origin/main');
 
@@ -78,6 +96,7 @@ describe('bridgeReviewComparisonPaneState', () => {
 		).toEqual({
 			displayedTargetLabel: 'origin/main',
 			kind: 'failedPrevious',
+			failureKind: 'refreshUnavailable',
 			requestedTargetLabel: 'feature/new-target',
 			retryTarget: activeTarget,
 		});
@@ -93,6 +112,7 @@ describe('bridgeReviewComparisonPaneState', () => {
 			}),
 		).toEqual({
 			kind: 'failedInitial',
+			failureKind: 'refreshUnavailable',
 			requestedTargetLabel: 'feature/new-target',
 			retryTarget: null,
 		});
@@ -179,13 +199,13 @@ function comparisonPresentation(props: {
 	readonly displayedSnapshot: NonNullable<
 		BridgeWorkerPanelChromePatchPayload['reviewComparison']
 	>['displayedSnapshot'];
-}): NonNullable<BridgeWorkerPanelChromePatchPayload['reviewComparison']> {
-	return {
+}): BridgeMainReviewComparisonPresentation {
+	return bridgeMainReviewComparisonPresentationSchema.parse({
 		activeTarget: props.activeTarget ?? comparisonTarget(),
 		attempt: props.attempt,
 		displayedSnapshot: props.displayedSnapshot,
 		repositoryDefaultTarget: { branchName: 'main', remoteName: 'origin' },
-	};
+	});
 }
 
 function comparisonTarget(): NonNullable<
@@ -208,6 +228,7 @@ function comparisonPackage(
 			kind: 'contribution',
 			resolvedTargetOID: 'b'.repeat(40),
 			reviewedHeadOID: 'c'.repeat(40),
+			reviewedSubjectBranchName: null,
 			symbolicTarget: { basis: 'commonCommit', kind: 'ref', name: targetName },
 		},
 		packageId,

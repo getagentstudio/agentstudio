@@ -1,7 +1,9 @@
 import AgentStudioCore
 import AgentStudioGit
+import AgentStudioTestHarness
 import CryptoKit
 import Foundation
+import Testing
 
 @testable import AgentStudioBridge
 
@@ -123,9 +125,7 @@ actor AgentStudioGitLocalClientFake: AgentStudioGitLocalClient {
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
-    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError)
-        -> GitWorktreeSnapshot
-    {
+    func createWorktree(_ request: GitCreateWorktreeRequest) async throws(GitDataPlaneError) -> GitWorktreeCreation {
         throw GitDataPlaneError.unsupported(message: "not used")
     }
 
@@ -178,7 +178,7 @@ actor AgentStudioGitLocalClientFake: AgentStudioGitLocalClient {
         return GitStatusFactsRead(facts: statusSnapshot, exactCleanBaseline: nil)
     }
 
-    func exactLineCountDetail(for worktreePath: URL) async throws(GitDataPlaneError)
+    func exactLineCountDetail(for worktreePath: URL, excludeSubmodules _: Bool) async throws(GitDataPlaneError)
         -> GitStatusLineCountDetail
     {
         GitStatusLineCountDetail(
@@ -195,12 +195,36 @@ actor AgentStudioGitLocalClientFake: AgentStudioGitLocalClient {
     {
         GitCompleteStatusSnapshot(
             facts: try await statusFacts(for: worktreePath, options: options).facts,
-            lineCountDetail: try await exactLineCountDetail(for: worktreePath)
+            lineCountDetail: try await exactLineCountDetail(for: worktreePath, excludeSubmodules: false)
         )
     }
 
     func branches(for repositoryPath: URL) async throws(GitDataPlaneError) -> [GitBranchSnapshot] {
         throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func remoteNames(for repositoryPath: URL) async throws(GitDataPlaneError) -> [String] {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func branchUse(_: GitBranchUseRequest) async throws(GitDataPlaneError) -> GitBranchUse {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func aheadBehind(_: GitAheadBehindRequest) async throws(GitDataPlaneError) -> GitAheadBehind {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func assessBranchIntegration(_: GitBranchIntegrationRequest) async throws(GitDataPlaneError)
+        -> GitBranchIntegrationReport
+    {
+        throw GitDataPlaneError.unsupported(message: "not used")
+    }
+
+    func deleteLocalBranch(_: GitDeleteLocalBranchRequest)
+        async throws(GitLockedOperationFailure<GitDeleteLocalBranchErrorReason>) -> GitDeleteLocalBranchResult
+    {
+        throw GitLockedOperationFailure(reason: .gitFailure(.unsupported(message: "not used")), lockResidue: nil)
     }
 
     func captureReviewComparisonTargets(_ request: GitReviewComparisonTargetCaptureRequest)
@@ -426,4 +450,87 @@ func gitBlobSHA1ContentHash(_ content: String) -> String {
     var blobData = Data("blob \(data.count)\0".utf8)
     blobData.append(data)
     return Insecure.SHA1.hash(data: blobData).map { String(format: "%02x", $0) }.joined()
+}
+
+func withBridgeGitContentQueuePressure(
+    enabled: Bool,
+    rootURL: URL,
+    operation: @Sendable (BridgeGitReadContext) async throws -> Void
+) async throws {
+    guard enabled else {
+        let context = makeBridgeGitReadContext(rootURL: rootURL)
+        do {
+            try await operation(context)
+        } catch {
+            await context.scheduler.shutdown()
+            throw error
+        }
+        await context.scheduler.shutdown()
+        return
+    }
+    let heldRead = HeldStep<Void>("status fallback content slot held")
+    let facts = FactRecorder<String, String>(
+        vocabulary: .init(
+            describeScope: { $0 }, describeFact: { $0 }, isClosing: { _, fact in fact == "finished" }
+        ))
+    let scheduler = BridgeGitReadScheduler(
+        topology: makeBridgeGitReadSchedulerTopology(maximumQueuedOperationCountPerClass: 1),
+        deadlineScheduler: BridgeGitReadManualDeadlineScheduler(),
+        eventSink: { event in
+            if event.kind == .queued, event.operationClass == .selectedVisibleContent,
+                event.snapshot.runningCountByOperationClass[.selectedVisibleContent] == 1,
+                event.snapshot.queuedCountByOperationClass[.selectedVisibleContent] == 1
+            {
+                facts.append(scope: "queued", fact: "admitted")
+            }
+        }
+    )
+    let context = BridgeGitReadContext(
+        scheduler: scheduler, worktreeKey: BridgeGitReadWorktreeKey(token: StableKey.fromPath(rootURL))
+    )
+    do {
+        try await withThrowingTaskGroup(of: Void.self) { reads in
+            defer {
+                heldRead.release()
+                reads.cancelAll()
+            }
+            reads.addTask {
+                defer { facts.append(scope: "running", fact: "finished") }
+                _ = try await scheduler.read(
+                    request: makeBridgeGitReadRequest(
+                        worktree: context.worktreeKey.token, operationClass: .selectedVisibleContent,
+                        key: "held-content"
+                    )
+                ) {
+                    facts.append(scope: "running", fact: "started")
+                    try await heldRead.arrive(())
+                    return "held-content"
+                }
+            }
+            try await facts.expectNext(in: "running", "started")
+            reads.addTask {
+                defer { facts.append(scope: "queued", fact: "finished") }
+                _ = try await scheduler.read(
+                    request: makeBridgeGitReadRequest(
+                        worktree: context.worktreeKey.token, operationClass: .selectedVisibleContent,
+                        key: "queued-content"
+                    )
+                ) { "queued-content" }
+            }
+            try await facts.expectNext(in: "queued", "admitted")
+            let pressure = await scheduler.snapshot()
+            #expect(pressure.runningCountByOperationClass[.selectedVisibleContent] == 1)
+            #expect(pressure.queuedCountByOperationClass[.selectedVisibleContent] == 1)
+            #expect(pressure.runningCountByOperationClass[.reviewMetadata] == nil)
+            #expect(pressure.queuedCountByOperationClass[.reviewMetadata] == nil)
+            try await operation(context)
+            heldRead.release()
+            try await reads.waitForAll()
+        }
+    } catch {
+        await scheduler.shutdown()
+        throw error
+    }
+    await scheduler.shutdown()
+    #expect((await scheduler.snapshot()).activeOperationIds.isEmpty)
 }

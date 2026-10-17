@@ -64,6 +64,21 @@ describe('worktree annotation output presentation', () => {
 		});
 	});
 
+	test('keeps a typed missing-folder error visible with its cause', () => {
+		expect(
+			annotationOutputFeedback({
+				effectCode: 'missing_folder',
+				effectError: 'The export folder no longer exists. Choose a folder and try again.',
+				kind: 'effect_failed',
+				summary: outputSummary({ messageCount: 1, outputKind: 'json_file' }),
+			}),
+		).toMatchObject({
+			closeInteraction: false,
+			message: 'The export folder no longer exists. Choose a folder and try again.',
+			severity: 'error',
+		});
+	});
+
 	test('distinguishes partial and unknown history without rebuilding content', () => {
 		expect(annotationOutputHistoryStatus('succeeded', 'clipboard_markdown')).toBe('Copied');
 		expect(annotationOutputHistoryStatus('succeeded', 'json_file')).toBe('Exported');

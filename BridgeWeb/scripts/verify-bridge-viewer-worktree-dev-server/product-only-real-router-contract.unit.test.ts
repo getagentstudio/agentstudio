@@ -18,31 +18,64 @@ import {
 	bridgeReviewOraclePathOrder,
 	bridgeViewerCleanupProofAfterOwnedStops,
 	bridgeViewerProductOnlyRegressionPhase,
-} from './product-only-real-router-regression.ts';
+} from './product-only-real-router-regression-runner.ts';
+import { classifyFreshReviewHydrationWindow } from './product-only-real-router-review-hydration-window.ts';
 import { waitForFreshReviewManifestState } from './product-only-real-router-review-proof.ts';
 
 describe('Bridge Viewer product-only real-router regression contract', () => {
-	test('requires paint only after a Review shell has rendered lines or prior paint evidence', async () => {
-		// Arrange
-		const hydrationWindowSource = await readFile(
-			new URL('./product-only-real-router-review-hydration-window.ts', import.meta.url),
-			'utf8',
-		);
+	test('requires a painted Markdown source as well as the selected code canvas', () => {
+		const passingProof = makePassingProductOnlyProof();
+		const missingMarkdownPaint = {
+			...passingProof,
+			fileMarkdownAtReviewFirstSwitch: {
+				articleCharacterCount: 0,
+				canvasVisible: false,
+				selectedDisplayPath: 'README.md',
+				sourcePath: null,
+			},
+		};
 
-		// Act
-		const paintEligibilityIndex = hydrationWindowSource.indexOf(
-			'item.renderedLineCount > 0 || item.publicationId !== null',
-		);
-		const paintValidationIndex = hydrationWindowSource.indexOf('paintEligibleItems.some');
-
-		// Assert
-		expect(paintEligibilityIndex).toBeGreaterThan(0);
-		expect(paintValidationIndex).toBeGreaterThan(paintEligibilityIndex);
-		expect(hydrationWindowSource).toContain('const renderedLineCount = queryAllInOpenShadowRoots(');
-		expect(hydrationWindowSource).toContain("'[data-line][data-line-index]'");
+		expect(
+			collectBridgeViewerProductOnlyContractViolations(missingMarkdownPaint).map(
+				(violation) => violation.code,
+			),
+		).toContain('file.markdown-visible-readable');
 	});
 
-	test('keeps rename source and destination as separate Review oracle items', () => {
+	test('requires correlated painted Review evidence for a visible hydrated item', () => {
+		const visibleItem = {
+			contentState: 'windowed',
+			itemId: 'review-item-1',
+			publicationId: 'publication-1',
+			renderedLineCount: 8,
+			sourceCorrelations: JSON.stringify([
+				{
+					itemId: 'review-item-1',
+					pierreItemId: 'review-item-1',
+					publicationId: 'publication-1',
+					semanticItemId: 'review-item-1',
+				},
+			]),
+		};
+		const painted = classifyFreshReviewHydrationWindow({
+			excludedItemIds: [],
+			scrollTop: 0,
+			selectedItemId: null,
+			visibleItems: [visibleItem],
+		});
+		const mismatched = classifyFreshReviewHydrationWindow({
+			excludedItemIds: [],
+			scrollTop: 0,
+			selectedItemId: null,
+			visibleItems: [{ ...visibleItem, publicationId: 'other-publication' }],
+		});
+
+		expect(painted.hydratedNonSelectedItemIds).toEqual(['review-item-1']);
+		expect(mismatched.visibleNonSelectedItemIds).toEqual(['review-item-1']);
+		expect(mismatched.hydratedNonSelectedItemIds).toEqual([]);
+	});
+
+	test('uses native Review rename similarity for oracle items', () => {
 		// Arrange
 		const reviewBase = 'fixture-base';
 
@@ -54,7 +87,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 			'diff',
 			'--name-status',
 			'-z',
-			'--no-renames',
+			'--find-renames=50%',
 			reviewBase,
 			'--',
 		]);
@@ -136,8 +169,8 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 				makeProductEntry(1, '/__bridge-product/command', 'workerSession.open', 200),
 				makeProductEntry(2, '/__bridge-product/stream', 'metadataStream.open', 200),
 				{
-					...makeProductEntry(3, '/__bridge-product/command', 'stream.frameObserved', 400),
-					streamKind: 'metadata',
+					...makeProductEntry(3, '/__bridge-product/command', 'subscription.acknowledge', 400),
+					responseKind: 'request.error',
 				},
 				{
 					...makeProductEntry(4, '/__bridge-product/command', 'subscription.open', 200),
@@ -157,7 +190,8 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		const violations = collectBridgeViewerProductOnlyContractViolations(proof);
 		const codes = violations.map((violation) => violation.code);
 
-		expect(codes).toContain('transport.frame-observation-bodyless-204');
+		expect(codes).toContain('transport.subscription-receipt-accepted');
+		expect(codes).toContain('transport.content-acknowledgement-bodyless-204');
 		expect(codes).toContain('transport.file.metadata-accepted');
 		expect(codes).toContain('transport.review.metadata-accepted');
 		expect(codes).toContain('file.product-display-ready');
@@ -167,6 +201,36 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(bridgeViewerProductOnlyRegressionPhase(violations)).toBe(
 			'initial-product-transport-red',
 		);
+	});
+
+	test('accepts only a correlated typed unknown-read content refusal', () => {
+		const correlatedTranscript = passingTranscript().map((entry) =>
+			entry.requestKind === 'content.acknowledge' && entry.ordinal === 7
+				? {
+						...entry,
+						contentUnknownReadRefusalCorrelated: true,
+						httpStatus: 404,
+						responseKind: 'content.acknowledgementRefused',
+					}
+				: entry,
+		);
+		const correlatedProof = makePassingProductOnlyProof({ transcript: correlatedTranscript });
+		expect(
+			collectBridgeViewerProductOnlyContractViolations(correlatedProof).map(
+				(violation) => violation.code,
+			),
+		).not.toContain('transport.content-acknowledgement-bodyless-204');
+
+		const uncorrelatedProof = makePassingProductOnlyProof({
+			transcript: correlatedTranscript.map((entry) =>
+				entry.httpStatus === 404 ? { ...entry, contentUnknownReadRefusalCorrelated: false } : entry,
+			),
+		});
+		expect(
+			collectBridgeViewerProductOnlyContractViolations(uncorrelatedProof).map(
+				(violation) => violation.code,
+			),
+		).toContain('transport.content-acknowledgement-bodyless-204');
 	});
 
 	test('uses the same permanent contract for the product-only green state', () => {
@@ -585,7 +649,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_MANIFEST_MISSING');
 	});
 
-	test('rejects a settled visible Review window whose non-selected body never hydrates', () => {
+	test('rejects a settled visible Review window whose non-selected item is not readable', () => {
 		// Arrange
 		const passingProof = makePassingProductOnlyProof();
 		const proof: BridgeViewerProductOnlyJourneyProof = {
@@ -594,7 +658,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 				...passingProof.reviewFreshRoute,
 				hydrationMilestones: passingProof.reviewFreshRoute.hydrationMilestones.map((milestone) =>
 					milestone.label === 'middle'
-						? { ...milestone, hydratedNonSelectedItemIds: [] }
+						? { ...milestone, readableNonSelectedItemIds: [] }
 						: milestone,
 				),
 			},
@@ -606,7 +670,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		);
 
 		// Assert
-		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_VISIBLE_HYDRATION_MISSING');
+		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING');
 		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_MANIFEST_MISSING');
 	});
 
@@ -631,38 +695,35 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		);
 
 		// Assert
-		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_HYDRATION_MISSING');
+		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING');
 	});
 
-	test('rejects incomplete full-traversal visible-body hydration coverage between milestones', () => {
-		// Arrange: the legacy five milestones are all green, but the exhaustive traversal receipt
-		// records that one expected non-selected item was never observed hydrated while visible.
+	test('accepts a windowed visible Review item as readable without painted coverage yet', () => {
 		const passingProof = makePassingProductOnlyProof();
-		const reviewFreshRouteWithIncompleteCoverage = {
-			...passingProof.reviewFreshRoute,
-			hydrationCoverage: {
-				expectedNonSelectedItemIds: ['review-item-2', 'review-item-3', 'review-item-4'],
-				missingHydratedVisibleWindows: [],
-				observedHydratedNonSelectedItemIds: ['review-item-2', 'review-item-4'],
-				settledWindowCount: 12,
-			},
-		};
 		const proof: BridgeViewerProductOnlyJourneyProof = {
 			...passingProof,
-			reviewFreshRoute: reviewFreshRouteWithIncompleteCoverage,
+			reviewFreshRoute: {
+				...passingProof.reviewFreshRoute,
+				hydrationMilestones: passingProof.reviewFreshRoute.hydrationMilestones.map((milestone) =>
+					milestone.label === 'middle'
+						? {
+								...milestone,
+								hydratedNonSelectedItemIds: [],
+								readableNonSelectedItemIds: ['review-item-2'],
+							}
+						: milestone,
+				),
+			},
 		};
 
-		// Act
 		const violationCodes = collectBridgeViewerProductOnlyContractViolations(proof).map(
 			(violation) => violation.code,
 		);
 
-		// Assert
-		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_VISIBLE_HYDRATION_COVERAGE_MISSING');
-		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_HYDRATION_MISSING');
+		expect(violationCodes).not.toContain('REVIEW_FRESH_ROUTE_VISIBLE_READABLE_MISSING');
 	});
 
-	test('rejects backward traversal that misses hydrated windows or changes selection', () => {
+	test('rejects backward traversal that misses readable windows or painted coverage or changes selection', () => {
 		// Arrange
 		const passingProof = makePassingProductOnlyProof();
 		const proof = {
@@ -693,7 +754,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		);
 
 		// Assert
-		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_BACKWARD_INVALID');
+		expect(violationCodes).toContain('REVIEW_FRESH_ROUTE_BACKWARD_READABLE_INVALID');
 	});
 
 	test('routes performance-only work to the representative runner and keeps product-only as default', async () => {
@@ -707,7 +768,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(registeredVerifierSource).toContain('runBridgeViewerWorktreeDevServerVerifier');
 		expect(registeredVerifierSource).toContain('runSelfHostedBridgeViewerProductOnlyRegression');
 		expect(registeredVerifierSource).toMatch(
-			/performanceOnlyMode[\s\S]*runSelfHostedBridgeViewerPerformanceVerifier\(\)[\s\S]*runSelfHostedBridgeViewerProductOnlyRegression\(\)/u,
+			/performanceOnlyMode[\s\S]*runSelfHostedBridgeViewerPerformanceVerifier\(loadRunner, ownerLaunch\)[\s\S]*runSelfHostedBridgeViewerProductOnlyRegression\(\)/u,
 		);
 	});
 
@@ -730,7 +791,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 				browserConfigSource,
 			);
 		const realRouterUsesInstalledChrome =
-			/chromium\.launch\(\{\s*channel:\s*'chrome',\s*headless:\s*true\s*\}\)/u.test(
+			/props\.launch\.launchBrowser\(\{\s*channel:\s*'chrome',\s*headless:\s*true\s*\}\)/u.test(
 				realRouterPageSource,
 			);
 
@@ -779,8 +840,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 
 	test('bounds Review hydration settlement and owns browser cleanup before journey timeout returns', async () => {
 		// Arrange
-		const [journeySource, reviewProofSource, settlementSource] = await Promise.all([
+		const [journeySource, deadlineSource, reviewProofSource, settlementSource] = await Promise.all([
 			readFile(new URL('./product-only-real-router-page.ts', import.meta.url), 'utf8'),
+			readFile(new URL('./product-only-real-router-journey-deadline.ts', import.meta.url), 'utf8'),
 			readFile(new URL('./product-only-real-router-review-proof.ts', import.meta.url), 'utf8'),
 			readFile(new URL('./product-only-real-router-settlement.ts', import.meta.url), 'utf8'),
 		]);
@@ -792,7 +854,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		const frameSettlementIsBounded = reviewProofSource.includes(
 			'waitForFreshReviewFrameSettlement',
 		);
-		const journeyOwnsDeadlineCleanup = journeySource.includes('createOwnedProductJourneyDeadline');
+		const journeyOwnsDeadlineCleanup =
+			journeySource.includes('createOwnedProductJourneyDeadline') &&
+			deadlineSource.includes('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
 		const initialHydrationSettlementIndex = reviewProofSource.indexOf(
 			'const initialHydrationWindow = await captureFreshReviewHydrationWindow',
 		);
@@ -842,7 +906,7 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(traversalHydrationSettlementIndex).toBeGreaterThan(traversalLoopIndex);
 		expect(traversalObservedHeaderSnapshotIndex).toBeGreaterThan(traversalHydrationSettlementIndex);
 		expect(traversalMountedOrderSnapshotIndex).toBeGreaterThan(traversalHydrationSettlementIndex);
-		expect(journeySource).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
+		expect(deadlineSource).toContain('BRIDGE_PRODUCT_JOURNEY_DEADLINE_EXCEEDED');
 		expect(journeySource).not.toContain('requestAnimationFrame');
 		expect(reviewProofSource).not.toContain('requestAnimationFrame');
 		expect(settlementSource).toContain('page.waitForFunction');
@@ -851,17 +915,19 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 
 	test('persists a scrubbed journey failure checkpoint before browser teardown', async () => {
 		// Arrange
-		const [journeySource, regressionSource, reviewProofSource] = await Promise.all([
+		const [journeySource, regressionSource, reviewFailureSource] = await Promise.all([
 			readFile(new URL('./product-only-real-router-page.ts', import.meta.url), 'utf8'),
-			readFile(new URL('./product-only-real-router-regression.ts', import.meta.url), 'utf8'),
-			readFile(new URL('./product-only-real-router-review-proof.ts', import.meta.url), 'utf8'),
+			readFile(new URL('./product-only-real-router-regression-runner.ts', import.meta.url), 'utf8'),
+			readFile(new URL('./product-only-real-router-review-failure.ts', import.meta.url), 'utf8'),
 		]);
 
 		// Act
 		const failureCaptureIndex = journeySource.indexOf(
 			'captureBridgeViewerProductOnlyJourneyFailure',
 		);
-		const pageCloseIndex = journeySource.indexOf('await page.close()');
+		const pageCloseIndex = journeySource.indexOf(
+			'Promise.allSettled([page.close(), browser.close()])',
+		);
 
 		// Assert
 		expect(failureCaptureIndex).toBeGreaterThan(0);
@@ -870,9 +936,9 @@ describe('Bridge Viewer product-only real-router regression contract', () => {
 		expect(journeySource).toContain('failureTransportSnapshot()');
 		expect(journeySource).not.toContain('paneSessionId: entry.paneSessionId');
 		expect(journeySource).not.toContain('workerInstanceId: entry.workerInstanceId');
-		expect(reviewProofSource).toContain('readFreshReviewFailureSnapshot');
-		expect(reviewProofSource).toContain("'data-review-selected-demand-result-status'");
-		expect(reviewProofSource).toContain("'data-review-visible-demand-loaded-count'");
+		expect(reviewFailureSource).toContain('readFreshReviewFailureSnapshot');
+		expect(reviewFailureSource).toContain("'data-review-selected-demand-result-status'");
+		expect(reviewFailureSource).toContain("'data-review-visible-demand-loaded-count'");
 		expect(regressionSource).toContain('bridgeViewerProductOnlyJourneyFailureFromError');
 		expect(regressionSource).toContain('readonly journeyFailure:');
 		expect(regressionSource).toContain('journeyFailure,');

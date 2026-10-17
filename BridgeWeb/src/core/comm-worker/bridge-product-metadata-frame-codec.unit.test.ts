@@ -100,83 +100,68 @@ describe('Bridge product metadata frame decoder', () => {
 		});
 	});
 
-	test('round-trips strict File and Review annotation catalog events through the framed metadata codec', () => {
-		const frameIdentity = {
-			metadataStreamId: 'metadata-stream-annotations',
-			paneSessionId: 'pane-session-annotations',
-			wireVersion: 2,
-			workerInstanceId: 'worker-instance-annotations',
-		} as const;
-		const catalogBeginEvent = {
-			authority: {
-				applicationSourceGeneration: 1,
-				worktreeId: '00000000-0000-7000-8000-000000000001',
+	test('round-trips strict File and Review Comment view batches through the framed metadata codec', () => {
+		const emptyBegin = validProductSessionCorpus.transportV2.batchFrames.find(
+			(frame) => frame.kind === 'subscription.batchBegin' && frame.partCount === 0,
+		);
+		const emptyComplete = validProductSessionCorpus.transportV2.batchFrames.find(
+			(frame) =>
+				frame.kind === 'subscription.batchComplete' && frame.batchId === emptyBegin?.batchId,
+		);
+		if (emptyBegin === undefined || emptyComplete === undefined)
+			throw new Error('Empty batch fixture missing.');
+		const frames = (['file.annotations', 'review.annotations'] as const).flatMap(
+			(subscriptionKind, index) => {
+				const scope = { kind: 'comment', sessionIds: [], worktreeId: 'worktree-1' } as const;
+				const subscriptionId = `${subscriptionKind}-subscription`;
+				const batchId = `${subscriptionKind}-batch`;
+				return [
+					bridgeProductMetadataFrameSchema.parse({
+						...emptyBegin,
+						batchId,
+						baseRevision: 0,
+						handle: `${subscriptionKind}-handle`,
+						incarnation: `${subscriptionKind}-incarnation`,
+						mode: 'snapshot',
+						snapshotCause: 'open',
+						publicationId: undefined,
+						scope,
+						streamSequence: index * 2 + 1,
+						subscriptionId,
+						subscriptionKind,
+						targetRevision: 1,
+					}),
+					bridgeProductMetadataFrameSchema.parse({
+						...emptyComplete,
+						batchId,
+						coveredScope: scope,
+						handle: `${subscriptionKind}-handle`,
+						incarnation: `${subscriptionKind}-incarnation`,
+						streamSequence: index * 2 + 2,
+						subscriptionId,
+						subscriptionKind,
+					}),
+				];
 			},
-			kind: 'annotation.catalog',
-			transfer: {
-				catalogRevision: 1,
-				expectedEntryCount: 0,
-				kind: 'catalog.begin',
-				transferId: 'annotation-catalog-transfer-1',
-			},
-		} as const;
-		const annotationInterestSha256 = 'a'.repeat(64);
-		const frames = [
-			{
-				...frameIdentity,
-				cursor: 'file-annotations-cursor-1',
-				data: {
-					event: catalogBeginEvent,
-					subscriptionKind: 'file.annotations',
-				},
-				interestRevision: 0,
-				interestSha256: annotationInterestSha256,
-				kind: 'subscription.data',
-
-				operationCorrelationId: null,
-				sourceGeneration: 1,
-				streamSequence: 1,
-				subscriptionId: 'file-annotations-subscription',
-				subscriptionKind: 'file.annotations',
-				subscriptionSequence: 1,
-				workerDerivationEpoch: 0,
-			},
-			{
-				...frameIdentity,
-				cursor: 'review-annotations-cursor-1',
-				data: {
-					event: catalogBeginEvent,
-					subscriptionKind: 'review.annotations',
-				},
-				interestRevision: 0,
-				interestSha256: annotationInterestSha256,
-				kind: 'subscription.data',
-
-				operationCorrelationId: null,
-				sourceGeneration: 1,
-				streamSequence: 2,
-				subscriptionId: 'review-annotations-subscription',
-				subscriptionKind: 'review.annotations',
-				subscriptionSequence: 1,
-				workerDerivationEpoch: 0,
-			},
-		] as const;
-
-		const encodedFrames = frames.map((frame) => encodeBridgeProductMetadataFrame(frame));
+		);
 		const decoder = new BridgeProductMetadataFrameDecoder();
-
-		expect(decoder.push(concatenateBytes(...encodedFrames))).toEqual(frames);
+		expect(decoder.push(concatenateBytes(...frames.map(encodeBridgeProductMetadataFrame)))).toEqual(
+			frames,
+		);
 		decoder.finish();
 		expect(decoder.diagnostics).toMatchObject({
-			emittedFrameCount: 2,
+			emittedFrameCount: 4,
 			failureCode: null,
 			state: 'finished',
 		});
-
 		for (const frame of frames) {
+			if (frame.kind !== 'subscription.batchBegin') continue;
 			expect(
-				bridgeProductMetadataFrameSchema.safeParse({ ...frame, sourceGeneration: 2 }).success,
-			).toBe(true);
+				bridgeProductMetadataFrameSchema.safeParse({
+					...frame,
+					scope: { kind: 'comment', sessionIds: [] },
+				}).success,
+			).toBe(false);
 		}
 	});
 
@@ -201,152 +186,42 @@ describe('Bridge product metadata frame decoder', () => {
 		}
 	});
 
-	test('interleaves independent Review and File epochs on one contiguous physical stream', () => {
-		const reviewInterestSha256 = '1a71797cab8ed23c72233b7706b166a33049e4e87dfbc55b9e252f9c1843eca6';
-		const fileInterestSha256 = '51ce8b03041697e18e2a24d5311e14bb1df4da119635bb84246c1b047316e46b';
-		const frameIdentity = {
-			metadataStreamId: 'metadata-stream-independent-epochs',
-			paneSessionId: 'pane-session-1',
-			wireVersion: 2,
-			workerInstanceId: 'worker-instance-1',
-		} as const;
-		const fileSource = {
-			repoId: '00000000-0000-4000-8000-000000000001',
-			rootRevisionToken: null,
-			sourceCursor: 'source-cursor-1',
-			sourceId: 'source-1',
-			subscriptionGeneration: 11,
-			worktreeId: '00000000-0000-4000-8000-000000000002',
-		} as const;
-		const frames = [
-			{
-				...frameIdentity,
-				kind: 'metadataStream.accepted',
-				resumeDisposition: 'snapshot_required',
-				streamSequence: 0,
-			},
-			{
-				...frameIdentity,
-				cursor: null,
-				interestRevision: 0,
-				interestSha256: reviewInterestSha256,
-				kind: 'subscription.accepted',
-				sourceGeneration: 7,
-				streamSequence: 1,
-				subscriptionId: 'review-subscription-epoch-7',
-				subscriptionKind: 'review.metadata',
-				subscriptionSequence: 0,
-				workerDerivationEpoch: 7,
-			},
-			{
-				...frameIdentity,
-				cursor: null,
-				interestRevision: 0,
-				interestSha256: fileInterestSha256,
-				kind: 'subscription.accepted',
-				sourceGeneration: 11,
-				streamSequence: 2,
-				subscriptionId: 'file-subscription-epoch-2',
-				subscriptionKind: 'file.metadata',
-				subscriptionSequence: 0,
-				workerDerivationEpoch: 2,
-			},
-			{
-				...frameIdentity,
-				cursor: null,
-				interestRevision: 0,
-				interestSha256: fileInterestSha256,
-				kind: 'subscription.accepted',
-				sourceGeneration: 12,
-				streamSequence: 3,
-				subscriptionId: 'file-subscription-epoch-3',
-				subscriptionKind: 'file.metadata',
-				subscriptionSequence: 0,
-				workerDerivationEpoch: 3,
-			},
-			{
-				...frameIdentity,
-				cursor: 'file-cursor-old-epoch',
-				data: {
-					event: { eventKind: 'file.sourceAccepted', source: fileSource },
-					subscriptionKind: 'file.metadata',
-				},
-				interestRevision: 0,
-				interestSha256: fileInterestSha256,
-				kind: 'subscription.data',
-
-				operationCorrelationId: null,
-				sourceGeneration: 11,
-				streamSequence: 4,
-				subscriptionId: 'file-subscription-epoch-2',
-				subscriptionKind: 'file.metadata',
-				subscriptionSequence: 1,
-				workerDerivationEpoch: 2,
-			},
-			{
-				...frameIdentity,
-				cursor: 'review-cursor-epoch-7',
-				data: {
-					event: {
-						eventKind: 'review.sourceAccepted',
-						operationCorrelationId: null,
-						generation: 7,
-						packageId: 'review-package-1',
-						publicationId: '00000000-0000-7000-8000-000000000001',
-						revision: 1,
-						sourceIdentity: 'review-source-1',
-					},
-					subscriptionKind: 'review.metadata',
-				},
-				interestRevision: 0,
-				interestSha256: reviewInterestSha256,
-				kind: 'subscription.data',
-
-				operationCorrelationId: null,
-				sourceGeneration: 7,
-				streamSequence: 5,
-				subscriptionId: 'review-subscription-epoch-7',
-				subscriptionKind: 'review.metadata',
-				subscriptionSequence: 1,
-				workerDerivationEpoch: 7,
-			},
-			{
-				...frameIdentity,
-				cursor: 'file-cursor-old-epoch-terminal',
-				interestRevision: 0,
-				interestSha256: fileInterestSha256,
-				kind: 'subscription.end',
-				sourceGeneration: 11,
-				streamSequence: 6,
-				subscriptionId: 'file-subscription-epoch-2',
-				subscriptionKind: 'file.metadata',
-				subscriptionSequence: 2,
-				workerDerivationEpoch: 2,
-			},
-		] as const;
-		const encodedFrames = frames.map((frame) =>
-			encodeBridgeProductMetadataFrame(bridgeProductMetadataFrameSchema.parse(frame)),
+	test('interleaves independent Review and File lifecycle epochs on one physical stream', () => {
+		const accepted = validProductSessionCorpus.metadataFrames.filter(
+			(frame) => frame.kind === 'subscription.accepted',
 		);
-		const mismatchedFileGenerationFrame = { ...frames[4], sourceGeneration: 12 };
-		const mismatchedReviewGenerationFrame = { ...frames[5], sourceGeneration: 8 };
+		const review = accepted.find((frame) => frame.subscriptionKind === 'review.metadata');
+		const fileEpochTwo = accepted.find(
+			(frame) => frame.subscriptionKind === 'file.metadata' && frame.workerDerivationEpoch === 2,
+		);
+		const fileEpochThree = accepted.find(
+			(frame) => frame.subscriptionKind === 'file.metadata' && frame.workerDerivationEpoch === 3,
+		);
+		const fileEnd = validProductSessionCorpus.metadataFrames.find(
+			(frame) => frame.kind === 'subscription.end' && frame.subscriptionKind === 'file.metadata',
+		);
+		if (
+			review === undefined ||
+			fileEpochTwo === undefined ||
+			fileEpochThree === undefined ||
+			fileEnd === undefined
+		) {
+			throw new Error('Independent epoch fixtures missing.');
+		}
+		const frames = [review, fileEpochTwo, fileEpochThree, fileEnd].map((frame, index) =>
+			bridgeProductMetadataFrameSchema.parse({ ...frame, streamSequence: index + 1 }),
+		);
 		const decoder = new BridgeProductMetadataFrameDecoder();
-
-		const decodedFrames = decoder.push(concatenateBytes(...encodedFrames));
-		decoder.finish();
-
-		expect(decodedFrames).toEqual(frames);
-		expect(bridgeProductMetadataFrameSchema.safeParse(mismatchedFileGenerationFrame).success).toBe(
-			true,
+		expect(decoder.push(concatenateBytes(...frames.map(encodeBridgeProductMetadataFrame)))).toEqual(
+			frames,
 		);
+		decoder.finish();
+		expect(frames.map((frame) => frame.streamSequence)).toEqual([1, 2, 3, 4]);
 		expect(
-			bridgeProductMetadataFrameSchema.safeParse(mismatchedReviewGenerationFrame).success,
-		).toBe(true);
-		expect(decodedFrames.map((frame) => frame.streamSequence)).toEqual([0, 1, 2, 3, 4, 5, 6]);
-		expect(
-			decodedFrames
-				.slice(1)
-				.map((frame) => ('workerDerivationEpoch' in frame ? frame.workerDerivationEpoch : null)),
-		).toEqual([7, 2, 3, 2, 7, 2]);
+			frames.map((frame) =>
+				'workerDerivationEpoch' in frame ? frame.workerDerivationEpoch : null,
+			),
+		).toEqual([7, 2, 3, 2]);
 		expect(frames.every((frame) => !('surface' in frame))).toBe(true);
 	});
 

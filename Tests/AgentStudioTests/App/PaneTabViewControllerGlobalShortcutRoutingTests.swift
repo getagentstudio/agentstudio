@@ -6,7 +6,7 @@ import Testing
 @testable import AgentStudioTestSupport
 
 @MainActor
-@Suite("PaneTabViewController global shortcut routing")
+@Suite("PaneTabViewController global shortcut routing", .serialized)
 struct PaneTabViewControllerGlobalShortcutRoutingTests {
     @Test("filterSidebar is only handled when the repos sidebar owns focus")
     func filterSidebarRequiresFocusedReposSidebar() {
@@ -71,8 +71,11 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
     @Test("production global key path consults keyboard owner policy")
     func productionGlobalKeyPathConsultsKeyboardOwnerPolicy() async throws {
         try await withAsyncTestCoreAtoms { atoms in
-            let harness = makeHarness(windowLifecycleStore: atoms.windowLifecycle)
             let handler = MockCommandHandler()
+            let harness = makeHarness(
+                workspaceCommandOwner: .external(handler),
+                windowLifecycleStore: atoms.windowLifecycle
+            )
             configureMainWindowKeyboardOwner(atoms)
             atoms.workspaceSidebarState.setSidebarCollapsed(false)
             atoms.workspaceSidebarState.setSidebarSurface(.inbox)
@@ -89,16 +92,8 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
             let trigger = try #require(ShortcutDecoder.decode(event: event))
             #expect(ShortcutDecoder.shortcut(for: trigger, in: .global) == .nextTab)
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = handler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    #expect(!harness.controller.handleAppOwnedKeyEvent(event))
-                    #expect(handler.executedCommands.isEmpty)
-                }
-            )
+            #expect(!harness.controller.handleAppOwnedKeyEvent(event))
+            #expect(handler.executedCommands.isEmpty)
         }
     }
 
@@ -106,8 +101,11 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
     func productionGlobalKeyPathUsesInjectedWindowLifecycle() async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let injectedWindowLifecycle = WindowLifecycleAtom()
-            let harness = makeHarness(windowLifecycleStore: injectedWindowLifecycle)
             let handler = MockCommandHandler()
+            let harness = makeHarness(
+                workspaceCommandOwner: .external(handler),
+                windowLifecycleStore: injectedWindowLifecycle
+            )
             let windowId = UUID()
             injectedWindowLifecycle.recordWindowRegistered(windowId)
             injectedWindowLifecycle.recordWindowBecameKey(windowId)
@@ -124,16 +122,8 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = handler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    #expect(harness.controller.handleAppOwnedKeyEvent(event))
-                    #expect(handler.executedCommands.map(\.0) == [.nextTab])
-                }
-            )
+            #expect(harness.controller.handleAppOwnedKeyEvent(event))
+            #expect(handler.executedCommands.map(\.0) == [.nextTab])
         }
     }
 
@@ -438,8 +428,11 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
     @Test("production global key path consults transient surface policy")
     func productionGlobalKeyPathConsultsTransientSurfacePolicy() async throws {
         try await withAsyncTestCoreAtoms { atoms in
-            let harness = makeHarness(windowLifecycleStore: atoms.windowLifecycle)
             let handler = MockCommandHandler()
+            let harness = makeHarness(
+                workspaceCommandOwner: .external(handler),
+                windowLifecycleStore: atoms.windowLifecycle
+            )
             configureMainWindowKeyboardOwner(atoms)
             let workspaceWindowId = try #require(atoms.windowLifecycle.focusedWindowId)
             _ = atoms.transientKeyboardSurface.present(
@@ -458,24 +451,19 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
             let trigger = try #require(ShortcutDecoder.decode(event: event))
             #expect(ShortcutDecoder.shortcut(for: trigger, in: .global) == .nextTab)
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = handler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    #expect(!harness.controller.handleAppOwnedKeyEvent(event))
-                    #expect(handler.executedCommands.isEmpty)
-                }
-            )
+            #expect(!harness.controller.handleAppOwnedKeyEvent(event))
+            #expect(handler.executedCommands.isEmpty)
         }
     }
 
     @Test("production global key path dispatches arrangement navigation through arrangement panel")
     func productionGlobalKeyPathDispatchesArrangementNavigationThroughArrangementPanel() async throws {
         try await withAsyncTestCoreAtoms { atoms in
-            let harness = makeHarness(windowLifecycleStore: atoms.windowLifecycle)
             let handler = MockCommandHandler()
+            let harness = makeHarness(
+                workspaceCommandOwner: .external(handler),
+                windowLifecycleStore: atoms.windowLifecycle
+            )
             configureMainWindowKeyboardOwner(atoms)
             let workspaceWindowId = try #require(atoms.windowLifecycle.focusedWindowId)
             _ = atoms.transientKeyboardSurface.present(
@@ -492,24 +480,19 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = handler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    #expect(harness.controller.handleAppOwnedKeyEvent(event))
-                    #expect(handler.executedCommands.map(\.0) == [.nextArrangement])
-                }
-            )
+            #expect(harness.controller.handleAppOwnedKeyEvent(event))
+            #expect(handler.executedCommands.map(\.0) == [.nextArrangement])
         }
     }
 
     @Test("arrangement panel maps command digit shortcuts to tab selection")
     func arrangementPanelMapsCommandDigitShortcutsToTabSelection() async throws {
         try await withAsyncTestCoreAtoms { atoms in
-            let harness = makeHarness(windowLifecycleStore: atoms.windowLifecycle)
             let handler = MockCommandHandler()
+            let harness = makeHarness(
+                workspaceCommandOwner: .external(handler),
+                windowLifecycleStore: atoms.windowLifecycle
+            )
             configureMainWindowKeyboardOwner(atoms)
             let workspaceWindowId = try #require(atoms.windowLifecycle.focusedWindowId)
             _ = atoms.transientKeyboardSurface.present(
@@ -526,24 +509,19 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = handler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    #expect(harness.controller.handleAppOwnedKeyEvent(event))
-                    #expect(handler.executedCommands.map(\.0) == [.selectTab2])
-                }
-            )
+            #expect(harness.controller.handleAppOwnedKeyEvent(event))
+            #expect(handler.executedCommands.map(\.0) == [.selectTab2])
         }
     }
 
     @Test("arrangement panel consumes unavailable tab ordinal shortcuts")
     func arrangementPanelConsumesUnavailableTabOrdinalShortcuts() async throws {
         try await withAsyncTestCoreAtoms { atoms in
-            let harness = makeHarness(windowLifecycleStore: atoms.windowLifecycle)
             let handler = MockCommandHandler()
+            let harness = makeHarness(
+                workspaceCommandOwner: .external(handler),
+                windowLifecycleStore: atoms.windowLifecycle
+            )
             handler.canExecuteResult = false
             configureMainWindowKeyboardOwner(atoms)
             let workspaceWindowId = try #require(atoms.windowLifecycle.focusedWindowId)
@@ -561,16 +539,8 @@ struct PaneTabViewControllerGlobalShortcutRoutingTests {
                 )
             )
 
-            try await withIsolatedCommandDispatcher(
-                configure: {
-                    AppCommandDispatcher.shared.handler = handler
-                    AppCommandDispatcher.shared.appCommandRouter = nil
-                },
-                body: {
-                    #expect(harness.controller.handleAppOwnedKeyEvent(event))
-                    #expect(handler.executedCommands.isEmpty)
-                }
-            )
+            #expect(harness.controller.handleAppOwnedKeyEvent(event))
+            #expect(handler.executedCommands.isEmpty)
         }
     }
 

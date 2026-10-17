@@ -1,10 +1,57 @@
 import AgentStudioTestSupport
+import Foundation
 import Testing
 
 @testable import AgentStudioBridge
 
 @Suite("Bridge pane product File annotation source witnesses")
 struct FileAnnotationSourceWitnessTests {
+    @Test(arguments: ["xxxx\nxxxx\n", "The file changed size too.\n"])
+    func changedFileRejectsAnnotationWithTypedSourceFailure(replacement: String) async throws {
+        let fixture = try ProductFileSourceFixture(fileCount: 1)
+        defer { fixture.remove() }
+        let source = fixture.makeSource()
+        let snapshot = try fixture.openSnapshot()
+        let collector = ProductFileSourceFactCollector()
+        try await source.open(subscription: snapshot, productAdmission: fixture.productAdmission.context) { _ in }
+        do {
+            try await source.applyViewDemand(
+                subscriptionId: snapshot.subscriptionId,
+                demand: fixture.viewDemand(),
+                productAdmission: fixture.productAdmission.context,
+                forceRecapture: false
+            ) { await collector.append($0, source: source) }
+            let payload = try #require(
+                (await collector.events).compactMap { event -> BridgeProductFileDescriptorReadyPayload? in
+                    guard case .descriptorReady(let ready) = event else { return nil }
+                    return ready
+                }.first)
+            guard case .available(let descriptor) = payload.availability else {
+                Issue.record("Expected available file descriptor")
+                await source.cancel(subscriptionId: snapshot.subscriptionId)
+                return
+            }
+            try Data(replacement.utf8).write(to: fixture.demandedFileURL)
+            var failure: WorktreeAnnotationSourceResolutionError?
+            do {
+                _ = try await source.captureWorktreeAnnotationSource(
+                    origin: .init(
+                        path: fixture.demandedPath, startLine: 1, endLine: 1,
+                        sourceRole: .file, diffSide: nil, sourceIdentity: descriptor.descriptorId
+                    ),
+                    productAdmission: fixture.productAdmission.context
+                )
+            } catch {
+                failure = error as? WorktreeAnnotationSourceResolutionError
+            }
+            #expect(failure == .invalidSource)
+        } catch {
+            await source.cancel(subscriptionId: snapshot.subscriptionId)
+            throw error
+        }
+        await source.cancel(subscriptionId: snapshot.subscriptionId)
+    }
+
     @Test("annotation source requirements dispatch through the production File source witness")
     func annotationSourceRequirementsUseProductionWitness() async throws {
         // Arrange
@@ -47,14 +94,14 @@ struct FileAnnotationSourceWitnessTests {
         try await FilesystemTestGitRepo.runGit(at: fixture.rootURL, args: ["init"])
         let source = fixture.makeSource()
         let snapshot = try fixture.openSnapshot()
-        let collector = ProductFileMetadataEventCollector()
+        let collector = ProductFileSourceFactCollector()
 
         do {
             try await source.open(
                 subscription: snapshot,
                 productAdmission: fixture.productAdmission.context
             ) { event in
-                await collector.append(event)
+                await collector.append(event, source: source)
             }
             let existentialSource: any BridgePaneProductFileMetadataProducing = source
             let fingerprint = try await existentialSource.currentWorktreeAnnotationFingerprint(

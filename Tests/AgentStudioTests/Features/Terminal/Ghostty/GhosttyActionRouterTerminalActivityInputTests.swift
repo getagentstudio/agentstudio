@@ -1,155 +1,184 @@
+import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
 import Testing
 
 @testable import AgentStudioTerminal
 
-/// SR6b (Program Design item 13, "Arming"). The isolated-instance tests
-/// prove `GhosttyTerminalActivityInputBinding`'s wait-then-bind mechanic
-/// without touching the shared global singleton other test files already
-/// bind/unbind against; the `.serialized` suite below proves
-/// `Ghostty.ActionRouter.armRestorePhase`'s integration with that real
-/// singleton in its already-bound state (the path production code takes in
-/// every real launch, since the router binds during boot).
-@Suite("Ghostty action router restore-phase arming: isolated binding")
+@MainActor
+@Suite("Terminal activity router readiness", .serialized)
 struct GhosttyActivityInputBindingRestorePhaseTests {
-    @Test("awaitBound resumes only after bind — never before, proven by ordering")
-    @MainActor
+    private func makeRouter(projector: TerminalActivityProjector = TerminalActivityProjector())
+        -> TerminalActivityRouter
+    {
+        TerminalActivityRouter(
+            bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
+            callbackHandlingAccess: { nil }, projector: projector,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale })
+    }
+
+    @Test("awaitBound resumes only after start publishes readiness")
     func awaitBoundResumesOnlyAfterBind() async throws {
-        let binding = GhosttyTerminalActivityInputBinding()
-        let log = OrderedEventLog()
-        let waiterRegisteredSource = LocalFactSource(vocabulary: waiterRegistrationFactVocabulary())
-        let waiterRegisteredRecorder = try waiterRegisteredSource.attach()
-
-        // R1 gate hang audit (Lead 2026-10-01): a single `Task.yield()` only
-        // claims `waitTask` reached registration — Swift's scheduler makes
-        // no such promise. `onWaiterRegistered` fires synchronously, still
-        // inside `awaitBound`'s own `withCheckedContinuation` setup
-        // closure, into `LocalFactSource.sink` -- synchronous by its own
-        // contract (`Tests/AgentStudioTestHarnessTests/FactRecorderLocalSinkTests.swift`)
-        // -- so awaiting this fact is a real registration, not a guess.
-        // Replaces a hand-built `CheckedContinuation` signal the
-        // architecture lint's `agentstudio_no_adhoc_continuation_wait` rule
-        // correctly flagged: this harness fits the seam after all.
-        let waitTask = Task { @MainActor in
-            await binding.awaitBound(onWaiterRegistered: {
-                waiterRegisteredSource.sink("binding", .waiterRegistered)
-            })
-            log.record("resumed")
+        let router = makeRouter()
+        let source = LocalFactSource(vocabulary: waiterRegistrationFactVocabulary())
+        let facts = try source.attach()
+        var events: [String] = []
+        let waiter = Task { @MainActor in
+            defer { source.end() }
+            await router.awaitSourceInputReady(onWaiterRegistered: { source.sink("router", .waiterRegistered) })
+            events.append("resumed")
         }
-        try await waiterRegisteredRecorder.expectNext(in: "binding", .waiterRegistered)
-        log.record("before-bind")
-        #expect(!binding.isBound)
-
-        binding.bind(
-            id: UUID(), context: { _ in .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 1) },
-            sink: { _ in })
-        await waitTask.value
-
-        #expect(log.events == ["before-bind", "resumed"])
+        do {
+            try await facts.expectNext(in: "router", .waiterRegistered)
+            events.append("before-start")
+            #expect(router.sourceInputContext(paneID: UUIDv7.generate()) == nil)
+            await router.start()
+            await waiter.value
+            #expect(events == ["before-start", "resumed"])
+            await router.stop()
+            try await facts.finish()
+        } catch {
+            waiter.cancel()
+            await waiter.value
+            await router.stop()
+            throw error
+        }
     }
 
-    @Test("already bound: awaitBound returns immediately without registering a waiter")
-    @MainActor
+    @Test("an already-started router returns immediately without registering a waiter")
     func alreadyBoundReturnsImmediately() async {
-        let binding = GhosttyTerminalActivityInputBinding()
-        binding.bind(
-            id: UUID(), context: { _ in .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 1) },
-            sink: { _ in })
-
-        await binding.awaitBound()
-
-        #expect(binding.isBound)
+        let router = makeRouter()
+        await router.start()
+        await router.awaitSourceInputReady(onWaiterRegistered: { Issue.record("ready router registered a waiter") })
+        #expect(router.sourceInputContext(paneID: UUIDv7.generate()) != nil)
+        await router.stop()
     }
 
-    @Test("a cancelled wait resumes without ever binding")
-    @MainActor
+    @Test("a cancelled wait resumes without ever starting the router")
     func cancelledWaitResumesWithoutBinding() async throws {
-        let binding = GhosttyTerminalActivityInputBinding()
-        let waiterRegisteredSource = LocalFactSource(vocabulary: waiterRegistrationFactVocabulary())
-        let waiterRegisteredRecorder = try waiterRegisteredSource.attach()
-
-        let waitTask = Task { @MainActor in
-            await binding.awaitBound(onWaiterRegistered: {
-                waiterRegisteredSource.sink("binding", .waiterRegistered)
-            })
+        let router = makeRouter()
+        let source = LocalFactSource(vocabulary: waiterRegistrationFactVocabulary())
+        let facts = try source.attach()
+        let waiter = Task { @MainActor in
+            defer { source.end() }
+            await router.awaitSourceInputReady(onWaiterRegistered: { source.sink("router", .waiterRegistered) })
         }
-        try await waiterRegisteredRecorder.expectNext(in: "binding", .waiterRegistered)
-        waitTask.cancel()
-        await waitTask.value
+        do {
+            try await facts.expectNext(in: "router", .waiterRegistered)
+            waiter.cancel()
+            await waiter.value
+            #expect(router.sourceInputContext(paneID: UUIDv7.generate()) == nil)
+            try await facts.finish()
+        } catch {
+            waiter.cancel()
+            await waiter.value
+            throw error
+        }
+    }
 
-        #expect(!binding.isBound)
+    @Test("cancellation before registration returns projectorUnbound and never arms")
+    func cancellationBeforeRegistrationDoesNotArm() async {
+        let projector = TerminalActivityProjector()
+        let router = makeRouter(projector: projector)
+        let paneID = UUIDv7.generate()
+        let task = Task { @MainActor in
+            await router.armRestorePhase(paneID: paneID, restoreGeneration: .init(rawValue: 3))
+        }
+        task.cancel()
+        #expect(await task.value == .projectorUnbound)
+        #expect(await projector.restorePhaseGenerationsByPane[paneID] == nil)
     }
 }
 
-/// R1 gate hang audit (Lead 2026-10-01): the one fact `awaitBoundResumesOnlyAfterBind`
-/// and `cancelledWaitResumesWithoutBinding` both need -- "the waiter is now
-/// registered" -- carried through the approved `LocalFactSource`/`FactRecorder`
-/// harness instead of a hand-built continuation waiter.
+@MainActor
+@Suite("Terminal activity router restore-phase arming", .serialized)
+struct GhosttyActionRouterRestorePhaseArmingTests {
+    @Test("arming an already-started router reaches its projector and returns armed")
+    func armingAnAlreadyBoundRouterSubmitsAndAcknowledges() async {
+        let projector = TerminalActivityProjector()
+        let router = TerminalActivityRouter(
+            bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
+            callbackHandlingAccess: { nil }, projector: projector,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale })
+        let paneID = UUIDv7.generate()
+        let generation = RestoreGeneration(rawValue: 42)
+        await router.start()
+        let acknowledgment = await router.armRestorePhase(paneID: paneID, restoreGeneration: generation)
+        #expect(acknowledgment == .armed)
+        #expect(await projector.restorePhaseGenerationsByPane[paneID] == generation)
+        await router.stop()
+    }
+
+    @Test("arming before readiness waits, then arms the same injected projector")
+    func armingBeforeReadinessWaitsThenArms() async throws {
+        let projector = TerminalActivityProjector()
+        let router = TerminalActivityRouter(
+            bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
+            callbackHandlingAccess: { nil }, projector: projector,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale })
+        let source = LocalFactSource(vocabulary: waiterRegistrationFactVocabulary())
+        let facts = try source.attach()
+        let paneID = UUIDv7.generate()
+        let generation = RestoreGeneration(rawValue: 43)
+        let arming = Task { @MainActor in
+            defer { source.end() }
+            return await router.armRestorePhase(
+                paneID: paneID, restoreGeneration: generation,
+                onWaiterRegistered: { source.sink("router", .waiterRegistered) })
+        }
+        do {
+            try await facts.expectNext(in: "router", .waiterRegistered)
+            #expect(await projector.restorePhaseGenerationsByPane[paneID] == nil)
+            await router.start()
+            #expect(await arming.value == .armed)
+            #expect(await projector.restorePhaseGenerationsByPane[paneID] == generation)
+            await router.stop()
+            try await facts.finish()
+        } catch {
+            arming.cancel()
+            _ = await arming.value
+            await router.stop()
+            throw error
+        }
+    }
+
+    @Test("stopping before readiness releases arming with projectorUnbound")
+    func stopBeforeReadinessDoesNotLeaveArmingPending() async throws {
+        let projector = TerminalActivityProjector()
+        let router = TerminalActivityRouter(
+            bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
+            callbackHandlingAccess: { nil }, projector: projector,
+            surfaceIDForPaneID: { _ in nil }, lastOutputLineReader: { _ in .surfaceStale })
+        let source = LocalFactSource(vocabulary: waiterRegistrationFactVocabulary())
+        let facts = try source.attach()
+        let paneID = UUIDv7.generate()
+        let arming = Task { @MainActor in
+            defer { source.end() }
+            return await router.armRestorePhase(
+                paneID: paneID, restoreGeneration: .init(rawValue: 44),
+                onWaiterRegistered: { source.sink("router", .waiterRegistered) })
+        }
+        do {
+            try await facts.expectNext(in: "router", .waiterRegistered)
+            await router.stop()
+            #expect(await arming.value == .projectorUnbound)
+            #expect(await projector.restorePhaseGenerationsByPane[paneID] == nil)
+            try await facts.finish()
+        } catch {
+            arming.cancel()
+            _ = await arming.value
+            await router.stop()
+            throw error
+        }
+    }
+
+}
+
 private enum WaiterRegistrationFact: Equatable, Sendable {
     case waiterRegistered
 }
 
 private func waiterRegistrationFactVocabulary() -> FactVocabulary<String, WaiterRegistrationFact> {
-    FactVocabulary(
-        describeScope: { $0 },
-        describeFact: { String(describing: $0) },
-        isClosing: { _, _ in true }
-    )
-}
-
-@MainActor
-private final class OrderedEventLog {
-    private(set) var events: [String] = []
-    func record(_ event: String) { events.append(event) }
-}
-
-/// Exercises `Ghostty.ActionRouter.armRestorePhase` against the real shared
-/// binding singleton, which several other test files also bind/unbind
-/// against.
-///
-/// Isolation audit (Lead 2026-10-01): this suite's own `@MainActor` +
-/// `.serialized` only serialize its own tests against each other, not
-/// against a *different* suite that also binds the same process-wide
-/// singleton -- confirmed against real reap-time evidence of two such
-/// suites in flight at once. What actually prevents that collision is the
-/// aggregate-serial lane runner itself:
-/// `run_aggregate_serial_non_webkit_swift_tests`
-/// (scripts/swift-test-helpers.sh:1496-1510) sends every auto-discovered
-/// `@MainActor @Suite(.serialized)` suite, this one included, through
-/// `dispatch_isolated_suites fast`, which runs each suite as its own
-/// `swift-testing-helper` process (`run_selected_isolated_suite`,
-/// scripts/swift-test-helpers.sh:1694-1716) -- confirmed by reading both
-/// functions directly. Two suites binding the same singleton therefore
-/// never share a process in the real lanes or in CI; they only collided
-/// under the gate's own ad-hoc `--filter` invocation, which puts every
-/// filtered suite into one process.
-@MainActor
-@Suite("Ghostty action router restore-phase arming: shared singleton", .serialized)
-struct GhosttyActionRouterRestorePhaseArmingTests {
-    @Test("arming an already-bound router submits .restorePhaseArmed and returns .armed")
-    func armingAnAlreadyBoundRouterSubmitsAndAcknowledges() async {
-        let bindingID = UUID()
-        let recorder = SubmittedInputRecorder()
-        Ghostty.ActionRouter.bindTerminalActivityInput(
-            id: bindingID,
-            context: { _ in .init(isAttended: false, isAgentClassified: false, outputBurstThreshold: 1) },
-            sink: { [recorder] input in recorder.record(input) }
-        )
-        defer { Ghostty.ActionRouter.unbindTerminalActivityInput(id: bindingID) }
-        let paneID = UUID()
-        let generation = RestoreGeneration(rawValue: 42)
-
-        let acknowledgment = await Ghostty.ActionRouter.armRestorePhase(
-            paneID: paneID, restoreGeneration: generation)
-
-        #expect(acknowledgment == .armed)
-        #expect(recorder.inputs == [.restorePhaseArmed(paneID: paneID, restoreGeneration: generation)])
-    }
-}
-
-@MainActor
-private final class SubmittedInputRecorder {
-    private(set) var inputs: [TerminalActivitySourceInput] = []
-    func record(_ input: TerminalActivitySourceInput) { inputs.append(input) }
+    FactVocabulary(describeScope: { $0 }, describeFact: { String(describing: $0) }, isClosing: { _, _ in true })
 }
