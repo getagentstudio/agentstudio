@@ -54,21 +54,76 @@ extension RepoExplorerPaneProjectionTests {
     func workerBranchLineFollowsEnrichment(enrichedBranch: String?, expectedText: String?) throws {
         let repoID = UUIDv7.generate()
         let worktree = makeWorktree(repoId: repoID)
-        let request = RepoExplorerProjectionRequest(
+        let request = branchContextRequest(
             generation: 1,
             snapshot: singleWorktreePaneSnapshot(repoID: repoID, worktree: worktree),
-            collapsedGroupIds: [],
-            isFiltering: false,
-            trigger: .dataRefresh,
-            worktreeEnrichmentSnapshot: enrichedBranch.map { branch in
-                [worktree.id: WorktreeEnrichment(worktreeId: worktree.id, repoId: repoID, branch: branch)]
-            } ?? [:]
+            enrichedBranch: enrichedBranch,
+            worktree: worktree
         )
 
         let result = try RepoExplorerProjectionWorker.project(request)
         let row = try #require(result.projection.paneRowsByGroupId.values.flatMap { $0 }.first)
 
         #expect(row.branchContextText == expectedText)
+    }
+
+    /// At launch enrichment arrives as a worktree-fact delta, which keeps the previous pane rows.
+    /// The rows carry the branch line, so the arrival must take the full projection.
+    @Test("arriving enrichment for a worktree with pane rows takes the full projection")
+    func arrivingEnrichmentRebuildsPaneRows() throws {
+        let repoID = UUIDv7.generate()
+        let worktree = makeWorktree(repoId: repoID)
+        let snapshot = singleWorktreePaneSnapshot(repoID: repoID, worktree: worktree)
+        let previous = try RepoExplorerProjectionWorker.project(
+            branchContextRequest(generation: 1, snapshot: snapshot, enrichedBranch: nil, worktree: worktree))
+        let arrived = branchContextRequest(generation: 2, snapshot: snapshot, enrichedBranch: "", worktree: worktree)
+
+        let scoped = RepoExplorerProjectionWorker.applyScopedChange(
+            .worktreeFact(worktree.id), request: arrived, previous: previous)
+        let full = try RepoExplorerProjectionWorker.project(arrived)
+
+        #expect(scoped == nil)
+        let row = try #require(full.projection.paneRowsByGroupId.values.flatMap { $0 }.first)
+        #expect(row.branchContextText == "agent-studio · detached")
+    }
+
+    @Test("an unchanged branch fact keeps the worktree delta for pane rows")
+    func unchangedBranchFactKeepsWorktreeDelta() throws {
+        let repoID = UUIDv7.generate()
+        let worktree = makeWorktree(repoId: repoID)
+        let snapshot = singleWorktreePaneSnapshot(repoID: repoID, worktree: worktree)
+        let previous = try RepoExplorerProjectionWorker.project(
+            branchContextRequest(
+                generation: 1, snapshot: snapshot, enrichedBranch: "feature/sidebar", worktree: worktree))
+        let refreshed = branchContextRequest(
+            generation: 2, snapshot: snapshot, enrichedBranch: "feature/sidebar", worktree: worktree)
+
+        let scoped = RepoExplorerProjectionWorker.applyScopedChange(
+            .worktreeFact(worktree.id), request: refreshed, previous: previous)
+
+        #expect(scoped != nil)
+    }
+
+    private func branchContextRequest(
+        generation: Int,
+        snapshot: RepoExplorerSnapshot,
+        enrichedBranch: String?,
+        worktree: Worktree
+    ) -> RepoExplorerProjectionRequest {
+        RepoExplorerProjectionRequest(
+            generation: generation,
+            snapshot: snapshot,
+            collapsedGroupIds: [],
+            isFiltering: false,
+            trigger: .dataRefresh,
+            worktreeEnrichmentSnapshot: enrichedBranch.map { branch in
+                [
+                    worktree.id: WorktreeEnrichment(
+                        worktreeId: worktree.id, repoId: worktree.repoId, branch: branch,
+                        updatedAt: Date(timeIntervalSince1970: TimeInterval(generation)))
+                ]
+            } ?? [:]
+        )
     }
 
     private func singleWorktreePaneSnapshot(repoID: UUID, worktree: Worktree) -> RepoExplorerSnapshot {

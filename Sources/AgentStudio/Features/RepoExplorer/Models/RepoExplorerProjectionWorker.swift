@@ -610,6 +610,17 @@ actor RepoExplorerProjectionWorker {
                 ?? false
         )
         branchNames[worktreeId] = branchName(enrichment: enrichment)
+        // Pane rows carry their worktree's branch line and git chips, and this delta keeps the
+        // previous rows, so a change those rows show needs the full projection.
+        let paneRowsShowWorktree = previous.projection.paneRowsByGroupId.values.contains { rows in
+            rows.contains { $0.destination.worktreeId == worktreeId }
+        }
+        if paneRowsShowWorktree,
+            branchNames[worktreeId] != previous.branchNameByWorktreeId[worktreeId]
+                || branchStatuses[worktreeId] != previous.branchStatusByWorktreeId[worktreeId]
+        {
+            return nil
+        }
         bridgeCommandResolutions[worktreeId] = BridgePaneCommandResolver.resolve(
             worktreeId: worktreeId,
             candidates: request.snapshot.bridgePaneCommandCandidatesByWorktreeId[worktreeId, default: []]
