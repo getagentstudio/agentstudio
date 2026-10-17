@@ -17,8 +17,8 @@ package struct RestoreGeneration: Sendable, Equatable, Hashable {
 /// item 13, choice 13's "Arming"). `.armed` covers both "the router was
 /// already bound" and "the router bound while we waited" — activation never
 /// proceeds to create the surface without one of those. `.projectorUnbound`
-/// is reached only when the wait for the router's bound fact was cancelled
-/// before binding ever happened.
+/// is reached when the wait ends without the router ever becoming ready:
+/// the wait was cancelled, or the router stopped first.
 package enum RestorePhaseArmAcknowledgment: Sendable, Equatable {
     case armed
     case projectorUnbound
