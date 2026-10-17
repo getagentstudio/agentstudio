@@ -187,9 +187,13 @@ private final class ScrollbackWorkspaceFixture {
             startsObserving: false)
         let clock = clock
         let origin = clock.now
+        let surfaceManager = HarnessSurfaceManager()
         coordinator = WorkspaceSurfaceCoordinator(
             store: store, viewRegistry: ViewRegistry(), runtime: SessionRuntime(store: store),
-            surfaceManager: HarnessSurfaceManager(), runtimeRegistry: RuntimeRegistry(),
+            surfaceManager: surfaceManager,
+            terminalSurfaceCommandDispatcher: AppTerminalFixtureSurfaceCommands(),
+            terminalSurfaceOperations: makeAppTerminalFixtureMountOperations(surfaceManager: surfaceManager),
+            runtimeRegistry: RuntimeRegistry(),
             windowLifecycleStore: WindowLifecycleAtom(),
             ipcLifecycle: .testUnavailable, bridgePaneAttendance: BridgePaneAttendanceAtom(),
             undoClock: {
