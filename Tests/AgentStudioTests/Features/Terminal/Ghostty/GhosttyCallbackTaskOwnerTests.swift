@@ -15,6 +15,11 @@ struct GhosttyCallbackTaskOwnerTests {
         do {
             try await proveReplyDependsOnStep(
                 makeScenario: {
+                    () throws -> HeldReplyScenario<
+                        GhosttyCallbackTaskOwnerFixture,
+                        Void,
+                        GhosttyCallbackTaskOwnerReply
+                    > in
                     let fixture = try GhosttyCallbackTaskOwnerFixture()
                     fixtureStore.append(fixture)
                     return fixture.replyScenario()
