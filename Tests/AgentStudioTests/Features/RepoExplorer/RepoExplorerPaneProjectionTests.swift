@@ -707,7 +707,7 @@ struct RepoExplorerPaneProjectionTests {
         #expect(matching.paneRowsByGroupId[groupID]?.map { $0.destination.paneId } == [paneId])
     }
 
-    private func makeRepo(id: UUID, worktrees: [Worktree]) -> RepoPresentationItem {
+    func makeRepo(id: UUID, worktrees: [Worktree]) -> RepoPresentationItem {
         RepoPresentationItem(
             id: id,
             name: "agent-studio",
@@ -801,11 +801,11 @@ struct RepoExplorerPaneProjectionTests {
         )
     }
 
-    private func makeWorktree(repoId: UUID, name: String = "main") -> Worktree {
+    func makeWorktree(repoId: UUID, name: String = "main") -> Worktree {
         Worktree(repoId: repoId, name: name, path: URL(fileURLWithPath: "/tmp/\(name)"))
     }
 
-    private func resolvedRemote(repoId: UUID) -> RepoEnrichment {
+    func resolvedRemote(repoId: UUID) -> RepoEnrichment {
         .resolvedRemote(
             repoId: repoId,
             raw: RawRepoOrigin(origin: "git@github.com:askluna/agent-studio.git", upstream: nil),

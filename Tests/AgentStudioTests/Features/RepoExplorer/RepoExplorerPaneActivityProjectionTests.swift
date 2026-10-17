@@ -56,6 +56,7 @@ struct RepoExplorerPaneActivityProjectionTests {
 
         #expect(result.clockText == "—")
         #expect(!result.isActive)
+        #expect(result.nextPresentationChangeDate == nil)
         #expect(result.unpinnedBucket == .noActivity)
         #expect(result.pinnedBucket == .older)
     }
@@ -232,6 +233,33 @@ struct RepoExplorerPaneActivityProjectionTests {
         #expect(projection.sections[1].resolvedGroups.map(\.repoTitle) == ["Just Now", "No activity"])
         #expect(projection.sections[0].title == "Pinned Panes")
         #expect(projection.sections[1].title == "Panes")
+    }
+
+    @Test("terminal activity without an agent carries the clock deadline and row recency")
+    func workerThreadsClockDeadlineAndRecencyIntoPaneRow() throws {
+        let referenceInstant = ContinuousClock.now
+        let wallNow = utcDate(year: 2026, month: 1, day: 15, hour: 12, minute: 0)
+        let paneID = UUIDv7.generate()
+        let snapshot = RepoExplorerSnapshot(
+            repos: [], repoEnrichmentByRepoId: [:], surface: .panes,
+            referenceDate: wallNow, referenceInstant: referenceInstant, calendar: utcCalendar, query: "",
+            unassociatedPaneLocations: [
+                WorkspacePaneLocation(
+                    paneId: paneID, tabId: UUIDv7.generate(), tabIndex: 0, paneIndexInTab: 0, isActiveInTab: false)
+            ])
+        let captured = RepoExplorerPaneRowFacts(
+            terminalTitle: "Terminal",
+            paneActivityTime: PaneActivityTime(
+                orderingInstant: referenceInstant.advanced(by: .seconds(-10)),
+                wallTime: .distantPast, source: .terminal),
+            latestMessageText: nil, recencyReferenceDate: .distantPast, recencyText: "—", isActive: false)
+
+        let prepared = RepoExplorerProjectionWorker.preparedPaneRowFacts([paneID: captured], snapshot: snapshot)
+        let projection = RepoExplorerProjection.project(snapshot, paneRowFactsByPaneId: prepared)
+        let row = try #require(projection.paneRowsByGroupId.values.flatMap { $0 }.first)
+
+        #expect(prepared[paneID]?.nextPresentationChangeDate == wallNow.addingTimeInterval(50))
+        #expect(row.recencyText == "Now")
     }
 
     private var utcCalendar: Calendar {

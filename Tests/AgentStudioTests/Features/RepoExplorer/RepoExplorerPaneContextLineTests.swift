@@ -14,7 +14,7 @@ struct RepoExplorerPaneContextLineTests {
         let icon: CommandIcon?
         let tone: PaneContextChipTone?
     }
-    // Expected words and glyphs transcribed from Spec R21a, independent of the presentation function.
+    // Words and glyphs from Spec R21a, with the row-motion design's dotted monitoring glyph.
     static let statuses: [StatusOracle] = [
         .init(status: .needsYou(.approval), text: "Needs you · approval", icon: .system(.flag), tone: .warning),
         .init(status: .needsYou(.question), text: "Needs you · question", icon: .system(.flag), tone: .warning),
@@ -23,7 +23,8 @@ struct RepoExplorerPaneContextLineTests {
             status: .failed(.init(category: "Build")), text: "Failed · Build", icon: .system(.xmarkOctagon),
             tone: .danger),
         .init(status: .working(.active), text: "Working", icon: .system(.circleFill), tone: .success),
-        .init(status: .working(.monitoring), text: "Working · monitoring", icon: .system(.circleFill), tone: .success),
+        .init(
+            status: .working(.monitoring), text: "Working · monitoring", icon: .system(.circleDotted), tone: .success),
         .init(status: .idle(.done), text: "Idle · done", icon: .system(.checkmark), tone: .neutral),
         .init(status: .idle(.ready), text: "Idle · ready", icon: .system(.circle), tone: .neutral),
         .init(status: .idle(.interrupted), text: "Idle · interrupted", icon: .system(.circle), tone: .neutral),
@@ -37,6 +38,45 @@ struct RepoExplorerPaneContextLineTests {
         #expect(line?.icon == oracle.icon)
         #expect(line?.tone == oracle.tone)
         #expect(line?.tooltip.text == oracle.text)
+    }
+
+    // Motion oracle from the row-motion design: only active work and monitoring move.
+    @Test(arguments: [
+        (AgentSessionStatus.needsYou(.approval), PaneLineGlyphMotion.still),
+        (.needsYou(.question), .still), (.needsYou(.blocked), .still),
+        (.failed(.init(category: "Build")), .still),
+        (.working(.active), .breathe), (.working(.monitoring), .rotate),
+        (.idle(.done), .still), (.idle(.ready), .still),
+        (.idle(.interrupted), .still), (.idle(.ended), .still), (.unknown, .still),
+    ])
+    func sessionMotionMatchesStatus(status: AgentSessionStatus, motion: PaneLineGlyphMotion) {
+        let line = RepoExplorerPaneContextLine.session(status)
+
+        #expect((line?.glyphMotion ?? .still) == motion)
+        #expect((line == nil) == (status == .unknown))
+    }
+
+    @Test(arguments: [
+        (AgentLineWork.working(.indeterminate), PaneLineGlyphMotion.breathe),
+        (.working(.step(current: 1, total: 3)), .breathe),
+        (.monitoring("checks"), .rotate), (.blockedOnYou(action: "Approve"), .still),
+        (.done, .still), (.failed(summary: "Build failed"), .still),
+    ])
+    func agentMotionMatchesWork(work: AgentLineWork, motion: PaneLineGlyphMotion) throws {
+        let detail = AgentLineDetail(
+            summary: "Agent work", work: work, detail: nil, refs: [],
+            writer: .session(
+                provider: try .init("codex"), sessionRef: try .init("run"), bindingGeneration: UUIDv7.generate()),
+            updatedAt: .distantPast, lifetime: .untilReplaced, stale: false)
+
+        let line = RepoExplorerPaneContextLine.agent(detail)
+
+        #expect(line.glyphMotion == motion)
+    }
+
+    @Test(arguments: AgentConnectionRefusalReason.allCases)
+    func connectionIssueNeverMoves(reason: AgentConnectionRefusalReason) {
+        #expect(RepoExplorerPaneContextLine.connection(reason).glyphMotion == .still)
     }
     @Test
     func everyExistingLineShowsInBothVariantsWithIndependentAgentWork() throws {
