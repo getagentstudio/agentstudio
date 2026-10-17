@@ -204,7 +204,7 @@ extension RepoExplorerProjectionWorkerTests {
         #expect(result.rowIndex.entries.count == 3)
         let visibleWorktreeIds = result.projection.resolvedGroups.first?.repos.first?.worktrees.map { $0.id }
         #expect(visibleWorktreeIds == [matchingWorktree.id])
-        #expect(result.branchNameByWorktreeId[matchingWorktree.id]?.isEmpty == true)
+        #expect(result.branchNameByWorktreeId[matchingWorktree.id] == nil)
     }
 
     @Test("worker preserves pinned-first section ordering off caller isolation")
@@ -276,7 +276,7 @@ extension RepoExplorerProjectionWorkerTests {
                     worktreeID: repo.worktrees[0].id
                 ),
             ])
-        #expect(result.branchNameByWorktreeId[repo.worktrees[0].id]?.isEmpty == true)
+        #expect(result.branchNameByWorktreeId[repo.worktrees[0].id] == nil)
     }
 
     @Test("generated requests preserve pane and tab presentation facts")

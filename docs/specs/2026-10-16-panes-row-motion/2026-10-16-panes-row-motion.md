@@ -27,6 +27,7 @@
 3. **Streaming is a derived activity fact.**
    - `RepoExplorerPaneActivityProjection` gains `isStreaming`: activity age below `AppPolicies.RepoExplorer.streamingActivityDuration`. That is a behavior constant, so it lives in AppPolicies; its value is the 10 s activity-publication coalescing plus a margin.
    - The flag's lapse instant joins `nextPresentationChangeDate`, so the existing refresh path turns the pulse off. No new timer, observer or atom.
+   - New output while a row already reads "Now" changes nothing visible, so the projection is equal-paint, but the lapse moves later. The adapter re-arms the deadline whenever a pane's or a repository's next transition moved, not only a repository's. Without that, the earlier deadline fires, re-projects to the same transitions and stops, and the pulse never ends. Re-arming only on a moved transition keeps a fired deadline from looping.
 4. **The chip pulse** is a very gentle repeating opacity animation on the clock chip while `isStreaming`. It is off under Reduce Motion.
 5. **The branch line:** today the projection drops the line when branch normalization fails. It will instead name git's answer (`detached`, `unknown branch`) for a worktree pane. A missing branch fact means facts have not arrived yet, so the line stays out until they do, rather than flashing `unknown branch` at launch.
 

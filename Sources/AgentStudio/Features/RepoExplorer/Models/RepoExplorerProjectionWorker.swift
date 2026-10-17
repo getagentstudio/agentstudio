@@ -571,8 +571,10 @@ actor RepoExplorerProjectionWorker {
         return branchNames
     }
 
-    private static func branchName(enrichment: WorktreeEnrichment?) -> String {
-        guard let enrichment else { return "" }
+    /// Absent until the worktree's enrichment arrives, so a pane row can tell "not known yet"
+    /// (no line) from git's own detached answer.
+    private static func branchName(enrichment: WorktreeEnrichment?) -> String? {
+        guard let enrichment else { return nil }
         let cachedBranch = enrichment.branch.trimmingCharacters(in: .whitespacesAndNewlines)
         if !cachedBranch.isEmpty {
             return cachedBranch
