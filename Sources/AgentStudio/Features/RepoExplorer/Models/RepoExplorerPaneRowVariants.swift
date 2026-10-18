@@ -1,7 +1,7 @@
 import AgentStudioCore
 import Foundation
 
-enum RepoExplorerPaneRowLine: Equatable, Sendable {
+package enum RepoExplorerPaneRowLine: Equatable, Sendable {
     case title(String)
     case worktreeBranch(String)
     case note(String)
@@ -9,7 +9,7 @@ enum RepoExplorerPaneRowLine: Equatable, Sendable {
     case sessionStatus(RepoExplorerPaneContextLine)
     case connectionIssue(RepoExplorerPaneContextLine)
 
-    var kind: RepoExplorerPaneLineKind {
+    package var kind: RepoExplorerPaneLineKind {
         switch self {
         case .title: .title
         case .worktreeBranch: .worktreeBranch
@@ -38,9 +38,19 @@ struct RepoExplorerPaneRowVariant: Equatable, Sendable {
     var showsChipLine = true
 }
 
-struct RepoExplorerPaneRowVariants: Equatable, Sendable {
+package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
     let compact: RepoExplorerPaneRowVariant
     let expanded: RepoExplorerPaneRowVariant
+
+    package static func informationLines(
+        title: String, note: String?, agentLine: AgentLineDetail?,
+        sessionStatus: AgentSessionStatus?, connectionIssue: AgentConnectionRefusalReason?
+    ) -> [RepoExplorerPaneRowLine] {
+        make(
+            title: title, branchContext: nil, note: note, isDrawer: false, branchStatus: nil, isActive: false,
+            agentLine: agentLine, sessionStatus: sessionStatus, connectionIssue: connectionIssue
+        ).expanded.lines
+    }
 
     static func make(
         title: String,

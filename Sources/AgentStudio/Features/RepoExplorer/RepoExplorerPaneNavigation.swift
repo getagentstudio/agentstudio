@@ -161,32 +161,9 @@ struct RepoExplorerPaneRowContent: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    @ViewBuilder
     private func titleLine(_ text: String) -> some View {
-        HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
-            (isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage(
-                loader: octiconLoader,
-                size: AppStyles.Shell.Sidebar.rowIdentityIconSize
-            )
-            .frame(
-                width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth,
-                alignment: .leading
-            )
-            Text(text)
-                .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarShortcutHint(
-            shortcutDisplay,
-            style: .toolbarStamp,
-            alignment: .trailing,
-            offset: CGSize(width: -AppStyles.Shell.Sidebar.KeyboardHint.rowTrailingInset, height: 0)
-        )
+        RepoExplorerPaneTitleLineView(
+            text: text, isDrawerPane: isDrawerPane, octiconLoader: octiconLoader, shortcutDisplay: shortcutDisplay)
     }
 
     private var chipRow: some View {
