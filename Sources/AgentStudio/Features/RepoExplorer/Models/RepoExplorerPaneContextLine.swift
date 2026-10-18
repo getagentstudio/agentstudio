@@ -41,7 +41,8 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
         let spec = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
         return Self(
             text: spec.label, icon: spec.icon,
-            tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "paneAgentConnectionIssue")),
+            tooltip: spec.controlTooltipRenderValue(
+                provenance: .localAction(rawValue: "paneAgentConnectionIssue"), textOverride: spec.helpText),
             tone: .warning, glyphMotion: .still, stale: false)
     }
 

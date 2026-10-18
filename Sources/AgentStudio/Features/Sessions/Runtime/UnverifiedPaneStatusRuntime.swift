@@ -50,8 +50,9 @@ struct UnverifiedPaneStatusRuntime: Sendable {
         return true
     }
 
-    mutating func commandFinished(paneId: UUID, reportedAt: ContinuousClock.Instant, at: Date) {
-        guard var pane = panes[paneId], let main = pane.main, pane.establishedAt < reportedAt else { return }
+    @discardableResult
+    mutating func commandFinished(paneId: UUID, reportedAt: ContinuousClock.Instant, at: Date) -> Bool {
+        guard var pane = panes[paneId], let main = pane.main, pane.establishedAt < reportedAt else { return false }
         pane.sequence += 1
         SessionStatusReducer.apply(
             .init(
@@ -60,6 +61,7 @@ struct UnverifiedPaneStatusRuntime: Sendable {
         pane.released.insert(main)
         pane.main = nil
         panes[paneId] = pane
+        return true
     }
 
     mutating func viewed(paneId: UUID, at: ContinuousClock.Instant) {

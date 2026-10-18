@@ -10,6 +10,37 @@ import Testing
 
 @Suite("Sessions unverified status")
 struct SessionsUnverifiedStatusTests {
+    @Test("only the elected main's applied end retires its warning, keeping refusal diagnostics")
+    func electedMainEndRetiresWarning() async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        let key = PaneId(existingUUID: pane)
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let mailbox = await ingestion.statusPublicationMailbox
+            _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart)
+            _ = mailbox.takeBatch()
+            _ = try await Self.submit(ingestion, pane: pane, signal: .turnDone)
+            #expect(
+                mailbox.takeBatch()[key] == .set(.init(status: .idle(.done), connectionIssue: .credentialNotRecognized))
+            )
+            #expect(
+                try await Self.submit(ingestion, pane: pane, session: "B", signal: .sessionEnd)
+                    == .hookAcceptedWithoutStatus)
+            #expect(mailbox.takeBatch().isEmpty)
+
+            #expect(try await Self.submit(ingestion, pane: pane, signal: .sessionEnd) == .hookApplied)
+
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended))))
+            #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
+            #expect(await ingestion.lastRefusal(paneId: pane)?.count == 4)
+            _ = try await Self.submit(ingestion, pane: pane, session: "B", signal: .turnStart)
+            #expect(
+                mailbox.takeBatch()[key]
+                    == .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized)))
+            #expect(try await Self.protectedCounts(fixture) == Array(repeating: 0, count: 10))
+        }
+    }
+
     @Test("status and refusal publish together, leave protected SQLite tables untouched, and verified binding wins")
     func noIdentityWritesAndVerifiedPrecedence() async throws {
         let fixture = try SessionsDatabaseFixture()
@@ -176,6 +207,11 @@ struct SessionsUnverifiedStatusTests {
                 oldExit.release()
                 #expect(try await pendingExit.value == nil)
                 #expect(statusMailbox.takeBatch().isEmpty)
+                let currentExit = try await ingestion.submitCommandFinished(
+                    paneId: pane, reportedAt: origin + .seconds(4))
+                #expect(currentExit == nil)
+                #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .idle(.ended))))
+                #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
                 #expect(
                     try await Self.submit(ingestion, pane: pane, signal: .turnDone, instant: origin + .seconds(4))
                         == .hookAcceptedWithoutStatus)
