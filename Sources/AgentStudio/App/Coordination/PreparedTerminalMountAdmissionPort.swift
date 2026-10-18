@@ -6,11 +6,14 @@ import Foundation
 
 @MainActor
 protocol PreparedTerminalMountHandling: AnyObject {
+    /// `async`: a cold pane arms its restore phase and awaits the
+    /// acknowledgment before creating its surface (SR6b; Program Design
+    /// item 13). Every other pane returns without ever suspending.
     func mountPreparedTerminalContent(
         admission: TerminalActivationAdmission,
         initialFrame: NSRect?,
         authority: TerminalSurfaceCreationAuthority
-    ) -> TerminalActivationAttemptResult
+    ) async -> TerminalActivationAttemptResult
 }
 
 /// Generation-bound admission boundary between the off-main terminal scheduler
@@ -53,6 +56,7 @@ final class PreparedTerminalMountAdmissionPort: TerminalActivationAdmissionPort 
     private var currentVisibleQueuedSnapshot: TerminalVisibleQueuedSnapshot
     private var claimTrackingByPaneID: [PaneId: PaneClaimTracking] = [:]
     private var issuedClaimIDs: Set<UUID> = []
+    private var restoreKindsByPaneID: [PaneId: TerminalRestoreKind] = [:]
 
     init(
         generation: WorkspaceContentMountGeneration,
@@ -196,6 +200,10 @@ final class PreparedTerminalMountAdmissionPort: TerminalActivationAdmissionPort 
 
     // MARK: - TerminalActivationAdmissionPort
 
+    func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind]) {
+        self.restoreKindsByPaneID = restoreKindsByPaneID
+    }
+
     @discardableResult
     func recordCurrentVisibleQueuedTerminals(
         _ terminals: TerminalVisibleQueuedTerminals
@@ -294,7 +302,7 @@ final class PreparedTerminalMountAdmissionPort: TerminalActivationAdmissionPort 
             return .rejected(.custodyReplaced)
         }
 
-        let result = mountHandler.mountPreparedTerminalContent(
+        let result = await mountHandler.mountPreparedTerminalContent(
             admission: admission,
             initialFrame: frame,
             authority: .prepared(claim)
@@ -311,7 +319,12 @@ final class PreparedTerminalMountAdmissionPort: TerminalActivationAdmissionPort 
         frame: NSRect?,
         proposal: TerminalAdmissionProposal
     ) -> TerminalAdmissionClaimOutcome {
-        let admission = TerminalActivationAdmission(generation: generation, descriptor: descriptor, attempt: attempt)
+        let admission = TerminalActivationAdmission(
+            generation: generation,
+            descriptor: descriptor,
+            attempt: attempt,
+            restoreKind: restoreKindsByPaneID[descriptor.paneID]
+        )
         let claimID = UUIDv7.generate()
         issuedClaimIDs.insert(claimID)
         claimTrackingByPaneID[proposal.paneID] = .claimed(claimID: claimID, admission: admission, frame: frame)

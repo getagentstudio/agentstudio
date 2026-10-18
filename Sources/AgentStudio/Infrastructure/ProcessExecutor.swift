@@ -35,10 +35,13 @@ package struct ProcessResult: Sendable {
 
 // MARK: - ProcessError
 
-enum ProcessError: Error, LocalizedError {
+/// `package` so callers outside this module (`ZmxBackend.discoverSessionInventory()`
+/// in `AgentStudioCore`) can distinguish a timeout from every other execution
+/// failure without re-deriving it from `localizedDescription` text.
+package enum ProcessError: Error, LocalizedError {
     case timedOut(command: String, seconds: TimeInterval)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .timedOut(let command, let seconds):
             return "Process '\(command)' timed out after \(Int(seconds))s"

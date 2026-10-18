@@ -14,6 +14,7 @@ package final class GhosttyActionRoutingHost {
         let submitActivityInput: @MainActor (TerminalActivitySourceInput) async -> Void
         let startupTraceRecorder: AgentStudioStartupTraceRecorder?
         let traceRuntime: AgentStudioTraceRuntime?
+        var reportColdStartAttachClientExited: @MainActor (UUID) -> Void = { _ in }
     }
 
     let runtimeRegistry: RuntimeRegistry
@@ -23,6 +24,7 @@ package final class GhosttyActionRoutingHost {
     let activityContext: @MainActor (UUID) -> TerminalActivityProjectionContext?
     let submitActivityInput: @MainActor (TerminalActivitySourceInput) async -> Void
     let startupTraceRecorder: AgentStudioStartupTraceRecorder?
+    let reportColdStartAttachClientExited: @MainActor (UUID) -> Void
     nonisolated let actionTraceQueueStore: GhosttyActionTraceQueueStore
 
     init(dependencies: Dependencies) {
@@ -33,6 +35,7 @@ package final class GhosttyActionRoutingHost {
         activityContext = dependencies.activityContext
         submitActivityInput = dependencies.submitActivityInput
         startupTraceRecorder = dependencies.startupTraceRecorder
+        reportColdStartAttachClientExited = dependencies.reportColdStartAttachClientExited
         actionTraceQueueStore = GhosttyActionTraceQueueStore(traceRuntime: dependencies.traceRuntime)
     }
 

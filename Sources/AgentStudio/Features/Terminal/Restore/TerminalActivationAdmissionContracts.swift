@@ -156,6 +156,13 @@ package protocol TerminalActivationAdmissionPort: AnyObject, Sendable {
         _ terminals: TerminalVisibleQueuedTerminals
     ) -> TerminalVisibilityRevision
 
+    /// Installs this generation's restore-kind map (SR1; Program Design item
+    /// 1). `mount()` calls this once, before the terminal lane activates, so
+    /// every claim minted afterward carries its pane's decided kind. Contains
+    /// no `await`. The default (below) is a no-op, so fakes and harnesses
+    /// that never wire restore decisions keep compiling unchanged.
+    func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind])
+
     /// Compare-and-claim. Contains no `await`, so the revision comparison and
     /// the `ViewRegistry` custody transition occur in one MainActor turn.
     func claimPreparedTerminal(
@@ -166,4 +173,9 @@ package protocol TerminalActivationAdmissionPort: AnyObject, Sendable {
     func activateClaimedTerminal(
         _ claim: ClaimedTerminalAdmission
     ) async -> ClaimedTerminalActivationOutcome
+}
+
+@MainActor
+extension TerminalActivationAdmissionPort {
+    package func installRestoreKinds(_ restoreKindsByPaneID: [PaneId: TerminalRestoreKind]) {}
 }
