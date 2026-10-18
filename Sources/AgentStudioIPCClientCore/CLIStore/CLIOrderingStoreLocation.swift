@@ -16,11 +16,15 @@ struct CLIOrderingStoreLocation {
             return nil
         }
         let directory = URL(fileURLWithPath: socket).deletingLastPathComponent()
-        guard let data = try? Data(contentsOf: directory.appending(path: "runtime.json")),
+        let discoveryURL = directory.appending(path: "runtime.json")
+        let hasPointer = (try? FileManager.default.destinationOfSymbolicLink(atPath: discoveryURL.path)) != nil
+        // A regular co-located document retains its existing path spelling.
+        let metadataURL = hasPointer ? discoveryURL.resolvingSymlinksInPath() : discoveryURL
+        guard let data = try? Data(contentsOf: metadataURL),
             let metadata = try? JSONDecoder().decode(RuntimeMetadata.self, from: data),
             metadata.socketPath == socket, let channel = CLIStoreChannel(rawValue: metadata.channel)
         else { return nil }
-        let store = directory.appending(path: "cli.sqlite")
+        let store = metadataURL.deletingLastPathComponent().appending(path: "cli.sqlite")
         guard FileManager.default.fileExists(atPath: store.path) else { return nil }
         return Self(url: store, channel: channel)
     }

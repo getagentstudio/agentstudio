@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -12,6 +13,8 @@ public struct AgentStudioIPCPaths: Equatable, Sendable {
     public let metadataURL: URL
     public let socketURL: URL
     public let cliStoreURL: URL
+
+    var metadataDiscoveryURL: URL { socketDirectory.appendingPathComponent("runtime.json") }
 
     public init(
         rootDirectory: URL,
@@ -190,7 +193,7 @@ public enum AgentStudioIPCFilesystem {
             throw AgentStudioIPCFilesystemTrustError(reason: .metadataEncodingFailed, path: paths.metadataURL.path)
         }
 
-        let temporaryURL = paths.ipcDirectory.appendingPathComponent(".runtime.\(UUID().uuidString).tmp")
+        let temporaryURL = paths.ipcDirectory.appendingPathComponent(".runtime.\(UUIDv7.generate().uuidString).tmp")
         do {
             try data.write(to: temporaryURL, options: [.atomic])
             try chmodOwnerOnly(temporaryURL, mode: 0o600)
@@ -202,16 +205,46 @@ public enum AgentStudioIPCFilesystem {
                 )
             }
             try chmodOwnerOnly(paths.metadataURL, mode: 0o600)
+            try publishMetadataDiscovery(paths: paths)
         } catch let error as AgentStudioIPCFilesystemTrustError {
             try? FileManager.default.removeItem(at: temporaryURL)
+            removeMetadata(paths: paths)
             throw error
         } catch {
             try? FileManager.default.removeItem(at: temporaryURL)
+            removeMetadata(paths: paths)
             throw AgentStudioIPCFilesystemTrustError(
                 reason: .metadataWriteFailed,
                 path: paths.metadataURL.path,
                 errnoCode: errno
             )
+        }
+    }
+
+    /// Runtime discovery and its canonical document share the server's lifetime.
+    /// Unlink only the named entries; a directory blocking publication is not ours to remove.
+    static func removeMetadata(paths: AgentStudioIPCPaths) {
+        if paths.metadataDiscoveryURL != paths.metadataURL {
+            _ = unlink(paths.metadataDiscoveryURL.path)
+        }
+        _ = unlink(paths.metadataURL.path)
+    }
+
+    private static func publishMetadataDiscovery(paths: AgentStudioIPCPaths) throws {
+        let discoveryURL = paths.metadataDiscoveryURL
+        guard discoveryURL != paths.metadataURL else { return }
+        try validateTrustedExistingPath(
+            paths.socketDirectory, requireDirectory: true, permissionPolicy: .ownerOnly)
+        let temporaryURL = paths.socketDirectory.appendingPathComponent(
+            ".runtime-discovery.\(UUIDv7.generate().uuidString).tmp")
+        guard symlink(paths.metadataURL.path, temporaryURL.path) == 0 else {
+            throw AgentStudioIPCFilesystemTrustError(
+                reason: .metadataWriteFailed, path: discoveryURL.path, errnoCode: errno)
+        }
+        defer { _ = unlink(temporaryURL.path) }
+        guard rename(temporaryURL.path, discoveryURL.path) == 0 else {
+            throw AgentStudioIPCFilesystemTrustError(
+                reason: .metadataWriteFailed, path: discoveryURL.path, errnoCode: errno)
         }
     }
 

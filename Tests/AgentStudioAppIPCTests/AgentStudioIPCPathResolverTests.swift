@@ -151,6 +151,59 @@ struct AgentStudioIPCPathResolverTests {
         #expect(try fixture.mode(for: paths.metadataURL) & 0o777 == 0o600)
     }
 
+    @Test("split directories publish one canonical runtime through an atomic discovery link")
+    func splitDirectoriesPublishCanonicalRuntimeLink() throws {
+        let fixture = try IPCPathFixture()
+        defer { fixture.cleanup() }
+        let paths = AgentStudioIPCPathResolver().paths(
+            rootDirectory: fixture.root, socketDirectory: fixture.root.appending(path: "ipc-socket"))
+        try AgentStudioIPCFilesystem.prepare(paths: paths)
+        let discoveryURL = paths.socketDirectory.appending(path: "runtime.json")
+
+        for _ in 0..<2 {
+            let runtimeID = UUIDv7.generate()
+            try AgentStudioIPCFilesystem.writeMetadata(
+                .init(
+                    runtimeId: runtimeID, processIdentifier: 123, channel: .debug,
+                    socketPath: paths.socketURL.path, startedAt: .init(timeIntervalSince1970: 0)),
+                paths: paths)
+
+            #expect(
+                try FileManager.default.destinationOfSymbolicLink(atPath: discoveryURL.path) == paths.metadataURL.path)
+            #expect(try Data(contentsOf: discoveryURL) == Data(contentsOf: paths.metadataURL))
+            let object = try #require(
+                JSONSerialization.jsonObject(with: Data(contentsOf: discoveryURL)) as? [String: Any])
+            #expect(object["runtimeId"] as? String == runtimeID.uuidString)
+            #expect(
+                Set(object.keys) == [
+                    "schemaVersion", "runtimeId", "processIdentifier", "channel", "socketPath", "startedAt", "protocol",
+                ])
+        }
+        #expect(try fixture.mode(for: paths.metadataURL) & 0o777 == 0o600)
+        #expect(try fixture.mode(for: paths.socketDirectory) & 0o777 == 0o700)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: paths.socketDirectory.path) == ["runtime.json"])
+        #expect(try FileManager.default.contentsOfDirectory(atPath: paths.ipcDirectory.path) == ["runtime.json"])
+    }
+
+    @Test("metadata publication rechecks the separate socket directory's trust")
+    func publicationRechecksSocketDirectoryTrust() throws {
+        let fixture = try IPCPathFixture()
+        defer { fixture.cleanup() }
+        let paths = AgentStudioIPCPathResolver().paths(
+            rootDirectory: fixture.root, socketDirectory: fixture.root.appending(path: "ipc-socket"))
+        try AgentStudioIPCFilesystem.prepare(paths: paths)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: paths.socketDirectory.path)
+
+        #expect(throws: AgentStudioIPCFilesystemTrustError.self) {
+            try AgentStudioIPCFilesystem.writeMetadata(
+                .init(
+                    runtimeId: UUIDv7.generate(), processIdentifier: 123, channel: .debug,
+                    socketPath: paths.socketURL.path, startedAt: .init(timeIntervalSince1970: 0)),
+                paths: paths)
+        }
+        #expect(!FileManager.default.fileExists(atPath: paths.metadataURL.path))
+    }
+
     @Test("hands the debug credential over through an owner-only escrow file")
     func writesDebugCredentialEscrowOwnerOnly() throws {
         let fixture = try IPCPathFixture()
