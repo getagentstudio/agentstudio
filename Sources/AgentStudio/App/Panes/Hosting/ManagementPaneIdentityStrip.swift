@@ -194,15 +194,15 @@ struct ManagementPaneIdentityOverlay: View {
     let context: PaneManagementContext
     let octiconLoader: OcticonLoader
     let store: WorkspaceStore
-    @State private var verifiedIdentity: PaneManagementIdentityCapture.VerifiedIdentity?
+    @State private var sessionIdentity = PaneManagementSessionIdentity()
     @State private var lines: [RepoExplorerPaneRowLine] = []
 
     var body: some View {
         let input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
-        let sessionRequest = PaneManagementIdentityCapture.SessionRequest(
+        let sessionReadTrigger = PaneManagementIdentityCapture.SessionReadTrigger(
             paneId: context.paneId, presentation: input.sessionPresentation)
         ManagementPaneIdentityStrip(
-            context: context.includingVerifiedLiveSession(verifiedIdentity?.session(for: sessionRequest)),
+            context: context.includingVerifiedLiveSession(sessionIdentity.summary),
             octiconLoader: octiconLoader,
             lines: lines, isDrawerPane: input.isDrawer
         )
@@ -213,11 +213,12 @@ struct ManagementPaneIdentityOverlay: View {
             guard !Task.isCancelled else { return }
             lines = prepared
         }
-        .task(id: sessionRequest) {
-            let session = await PaneManagementIdentityCapture.verifiedLiveSession(
-                paneId: sessionRequest.paneId, readers: readers)
-            guard !Task.isCancelled else { return }
-            verifiedIdentity = .init(request: sessionRequest, summary: session)
+        // This task reads on every appearance and observable status change, never from a cache.
+        // Equal/coalesced rebinding while continuously open refreshes on the next appearance;
+        // semantic status deliberately remains separate from binding identity.
+        .task(id: sessionReadTrigger) {
+            await sessionIdentity.refresh(paneId: sessionReadTrigger.paneId, readers: readers)
         }
+        .onDisappear { sessionIdentity.close() }
     }
 }
