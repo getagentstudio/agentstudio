@@ -140,6 +140,8 @@ struct SurfaceErrorOverlay: View {
             return "The terminal failed to initialize. Please check the logs for more information."
         case .unknown:
             return "An unknown error occurred. Please try restarting the terminal."
+        case .coldRestoreFailed:
+            return "Restoring this session after restart didn't finish starting. Restart to try again."
         }
     }
 }
