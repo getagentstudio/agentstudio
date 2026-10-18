@@ -1,4 +1,5 @@
 import type { BridgeBodyRegistry } from '../demand/bridge-body-registry.js';
+import { BridgeProductContentProducerCapacityDeferred } from './bridge-product-content-response-reader.js';
 import type {
 	BridgeProductContentTerminal,
 	BridgeProductContentResponseStartControl,
@@ -334,10 +335,25 @@ export async function fetchBridgeWorkerReviewContentResource(
 			textBytes: terminal.bytes,
 			terminal,
 		};
-	} catch {
-		return abortSignal.aborted
-			? abortedBridgeWorkerReviewContentFetchResult(descriptor)
-			: internalBridgeWorkerReviewContentFetchResult(descriptor);
+	} catch (error) {
+		if (abortSignal.aborted) {
+			return abortedBridgeWorkerReviewContentFetchResult(descriptor);
+		}
+		if (error instanceof BridgeProductContentProducerCapacityDeferred) {
+			return {
+				contentRequestId: contentStream.contentRequestId,
+				disposition: 'retryWait',
+				terminal: {
+					code: 'internal',
+					contentKind: 'review.content',
+					descriptorId: descriptor.descriptorId,
+					kind: 'error',
+					retryable: true,
+					safeMessage: error.message,
+				},
+			};
+		}
+		return internalBridgeWorkerReviewContentFetchResult(descriptor);
 	} finally {
 		unregisterResponseStartControl?.();
 	}
