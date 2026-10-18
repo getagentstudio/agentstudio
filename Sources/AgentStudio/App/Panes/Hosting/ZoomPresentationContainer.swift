@@ -204,7 +204,8 @@ struct ZoomPresentationContainer: View {
                         {
                             ManagementPaneIdentityOverlay(
                                 context: sourceManagementContext,
-                                octiconLoader: octiconLoader
+                                octiconLoader: octiconLoader,
+                                store: store
                             )
                         }
                     }

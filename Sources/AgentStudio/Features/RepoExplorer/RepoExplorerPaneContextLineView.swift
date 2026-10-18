@@ -5,6 +5,7 @@ import SwiftUI
 
 package struct RepoExplorerPaneContextLineView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulseIsDimmed = false
 
     let line: RepoExplorerPaneContextLine
     let isAgentLine: Bool
@@ -18,13 +19,27 @@ package struct RepoExplorerPaneContextLineView: View {
     package var body: some View {
         HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
             line.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.Shell.Sidebar.branchIconSize)
-                .symbolEffect(.breathe, isActive: !reduceMotion && line.glyphMotion == .breathe)
+                .opacity(
+                    opacityPulseIsActive && pulseIsDimmed
+                        ? AppStyles.Shell.Sidebar.paneLinePulseMinimumOpacity
+                        : AppStyles.Shell.Sidebar.paneLinePulseMaximumOpacity
+                )
+                .animation(
+                    opacityPulseIsActive
+                        ? .easeInOut(duration: AppStyles.Shell.Sidebar.paneLinePulsePeriod / 2)
+                            .repeatForever(autoreverses: true)
+                        : nil,
+                    value: pulseIsDimmed
+                )
+                .onChange(of: opacityPulseIsActive, initial: true) { _, isActive in
+                    pulseIsDimmed = isActive
+                }
                 .symbolEffect(
                     .rotate,
                     options: .repeating.speed(AppStyles.Shell.Sidebar.paneLineRotationSpeed),
                     isActive: !reduceMotion && line.glyphMotion == .rotate
                 )
-                .foregroundStyle(glyphColor)
+                .foregroundStyle(line.tone.foregroundColor)
                 .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
             Text(line.text)
                 .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
@@ -36,13 +51,8 @@ package struct RepoExplorerPaneContextLineView: View {
         .opacity(line.stale ? AppStyles.General.Foreground.secondary : 1)
         .controlHelp(line.tooltip)
     }
-    private var glyphColor: Color {
-        switch line.tone {
-        case .neutral: .secondary
-        case .info: AppStyles.Shell.Sidebar.chipInfoColor
-        case .success: AppStyles.Shell.Sidebar.chipSuccessColor
-        case .warning: AppStyles.Shell.Sidebar.chipWarningColor
-        case .danger: AppStyles.Shell.Sidebar.chipDangerColor
-        }
+
+    private var opacityPulseIsActive: Bool {
+        !reduceMotion && line.glyphMotion == .opacityPulse
     }
 }

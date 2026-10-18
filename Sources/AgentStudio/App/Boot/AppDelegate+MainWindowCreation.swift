@@ -106,7 +106,11 @@ extension AppDelegate {
         return PaneContextUIReaders(
             sessionStatus: atomStore.sessionStatus, presentation: atomStore.paneContextPresentation,
             pane: { atomStore.core.workspacePane.pane($0.uuid) },
-            serviceProvider: { [weak self] in self?.appIPCPaneContextUIAdapter })
+            serviceProvider: { [weak self] in self?.appIPCPaneContextUIAdapter },
+            readSessionStatus: { [weak self] paneId in
+                guard let ingestion = self?.appIPCSessionsPaneContextComposition?.ingestion else { return .unbound }
+                return try await ingestion.readSessionStatus(paneId: paneId.uuid)
+            })
     }
 
     func makeMainWindowController(dependencies: AppDelegateMainWindowCreationDependencies) -> MainWindowController {

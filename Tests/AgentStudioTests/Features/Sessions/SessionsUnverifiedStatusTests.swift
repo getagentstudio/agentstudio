@@ -10,6 +10,126 @@ import Testing
 
 @Suite("Sessions unverified status")
 struct SessionsUnverifiedStatusTests {
+    @Test("a queued main end cannot replace or retire a newer capacity refusal")
+    func queuedEndPreservesNewerCapacityRefusal() async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let held = HeldStep<Void>("other pane's SQLite write before queued main end")
+        let pane = UUIDv7.generate()
+        let other = UUIDv7.generate()
+        let origin = ContinuousClock.now
+        let facts = LocalFactSource<UUID, RefusalOverlapFact>(
+            vocabulary: .init(
+                describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
+                isClosing: { _, fact in
+                    if case .finished = fact { return true }
+                    return false
+                }))
+        let recorder = try facts.attach()
+        let access = HeldUnverifiedStatusSQLiteAccess(
+            base: fixture.sqliteAccess, held: held, holdsNextWrite: false,
+            onFirstWrite: { facts.sink(other, .predecessorWrite) })
+        let ingestion = SessionsIngestion(
+            repository: .init(sqliteAccess: access), limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 2),
+            probe: { statistics in
+                if statistics.paneId == pane, statistics.event == .depthChanged, statistics.pendingForPane == 1 {
+                    facts.sink(pane, .queued)
+                }
+            })
+        let mailbox = await ingestion.statusPublicationMailbox
+        var predecessor: Task<SessionsHookOutcome, any Error>?
+        var ending: Task<SessionsUnverifiedStatusOutcome, any Error>?
+        do {
+            let initial = try await Self.submit(
+                ingestion, pane: pane, signal: .turnStart, instant: origin - .seconds(2))
+            facts.sink(pane, .initialReturned(initial))
+            try await recorder.expectNext(in: pane, .queued)
+            try await recorder.expectNext(in: pane, .initialReturned(.hookApplied))
+            _ = mailbox.takeBatch()
+            await access.holdNextWrite()
+            predecessor = Task {
+                do {
+                    let outcome = try await ingestion.submitHook(makeHookAdmission(paneId: other))
+                    facts.sink(other, .finished(nil))
+                    return outcome
+                } catch {
+                    facts.sink(other, .finished(String(describing: error)))
+                    throw error
+                }
+            }
+            try await recorder.expectNext(in: other, .predecessorWrite)
+            ending = Task {
+                do {
+                    let outcome = try await Self.submit(
+                        ingestion, pane: pane, signal: .sessionEnd, instant: origin - .seconds(1))
+                    facts.sink(pane, .finished(nil))
+                    return outcome
+                } catch {
+                    facts.sink(pane, .finished(String(describing: error)))
+                    throw error
+                }
+            }
+            try await recorder.expectNext(in: pane, .queued)
+            await #expect(throws: SessionsRepositoryError.globalQueueFull) {
+                try await Self.submit(ingestion, pane: pane, signal: .turnStart)
+            }
+            let latest = try #require(await ingestion.lastRefusal(paneId: pane))
+            #expect(latest.reason == .queueFull)
+            #expect(latest.count == 2)
+            #expect(
+                mailbox.takeBatch()[.init(existingUUID: pane)]
+                    == .set(.init(status: .working(.active), connectionIssue: .queueFull)))
+
+            held.release()
+            _ = try await predecessor?.value
+            #expect(try await ending?.value == .hookApplied)
+
+            #expect(await ingestion.lastRefusal(paneId: pane) == latest)
+            #expect(
+                mailbox.takeBatch()[.init(existingUUID: pane)]
+                    == .set(.init(status: .idle(.ended), connectionIssue: .queueFull)))
+        } catch {
+            held.release()
+            _ = try? await predecessor?.value
+            _ = try? await ending?.value
+            await ingestion.finish()
+            try? await recorder.finish()
+            throw error
+        }
+        await ingestion.finish()
+        try await recorder.finish()
+    }
+
+    @Test("only the elected main's applied end retires its warning, keeping refusal diagnostics")
+    func electedMainEndRetiresWarning() async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let pane = UUIDv7.generate()
+        let key = PaneId(existingUUID: pane)
+        try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
+            let mailbox = await ingestion.statusPublicationMailbox
+            _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart)
+            _ = mailbox.takeBatch()
+            _ = try await Self.submit(ingestion, pane: pane, signal: .turnDone)
+            #expect(
+                mailbox.takeBatch()[key] == .set(.init(status: .idle(.done), connectionIssue: .credentialNotRecognized))
+            )
+            #expect(
+                try await Self.submit(ingestion, pane: pane, session: "B", signal: .sessionEnd)
+                    == .hookAcceptedWithoutStatus)
+            #expect(mailbox.takeBatch().isEmpty)
+
+            #expect(try await Self.submit(ingestion, pane: pane, signal: .sessionEnd) == .hookApplied)
+
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended))))
+            #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
+            #expect(await ingestion.lastRefusal(paneId: pane)?.count == 4)
+            _ = try await Self.submit(ingestion, pane: pane, session: "B", signal: .turnStart)
+            #expect(
+                mailbox.takeBatch()[key]
+                    == .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized)))
+            #expect(try await Self.protectedCounts(fixture) == Array(repeating: 0, count: 10))
+        }
+    }
+
     @Test("status and refusal publish together, leave protected SQLite tables untouched, and verified binding wins")
     func noIdentityWritesAndVerifiedPrecedence() async throws {
         let fixture = try SessionsDatabaseFixture()
@@ -176,6 +296,11 @@ struct SessionsUnverifiedStatusTests {
                 oldExit.release()
                 #expect(try await pendingExit.value == nil)
                 #expect(statusMailbox.takeBatch().isEmpty)
+                let currentExit = try await ingestion.submitCommandFinished(
+                    paneId: pane, reportedAt: origin + .seconds(4))
+                #expect(currentExit == nil)
+                #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .idle(.ended))))
+                #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
                 #expect(
                     try await Self.submit(ingestion, pane: pane, signal: .turnDone, instant: origin + .seconds(4))
                         == .hookAcceptedWithoutStatus)
@@ -318,18 +443,33 @@ private actor HeldUnverifiedStatusSQLiteAccess: SessionsSQLiteAccess {
     let base: TestSessionsSQLiteAccess
     let held: HeldStep<Void>
     var holdsNextWrite = true
-    init(base: TestSessionsSQLiteAccess, held: HeldStep<Void>) {
+    let onFirstWrite: @Sendable () -> Void
+    init(
+        base: TestSessionsSQLiteAccess, held: HeldStep<Void>, holdsNextWrite: Bool = true,
+        onFirstWrite: @escaping @Sendable () -> Void = {}
+    ) {
         self.base = base
         self.held = held
+        self.holdsNextWrite = holdsNextWrite
+        self.onFirstWrite = onFirstWrite
     }
+    func holdNextWrite() { holdsNextWrite = true }
     func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
         try await base.read(operation)
     }
     func write<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
         if holdsNextWrite {
             holdsNextWrite = false
+            onFirstWrite()
             try await held.arrive(())
         }
         return try await base.write(operation)
     }
+}
+
+private enum RefusalOverlapFact: Equatable, Sendable {
+    case queued
+    case initialReturned(SessionsUnverifiedStatusOutcome)
+    case predecessorWrite
+    case finished(String?)
 }

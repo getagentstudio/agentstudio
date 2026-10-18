@@ -139,7 +139,11 @@ extension SessionsIngestion: SessionOpenAskInput {
         try await restoreStatusIfNeeded(paneId: paneId)
         consumePaneViewedBatch()
         if !hasActiveBinding(paneId: paneId), !statusRuntime.retiredPaneIds.contains(paneId) {
-            unverifiedStatusRuntime.commandFinished(paneId: paneId, reportedAt: reportedAt, at: Date())
+            let hadUnverifiedMain = unverifiedStatusRuntime.panes[paneId]?.main != nil
+            let released = unverifiedStatusRuntime.commandFinished(paneId: paneId, reportedAt: reportedAt, at: Date())
+            if released || !hadUnverifiedMain {
+                retireRefusal(paneId: paneId, before: reportedAt)
+            }
             publishStatus(paneId: paneId)
             return nil
         }
@@ -177,6 +181,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         }
         statusRuntime.liveBindingBoundAt.removeValue(forKey: binding.bindingGenerationId)
         statusRuntime.confirmedLiveBindingIds.remove(binding.bindingGenerationId)
+        retireRefusal(paneId: binding.paneId, before: reportedAt)
         publishStatus(paneId: binding.paneId)
     }
 
@@ -252,7 +257,7 @@ extension SessionsIngestion: SessionOpenAskInput {
             status =
                 unverifiedStatusRuntime.status(paneId: paneId)
                 ?? verified.map(SessionStatusReducer.status) ?? .unknown
-            issue = lastRefusalReason(paneId: paneId)
+            issue = currentRefusalReason(paneId: paneId)
         }
         statusPublicationMailbox.offer(.init(status: status, connectionIssue: issue), for: .init(existingUUID: paneId))
     }
