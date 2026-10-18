@@ -72,7 +72,7 @@ struct RepoExplorerPaneProjectionTests {
         #expect(drawerPane.sidebarTerminalTitle == "Drawer")
     }
 
-    @Test("Panes rows are sorted by the one activity time within an activity bucket")
+    @Test("Panes Active rows keep tab order and retain their activity presentation")
     func allPanesRowsCarryPresentationFactsInActivityOrder() throws {
         let repoId = UUIDv7.generate()
         let worktree = makeWorktree(repoId: repoId, name: "agent-studio.sidebar-grouping")
@@ -145,12 +145,12 @@ struct RepoExplorerPaneProjectionTests {
 
         let group = try #require(projection.resolvedGroups.first)
         let rows = try #require(projection.paneRowsByGroupId[group.id])
-        #expect(rows.map(\.destination.paneId) == [newerPaneId, olderPaneId])
-        #expect(rows[0].primaryText == "tests running")
-        #expect(rows[0].secondaryText == "Review ready")
-        #expect(rows[0].recencyText == "Now")
-        #expect(rows[0].isActive)
-        #expect(rows[0].isDrawerPane)
+        #expect(rows.map(\.destination.paneId) == [olderPaneId, newerPaneId])
+        #expect(rows[1].primaryText == "tests running")
+        #expect(rows[1].secondaryText == "Review ready")
+        #expect(rows[1].recencyText == "Now")
+        #expect(rows[1].isActive)
+        #expect(rows[1].isDrawerPane)
     }
 
     @Test("activity sorting never falls back to focus recency")
@@ -195,7 +195,7 @@ struct RepoExplorerPaneProjectionTests {
                 neverFocusedPaneId: .init(
                     terminalTitle: "new pane",
                     paneActivityTime: PaneActivityTime(
-                        orderingInstant: referenceInstant.advanced(by: .seconds(-20)),
+                        orderingInstant: referenceInstant.advanced(by: .seconds(-800)),
                         wallTime: Date(timeIntervalSince1970: 1),
                         source: .terminal
                     ),
@@ -207,7 +207,7 @@ struct RepoExplorerPaneProjectionTests {
                 previouslyFocusedPaneId: .init(
                     terminalTitle: "old pane",
                     paneActivityTime: PaneActivityTime(
-                        orderingInstant: referenceInstant.advanced(by: .seconds(-10)),
+                        orderingInstant: referenceInstant.advanced(by: .seconds(-700)),
                         wallTime: Date(timeIntervalSince1970: 2),
                         source: .hook
                     ),

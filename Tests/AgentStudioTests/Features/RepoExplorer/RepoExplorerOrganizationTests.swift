@@ -23,8 +23,8 @@ extension RepoExplorerReadModelTests {
     }
 
     @MainActor
-    @Test("fixed Panes policy orders both pinned and ordinary panes by newest activity")
-    func fixedPanesPolicyOrdersBothSectionsByNewestActivity() throws {
+    @Test("fixed Panes policy keeps both Active sections in tab order")
+    func fixedPanesPolicyKeepsHotSectionsInTabOrder() throws {
         let now = Date(timeIntervalSince1970: 1_788_804_000)
         let repoID = UUIDv7.generate()
         let checkout = worktree(repoId: repoID)
@@ -60,18 +60,18 @@ extension RepoExplorerReadModelTests {
                 ]
             ),
             paneRowFactsByPaneId: [
-                olderPinned: paneFacts(title: "A pinned", activityAt: now.addingTimeInterval(-40), isPinned: true),
-                newerPinned: paneFacts(title: "Z pinned", activityAt: now.addingTimeInterval(-10), isPinned: true),
-                olderOrdinary: paneFacts(title: "A ordinary", activityAt: now.addingTimeInterval(-40)),
-                newerOrdinary: paneFacts(title: "Z ordinary", activityAt: now.addingTimeInterval(-10)),
+                olderPinned: paneFacts(title: "Z pinned", activityAt: now.addingTimeInterval(-40), isPinned: true),
+                newerPinned: paneFacts(title: "A pinned", activityAt: now.addingTimeInterval(-10), isPinned: true),
+                olderOrdinary: paneFacts(title: "Z ordinary", activityAt: now.addingTimeInterval(-40)),
+                newerOrdinary: paneFacts(title: "A ordinary", activityAt: now.addingTimeInterval(-10)),
             ]
         )
 
         #expect(projection.sections.map(\.kind) == [.pinnedPanes, .panes])
         let pinnedSection = try #require(projection.sections.first)
         let ordinarySection = try #require(projection.sections.last)
-        #expect(self.paneIDs(in: pinnedSection, projection: projection) == [newerPinned, olderPinned])
-        #expect(self.paneIDs(in: ordinarySection, projection: projection) == [newerOrdinary, olderOrdinary])
+        #expect(self.paneIDs(in: pinnedSection, projection: projection) == [olderPinned, newerPinned])
+        #expect(self.paneIDs(in: ordinarySection, projection: projection) == [olderOrdinary, newerOrdinary])
     }
 
     @Test("Repos activity sections keep checkouts together and pinned repos exclusive")
