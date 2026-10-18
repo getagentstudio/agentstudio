@@ -44,12 +44,15 @@ struct SessionsVerticalHarness {
     /// which is all a session-method test needs.
     static func make(
         debugCredentialEscrowURL: URL? = nil,
+        channel: AgentStudioIPCChannel = .debug,
+        prepareRuntimePaths: @Sendable (AgentStudioIPCPaths) throws -> Void = { _ in },
         installActivityClock: Bool = false,
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
         activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in }
     ) async throws -> Self {
         let workspaceWindowId = UUIDv7.generate()
         let appDelegate = makeSessionFixtureAppDelegate()
+        appDelegate.appIPCServerChannel = channel
         let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness(
             workspaceWindowId: workspaceWindowId, commandDispatcher: appDelegate.commandDispatcherForBoot())
         var createdRootDirectory: URL?
@@ -99,21 +102,9 @@ struct SessionsVerticalHarness {
             )
             boundPaneToken = paneToken
 
-            // The tail of the identifier, not its head: a UUIDv7 begins with a
-            // millisecond timestamp, so two harnesses built in the same millisecond
-            // shared a directory name and the second failed to create it. The tail
-            // is cryptographic random. The whole identifier will not do — the
-            // socket underneath this root must fit in `sockaddr_un.sun_path`, which
-            // is 104 bytes including the temporary directory and `/ipc/agentstudio.sock`.
-            let rootDirectory = FileManager.default.temporaryDirectory
-                .appending(path: "as-ipc-\(UUIDv7.generate().uuidString.suffix(12))")
-            try FileManager.default.createDirectory(
-                at: rootDirectory,
-                withIntermediateDirectories: false,
-                attributes: [.posixPermissions: 0o700]
-            )
+            let paths = try makeRuntimePaths(prepare: prepareRuntimePaths)
+            let rootDirectory = paths.rootDirectory
             createdRootDirectory = rootDirectory
-            let paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootDirectory)
             appDelegate.appIPCPaths = paths
 
             var token = AgentStudioIPCSubjectToken(rawValue: "sessions-vertical-\(UUIDv7.generate().uuidString)")
@@ -166,6 +157,25 @@ struct SessionsVerticalHarness {
             if let createdRootDirectory {
                 try? FileManager.default.removeItem(at: createdRootDirectory)
             }
+            throw error
+        }
+    }
+
+    private static func makeRuntimePaths(
+        prepare: (AgentStudioIPCPaths) throws -> Void
+    ) throws -> AgentStudioIPCPaths {
+        // A UUIDv7 timestamp prefix can collide between fixtures. Its random tail
+        // keeps roots distinct while leaving the socket within sun_path's 104 bytes.
+        let rootDirectory = FileManager.default.temporaryDirectory
+            .appending(path: "as-ipc-\(UUIDv7.generate().uuidString.suffix(12))")
+        try FileManager.default.createDirectory(
+            at: rootDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        do {
+            let paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootDirectory)
+            try prepare(paths)
+            return paths
+        } catch {
+            try? FileManager.default.removeItem(at: rootDirectory)
             throw error
         }
     }
