@@ -195,6 +195,12 @@ struct SidebarToolbarControlVisualStateTests {
         #expect(searchSource.contains(".sidebarShortcutHint("))
         #expect(searchSource.contains("alignment: .trailing"))
 
+        let paneRowSource = try String(
+            contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneNavigation.swift",
+            encoding: .utf8
+        )
+        #expect(!paneRowSource.contains("style: .accentGlyph"))
+
         let paneTitleLineSource = try String(
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneTitleLineView.swift",
             encoding: .utf8
