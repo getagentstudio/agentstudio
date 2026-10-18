@@ -101,6 +101,9 @@ package enum AppStyles {
 
     package enum Shell {
         package enum Sidebar {
+            package static let paneInfoColumnMinimumWidth: CGFloat = 200
+            package static let paneInfoTwoColumnWidth: CGFloat =
+                paneInfoColumnMinimumWidth * 2 + AppStyles.General.Spacing.loose
             package static let paneLineRotationSpeed = 0.35
             package static let pendingFactsSymbolEffectSpeed = 0.35
             package static let statusUnavailableForegroundOpacity: CGFloat = 0.7

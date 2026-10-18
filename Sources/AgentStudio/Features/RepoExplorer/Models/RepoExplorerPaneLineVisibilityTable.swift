@@ -1,4 +1,4 @@
-enum RepoExplorerPaneLineKind: Hashable, Sendable {
+package enum RepoExplorerPaneLineKind: Hashable, Sendable {
     case title, worktreeBranch, note, agentLine, sessionStatus, connectionIssue, chips
 }
 enum RepoExplorerPaneLineVisibility: Sendable {

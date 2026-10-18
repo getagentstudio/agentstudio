@@ -273,7 +273,8 @@ struct PaneLeafContainer: View {
                             {
                                 ManagementPaneIdentityOverlay(
                                     context: managementContext,
-                                    octiconLoader: octiconLoader
+                                    octiconLoader: octiconLoader,
+                                    store: store
                                 )
                             }
                         }

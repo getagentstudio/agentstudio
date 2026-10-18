@@ -604,6 +604,10 @@ struct RepoExplorerWorktreeRowTests {
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneNavigation.swift",
             encoding: .utf8
         )
+        let paneTitleLineSource = try String(
+            contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneTitleLineView.swift",
+            encoding: .utf8
+        )
         let worktreeRowSource = try String(
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerWorktreeRow.swift",
             encoding: .utf8
@@ -629,15 +633,19 @@ struct RepoExplorerWorktreeRowTests {
         for source in [paneRowSource, worktreeRowSource] {
             #expect(source.contains("VStack(alignment: .leading"))
             #expect(source.contains("SidebarStatusChipRow("))
+        }
+        for source in [paneRowSource, paneTitleLineSource, worktreeRowSource] {
             #expect(!source.contains("sidebarTextColumn"))
+        }
+        for source in [paneTitleLineSource, worktreeRowSource] {
             #expect(source.contains(".frame(maxWidth: .infinity, alignment: .leading)"))
         }
         #expect(chipSource.contains("package struct SidebarStatusChipRow"))
         #expect(chipSource.contains("width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth"))
         #expect(chipSource.contains("spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing"))
         #expect(!metadataLineSource.contains("sidebarTextColumn"))
-        #expect(paneRowSource.contains("(isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage("))
-        #expect(paneRowSource.contains("size: AppStyles.Shell.Sidebar.rowIdentityIconSize"))
+        #expect(paneTitleLineSource.contains("(isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage("))
+        #expect(paneTitleLineSource.contains("size: AppStyles.Shell.Sidebar.rowIdentityIconSize"))
         #expect(worktreeRowSource.contains("AppStyles.Shell.Sidebar.worktreeIconSize"))
         #expect(AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth == AppStyles.Shell.Sidebar.groupIconColumnWidth)
         #expect(
@@ -645,10 +653,11 @@ struct RepoExplorerWorktreeRowTests {
                 "leadingInset = AppStyles.Shell.Sidebar.nativeGroupChildRowLeadingInset"
             )
         )
-        for source in [paneRowSource, worktreeRowSource, metadataLineSource, groupHeaderSource] {
+        for source in [paneRowSource, paneTitleLineSource, worktreeRowSource, metadataLineSource, groupHeaderSource] {
             #expect(source.contains("alignment: .leading"))
         }
         #expect(!paneRowSource.contains("rowLeadingIconColumnWidth,\n                    alignment: .trailing"))
+        #expect(!paneTitleLineSource.contains("rowLeadingIconColumnWidth,\n                alignment: .trailing"))
         #expect(!worktreeRowSource.contains("rowLeadingIconColumnWidth, alignment: .trailing"))
         #expect(!metadataLineSource.contains("rowLeadingIconColumnWidth, alignment: .trailing"))
         #expect(!groupHeaderSource.contains("groupIconColumnWidth,\n                            alignment: .trailing"))
