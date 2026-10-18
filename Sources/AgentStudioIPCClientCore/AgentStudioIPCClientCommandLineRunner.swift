@@ -310,6 +310,10 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     private func providerCommandExit(
         readInput: @escaping @Sendable () -> Data
     ) -> Int32? {
+        if props.arguments.first == "package", let action = props.arguments.dropFirst().first, action != "install" {
+            props.standardErrorSink("agentstudio package: unknown subcommand \(action)")
+            return 1
+        }
         let isHook: Bool = props.arguments.first == "hook"
         let readHookInput: @Sendable () throws -> Data = {
             if let hookDeadline {

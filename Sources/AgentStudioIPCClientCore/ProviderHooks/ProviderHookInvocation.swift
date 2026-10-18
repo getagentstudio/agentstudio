@@ -179,6 +179,44 @@ package enum ProviderHookInvocation {
         return 0
     }
 
+    @discardableResult
+    package static func runCursorHook(_ props: Props) -> Int32 {
+        guard let event = CursorHookEventName(rawValue: props.eventName) else { return 0 }
+        let deadline = (props.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit))
+            .capped(to: CLIPolicy.hookCallLimit)
+        guard let configuration = ProviderHookStatusReporting.configuration(environment: props.environment) else {
+            return 0
+        }
+        let payload: CursorHookPayload
+        do {
+            payload = try JSONDecoder().decode(CursorHookPayload.self, from: try props.standardInput())
+        } catch {
+            recordPayloadRefusal(
+                ProviderHookRefusalInvocation.reason(for: error), props: props, configuration: configuration,
+                deadline: deadline)
+            return 0
+        }
+        guard !payload.conversationId.isEmpty else {
+            recordPayloadRefusal(.noSessionId, props: props, configuration: configuration, deadline: deadline)
+            return 0
+        }
+        guard
+            let projected = CursorHookProjection.project(
+                eventName: event, payload: payload, freshOccurrenceIdentifier: props.correlationIdProvider)
+        else {
+            recordPayloadRefusal(.undecodablePayload, props: props, configuration: configuration, deadline: deadline)
+            return 0
+        }
+        ProviderHookStatusReporting(
+            environment: props.environment, configuration: configuration, delivery: props.delivery,
+            deadline: deadline, diagnosticSink: props.standardErrorSink
+        ).event(
+            .init(
+                handle: "self", provider: projected.provider, event: projected.event,
+                correlationId: props.correlationIdProvider()))
+        return 0
+    }
+
     private static func recordPayloadRefusal(
         _ reason: IPCSessionRefusalReason, props: Props,
         configuration: AgentStudioIPCClientConfiguration, deadline: CallDeadline

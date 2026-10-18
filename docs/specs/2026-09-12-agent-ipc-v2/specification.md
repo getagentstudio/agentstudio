@@ -46,7 +46,7 @@ never silently follows stale evidence. Sessions pane UI is a later surface.
 Evidence: Requirements E-SPEC, E-OWNER and its C1 sequence.
 
 C3 — Installer/operator (U5)
-Install once -> inspect per-provider outcome -> run native integration -> uninstall
+Install once -> inspect per-provider outcome -> run native integration -> reinstall without duplicates
 Pain: provider-specific configuration and uncertain activation.
 Difference: exact package ownership, preserved unrelated config, explicit limits.
 Evidence: Requirements E-HOOKS, E-GHOSTEX and its C3 sequence.
@@ -63,7 +63,7 @@ Native providers / pane agents -- hooks + skill --> Swift agentstudio CLI
                                                 [Agent Studio]
 Developer <---- Sessions query: message / state / attention ---+
 Debug test agent <---- debugTesting actions and results -------+
-Installer/operator <---- native install/uninstall outcomes -----+
+Installer/operator <---- native installation outcomes -----+
 Maintainer / future adapter <---- typed catalog ----------------+
 
 Excluded: Studio-to-agent steering, Inbox delivery, remote hosts, screen scraping.
@@ -106,7 +106,7 @@ a catalog can be excellent while a model-facing invocation still wastes tokens.
 
 | ID | Obligation and observable failure boundary | Basis; contract; proof |
 | --- | --- | --- |
-| R-14 | One package MUST install the appropriate native hook/skill/plugin for Claude Code, Codex CLI and Cursor CLI. Install/upgrade MUST preserve unrelated settings and avoid duplicates; uninstall MUST remove exactly package-owned additions and disclose conflicting edits. Outcomes and activation limits MUST be per provider. | U5; D1/D2; C5; V5 |
+| R-14 | One package MUST install the appropriate native hook/skill/plugin for Claude Code, Codex CLI and Cursor CLI. Install/upgrade MUST preserve unrelated settings and avoid duplicates and disclose conflicting edits. Outcomes and activation limits MUST be per provider. | U5; D1/D2; C5; V5 |
 | R-15 | Lifecycle reports MUST represent session start/end, turn start/done/abort, permission/question/elicitation needs-you, tool and subagent activity. Each provider/version/event capability MUST be qualified separately; unsupported capabilities MUST remain unknown. | U7, U12, U13; D3, E; C5; V6 |
 | R-16 | State MUST use UNKNOWN, RUNNING, NEEDS YOU and DONE with the evidence precedence and matching rules in C5. Origin is server-assigned REPORTED, AGENT REPORTED or ESTIMATED; weaker, replayed, old-turn, old-generation or cross-context facts MUST NOT rewrite stronger current evidence or duplicate results. Typed terminal facts MUST use their qualified provider meaning; screen content is excluded. | U7, U12, U14; E; C5; V6 |
 | R-17 | Needs-you MUST remain observe-only, with durable/queryable request identity and matching resolution. The app MUST derive a model report's request ID and coalesce one current deliberate assertion per conversation/generation; clearing that assertion MUST need no model-typed ID. Report handling MUST NOT answer, approve, deny or wait on Studio for a provider response. | U7, U13, U22; D3, H, Q; C3/C5; V3/V6 |
@@ -293,8 +293,8 @@ observable unavailable outcomes for dormant features.
 
 Round 1 installs native integrations for Claude Code, Codex CLI and Cursor CLI.
 Install success is distinct from hook trust/activation and event qualification.
-Reinstall is idempotent; uninstall removes only still-owned entries and reports
-user-modified conflicts. Unsupported profiles stay useful through explicit
+Reinstall is idempotent, preserves unrelated settings and reports user-modified
+conflicts. Unsupported profiles stay useful through explicit
 agent reports without inheriting provider authority.
 
 session.bind establishes an absent binding, repeats the same current conversation
@@ -478,7 +478,7 @@ performance, privacy and native accessibility gates remain intact.
 | V2 | R-04–R-10, R-23 | In-process ClientCore and shell CLI transcripts through the actual catalog/decoder: every schema/example/result alternative, command relationships, target kinds, unknown/version-skew errors, omitted correlation, equivalent/conflicting/ordinal-reassignment replay and MCP metadata projection, including targetless diagnostic duplicate/conflict cases across reconnect and runtime replacement. Inspect the bundled Swift executable's signing/notarization context; no JSON-generated CLI resource or hand map supplies its verbs. |
 | V3 | R-09, R-11, R-12, R-17 | Installed skill plus CLI reports/messages in a real bound agent context using only inherited AGENTSTUDIO_CLI/PATH, with another app channel installed: scalar calls, no typed identifiers/JSON, one-line replies, no catalog/query dump. Verify server-derived request identity, repeated help/done coalescing, ID-free clear, binding A→B with delayed A bind/report, repeated B bind, source end/restart, descendant calls with and without stronger provider evidence, exact message text and concise invalid-context/queued outcomes. |
 | V4 | R-02, R-05, R-13 | A Haiku/Luna-class agent given only the installed skill starts via the repo launcher, discovers from an unrelated shell and drives the debug app end-to-end: split, send terminal input, run a command and read a snapshot using plain arguments/short replies. Every AppCommand dispatches its typed debug variant; presentation-only outcomes report presentation. Stable/beta refuse debug-only variants and omit them from discovery, preserving admitted headless variants. Two sequential authenticated calls with disconnect both succeed; inspect reusable credential disposition, shutdown/replacement revocation/deletion and stable/beta absence. Test duplicate/conflicting targetless mutations across reconnect/runtime replacement and explicit selection among multiple debug apps; pane credentials never gain diagnostic authority. |
-| V5 | R-14, R-22 | Native install/upgrade/reinstall/uninstall with pre-existing and modified settings, partial failures, missing/untrusted integrations and exact ownership diffs; actual provider entry points remain usable on reporting failure. |
+| V5 | R-14, R-22 | Native install/upgrade/reinstall with pre-existing and modified settings, partial failures, missing/untrusted integrations and exact ownership diffs; actual provider entry points remain usable on reporting failure. |
 | V6 | R-09, R-15–R-17, R-22 | Exact-version provider fixtures for origin, turn/request/child matching, abort, generation loss, binding A→B then delayed A bind/report, late/historical new-generation bind, repeated B bind, source end/restart, equivalent/conflicting occurrence-ID reuse across correlations, stale/replayed inputs, precedence and state fallback; Contract 7 typed terminal facts with silence/screen/unqualified-event negatives. Cursor headless evidence does not substitute for its pane mode. |
 | V7 | R-03, R-09, R-18–R-20 | Real app-down CLI emission with removed-socket and stale-socket-file variants, post-readiness recovery drain and SQLite queries: exact durable messages and deliberate reports once, seen/attention survival, late-versus-live ordering, app-derived assertion IDs, live-overload loss disclosure, notification append/commit failures and crashes before/after commit/line removal. Controls/queries/auth, needs-you --clear and hook lifecycle facts never enter the offline spool; deleted/unresolvable bindings yield queryable unattributed notifications. Reads/focus cannot mark seen. Acknowledgment proof (session.message.ack isolation, idempotence, pane denial, stable/beta absence) is deferred with the entry itself (AH); round 1 proves only that no acknowledgment path exists and messages stay unseen. |
 | V8 | R-19, R-21 | Real storage and telemetry sinks with distinctive private payloads in success/rejection/recovery: no message/explanation/token in OTLP/JSONL logs, no bearer in spool/argv, no transcript ingestion; architecture/runtime evidence preserves IPC/atom/renderer/zmx and dormant Inbox boundaries. |

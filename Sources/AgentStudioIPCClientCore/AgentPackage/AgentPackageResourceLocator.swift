@@ -86,6 +86,7 @@ package enum AgentPackageInstallationError: Error, Equatable, Sendable, CustomSt
     case providerHomeNotWritable(String)
     case configurationUnreadable(String)
     case featuresTableNotLocatable(String)
+    case writableRootsNotLocatable(String)
 
     package var description: String {
         switch self {
@@ -99,6 +100,8 @@ package enum AgentPackageInstallationError: Error, Equatable, Sendable, CustomSt
             "cannot read existing configuration at \(path)"
         case .featuresTableNotLocatable(let path):
             "cannot locate the [features] table in \(path) with certainty; not modified"
+        case .writableRootsNotLocatable(let path):
+            "cannot locate sandbox_workspace_write.writable_roots in \(path) with certainty; not modified"
         }
     }
 }
