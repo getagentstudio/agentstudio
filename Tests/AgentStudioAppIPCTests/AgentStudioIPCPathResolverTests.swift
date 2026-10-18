@@ -1,8 +1,11 @@
-import AgentStudioAppIPC
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import Darwin
 import Foundation
 import Testing
+
+@testable import AgentStudioAppIPC
+@testable import AgentStudioIPCClientCore
 
 @Suite("AgentStudio IPC paths and filesystem trust")
 struct AgentStudioIPCPathResolverTests {
@@ -204,6 +207,52 @@ struct AgentStudioIPCPathResolverTests {
         #expect(!FileManager.default.fileExists(atPath: paths.metadataURL.path))
     }
 
+    @Test("rejected socket-directory replacement cannot redirect failure cleanup")
+    func replacedSocketDirectoryCannotRedirectFailureCleanup() throws {
+        let fixture = try IPCPathFixture()
+        defer { fixture.cleanup() }
+        let paths = AgentStudioIPCPathResolver().paths(
+            rootDirectory: fixture.root, socketDirectory: fixture.root.appending(path: "ipc-socket"))
+        try AgentStudioIPCFilesystem.prepare(paths: paths)
+        let storeBytes = Data("retained store".utf8)
+        try storeBytes.write(to: paths.cliStoreURL)
+        let foreign = fixture.root.appending(path: "another-runtime")
+        try FileManager.default.createDirectory(
+            at: foreign, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
+        let foreignMetadata = foreign.appending(path: "runtime.json")
+        let sentinel = Data("another runtime's metadata".utf8)
+        try sentinel.write(to: foreignMetadata)
+        try FileManager.default.moveItem(at: paths.socketDirectory, to: fixture.root.appending(path: "retired-socket"))
+        try FileManager.default.createSymbolicLink(at: paths.socketDirectory, withDestinationURL: foreign)
+
+        do {
+            try AgentStudioIPCFilesystem.writeMetadata(
+                .init(
+                    runtimeId: UUIDv7.generate(), processIdentifier: 123, channel: .debug,
+                    socketPath: paths.socketURL.path, startedAt: .init(timeIntervalSince1970: 0)),
+                paths: paths)
+            Issue.record("Publication must reject the replaced socket directory")
+        } catch let error as AgentStudioIPCFilesystemTrustError {
+            #expect(error.reason == .symlinkNotAllowed)
+        }
+
+        #expect((try? Data(contentsOf: foreignMetadata)) == sentinel)
+        #expect(try Data(contentsOf: paths.cliStoreURL) == storeBytes)
+        #expect(!FileManager.default.fileExists(atPath: paths.metadataURL.path))
+    }
+
+    @Test("parent-alias spellings retain one regular canonical runtime")
+    func parentAliasDirectoriesRetainCanonicalMetadata() throws {
+        try checkPhysicalCoLocation { root in URL(fileURLWithPath: "/private" + root.path).appending(path: "ipc") }
+    }
+
+    @Test(
+        "case-equivalent spellings retain one regular canonical runtime",
+        .enabled(if: FileManager.default.fileExists(atPath: "/PRIVATE/TMP")))
+    func caseEquivalentDirectoriesRetainCanonicalMetadata() throws {
+        try checkPhysicalCoLocation { root in root.appending(path: "IPC") }
+    }
+
     @Test("hands the debug credential over through an owner-only escrow file")
     func writesDebugCredentialEscrowOwnerOnly() throws {
         let fixture = try IPCPathFixture()
@@ -259,6 +308,56 @@ struct AgentStudioIPCPathResolverTests {
                 == .refuseDifferentLiveRuntime
         )
     }
+}
+
+private func checkPhysicalCoLocation(socketDirectory: (URL) -> URL) throws {
+    let fixture = try IPCPathFixture()
+    defer { fixture.cleanup() }
+    let paths = AgentStudioIPCPathResolver().paths(
+        rootDirectory: fixture.root, socketDirectory: socketDirectory(fixture.root))
+    try AgentStudioIPCFilesystem.prepare(paths: paths)
+    try #require(paths.ipcDirectory.path != paths.socketDirectory.path)
+    var canonicalStatus = stat()
+    var socketStatus = stat()
+    try #require(lstat(paths.ipcDirectory.path, &canonicalStatus) == 0)
+    try #require(lstat(paths.socketDirectory.path, &socketStatus) == 0)
+    try #require(canonicalStatus.st_dev == socketStatus.st_dev && canonicalStatus.st_ino == socketStatus.st_ino)
+    let storeBytes = Data("retained store".utf8)
+    try storeBytes.write(to: paths.cliStoreURL)
+    defer {
+        AgentStudioIPCFilesystem.removeMetadata(paths: paths)
+        #expect((try? Data(contentsOf: paths.cliStoreURL)) == storeBytes)
+    }
+    for _ in 0..<2 {
+        let runtimeID = UUIDv7.generate()
+        try AgentStudioIPCFilesystem.writeMetadata(
+            .init(
+                runtimeId: runtimeID, processIdentifier: 123, channel: .debug,
+                socketPath: paths.socketURL.path, startedAt: .init(timeIntervalSince1970: 0)),
+            paths: paths)
+
+        var metadataStatus = stat()
+        try #require(lstat(paths.metadataURL.path, &metadataStatus) == 0)
+        #expect((metadataStatus.st_mode & S_IFMT) == S_IFREG)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        let metadata = try decoder.decode(AgentStudioIPCRuntimeMetadata.self, from: Data(contentsOf: paths.metadataURL))
+        #expect(metadata.runtimeId == runtimeID)
+        #expect(metadata.schemaVersion == 1)
+        #expect(metadata.socketPath == paths.socketURL.path)
+        #expect(metadata.channel == .debug)
+        let location = try #require(
+            CLIOrderingStoreLocation.resolve(
+                environment: ["AGENTSTUDIO_IPC_SOCKET": paths.socketURL.path], socketPath: paths.socketURL.path))
+        #expect(location.url.resolvingSymlinksInPath() == paths.cliStoreURL.resolvingSymlinksInPath())
+        #expect(location.channel == .debug)
+        #expect(
+            try Set(FileManager.default.contentsOfDirectory(atPath: paths.ipcDirectory.path)) == [
+                "runtime.json", "cli.sqlite",
+            ])
+    }
+    AgentStudioIPCFilesystem.removeMetadata(paths: paths)
+    #expect(!FileManager.default.fileExists(atPath: paths.metadataURL.path))
 }
 
 private func filesystemTrustError(for paths: AgentStudioIPCPaths) -> AgentStudioIPCFilesystemTrustError? {
