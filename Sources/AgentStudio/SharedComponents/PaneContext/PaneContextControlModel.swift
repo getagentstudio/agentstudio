@@ -96,6 +96,7 @@ package struct AskFormDraft: Sendable, Equatable {
 
 package enum PaneContextChipTone: Sendable, Equatable {
     case neutral
+    case accent
     case info
     case success
     case warning

@@ -4,7 +4,7 @@ import AgentStudioSharedComponents
 
 package enum PaneLineGlyphMotion: Equatable, Sendable {
     case still
-    case breathe
+    case opacityPulse
     case rotate
 }
 
@@ -20,7 +20,7 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
         let spec = LocalActionSpec.showPaneAgentLine(line.work).actionSpec
         let tone: PaneContextChipTone =
             switch line.work {
-            case .working: .success
+            case .working: .accent
             case .monitoring: .info
             case .blockedOnYou: .warning
             case .done: .neutral
@@ -28,7 +28,7 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             }
         let glyphMotion: PaneLineGlyphMotion =
             switch line.work {
-            case .working: .breathe
+            case .working: .opacityPulse
             case .monitoring: .rotate
             case .blockedOnYou, .done, .failed: .still
             }
@@ -52,12 +52,12 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             switch status {
             case .needsYou: .warning
             case .failed: .danger
-            case .working: .success
+            case .working: .accent
             case .idle, .unknown: .neutral
             }
         let glyphMotion: PaneLineGlyphMotion =
             switch status {
-            case .working(.active): .breathe
+            case .working(.active): .opacityPulse
             case .working(.monitoring): .rotate
             case .needsYou, .failed, .idle, .unknown: .still
             }
