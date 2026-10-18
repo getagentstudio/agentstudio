@@ -7,6 +7,7 @@ import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
 import Foundation
+import GRDB
 import Synchronization
 import Testing
 
@@ -105,14 +106,83 @@ struct AppIPCDebugCredentialEscrowTests {
         await harness.tearDown()
     }
 
-    private func oldShellWrite(harness: SessionsVerticalHarness, verb: String) async -> OldShellWriteOutcome {
-        let environment = [
-            "AGENTSTUDIO_IPC_SOCKET": harness.socketPath,
-            "AGENTSTUDIO_PANE_ID": harness.boundPaneId.uuidString,
-            "AGENTSTUDIO_WORKSPACE_ID": harness.commandHarness.store.identityAtom.workspaceId.uuidString,
-            "AGENTSTUDIO_PANE_TOKEN": "old-shell-unrecognized-token",
-            "CLAUDE_CODE_SESSION_ID": "old-shell-provider-session",
-        ]
+    @Test(
+        "valid-token status writes use the pane when the provider session is unbound and retain bound attribution",
+        arguments: ["claude-code", "codex"], [false, true])
+    func validTokenStatusDoesNotRequireSessionBinding(provider: String, bindSession: Bool) async throws {
+        let harness = try await SessionsVerticalHarness.make()
+        do {
+            let conversationID = "status-session"
+            if bindSession {
+                let binding = try await harness.sessionEvent(
+                    paneId: harness.boundPaneId,
+                    provider: .init(identifier: provider, version: "1.0.0", mode: "cli"),
+                    name: "toolActivity", conversationId: conversationID)
+                try #require(binding.disposition == .admitted)
+            }
+            let token = try #require(harness.boundPaneToken)
+            let environment = [
+                "AGENTSTUDIO_IPC_SOCKET": harness.socketPath,
+                "AGENTSTUDIO_PANE_ID": harness.boundPaneId.uuidString,
+                "AGENTSTUDIO_WORKSPACE_ID": harness.commandHarness.store.identityAtom.workspaceId.uuidString,
+                "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
+                provider == "codex" ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID": conversationID,
+            ]
+            let composition = try #require(harness.appDelegate.appIPCSessionsPaneContextComposition)
+            let paneID = harness.boundPaneId
+            for verb in ["line", "title"] {
+                let result = await oldShellWrite(harness: harness, verb: verb, environment: environment)
+                #expect(result.exitCode == 0, "\(verb) exit \(result.exitCode): \(result.standardError)")
+                #expect(result.standardError.isEmpty)
+            }
+            let read = await composition.paneContextService.readDetail(
+                .init(paneId: PaneId(existingUUID: paneID), page: .first))
+            guard case .detail(let detail) = read else {
+                Issue.record("status writes must leave readable pane context")
+                await harness.tearDown()
+                return
+            }
+            #expect(detail.agentTitle == "old-shell status")
+            let line = try #require(detail.agentLine)
+            #expect(line.summary == "old-shell status")
+            if bindSession {
+                guard case .session(let writerProvider, let sessionRef, _) = line.writer else {
+                    Issue.record("bound status must retain the session writer")
+                    await harness.tearDown()
+                    return
+                }
+                #expect(writerProvider.value == provider)
+                #expect(sessionRef.value == conversationID)
+                #expect(detail.session?.sessionRef.value == conversationID)
+            } else {
+                #expect(line.writer == .pane(PaneId(existingUUID: paneID)))
+                #expect(detail.session == nil)
+            }
+            let sqliteAccess = await composition.paneContextService.sqliteAccess
+            let titleWriter = try await sqliteAccess.read { database in
+                try String.fetchOne(
+                    database, sql: "SELECT writer_kind FROM pane_state WHERE pane_id = ? AND kind = 'agentTitle'",
+                    arguments: [paneID.uuidString])
+            }
+            #expect(titleWriter == (bindSession ? "session" : "pane"))
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
+    }
+
+    private func oldShellWrite(
+        harness: SessionsVerticalHarness, verb: String, environment suppliedEnvironment: [String: String]? = nil
+    ) async -> OldShellWriteOutcome {
+        let environment =
+            suppliedEnvironment ?? [
+                "AGENTSTUDIO_IPC_SOCKET": harness.socketPath,
+                "AGENTSTUDIO_PANE_ID": harness.boundPaneId.uuidString,
+                "AGENTSTUDIO_WORKSPACE_ID": harness.commandHarness.store.identityAtom.workspaceId.uuidString,
+                "AGENTSTUDIO_PANE_TOKEN": "old-shell-unrecognized-token",
+                "CLAUDE_CODE_SESSION_ID": "old-shell-provider-session",
+            ]
         #expect(environment["AGENTSTUDIO_CLI_STORE"] == nil)
         #expect(environment["AGENTSTUDIO_CLI_STORE_CHANNEL"] == nil)
         let driver = ControlledDeadlineDriver()
