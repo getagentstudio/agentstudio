@@ -6,6 +6,7 @@ package struct RepoExplorerPinnedPaneProjectionRequest: Sendable {
     let paneStatesByID: [UUID: PaneGraphState]
     let tabStatesByID: [UUID: TabGraphState]
     let tabIDsInOrder: [UUID]
+    let activeArrangementIDsByTabID: [UUID: UUID]
     let activityTimesByPaneID: [UUID: PaneActivityTime]
     let showsDrawerPanes: Bool
     let referenceInstant: ContinuousClock.Instant
@@ -19,6 +20,7 @@ package struct RepoExplorerPinnedPaneProjectionRequest: Sendable {
         self.paneStatesByID = coreAtoms.workspacePaneGraph.paneStateSnapshot()
         self.tabStatesByID = coreAtoms.workspaceTabGraph.tabStateSnapshot()
         self.tabIDsInOrder = coreAtoms.workspaceTabGraph.tabIDsInOrder
+        self.activeArrangementIDsByTabID = coreAtoms.workspaceArrangementCursor.activeArrangementIdsByTabId
         self.activityTimesByPaneID = coreAtoms.paneActivityTime.snapshot()
         self.showsDrawerPanes = coreAtoms.workspaceSidebarState.showsDrawerPanes
         self.referenceInstant = ContinuousClock.now
@@ -51,9 +53,15 @@ package enum RepoExplorerPinnedPaneProjector {
 
         var eligibleMembers: [RepoExplorerPinnedActivityMember] = []
         var seenPaneIDs = Set<UUID>()
-        for tabID in request.tabIDsInOrder {
+        for (tabIndex, tabID) in request.tabIDsInOrder.enumerated() {
             guard let tabState = request.tabStatesByID[tabID] else { continue }
-            for paneID in tabState.paneIDs {
+            let selectedPaneIDs =
+                request.activeArrangementIDsByTabID[tabID].flatMap {
+                    tabState.paneIDs(inArrangement: $0)
+                } ?? []
+            let selectedPaneIndexes = Dictionary(
+                uniqueKeysWithValues: selectedPaneIDs.enumerated().map { ($0.element, $0.offset) })
+            for (paneIndex, paneID) in tabState.paneIDs.enumerated() {
                 guard seenPaneIDs.insert(paneID).inserted,
                     let paneState = request.paneStatesByID[paneID],
                     paneState.sessionResidency.isActive,
@@ -66,6 +74,8 @@ package enum RepoExplorerPinnedPaneProjector {
                 eligibleMembers.append(
                     RepoExplorerPinnedActivityMember(
                         paneID: paneID,
+                        tabIndex: tabIndex,
+                        paneIndexInTab: selectedPaneIndexes[paneID] ?? paneIndex,
                         activityTime: request.activityTimesByPaneID[paneID],
                         isDrawer: paneState.isDrawerChild,
                         ownerPaneID: paneState.parentPaneId
