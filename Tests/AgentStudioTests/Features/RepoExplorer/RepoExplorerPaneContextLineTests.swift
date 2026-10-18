@@ -8,6 +8,31 @@ import Testing
 
 @Suite
 struct RepoExplorerPaneContextLineTests {
+    @MainActor
+    @Test("Working resolves to app accent and opacity pulse while success stays green")
+    func workingUsesAppAccentAndGentlePulse() throws {
+        let active = try #require(RepoExplorerPaneContextLine.session(.working(.active)))
+        let monitoring = try #require(RepoExplorerPaneContextLine.session(.working(.monitoring)))
+
+        #expect(active.tone.foregroundColor == AppStyles.General.Accent.primaryColor)
+        #expect(active.glyphMotion == .opacityPulse)
+        #expect(monitoring.tone.foregroundColor == AppStyles.General.Accent.primaryColor)
+        #expect(monitoring.glyphMotion == .rotate)
+        for work in [AgentLineWork.working(.indeterminate), .working(.step(current: 1, total: 3))] {
+            let detail = AgentLineDetail(
+                summary: "Working", work: work, detail: nil, refs: [],
+                writer: .session(
+                    provider: try .init("codex"), sessionRef: try .init("run"),
+                    bindingGeneration: UUIDv7.generate()),
+                updatedAt: .distantPast, lifetime: .untilReplaced, stale: false)
+            let line = RepoExplorerPaneContextLine.agent(detail)
+            #expect(line.tone.foregroundColor == AppStyles.General.Accent.primaryColor)
+            #expect(line.glyphMotion == .opacityPulse)
+        }
+        #expect(PaneContextChipTone.success.foregroundColor == AppStyles.Shell.Sidebar.chipSuccessColor)
+        #expect(PaneContextChipTone.success.foregroundColor != AppStyles.General.Accent.primaryColor)
+    }
+
     struct StatusOracle: Sendable {
         let status: AgentSessionStatus
         let text: String?
@@ -22,9 +47,9 @@ struct RepoExplorerPaneContextLineTests {
         .init(
             status: .failed(.init(category: "Build")), text: "Failed · Build", icon: .system(.xmarkOctagon),
             tone: .danger),
-        .init(status: .working(.active), text: "Working", icon: .system(.circleFill), tone: .success),
+        .init(status: .working(.active), text: "Working", icon: .system(.circleFill), tone: .accent),
         .init(
-            status: .working(.monitoring), text: "Working · monitoring", icon: .system(.circleDotted), tone: .success),
+            status: .working(.monitoring), text: "Working · monitoring", icon: .system(.circleDotted), tone: .accent),
         .init(status: .idle(.done), text: "Idle · done", icon: .system(.checkmark), tone: .neutral),
         .init(status: .idle(.ready), text: "Idle · ready", icon: .system(.circle), tone: .neutral),
         .init(status: .idle(.interrupted), text: "Idle · interrupted", icon: .system(.circle), tone: .neutral),
@@ -45,7 +70,7 @@ struct RepoExplorerPaneContextLineTests {
         (AgentSessionStatus.needsYou(.approval), PaneLineGlyphMotion.still),
         (.needsYou(.question), .still), (.needsYou(.blocked), .still),
         (.failed(.init(category: "Build")), .still),
-        (.working(.active), .breathe), (.working(.monitoring), .rotate),
+        (.working(.active), .opacityPulse), (.working(.monitoring), .rotate),
         (.idle(.done), .still), (.idle(.ready), .still),
         (.idle(.interrupted), .still), (.idle(.ended), .still), (.unknown, .still),
     ])
@@ -57,8 +82,8 @@ struct RepoExplorerPaneContextLineTests {
     }
 
     @Test(arguments: [
-        (AgentLineWork.working(.indeterminate), PaneLineGlyphMotion.breathe),
-        (.working(.step(current: 1, total: 3)), .breathe),
+        (AgentLineWork.working(.indeterminate), PaneLineGlyphMotion.opacityPulse),
+        (.working(.step(current: 1, total: 3)), .opacityPulse),
         (.monitoring("checks"), .rotate), (.blockedOnYou(action: "Approve"), .still),
         (.done, .still), (.failed(summary: "Build failed"), .still),
     ])
