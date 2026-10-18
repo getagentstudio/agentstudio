@@ -37,11 +37,17 @@ package enum SessionsUnverifiedStatusOutcome: Sendable, Equatable {
 package actor SessionsIngestion {
     private enum ConnectionRefusalRecord {
         case current(SessionsHookRefusal, recordedAt: ContinuousClock.Instant)
-        case historical(SessionsHookRefusal)
+        case historical(SessionsHookRefusal, recordedAt: ContinuousClock.Instant)
 
         var refusal: SessionsHookRefusal {
             switch self {
-            case .current(let refusal, _), .historical(let refusal): refusal
+            case .current(let refusal, _), .historical(let refusal, _): refusal
+            }
+        }
+
+        var recordedAt: ContinuousClock.Instant {
+            switch self {
+            case .current(_, let recordedAt), .historical(_, let recordedAt): recordedAt
             }
         }
     }
@@ -118,6 +124,7 @@ package actor SessionsIngestion {
     }
 
     private func storeRefusal(paneId: UUID, refusal: SessionsHookRefusal, recordedAt: ContinuousClock.Instant) {
+        if let latest = refusalByPane[paneId], latest.recordedAt > recordedAt { return }
         let counted = SessionsHookRefusal(
             reason: refusal.reason, event: refusal.event, at: refusal.at, intent: refusal.intent,
             count: (refusalByPane[paneId]?.refusal.count ?? 0) + 1)
@@ -161,10 +168,16 @@ package actor SessionsIngestion {
         return refusal.reason
     }
 
-    func retireRefusal(paneId: UUID, before exitInstant: ContinuousClock.Instant? = nil) {
+    func retireRefusal(paneId: UUID, before exitInstant: ContinuousClock.Instant) {
         guard case .current(let refusal, let recordedAt)? = refusalByPane[paneId] else { return }
-        if let exitInstant, recordedAt >= exitInstant { return }
-        refusalByPane[paneId] = .historical(refusal)
+        guard recordedAt < exitInstant else { return }
+        refusalByPane[paneId] = .historical(refusal, recordedAt: recordedAt)
+    }
+
+    private func retireRefusal(paneId: UUID, through eventInstant: ContinuousClock.Instant) {
+        guard case .current(let refusal, let recordedAt)? = refusalByPane[paneId] else { return }
+        guard recordedAt <= eventInstant else { return }
+        refusalByPane[paneId] = .historical(refusal, recordedAt: recordedAt)
     }
 
     func clearRefusal(paneId: UUID) {
@@ -335,7 +348,9 @@ extension SessionsIngestion {
                         break
                     }
                     let applied = unverifiedStatusRuntime.apply(hook)
-                    if applied, hook.signal?.name == .sessionEnd { retireRefusal(paneId: paneId) }
+                    if applied, hook.signal?.name == .sessionEnd {
+                        retireRefusal(paneId: paneId, through: pending.recordedAt)
+                    }
                     if let viewedAt = statusRuntime.latestViewedAt[paneId] {
                         unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
                     }
