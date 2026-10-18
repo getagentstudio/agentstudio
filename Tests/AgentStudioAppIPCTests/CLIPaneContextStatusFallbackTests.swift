@@ -191,11 +191,11 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "missing, mismatched or unreadable runtime metadata refuses without an ordering mutation",
-        arguments: ["missing", "mismatched", "unreadable", "channelMismatch", "missingStore"])
+        arguments: ["missing", "mismatched", "unreadable", "channelMismatch", "missingStore", "mismatchedMissingStore"])
     func missingStoreIsLocalRefusal(metadataCase: String) async throws {
         try await withRefusedTokenPaneCLIContext { context in
             let directory = context.fixture.paths.socketURL.deletingLastPathComponent()
-            let hasStore = metadataCase != "missingStore"
+            let hasStore = metadataCase != "missingStore" && metadataCase != "mismatchedMissingStore"
             if hasStore {
                 var seedEnvironment = context.environment
                 seedEnvironment["AGENTSTUDIO_CLI_STORE"] = directory.appending(path: "cli.sqlite").path
@@ -210,7 +210,7 @@ struct CLIPaneContextStatusFallbackTests {
                 let metadataURL = directory.appending(path: "runtime.json")
                 switch metadataCase {
                 case "missing": try FileManager.default.removeItem(at: metadataURL)
-                case "mismatched":
+                case "mismatched", "mismatchedMissingStore":
                     try Data(#"{"socketPath":"/another/socket","channel":"debug"}"#.utf8).write(to: metadataURL)
                 case "unreadable": try Data("invalid metadata".utf8).write(to: metadataURL)
                 case "channelMismatch":
@@ -222,8 +222,8 @@ struct CLIPaneContextStatusFallbackTests {
             }
             let result = await runFallbackCLI(
                 context, arguments: ["title", "refused"], environment: context.environment)
-            #expect(result.exitCode != 0)
-            #expect(result.standardError.contains("orderingStoreUnavailable"))
+            #expect(result.exitCode == 1)
+            #expect(result.standardError == "unavailable(orderingStoreUnavailable)")
             #expect(context.port.wire.methods == methodsBefore)
             #expect(context.port.claims.count == claimsBefore)
             #expect(context.port.titles.count == titlesBefore)
@@ -248,8 +248,8 @@ struct CLIPaneContextStatusFallbackTests {
                 context, arguments: ["pane.title.set", "--json", json], environment: tokenless)
             #expect(competing.exitCode == 0)
             let refused = await runFallbackCLI(context, arguments: ["title", "lower"])
-            #expect(refused.exitCode != 0)
-            #expect(refused.standardError.contains("lastAccepted"))
+            #expect(refused.exitCode == 1)
+            #expect(refused.standardError == "stale(lastAccepted)")
             #expect(context.port.titles.filter { $0.text == "lower" }.count == 1)
             #expect(try await context.title() == "higher")
             #expect(await runFallbackCLI(context, arguments: ["title", "next"]).exitCode == 0)

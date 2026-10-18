@@ -214,8 +214,21 @@ struct PaneCLICommandRunner: Sendable {
                         stream: stream, key: primaryKey, reservation: reservations[0], correlationID: correlationID),
                     store: store, descriptors: descriptors, client: client)
                 return
+            } catch let failure as IPCDescriptorRemoteFailure
+                where writer != nil && failure.documentedReason == IPCSessionFailureReason.bindingRequired
+            {
+                guard let reservation = reservations.last else {
+                    throw PaneCLICommandFailure.orderingStoreUnavailable
+                }
+                try orderedWrite(
+                    PaneOrderedWriteRequest(
+                        intent: intent,
+                        attribution: PaneWriteAttribution(writer: nil, paneClaim: nil, tokenOutcome: nil),
+                        stream: stream, key: paneKey, reservation: reservation, correlationID: correlationID),
+                    store: store, descriptors: descriptors, client: client)
+                return
             } catch let failure as IPCDescriptorClientFailure where failure.disposition == .authenticationRejected {
-                // Only login rejection permits fallback. Both writer slots were
+                // Login rejection permits the unauthenticated fallback. Both writer slots were
                 // reserved before login, so this older intent cannot be renumbered.
             }
         }
