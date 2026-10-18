@@ -195,13 +195,13 @@ struct SidebarToolbarControlVisualStateTests {
         #expect(searchSource.contains(".sidebarShortcutHint("))
         #expect(searchSource.contains("alignment: .trailing"))
 
-        let paneRowSource = try String(
-            contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneNavigation.swift",
+        let paneTitleLineSource = try String(
+            contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPaneTitleLineView.swift",
             encoding: .utf8
         )
-        #expect(paneRowSource.contains(".sidebarShortcutHint("))
-        #expect(paneRowSource.contains("alignment: .trailing"))
-        #expect(!paneRowSource.contains("style: .accentGlyph"))
+        #expect(paneTitleLineSource.contains(".sidebarShortcutHint("))
+        #expect(paneTitleLineSource.contains("alignment: .trailing"))
+        #expect(!paneTitleLineSource.contains("style: .accentGlyph"))
 
         let worktreeRowSource = try String(
             contentsOfFile: "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerWorktreeRow.swift",
