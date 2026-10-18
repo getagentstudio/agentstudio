@@ -7,6 +7,60 @@ import Testing
 
 @Suite("Repo Explorer pane activity projection")
 struct RepoExplorerPaneActivityProjectionTests {
+    @Test(
+        "output keeps hot rows in tab order while older buckets stay newest-first",
+        arguments: [false, true], [10, 120, 800, 7200])
+    func outputDoesNotReorderHotRows(pinned: Bool, age: Int) {
+        let createdFirstID = UUIDv7.generate()
+        let middleID = UUIDv7.generate()
+        let createdLastID = UUIDv7.generate()
+        let expectedTabOrder = [createdLastID, middleID, createdFirstID]
+        let tabIDs = [UUIDv7.generate(), UUIDv7.generate()]
+        let referenceInstant = ContinuousClock.now
+        let wallNow = utcDate(year: 2026, month: 1, day: 15, hour: 12, minute: 0)
+        let locations = [
+            WorkspacePaneLocation(
+                paneId: createdFirstID, tabId: tabIDs[1], tabIndex: 1,
+                paneIndexInTab: 0, isActiveInTab: false),
+            WorkspacePaneLocation(
+                paneId: middleID, tabId: tabIDs[0], tabIndex: 0,
+                paneIndexInTab: 1, isActiveInTab: false),
+            WorkspacePaneLocation(
+                paneId: createdLastID, tabId: tabIDs[0], tabIndex: 0,
+                paneIndexInTab: 0, isActiveInTab: false),
+        ]
+        let snapshot = RepoExplorerSnapshot(
+            repos: [], repoEnrichmentByRepoId: [:], surface: .panes,
+            referenceDate: wallNow, referenceInstant: referenceInstant, calendar: utcCalendar,
+            query: "", unassociatedPaneLocations: locations)
+        for swapped in [false, true] {
+            let offsets = swapped ? [1, 3, 2] : [3, 1, 2]
+            let facts = Dictionary(
+                uniqueKeysWithValues: expectedTabOrder.enumerated().map { index, paneID in
+                    (
+                        paneID,
+                        RepoExplorerPaneRowFacts(
+                            terminalTitle: "Pane",
+                            paneActivityTime: PaneActivityTime(
+                                orderingInstant: referenceInstant.advanced(by: .seconds(-(age + offsets[index]))),
+                                wallTime: .distantPast, source: .terminal),
+                            isPinned: pinned, latestMessageText: nil, recencyReferenceDate: wallNow,
+                            recencyText: "", isActive: false)
+                    )
+                })
+
+            let projection = RepoExplorerProjection.project(snapshot, paneRowFactsByPaneId: facts)
+            let rows = projection.sections.flatMap(\.resolvedGroups)
+                .flatMap { projection.paneRowsByGroupId[$0.id, default: []].map(\.destination.paneId) }
+
+            let staysInTabOrder = pinned ? age < 60 : age < 600
+            let newestFirst =
+                swapped
+                ? [createdLastID, createdFirstID, middleID] : [middleID, createdFirstID, createdLastID]
+            #expect(rows == (staysInTabOrder ? expectedTabOrder : newestFirst))
+        }
+    }
+
     @Test("one activity time determines the clock, Active, and both bucket sets")
     func sameTimeDrivesEveryPresentation() {
         let samples = [
