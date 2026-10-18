@@ -31,6 +31,28 @@ package struct TerminalRestoreRuntime {
         return pane.terminalState?.zmxSessionID
     }
 
+    /// The actual startup command for an already-decided restore kind (SR1-
+    /// SR3, SR6a; Program Design item 2, choice 1's "`TerminalRestoreRuntime
+    /// .startupCommand(for:kind:)` stays pure and synchronous"). Amended
+    /// 2026-09-30 ("option A"; Spec SR2a; S4b): every cohort-computed kind —
+    /// `.cold`, `.warm`, and `.unverified` alike — sends its plan's
+    /// cold-restore script; zmx itself ignores that script when the session
+    /// it finds is actually alive, so a correct warm/unverified check
+    /// changes nothing observable, and a session that died between the
+    /// check and the reconnect is recreated by the script instead of
+    /// silently attaching to a blank shell. Only `nil` (no cohort-computed
+    /// kind — every call site outside the launch-restore cohort, such as a
+    /// steady-state new pane or a mid-session repair) keeps today's plain
+    /// attach.
+    package func startupCommand(for pane: Pane, kind: TerminalRestoreKind?) -> String? {
+        switch kind {
+        case .cold(let plan), .warm(_, let plan), .unverified(_, let plan):
+            return ZmxBackend.buildColdRestoreCommand(plan)
+        case nil:
+            return zmxAttachCommand(for: pane)
+        }
+    }
+
     package func zmxAttachCommand(for pane: Pane) -> String? {
         guard sessionConfiguration.isOperational else { return nil }
         guard let sessionID = zmxSessionID(for: pane) else { return nil }

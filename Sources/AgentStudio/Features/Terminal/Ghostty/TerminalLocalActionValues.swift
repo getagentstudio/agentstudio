@@ -164,6 +164,12 @@ struct TerminalLocalAccumulatorMetrics: Sendable, Equatable {
     }
 }
 
+/// SR6b: the restore-phase-ended control plus its preceding aggregate.
+struct TerminalLocalRestorePhaseEnd: Sendable, Equatable {
+    let precedingAggregate: TerminalActivityAggregateInput?
+    let generation: RestoreGeneration
+}
+
 struct TerminalLocalActionBatch: Sendable, Equatable {
     let surfaceID: UUID
     let presentation: TerminalLocalPresentationBatch
@@ -173,6 +179,7 @@ struct TerminalLocalActionBatch: Sendable, Equatable {
     let titleMetadata: TerminalTitleMetadataBatch?
     let metrics: TerminalLocalAccumulatorMetrics
     let firstOfferedAtNanoseconds: UInt64
+    var restorePhaseEnd: TerminalLocalRestorePhaseEnd?
 
     var retainedEntryCount: Int {
         var count = searchLifecycle == nil ? 0 : 1
