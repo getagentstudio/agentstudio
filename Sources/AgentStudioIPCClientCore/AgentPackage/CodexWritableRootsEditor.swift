@@ -1,17 +1,17 @@
 import Foundation
 
-/// Edits only the selected store-directory element of Codex's writable roots.
+/// Adds the store directory without rewriting foreign writable roots.
 package enum CodexWritableRootsEditor {
     package static func updating(
-        _ contents: String, directory: String, removing: Bool = false, configurationPath: String
+        _ contents: String, directory: String, configurationPath: String
     ) throws -> (contents: String, changed: Bool) {
-        do { return try edit(contents, directory: directory, removing: removing) } catch {
+        do { return try edit(contents, directory: directory) } catch {
             throw AgentPackageInstallationError.writableRootsNotLocatable(configurationPath)
         }
     }
 
     private static func edit(
-        _ contents: String, directory: String, removing: Bool
+        _ contents: String, directory: String
     ) throws -> (contents: String, changed: Bool) {
         let scanner = try CodexTOMLLineScanner(contents)
         let newline = contents.contains("\r\n") ? "\r\n" : "\n"
@@ -20,7 +20,6 @@ package enum CodexWritableRootsEditor {
         let quoted = CodexTOMLLineScanner.text(try encoder.encode(directory))
         let assignmentText = "writable_roots = [\(quoted)]\(newline)"
         guard let table = try scanner.table(named: "sandbox_workspace_write") else {
-            if removing { return (contents, false) }
             let separator = contents.isEmpty ? "" : (contents.hasSuffix("\n") ? newline : newline + newline)
             return (contents + separator + "[sandbox_workspace_write]\(newline)" + assignmentText, true)
         }
@@ -33,7 +32,6 @@ package enum CodexWritableRootsEditor {
         }
         guard assignments.count <= 1 else { throw CodexTOMLLineScanner.Failure.ambiguous }
         guard let (line, valueStart) = assignments.first else {
-            if removing { return (contents, false) }
             let position = table.header.range.upperBound
             let prefix = position > 0 && scanner.bytes[position - 1] != 10 ? newline : ""
             return (
@@ -54,37 +52,12 @@ package enum CodexWritableRootsEditor {
         else { throw CodexTOMLLineScanner.Failure.ambiguous }
         try validateSeparators(scanner: scanner, elements: elements, opening: opening, closing: closing)
         let matching = elements.filter { $0.value == directory }
-        if removing {
-            guard !matching.isEmpty else { return (contents, false) }
-            return (
-                try removingElements(matching, from: contents, scanner: scanner, opening: opening, closing: closing),
-                true
-            )
-        }
         guard matching.isEmpty else { return (contents, false) }
         return (
             addingElement(
                 quoted, to: contents, scanner: scanner, elements: elements, bounds: opening..<closing,
                 newline: newline), true
         )
-    }
-
-    private static func removingElements(
-        _ elements: [CodexTOMLLineScanner.QuotedValue], from contents: String,
-        scanner: CodexTOMLLineScanner, opening: Int, closing: Int
-    ) throws -> String {
-        // Re-scan after each removal so adjacent matching elements never claim the same comma.
-        guard let element = elements.last else { return contents }
-        var edits: [(Range<Int>, String)] = [(element.range, "")]
-        let next = scanner.mask[element.range.upperBound..<closing].firstIndex { ![9, 10, 13, 32].contains($0) }
-        if let next, scanner.mask[next] == 44 {
-            edits.append((next..<(next + 1), ""))
-        } else if let previous = scanner.mask[(opening + 1)..<element.range.lowerBound].lastIndex(of: 44) {
-            edits.append((previous..<(previous + 1), ""))
-        }
-        let updated = CodexTOMLLineScanner.replacing(contents, edits: edits)
-        guard elements.count > 1, let directory = element.value else { return updated }
-        return try edit(updated, directory: directory, removing: true).contents
     }
 
     private static func validateSeparators(

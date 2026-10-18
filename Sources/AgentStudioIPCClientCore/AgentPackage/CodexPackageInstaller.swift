@@ -126,56 +126,6 @@ package enum CodexPackageInstaller {
         return output
     }
 
-    // MARK: - Uninstall
-
-    package static func uninstall(_ props: Props) throws -> [String] {
-        try requireWritableHome(props)
-        let roots = try CodexWritableRootsEditor.updating(
-            existingConfiguration(props), directory: props.ipcDirectory.path, removing: true,
-            configurationPath: props.configurationURL.path)
-        var output: [String] = []
-        var removedEntries = 0
-        if let data = props.fileManager.contents(atPath: props.hooksURL.path) {
-            var document = try CodexHooksDocument(data: data, path: props.hooksURL.path)
-            for event in CodexHookEventName.installedEvents {
-                removedEntries += document.removeOwnedGroups(
-                    event: event.rawValue, ownedCommandFragment: ownedCommandFragment)
-            }
-            // A file this package never wrote is left byte-identical: no
-            // re-encode, no deletion. Only an install of ours can have put
-            // entries there, and only then can removing them empty the file.
-            if removedEntries == 0 {
-                output.append("no agentstudio hook entries to remove from \(props.hooksURL.path)")
-            } else if document.carriesNothingButAnEmptyHooksTable {
-                try props.fileManager.removeItem(at: props.hooksURL)
-                output.append("removed \(removedEntries) hook entries and \(props.hooksURL.path)")
-            } else {
-                try AtomicFileWriter.write(
-                    try document.encoded(), to: props.hooksURL, fileManager: props.fileManager)
-                output.append(
-                    "removed \(removedEntries) hook entries from \(props.hooksURL.path)")
-            }
-        } else {
-            output.append("no hook entries to remove at \(props.hooksURL.path)")
-        }
-        if roots.changed {
-            try AtomicFileWriter.write(
-                Data(roots.contents.utf8), to: props.configurationURL, fileManager: props.fileManager)
-            output.append("removed \(props.ipcDirectory.path) from sandbox_workspace_write.writable_roots")
-        }
-
-        let markerPath = props.skillDirectory.appending(path: installationMarkerName).path
-        if props.fileManager.fileExists(atPath: markerPath) {
-            try props.fileManager.removeItem(at: props.skillDirectory)
-            output.append("removed the agentstudio skill from \(props.skillDirectory.path)")
-        } else {
-            output.append("left \(props.skillDirectory.path) alone; it carries no package marker")
-        }
-        output.append(
-            "left features.hooks in \(props.configurationURL.path) enabled; other hooks may need it")
-        return output
-    }
-
     // MARK: - Planning
 
     private static func plannedConfiguration(

@@ -10,7 +10,6 @@ import Foundation
 package enum AgentPackageSubcommand: Equatable, Sendable {
     case hook(provider: String, eventName: String)
     case install(provider: String, providerHomePath: String?)
-    case uninstall(provider: String, providerHomePath: String?)
 
     package static func parse(_ arguments: [String]) -> Self? {
         switch arguments.first {
@@ -22,7 +21,6 @@ package enum AgentPackageSubcommand: Equatable, Sendable {
             let home = providerHomePath(Array(arguments.dropFirst(3)))
             switch arguments[1] {
             case "install": return .install(provider: arguments[2], providerHomePath: home)
-            case "uninstall": return .uninstall(provider: arguments[2], providerHomePath: home)
             default: return nil
             }
         default:
@@ -80,11 +78,7 @@ package struct AgentPackageCommandRunner: Sendable {
         case .hook(let provider, let eventName):
             return runHook(provider: provider, eventName: eventName, props: props)
         case .install(let provider, let providerHomePath):
-            return runInstaller(
-                provider: provider, providerHomePath: providerHomePath, props: props, installs: true)
-        case .uninstall(let provider, let providerHomePath):
-            return runInstaller(
-                provider: provider, providerHomePath: providerHomePath, props: props, installs: false)
+            return runInstaller(provider: provider, providerHomePath: providerHomePath, props: props)
         }
     }
 
@@ -121,8 +115,7 @@ package struct AgentPackageCommandRunner: Sendable {
     private static func runInstaller(
         provider: String,
         providerHomePath: String?,
-        props: Props,
-        installs: Bool
+        props: Props
     ) -> Int32 {
         guard [CodexPackageInstaller.providerIdentifier, CursorPackageInstaller.providerIdentifier].contains(provider)
         else {
@@ -135,10 +128,7 @@ package struct AgentPackageCommandRunner: Sendable {
             if provider == CursorPackageInstaller.providerIdentifier {
                 let installerProps = CursorPackageInstaller.Props(
                     cursorHome: CursorPackageInstaller.cursorHome(explicitPath: providerHomePath), locator: locator)
-                let lines =
-                    installs
-                    ? try CursorPackageInstaller.install(installerProps)
-                    : try CursorPackageInstaller.uninstall(installerProps)
+                let lines = try CursorPackageInstaller.install(installerProps)
                 lines.forEach(props.standardOutputSink)
                 return 0
             }
@@ -155,10 +145,7 @@ package struct AgentPackageCommandRunner: Sendable {
                 locator: locator,
                 ipcDirectory: location.url.deletingLastPathComponent()
             )
-            let lines =
-                installs
-                ? try CodexPackageInstaller.install(installerProps)
-                : try CodexPackageInstaller.uninstall(installerProps)
+            let lines = try CodexPackageInstaller.install(installerProps)
             lines.forEach(props.standardOutputSink)
             return 0
         } catch {

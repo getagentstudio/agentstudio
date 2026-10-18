@@ -30,8 +30,7 @@ package struct CursorHooksDocument {
         }
     }
 
-    package mutating func replaceOwnedEntries(scriptURL: URL?) -> Int {
-        var removed = 0
+    package mutating func replaceOwnedEntries(scriptURL: URL) {
         for event in CursorHookEventName.installedEvents {
             let entries = hooks[event.rawValue] as? [Any] ?? []
             var remaining = entries.filter { entry in
@@ -40,17 +39,9 @@ package struct CursorHooksDocument {
                 }
                 return !command.contains(CursorPackageInstaller.ownedCommandFragment)
             }
-            removed += entries.count - remaining.count
-            if let scriptURL {
-                remaining.append(["command": "\"\(scriptURL.path)\" \(event.rawValue)"])
-            }
-            if remaining.isEmpty {
-                hooks.removeValue(forKey: event.rawValue)
-            } else {
-                hooks[event.rawValue] = remaining
-            }
+            remaining.append(["command": "\"\(scriptURL.path)\" \(event.rawValue)"])
+            hooks[event.rawValue] = remaining
         }
-        return removed
     }
 
     package func encoded() throws -> Data {

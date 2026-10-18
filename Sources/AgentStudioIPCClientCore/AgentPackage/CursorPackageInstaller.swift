@@ -29,7 +29,7 @@ package enum CursorPackageInstaller {
                 atPath: props.locator.skillSourceDirectory.appending(path: "SKILL.md").path)
         else { throw AgentPackageInstallationError.packageResourcesUnavailable }
         var document = try CursorHooksDocument(data: hooksContents(props), path: props.hooksURL.path)
-        _ = document.replaceOwnedEntries(scriptURL: script)
+        document.replaceOwnedEntries(scriptURL: script)
         let hooks = try document.encoded()
         try AtomicFileWriter.write(hooks, to: props.hooksURL, fileManager: .default)
         try FileManager.default.createDirectory(at: props.skillDirectory, withIntermediateDirectories: true)
@@ -41,22 +41,6 @@ package enum CursorPackageInstaller {
             "wrote \(CursorHookEventName.installedEvents.count) Cursor hook entries to \(props.hooksURL.path)",
             "installed the agentstudio skill in \(props.skillDirectory.path)",
         ]
-    }
-
-    package static func uninstall(_ props: Props) throws -> [String] {
-        try requireWritableHome(props)
-        var removed = 0
-        if let data = try hooksContents(props) {
-            var document = try CursorHooksDocument(data: data, path: props.hooksURL.path)
-            removed = document.replaceOwnedEntries(scriptURL: nil)
-            if removed > 0 {
-                try AtomicFileWriter.write(try document.encoded(), to: props.hooksURL, fileManager: .default)
-            }
-        }
-        if FileManager.default.fileExists(atPath: props.skillDirectory.appending(path: installationMarkerName).path) {
-            try FileManager.default.removeItem(at: props.skillDirectory)
-        }
-        return ["removed \(removed) Cursor hook entries from \(props.hooksURL.path)"]
     }
 
     private static func requireWritableHome(_ props: Props) throws {

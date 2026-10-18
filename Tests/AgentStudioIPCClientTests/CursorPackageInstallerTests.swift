@@ -19,8 +19,8 @@ struct CursorPackageInstallerTests {
         #expect(!fixture.fileExists(relativePath: "skills/agentstudio"))
     }
 
-    @Test("reinstall and uninstall preserve foreign hooks and root keys", arguments: [false, true])
-    func mergeAndUninstall(versionOnly: Bool) throws {
+    @Test("install and reinstall preserve foreign hooks and root keys", arguments: [false, true])
+    func mergeAndReinstall(versionOnly: Bool) throws {
         let fixture = try CodexHomeFixture(packageDirectoryName: "Agent Studio Beta.app")
         defer { fixture.tearDown() }
         let foreign: [String: Any] = ["command": "/usr/local/bin/mine", "extra": ["keep": true]]
@@ -58,20 +58,16 @@ struct CursorPackageInstallerTests {
         #expect(hooks["sessionStart"] == nil)
         #expect(hooks["subagentStart"] == nil)
         #expect(hooks["subagentStop"] == nil)
-        _ = try CursorPackageInstaller.uninstall(props)
-        #expect(!fixture.fileExists(relativePath: "skills/agentstudio"))
-        let uninstalled = try #require(fixture.hooksData())
-        let restored = try #require(JSONSerialization.jsonObject(with: uninstalled) as? [String: Any])
-        let remaining = try #require(restored["hooks"] as? [String: Any])
         if versionOnly {
-            #expect(remaining.isEmpty)
+            #expect(Set(hooks.keys) == ownedEvents)
         } else {
-            #expect(restored["description"] as? String == "keep")
-            let prompt = try #require(remaining["beforeSubmitPrompt"] as? [[String: Any]])
+            #expect(document["description"] as? String == "keep")
+            let prompt = try #require(hooks["beforeSubmitPrompt"] as? [[String: Any]])
+            let foreignEntries = prompt.filter { ($0["command"] as? String) == "/usr/local/bin/mine" }
             #expect(
-                try JSONSerialization.data(withJSONObject: prompt, options: [.sortedKeys])
+                try JSONSerialization.data(withJSONObject: foreignEntries, options: [.sortedKeys])
                     == JSONSerialization.data(withJSONObject: [foreign], options: [.sortedKeys]))
-            #expect(remaining["preToolUse"] != nil)
+            #expect((hooks["preToolUse"] as? [[String: String]]) == [["command": "unrelated"]])
         }
     }
 
@@ -93,17 +89,20 @@ struct CursorPackageInstallerTests {
         #expect(!fixture.fileExists(relativePath: "skills/agentstudio"))
     }
 
-    @Test("uninstall keeps an unmarked skill and a foreign hooks file byte-identical")
-    func foreignFilesSurviveUninstall() throws {
+    @Test("install populates its empty event and preserves a foreign empty event")
+    func installPreservesForeignEmptyEvent() throws {
         let fixture = try CodexHomeFixture()
         defer { fixture.tearDown() }
-        let original = #"{"version":1, "hooks": {"stop":[{"command":"mine"}]}}"#
-        try fixture.writeHooks(original)
-        try fixture.writeSkillWithoutMarker()
-        _ = try CursorPackageInstaller.uninstall(
+        try fixture.writeHooks(#"{"version":1,"hooks":{"beforeSubmitPrompt":[],"afterAgentResponse":[]}}"#)
+
+        _ = try CursorPackageInstaller.install(
             .init(cursorHome: fixture.codexHome, locator: fixture.props.locator))
-        #expect(fixture.hooksText() == original)
-        #expect(fixture.fileExists(relativePath: "skills/agentstudio/SKILL.md"))
+
+        let data = try #require(fixture.hooksData())
+        let document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try #require(document["hooks"] as? [String: Any])
+        #expect((hooks["beforeSubmitPrompt"] as? [Any])?.count == 1)
+        #expect((hooks["afterAgentResponse"] as? [Any])?.isEmpty == true)
     }
 
     @Test("missing Cursor home refuses before creating it")

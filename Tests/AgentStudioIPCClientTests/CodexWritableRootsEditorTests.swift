@@ -42,21 +42,31 @@ struct CodexWritableRootsEditorTests {
         #expect(edited.contents == scenario.1)
     }
 
-    @Test("installer notices once and uninstall removes only its directory")
-    func installerRootLifecycle() throws {
+    @Test("install adds a missing root once and preserves an existing root", arguments: [false, true])
+    func installPreservesWritableRoots(alreadyPresent: Bool) throws {
         let fixture = try CodexHomeFixture()
         defer { fixture.tearDown() }
-        try fixture.writeConfiguration("[sandbox_workspace_write]\nwritable_roots = ['/keep']\n")
-        let first = try CodexPackageInstaller.install(fixture.props)
-        #expect(first.filter { $0.hasPrefix("notice: added ") }.count == 1)
-        #expect(first.contains { $0.contains("dotfiles-managed") })
+        let roots = alreadyPresent ? "['/keep', \"\(fixture.props.ipcDirectory.path)\"]" : "['/keep']"
+        let original =
+            "[features]\nhooks = true\n[sandbox_workspace_write]\nwritable_roots = \(roots) # dotfiles\n"
+        try fixture.writeConfiguration(original)
+
+        let output = try CodexPackageInstaller.install(fixture.props)
+
+        if alreadyPresent {
+            #expect(fixture.configuration() == original)
+            #expect(!output.contains { $0.hasPrefix("notice: added ") })
+        } else {
+            #expect(output.filter { $0.hasPrefix("notice: added ") }.count == 1)
+            #expect(output.contains { $0.contains("dotfiles-managed") })
+        }
+        let installed = fixture.configuration()
         let repeated = try CodexPackageInstaller.install(fixture.props)
+        #expect(fixture.configuration() == installed)
         #expect(!repeated.contains { $0.hasPrefix("notice: added ") })
-        _ = try CodexPackageInstaller.uninstall(fixture.props)
-        #expect(!fixture.configuration().contains(fixture.props.ipcDirectory.path))
-        #expect(fixture.configuration().contains("'/keep'"))
-        #expect(fixture.configuration().contains("writable_roots"))
-        #expect(fixture.configuration().contains("hooks = true"))
+        #expect(installed.contains(fixture.props.ipcDirectory.path))
+        #expect(installed.contains("'/keep'"))
+        #expect(installed.contains("# dotfiles"))
     }
 
     @Test(
@@ -107,7 +117,7 @@ struct CodexWritableRootsEditorTests {
     }
 
     @Test(
-        "adds exactly one store directory and removes only that element",
+        "adds exactly one store directory and preserves foreign text on reinstall",
         arguments: [
             "", "model = 'keep'\n",
             "[sandbox_workspace_write]\nnetwork_access = true\n",
@@ -119,7 +129,7 @@ struct CodexWritableRootsEditorTests {
             "policy = \"\"\"\n[sandbox_workspace_write]\nwritable_roots = ['fake']\n\"\"\"\n",
             "policy = '''\n[sandbox_workspace_write]\nwritable_roots = ['fake']\n'''\n",
         ])
-    func addReinstallAndRemove(original: String) throws {
+    func addAndReinstallPreserveForeignText(original: String) throws {
         let directory = "/runtime/ipc"
         let added = try CodexWritableRootsEditor.updating(
             original, directory: directory, configurationPath: "fixture")
@@ -129,16 +139,10 @@ struct CodexWritableRootsEditorTests {
             added.contents, directory: directory, configurationPath: "fixture")
         #expect(!repeated.changed)
         #expect(repeated.contents == added.contents)
-        let removed = try CodexWritableRootsEditor.updating(
-            added.contents, directory: directory, removing: true, configurationPath: "fixture")
-        #expect(removed.changed)
-        #expect(!removed.contents.contains(directory))
-        #expect(removed.contents.contains("[sandbox_workspace_write]"))
-        #expect(removed.contents.contains("writable_roots"))
-        if original.contains("/keep") { #expect(removed.contents.contains("/keep")) }
-        if original.contains("keep comment") { #expect(removed.contents.contains("keep comment")) }
-        if original.contains("/#keep]雪") { #expect(removed.contents.contains("/#keep]雪")) }
-        if original.hasPrefix("policy") { #expect(removed.contents.hasPrefix(original)) }
+        if original.contains("/keep") { #expect(added.contents.contains("/keep")) }
+        if original.contains("keep comment") { #expect(added.contents.contains("keep comment")) }
+        if original.contains("/#keep]雪") { #expect(added.contents.contains("/#keep]雪")) }
+        if original.hasPrefix("policy") { #expect(added.contents.hasPrefix(original)) }
     }
 
     @Test(
@@ -190,9 +194,7 @@ struct CodexWritableRootsEditorTests {
         let repeated = try CodexWritableRootsEditor.updating(
             added.contents, directory: directory, configurationPath: "fixture")
         #expect(!repeated.changed)
-        let removed = try CodexWritableRootsEditor.updating(
-            added.contents, directory: directory, removing: true, configurationPath: "fixture")
-        #expect(removed.contents.contains("'/#keep]雪'"))
-        #expect(removed.contents.contains(#"\U0001F600"#))
+        #expect(added.contents.contains("'/#keep]雪'"))
+        #expect(added.contents.contains(#"\U0001F600"#))
     }
 }

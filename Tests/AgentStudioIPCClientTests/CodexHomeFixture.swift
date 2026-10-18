@@ -86,15 +86,6 @@ struct CodexHomeFixture {
         try Data(contents.utf8).write(to: codexHome.appending(path: "hooks.json"))
     }
 
-    func writeSkillWithoutMarker() throws {
-        let directory =
-            codexHome
-            .appending(path: "skills", directoryHint: .isDirectory)
-            .appending(path: "agentstudio", directoryHint: .isDirectory)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data("someone else's skill".utf8).write(to: directory.appending(path: "SKILL.md"))
-    }
-
     /// Edits the installed entry the way a curious user would, so the next
     /// install has to notice the difference.
     func rewriteOwnedTimeout(event: CodexHookEventName, to timeout: Int) throws {

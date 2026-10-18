@@ -306,7 +306,6 @@ struct CodexHookInvocationTests {
                 ["package", "install", "codex", "--codex-home", "/tmp/home"],
                 .install(provider: "codex", providerHomePath: "/tmp/home")
             ),
-            (["package", "uninstall", "codex"], .uninstall(provider: "codex", providerHomePath: nil)),
         ]
     )
     func subcommandParsing(arguments: [String], expected: AgentPackageSubcommand) {
@@ -315,13 +314,13 @@ struct CodexHookInvocationTests {
     }
 
     @Test(
-        "anything that is not a provider subcommand falls through to the descriptor surface",
+        "the parser rejects incomplete and unknown provider subcommands",
         arguments: [
             ["session.query"], ["hook"], ["hook", "codex"], ["package"], ["package", "list", "codex"],
             ["package", "install"],
         ]
     )
-    func nonSubcommandArgumentsFallThrough(arguments: [String]) {
+    func nonSubcommandArgumentsAreRejected(arguments: [String]) {
         // Arrange / Act / Assert
         #expect(AgentPackageSubcommand.parse(arguments) == nil)
     }

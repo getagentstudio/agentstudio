@@ -130,7 +130,7 @@ struct CursorHookInvocationTests {
             .init(
                 eventName: unknown ? "subagentStop" : "beforeSubmitPrompt", environment: Self.environment,
                 standardInput: {
-                    if unknown { Issue.record("Uninstalled hook must not read input") }
+                    if unknown { Issue.record("Unregistered hook must not read input") }
                     return Data(#"{"conversation_id":"session"}"#.utf8)
                 },
                 correlationIdProvider: { UUIDv7.generate() }, delivery: delivery, standardErrorSink: { _ in },

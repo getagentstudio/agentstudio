@@ -274,38 +274,7 @@ struct CodexPackageInstallerTests {
         #expect(home.configuration().contains("\n[features]\nhooks = true\n"))
     }
 
-    @Test("uninstall on a machine that never installed leaves hooks.json byte-identical")
-    func uninstallLeavesAForeignHooksFileAlone() throws {
-        // Arrange
-        let home = try CodexHomeFixture()
-        defer { home.tearDown() }
-        let original = "{\"hooks\":{\"SessionStart\":[]},  \"description\":\"mine\"}"
-        try home.writeHooks(original)
-
-        // Act
-        let output = try CodexPackageInstaller.uninstall(home.props)
-
-        // Assert
-        #expect(home.hooksText() == original)
-        #expect(output.contains { $0.contains("no agentstudio hook entries to remove") })
-    }
-
-    @Test("a non-object hooks value is never read as empty and is never deleted")
-    func uninstallLeavesANonObjectHooksValueAlone() throws {
-        // Arrange
-        let home = try CodexHomeFixture()
-        defer { home.tearDown() }
-        let original = "{\"hooks\":\"not-an-object\"}"
-        try home.writeHooks(original)
-
-        // Act
-        _ = try CodexPackageInstaller.uninstall(home.props)
-
-        // Assert
-        #expect(home.hooksText() == original)
-    }
-
-    @Test("hooks belonging to someone else survive install and uninstall untouched")
+    @Test("hooks belonging to someone else survive install untouched")
     func unrelatedHooksArePreserved() throws {
         // Arrange
         let home = try CodexHomeFixture()
@@ -320,7 +289,8 @@ struct CodexPackageInstallerTests {
                 ],
                 "PostToolUse": [
                   { "matcher": "shell", "hooks": [{ "type": "command", "command": "/usr/local/bin/audit.sh" }] }
-                ]
+                ],
+                "ForeignEvent": []
               }
             }
             """
@@ -336,14 +306,11 @@ struct CodexPackageInstallerTests {
         #expect(Self.command(sessionStart[0]) == "/usr/local/bin/mine.sh")
         #expect(Self.command(sessionStart[1])?.contains(CodexPackageInstaller.ownedCommandFragment) == true)
 
-        // Act
-        _ = try CodexPackageInstaller.uninstall(home.props)
-
-        // Assert
-        let remaining = try home.hooksDocument()
-        #expect(remaining.groups(event: "SessionStart").count == 1)
-        #expect(Self.command(remaining.groups(event: "SessionStart")[0]) == "/usr/local/bin/mine.sh")
-        #expect(remaining.groups(event: "PostToolUse").count == 1)
+        #expect(installed.groups(event: "PostToolUse").count == 1)
+        let data = try #require(home.hooksData())
+        let document = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let hooks = try #require(document["hooks"] as? [String: Any])
+        #expect((hooks["ForeignEvent"] as? [Any])?.isEmpty == true)
     }
 
     @Test("reinstalling changes nothing and prints no notice")
@@ -381,38 +348,6 @@ struct CodexPackageInstallerTests {
         let restored = try #require(home.ownedGroup(event: .sessionStart))
         let handler = try #require((restored["hooks"] as? [[String: Any]])?.first)
         #expect(handler["timeout"] as? Int == CodexPackageInstaller.hookTimeoutSeconds)
-    }
-
-    @Test("uninstall removes the package's own files and leaves the feature enabled")
-    func uninstallRemovesOnlyWhatItOwns() throws {
-        // Arrange
-        let home = try CodexHomeFixture()
-        defer { home.tearDown() }
-        _ = try CodexPackageInstaller.install(home.props)
-
-        // Act
-        let output = try CodexPackageInstaller.uninstall(home.props)
-
-        // Assert
-        #expect(home.fileExists(relativePath: "hooks.json") == false)
-        #expect(home.fileExists(relativePath: "skills/agentstudio") == false)
-        #expect(home.configuration().contains("hooks = true"))
-        #expect(output.contains { $0.contains("features.hooks") })
-    }
-
-    @Test("uninstall leaves a skill directory that carries no package marker")
-    func uninstallLeavesAnUnmarkedSkillDirectory() throws {
-        // Arrange
-        let home = try CodexHomeFixture()
-        defer { home.tearDown() }
-        try home.writeSkillWithoutMarker()
-
-        // Act
-        let output = try CodexPackageInstaller.uninstall(home.props)
-
-        // Assert
-        #expect(home.fileExists(relativePath: "skills/agentstudio/SKILL.md"))
-        #expect(output.contains { $0.contains("no package marker") })
     }
 
     @Test("a Codex home that does not exist fails before anything is written")
