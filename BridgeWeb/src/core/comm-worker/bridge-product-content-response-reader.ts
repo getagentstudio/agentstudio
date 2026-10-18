@@ -19,6 +19,19 @@ import { encodeBridgeProductRequestBody } from './bridge-product-request-body.js
 import type { BridgeProductRequestExecutor } from './bridge-product-request-executor.js';
 import type { BridgeProductSessionAuthority } from './bridge-product-session-authority.js';
 
+const bridgeProductContentProducerCapacityResponse = {
+	statusCode: 503,
+	headerName: 'X-AgentStudio-Bridge-Content-Rejection',
+	headerValue: 'producer_capacity',
+};
+
+export class BridgeProductContentProducerCapacityDeferred extends Error {
+	constructor() {
+		super('Bridge product content producer capacity is temporarily exhausted.');
+		this.name = 'BridgeProductContentProducerCapacityDeferred';
+	}
+}
+
 export async function readBridgeProductContentResponse<
 	TContentKind extends BridgeProductContentKind,
 >(props: {
@@ -178,6 +191,13 @@ export async function readBridgeProductContentResponse<
 				}),
 		});
 		opening.abortSignal.throwIfAborted();
+		if (
+			response.status === bridgeProductContentProducerCapacityResponse.statusCode &&
+			response.headers.get(bridgeProductContentProducerCapacityResponse.headerName) ===
+				bridgeProductContentProducerCapacityResponse.headerValue
+		) {
+			throw new BridgeProductContentProducerCapacityDeferred();
+		}
 		if (!response.ok || response.body === null) {
 			throw new Error(`Bridge product content stream failed with status ${response.status}.`);
 		}
