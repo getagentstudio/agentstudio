@@ -4,6 +4,8 @@ import AgentStudioSharedComponents
 import SwiftUI
 
 package struct RepoExplorerPaneContextLineView: View {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     let line: RepoExplorerPaneContextLine
     let isAgentLine: Bool
     let octiconLoader: OcticonLoader
@@ -16,6 +18,12 @@ package struct RepoExplorerPaneContextLineView: View {
     package var body: some View {
         HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
             line.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.Shell.Sidebar.branchIconSize)
+                .symbolEffect(.breathe, isActive: !reduceMotion && line.glyphMotion == .breathe)
+                .symbolEffect(
+                    .rotate,
+                    options: .repeating.speed(AppStyles.Shell.Sidebar.paneLineRotationSpeed),
+                    isActive: !reduceMotion && line.glyphMotion == .rotate
+                )
                 .foregroundStyle(glyphColor)
                 .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
             Text(line.text)
