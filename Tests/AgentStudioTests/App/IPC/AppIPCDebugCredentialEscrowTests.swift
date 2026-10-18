@@ -108,7 +108,7 @@ struct AppIPCDebugCredentialEscrowTests {
 
     @Test(
         "valid-token status writes use the pane when the provider session is unbound and retain bound attribution",
-        arguments: ["claude-code", "codex"], [false, true])
+        arguments: ["claude-code", "codex", "cursor"], [false, true])
     func validTokenStatusDoesNotRequireSessionBinding(provider: String, bindSession: Bool) async throws {
         let harness = try await SessionsVerticalHarness.make()
         do {
@@ -121,12 +121,18 @@ struct AppIPCDebugCredentialEscrowTests {
                 try #require(binding.disposition == .admitted)
             }
             let token = try #require(harness.boundPaneToken)
+            let sessionVariable: String
+            switch provider {
+            case "codex": sessionVariable = "CODEX_THREAD_ID"
+            case "cursor": sessionVariable = "CURSOR_CONVERSATION_ID"
+            default: sessionVariable = "CLAUDE_CODE_SESSION_ID"
+            }
             let environment = [
                 "AGENTSTUDIO_IPC_SOCKET": harness.socketPath,
                 "AGENTSTUDIO_PANE_ID": harness.boundPaneId.uuidString,
                 "AGENTSTUDIO_WORKSPACE_ID": harness.commandHarness.store.identityAtom.workspaceId.uuidString,
                 "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
-                provider == "codex" ? "CODEX_THREAD_ID" : "CLAUDE_CODE_SESSION_ID": conversationID,
+                sessionVariable: conversationID,
             ]
             let composition = try #require(harness.appDelegate.appIPCSessionsPaneContextComposition)
             let paneID = harness.boundPaneId

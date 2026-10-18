@@ -8,6 +8,20 @@ import Testing
 /// other hooks, their `[features]` table, and their trust grants.
 @Suite("Codex package installer")
 struct CodexPackageInstallerTests {
+    @Test("the owner's multiline policy and writable roots install without losing unrelated text")
+    func ownerConfigurationInstallsStoreRoot() throws {
+        let home = try CodexHomeFixture()
+        defer { home.tearDown() }
+        let original =
+            "model = \"test\"\n[features]\nhooks = true\n[sandbox_workspace_write]\nwritable_roots = [\n  \"/keep\",\n]\n[policy]\nextra_policy = \"\"\"\n[features]\nhooks = false\n\"\"\"\n"
+        try home.writeConfiguration(original)
+        _ = try CodexPackageInstaller.install(home.props)
+        let configuration = home.configuration()
+        #expect(configuration.contains("\"/keep\""))
+        #expect(configuration.contains(home.root.appending(path: "runtime/ipc").path))
+        #expect(configuration.contains("extra_policy = \"\"\"\n[features]\nhooks = false\n\"\"\""))
+    }
+
     @Test("a fresh install enables the feature, writes every hook entry and lands the skill")
     func freshInstall() throws {
         // Arrange
@@ -78,7 +92,7 @@ struct CodexPackageInstallerTests {
         let legacyText = try #require(String(data: legacyDocument, encoding: .utf8))
         try home.writeHooks(legacyText)
         let output = try CodexPackageInstaller.install(home.props)
-        let notices = output.filter { $0.hasPrefix("notice:") }
+        let notices = output.filter { $0.hasPrefix("notice: replacing") }
         let expectedNotices = Set(
             CodexHookEventName.installedEvents.map {
                 "notice: replacing modified agentstudio entry \($0.rawValue)"
@@ -184,7 +198,8 @@ struct CodexPackageInstallerTests {
         // Arrange
         let home = try CodexHomeFixture()
         defer { home.tearDown() }
-        let original = "[features]\n  hooks   =   true\n"
+        let original =
+            "[features]\n  hooks   =   true\n[sandbox_workspace_write]\nwritable_roots = [\"\(home.props.ipcDirectory.path)\"]\n"
         try home.writeConfiguration(original)
 
         // Act
@@ -236,7 +251,8 @@ struct CodexPackageInstallerTests {
         // Arrange
         let home = try CodexHomeFixture()
         defer { home.tearDown() }
-        let original = "[features]\nhooks = true  # keep hooks on\n"
+        let original =
+            "[features]\nhooks = true  # keep hooks on\n[sandbox_workspace_write]\nwritable_roots = [\"\(home.props.ipcDirectory.path)\"]\n"
         try home.writeConfiguration(original)
 
         // Act
@@ -247,27 +263,15 @@ struct CodexPackageInstallerTests {
         #expect(output.contains { $0.contains("already true") })
     }
 
-    /// A `[features]` line inside a multi-line string is indistinguishable from
-    /// a real header to a line scanner, and guessing wrong appends a second
-    /// `[features]` table, which TOML rejects as a duplicate.
-    @Test("a [features] line the scanner cannot place refuses the install and writes nothing")
-    func ambiguousFeaturesTableRefusesTheInstall() throws {
-        // Arrange
+    @Test("a features lookalike inside a multiline string is preserved and a real table is appended")
+    func multilineFeaturesLookalikeIsPreserved() throws {
         let home = try CodexHomeFixture()
         defer { home.tearDown() }
         let original = "instructions = \"\"\"\n[features]\nhooks = false\n\"\"\"\n"
         try home.writeConfiguration(original)
-
-        // Act / Assert
-        let configurationPath = home.codexHome.appending(path: "config.toml").path
-        #expect(
-            throws: AgentPackageInstallationError.featuresTableNotLocatable(configurationPath)
-        ) {
-            _ = try CodexPackageInstaller.install(home.props)
-        }
-        #expect(home.configuration() == original)
-        #expect(home.fileExists(relativePath: "hooks.json") == false)
-        #expect(home.fileExists(relativePath: "skills/agentstudio") == false)
+        _ = try CodexPackageInstaller.install(home.props)
+        #expect(home.configuration().hasPrefix(original))
+        #expect(home.configuration().contains("\n[features]\nhooks = true\n"))
     }
 
     @Test("uninstall on a machine that never installed leaves hooks.json byte-identical")
@@ -372,7 +376,7 @@ struct CodexPackageInstallerTests {
         let output = try CodexPackageInstaller.install(home.props)
 
         // Assert
-        let notices = output.filter { $0.hasPrefix("notice:") }
+        let notices = output.filter { $0.hasPrefix("notice: replacing") }
         #expect(notices == ["notice: replacing modified agentstudio entry SessionStart"])
         let restored = try #require(home.ownedGroup(event: .sessionStart))
         let handler = try #require((restored["hooks"] as? [[String: Any]])?.first)
@@ -418,7 +422,7 @@ struct CodexPackageInstallerTests {
         defer { home.tearDown() }
         let absentHome = home.root.appending(path: "not-here", directoryHint: .isDirectory)
         let absent = CodexPackageInstaller.Props(
-            codexHome: absentHome, locator: home.props.locator)
+            codexHome: absentHome, locator: home.props.locator, ipcDirectory: home.props.ipcDirectory)
 
         // Act / Assert
         #expect(throws: AgentPackageInstallationError.self) {

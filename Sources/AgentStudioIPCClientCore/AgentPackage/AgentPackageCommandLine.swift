@@ -92,6 +92,13 @@ package struct AgentPackageCommandRunner: Sendable {
     /// standard error and a zero exit, exactly like an unreadable payload.
     private static func runHook(provider: String, eventName: String, props: Props) -> Int32 {
         switch provider {
+        case CursorPackageInstaller.providerIdentifier:
+            return ProviderHookInvocation.runCursorHook(
+                .init(
+                    eventName: eventName, environment: props.environment, standardInput: props.standardInput,
+                    correlationIdProvider: props.correlationIdProvider,
+                    delivery: .liveIPC(exampleIdentifierProvider: props.exampleIdentifierProvider),
+                    standardErrorSink: props.standardErrorSink, deadline: props.deadline))
         case CodexPackageInstaller.providerIdentifier:
             return ProviderHookInvocation.runCodexHook(
                 ProviderHookInvocation.Props(
@@ -117,17 +124,36 @@ package struct AgentPackageCommandRunner: Sendable {
         props: Props,
         installs: Bool
     ) -> Int32 {
-        guard provider == CodexPackageInstaller.providerIdentifier else {
+        guard [CodexPackageInstaller.providerIdentifier, CursorPackageInstaller.providerIdentifier].contains(provider)
+        else {
             props.standardErrorSink("agentstudio package: unknown provider \(provider)")
             return 1
         }
         do {
             let locator = try AgentPackageResourceLocator.resolve(
                 executableURL: props.executableURL, environment: props.environment)
+            if provider == CursorPackageInstaller.providerIdentifier {
+                let installerProps = CursorPackageInstaller.Props(
+                    cursorHome: CursorPackageInstaller.cursorHome(explicitPath: providerHomePath), locator: locator)
+                let lines =
+                    installs
+                    ? try CursorPackageInstaller.install(installerProps)
+                    : try CursorPackageInstaller.uninstall(installerProps)
+                lines.forEach(props.standardOutputSink)
+                return 0
+            }
+            guard
+                let location = CLIOrderingStoreLocation.resolve(
+                    environment: props.environment, socketPath: props.environment["AGENTSTUDIO_IPC_SOCKET"])
+            else {
+                props.standardErrorSink("run this from an Agent Studio pane")
+                return 1
+            }
             let installerProps = CodexPackageInstaller.Props(
                 codexHome: CodexPackageInstaller.codexHome(
                     explicitPath: providerHomePath, environment: props.environment),
-                locator: locator
+                locator: locator,
+                ipcDirectory: location.url.deletingLastPathComponent()
             )
             let lines =
                 installs

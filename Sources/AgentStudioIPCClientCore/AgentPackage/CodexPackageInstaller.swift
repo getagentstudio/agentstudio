@@ -34,15 +34,18 @@ package enum CodexPackageInstaller {
     package struct Props {
         package let codexHome: URL
         package let locator: AgentPackageResourceLocator
+        package let ipcDirectory: URL
         package let fileManager: FileManager
 
         package init(
             codexHome: URL,
             locator: AgentPackageResourceLocator,
+            ipcDirectory: URL,
             fileManager: FileManager = .default
         ) {
             self.codexHome = codexHome
             self.locator = locator
+            self.ipcDirectory = ipcDirectory
             self.fileManager = fileManager
         }
 
@@ -89,15 +92,21 @@ package enum CodexPackageInstaller {
 
         // Everything is decided and validated before any byte is written, so a
         // rejected input leaves the Codex home exactly as it was.
-        let configuration = try plannedConfiguration(props)
+        let features = try plannedConfiguration(props)
+        let roots = try CodexWritableRootsEditor.updating(
+            features.contents, directory: props.ipcDirectory.path, configurationPath: props.configurationURL.path)
         var notices: [String] = []
         let hooks = try plannedHooks(props, scriptURL: scriptURL, notices: &notices)
 
         var output = notices
         try AtomicFileWriter.write(
-            Data(configuration.contents.utf8), to: props.configurationURL,
+            Data(roots.contents.utf8), to: props.configurationURL,
             fileManager: props.fileManager)
-        output.append(configurationLine(configuration.outcome))
+        output.append(configurationLine(features.outcome))
+        if roots.changed {
+            output.append("notice: added \(props.ipcDirectory.path) to sandbox_workspace_write.writable_roots")
+            output.append("dotfiles-managed configs need the same writable_roots entry")
+        }
         try AtomicFileWriter.write(hooks, to: props.hooksURL, fileManager: props.fileManager)
         output.append(
             "wrote \(CodexHookEventName.installedEvents.count) hook entries to \(props.hooksURL.path)")
@@ -121,6 +130,9 @@ package enum CodexPackageInstaller {
 
     package static func uninstall(_ props: Props) throws -> [String] {
         try requireWritableHome(props)
+        let roots = try CodexWritableRootsEditor.updating(
+            existingConfiguration(props), directory: props.ipcDirectory.path, removing: true,
+            configurationPath: props.configurationURL.path)
         var output: [String] = []
         var removedEntries = 0
         if let data = props.fileManager.contents(atPath: props.hooksURL.path) {
@@ -146,6 +158,11 @@ package enum CodexPackageInstaller {
         } else {
             output.append("no hook entries to remove at \(props.hooksURL.path)")
         }
+        if roots.changed {
+            try AtomicFileWriter.write(
+                Data(roots.contents.utf8), to: props.configurationURL, fileManager: props.fileManager)
+            output.append("removed \(props.ipcDirectory.path) from sandbox_workspace_write.writable_roots")
+        }
 
         let markerPath = props.skillDirectory.appending(path: installationMarkerName).path
         if props.fileManager.fileExists(atPath: markerPath) {
@@ -164,18 +181,18 @@ package enum CodexPackageInstaller {
     private static func plannedConfiguration(
         _ props: Props
     ) throws -> (contents: String, outcome: CodexFeatureTableEditor.Outcome) {
-        let existing: String
-        if let data = props.fileManager.contents(atPath: props.configurationURL.path) {
-            guard let decoded = String(data: data, encoding: .utf8) else {
-                throw AgentPackageInstallationError.configurationUnreadable(
-                    props.configurationURL.path)
-            }
-            existing = decoded
-        } else {
-            existing = ""
+        try CodexFeatureTableEditor.enablingHooks(
+            in: existingConfiguration(props), configurationPath: props.configurationURL.path)
+    }
+
+    private static func existingConfiguration(_ props: Props) throws -> String {
+        guard props.fileManager.fileExists(atPath: props.configurationURL.path) else { return "" }
+        guard let data = props.fileManager.contents(atPath: props.configurationURL.path),
+            let contents = String(data: data, encoding: .utf8)
+        else {
+            throw AgentPackageInstallationError.configurationUnreadable(props.configurationURL.path)
         }
-        return try CodexFeatureTableEditor.enablingHooks(
-            in: existing, configurationPath: props.configurationURL.path)
+        return contents
     }
 
     private static func plannedHooks(
