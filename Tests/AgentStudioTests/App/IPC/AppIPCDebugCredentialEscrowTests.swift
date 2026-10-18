@@ -79,9 +79,11 @@ struct AppIPCDebugCredentialEscrowTests {
         await harness.tearDown()
     }
 
-    @Test("old-shell title and line allocate ordering without a new-shell seed", arguments: ["title", "line"])
-    func oldShellWritesAfterStartup(verb: String) async throws {
-        let harness = try await SessionsVerticalHarness.make()
+    @Test(
+        "old-shell title and line allocate ordering without a new-shell seed",
+        arguments: ["title", "line"], [false, true])
+    func oldShellWritesAfterStartup(verb: String, separateSocketDirectory: Bool) async throws {
+        let harness = try await SessionsVerticalHarness.make(separateSocketDirectory: separateSocketDirectory)
         do {
             let result = await oldShellWrite(harness: harness, verb: verb)
             #expect(result.exitCode == 0, "old-shell stderr: \(result.standardError)")

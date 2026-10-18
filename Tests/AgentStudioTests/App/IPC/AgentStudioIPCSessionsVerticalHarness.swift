@@ -45,6 +45,7 @@ struct SessionsVerticalHarness {
     static func make(
         debugCredentialEscrowURL: URL? = nil,
         channel: AgentStudioIPCChannel = .debug,
+        separateSocketDirectory: Bool = false,
         prepareRuntimePaths: @Sendable (AgentStudioIPCPaths) throws -> Void = { _ in },
         installActivityClock: Bool = false,
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
@@ -102,7 +103,8 @@ struct SessionsVerticalHarness {
             )
             boundPaneToken = paneToken
 
-            let paths = try makeRuntimePaths(prepare: prepareRuntimePaths)
+            let paths = try makeRuntimePaths(
+                separateSocketDirectory: separateSocketDirectory, prepare: prepareRuntimePaths)
             let rootDirectory = paths.rootDirectory
             createdRootDirectory = rootDirectory
             appDelegate.appIPCPaths = paths
@@ -162,6 +164,7 @@ struct SessionsVerticalHarness {
     }
 
     private static func makeRuntimePaths(
+        separateSocketDirectory: Bool,
         prepare: (AgentStudioIPCPaths) throws -> Void
     ) throws -> AgentStudioIPCPaths {
         // A UUIDv7 timestamp prefix can collide between fixtures. Its random tail
@@ -171,7 +174,9 @@ struct SessionsVerticalHarness {
         try FileManager.default.createDirectory(
             at: rootDirectory, withIntermediateDirectories: false, attributes: [.posixPermissions: 0o700])
         do {
-            let paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootDirectory)
+            let paths = AgentStudioIPCPathResolver().paths(
+                rootDirectory: rootDirectory,
+                socketDirectory: separateSocketDirectory ? rootDirectory.appending(path: "ipc-socket") : nil)
             try prepare(paths)
             return paths
         } catch {

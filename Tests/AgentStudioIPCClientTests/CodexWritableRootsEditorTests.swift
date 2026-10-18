@@ -71,7 +71,7 @@ struct CodexWritableRootsEditorTests {
 
     @Test(
         "install discovers the store directory or refuses without writing", arguments: ["stable", "beta", "debug"],
-        ["explicit", "metadata", "missing", "mismatch"])
+        ["explicit", "metadata", "split", "missing", "mismatch"])
     func installUsesExistingStoreContext(channel: String, source: String) throws {
         let fixture = try CodexHomeFixture()
         defer { fixture.tearDown() }
@@ -79,7 +79,7 @@ struct CodexWritableRootsEditorTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let store = directory.appending(path: "cli.sqlite")
         let socket =
-            source == "explicit"
+            ["explicit", "split"].contains(source)
             ? fixture.root.appending(path: "separate-socket/agent.sock") : directory.appending(path: "agent.sock")
         var environment = ["AGENTSTUDIO_PACKAGE_ROOT": fixture.packageRoot.path]
         if source == "explicit" {
@@ -92,6 +92,13 @@ struct CodexWritableRootsEditorTests {
             try JSONSerialization.data(withJSONObject: [
                 "socketPath": source == "mismatch" ? "/other/socket" : socket.path, "channel": channel,
             ]).write(to: directory.appending(path: "runtime.json"))
+            if source == "split" {
+                try FileManager.default.createDirectory(
+                    at: socket.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try FileManager.default.createSymbolicLink(
+                    at: socket.deletingLastPathComponent().appending(path: "runtime.json"),
+                    withDestinationURL: directory.appending(path: "runtime.json"))
+            }
         }
         let errors = Mutex<[String]>([])
         let result = AgentPackageCommandRunner.run(
@@ -108,7 +115,11 @@ struct CodexWritableRootsEditorTests {
             #expect(!fixture.fileExists(relativePath: "skills/agentstudio"))
         } else {
             #expect(result == 0, "\(errors.withLock { $0 })")
-            #expect(fixture.configuration().contains(directory.path))
+            let expectedDirectory = source == "split" ? directory.resolvingSymlinksInPath() : directory
+            #expect(fixture.configuration().contains(expectedDirectory.path))
+            if source == "split" {
+                #expect(!fixture.configuration().contains(socket.deletingLastPathComponent().path))
+            }
             if source == "explicit" {
                 #expect(!FileManager.default.fileExists(atPath: store.path))
                 #expect(!fixture.configuration().contains(socket.deletingLastPathComponent().path))
