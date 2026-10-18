@@ -688,8 +688,7 @@ missing/invalid AGENTSTUDIO_CLI fails the guard rather than selecting another
 installed channel's executable. Installation manifests record exact owned additions, structural
 keys and last installed values, not tokens or message text. Install/upgrade
 preserves unrelated settings, avoids duplicate entries and reports conflicts.
-Uninstall removes only still-owned additions; user-modified values remain with
-an explicit conflict report. Missing executables/config access and inactive
+Missing executables/config access and inactive
 native trust are per-provider outcomes, not global success. Native trust cannot
 be bypassed by installation. pi/OpenCode are outside this package's first round.
 
@@ -704,9 +703,8 @@ app. The pane env therefore prepends `Contents/Helpers` to PATH and advertises
 that file as AGENTSTUDIO_CLI.
 Providers land in the order Codex CLI, Claude Code, Cursor CLI, each proven with
 that provider's real entry point before the next starts. The installer is a
-subcommand of the same CLI (`agentstudio package install|uninstall <provider>`).
-It writes only entries carrying a package-owned marker, removes only marked
-entries, and prints a one-line notice when a marked entry differs from the
+subcommand of the same CLI (`agentstudio package install <provider>`).
+It writes only entries carrying a package-owned marker and prints a one-line notice when a marked entry differs from the
 package's current value before overwriting it. No manifest of last-installed
 values and no conflict-diff engine exist in round 1.
 ## Call-path deltas
@@ -786,7 +784,7 @@ D7 PACKAGE — R-14, R-22
 Current: separate native integration setup
 Target: + native install table -> exact ownership manifest -> per-provider outcome
         + hooks invoke bundled CLI; skill invokes scalar projections
-        + idempotent upgrade/uninstall preserves unrelated or conflicting edits
+        + idempotent upgrade/reinstall preserves unrelated or conflicting edits
         = provider trust and lifecycle; report failure is fail-open
 Outcome: installed/active/qualified are separately observable.
 ```

@@ -15,7 +15,7 @@ import Testing
 struct CLIPaneContextStatusFallbackTests {
     @Test(
         "refused-token title and line allocate a pane epoch then reuse it", arguments: ["title", "line"],
-        ["claude", "codex"])
+        ["claude", "codex", "cursor"])
     func firstAndCachedEpochUsePaneWriter(verb: String, provider: String) async throws {
         try await withRefusedTokenPaneCLIContext(provider: provider) { context in
             let first = await runFallbackCLI(context, arguments: [verb, "first"])
@@ -259,7 +259,7 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "an older refused-token call cannot overwrite a newer title through an explicit or discovered store",
-        arguments: [false, true], ["claude", "codex"])
+        arguments: [false, true], ["claude", "codex", "cursor"])
     func heldOlderCallIsRejected(discoverStore: Bool, provider: String) async throws {
         try await withRefusedTokenPaneCLIContext(provider: provider) { context in
             var seedEnvironment = context.callEnvironment(store: nil, useStore: true)
@@ -307,9 +307,10 @@ private func withRefusedTokenPaneCLIContext<Output: Sendable>(
     try await withS5PaneCLIContext(bindSession: bindSession) { context in
         var environment = context.environment
         environment["AGENTSTUDIO_PANE_TOKEN"] = "unrecognized-pane-cli-fixture-token"
-        if provider == "codex" {
+        if provider == "codex" || provider == "cursor" {
             environment.removeValue(forKey: "CLAUDE_CODE_SESSION_ID")
-            environment["CODEX_THREAD_ID"] = context.writer.conversationId
+            environment[provider == "codex" ? "CODEX_THREAD_ID" : "CURSOR_CONVERSATION_ID"] =
+                context.writer.conversationId
         }
         return try await body(
             S5PaneCLIContext(
