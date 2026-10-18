@@ -33,6 +33,35 @@ struct RepoExplorerPaneContextLineTests {
         #expect(PaneContextChipTone.success.foregroundColor != AppStyles.General.Accent.primaryColor)
     }
 
+    static let connectionCopy: [(AgentConnectionRefusalReason, String)] = [
+        (.credentialNotRecognized, "Messages unavailable · restart this shell to reconnect"),
+        (.paneNotFound, "Agent identity unavailable · run this from an open Agent Studio pane"),
+        (.paneRetired, "Agent identity unavailable · this pane has closed"),
+        (.otherWorkspace, "Agent identity unavailable · run this from the matching workspace"),
+        (.intentRequiresToken, "Messages unavailable · restart this shell to reconnect"),
+        (.noSessionId, "Agent identity unavailable · the provider did not supply a session ID"),
+        (.undecodablePayload, "Agent identity unavailable · the provider hook report could not be read"),
+        (.queueFull, "Agent report not accepted · the app’s report queue is full"),
+        (.appUnavailable, "Agent request unavailable · Agent Studio could not be reached"),
+        (.deadlineExceeded, "Agent request unavailable · the app did not reply in time"),
+        (.orderingStoreUnavailable, "Agent Line unavailable · restart Agent Studio"),
+    ]
+
+    @Test(arguments: connectionCopy)
+    func connectionWarningNamesUnavailableCapability(reason: AgentConnectionRefusalReason, expected: String) {
+        let line = RepoExplorerPaneContextLine.connection(reason)
+
+        #expect(Set(Self.connectionCopy.map(\.0)) == Set(AgentConnectionRefusalReason.allCases))
+        #expect(line.text == expected)
+        #expect(!line.text.contains(reason.rawValue))
+        #expect(!line.text.contains("not connected"))
+        #expect(!line.text.hasSuffix("."))
+        #expect(line.tooltip.text.contains(expected))
+        #expect(line.tooltip.text.contains(reason.rawValue))
+        #expect(line.tone == .warning)
+        #expect(line.glyphMotion == .still)
+    }
+
     struct StatusOracle: Sendable {
         let status: AgentSessionStatus
         let text: String?
@@ -175,7 +204,7 @@ struct RepoExplorerPaneContextLineTests {
         #expect(drawerRow.variants?.compact.lines == drawerRow.variants?.expanded.lines)
     }
 
-    @Test("Needs you and the persistent connection reason remain separate lines in both row variants")
+    @Test("Needs you and the scoped connection warning remain separate lines in both row variants")
     func connectionIssueNeverHidesStatus() throws {
         let variants = RepoExplorerPaneRowVariants.make(
             title: "Pane", branchContext: nil, note: nil, isDrawer: false, branchStatus: nil, isActive: false,
@@ -189,8 +218,10 @@ struct RepoExplorerPaneContextLineTests {
             return
         }
         #expect(status.text == "Needs you · approval")
-        #expect(connection.text == "agent not connected · credentialNotRecognized")
-        #expect(connection.tooltip.text == connection.text)
+        #expect(connection.text == "Messages unavailable · restart this shell to reconnect")
+        #expect(
+            connection.tooltip.text
+                == "Messages unavailable · restart this shell to reconnect · credentialNotRecognized")
         #expect(connection.tone == .warning)
         #expect(variants.compact.fallbackLineCount == 4)
     }

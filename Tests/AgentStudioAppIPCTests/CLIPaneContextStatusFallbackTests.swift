@@ -74,6 +74,10 @@ struct CLIPaneContextStatusFallbackTests {
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
                     == .set(.init(status: .unknown, connectionIssue: .credentialNotRecognized)))
+            let reason = try #require(refusal?.reason)
+            let warning = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
+            #expect(warning.label == "Messages unavailable · restart this shell to reconnect")
+            #expect(warning.helpText.contains(reason.rawValue))
         }
     }
 
