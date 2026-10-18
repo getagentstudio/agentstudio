@@ -468,6 +468,17 @@ final class SessionsVerticalMainWindowController: MainWindowController {
     override var workspaceWindowId: UUID { registeredWorkspaceWindowId ?? super.workspaceWindowId }
 }
 
+enum SessionsVerticalFrameReaderError: Error, Equatable, CustomStringConvertible {
+    case connectionClosedBeforeCompleteFrame(bufferedByteCount: Int)
+
+    var description: String {
+        switch self {
+        case .connectionClosedBeforeCompleteFrame(let bufferedByteCount):
+            "connection closed before a complete frame; buffered bytes: \(bufferedByteCount)"
+        }
+    }
+}
+
 struct SessionsVerticalFrameReader {
     private var decoder = NDJSONFrameDecoder(maxFrameBytes: IPCFramePolicy.maximumResponseFrameBytes)
     private var queuedFrames: [String] = []
@@ -489,6 +500,10 @@ struct SessionsVerticalFrameReader {
                         continuation.resume(throwing: error)
                     }
                 }
+            }
+            guard !data.isEmpty else {
+                throw SessionsVerticalFrameReaderError.connectionClosedBeforeCompleteFrame(
+                    bufferedByteCount: decoder.pendingByteCount)
             }
             queuedFrames.append(contentsOf: try decoder.append(data))
             if !queuedFrames.isEmpty {
