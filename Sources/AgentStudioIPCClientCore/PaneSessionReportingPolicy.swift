@@ -7,4 +7,15 @@ enum PaneSessionReportingPolicy {
         environment["CLAUDE_CODE_SESSION_KIND"] == "bg"
             || environment["CLAUDE_JOB_DIR"].map { !$0.isEmpty } == true
     }
+
+    static func isPaneReportingMethod(_ command: String) -> Bool {
+        let method = PaneCLIVerb(rawValue: command)?.methodName ?? command
+        switch method {
+        case "pane.message.send", "pane.message.ask", "pane.line.set", "pane.title.set", "pane.writer.claimEpoch",
+            "session.event", "session.status", "session.refusal":
+            return true
+        default:
+            return false
+        }
+    }
 }

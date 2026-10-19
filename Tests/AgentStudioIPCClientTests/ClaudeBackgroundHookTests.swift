@@ -7,6 +7,24 @@ import Testing
 @Suite("Claude background hook suppression")
 struct ClaudeBackgroundHookTests {
     @Test(
+        "all raw pane reporting methods refuse before discovery",
+        arguments: [
+            "pane.message.send", "pane.message.ask", "pane.line.set", "pane.title.set", "pane.writer.claimEpoch",
+            "session.event", "session.status", "session.refusal",
+        ])
+    func rawReportingRefusalPrecedesDiscovery(method: String) {
+        do {
+            _ = try AgentStudioIPCClientArguments.parseGlobal(
+                [method], environment: ["CLAUDE_JOB_DIR": "/fixture/job"], standardInputProvider: { Data() })
+            Issue.record("Background report must be refused")
+        } catch let failure as PaneCLICommandFailure {
+            #expect(failure.description == "background session: not attached to a pane")
+        } catch {
+            Issue.record("Expected background refusal, got \(error)")
+        }
+    }
+
+    @Test(
         "background hooks ignore payload and pane authority",
         arguments: ["CLAUDE_JOB_DIR", "CLAUDE_CODE_SESSION_KIND"], [false, true])
     func backgroundHookDoesNotReadOrReport(marker: String, hasToken: Bool) {

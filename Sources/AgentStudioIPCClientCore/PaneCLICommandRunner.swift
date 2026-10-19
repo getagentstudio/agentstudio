@@ -32,7 +32,8 @@ struct PaneCLICommandRunner: Sendable {
     }
 
     private func reportCredentialRefusal(tokenOutcome: IPCSessionTokenOutcome) {
-        guard deadline.remainingBudget > .zero,
+        guard !PaneSessionReportingPolicy.isBackgroundSession(environment: props.environment),
+            deadline.remainingBudget > .zero,
             let claim = ProviderHookStatusReporting.paneClaim(environment: props.environment)
         else { return }
         // Report only the refusal through the existing status client. The
