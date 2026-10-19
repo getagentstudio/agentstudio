@@ -37,16 +37,18 @@ struct AgentStudioIPCCursorHookVerticalTests {
         await harness.tearDown()
     }
 
-    @Test("Cursor keeps the active main and binds a successor only after session end")
-    func cursorRespectsMainSessionAdmission() async throws {
+    @Test("Cursor prompt takes over without predecessor session end")
+    func cursorPromptReplacesMainSession() async throws {
         let harness = try await SessionsVerticalHarness.make()
         do {
             _ = try await runHook("beforeSubmitPrompt", conversation: "cursor-A", harness: harness)
+            _ = try await runHook("stop", conversation: "cursor-A", status: "completed", harness: harness)
             _ = try await runHook("beforeSubmitPrompt", conversation: "cursor-B", harness: harness)
             let active = try await harness.sessionQuery(paneId: harness.boundPaneId)
-            #expect(active.session?.conversationId == "cursor-A")
+            #expect(active.session?.conversationId == "cursor-B")
+            #expect(active.session?.status == .working(state: .active))
+            _ = try await runHook("stop", conversation: "cursor-A", status: "error", harness: harness)
             _ = try await runHook("sessionEnd", conversation: "cursor-A", harness: harness)
-            _ = try await runHook("beforeSubmitPrompt", conversation: "cursor-B", harness: harness)
             let successor = try await harness.sessionQuery(paneId: harness.boundPaneId)
             #expect(successor.session?.conversationId == "cursor-B")
             #expect(successor.session?.status == .working(state: .active))

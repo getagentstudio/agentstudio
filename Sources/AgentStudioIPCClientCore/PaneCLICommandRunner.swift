@@ -32,7 +32,8 @@ struct PaneCLICommandRunner: Sendable {
     }
 
     private func reportCredentialRefusal(tokenOutcome: IPCSessionTokenOutcome) {
-        guard deadline.remainingBudget > .zero,
+        guard !PaneSessionReportingPolicy.isBackgroundSession(environment: props.environment),
+            deadline.remainingBudget > .zero,
             let claim = ProviderHookStatusReporting.paneClaim(environment: props.environment)
         else { return }
         // Report only the refusal through the existing status client. The
@@ -410,11 +411,13 @@ struct PaneCLICommandRunner: Sendable {
 }
 
 enum PaneCLICommandFailure: Error {
+    case backgroundSession
     case orderingStoreUnavailable
     case stale(IPCPaneWriteStaleness)
 
     var description: String {
         switch self {
+        case .backgroundSession: "background session: not attached to a pane"
         case .orderingStoreUnavailable: "unavailable(orderingStoreUnavailable)"
         case .stale(let reason):
             switch reason {
