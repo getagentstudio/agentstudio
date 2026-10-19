@@ -96,5 +96,27 @@ fi
     exit 0
   fi
   git commit -m "Update ${CASK_FILE#Casks/} to ${TAG}"
-  git push origin main
+
+  max_push_attempts=3
+  for ((push_attempt = 1; push_attempt <= max_push_attempts; push_attempt++)); do
+    if push_output="$(LC_ALL=C git push --porcelain origin main 2>&1)"; then
+      printf '%s\n' "$push_output"
+      exit 0
+    else
+      push_status=$?
+    fi
+    printf '%s\n' "$push_output" >&2
+
+    # Porcelain status distinguishes a stale branch from auth or server failures.
+    case "$push_output" in
+      *$'\t[rejected] (fetch first)'*|*$'\t[rejected] (non-fast-forward)'*) ;;
+      *) exit "$push_status" ;;
+    esac
+    if [[ "$push_attempt" -eq "$max_push_attempts" ]]; then
+      echo "Homebrew tap push failed after $max_push_attempts attempts" >&2
+      exit "$push_status"
+    fi
+    echo "Homebrew tap changed upstream; rebasing before push attempt $((push_attempt + 1))" >&2
+    git pull --rebase origin main
+  done
 )
