@@ -43,9 +43,13 @@ struct BridgeProductWebKitHeldNativeFrame {
         let pump = BridgeProductSchemeFramePump(
             session: session, producerLease: lease, productAdmission: admission, acknowledgeLifecycle: { _ in true })
         do {
-            _ = try await session.enqueueRequiredProducerOpeningFrame(
+            let opening = try await session.enqueueRequiredProducerOpeningFrame(
                 for: lease, productAdmission: admission,
                 build: { _ in producerRegistryContentOpeningFrame(for: request) })
+            guard case .enqueued = opening else {
+                throw BridgeProductWebKitTwoPaneJourneyTestSupport.JourneyError.conditionFailed(
+                    "unrelated native content opening was not enqueued: \(opening)")
+            }
             guard case .frame(let delivery) = await pump.nextFrame() else {
                 throw BridgeProductWebKitTwoPaneJourneyTestSupport.JourneyError.conditionFailed(
                     "unrelated native content frame was not claimed")
