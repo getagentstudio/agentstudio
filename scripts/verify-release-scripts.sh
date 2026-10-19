@@ -321,6 +321,7 @@ cat > "$fixture_dir/origin.git/hooks/pre-receive" <<'REJECT_TAP_PUSH'
 #!/bin/bash
 echo attempt >> push-attempts
 echo "tap push denied by server policy" >&2
+printf '\t[rejected] (fetch first)\n' >&2
 exit 1
 REJECT_TAP_PUSH
 chmod +x "$fixture_dir/origin.git/hooks/pre-receive"
@@ -332,7 +333,14 @@ if HOMEBREW_TAP_LOCAL_PATH="$fixture_dir/updater" DRY_RUN=0 SKIP_BREW_STYLE=1 \
   exit 1
 fi
 assert_contains "$(<"$fixture_dir/update.log")" "tap push denied by server policy"
-test "$(wc -l < "$fixture_dir/origin.git/push-attempts" | tr -d ' ')" = 1
+assert_contains "$(<"$fixture_dir/update.log")" $'\t[rejected] (fetch first)'
+assert_contains "$(<"$fixture_dir/update.log")" "[remote rejected]"
+denied_push_attempts="$(wc -l < "$fixture_dir/origin.git/push-attempts" | tr -d ' ')"
+if [[ "$denied_push_attempts" != 1 ]]; then
+  cat "$fixture_dir/update.log" >&2
+  echo "server-denied tap push made $denied_push_attempts attempts; expected exactly 1" >&2
+  exit 1
+fi
 test "$(git -C "$fixture_dir/origin.git" rev-parse main)" = "$origin_before_denial"
 echo "tap server rejection passed: one attempt; Git error retained; origin unchanged"
 

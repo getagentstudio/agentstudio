@@ -99,7 +99,8 @@ fi
 
   max_push_attempts=3
   for ((push_attempt = 1; push_attempt <= max_push_attempts; push_attempt++)); do
-    if push_output="$(LC_ALL=C git push --porcelain origin main 2>&1)"; then
+    # Keep remote diagnostics on stderr; only stdout contains porcelain records.
+    if push_output="$(LC_ALL=C git push --porcelain origin main)"; then
       printf '%s\n' "$push_output"
       exit 0
     else
@@ -107,11 +108,18 @@ fi
     fi
     printf '%s\n' "$push_output" >&2
 
-    # Porcelain status distinguishes a stale branch from auth or server failures.
-    case "$push_output" in
-      *$'\t[rejected] (fetch first)'*|*$'\t[rejected] (non-fast-forward)'*) ;;
-      *) exit "$push_status" ;;
-    esac
+    retryable_push_rejection=0
+    while IFS= read -r push_record; do
+      case "$push_record" in
+        $'!\trefs/heads/main:refs/heads/main\t[rejected] (fetch first)'|\
+        $'!\trefs/heads/main:refs/heads/main\t[rejected] (non-fast-forward)')
+          retryable_push_rejection=1
+          ;;
+      esac
+    done <<< "$push_output"
+    if [[ "$retryable_push_rejection" != 1 ]]; then
+      exit "$push_status"
+    fi
     if [[ "$push_attempt" -eq "$max_push_attempts" ]]; then
       echo "Homebrew tap push failed after $max_push_attempts attempts" >&2
       exit "$push_status"
