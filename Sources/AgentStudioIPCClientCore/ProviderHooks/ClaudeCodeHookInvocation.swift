@@ -46,6 +46,7 @@ package enum ClaudeCodeHookInvocation {
         guard Array(inputs.arguments.prefix(commandPrefix.count)) == commandPrefix else {
             return nil
         }
+        guard !PaneSessionReportingPolicy.isBackgroundSession(environment: inputs.environment) else { return 0 }
         let deadline = inputs.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         let remainder = Array(inputs.arguments.dropFirst(commandPrefix.count))
         guard let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {

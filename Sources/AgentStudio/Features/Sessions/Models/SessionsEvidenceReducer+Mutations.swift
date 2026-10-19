@@ -26,6 +26,15 @@ extension SessionsEvidenceReducer {
         if let liveMain, liveMain.bindingGenerationId == ownMatching?.bindingGenerationId {
             return .accepted(binding: liveMain, disposition: .applied, supersededBinding: nil)
         }
+        // Cursor has no child-session hooks. A new prompt identifies the
+        // conversation now occupying the CLI, even when /clear omitted an end.
+        if hook.providerIdentifier == "cursor", hook.eventName == .turnStart,
+            liveMain == nil || liveMain?.providerIdentifier == "cursor"
+        {
+            return .accepted(
+                binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
+                disposition: .bound, supersededBinding: liveMain)
+        }
         if let ownMatching, ownMatching.status == .ended, hook.eventName != .sessionStart {
             return .accepted(binding: ownMatching, disposition: .recordedOnly, supersededBinding: nil)
         }
