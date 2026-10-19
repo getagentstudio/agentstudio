@@ -410,11 +410,13 @@ struct PaneCLICommandRunner: Sendable {
 }
 
 enum PaneCLICommandFailure: Error {
+    case backgroundSession
     case orderingStoreUnavailable
     case stale(IPCPaneWriteStaleness)
 
     var description: String {
         switch self {
+        case .backgroundSession: "background session: not attached to a pane"
         case .orderingStoreUnavailable: "unavailable(orderingStoreUnavailable)"
         case .stale(let reason):
             switch reason {
