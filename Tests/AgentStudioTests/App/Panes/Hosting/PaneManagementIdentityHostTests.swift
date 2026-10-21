@@ -52,7 +52,7 @@ struct PaneManagementIdentityHostTests {
             clock.advance(by: .seconds(60))
             let thirdDeadline = secondDeadline.advanced(by: .seconds(60))
             try await clock.registered(
-                thirdDeadline, pane: pane, currentInput: replacementInput, retiredInput: initialInput)
+                thirdDeadline, pane: pane, currentInput: replacementInput)
             #expect(ObjectIdentifier(fixture.host) == hostIdentity)
             try fixture.expectRendered(text: "1m", active: false)
 

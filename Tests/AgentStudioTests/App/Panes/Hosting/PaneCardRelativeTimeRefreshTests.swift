@@ -56,6 +56,38 @@ struct PaneCardRelativeTimeRefreshTests {
         }
     }
 
+    @Test("replacement barrier drains either clock-fact order before the next tick and hide", arguments: [true, false])
+    func replacementBarrierConsumesBothClockOrders(registrationFirst: Bool) async throws {
+        let clock = NativeCardTestClock()
+        let pane = UUIDv7.generate()
+        let oldInput = clock.now
+        let currentInput = oldInput.advanced(by: .seconds(10))
+        let deadline = currentInput.advanced(by: .seconds(60))
+        let nextDeadline = deadline.advanced(by: .seconds(60))
+        let oldTerminal = NativeCardClockFact.workerEnded(pane, oldInput, cancelled: true)
+        let registration = NativeCardClockFact.registered(deadline)
+
+        // Both sequences are valid across workers. Queue them explicitly so the
+        // regression cannot pass just because this runner schedules retirement first.
+        clock.facts.append(scope: 0, fact: .ended(0, oldInput.advanced(by: .seconds(60)), cancelled: true))
+        for fact in registrationFirst ? [registration, oldTerminal] : [oldTerminal, registration] {
+            clock.facts.append(scope: 0, fact: fact)
+        }
+        clock.facts.append(scope: 0, fact: .ended(1, deadline, cancelled: false))
+        clock.facts.append(scope: 0, fact: .registered(nextDeadline))
+        clock.facts.append(scope: 0, fact: .ended(2, nextDeadline, cancelled: true))
+        let currentTerminal = NativeCardClockFact.workerEnded(pane, currentInput, cancelled: true)
+        clock.facts.append(scope: 0, fact: currentTerminal)
+        clock.facts.append(scope: 1, fact: currentTerminal)
+        // Close the source before waiting: missing facts fail instead of hanging.
+        try await clock.retire()
+
+        try await clock.registered(deadline, pane: pane, currentInput: currentInput, retiredInput: oldInput)
+        try await clock.registered(nextDeadline, pane: pane, currentInput: currentInput)
+        try await clock.cancelledWorker(pane: pane, input: currentInput)
+        try await clock.finish()
+    }
+
     @Test("retiring the relative-time owner cancels its worker")
     func deinitializationCancelsWorker() async throws {
         let clock = NativeCardTestClock()

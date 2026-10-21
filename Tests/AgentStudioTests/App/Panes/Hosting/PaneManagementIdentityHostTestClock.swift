@@ -142,15 +142,20 @@ final class NativeCardTestClock: Clock {
     func registered(
         _ deadline: Instant, pane: UUID, currentInput: Instant, retiredInput: Instant? = nil
     ) async throws {
-        while true {
+        // Owner and clock scopes have independent cursors. A replacement is ready
+        // only after this scope has consumed both facts, in either arrival order.
+        var deadlineRegistered = false
+        var retiredWorkerEnded = retiredInput == nil
+        while !deadlineRegistered || !retiredWorkerEnded {
             let fact = try await facts.expectNext(in: 0, where: { _ in true }, "deadline or worker terminal outcome")
             switch fact {
-            case .registered(let actual) where actual == deadline:
-                return
+            case .registered(let actual) where actual == deadline && !deadlineRegistered:
+                deadlineRegistered = true
             case .ended:
                 break
-            case .workerEnded(let actualPane, let input, true) where actualPane == pane && input == retiredInput:
-                break
+            case .workerEnded(let actualPane, let input, true)
+            where actualPane == pane && input == retiredInput && !retiredWorkerEnded:
+                retiredWorkerEnded = true
             case .workerEnded(_, let input, _) where input == currentInput:
                 throw NativeCardClockFailure(description: "Current worker ended before registering its deadline")
             default:
