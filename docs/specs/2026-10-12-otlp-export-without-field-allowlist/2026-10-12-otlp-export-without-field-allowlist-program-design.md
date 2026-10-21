@@ -78,19 +78,19 @@ The list is derived from the current emitters in source, not from a metric-store
 | --- | --- |
 | A flag, sequence or unlisted number becomes a metric series | Rejected at the sample mapping: a name not on the list produces no sample. Enforced by an automated test (V3). |
 | Queue statistics labeled per event | The queue keys are handled before the per-event sample path and emitted without the `event` dimension (automated test, V3). |
-| Export to a non-loopback address | Unchanged guard in the trace configuration, for every signal (existing tests, V2). Redirects: a known residual, because swift-otel follows up to 20. Recorded in R2 with its owner decision. |
+| Export to a non-loopback address | Unchanged guard in the trace configuration, for every signal (existing tests, V2). Redirects: an accepted residual (owner, 2026-10-21; R2 is endpoint-only), because swift-otel follows up to 20 from a configuration the app cannot reach. |
 
 ## Failure
 
 - **Local stack unreachable:** unchanged. Export is fail-open, and JSONL still writes.
-- **Collector redaction:** unchanged. It still removes token, secret, password and payload patterns. This design relies on loopback-only export, not on redaction.
+- **Collector redaction:** unchanged. It still removes token, secret, password and payload patterns. This design relies on the loopback endpoint check, not on redaction.
 
 ## How each requirement works and how it is proven
 
 | U | R | E | Owner | Interface | Shape and home | State | Failure | Proof |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | U1, U3 | R1: every recorded attribute appears unchanged in the encoded export (app boundary) | E1, E2 | `AgentStudioOTLPTraceProjection` | `project(record)` (existing entry) | `AgentStudioOTLPProjectedLogRecord`, AnyValue incl. arrays | stateless | none: no filter left to fail | V1 projection tests per family; V4 real launch log query |
-| U3 | R2: loopback-only export | E6 | `AgentStudioTraceConfiguration` | endpoint validation (existing) | endpoint config (existing) | unchanged | non-loopback → JSONL only (existing) | V2 existing configuration tests |
+| U3 | R2: loopback-only configured endpoint | E6 | `AgentStudioTraceConfiguration` | endpoint validation (existing) | endpoint config (existing) | unchanged | non-loopback → JSONL only (existing) | V2 existing configuration tests |
 | U3 | R3: atoms opt-in unchanged | E1 | `AgentStudioTraceTag` | wildcard parsing (existing) | tag set (existing) | unchanged | — | V2 existing tests |
 | U2, U3 | R4: samples only for listed measurements and queue stats | E3, E4, E5 | `AgentStudioOTLPPerformanceMetrics` | sample mapping gated by the measurement list | `Set<String>` list; `AgentStudioOTLPPerformanceMetricSample` | stateless | unlisted → no sample | V3 metric tests; V4 series census |
 | U2, U4 | R5: hand-picked labels; Panes and activity admitted | E3 | metric taxonomy | dimension selection (existing) | `SidebarMetricSurface` + group-mode values (modified) | stateless | — | V3 |

@@ -14,7 +14,7 @@ Today, the app filters every log field against hand-kept lists before export. Ab
 
 The same filter also feeds metrics. Metrics derive samples from the filtered fields, and some carry noise: flag and sequence gauges, plus three trace-queue statistics copied onto every event's series (372 of 3,581 series).
 
-The filter protects nothing that matters here. Export is loopback-only, enforced by the trace configuration. The local JSONL trace already holds every unfiltered field. The shared collector separately redacts token, secret, password and payload patterns.
+The filter protects nothing that matters here. The configured export endpoint must be loopback, enforced by the trace configuration (redirects are not checked; see Specification R2). The local JSONL trace already holds every unfiltered field. The shared collector separately redacts token, secret, password and payload patterns.
 
 ## What the owner asked for
 
