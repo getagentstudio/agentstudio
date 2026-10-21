@@ -48,11 +48,10 @@ extension SessionsProviderTraceIntegrationTests {
                 let read = try await adapter.readSessionState(paneId: pane, params: .init(handle: "self"))
                 #expect(read.sourceHealth == .unbound)
                 #expect(read.session == nil)
-                #expect(read.lastRefusal?.reason == .credentialNotRecognized)
-                #expect(read.lastRefusal?.intent == .status)
+                #expect(read.lastRefusal == nil)
                 #expect(
                     statusMailbox.takeBatch()[.init(existingUUID: pane)]
-                        == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
+                        == .set(.init(status: .needsYou(.approval))))
                 let context = try await ingestion.repository.statusContext(paneId: pane)
                 #expect(context.bindings.isEmpty)
                 #expect(context.evidence.isEmpty)
@@ -80,8 +79,8 @@ extension SessionsProviderTraceIntegrationTests {
         }
     }
 
-    @Test("a bound pane's unverified hook records E7 but changes neither status nor activity")
-    func boundUnverifiedHookRecordsRefusalWithoutActivity() async throws {
+    @Test("a bound pane's unverified hook changes neither warning, status nor activity")
+    func boundUnverifiedHookIsQuietWithoutActivity() async throws {
         let fixture = try RecordedStatusDatabase()
         defer { try? FileManager.default.removeItem(at: fixture.root) }
         let pane = UUIDv7.generate()
@@ -115,8 +114,7 @@ extension SessionsProviderTraceIntegrationTests {
                 #expect(reply.disposition == .admitted)
                 #expect(activity.withLock { $0.count } == before)
                 let state = try await adapter.readSessionState(paneId: pane, params: .init(handle: "self"))
-                #expect(state.lastRefusal?.reason == .credentialNotRecognized)
-                #expect(state.lastRefusal?.count == 1)
+                #expect(state.lastRefusal == nil)
                 #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
                 #expect(statusMailbox.takeBatch().isEmpty)
                 #expect(await ingestion.unverifiedStatusRuntime.panes[pane] == nil)
