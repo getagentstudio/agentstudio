@@ -24,7 +24,7 @@ struct PaneManagementIdentityRenderingArchitectureTests {
         #expect(strip.contains("RepoExplorerPaneContextLineView("))
         #expect(strip.contains("ViewThatFits(in: .horizontal)"))
         #expect(strip.contains(".textSelection(.enabled)"))
-        #expect(strip.contains(".truncationMode(.middle)"))
+        #expect(!strip.contains(".truncationMode(.middle)"))
         #expect(!strip.contains("readSessionStatus("))
         #expect(strip.contains("await sessionIdentity.refresh("))
         #expect(strip.contains(".onDisappear { sessionIdentity.close() }"))
