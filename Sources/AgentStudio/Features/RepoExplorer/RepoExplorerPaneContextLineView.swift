@@ -10,13 +10,25 @@ package struct RepoExplorerPaneContextLineView: View {
     let line: RepoExplorerPaneContextLine
     let isAgentLine: Bool
     let octiconLoader: OcticonLoader
+    let showsTooltip: Bool
 
-    package init(line: RepoExplorerPaneContextLine, isAgentLine: Bool, octiconLoader: OcticonLoader) {
+    package init(
+        line: RepoExplorerPaneContextLine, isAgentLine: Bool, octiconLoader: OcticonLoader, showsTooltip: Bool = true
+    ) {
         self.line = line
         self.isAgentLine = isAgentLine
         self.octiconLoader = octiconLoader
+        self.showsTooltip = showsTooltip
     }
     package var body: some View {
+        if showsTooltip {
+            content.controlHelp(line.tooltip)
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
             line.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.Shell.Sidebar.branchIconSize)
                 .opacity(
@@ -49,7 +61,6 @@ package struct RepoExplorerPaneContextLineView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .opacity(line.stale ? AppStyles.General.Foreground.secondary : 1)
-        .controlHelp(line.tooltip)
     }
 
     private var opacityPulseIsActive: Bool {

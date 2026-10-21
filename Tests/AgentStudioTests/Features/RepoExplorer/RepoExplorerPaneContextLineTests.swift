@@ -57,7 +57,7 @@ struct RepoExplorerPaneContextLineTests {
         #expect(!line.text.contains("not connected"))
         #expect(!line.text.hasSuffix("."))
         #expect(line.tooltip.text.contains(expected))
-        #expect(line.tooltip.text.contains(reason.rawValue))
+        #expect(!line.tooltip.text.contains(reason.rawValue))
         #expect(line.tone == .warning)
         #expect(line.glyphMotion == .still)
     }
@@ -221,7 +221,7 @@ struct RepoExplorerPaneContextLineTests {
         #expect(connection.text == "Messages unavailable · restart this shell to reconnect")
         #expect(
             connection.tooltip.text
-                == "Messages unavailable · restart this shell to reconnect · credentialNotRecognized")
+                == "Messages unavailable · restart this shell to reconnect")
         #expect(connection.tone == .warning)
         #expect(variants.compact.fallbackLineCount == 4)
     }

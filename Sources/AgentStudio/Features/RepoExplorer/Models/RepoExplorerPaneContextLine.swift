@@ -16,7 +16,7 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
     package let glyphMotion: PaneLineGlyphMotion
     package let stale: Bool
 
-    static func agent(_ line: AgentLineDetail) -> Self {
+    package static func agent(_ line: AgentLineDetail) -> Self {
         let spec = LocalActionSpec.showPaneAgentLine(line.work).actionSpec
         let tone: PaneContextChipTone =
             switch line.work {

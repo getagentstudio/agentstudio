@@ -76,6 +76,7 @@ package struct DrawerOverlay: View {
     let pinPaneAction: TargetedCommandControlAction?
     let paneSurfaceActions: [PaneSurfaceToolbarAction]
     let paneContextActions: [PaneSurfaceToolbarAction]
+    let middleContent: AnyView?
 
     package init(
         octiconLoader: OcticonLoader,
@@ -86,7 +87,8 @@ package struct DrawerOverlay: View {
         pinPaneAction: TargetedCommandControlAction? = nil,
         trailingActions: TrailingActions?,
         paneSurfaceActions: [PaneSurfaceToolbarAction] = [],
-        paneContextActions: [PaneSurfaceToolbarAction] = []
+        paneContextActions: [PaneSurfaceToolbarAction] = [],
+        middleContent: AnyView? = nil
     ) {
         self.octiconLoader = octiconLoader
         self.drawer = drawer
@@ -97,6 +99,7 @@ package struct DrawerOverlay: View {
         self.trailingActions = trailingActions
         self.paneSurfaceActions = paneSurfaceActions
         self.paneContextActions = paneContextActions
+        self.middleContent = middleContent
     }
 
     package var body: some View {
@@ -111,7 +114,8 @@ package struct DrawerOverlay: View {
                 pinPaneAction: pinPaneAction,
                 trailingActions: trailingActions,
                 paneSurfaceActions: paneSurfaceActions,
-                paneContextActions: paneContextActions
+                paneContextActions: paneContextActions,
+                middleContent: middleContent
             )
             .popover(
                 isPresented: trailingActions?.inboxPopoverPresented ?? .constant(false),

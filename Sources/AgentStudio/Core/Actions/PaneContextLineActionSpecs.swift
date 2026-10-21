@@ -35,7 +35,7 @@ enum PaneContextLineActionSpecs {
             case .orderingStoreUnavailable:
                 "Agent Line unavailable · restart Agent Studio"
             }
-        return ActionSpec(label: text, helpText: "\(text) · \(reason.rawValue)", icon: .system(.flag))
+        return ActionSpec(label: text, helpText: text, icon: .system(.flag))
     }
 
     static func sessionStatus(_ status: AgentSessionStatus) -> ActionSpec {
