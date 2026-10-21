@@ -77,7 +77,8 @@ struct CLIPaneContextStatusFallbackTests {
             let reason = try #require(refusal?.reason)
             let warning = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
             #expect(warning.label == "Messages unavailable · restart this shell to reconnect")
-            #expect(warning.helpText.contains(reason.rawValue))
+            #expect(warning.helpText == warning.label)
+            #expect(!warning.helpText.contains(reason.rawValue))
         }
     }
 

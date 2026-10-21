@@ -49,6 +49,7 @@ struct DrawerIconBar: View {
     let trailingActions: DrawerOverlay.TrailingActions?
     let paneSurfaceActions: [PaneSurfaceToolbarAction]
     let paneContextActions: [PaneSurfaceToolbarAction]
+    let middleContent: AnyView?
 
     @State private var isAddHovered = false
     @State private var isToggleHovered = false
@@ -68,7 +69,8 @@ struct DrawerIconBar: View {
         pinPaneAction: TargetedCommandControlAction? = nil,
         trailingActions: DrawerOverlay.TrailingActions?,
         paneSurfaceActions: [PaneSurfaceToolbarAction] = [],
-        paneContextActions: [PaneSurfaceToolbarAction] = []
+        paneContextActions: [PaneSurfaceToolbarAction] = [],
+        middleContent: AnyView? = nil
     ) {
         self.octiconLoader = octiconLoader
         self.pinPaneAction = pinPaneAction
@@ -76,6 +78,7 @@ struct DrawerIconBar: View {
         self.trailingActions = trailingActions
         self.paneSurfaceActions = paneSurfaceActions
         self.paneContextActions = paneContextActions
+        self.middleContent = middleContent
     }
 
     private static let tooltipCoordinateSpaceName = "drawerTooltipBar"
@@ -204,7 +207,17 @@ struct DrawerIconBar: View {
                             )
                         }
 
-                        Spacer()
+                        // An overlay cannot contribute an intrinsic width to either control group.
+                        Spacer(minLength: 0)
+                            .frame(maxHeight: .infinity)
+                            .overlay(alignment: .leading) {
+                                middleContent
+                                    .frame(
+                                        maxWidth: AppStyles.Shell.DrawerToolbar.agentLineMaxWidth, alignment: .leading
+                                    )
+                                    .padding(.horizontal, AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
+                            }
+                            .clipped()
 
                         if let trailingActions {
                             HStack(spacing: 0) {

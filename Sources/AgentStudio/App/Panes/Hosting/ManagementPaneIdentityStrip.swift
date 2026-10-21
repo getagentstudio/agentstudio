@@ -19,50 +19,21 @@ struct ManagementPaneIdentityStrip: View {
     var isDrawerPane = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(lines, id: \.kind) { line in
-                switch line {
-                case .title(let text):
-                    RepoExplorerPaneTitleLineView(
-                        text: text, isDrawerPane: isDrawerPane, octiconLoader: octiconLoader)
-                case .note(let text):
-                    SidebarMetadataLine(icon: .systemName("long.text.page.and.pencil"), text: text)
-                case .agentLine(let line):
-                    RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
-                case .sessionStatus(let line), .connectionIssue(let line):
-                    RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
-                case .worktreeBranch:
-                    EmptyView()
-                }
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: AppStyles.General.Spacing.loose) {
+                informationColumn
+                    .frame(
+                        minWidth: AppStyles.Shell.Sidebar.paneInfoColumnMinimumWidth, maxWidth: .infinity,
+                        alignment: .leading)
+                identityGrid
+                    .fixedSize(horizontal: true, vertical: true)
+                    .frame(
+                        minWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
+                        alignment: .leading)
             }
-            ViewThatFits(in: .horizontal) {
-                Grid(
-                    alignment: .leading, horizontalSpacing: AppStyles.General.Spacing.loose,
-                    verticalSpacing: AppStyles.General.Spacing.standard
-                ) {
-                    identityPair("repo", "branch")
-                    identityPair("worktree", "cwd")
-                    identityPair("session", "pane")
-                    if let fallback = context.identityRows.first(where: { $0.id == "fallback" }) {
-                        GridRow { identityRow(fallback).gridCellColumns(2) }
-                    }
-                }
-                .frame(
-                    minWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
-                    idealWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
-                    maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
-                    ForEach(context.identityRows) { row in identityRow(row) }
-                }
-            }
-            if let statusChips = context.statusChips,
-                SidebarGitStatusChips.hasContent(branchStatus: statusChips.branchStatus, usesPanesLoadingChip: true)
-            {
-                SidebarStatusChipRow(isPendingPullRequestFacts: false) {
-                    SidebarGitStatusChips(
-                        branchStatus: statusChips.branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true
-                    )
-                }
+            VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
+                informationColumn
+                identityColumn
             }
         }
         .padding(.horizontal, 18)
@@ -83,12 +54,75 @@ struct ManagementPaneIdentityStrip: View {
         .background {
             AccessibilityLabelBridge(
                 identifier: "paneManagement.identityStrip",
-                label: context.identityRows.map(\.text).joined(separator: ", ")
+                label: informationAccessibilityLabels.joined(separator: ", ")
             )
         }
         .padding(.horizontal, AppStyles.General.Spacing.loose)
         .padding(.vertical, AppStyles.General.Spacing.loose)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var informationAccessibilityLabels: [String] {
+        let lineLabels = lines.map { line in
+            switch line {
+            case .title(let text), .note(let text), .worktreeBranch(let text): text
+            case .agentLine(let value), .sessionStatus(let value), .connectionIssue(let value): value.text
+            }
+        }
+        return lineLabels + context.identityRows.map(accessibilityLabel(for:))
+    }
+
+    private var informationColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(lines, id: \.kind) { line in
+                switch line {
+                case .title(let text):
+                    RepoExplorerPaneTitleLineView(
+                        text: text, isDrawerPane: isDrawerPane, octiconLoader: octiconLoader)
+                case .note(let text):
+                    SidebarMetadataLine(icon: .systemName("long.text.page.and.pencil"), text: text)
+                case .agentLine(let line):
+                    RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
+                case .sessionStatus(let line), .connectionIssue(let line):
+                    RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
+                case .worktreeBranch:
+                    EmptyView()
+                }
+            }
+            if let statusChips = context.statusChips,
+                SidebarGitStatusChips.hasContent(branchStatus: statusChips.branchStatus, usesPanesLoadingChip: true)
+            {
+                SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+                    SidebarGitStatusChips(
+                        branchStatus: statusChips.branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true
+                    )
+                }
+            }
+        }
+    }
+
+    private var identityColumn: some View {
+        ViewThatFits(in: .horizontal) {
+            identityGrid.fixedSize(horizontal: true, vertical: true)
+            VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
+                ForEach(context.identityRows) { row in identityRow(row) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var identityGrid: some View {
+        Grid(
+            alignment: .leading, horizontalSpacing: AppStyles.General.Spacing.loose,
+            verticalSpacing: AppStyles.General.Spacing.standard
+        ) {
+            identityPair("repo", "branch")
+            identityPair("worktree", "cwd")
+            identityPair("session", "pane")
+            if let fallback = context.identityRows.first(where: { $0.id == "fallback" }) {
+                GridRow { identityRow(fallback).gridCellColumns(2) }
+            }
+        }
     }
 
     @ViewBuilder
@@ -124,8 +158,7 @@ struct ManagementPaneIdentityStrip: View {
             Text(row.text)
                 .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium))
                 .foregroundStyle(.primary.opacity(0.92))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
