@@ -380,6 +380,7 @@ package enum AppStyles {
                     srgbRed: 29.0 / 255.0, green: 31.0 / 255.0, blue: 35.0 / 255.0, alpha: 1.0
                 ))
             package static let trailingClusterSpacing: CGFloat = AppStyles.General.Spacing.standard
+            package static let agentLineMaxWidth: CGFloat = 360
             package static let labeledActionTrailingPadding: CGFloat = AppStyles.General.Spacing.standard
             package static let dividerHeight: CGFloat = 16
             package static let dividerHorizontalPadding = AppStyles.General.Spacing.standard

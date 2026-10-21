@@ -212,6 +212,9 @@ struct DrawerIconBar: View {
                             .frame(maxHeight: .infinity)
                             .overlay(alignment: .leading) {
                                 middleContent
+                                    .frame(
+                                        maxWidth: AppStyles.Shell.DrawerToolbar.agentLineMaxWidth, alignment: .leading
+                                    )
                                     .padding(.horizontal, AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
                             }
                             .clipped()

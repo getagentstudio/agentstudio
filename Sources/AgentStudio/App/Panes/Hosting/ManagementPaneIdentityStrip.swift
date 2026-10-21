@@ -25,9 +25,10 @@ struct ManagementPaneIdentityStrip: View {
                     .frame(
                         minWidth: AppStyles.Shell.Sidebar.paneInfoColumnMinimumWidth, maxWidth: .infinity,
                         alignment: .leading)
-                identityColumn
+                identityGrid
+                    .fixedSize(horizontal: true, vertical: true)
                     .frame(
-                        minWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth, maxWidth: .infinity,
+                        minWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
                         alignment: .leading)
             }
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
@@ -102,23 +103,24 @@ struct ManagementPaneIdentityStrip: View {
 
     private var identityColumn: some View {
         ViewThatFits(in: .horizontal) {
-            Grid(
-                alignment: .leading, horizontalSpacing: AppStyles.General.Spacing.loose,
-                verticalSpacing: AppStyles.General.Spacing.standard
-            ) {
-                identityPair("repo", "branch")
-                identityPair("worktree", "cwd")
-                identityPair("session", "pane")
-                if let fallback = context.identityRows.first(where: { $0.id == "fallback" }) {
-                    GridRow { identityRow(fallback).gridCellColumns(2) }
-                }
-            }
-            .frame(
-                minWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
-                idealWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
-                maxWidth: .infinity, alignment: .leading)
+            identityGrid.fixedSize(horizontal: true, vertical: true)
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
                 ForEach(context.identityRows) { row in identityRow(row) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var identityGrid: some View {
+        Grid(
+            alignment: .leading, horizontalSpacing: AppStyles.General.Spacing.loose,
+            verticalSpacing: AppStyles.General.Spacing.standard
+        ) {
+            identityPair("repo", "branch")
+            identityPair("worktree", "cwd")
+            identityPair("session", "pane")
+            if let fallback = context.identityRows.first(where: { $0.id == "fallback" }) {
+                GridRow { identityRow(fallback).gridCellColumns(2) }
             }
         }
     }
@@ -156,8 +158,7 @@ struct ManagementPaneIdentityStrip: View {
             Text(row.text)
                 .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium))
                 .foregroundStyle(.primary.opacity(0.92))
-                .lineLimit(1)
-                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }

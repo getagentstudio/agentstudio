@@ -13,7 +13,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextToolbarRenderingTests {
-    @Test("Agent Line uses the sidebar's keyed source and leaves both button groups fixed", arguments: [480.0, 900.0])
+    @Test("Agent Line uses the sidebar's keyed source and leaves both button groups fixed", arguments: [480.0, 1000.0])
     func agentLineOnlyUsesRemainingWidth(width: Double) async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let pane = PaneId.generateUUIDv7()
@@ -25,8 +25,10 @@ struct PaneContextToolbarRenderingTests {
             var baselineHeight: CGFloat?
             var emptyTextPixels: Data?
             var fixedGroupPixels: [Data]?
+            var emptyBeyondCapPixels: Data?
             for summary in [
-                nil, "Checking toolbar spacing", String(repeating: "Wide agent work description ", count: 20),
+                nil, "Checking toolbar spacing", String(repeating: "W", count: 200),
+                String(repeating: "Wide agent work description ", count: 20),
             ] {
                 let line = summary.map {
                     AgentLineDetail(
@@ -70,12 +72,23 @@ struct PaneContextToolbarRenderingTests {
                         in: mounted.host,
                         rect: CGRect(x: middleEnd, y: 0, width: width - middleEnd, height: barHeight)),
                 ]
+                let capEnd = min(middleEnd, middleStart + 360 + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
+                let beyondCapPixels =
+                    middleEnd > capEnd
+                    ? try pixels(
+                        in: mounted.host,
+                        rect: CGRect(x: capEnd, y: 0, width: middleEnd - capEnd, height: barHeight))
+                    : Data()
                 if summary != nil {
                     #expect(textPixels != (try #require(emptyTextPixels)), "Agent Line text must paint in the middle")
                     #expect(groupPixels == (try #require(fixedGroupPixels)), "Agent Line must not paint over controls")
+                    #expect(
+                        beyondCapPixels == (try #require(emptyBeyondCapPixels)),
+                        "Agent Line ink must stop at 360 points")
                 } else {
                     emptyTextPixels = textPixels
                     fixedGroupPixels = groupPixels
+                    emptyBeyondCapPixels = beyondCapPixels
                 }
                 let labels = accessibilityLabels(in: mounted.host)
                 #expect(!labels.contains("Working"))
@@ -90,6 +103,116 @@ struct PaneContextToolbarRenderingTests {
             }
             atoms.paneContextPresentation.remove([pane])
         }
+    }
+
+    @Test("lineless cards paint complete identity values", arguments: [1340.0, 2000.0])
+    func cardDoesNotTruncateIdentities(width: Double) throws {
+        let pane = try #require(UUID(uuidString: "01A15E24-74DE-761D-A3FA-959D7FBCA58C"))
+        let rows: [PaneManagementIdentityRow] = [
+            .init(id: "repo", icon: .system("folder"), text: "alpha-repo", toolTip: nil),
+            .init(id: "worktree", icon: .system("folder"), text: "alpha-repo", toolTip: nil),
+            .init(id: "branch", icon: .system("folder"), text: "main", toolTip: nil),
+            .init(id: "cwd", icon: .system("folder"), text: "alpha-repo", toolTip: nil),
+            .init(id: "session", icon: .system("folder"), text: "codex · known-conversation", toolTip: nil),
+            .init(id: "pane", icon: .system("folder"), text: pane.uuidString, toolTip: nil),
+        ]
+        let context = PaneManagementContext(
+            paneId: pane, identityRows: rows, statusChips: nil, targetPath: nil, showsIdentityBlock: true)
+        let mounted = mountCard(
+            AnyView(ManagementPaneIdentityStrip(context: context, octiconLoader: makeTestOcticonLoader())), width: width
+        )
+        defer { mounted.window.orderOut(nil) }
+        let rendered = try ink(in: mounted.host)
+        for row in rows {
+            let reference = mountCard(
+                AnyView(
+                    Text(row.text)
+                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium))
+                        .foregroundStyle(Color.white.opacity(0.92))
+                        .textSelection(.enabled)
+                        .fixedSize()
+                ), width: nil)
+            defer { reference.window.orderOut(nil) }
+            #expect(
+                containsTextInk(try ink(in: reference.host), in: rendered),
+                "Complete \(row.id) value must be visibly rendered at \(width) points")
+        }
+    }
+
+    private func mountCard(_ content: AnyView, width: CGFloat?) -> MountedToolbar {
+        let host = NSHostingView(
+            rootView: AnyView(content.frame(width: width).background(Color.black).environment(\.colorScheme, .dark)))
+        host.frame = CGRect(origin: .zero, size: host.fittingSize)
+        let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.contentView = host
+        window.orderFront(nil)
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        return MountedToolbar(host: host, window: window)
+    }
+
+    private func ink(in host: NSView) throws -> (width: Int, height: Int, mask: [Bool]) {
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
+        host.cacheDisplay(in: host.bounds, to: bitmap)
+        let image = try #require(bitmap.cgImage)
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try #require(
+                CGContext(
+                    data: buffer.baseAddress, width: image.width, height: image.height,
+                    bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        let mask = stride(from: 0, to: bytes.count, by: 4).map {
+            bytes[$0] > 160 && bytes[$0 + 1] > 160 && bytes[$0 + 2] > 160
+        }
+        return (image.width, image.height, mask)
+    }
+
+    private func containsTextInk(
+        _ reference: (width: Int, height: Int, mask: [Bool]),
+        in rendered: (width: Int, height: Int, mask: [Bool])
+    ) -> Bool {
+        let points = reference.mask.indices.filter { reference.mask[$0] }.map {
+            (x: $0 % reference.width, y: $0 / reference.width)
+        }
+        guard !points.isEmpty, reference.width <= rendered.width, reference.height <= rendered.height else {
+            return false
+        }
+        // Text can land on a different subpixel phase in the grid than in its intrinsic-width reference.
+        // Allow one raster pixel around each stroke, while requiring almost the entire full value.
+        let allowedMisses = points.count / 20
+        let firstPoint = points[0]
+        for originY in 0...(rendered.height - reference.height) {
+            for originX in 0...(rendered.width - reference.width) {
+                guard rendered.mask[(originY + firstPoint.y) * rendered.width + originX + firstPoint.x] else {
+                    continue
+                }
+                var misses = 0
+                for point in points {
+                    let pixelX = originX + point.x
+                    let pixelY = originY + point.y
+                    let matches = (-1...1).contains { deltaY in
+                        (-1...1).contains { deltaX in
+                            let x = pixelX + deltaX
+                            let y = pixelY + deltaY
+                            return x >= 0 && x < rendered.width && y >= 0 && y < rendered.height
+                                && rendered.mask[y * rendered.width + x]
+                        }
+                    }
+                    if !matches {
+                        misses += 1
+                        if misses > allowedMisses { break }
+                    }
+                }
+                if misses <= allowedMisses { return true }
+            }
+        }
+        return false
     }
 
     @Test("the toolbar Agent Line is absent without a display, even with Working and a credential refusal")
