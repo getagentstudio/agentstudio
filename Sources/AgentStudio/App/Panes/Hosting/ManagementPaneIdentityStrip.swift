@@ -17,6 +17,9 @@ struct ManagementPaneIdentityStrip: View {
     let octiconLoader: OcticonLoader
     var lines: [RepoExplorerPaneRowLine] = []
     var isDrawerPane = false
+    var recencyText = "—"
+    var recencyTier: RepoExplorerPaneRecencyTier = .grey
+    var isActive = false
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -82,21 +85,28 @@ struct ManagementPaneIdentityStrip: View {
                 case .note(let text):
                     SidebarMetadataLine(icon: .systemName("long.text.page.and.pencil"), text: text)
                 case .agentLine(let line):
-                    RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
+                    RepoExplorerPaneContextLineView(
+                        line: line, isAgentLine: true, octiconLoader: octiconLoader)
                 case .sessionStatus(let line), .connectionIssue(let line):
-                    RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
+                    RepoExplorerPaneContextLineView(
+                        line: line, isAgentLine: false, octiconLoader: octiconLoader)
                 case .worktreeBranch:
                     EmptyView()
                 }
             }
-            if let statusChips = context.statusChips,
-                SidebarGitStatusChips.hasContent(branchStatus: statusChips.branchStatus, usesPanesLoadingChip: true)
-            {
-                SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+            SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+                if let statusChips = context.statusChips,
+                    SidebarGitStatusChips.hasContent(
+                        branchStatus: statusChips.branchStatus, usesPanesLoadingChip: true)
+                {
                     SidebarGitStatusChips(
-                        branchStatus: statusChips.branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true
+                        branchStatus: statusChips.branchStatus, octiconLoader: octiconLoader,
+                        usesPanesLoadingChip: true
                     )
                 }
+                RepoExplorerPaneActivityChips(
+                    recencyText: recencyText, recencyTier: recencyTier,
+                    isActive: isActive, octiconLoader: octiconLoader)
             }
         }
     }
@@ -145,7 +155,9 @@ struct ManagementPaneIdentityStrip: View {
         }
     }
 
-    private func identityRow(_ row: PaneManagementIdentityRow, minimumWidth: CGFloat? = nil) -> some View {
+    private func identityRow(_ row: PaneManagementIdentityRow, minimumWidth: CGFloat? = nil)
+        -> some View
+    {
         HStack(spacing: AppStyles.General.Spacing.tight) {
             rowIcon(for: row.icon)
                 .foregroundStyle(.secondary.opacity(0.92))
@@ -163,7 +175,9 @@ struct ManagementPaneIdentityStrip: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .frame(minWidth: minimumWidth)
-        .controlHelp(ControlTooltipResolver.resolve(.dynamicData(.stateReadout, text: row.toolTip ?? row.text)))
+        .controlHelp(
+            ControlTooltipResolver.resolve(.dynamicData(.stateReadout, text: row.toolTip ?? row.text))
+        )
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(accessibilityLabel(for: row))
     }
@@ -222,36 +236,61 @@ struct ManagementPaneIdentityStrip: View {
     }
 }
 
-struct ManagementPaneIdentityOverlay: View {
+struct ManagementPaneIdentityOverlay<ActivityClock: Clock>: View
+where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClock.Instant {
     @Environment(\.paneContextUIReaders) private var readers
     let context: PaneManagementContext
     let octiconLoader: OcticonLoader
     let store: WorkspaceStore
+    let clock: ActivityClock
     @State private var sessionIdentity = PaneManagementSessionIdentity()
-    @State private var lines: [RepoExplorerPaneRowLine] = []
+    @State private var relativeTimeRefresh: PaneCardRelativeTimeRefresh
+
+    init(
+        context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
+        clock: ActivityClock,
+        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneCardRelativeTimeRefresh.Event) -> Void = { _ in }
+    ) {
+        self.context = context
+        self.octiconLoader = octiconLoader
+        self.store = store
+        self.clock = clock
+        _relativeTimeRefresh = State(initialValue: PaneCardRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
+    }
 
     var body: some View {
-        let input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
+        let input = PaneManagementIdentityCapture.input(
+            context: context, store: store, readers: readers)
         let sessionReadTrigger = PaneManagementIdentityCapture.SessionReadTrigger(
             paneId: context.paneId, presentation: input.sessionPresentation)
+        let presentation = relativeTimeRefresh.presentation
         ManagementPaneIdentityStrip(
             context: context.includingVerifiedLiveSession(sessionIdentity.summary),
             octiconLoader: octiconLoader,
-            lines: lines, isDrawerPane: input.isDrawer
+            lines: presentation?.lines ?? [], isDrawerPane: input.isDrawer,
+            recencyText: presentation?.recencyText ?? "—",
+            recencyTier: presentation?.recencyTier ?? .grey,
+            isActive: presentation?.isActive ?? false
         )
         .frame(maxWidth: .infinity)
         .background(AppStyles.Shell.PaneChrome.background)
-        .task(id: input) {
-            let prepared = await PaneManagementIdentityCapture.lines(input)
-            guard !Task.isCancelled else { return }
-            lines = prepared
-        }
+        .onAppear { relativeTimeRefresh.startOrReplace(input, clock: clock) }
+        .onChange(of: input) { _, changed in relativeTimeRefresh.startOrReplace(changed, clock: clock) }
         // This task reads on every appearance and observable status change, never from a cache.
         // Equal/coalesced rebinding while continuously open refreshes on the next appearance;
         // semantic status deliberately remains separate from binding identity.
         .task(id: sessionReadTrigger) {
             await sessionIdentity.refresh(paneId: sessionReadTrigger.paneId, readers: readers)
         }
-        .onDisappear { sessionIdentity.close() }
+        .onDisappear {
+            relativeTimeRefresh.hide()
+            sessionIdentity.close()
+        }
+    }
+}
+
+extension ManagementPaneIdentityOverlay where ActivityClock == ContinuousClock {
+    init(context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore) {
+        self.init(context: context, octiconLoader: octiconLoader, store: store, clock: ContinuousClock())
     }
 }
