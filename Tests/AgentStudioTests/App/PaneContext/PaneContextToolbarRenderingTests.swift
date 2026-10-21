@@ -14,14 +14,17 @@ import Testing
 @Suite(.serialized)
 struct PaneContextToolbarRenderingTests {
     @Test("Agent Line uses the sidebar's keyed source and leaves both button groups fixed", arguments: [480.0, 900.0])
-    func agentLineOnlyUsesRemainingWidth(width: Double) async {
-        await withAsyncTestCoreAtoms { atoms in
+    func agentLineOnlyUsesRemainingWidth(width: Double) async throws {
+        try await withAsyncTestCoreAtoms { atoms in
             let pane = PaneId.generateUUIDv7()
             let statuses = SessionStatusAtom()
             statuses.apply([pane: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])
             let readers = PaneContextUIReaders(
                 sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil })
             var baseline: [String: CGRect]?
+            var baselineHeight: CGFloat?
+            var emptyTextPixels: Data?
+            var fixedGroupPixels: [Data]?
             for summary in [
                 nil, "Checking toolbar spacing", String(repeating: "Wide agent work description ", count: 20),
             ] {
@@ -39,9 +42,41 @@ struct PaneContextToolbarRenderingTests {
                 let mounted = mount(pane: pane, readers: readers, width: width)
                 defer { mounted.window.orderOut(nil) }
                 let controls = buttonFrames(in: mounted.host)
+                let barHeight = mounted.host.bounds.height
+                #expect(barHeight == DrawerLayout.iconStripHeight)
+                #expect(mounted.host.fittingSize.height == barHeight)
+                if let baselineHeight { #expect(barHeight == baselineHeight) } else { baselineHeight = barHeight }
                 #expect(controls.count == 9)
                 #expect(controls.values.allSatisfy { $0.width > 0 && $0.height > 0 })
                 if let baseline { #expect(controls == baseline) } else { baseline = controls }
+                let leadingIdentifiers: Set<String> = [
+                    "paneSurfaceToolbar.drawerToggle", "paneSurfaceToolbar.drawerAdd",
+                    "paneSurfaceToolbar.pinPane", "paneSurfaceToolbar.note",
+                ]
+                let middleStart = try #require(
+                    controls.filter { leadingIdentifiers.contains($0.key) }.values.map(\.maxX).max())
+                let middleEnd = try #require(
+                    controls.filter { !leadingIdentifiers.contains($0.key) }.values.map(\.minX).min())
+                let textStart =
+                    middleStart + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing
+                    + AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth
+                    + AppStyles.Shell.Sidebar.groupIconTitleSpacing
+                let textRect = CGRect(x: textStart, y: 0, width: middleEnd - textStart, height: barHeight)
+                #expect(textRect.width > 0)
+                let textPixels = try pixels(in: mounted.host, rect: textRect)
+                let groupPixels = try [
+                    pixels(in: mounted.host, rect: CGRect(x: 0, y: 0, width: middleStart, height: barHeight)),
+                    pixels(
+                        in: mounted.host,
+                        rect: CGRect(x: middleEnd, y: 0, width: width - middleEnd, height: barHeight)),
+                ]
+                if summary != nil {
+                    #expect(textPixels != (try #require(emptyTextPixels)), "Agent Line text must paint in the middle")
+                    #expect(groupPixels == (try #require(fixedGroupPixels)), "Agent Line must not paint over controls")
+                } else {
+                    emptyTextPixels = textPixels
+                    fixedGroupPixels = groupPixels
+                }
                 let labels = accessibilityLabels(in: mounted.host)
                 #expect(!labels.contains("Working"))
                 #expect(!labels.contains(where: { $0.contains("Messages unavailable") || $0.contains("credential") }))
@@ -160,8 +195,8 @@ struct PaneContextToolbarRenderingTests {
                     paneContextActions: [surfaceAction(.zoomPane)],
                     middleContent: AnyView(
                         PaneContextToolbarAgentLine(paneId: pane, readers: readers, octiconLoader: loader))
-                ).frame(width: width, height: 30)))
-        host.frame = CGRect(x: 0, y: 0, width: width, height: 30)
+                ).frame(width: width)))
+        host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
@@ -184,9 +219,10 @@ struct PaneContextToolbarRenderingTests {
                 tooltip: spec.controlTooltipRenderValue(), isEnabled: true, isSelected: false), perform: {})
     }
 
-    private func pixels(in host: NSView) throws -> Data {
-        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
-        host.cacheDisplay(in: host.bounds, to: bitmap)
+    private func pixels(in host: NSView, rect: CGRect? = nil) throws -> Data {
+        let region = rect ?? host.bounds
+        let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: region))
+        host.cacheDisplay(in: region, to: bitmap)
         return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 

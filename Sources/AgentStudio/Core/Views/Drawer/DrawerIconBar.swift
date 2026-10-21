@@ -209,6 +209,7 @@ struct DrawerIconBar: View {
 
                         // An overlay cannot contribute an intrinsic width to either control group.
                         Spacer(minLength: 0)
+                            .frame(maxHeight: .infinity)
                             .overlay(alignment: .leading) {
                                 middleContent
                                     .padding(.horizontal, AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
