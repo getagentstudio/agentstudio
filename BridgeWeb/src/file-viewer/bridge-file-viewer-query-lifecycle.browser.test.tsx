@@ -419,6 +419,10 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 			name: 'names missing opening capture when the real File menu finishes opening',
 		},
 		{
+			mode: 'missing-earliest',
+			name: 'owns the earliest real File close completion after missing opening capture',
+		},
+		{
 			mode: 'failure',
 			name: 'joins capture and retires a held File opening after challenge failure before release',
 		},
@@ -427,6 +431,7 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 			name: 'joins capture and retires a held File opening after owner retirement before release',
 		},
 	] as const)('$name', async ({ mode }, context) => {
+		const isMissingCapture = mode === 'missing' || mode === 'missing-earliest';
 		await render(
 			<BridgeFileViewerBrowserHarnessApp initialFileBatch={makeMixedFileClassBatch()} />,
 		);
@@ -434,7 +439,7 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 		const owner = new AbortController();
 		const challenge = createHeldFileMenuOpeningChallenge({
 			ownerSignals: [context.signal, owner.signal],
-			...(mode === 'missing' ? { matchesRegistration: (): boolean => false } : {}),
+			...(isMissingCapture ? { matchesRegistration: (): boolean => false } : {}),
 			beforeRelease: (): void => {
 				if (mode === 'failure')
 					throw new Error('Injected File opening challenge failure before release');
@@ -443,18 +448,17 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 		});
 		const operation = challenge.run(
 			(afterCapture): Promise<void> =>
-				dispatchFileViewerShortcut({ altKey: true }, document, afterCapture),
+				dispatchFileViewerShortcut({ altKey: true }, document, { afterCaptureFrame: afterCapture }),
 		);
 		if (mode === 'matched') {
 			await operation;
 			expect(challenge.snapshot().captureDisposition).toBe('released');
 		} else {
-			const expectedError =
-				mode === 'missing'
-					? missingFileMenuOpeningCapture
-					: mode === 'retirement'
-						? retiredFileMenuOpeningCapture
-						: 'Injected File opening challenge failure before release';
+			const expectedError = isMissingCapture
+				? missingFileMenuOpeningCapture
+				: mode === 'retirement'
+					? retiredFileMenuOpeningCapture
+					: 'Injected File opening challenge failure before release';
 			await expect(operation).rejects.toThrow(expectedError);
 			expect(challenge.snapshot().captureDisposition).toBe('retired');
 		}
@@ -471,19 +475,40 @@ describe('BridgeFileViewerApp query and content lifecycle Browser Mode', () => {
 				staleDeliveryIgnored: true,
 			});
 		} else {
-			if (mode === 'missing') expect(challenge.snapshot().openingCompleted).toBe(true);
+			if (isMissingCapture) expect(challenge.snapshot().openingCompleted).toBe(true);
 			expect(
 				document.querySelector('[data-testid="worktree-file-filter-menu-popover"][data-open]'),
 			).not.toBeNull();
 		}
-		if (mode === 'missing') {
-			const heldClose = holdFileMenuCloseAnimationCompletion(context.signal);
+		if (isMissingCapture) {
+			// The same earliest native completion must be owned before frame capture,
+			// while the existing late case continues to hold it beyond that frame.
+			const nativeAnimationsDescriptor = Object.getOwnPropertyDescriptor(
+				Element.prototype,
+				'getAnimations',
+			);
+			const heldClose = holdFileMenuCloseAnimationCompletion(
+				context.signal,
+				mode === 'missing-earliest' ? 'earliest' : 'after-capture',
+			);
 			try {
-				await dispatchFileViewerShortcut({ altKey: true }, document, heldClose.releaseAfterCapture);
+				await dispatchFileViewerShortcut(
+					{ altKey: true },
+					document,
+					mode === 'missing-earliest'
+						? { afterDispatch: heldClose.releaseCapturedCompletion }
+						: { afterCaptureFrame: heldClose.releaseCapturedCompletion },
+				);
 				expect(heldClose.wasCaptured()).toBe(true);
+				expect(
+					document.querySelector('[data-testid="worktree-file-filter-menu-popover"]'),
+				).toBeNull();
 			} finally {
 				await heldClose.close();
 			}
+			expect(Object.getOwnPropertyDescriptor(Element.prototype, 'getAnimations')).toEqual(
+				nativeAnimationsDescriptor,
+			);
 		} else {
 			await dispatchFileViewerShortcut({ altKey: true });
 		}
