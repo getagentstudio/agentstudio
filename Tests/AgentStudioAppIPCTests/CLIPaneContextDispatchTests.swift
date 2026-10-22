@@ -204,7 +204,7 @@ struct CLIPaneContextDispatchTests {
     @Test("line builds only its epoch claim and write on one authenticated connection")
     func lineIsOneCompiledExchange() async throws {
         try await withS5PaneCLIContext { context in
-            let output = try await context.run(["line", "compiled line", "--working"])
+            let output = try await context.run(["line", "compiled line"])
             #expect(output.terminationStatus == 0)
             #expect(context.port.wire.connections == 1)
             #expect(context.port.wire.methods == ["auth.login", "pane.writer.claimEpoch", "pane.line.set"])
@@ -264,7 +264,7 @@ struct CLIPaneContextDispatchTests {
     @Test("reset and clear stay ordered writes", arguments: ["title", "line"])
     func clearingUsesTheSameOrderedStream(verb: String) async throws {
         try await withS5PaneCLIContext { context in
-            let seedArguments = verb == "title" ? ["title", "before reset"] : ["line", "before clear", "--working"]
+            let seedArguments = verb == "title" ? ["title", "before reset"] : ["line", "before clear"]
             let seed = try await context.run(seedArguments)
             #expect(seed.terminationStatus == 0)
             guard seed.terminationStatus == 0 else { return }

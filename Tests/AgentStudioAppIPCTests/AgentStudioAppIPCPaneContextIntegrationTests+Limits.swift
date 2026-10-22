@@ -151,39 +151,17 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
         let number = IPCPaneWriteNumber(epoch: 1, counter: 1)
         let lines: [(IPCPaneAgentLineInput, String)] = [
             (
-                .init(summary: String(repeating: "é", count: 101), work: .done, refs: [], lifetime: .untilReplaced),
+                .init(summary: String(repeating: "é", count: 101), refs: []),
                 "tooLarge"
             ),
             (
                 .init(
-                    summary: "ok", work: .monitoring(target: String(repeating: "é", count: 101)), refs: [],
-                    lifetime: .untilReplaced), "tooLarge"
+                    summary: "ok", refs: Array(repeating: .goToPane(paneId: domain.paneId), count: 9)), "tooLarge"
             ),
             (
                 .init(
-                    summary: "ok", work: .done, detail: String(repeating: "é", count: 1025), refs: [],
-                    lifetime: .untilReplaced), "tooLarge"
-            ),
-            (
-                .init(
-                    summary: "ok", work: .working(progress: .step(current: 10_001, total: 10_002)), refs: [],
-                    lifetime: .untilReplaced), "tooLarge"
-            ),
-            (
-                .init(
-                    summary: "ok", work: .working(progress: .step(current: -1, total: 2)), refs: [],
-                    lifetime: .untilReplaced), "invalidField"
-            ),
-            (
-                .init(
-                    summary: "ok", work: .done, refs: Array(repeating: .goToPane(paneId: domain.paneId), count: 9),
-                    lifetime: .untilReplaced), "tooLarge"
-            ),
-            (
-                .init(
-                    summary: "ok", work: .done,
-                    refs: [.openFile(path: String(repeating: "x", count: 513), line: nil)], lifetime: .untilReplaced
-                ), "tooLarge"
+                    summary: "ok",
+                    refs: [.openFile(path: String(repeating: "x", count: 513), line: nil)]), "tooLarge"
             ),
         ]
         var calls = try lines.map {

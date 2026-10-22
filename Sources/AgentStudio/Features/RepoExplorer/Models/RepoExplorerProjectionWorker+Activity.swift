@@ -171,7 +171,12 @@ extension RepoExplorerProjectionWorker {
                     calendar: snapshot.calendar
                 )
                 : nil
-            if let transition = [recencyTransition, activityTransition].compactMap(\.self).min() {
+            let messageTransition =
+                snapshot.surface == .panes
+                ? facts.contextDisplay?.agentLine.map {
+                    RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: snapshot.referenceDate)
+                } : nil
+            if let transition = [recencyTransition, activityTransition, messageTransition].compactMap(\.self).min() {
                 transitions[paneID] = transition
             }
         }

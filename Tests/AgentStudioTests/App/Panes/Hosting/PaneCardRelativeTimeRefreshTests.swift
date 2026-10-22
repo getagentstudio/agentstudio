@@ -9,10 +9,62 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneCardRelativeTimeRefreshTests {
+    @Test("message replacement uses its own metadata and hiding before entry cancels both workers")
+    func messageReplacementAndImmediateHide() async throws {
+        let clock = NativeCardTestClock()
+        var events: [PaneRelativeTimeRefresh.Event] = []
+        let refresh = PaneRelativeTimeRefresh(onEvent: {
+            events.append($0)
+            clock.observeOwner($0)
+        })
+        let pane = UUIDv7.generate()
+        let initial = PaneManagementIdentityCapture.VisibleInput.message(
+            paneId: pane,
+            detail: .init(
+                summary: "First", refs: [], writer: .pane(.init(existingUUID: pane)),
+                updatedAt: Date(timeIntervalSince1970: 1_800_000_000)))
+        let replacement = PaneManagementIdentityCapture.VisibleInput.message(
+            paneId: pane,
+            detail: .init(
+                summary: "First", refs: [], writer: .pane(.init(existingUUID: pane)),
+                updatedAt: Date(timeIntervalSince1970: 1_800_000_010)))
+        let clockOpening = await clock.facts.mark(0)
+        let ownerOpening = await clock.facts.mark(1)
+        do {
+            try #require(refresh.startOrReplace(initial, clock: clock) == .started)
+            try #require(refresh.startOrReplace(initial, clock: clock) == .unchanged)
+            try #require(refresh.startOrReplace(replacement, clock: clock) == .replaced(cancelRequested: true))
+            try #require(refresh.hide() == .cancelled(requested: true))
+            try await clock.retire()
+            try await clock.facts.expectNone(
+                of: {
+                    if case .registered = $0 { return true }
+                    return false
+                },
+                "deadline registered after immediate hide", from: clockOpening, closedBy: { $0 == .retired })
+            try await clock.facts.expectNone(
+                of: {
+                    if case .workerEnded(_, _, false) = $0 { return true }
+                    return false
+                },
+                "uncancelled hidden worker", from: ownerOpening, closedBy: { $0 == .retired })
+            #expect(events.contains(.ended(initial, .cancelled)))
+            #expect(events.contains(.ended(replacement, .cancelled)))
+            #expect(refresh.presentation == nil)
+            #expect(clock.pendingSleepCount == 0)
+            try await clock.facts.finish()
+        } catch {
+            refresh.hide()
+            try? await clock.retire()
+            try? await clock.facts.finish()
+            throw error
+        }
+    }
+
     @Test("replacement and hide return actual cancellation dispositions before terminal awaits")
     func synchronousDispositionsCloseWrongKeyAndNoCancelFailures() async throws {
         let clock = NativeCardTestClock()
-        let refresh = PaneCardRelativeTimeRefresh(onEvent: { clock.observeOwner($0) })
+        let refresh = PaneRelativeTimeRefresh(onEvent: { clock.observeOwner($0) })
         let initialTime = clock.now
         let initial = input(at: initialTime)
         do {
@@ -91,7 +143,7 @@ struct PaneCardRelativeTimeRefreshTests {
     @Test("retiring the relative-time owner cancels its worker")
     func deinitializationCancelsWorker() async throws {
         let clock = NativeCardTestClock()
-        var refresh: PaneCardRelativeTimeRefresh? = PaneCardRelativeTimeRefresh(onEvent: { clock.observeOwner($0) })
+        var refresh: PaneRelativeTimeRefresh? = PaneRelativeTimeRefresh(onEvent: { clock.observeOwner($0) })
         let reference = clock.now
         let initial = input(at: reference)
         do {

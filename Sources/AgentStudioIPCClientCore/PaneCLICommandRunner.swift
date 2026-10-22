@@ -413,12 +413,15 @@ struct PaneCLICommandRunner: Sendable {
 }
 
 enum PaneCLICommandFailure: Error {
+    case agentLineRequiresMessage
     case backgroundSession
     case orderingStoreUnavailable
     case stale(IPCPaneWriteStaleness)
 
     var description: String {
         switch self {
+        case .agentLineRequiresMessage:
+            "Agent Line accepts a message only. Use: agentstudio line \"<message>\" or agentstudio line --clear. Status comes from harness hooks; use agentstudio ask \"<question>\" when you need the user."
         case .backgroundSession: "background session: not attached to a pane"
         case .orderingStoreUnavailable: "unavailable(orderingStoreUnavailable)"
         case .stale(let reason):

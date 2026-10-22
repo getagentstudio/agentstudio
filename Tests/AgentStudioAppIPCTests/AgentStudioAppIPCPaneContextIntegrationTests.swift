@@ -414,8 +414,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                         return
                     }
                     let line = IPCPaneAgentLineInput(
-                        summary: "Monitoring tests", work: .monitoring(target: "CI"), refs: [], lifetime: .untilReplaced
-                    )
+                        summary: "Monitoring tests", refs: [])
                     let lineParams = IPCPaneLineSetParams(
                         handle: "self", line: line, writeNumber: IPCPaneWriteNumber(epoch: lineEpoch, counter: 1),
                         correlationId: UUIDv7.generate())
@@ -439,7 +438,7 @@ struct AgentStudioAppIPCPaneContextIntegrationTests {
                         from: await reader.receiveResponseWithoutBlockingMainActor(connection: connection))
                     #expect(detail.agentTitle == nil)
                     #expect(detail.agentLine?.summary == line.summary)
-                    #expect(detail.agentLine?.work == line.work)
+                    #expect(detail.agentLine?.refs == line.refs)
                 })
         }
     }

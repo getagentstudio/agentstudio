@@ -26,6 +26,30 @@ enum PaneManagementIdentityCapture {
         var activityTime: PaneActivityTime?
     }
 
+    enum VisibleInput: Equatable, Sendable {
+        case card(LineInput)
+        case message(paneId: UUID, detail: AgentLineDetail)
+
+        var paneId: UUID {
+            switch self {
+            case .card(let input): input.paneId
+            case .message(let paneId, _): paneId
+            }
+        }
+
+        var activityTime: PaneActivityTime? {
+            if case .card(let input) = self { return input.activityTime }
+            return nil
+        }
+
+        var agentLine: AgentLineDetail? {
+            switch self {
+            case .card(let input): input.agentLine
+            case .message(_, let detail): detail
+            }
+        }
+    }
+
     struct Presentation: Equatable, Sendable {
         let lines: [RepoExplorerPaneRowLine]
         let recencyText: String
@@ -52,7 +76,9 @@ enum PaneManagementIdentityCapture {
             activityTime: atom(\.paneActivityTime).value(for: context.paneId))
     }
 
-    @concurrent nonisolated static func lines(_ input: LineInput) async -> [RepoExplorerPaneRowLine] {
+    @concurrent nonisolated static func lines(_ input: LineInput, now: Date) async
+        -> [RepoExplorerPaneRowLine]
+    {
         let title =
             input.agentTitle
             ?? RepoExplorerPaneTitleNormalizer.normalizedTitle(
@@ -61,7 +87,7 @@ enum PaneManagementIdentityCapture {
         return RepoExplorerPaneRowVariants.informationLines(
             title: title, note: input.note, agentLine: input.agentLine,
             sessionStatus: input.sessionPresentation?.status,
-            connectionIssue: input.sessionPresentation?.connectionIssue)
+            connectionIssue: input.sessionPresentation?.connectionIssue, now: now)
     }
 
     static func verifiedLiveSession(paneId: UUID, readers: PaneContextUIReaders?) async
@@ -80,10 +106,20 @@ enum PaneManagementIdentityCapture {
         wallNow suppliedWallDate: Date? = nil, calendar: Calendar = .current,
         publish: @MainActor @Sendable (Presentation) -> Void
     ) async where C.Duration == Duration {
+        await watch(
+            .card(input), clock: clock, referenceInstant: suppliedReference,
+            wallNow: suppliedWallDate, calendar: calendar, publish: publish)
+    }
+
+    @concurrent nonisolated static func watch<C: Clock>(
+        _ input: VisibleInput, clock: C,
+        referenceInstant suppliedReference: ContinuousClock.Instant? = nil,
+        wallNow suppliedWallDate: Date? = nil, calendar: Calendar = .current,
+        publish: @MainActor @Sendable (Presentation) -> Void
+    ) async where C.Duration == Duration {
         let clockReference = clock.now
         let referenceInstant = suppliedReference ?? ContinuousClock.now
         let wallNow = suppliedWallDate ?? Date.now
-        let preparedLines = await lines(input)
         var previous: Presentation?
         while !Task.isCancelled {
             let elapsed = clockReference.duration(to: clock.now)
@@ -94,6 +130,11 @@ enum PaneManagementIdentityCapture {
             let activity = RepoExplorerPaneActivityProjection.make(
                 time: input.activityTime, referenceInstant: referenceInstant.advanced(by: elapsed),
                 wallNow: currentWallDate, calendar: calendar)
+            let preparedLines: [RepoExplorerPaneRowLine]
+            switch input {
+            case .card(let card): preparedLines = await lines(card, now: currentWallDate)
+            case .message(_, let detail): preparedLines = [.agentLine(.agent(detail, now: currentWallDate))]
+            }
             let prepared = Presentation(
                 lines: preparedLines, recencyText: activity.clockText,
                 recencyTier: activity.recencyTier, isActive: activity.isActive)
@@ -102,7 +143,11 @@ enum PaneManagementIdentityCapture {
                 await publish(prepared)
                 previous = prepared
             }
-            guard let nextDate = activity.nextPresentationChangeDate else { return }
+            let messageDeadline = input.agentLine.map {
+                RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: currentWallDate)
+            }
+            guard let nextDate = [activity.nextPresentationChangeDate, messageDeadline].compactMap(\.self).min()
+            else { return }
             let deadline = clockReference.advanced(
                 by: elapsed + .seconds(nextDate.timeIntervalSince(currentWallDate)))
             do {
@@ -114,10 +159,10 @@ enum PaneManagementIdentityCapture {
     }
 }
 
-/// Owns one visible pane card's relative-time worker and its transition receipts.
+/// Owns one visible card or toolbar's relative-time worker and its transition receipts.
 @MainActor
 @Observable
-final class PaneCardRelativeTimeRefresh {
+final class PaneRelativeTimeRefresh {
     enum StartResult: Equatable, Sendable {
         case started
         case unchanged
@@ -132,14 +177,14 @@ final class PaneCardRelativeTimeRefresh {
     enum WorkerOutcome: Equatable, Sendable { case completed, cancelled }
 
     enum Event: Equatable, Sendable {
-        case operation(PaneManagementIdentityCapture.LineInput, StartResult)
+        case operation(PaneManagementIdentityCapture.VisibleInput, StartResult)
         case hidden(HideResult)
-        case entered(PaneManagementIdentityCapture.LineInput)
-        case ended(PaneManagementIdentityCapture.LineInput, WorkerOutcome)
+        case entered(PaneManagementIdentityCapture.VisibleInput)
+        case ended(PaneManagementIdentityCapture.VisibleInput, WorkerOutcome)
     }
 
     private struct Worker: Sendable {
-        let input: PaneManagementIdentityCapture.LineInput
+        let input: PaneManagementIdentityCapture.VisibleInput
         let id: UUID
         let task: Task<Void, Never>
     }
@@ -156,7 +201,14 @@ final class PaneCardRelativeTimeRefresh {
 
     @discardableResult
     func startOrReplace<C: Clock>(
-        _ input: PaneManagementIdentityCapture.LineInput, clock: C
+        _ input: PaneManagementIdentityCapture.LineInput, clock: C, wallNow: Date? = nil
+    ) -> StartResult where C.Duration == Duration, C.Instant == ContinuousClock.Instant {
+        startOrReplace(.card(input), clock: clock, wallNow: wallNow)
+    }
+
+    @discardableResult
+    func startOrReplace<C: Clock>(
+        _ input: PaneManagementIdentityCapture.VisibleInput, clock: C, wallNow: Date? = nil
     ) -> StartResult where C.Duration == Duration, C.Instant == ContinuousClock.Instant {
         if worker?.input == input {
             onEvent(.operation(input, .unchanged))
@@ -178,7 +230,7 @@ final class PaneCardRelativeTimeRefresh {
                 onEvent(.ended(input, Task.isCancelled ? .cancelled : .completed))
             }
             await PaneManagementIdentityCapture.watch(
-                input, clock: clock, referenceInstant: clock.now
+                input, clock: clock, referenceInstant: clock.now, wallNow: wallNow
             ) { [weak self] prepared in
                 guard let self, !Task.isCancelled, self.worker?.id == id, self.presentation != prepared else { return }
                 self.presentation = prepared

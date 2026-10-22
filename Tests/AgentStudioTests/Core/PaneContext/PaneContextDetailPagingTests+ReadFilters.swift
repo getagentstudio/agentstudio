@@ -6,7 +6,9 @@ import Testing
 @testable import AgentStudioCore
 
 extension PaneContextDetailPagingTests {
-    @Test("pure detail reads apply expiry and retention with a newer revision before the deadline commits")
+    @Test(
+        "pure detail reads retain messages and apply settled-message retention with a newer revision before the deadline commits"
+    )
     func readTimeFiltersAdvanceRevisionWithoutWriting() async throws {
         try await withPaneContextService { fixture, service in
             let ask = fixture.ask()
@@ -20,14 +22,13 @@ extension PaneContextDetailPagingTests {
             let line = PaneLineWriteRequest(
                 paneId: fixture.paneId, writer: fixture.sender,
                 line: .init(
-                    summary: "Before expiry", work: .working(.indeterminate), detail: nil, refs: [],
-                    lifetime: .expires(at: fixture.time.now.addingTimeInterval(lifetime))),
+                    summary: "Retained message", refs: []),
                 writeNumber: .init(epoch: epoch, counter: 1))
             let written = await service.setLine(line)
             #expect(written == .applied)
             let before = try await fixture.detail(service)
             let storedBefore = try await readFilterStorageFacts(fixture)
-            #expect(before.agentLine?.stale == false)
+            _ = try #require(before.agentLine)
             let initialMessageIds = Set(before.messages.map { $0.id })
             #expect(initialMessageIds == [ask.messageId, live.messageId])
 
@@ -43,20 +44,20 @@ extension PaneContextDetailPagingTests {
             #expect(parentReadObserved)
             #expect(noMutations)
             #expect(selectsUseReaders)
-            #expect(filtered.agentLine?.stale == true)
+            #expect(filtered.agentLine == before.agentLine)
             let filteredMessageIds = filtered.messages.map { $0.id }
             #expect(filteredMessageIds == [live.messageId])
             #expect(filtered.revision.value > before.revision.value)
             let storedAfterRead = try await readFilterStorageFacts(fixture)
             #expect(storedAfterRead.revision == storedBefore.revision)
-            #expect(storedAfterRead.lineStale == false)
+            #expect(storedAfterRead.line == storedBefore.line)
             #expect(storedAfterRead.hiddenCount == 0)
             let repeated = try await fixture.detail(service)
             #expect(repeated == filtered)
 
             await service.deadlineReached()
             let persisted = try await readFilterStorageFacts(fixture)
-            #expect(persisted.lineStale == true)
+            #expect(persisted.line == storedBefore.line)
             #expect(persisted.hiddenCount == 1)
             #expect(persisted.revision.value > storedBefore.revision.value)
             let afterSweep = try await fixture.detail(service)
@@ -123,7 +124,7 @@ extension PaneContextDetailPagingTests {
 
 private struct ReadFilterStorageFacts: Sendable {
     let revision: PaneContextRevision
-    let lineStale: Bool?
+    let line: AgentLineDetail?
     let hiddenCount: Int
 }
 
@@ -131,9 +132,7 @@ private func readFilterStorageFacts(_ fixture: PaneContextServiceFixture) async 
     try await fixture.databasePool.read { database in
         ReadFilterStorageFacts(
             revision: try PaneContextStorage.revision(database, paneId: fixture.paneId),
-            lineStale: try Bool.fetchOne(
-                database, sql: "SELECT stale FROM pane_state WHERE pane_id = ? AND kind = 'agentLine'",
-                arguments: [fixture.paneId.uuidString]),
+            line: try PaneContextStorage.line(database, paneId: fixture.paneId),
             hiddenCount: try Int.fetchOne(
                 database, sql: "SELECT COUNT(*) FROM pane_request WHERE pane_id = ? AND display_hidden = 1",
                 arguments: [fixture.paneId.uuidString]) ?? 0)

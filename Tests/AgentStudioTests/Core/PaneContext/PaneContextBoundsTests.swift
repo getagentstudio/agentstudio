@@ -47,9 +47,7 @@ struct PaneContextBoundsTests {
                 let lineEpoch = try await fixture.epoch(service, stream: .line)
                 let ref = MessageAction.openFile(path: String(repeating: "x", count: 512 - prefix), line: nil)
                 let line = AgentLineInput(
-                    summary: String(repeating: "l", count: 200), work: .monitoring(String(repeating: "w", count: 200)),
-                    detail: String(repeating: "d", count: 2048), refs: Array(repeating: ref, count: 8),
-                    lifetime: .untilReplaced)
+                    summary: String(repeating: "l", count: 200), refs: Array(repeating: ref, count: 8))
                 try #require(
                     await service.setLine(
                         PaneLineWriteRequest(

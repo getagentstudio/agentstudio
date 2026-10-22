@@ -13,9 +13,6 @@ package enum AppPolicies {
         package static let maximumActions = 4
         package static let maximumActionBytes = 1024
         package static let maximumLineSummaryBytes = 200
-        package static let maximumLineDetailBytes = 2048
-        package static let maximumLineWorkBytes = 200
-        package static let maximumLineStep = 10_000
         package static let maximumLineRefs = 8
         package static let maximumLineRefBytes = 512
         package static let maximumTitleBytes = 256
@@ -33,8 +30,8 @@ package enum AppPolicies {
         /// one source continuation and the source-list continuation header.
         package static var minimumDetailBytes: Int {
             maximumMessageDetailBytes
-                + maximumTitleBytes + maximumLineSummaryBytes + maximumLineDetailBytes
-                + maximumLineWorkBytes + maximumLineRefs * maximumLineRefBytes
+                + maximumTitleBytes + maximumLineSummaryBytes
+                + maximumLineRefs * maximumLineRefBytes
                 + maximumActions * maximumActionBytes
                 + Sessions.maximumListedOpenPrompts * (Sessions.maximumPromptSummaryBytes + maximumChoiceLabelBytes)
                 + Sessions.maximumFailureSummaryBytes + maximumActionBytes

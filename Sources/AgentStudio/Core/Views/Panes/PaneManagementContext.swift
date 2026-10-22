@@ -10,6 +10,15 @@ package struct PaneManagementIdentityRow: Equatable, Identifiable {
     package let icon: PaneManagementIcon
     package let text: String
     package let toolTip: String?
+    package let copyValue: String?
+
+    package init(id: String, icon: PaneManagementIcon, text: String, toolTip: String?, copyValue: String? = nil) {
+        self.id = id
+        self.icon = icon
+        self.text = text
+        self.toolTip = toolTip
+        self.copyValue = copyValue
+    }
 }
 
 package struct WorkspaceStatusChipsModel: Equatable {
@@ -97,7 +106,9 @@ package struct PaneManagementContext: Equatable {
         if let session {
             let identity = "\(session.provider.value) · \(session.sessionRef.value)"
             rows.insert(
-                .init(id: "session", icon: .system("person.crop.circle"), text: identity, toolTip: identity),
+                .init(
+                    id: "session", icon: .system("person.crop.circle"), text: identity, toolTip: identity,
+                    copyValue: session.sessionRef.value),
                 at: rows.firstIndex { $0.id == "pane" } ?? rows.endIndex)
         }
         return Self(
@@ -184,7 +195,9 @@ package struct PaneManagementContext: Equatable {
 
         if let pane {
             rows.append(
-                .init(id: "pane", icon: .system("terminal"), text: pane.id.uuidString, toolTip: pane.id.uuidString))
+                .init(
+                    id: "pane", icon: .system("terminal"), text: pane.id.uuidString, toolTip: pane.id.uuidString,
+                    copyValue: pane.id.uuidString))
         }
         return rows
     }

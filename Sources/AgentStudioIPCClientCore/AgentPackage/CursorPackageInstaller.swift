@@ -24,19 +24,18 @@ package enum CursorPackageInstaller {
         try requireWritableHome(props)
         let version = try props.locator.version()
         let script = props.locator.hookScriptURL(provider: providerIdentifier, scriptName: hookScriptName)
-        guard FileManager.default.isReadableFile(atPath: script.path),
-            let skill = FileManager.default.contents(
-                atPath: props.locator.skillSourceDirectory.appending(path: "SKILL.md").path)
-        else { throw AgentPackageInstallationError.packageResourcesUnavailable }
+        guard FileManager.default.isReadableFile(atPath: script.path) else {
+            throw AgentPackageInstallationError.packageResourcesUnavailable
+        }
         var document = try CursorHooksDocument(data: hooksContents(props), path: props.hooksURL.path)
         document.replaceOwnedEntries(scriptURL: script)
         let hooks = try document.encoded()
+        let skill = try PreparedAgentSkillDirectory(
+            source: props.locator.skillSourceDirectory, providerHome: props.cursorHome,
+            marker: Data("\(version)\n".utf8))
+        defer { skill.discardStaging() }
         try AtomicFileWriter.write(hooks, to: props.hooksURL, fileManager: .default)
-        try FileManager.default.createDirectory(at: props.skillDirectory, withIntermediateDirectories: true)
-        try AtomicFileWriter.write(skill, to: props.skillDirectory.appending(path: "SKILL.md"), fileManager: .default)
-        try AtomicFileWriter.write(
-            Data("\(version)\n".utf8), to: props.skillDirectory.appending(path: installationMarkerName),
-            fileManager: .default)
+        try skill.publish(to: props.skillDirectory)
         return [
             "wrote \(CursorHookEventName.installedEvents.count) Cursor hook entries to \(props.hooksURL.path)",
             "installed the agentstudio skill in \(props.skillDirectory.path)",

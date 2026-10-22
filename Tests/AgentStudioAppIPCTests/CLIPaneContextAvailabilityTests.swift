@@ -27,7 +27,7 @@ struct CLIPaneContextAvailabilityTests {
             let observed = try await withS5PaneCLIContext(orderedWriteProof: proof) { context in
                 try await withS5OrderingStoreCondition(condition, context: context) { useStore in
                     var refused: [ExitedProcessOutput] = []
-                    for arguments in [["line", "unallocated line", "--working"], ["title", "unallocated title"]] {
+                    for arguments in [["line", "unallocated line"], ["title", "unallocated title"]] {
                         refused.append(try await context.run(arguments, useStore: useStore))
                     }
                     let notice = try await context.run(["notify", "notice without an allocator"], useStore: useStore)

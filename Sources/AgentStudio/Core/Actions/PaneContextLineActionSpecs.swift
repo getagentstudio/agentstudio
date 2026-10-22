@@ -1,15 +1,7 @@
 /// Data readouts and the Agent Line action share the command display pipeline.
 enum PaneContextLineActionSpecs {
-    static func agentLine(_ work: AgentLineWork) -> ActionSpec {
-        let icon: CommandIcon
-        switch work {
-        case .working: icon = .system(.circleFill)
-        case .monitoring: icon = .system(.circleDotted)
-        case .blockedOnYou: icon = .system(.flag)
-        case .done: icon = .system(.checkmark)
-        case .failed: icon = .system(.xmarkOctagon)
-        }
-        return ActionSpec(label: "Agent Line", helpText: "Show this agent's work", icon: icon)
+    static var agentLine: ActionSpec {
+        ActionSpec(label: "Agent Line", helpText: "Show this agent's message", icon: .system(.textBubble))
     }
     static func connectionIssue(_ reason: AgentConnectionRefusalReason) -> ActionSpec {
         let text: String =

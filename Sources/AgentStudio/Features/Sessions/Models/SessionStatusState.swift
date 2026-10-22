@@ -66,10 +66,6 @@ package struct OpenAskSummary: Sendable, Equatable {
     }
 }
 
-package enum AgentLineWork: Sendable, Equatable {
-    case monitoring
-}
-
 package struct SessionStatusState: Sendable, Equatable {
     package var binding: SessionBindingPhase
     package var turn: SessionTurnPhase = .notStarted
@@ -77,7 +73,6 @@ package struct SessionStatusState: Sendable, Equatable {
     package var lastClosedTurnId: String?
     package var providerPrompts: [ProviderPromptKey: ProviderPrompt] = [:]
     package var openAsks = OpenAskSummary(sequence: 0, approval: 0, question: 0, blocked: 0)
-    package var lineWork: AgentLineWork?
     package var seenAfterDone = false
 }
 
@@ -98,7 +93,6 @@ package enum SessionStatusInput: Sendable, Equatable {
     case sessionEnd
     case bindingReplaced(by: UUID)
     case openAsks(OpenAskSummary)
-    case agentLine(AgentLineWork?)
     case paneViewed(ContinuousClock.Instant)
 }
 
@@ -133,10 +127,8 @@ package enum SessionStatusReducer {
                 state.seenAfterDone = false
             } else {
                 let asks = state.openAsks
-                let lineWork = state.lineWork
                 state = SessionStatusState(binding: .bound(generation))
                 state.openAsks = asks
-                state.lineWork = lineWork
             }
         case .userPromptSubmit:
             state.providerPrompts.removeAll()
@@ -173,8 +165,6 @@ package enum SessionStatusReducer {
             state.binding = .replaced(by: generation, at: event.occurredAt)
         case .openAsks(let summary):
             if summary.sequence > state.openAsks.sequence { state.openAsks = summary }
-        case .agentLine(let work):
-            state.lineWork = work
         case .paneViewed(let viewedAt):
             if case .done(_, let admittedAt) = state.turn, admittedAt < viewedAt,
                 case .bound = state.binding
@@ -188,7 +178,7 @@ package enum SessionStatusReducer {
         _ event: SessionStatusEvent, state: inout SessionStatusState
     ) -> SessionStatusEvent? {
         switch event.input {
-        case .sessionStart, .sessionEnd, .bindingReplaced, .openAsks, .agentLine, .paneViewed:
+        case .sessionStart, .sessionEnd, .bindingReplaced, .openAsks, .paneViewed:
             return event
         case .userPromptSubmit, .toolActivity, .subagentActivity, .permission, .question,
             .toolCompleted, .toolFailed, .elicitation, .elicitationResult, .stop, .stopFailure, .interrupt:
@@ -219,7 +209,7 @@ package enum SessionStatusReducer {
         }
         switch state.turn {
         case .notStarted: return .unknown
-        case .working: return .working(state.lineWork == .monitoring ? .monitoring : .active)
+        case .working: return .working(.active)
         case .done: return .idle(state.seenAfterDone ? .ready : .done)
         case .interrupted: return .idle(.interrupted)
         case .failed(let summary, _): return .failed(summary)

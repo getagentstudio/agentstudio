@@ -1,0 +1,4 @@
+interface:
+  display_name: "Agent Studio"
+  short_description: "Use Agent Studio worktrees, panes and App commands"
+  default_prompt: "Use $agentstudio to choose the supported CLI command for my task."
