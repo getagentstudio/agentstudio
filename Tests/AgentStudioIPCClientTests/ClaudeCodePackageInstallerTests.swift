@@ -367,29 +367,6 @@ struct ClaudeCodePackageInstallerTests {
 
 @Suite("Claude Code package command")
 struct ClaudeCodePackageCommandTests {
-    @Test("Arguments for another provider or command are not claimed")
-    func unrelatedArgumentsAreNotClaimed() {
-        // Arrange
-        let unrelated = [["session.query"], ["package", "install", "codex"], ["package"]]
-
-        // Act
-        let outcomes = unrelated.map { arguments in
-            ClaudeCodePackageCommand.handle(
-                ClaudeCodePackageCommandInputs(
-                    arguments: arguments,
-                    environment: [:],
-                    executableURL: URL(fileURLWithPath: "/tmp/agentstudio"),
-                    noticeSink: { _ in },
-                    errorSink: { _ in },
-                    installedVersionReader: { nil }
-                )
-            )
-        }
-
-        // Assert
-        #expect(outcomes.allSatisfy { $0 == nil })
-    }
-
     @Test("Install runs against an explicit configuration directory")
     func installThroughTheCommand() throws {
         // Arrange
@@ -397,12 +374,10 @@ struct ClaudeCodePackageCommandTests {
         defer { fixture.tearDown() }
         var notices: [String] = []
         var errors: [String] = []
-        func run(_ verb: String) -> Int32? {
+        func run() -> Int32 {
             ClaudeCodePackageCommand.handle(
                 ClaudeCodePackageCommandInputs(
-                    arguments: [
-                        "package", verb, "claude", "--config-dir", fixture.configurationDirectory.path,
-                    ],
+                    options: .init(configurationDirectoryPath: fixture.configurationDirectory.path),
                     environment: ["AGENTSTUDIO_PACKAGE_ROOT": fixture.packageRoot.path],
                     executableURL: URL(fileURLWithPath: "/tmp/agentstudio"),
                     noticeSink: { notices.append($0) },
@@ -413,7 +388,7 @@ struct ClaudeCodePackageCommandTests {
         }
 
         // Act
-        let installExit = run("install")
+        let installExit = run()
         let installedGroups = try fixture.hookGroups(for: "SessionStart")
 
         // Assert
@@ -430,7 +405,7 @@ struct ClaudeCodePackageCommandTests {
         // Act
         let exitCode = ClaudeCodePackageCommand.handle(
             ClaudeCodePackageCommandInputs(
-                arguments: ["package", "install", "claude", "--config-dir", "/nonexistent/agentstudio"],
+                options: .init(configurationDirectoryPath: "/nonexistent/agentstudio"),
                 environment: [:],
                 executableURL: URL(fileURLWithPath: "/tmp/agentstudio"),
                 noticeSink: { _ in },

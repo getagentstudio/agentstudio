@@ -29,6 +29,38 @@ package struct IPCClientGlobalArguments: Sendable {
     }
 }
 
+/// The accepted auth.login method forms and where each obtains its parameters.
+/// Global credential resolution remains owned by parseGlobal.
+enum IPCAuthLoginMethodSyntax: CaseIterable {
+    case resolvedCredential
+    case jsonStandardInput
+
+    static let methodName = "auth.login"
+
+    var methodArguments: [String] {
+        switch self {
+        case .resolvedCredential: [Self.methodName]
+        case .jsonStandardInput: [Self.methodName, "--stdin"]
+        }
+    }
+
+    var commandLine: String { "agentstudio " + methodArguments.joined(separator: " ") }
+
+    var inputDescription: String {
+        switch self {
+        case .resolvedCredential:
+            "\(commandLine) uses the resolved credential: the pane's inherited token, or a raw token from agentstudio --token-stdin \(Self.methodName)."
+        case .jsonStandardInput:
+            "\(commandLine) reads the JSON parameter object from standard input."
+        }
+    }
+
+    init?(arguments: [String]) {
+        guard let syntax = Self.allCases.first(where: { $0.methodArguments == arguments }) else { return nil }
+        self = syntax
+    }
+}
+
 package enum AgentStudioIPCClientArguments {
     package static func parseGlobal(
         _ arguments: [String],
@@ -109,21 +141,27 @@ package enum AgentStudioIPCClientArguments {
         correlationIDGenerator: @Sendable () -> UUID,
         standardInputProvider: () throws -> Data
     ) throws -> AgentStudioIPCClientInvocation {
-        if global.methodArguments == ["auth.login"], let token = global.configuration.authToken,
-            let descriptor = descriptors.first(where: { $0.metadata.name == "auth.login" })
-        {
-            return try AgentStudioIPCClientInvocation(
-                configuration: global.configuration,
-                descriptorInvocation: IPCDescriptorInvocation(
-                    descriptor: descriptor,
-                    normalizedParameters: descriptor.normalizeParameters(
-                        JSONEncoder().encode(IPCAuthLoginParams(token: token))),
-                    presentation: .tooling
-                )
-            )
-        }
-        if global.methodArguments.first == "auth.login", global.methodArguments != ["auth.login", "--stdin"] {
-            throw invalidArguments()
+        if global.methodArguments.first == IPCAuthLoginMethodSyntax.methodName {
+            guard let syntax = IPCAuthLoginMethodSyntax(arguments: global.methodArguments) else {
+                throw invalidArguments()
+            }
+            switch syntax {
+            case .resolvedCredential:
+                guard let token = global.configuration.authToken,
+                    let descriptor = descriptors.first(where: {
+                        $0.metadata.name == IPCAuthLoginMethodSyntax.methodName
+                    })
+                else { throw invalidArguments() }
+                return try AgentStudioIPCClientInvocation(
+                    configuration: global.configuration,
+                    descriptorInvocation: IPCDescriptorInvocation(
+                        descriptor: descriptor,
+                        normalizedParameters: descriptor.normalizeParameters(
+                            JSONEncoder().encode(IPCAuthLoginParams(token: token))),
+                        presentation: .tooling))
+            case .jsonStandardInput:
+                break
+            }
         }
         let readsMethodInput =
             descriptors.contains { $0.metadata.name == global.methodArguments.first }
