@@ -5,7 +5,7 @@ package enum AgentStudioOTLPTraceProjection {
         let safeResource = safeResource(record.resource)
         let resource = projectedResource(safeResource)
         var attributes = projectedAttributes(record.attributes, resource: safeResource)
-        if record.timeUnixNano <= UInt64(Int.max) {
+        if attributes["agentstudio.event.time_unix_nano"] == nil, record.timeUnixNano <= UInt64(Int.max) {
             attributes["agentstudio.event.time_unix_nano"] = .int(Int(record.timeUnixNano))
         }
         return AgentStudioOTLPProjectedLogRecord(
@@ -54,7 +54,8 @@ package enum AgentStudioOTLPTraceProjection {
         _ attributes: [String: AgentStudioTraceValue], resource: [String: String]
     ) -> [String: AgentStudioTraceValue] {
         var projected = attributes
-        for (key, value) in resource where resourceKeysProjectedAsLogAttributes.contains(key) {
+        // Enrichment fills gaps; recorded attributes retain their original names and values.
+        for (key, value) in resource where resourceKeysProjectedAsLogAttributes.contains(key) && projected[key] == nil {
             projected[key] = .string(value)
         }
         return projected

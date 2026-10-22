@@ -82,4 +82,69 @@ extension AgentStudioOTLPBootstrapSmokeTests {
             }
         }
     }
+
+    @Test
+    func encodedLogsKeepRecordedAttributesWhenEnrichmentCollides() async throws {
+        let collector = try LoopbackOTLPHTTPCollector()
+        defer { collector.cancel() }
+        try await collector.start()
+        let sink = try AgentStudioOTLPTraceSink(
+            context: .init(
+                endpoint: collector.endpoint(), otlpProtocol: .httpProtobuf,
+                queueStatistics: AgentStudioTraceQueueStatistics()
+            ),
+            bootstrapper: AgentStudioOTLPBootstrapper()
+        )
+        // Literal contract inventory: every resource key copied to log attributes, plus timestamp below.
+        let enrichmentResource: [String: String] = [
+            "agentstudio.release_channel": "beta",
+            "agentstudio.runtime_flavor": "debug",
+            "agent.proof.launch": "collision-launch",
+            "agent.proof.marker": "collision-marker",
+            "dev.release.channel": "beta",
+            "dev.repo.hash": "repo-hash",
+            "dev.runtime.flavor": "debug",
+            "dev.worktree.hash": "worktree-hash",
+            "dev.branch.name": "collision-branch",
+            "service.version": "resource-version",
+        ]
+        var recordedAttributes: [String: AgentStudioTraceValue] = [:]
+        for key in enrichmentResource.keys {
+            recordedAttributes[key] = .stringArray(["recorded \(key)", "", "/fixture/value"])
+        }
+        recordedAttributes["agentstudio.event.time_unix_nano"] = .stringArray(["recorded timestamp", "456"])
+        for (body, attributes) in [
+            ("fixture.enrichment_collision", recordedAttributes),
+            ("fixture.enrichment_control", [:]),
+        ] {
+            try await sink.record(
+                .init(
+                    timeUnixNano: 123, severityText: .info, body: body,
+                    traceID: nil, spanID: nil, parentSpanID: nil,
+                    resource: enrichmentResource,
+                    scope: .init(name: "agentstudio.performance", version: "test"), attributes: attributes
+                )
+            )
+        }
+        try await sink.shutdown()
+        collector.cancel()
+        let requests = await collector.receivedRequests()
+        let logs = try requests.filter { $0.path.hasSuffix("/v1/logs") }.flatMap {
+            try OTLPProtobufTestDecoder.logRecords(in: $0.body)
+        }
+        let collisionLog = try #require(logs.first { $0.body == "fixture.enrichment_collision" })
+        for (key, value) in recordedAttributes {
+            guard case .stringArray(let values) = value else {
+                Issue.record("Expected array collision fixture for \(key)")
+                continue
+            }
+            #expect(collisionLog.attributes[key] == .stringArray(values), "Recorded collision: \(key)")
+        }
+        let controlLog = try #require(logs.first { $0.body == "fixture.enrichment_control" })
+        for (key, value) in enrichmentResource {
+            #expect(controlLog.attributes[key] == .string(value), "Absent recorded attribute: \(key)")
+        }
+        #expect(controlLog.attributes["agentstudio.event.time_unix_nano"] == .string("123"))
+    }
+
 }
