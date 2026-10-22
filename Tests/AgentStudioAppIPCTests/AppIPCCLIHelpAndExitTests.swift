@@ -19,6 +19,10 @@ struct AppIPCCLIHelpAndExitTests {
             #expect(text.contains(name), "missing compiled method: \(name)")
         }
         #expect(!text.contains(recordedCLILiveCommandID.rawValue))
+        #expect(
+            text.components(separatedBy: "\n").contains(
+                "  agentstudio package install claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+            ))
     }
 
     @Test("method help comes from the compiled descriptor without an app")
@@ -91,11 +95,11 @@ struct AppIPCCLIHelpAndExitTests {
             executableURL: cliExecutableURL(), arguments: ["package", "uninstall", provider],
             environment: offlineEnvironment())
 
-        #expect(output.exitCode == 1)
+        #expect(output.exitCode == 64)
         #expect(output.standardOutput.isEmpty)
         #expect(
             String(bytes: output.standardError, encoding: .utf8)
-                == "agentstudio package: unknown subcommand uninstall\n")
+                == "agentstudio package: unknown subcommand uninstall\n\(expectedPackageUsage)\n")
     }
 
     @Test("a real server refusal exits nonzero in the CLI process")
