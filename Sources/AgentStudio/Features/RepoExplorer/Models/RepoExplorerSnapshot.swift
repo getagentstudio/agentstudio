@@ -161,7 +161,7 @@ enum RepoExplorerPaneRecencyText {
     }
 }
 
-enum RepoExplorerPaneRecencyTier: Equatable, Sendable {
+package enum RepoExplorerPaneRecencyTier: Equatable, Sendable {
     case strongBlue
     case mediumBlue
     case mutedBlue
