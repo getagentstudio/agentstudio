@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSharedComponents
+import Foundation
 
 package enum PaneLineGlyphMotion: Equatable, Sendable {
     case still
@@ -14,21 +15,27 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
     package let tooltip: ControlTooltipRenderValue
     package let tone: PaneContextChipTone
     package let glyphMotion: PaneLineGlyphMotion
+    package let ageText: String?
 
-    package static func agent(_ line: AgentLineDetail) -> Self {
+    package static func agent(_ line: AgentLineDetail, now: Date) -> Self {
         let spec = LocalActionSpec.showPaneAgentLine.actionSpec
         return Self(
             text: line.summary, icon: spec.icon,
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "showPaneAgentLine")),
-            tone: .neutral, glyphMotion: .still)
+            tone: .neutral, glyphMotion: .still,
+            ageText: RepoExplorerPaneRecencyText.age(referenceDate: line.updatedAt, now: now).messageText)
     }
+    package static func nextMessageAgeChangeDate(_ line: AgentLineDetail, now: Date) -> Date {
+        RepoExplorerPaneRecencyText.age(referenceDate: line.updatedAt, now: now).nextChangeDate
+    }
+
     package static func connection(_ reason: AgentConnectionRefusalReason) -> Self {
         let spec = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
         return Self(
             text: spec.label, icon: spec.icon,
             tooltip: spec.controlTooltipRenderValue(
                 provenance: .localAction(rawValue: "paneAgentConnectionIssue"), textOverride: spec.helpText),
-            tone: .warning, glyphMotion: .still)
+            tone: .warning, glyphMotion: .still, ageText: nil)
     }
 
     package static func session(_ status: AgentSessionStatus) -> Self? {
@@ -50,6 +57,6 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
         return Self(
             text: spec.label, icon: spec.icon,
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "paneSessionStatus")),
-            tone: tone, glyphMotion: glyphMotion)
+            tone: tone, glyphMotion: glyphMotion, ageText: nil)
     }
 }

@@ -113,7 +113,7 @@ struct RepoExplorerPaneContextLineTests {
             updatedAt: .distantPast)
         let variants = RepoExplorerPaneRowVariants.make(
             title: "Agent title", branchContext: "repo · main", note: "Review this", isDrawer: true,
-            branchStatus: nil, isActive: false, agentLine: line, sessionStatus: .needsYou(.approval))
+            branchStatus: nil, isActive: false, agentLine: line, sessionStatus: .needsYou(.approval), now: .distantPast)
         #expect(variants.compact.lines == variants.expanded.lines)
         #expect(variants.compact.lines.count == 5)
         #expect(variants.compact.fallbackLineCount == 6)
@@ -135,7 +135,7 @@ struct RepoExplorerPaneContextLineTests {
         for status: AgentSessionStatus? in [nil, .unknown] {
             let variants = RepoExplorerPaneRowVariants.make(
                 title: "Pane", branchContext: nil, note: nil, isDrawer: false,
-                branchStatus: nil, isActive: false, sessionStatus: status)
+                branchStatus: nil, isActive: false, sessionStatus: status, now: .distantPast)
             #expect(variants.compact.lines == [.title("Pane")])
             #expect(variants.compact.fallbackLineCount == 2)
         }
@@ -180,7 +180,7 @@ struct RepoExplorerPaneContextLineTests {
     func connectionIssueNeverHidesStatus() throws {
         let variants = RepoExplorerPaneRowVariants.make(
             title: "Pane", branchContext: nil, note: nil, isDrawer: false, branchStatus: nil, isActive: false,
-            sessionStatus: .needsYou(.approval), connectionIssue: .credentialNotRecognized)
+            sessionStatus: .needsYou(.approval), connectionIssue: .credentialNotRecognized, now: .distantPast)
         #expect(variants.compact.lines == variants.expanded.lines)
         try #require(variants.compact.lines.count == 3)
         guard case .sessionStatus(let status) = variants.compact.lines[1],

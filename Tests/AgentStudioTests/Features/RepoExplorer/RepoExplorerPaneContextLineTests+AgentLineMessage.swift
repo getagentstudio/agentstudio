@@ -12,7 +12,7 @@ extension RepoExplorerPaneContextLineTests {
             summary: "A message", refs: [],
             writer: .pane(.generateUUIDv7()), updatedAt: .distantPast)
 
-        let line = RepoExplorerPaneContextLine.agent(message)
+        let line = RepoExplorerPaneContextLine.agent(message, now: message.updatedAt)
 
         guard case .system(let glyph) = line.icon else {
             Issue.record("Agent Line must use the catalog's message symbol")

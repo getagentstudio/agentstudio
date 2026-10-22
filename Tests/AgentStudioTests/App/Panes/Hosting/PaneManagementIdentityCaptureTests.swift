@@ -18,7 +18,7 @@ struct PaneManagementIdentityCaptureTests {
             shellExecutablePath: "/bin/zsh", agentTitle: nil, note: nil, isDrawer: false,
             agentLine: nil, sessionPresentation: nil)
 
-        let lines = await PaneManagementIdentityCapture.lines(input)
+        let lines = await PaneManagementIdentityCapture.lines(input, now: .distantPast)
 
         #expect(lines.first == .title("zsh"))
         #expect(
@@ -166,7 +166,7 @@ struct PaneManagementIdentityCaptureTests {
             let context = PaneManagementContext.project(paneId: pane.id, store: store)
             let input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
 
-            let lines = await PaneManagementIdentityCapture.lines(input)
+            let lines = await PaneManagementIdentityCapture.lines(input, now: .distantPast)
 
             #expect(lines.map(\.kind) == [.title, .note, .agentLine, .sessionStatus, .connectionIssue])
             #expect(lines.first == .title("Agent title"))
@@ -174,7 +174,7 @@ struct PaneManagementIdentityCaptureTests {
             let sidebar = RepoExplorerPaneRowVariants.make(
                 title: "Agent title", branchContext: "repo · main", note: "Watch release logs",
                 isDrawer: false, branchStatus: nil, isActive: false, agentLine: detail,
-                sessionStatus: .working(.active), connectionIssue: .credentialNotRecognized)
+                sessionStatus: .working(.active), connectionIssue: .credentialNotRecognized, now: .distantPast)
             #expect(lines == sidebar.expanded.lines.filter { $0.kind != .worktreeBranch })
             #expect(!context.identityRows.contains { $0.id == "note" })
         }

@@ -58,7 +58,19 @@ package struct RepoExplorerPaneContextLineView: View {
                 .foregroundStyle(isAgentLine ? Color.primary : Color.secondary)
                 .lineLimit(1)
                 .truncationMode(.tail)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+            if let ageText = line.ageText {
+                Text(ageText)
+                    .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
+                    .foregroundStyle(Color.secondary)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+                    .layoutPriority(1)
+                    .background {
+                        AccessibilityLabelBridge(
+                            identifier: "paneContext.agentLine.age", label: ageText, role: .staticText)
+                    }
+            }
         }
     }
 

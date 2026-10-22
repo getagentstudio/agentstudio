@@ -8,8 +8,8 @@ import Synchronization
 enum NativeCardClockFact: Sendable, Equatable {
     case registered(ContinuousClock.Instant)
     case ended(Int, ContinuousClock.Instant, cancelled: Bool)
-    case operation(UUID, ContinuousClock.Instant?, PaneCardRelativeTimeRefresh.StartResult)
-    case hidden(PaneCardRelativeTimeRefresh.HideResult)
+    case operation(UUID, ContinuousClock.Instant?, PaneRelativeTimeRefresh.StartResult)
+    case hidden(PaneRelativeTimeRefresh.HideResult)
     case entered(UUID, ContinuousClock.Instant?)
     case workerEnded(UUID, ContinuousClock.Instant?, cancelled: Bool)
     case drained
@@ -72,7 +72,7 @@ final class NativeCardTestClock: Clock {
     }
 
     @MainActor
-    func observeOwner(_ event: PaneCardRelativeTimeRefresh.Event) {
+    func observeOwner(_ event: PaneRelativeTimeRefresh.Event) {
         switch event {
         case .operation(let input, let result):
             if result != .unchanged { sleeps.withLock { $0.workerTasks += 1 } }
@@ -98,7 +98,7 @@ final class NativeCardTestClock: Clock {
     func advance(by duration: Duration) { controlled.advance(by: duration) }
 
     @MainActor
-    func nextOperation(pane: UUID, input: Instant) async throws -> PaneCardRelativeTimeRefresh.StartResult {
+    func nextOperation(pane: UUID, input: Instant?) async throws -> PaneRelativeTimeRefresh.StartResult {
         let fact = try await facts.expectNext(in: 1, where: { _ in true }, "owner start/replace disposition")
         guard case .operation(let actualPane, let actualInput, let result) = fact,
             actualPane == pane, actualInput == input
@@ -107,7 +107,7 @@ final class NativeCardTestClock: Clock {
     }
 
     @MainActor
-    func nextHideResult() async throws -> PaneCardRelativeTimeRefresh.HideResult {
+    func nextHideResult() async throws -> PaneRelativeTimeRefresh.HideResult {
         let fact = try await facts.expectNext(in: 1, where: { _ in true }, "owner hide disposition")
         guard case .hidden(let result) = fact else {
             throw NativeCardClockFailure(description: "Unexpected owner hide disposition: \(fact)")
@@ -116,7 +116,7 @@ final class NativeCardTestClock: Clock {
     }
 
     @MainActor
-    func entered(pane: UUID, input: Instant) async throws {
+    func entered(pane: UUID, input: Instant?) async throws {
         try await facts.expectNext(in: 1, .entered(pane, input))
     }
 
@@ -140,7 +140,7 @@ final class NativeCardTestClock: Clock {
 
     @MainActor
     func registered(
-        _ deadline: Instant, pane: UUID, currentInput: Instant, retiredInput: Instant? = nil
+        _ deadline: Instant, pane: UUID, currentInput: Instant?, retiredInput: Instant? = nil
     ) async throws {
         // Owner and clock scopes have independent cursors. A replacement is ready
         // only after this scope has consumed both facts, in either arrival order.
@@ -165,7 +165,7 @@ final class NativeCardTestClock: Clock {
     }
 
     @MainActor
-    func cancelledWorker(pane: UUID, input: Instant) async throws {
+    func cancelledWorker(pane: UUID, input: Instant?) async throws {
         try await facts.expectNext(in: 1, .workerEnded(pane, input, cancelled: true))
         var sleepCancelled = false
         while true {

@@ -7,6 +7,7 @@ extension CLIPaneContextDispatchTests {
     @Test(
         "removed Agent Line options explain the message contract without any IPC",
         arguments: [
+            ["--working"], ["--done"], ["--working", "--step", "3/7"], ["--step", "abc"],
             ["message", "--working"], ["message", "--done"], ["message", "--step", "3/7"],
             ["message", "--monitoring", "CI"], ["message", "--blocked-on-you", "approve"],
             ["message", "--failed", "compile"], ["message", "--detail", "details"],

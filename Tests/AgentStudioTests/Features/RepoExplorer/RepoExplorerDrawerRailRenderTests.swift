@@ -113,8 +113,7 @@ struct RepoExplorerDrawerRailRenderTests {
             note: note,
             isDrawer: isDrawer,
             branchStatus: nil,
-            isActive: false
-        )
+            isActive: false, now: .distantPast)
         row.drawerRail = rail
         return row
     }

@@ -91,7 +91,8 @@ extension RepoExplorerProjection {
                         groupID: groupID,
                         repositoriesByID: repositoriesByID,
                         facts: input.paneFacts[destination.paneId],
-                        branchFacts: input.branchFacts
+                        branchFacts: input.branchFacts,
+                        now: input.snapshot.referenceDate
                     )
                     row.drawerRail = orderedGroup.railByPaneID[paneID] ?? .none
                     return row
@@ -259,7 +260,8 @@ extension RepoExplorerProjection {
         groupID: String,
         repositoriesByID: [UUID: RepoPresentationItem],
         facts: RepoExplorerPaneRowFacts?,
-        branchFacts: RepoExplorerPaneBranchProjectionFacts
+        branchFacts: RepoExplorerPaneBranchProjectionFacts,
+        now: Date
     ) -> RepoExplorerProjectedPaneRow {
         let rowID = "pane-row:\(groupID):\(destination.paneId.uuidString)"
         let title = panePrimaryText(destination, terminalTitle: facts?.sidebarTerminalTitle, showsPaneNumber: false)
@@ -317,7 +319,8 @@ extension RepoExplorerProjection {
             agentLine: facts?.contextDisplay?.agentLine,
             sessionStatus: facts?.sessionStatus,
             connectionIssue: facts?.connectionIssue,
-            messageCount: pinnedRow.messageChip?.count ?? 0
+            messageCount: pinnedRow.messageChip?.count ?? 0,
+            now: now
         )
         return pinnedRow
     }

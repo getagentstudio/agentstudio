@@ -69,7 +69,8 @@ struct ManagementPaneIdentityStrip: View {
         let lineLabels = lines.map { line in
             switch line {
             case .title(let text), .note(let text), .worktreeBranch(let text): text
-            case .agentLine(let value), .sessionStatus(let value), .connectionIssue(let value): value.text
+            case .agentLine(let value), .sessionStatus(let value), .connectionIssue(let value):
+                [value.text, value.ageText].compactMap { $0 }.joined(separator: ", ")
             }
         }
         return lineLabels + context.identityRows.map(accessibilityLabel(for:))
@@ -244,18 +245,18 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let store: WorkspaceStore
     let clock: ActivityClock
     @State private var sessionIdentity = PaneManagementSessionIdentity()
-    @State private var relativeTimeRefresh: PaneCardRelativeTimeRefresh
+    @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
 
     init(
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
         clock: ActivityClock,
-        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneCardRelativeTimeRefresh.Event) -> Void = { _ in }
+        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
     ) {
         self.context = context
         self.octiconLoader = octiconLoader
         self.store = store
         self.clock = clock
-        _relativeTimeRefresh = State(initialValue: PaneCardRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
+        _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
     }
 
     var body: some View {

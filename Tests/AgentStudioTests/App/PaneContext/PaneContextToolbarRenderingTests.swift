@@ -41,65 +41,69 @@ struct PaneContextToolbarRenderingTests {
                             revision: .init(1), agentTitle: nil, agentLine: line, own: .zero,
                             includingDrawers: .zero, pullRequests: .notApplicable))
                 ])
-                let mounted = mount(pane: pane, readers: readers, width: width)
-                defer { mounted.window.orderOut(nil) }
-                let controls = buttonFrames(in: mounted.host)
-                let barHeight = mounted.host.bounds.height
-                #expect(barHeight == DrawerLayout.iconStripHeight)
-                #expect(mounted.host.fittingSize.height == barHeight)
-                if let baselineHeight { #expect(barHeight == baselineHeight) } else { baselineHeight = barHeight }
-                #expect(controls.count == 9)
-                #expect(controls.values.allSatisfy { $0.width > 0 && $0.height > 0 })
-                if let baseline { #expect(controls == baseline) } else { baseline = controls }
-                let leadingIdentifiers: Set<String> = [
-                    "paneSurfaceToolbar.drawerToggle", "paneSurfaceToolbar.drawerAdd",
-                    "paneSurfaceToolbar.pinPane", "paneSurfaceToolbar.note",
-                ]
-                let middleStart = try #require(
-                    controls.filter { leadingIdentifiers.contains($0.key) }.values.map(\.maxX).max())
-                let middleEnd = try #require(
-                    controls.filter { !leadingIdentifiers.contains($0.key) }.values.map(\.minX).min())
-                let textStart =
-                    middleStart + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing
-                    + AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth
-                    + AppStyles.Shell.Sidebar.groupIconTitleSpacing
-                let textRect = CGRect(x: textStart, y: 0, width: middleEnd - textStart, height: barHeight)
-                #expect(textRect.width > 0)
-                let textPixels = try pixels(in: mounted.host, rect: textRect)
-                let groupPixels = try [
-                    pixels(in: mounted.host, rect: CGRect(x: 0, y: 0, width: middleStart, height: barHeight)),
-                    pixels(
-                        in: mounted.host,
-                        rect: CGRect(x: middleEnd, y: 0, width: width - middleEnd, height: barHeight)),
-                ]
-                let capEnd = min(middleEnd, middleStart + 360 + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
-                let beyondCapPixels =
-                    middleEnd > capEnd
-                    ? try pixels(
-                        in: mounted.host,
-                        rect: CGRect(x: capEnd, y: 0, width: middleEnd - capEnd, height: barHeight))
-                    : Data()
-                if summary != nil {
-                    #expect(textPixels != (try #require(emptyTextPixels)), "Agent Line text must paint in the middle")
-                    #expect(groupPixels == (try #require(fixedGroupPixels)), "Agent Line must not paint over controls")
+                try await withMountedToolbar(pane: pane, readers: readers, width: width) { mounted in
+                    let controls = buttonFrames(in: mounted.host)
+                    let barHeight = mounted.host.bounds.height
+                    #expect(barHeight == DrawerLayout.iconStripHeight)
+                    #expect(mounted.host.fittingSize.height == barHeight)
+                    if let baselineHeight { #expect(barHeight == baselineHeight) } else { baselineHeight = barHeight }
+                    #expect(controls.count == 9)
+                    #expect(controls.values.allSatisfy { $0.width > 0 && $0.height > 0 })
+                    if let baseline { #expect(controls == baseline) } else { baseline = controls }
+                    let leadingIdentifiers: Set<String> = [
+                        "paneSurfaceToolbar.drawerToggle", "paneSurfaceToolbar.drawerAdd",
+                        "paneSurfaceToolbar.pinPane", "paneSurfaceToolbar.note",
+                    ]
+                    let middleStart = try #require(
+                        controls.filter { leadingIdentifiers.contains($0.key) }.values.map(\.maxX).max())
+                    let middleEnd = try #require(
+                        controls.filter { !leadingIdentifiers.contains($0.key) }.values.map(\.minX).min())
+                    let textStart =
+                        middleStart + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing
+                        + AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth
+                        + AppStyles.Shell.Sidebar.groupIconTitleSpacing
+                    let textRect = CGRect(x: textStart, y: 0, width: middleEnd - textStart, height: barHeight)
+                    #expect(textRect.width > 0)
+                    let textPixels = try pixels(in: mounted.host, rect: textRect)
+                    let groupPixels = try [
+                        pixels(in: mounted.host, rect: CGRect(x: 0, y: 0, width: middleStart, height: barHeight)),
+                        pixels(
+                            in: mounted.host,
+                            rect: CGRect(x: middleEnd, y: 0, width: width - middleEnd, height: barHeight)),
+                    ]
+                    let capEnd = min(
+                        middleEnd, middleStart + 360 + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
+                    let beyondCapPixels =
+                        middleEnd > capEnd
+                        ? try pixels(
+                            in: mounted.host,
+                            rect: CGRect(x: capEnd, y: 0, width: middleEnd - capEnd, height: barHeight))
+                        : Data()
+                    if summary != nil {
+                        #expect(
+                            textPixels != (try #require(emptyTextPixels)), "Agent Line text must paint in the middle")
+                        #expect(
+                            groupPixels == (try #require(fixedGroupPixels)), "Agent Line must not paint over controls")
+                        #expect(
+                            beyondCapPixels == (try #require(emptyBeyondCapPixels)),
+                            "Agent Line ink must stop at 360 points")
+                    } else {
+                        emptyTextPixels = textPixels
+                        fixedGroupPixels = groupPixels
+                        emptyBeyondCapPixels = beyondCapPixels
+                    }
+                    let labels = accessibilityLabels(in: mounted.host)
+                    #expect(!labels.contains("Working"))
                     #expect(
-                        beyondCapPixels == (try #require(emptyBeyondCapPixels)),
-                        "Agent Line ink must stop at 360 points")
-                } else {
-                    emptyTextPixels = textPixels
-                    fixedGroupPixels = groupPixels
-                    emptyBeyondCapPixels = beyondCapPixels
+                        !labels.contains(where: { $0.contains("Messages unavailable") || $0.contains("credential") }))
+                    if let summary {
+                        #expect(labels.contains(summary))
+                    } else {
+                        #expect(!labels.contains("Checking toolbar spacing"))
+                    }
+                    #expect(abs(mounted.host.bounds.width - CGFloat(width)) < 0.5)
+                    #expect(mounted.host.fittingSize.width <= width)
                 }
-                let labels = accessibilityLabels(in: mounted.host)
-                #expect(!labels.contains("Working"))
-                #expect(!labels.contains(where: { $0.contains("Messages unavailable") || $0.contains("credential") }))
-                if let summary {
-                    #expect(labels.contains(summary))
-                } else {
-                    #expect(!labels.contains("Checking toolbar spacing"))
-                }
-                #expect(abs(mounted.host.bounds.width - CGFloat(width)) < 0.5)
-                #expect(mounted.host.fittingSize.width <= width)
             }
             atoms.paneContextPresentation.remove([pane])
         }
@@ -215,7 +219,7 @@ struct PaneContextToolbarRenderingTests {
         }
     }
 
-    private func mountCard(_ content: AnyView, width: CGFloat?) -> MountedToolbar {
+    func mountCard(_ content: AnyView, width: CGFloat?) -> PaneContextToolbarTestHost {
         let host = NSHostingView(
             rootView: AnyView(content.frame(width: width).background(Color.black).environment(\.colorScheme, .dark)))
         host.frame = CGRect(origin: .zero, size: host.fittingSize)
@@ -227,11 +231,10 @@ struct PaneContextToolbarRenderingTests {
         window.layoutIfNeeded()
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
-        return MountedToolbar(host: host, window: window)
+        return PaneContextToolbarTestHost(host: host, window: window)
     }
 
-    private func ink(in host: NSView, minimumBrightness: UInt8 = 160) throws -> (width: Int, height: Int, mask: [Bool])
-    {
+    func ink(in host: NSView, minimumBrightness: UInt8 = 160) throws -> (width: Int, height: Int, mask: [Bool]) {
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
@@ -250,7 +253,7 @@ struct PaneContextToolbarRenderingTests {
         return (image.width, image.height, mask)
     }
 
-    private func containsTextInk(
+    func containsTextInk(
         _ reference: (width: Int, height: Int, mask: [Bool]),
         in rendered: (width: Int, height: Int, mask: [Bool])
     ) -> Bool {
@@ -300,17 +303,19 @@ struct PaneContextToolbarRenderingTests {
             statuses.apply([pane: .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized))])
             let readers = PaneContextUIReaders(
                 sessionStatus: statuses, presentation: atoms.paneContextPresentation, pane: { _ in nil })
-            let mounted = mount(pane: pane, readers: readers, width: 480)
-            defer { mounted.window.orderOut(nil) }
-            let warningPixels = try pixels(in: mounted.host)
-            statuses.apply([pane: .remove])
-            let baseline = mount(pane: pane, readers: readers, width: 480)
-            defer { baseline.window.orderOut(nil) }
-            #expect(warningPixels == (try pixels(in: baseline.host)))
-            let labels = accessibilityLabels(in: mounted.host)
-            #expect(!labels.contains("Working"))
-            #expect(!labels.contains(where: { $0.contains("Messages unavailable") || $0.contains("credential") }))
-            #expect(buttonFrames(in: mounted.host).count == 9)
+            try await withMountedToolbar(pane: pane, readers: readers, width: 480) { mounted in
+                let warningPixels = try pixels(in: mounted.host)
+                statuses.apply([pane: .remove])
+                try await withMountedToolbar(pane: pane, readers: readers, width: 480) { baseline in
+                    let baselinePixels = try pixels(in: baseline.host)
+                    #expect(warningPixels == baselinePixels)
+                    let labels = accessibilityLabels(in: mounted.host)
+                    #expect(!labels.contains("Working"))
+                    #expect(
+                        !labels.contains(where: { $0.contains("Messages unavailable") || $0.contains("credential") }))
+                    #expect(buttonFrames(in: mounted.host).count == 9)
+                }
+            }
         }
     }
 
@@ -336,7 +341,7 @@ struct PaneContextToolbarRenderingTests {
                 paneId: pane.id, identityRows: projected.identityRows,
                 statusChips: .init(branchStatus: .unknown), targetPath: nil, showsIdentityBlock: true)
             let input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
-            let lines = await PaneManagementIdentityCapture.lines(input)
+            let lines = await PaneManagementIdentityCapture.lines(input, now: .distantPast)
             #expect(
                 lines.contains(.sessionStatus(try #require(RepoExplorerPaneContextLine.session(.working(.active))))))
             #expect(lines.contains(.connectionIssue(.connection(.credentialNotRecognized))))
@@ -369,7 +374,28 @@ struct PaneContextToolbarRenderingTests {
         }
     }
 
-    private func mount(pane: PaneId, readers: PaneContextUIReaders, width: CGFloat) -> MountedToolbar {
+    func withMountedToolbar(
+        pane: PaneId, readers: PaneContextUIReaders, width: CGFloat,
+        body: (PaneContextToolbarTestHost) async throws -> Void
+    ) async throws {
+        let mounted = try await mount(pane: pane, readers: readers, width: width)
+        do {
+            try await body(mounted)
+            try await mounted.stop()
+        } catch {
+            mounted.hide()
+            try? await mounted.clock?.retire()
+            try? await mounted.clock?.facts.finish()
+            mounted.window.close()
+            throw error
+        }
+    }
+
+    private func mount(pane: PaneId, readers: PaneContextUIReaders, width: CGFloat) async throws
+        -> PaneContextToolbarTestHost
+    {
+        let clock = NativeCardTestClock()
+        let hasLine = readers.contextDisplayForPane(pane)?.agentLine != nil
         let loader = makeTestOcticonLoader()
         let trailing = DrawerOverlay.TrailingActions(
             editPaneNoteAction: action(.editPaneNote), openEditorMenuAction: action(.openPaneLocationInEditorMenu),
@@ -394,7 +420,10 @@ struct PaneContextToolbarRenderingTests {
                     pinPaneAction: action(.pinPane), trailingActions: trailing,
                     paneContextActions: [surfaceAction(.zoomPane)],
                     middleContent: AnyView(
-                        PaneContextToolbarAgentLine(paneId: pane, readers: readers, octiconLoader: loader))
+                        PaneContextToolbarAgentLine(
+                            paneId: pane, readers: readers, octiconLoader: loader, clock: clock,
+                            wallNow: Date(timeIntervalSince1970: 1_800_000_125),
+                            onRelativeTimeEvent: { clock.observeOwner($0) }))
                 ).frame(width: width)))
         host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
@@ -404,7 +433,30 @@ struct PaneContextToolbarRenderingTests {
         window.layoutIfNeeded()
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
-        return MountedToolbar(host: host, window: window)
+        let mounted = PaneContextToolbarTestHost(
+            host: host, window: window, clock: clock, paneId: pane.uuid, hasLine: hasLine)
+        do {
+            if hasLine {
+                try #require(try await clock.nextOperation(pane: pane.uuid, input: nil) == .started)
+                try await clock.entered(pane: pane.uuid, input: nil)
+                let fact = try await clock.facts.expectNext(
+                    in: 0, where: { _ in true }, "toolbar age registration or worker end")
+                guard case .registered = fact else {
+                    throw ToolbarHostFailure.unexpectedClockFact(String(describing: fact))
+                }
+            } else {
+                #expect(try await clock.nextHideResult() == .notRunning)
+            }
+            host.layoutSubtreeIfNeeded()
+            host.displayIfNeeded()
+            return mounted
+        } catch {
+            mounted.hide()
+            try? await clock.retire()
+            try? await clock.facts.finish()
+            window.close()
+            throw error
+        }
     }
 
     private func action(_ command: AppCommand) -> TargetedCommandControlAction {
@@ -426,7 +478,7 @@ struct PaneContextToolbarRenderingTests {
         return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 
-    private func buttonFrames(in host: NSView) -> [String: CGRect] {
+    func buttonFrames(in host: NSView) -> [String: CGRect] {
         var frames: [String: CGRect] = [:]
         func visit(_ view: NSView) {
             if let button = view as? AccessibilityPressBridgeView {
@@ -438,7 +490,7 @@ struct PaneContextToolbarRenderingTests {
         return frames
     }
 
-    private func accessibilityLabels(in view: NSView) -> Set<String> {
+    func accessibilityLabels(in view: NSView) -> Set<String> {
         var labels = Set<String>()
         var visited = Set<ObjectIdentifier>()
         func visit(_ object: NSObject) {
@@ -460,10 +512,4 @@ struct PaneContextToolbarRenderingTests {
         visit(view)
         return labels
     }
-}
-
-@MainActor
-private struct MountedToolbar {
-    let host: NSHostingView<AnyView>
-    let window: NSWindow
 }
