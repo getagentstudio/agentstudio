@@ -6,6 +6,16 @@ import Foundation
 /// Records the canonical pane each session registration resolved, so the
 /// registration tests can prove targeting without a Sessions database.
 actor RecordingSessionsPort: AppIPCSessionsPort {
+    private(set) var statusPaneIds: [UUID] = []
+    func recordUnverifiedStatus(
+        paneId: UUID, params: IPCSessionStatusParams,
+        revalidateClaim: @escaping @Sendable () throws -> Void
+    ) async throws -> IPCSessionEventResult {
+        try revalidateClaim()
+        statusPaneIds.append(paneId)
+        return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
+    }
+
     private(set) var eventPaneIds: [UUID] = []
     private(set) var eventProvenances: [IPCSessionEventProvenance] = []
     private(set) var queryPaneIds: [UUID] = []

@@ -34,6 +34,17 @@ protocol WorkspaceSurfaceManaging: AnyObject {
     func reconcileAttachedVisibility(
         _ visibilityForPaneID: (UUID) -> Bool
     ) -> SurfaceVisibilityReconciliationResult
+
+    /// SR5; Program Design item 3: shows the specific restore-start failure
+    /// reason on the pane's overlay instead of generic "Process Exited". A
+    /// no-op if the pane has no attached surface.
+    func reportColdRestoreFailure(paneID: UUID, failure: ColdStartFailure)
+}
+
+/// Default no-op: only `SurfaceManager` implements this for real, so the
+/// ~25 test fakes conforming to `WorkspaceSurfaceManaging` need no stub.
+extension WorkspaceSurfaceManaging {
+    func reportColdRestoreFailure(paneID: UUID, failure: ColdStartFailure) {}
 }
 
 extension SurfaceManager: WorkspaceSurfaceManaging {}
@@ -59,6 +70,8 @@ final class WorkspaceSurfaceCoordinator {
     }
 
     let store: WorkspaceStore
+    var terminalActivityRouter: TerminalActivityRouter?
+    let coldStartAttachExitBinding = ColdStartAttachExitBinding()
     var paneActivityClock: PaneActivityClock?
     var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
     var sessionsIngestion: SessionsIngestion?
@@ -131,6 +144,66 @@ final class WorkspaceSurfaceCoordinator {
     private var criticalRuntimeEventsTask: Task<Void, Never>?
     private var batchedRuntimeEventsTask: Task<Void, Never>?
     var bridgePaneRetirementTasksByPaneId: [UUID: Task<Void, Never>] = [:]
+    /// SR4; Program Design item 4 ("Staggered starts"): owns each cold
+    /// pane's startup-window observation task -- cancellable on retirement
+    /// or teardown, self-removing, test-awaitable. See
+    /// `WorkspaceSurfaceCoordinator+TerminalContentMounting.swift`.
+    var coldStartObservationTasksByPaneID: [UUID: Task<Void, Never>] = [:]
+    /// Typed-fact sink (`docs/specs/2026-09-28-typed-fact-test-harness`):
+    /// `nil` in production, a `LocalFactSource.sink` in tests.
+    var coldStartObservationFactSink: (@Sendable (UUID, ColdStartOutcome) -> Void)?
+    /// SR2a; Program Design item 5: one more `observeSessionIdentity` call
+    /// after a warm/unverified pane's attach settles, compared against the
+    /// warm baseline. Reuses `ZmxBackend`'s default timeout, not the
+    /// shorter `inventoryProbeDeadline` the launch-restore cohort's own
+    /// probe uses -- this runs one pane at a time, off the startup path.
+    lazy var postAttachRecreationProbe: (any ZmxSessionRestoreProbing)? = ZmxBackend(configuration: sessionConfig)
+    /// A6 (advisor review 2026-10-01; PD rev 21 item 5, Lead decision: push,
+    /// not pull): panes mounted warm/unverified and still waiting for their
+    /// post-attach recreation check's own first render. `TerminalActivityRouter`'s
+    /// existing `.firstRender` outcome arm (already unconditional for
+    /// warm/unverified panes -- they never arm a restore phase, so
+    /// `consumeAggregateState`'s `!isInRestorePhase` gate never blocks
+    /// them) calls the injected `onFirstRender` callback it's composed
+    /// with in `AppDelegate.bootStartTerminalActivityRouter`, which
+    /// forwards here via `receivePostAttachFirstRender(paneID:)`. A pane
+    /// still present here when it retires never gets a render; see
+    /// `retirePanesPermanently`.
+    var pendingPostAttachRecreationChecksByPaneID: [UUID: PendingPostAttachRecreationCheck] = [:]
+    /// Ownership shape matches `coldStartObservationTasksByPaneID`:
+    /// cancellable on retirement/teardown, self-removing, test-awaitable.
+    var postAttachRecreationCheckTasksByPaneID: [UUID: Task<Void, Never>] = [:]
+    /// Detection only (Program Design item 5's own stop: no UI mechanism
+    /// exists yet; `InboxNotificationRouter` stays retired). `nil` in
+    /// production, a `LocalFactSource.sink` in tests.
+    var postAttachRecreationCheckFactSink: (@Sendable (UUID, PaneRecreationCheckOutcome) -> Void)?
+    /// R2-2 (review round 2, Lead 2026-10-01): `executeRepair`'s own
+    /// `restorePhaseLatch` carry-across (A5) only covers a replacement that
+    /// succeeds. A failed `.recreateSurface` (creation/attachment failure)
+    /// has no surface left to hold the generation on, but the projector's
+    /// own phase survives the failure by design (SR6b) -- this is where
+    /// that generation waits until a later repair, `.recreateSurface` or
+    /// `.createMissingView`, actually succeeds and reinstalls it. Cleared
+    /// on successful reinstall or permanent retirement (`retirePanesPermanently`),
+    /// never on a failed attempt alone.
+    var pendingRestorePhaseLatchesByPaneID: [UUID: RestoreGeneration] = [:]
+    /// Issues fresh, launch-unique `RestoreGeneration` values (SR6b;
+    /// Program Design item 13). Moved here from the now-deleted
+    /// `RestoreGenerationAllocator` (a process-wide singleton the repo's
+    /// `agentstudio_no_new_process_singletons` lint now forbids,
+    /// agent-studio#441): `RestoreGeneration` is compared only for
+    /// equality/dedup, never ordered (its own doc comment), so uniqueness
+    /// per coordinator -- the one production owner that arms a restore
+    /// phase -- is sufficient; generations are only ever compared within
+    /// one pane's own history.
+    private var nextRestoreGenerationValue: UInt64 = 1
+    /// Not `private`: `WorkspaceSurfaceCoordinator+TerminalContentMounting.swift`'s
+    /// `mountPreparedTerminalContent` is the one call site, in a different
+    /// file -- `private` is file-scoped and does not cross that boundary.
+    func allocateRestoreGeneration() -> RestoreGeneration {
+        defer { nextRestoreGenerationValue &+= 1 }
+        return RestoreGeneration(rawValue: nextRestoreGenerationValue)
+    }
     var bridgePaneRetirementsRequiringRuntimeUnregister: Set<UUID> = []
     var bridgePaneRetirementsRequiringRestore: Set<UUID> = []
     var filesystemSyncTask: Task<Void, Never>?
@@ -304,6 +377,19 @@ final class WorkspaceSurfaceCoordinator {
             task.cancel()
         }
         runtimeEventBridgeTasks.removeAll()
+        for paneID in coldStartObservationTasksByPaneID.keys {
+            coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
+        }
+        for task in coldStartObservationTasksByPaneID.values {
+            task.cancel()
+        }
+        coldStartObservationTasksByPaneID.removeAll()
+        for task in postAttachRecreationCheckTasksByPaneID.values {
+            task.cancel()
+        }
+        postAttachRecreationCheckTasksByPaneID.removeAll()
+        pendingPostAttachRecreationChecksByPaneID.removeAll()
+        pendingRestorePhaseLatchesByPaneID.removeAll()
         criticalRuntimeEventsTask?.cancel()
         batchedRuntimeEventsTask?.cancel()
         filesystemSyncTask?.cancel()
@@ -347,6 +433,9 @@ final class WorkspaceSurfaceCoordinator {
         let activeFilesystemSyncTask = filesystemSyncTask
         let activePullRequestDemandDeliveryTask = pullRequestDemandDeliveryTask
         let activeRuntimeBridgeTasks = Array(runtimeEventBridgeTasks.values)
+        let activeColdStartObservationPaneIDs = Array(coldStartObservationTasksByPaneID.keys)
+        let activeColdStartObservationTasks = Array(coldStartObservationTasksByPaneID.values)
+        let activePostAttachRecreationCheckTasks = Array(postAttachRecreationCheckTasksByPaneID.values)
 
         paneEventIngressTask?.cancel()
         paneEventIngressTask = nil
@@ -367,6 +456,29 @@ final class WorkspaceSurfaceCoordinator {
             task.cancel()
         }
         runtimeEventBridgeTasks.removeAll()
+        for paneID in activeColdStartObservationPaneIDs {
+            coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
+        }
+        for task in activeColdStartObservationTasks {
+            task.cancel()
+        }
+        coldStartObservationTasksByPaneID.removeAll()
+        for task in activePostAttachRecreationCheckTasks {
+            task.cancel()
+        }
+        postAttachRecreationCheckTasksByPaneID.removeAll()
+        // R3-2 (review round 3, Lead decision 2026-10-02): every pane still
+        // waiting for its first output when the whole coordinator shuts
+        // down never gets one either -- same reason, same one-disposition
+        // shape as `retirePanesPermanently`'s existing per-pane close
+        // (above) and `finishViewTeardown`'s new one
+        // (WorkspaceSurfaceCoordinator+ViewLifecycle.swift). This used to
+        // just clear the map silently.
+        for paneID in pendingPostAttachRecreationChecksByPaneID.keys {
+            postAttachRecreationCheckFactSink?(paneID, .uncheckable(.paneUnavailableBeforeFirstRender))
+        }
+        pendingPostAttachRecreationChecksByPaneID.removeAll()
+        pendingRestorePhaseLatchesByPaneID.removeAll()
 
         await repositoryFactDemandCoordinator.shutdown()
         await filesystemProjectionIndex.shutdown()
@@ -387,6 +499,12 @@ final class WorkspaceSurfaceCoordinator {
             await activePullRequestDemandDeliveryTask.value
         }
         for task in activeRuntimeBridgeTasks {
+            await task.value
+        }
+        for task in activeColdStartObservationTasks {
+            await task.value
+        }
+        for task in activePostAttachRecreationCheckTasks {
             await task.value
         }
 
@@ -434,7 +552,26 @@ final class WorkspaceSurfaceCoordinator {
     }
 
     /// Shared final-retirement edge for undo expiry and committed direct discards.
+    ///
+    /// Also the sole source of the projector's permanent-close signal (SR6b): a
+    /// discarded pane never reaches an ordinary `.surfaceClosed` here, so
+    /// without this, an armed-but-never-typed-into pane's restore phase would
+    /// leak in `TerminalActivityProjector.restorePhaseByPane` forever. Fired
+    /// as a submitted input, matching `TerminalActivityRouter
+    /// .markUnseenActivityObserved`'s existing fire-and-forget pattern for
+    /// posting a terminal-activity fact from a synchronous call site.
     func retirePanesPermanently(_ paneIDs: Set<UUID>) {
+        for paneID in paneIDs {
+            Task { @MainActor [terminalActivityRouter] in
+                await terminalActivityRouter?.retirePanePermanently(paneID: paneID)
+            }
+            coldStartAttachExitBinding.cancelPendingColdStart(paneID: paneID)
+            postAttachRecreationCheckTasksByPaneID[paneID]?.cancel()
+            if pendingPostAttachRecreationChecksByPaneID.removeValue(forKey: paneID) != nil {
+                postAttachRecreationCheckFactSink?(paneID, .uncheckable(.paneUnavailableBeforeFirstRender))
+            }
+            pendingRestorePhaseLatchesByPaneID.removeValue(forKey: paneID)
+        }
         let retiredPaneIDs = Array(paneIDs)
         paneActivityClock?.retire(retiredPaneIDs)
         sessionsPaneViewedMailbox?.retire(retiredPaneIDs)

@@ -377,8 +377,8 @@ AppDelegate (creates all services in dependency order)
             └── terminalContainer (dynamic split hierarchy)
 
 Boot sequence ([`WorkspaceBootSequence.swift`](../../../Sources/AgentStudio/App/Boot/WorkspaceBootSequence.swift)):
-  presentation: prepareDatabases → loadCanonicalStore → establishRuntimeBus
-  then async: loadCacheStore → loadUIStore → startFilesystemActor → startGitProjector
+  presentation: prepareDatabases → loadCanonicalStore → loadSidebarMemory → establishRuntimeBus
+  then async: loadCacheStore → loadWorkspaceSettings → startFilesystemActor → startGitProjector
   → startForgeActor → startCacheCoordinator → armPersistenceObservation
   → triggerInitialTopologySync → readyForReactiveSidebar
 

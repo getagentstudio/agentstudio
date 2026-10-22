@@ -180,7 +180,15 @@ package struct AppIPCTypedMethodRegistration<
                 allowedTargetKinds = descriptor.allowedTargetKinds
             }
             try Self.validateTarget(resolution.canonicalHandle, allowedKinds: allowedTargetKinds)
-            if descriptor.principalAvailability == .authenticated {
+            if case .paneClaim(let paneId, _)? = context.principal?.kind {
+                guard descriptor.callIntent == .status, resolution.resolvedPaneIds == [paneId],
+                    resolution.target == .pane(paneId.uuidString),
+                    resolution.requiredScopes.isEmpty
+                else {
+                    throw AppIPCPaneClaimError(reason: .intentRequiresToken)
+                }
+                try context.revalidatePaneClaim()
+            } else if descriptor.principalAvailability == .authenticated {
                 guard let principal = context.principal else {
                     throw AppIPCTypedMethodRegistrationError.authenticationRequired
                 }
@@ -217,12 +225,20 @@ package struct AppIPCTypedMethodRegistration<
                 let validated = try descriptor.contract.validatedParameters(from: parameterData)
                 let wireCorrelation = try normalizedWireCorrelationId(from: validated.json.data)
                 try Self.validateCorrelation(in: validated.value, using: correlation, matches: wireCorrelation)
-                return try await prepareAndHandle(validated.value, wireCorrelation, context, tools, authorization)
+                let requestContext =
+                    descriptor.principalAvailability == .authenticated
+                    ? try context.admittingClaim(parameters: validated.json.data, intent: descriptor.callIntent)
+                    : context
+                return try await prepareAndHandle(
+                    validated.value, wireCorrelation, requestContext, tools, authorization)
             })
     }
 
     private func validateConnectionAccess(_ context: AppIPCConnectionContext) throws {
-        if descriptor.principalAvailability == .authenticated, context.principal == nil {
+        if descriptor.principalAvailability == .authenticated, context.principal == nil,
+            !(descriptor.callIntent == .status && context.paneClaimAdmission != nil)
+        {
+            if context.paneClaimAdmission != nil { throw AppIPCPaneClaimError(reason: .intentRequiresToken) }
             throw AppIPCTypedMethodRegistrationError.authenticationRequired
         }
 
@@ -245,7 +261,8 @@ package struct AppIPCTypedMethodRegistration<
         case (.automationClient, _),
             (.unsafeDebugClient, _),
             (.spawnedPaneAgent, _),
-            (.futureMCPClient, _):
+            (.futureMCPClient, _),
+            (.paneClaim, _):
             false
         }
     }

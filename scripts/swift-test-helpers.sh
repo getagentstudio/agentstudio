@@ -915,6 +915,7 @@ fast|PaneContextPopoverActionViewTests|process-global
 fast|PaneContextPopoverControllerNativeTests|process-global
 fast|RepoExplorerPaneContextAnchorTests|process-global
 fast|PaneContextPopoverHostNativeTests|process-global
+large|AppIPCPaneClaimSocketTests|concurrent
 large|AgentStudioAppIPCConnectionAdmissionTests|concurrent
 large|AgentStudioAppIPCConnectionWaitingTests|concurrent
 large|AgentStudioAppIPCConnectionOutputTests|concurrent
@@ -933,6 +934,7 @@ large|CLIHookSilenceScriptTests|process-global
 large|CLIAgentHelpScriptTests|concurrent
 large|CLIPaneContextOrderingTests|process-global
 large|CLIPaneContextAvailabilityTests|process-global
+large|CLIBackgroundSessionTests|process-global
 large|CLIPaneContextAnswersTests|process-global
 large|CLIPaneContextDispatchTests|process-global
 large|AgentStudioOTLPBootstrapSmokeTests|process-global
@@ -978,7 +980,9 @@ large|DerivedTerminalActivityNotificationRegressionTests|process-global
 large|DrawerCommandIntegrationTests|process-global
 large|DrawerZoomFrameCurrencyIntegrationTests|process-global
 e2e|E2ESerializedTests|serial
+zmx|E2ESerializedTests/ColdRestoreRestorePhaseIntersectionTests|serial
 e2e|E2ESerializedTests/FilesystemSourceE2ETests|serial
+zmx|E2ESerializedTests/TerminalRestoreZmxIntegrationTests|serial
 e2e|E2ESerializedTests/ZmxBackendIntegrationTests|serial
 zmx|E2ESerializedTests/ZmxE2ETests|serial
 large|ExpectationLogTests|process-global
@@ -1059,6 +1063,8 @@ fast|SQLiteDatabaseFactoryProcessTests|process-global
 large|ProviderStatusHookInstallerTests|concurrent
 large|SessionStatusPublicationTests|concurrent
 large|SessionsProviderTraceIntegrationTests|concurrent
+large|SidebarMemoryBeforePresentationTests|process-global
+large|SidebarMemoryDefaultsPresentationTests|process-global
 large|SidebarPerformanceContinuityControlScriptTests|concurrent
 large|SidebarPerformanceFixtureParserScriptTests|concurrent
 large|SidebarPerformancePolicyParserScriptTests|concurrent

@@ -21,6 +21,7 @@ export function createSurfaceClientHarness(
 	hasInstalledReviewIdentity = true,
 ): {
 	readonly client: ReturnType<typeof createWorktreeAnnotationSurfaceClient>;
+	readonly surfaceClient: BridgePaneSurfaceClient;
 	readonly fireWorkerReplacement: () => void;
 	readonly publish: (message: BridgeWorkerServerToMainMessage) => void;
 	readonly sentCommands: Array<Parameters<BridgePaneSurfaceClient['send']>[0]>;
@@ -78,10 +79,15 @@ export function createSurfaceClientHarness(
 				telemetrySamples.push(sample);
 			},
 		}),
+		surfaceClient,
 		fireWorkerReplacement: (): void => {
 			for (const replacementListener of workerReplacementListeners) replacementListener();
 		},
 		publish: (message): void => {
+			// Explicit staging owns catalog installation in catalog lifecycle tests.
+			if (message.kind === 'annotationCatalogStaging' && message.surface === surface) {
+				catalogStaged = true;
+			}
 			if (
 				!catalogStaged &&
 				message.kind === 'annotationProjectionConvergence' &&

@@ -30,7 +30,8 @@ struct CodexHomeFixture {
     var props: CodexPackageInstaller.Props {
         CodexPackageInstaller.Props(
             codexHome: codexHome,
-            locator: AgentPackageResourceLocator(packageRoot: packageRoot)
+            locator: AgentPackageResourceLocator(packageRoot: packageRoot),
+            ipcDirectory: root.appending(path: "runtime/ipc")
         )
     }
 
@@ -85,15 +86,6 @@ struct CodexHomeFixture {
         try Data(contents.utf8).write(to: codexHome.appending(path: "hooks.json"))
     }
 
-    func writeSkillWithoutMarker() throws {
-        let directory =
-            codexHome
-            .appending(path: "skills", directoryHint: .isDirectory)
-            .appending(path: "agentstudio", directoryHint: .isDirectory)
-        try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try Data("someone else's skill".utf8).write(to: directory.appending(path: "SKILL.md"))
-    }
-
     /// Edits the installed entry the way a curious user would, so the next
     /// install has to notice the difference.
     func rewriteOwnedTimeout(event: CodexHookEventName, to timeout: Int) throws {
@@ -132,5 +124,10 @@ struct CodexHomeFixture {
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: script)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
         try Data("# agentstudio\n".utf8).write(to: skillDirectory.appending(path: "SKILL.md"))
+        let cursorHooks = packageRoot.appending(path: "providers/cursor/hooks")
+        try fileManager.createDirectory(at: cursorHooks, withIntermediateDirectories: true)
+        let cursorScript = cursorHooks.appending(path: "agentstudio-cursor-hook.sh")
+        try Data("#!/bin/sh\nexit 0\n".utf8).write(to: cursorScript)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cursorScript.path)
     }
 }

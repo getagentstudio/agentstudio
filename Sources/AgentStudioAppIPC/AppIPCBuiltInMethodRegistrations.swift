@@ -63,6 +63,8 @@ enum AppIPCBuiltInRegistrationSupport {
             target = .pane(boundPaneId)
         case .automationClient, .futureMCPClient, .unsafeDebugClient:
             target = .app
+        case .paneClaim:
+            throw AppIPCPaneClaimError(reason: .intentRequiresToken)
         }
         return AppIPCTargetResolution(parameters: parameters, canonicalHandle: nil, target: target)
     }

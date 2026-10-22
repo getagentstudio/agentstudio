@@ -270,6 +270,7 @@ func hookSilenceExecutableURL() throws -> URL {
 /// test waits for the product's bound, never a test sleep or timing budget.
 final class HookSilenceProcessFixture: @unchecked Sendable {
     private let condition: HookSilenceCondition
+    private let rejectsLogin: Bool
     private let rootURL: URL
     private let socketPath: String
     private let listener: UnixSocketListener
@@ -285,10 +286,12 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
     private var advertisedReadThrough: IPCCLIStoreReadThrough?
     private let authenticationResponseSent = HeldStep<Void>("auth.login response sent")
     private let refusalResponseSent = HeldStep<Void>("session.refusal response sent")
+    private let statusResponseSent = HeldStep<Void>("session.status fallback response sent")
     private let slowRequestRecorded = HeldStep<Void>("slow request recorded")
 
-    init(condition: HookSilenceCondition) throws {
+    init(condition: HookSilenceCondition, rejectsLogin: Bool = false) throws {
         self.condition = condition
+        self.rejectsLogin = rejectsLogin
         rootURL = URL(fileURLWithPath: "/tmp/hook-silence-\(UUIDv7.generate().uuidString)", isDirectory: true)
         socketPath = rootURL.appending(path: "app.sock").path
         listener = UnixSocketListener(endpoint: UnixSocketEndpoint(path: socketPath))
@@ -301,7 +304,12 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
     func waitForNetworkResponse(_ index: Int) throws {
         switch index {
         case 0: try authenticationResponseSent.arriveBlocking(())
-        case 1: try refusalResponseSent.arriveBlocking(())
+        case 1:
+            if rejectsLogin {
+                try statusResponseSent.arriveBlocking(())
+            } else {
+                try refusalResponseSent.arriveBlocking(())
+            }
         default: return
         }
     }
@@ -378,7 +386,23 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
                                     continue
                                 }
                                 let response: JSONRPCResponse
-                                if request.method == "auth.login" {
+                                if request.method == "auth.login", rejectsLogin {
+                                    response = .failure(
+                                        id: request.id,
+                                        error: JSONRPCErrorPayload(
+                                            code: -32_001, message: "unauthenticated",
+                                            data: .object(["reason": .string("unauthenticated")])))
+                                } else if request.method == "session.status" {
+                                    let status = try JSONDecoder().decode(
+                                        IPCSessionStatusParams.self,
+                                        from: JSONEncoder().encode(request.params ?? .object([:])))
+                                    response = .success(
+                                        id: request.id,
+                                        result: try JSONRPCCodec.encodeJSONValue(
+                                            IPCSessionEventResult(
+                                                paneId: status.paneClaim.paneId, disposition: .admitted,
+                                                correlationId: status.correlationId)))
+                                } else if request.method == "auth.login" {
                                     let status = IPCAuthStatusResult.authenticated(
                                         principalId: principalID, runtimeId: runtimeID,
                                         accessMode: .automationSameUser,
@@ -415,6 +439,7 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
                                 lock.withLock { sentResponses.append(response) }
                                 if request.method == "auth.login" { authenticationResponseSent.release() }
                                 if request.method == "session.refusal" { refusalResponseSent.release() }
+                                if request.method == "session.status" { statusResponseSent.release() }
                             }
                         }
                     } catch {
@@ -434,6 +459,7 @@ final class HookSilenceProcessFixture: @unchecked Sendable {
         }
         for connection in owned.0 { connection.close() }
         for worker in owned.1 { await worker.wait() }
+        statusResponseSent.retire()
     }
 
     func removeFiles() { try? FileManager.default.removeItem(at: rootURL) }

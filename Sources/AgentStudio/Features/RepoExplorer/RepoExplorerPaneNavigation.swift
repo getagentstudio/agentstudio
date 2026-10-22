@@ -49,7 +49,8 @@ struct RepoExplorerPaneRow: View {
                 showsExpandedChips: row.displayVariant == .expanded,
                 drawerRail: row.drawerRail,
                 showsChipLine: row.displayVariant == .expanded
-                    ? row.variants?.expanded.showsChipLine ?? true : row.variants?.compact.showsChipLine ?? true,
+                    ? row.variants?.expanded.showsChipLine ?? true
+                    : row.variants?.compact.showsChipLine ?? true,
                 messageChip: row.messageChip,
                 paneId: PaneId(existingUUID: row.destination.paneId),
                 paneContextControl: paneContextControl,
@@ -132,10 +133,12 @@ struct RepoExplorerPaneRowContent: View {
                         if let paneId, let control = paneContextControl(paneId, .agentLine(line)) {
                             control
                         } else {
-                            RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
+                            RepoExplorerPaneContextLineView(
+                                line: line, isAgentLine: true, octiconLoader: octiconLoader)
                         }
-                    case .sessionStatus(let line):
-                        RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
+                    case .sessionStatus(let line), .connectionIssue(let line):
+                        RepoExplorerPaneContextLineView(
+                            line: line, isAgentLine: false, octiconLoader: octiconLoader)
                     }
                 }
             } else {
@@ -161,32 +164,10 @@ struct RepoExplorerPaneRowContent: View {
         .fixedSize(horizontal: false, vertical: true)
     }
 
-    @ViewBuilder
     private func titleLine(_ text: String) -> some View {
-        HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
-            (isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage(
-                loader: octiconLoader,
-                size: AppStyles.Shell.Sidebar.rowIdentityIconSize
-            )
-            .frame(
-                width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth,
-                alignment: .leading
-            )
-            Text(text)
-                .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.tail)
-                .layoutPriority(1)
-                .foregroundStyle(.primary)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sidebarShortcutHint(
-            shortcutDisplay,
-            style: .toolbarStamp,
-            alignment: .trailing,
-            offset: CGSize(width: -AppStyles.Shell.Sidebar.KeyboardHint.rowTrailingInset, height: 0)
-        )
+        RepoExplorerPaneTitleLineView(
+            text: text, isDrawerPane: isDrawerPane, octiconLoader: octiconLoader,
+            shortcutDisplay: shortcutDisplay)
     }
 
     private var chipRow: some View {
@@ -222,21 +203,41 @@ struct RepoExplorerPaneRowContent: View {
                     if let messageChip, let paneId {
                         paneContextControl(paneId, .messages(messageChip))
                     }
-                    SidebarChip(
-                        icon: .system(.clock),
-                        octiconLoader: octiconLoader,
-                        text: recencyText,
-                        style: recencyChipStyle
-                    )
-                    if isActive {
-                        SidebarChip(
-                            icon: .system(.playCircleFill),
-                            octiconLoader: octiconLoader,
-                            text: nil,
-                            style: .accent(.accentColor)
-                        )
-                    }
+                    RepoExplorerPaneActivityChips(
+                        recencyText: recencyText, recencyTier: recencyTier,
+                        isActive: isActive, octiconLoader: octiconLoader)
                 }
+            }
+        }
+    }
+
+}
+
+package struct RepoExplorerPaneActivityChips: View {
+    let recencyText: String
+    let recencyTier: RepoExplorerPaneRecencyTier
+    let isActive: Bool
+    let octiconLoader: OcticonLoader
+
+    package init(
+        recencyText: String, recencyTier: RepoExplorerPaneRecencyTier,
+        isActive: Bool, octiconLoader: OcticonLoader
+    ) {
+        self.recencyText = recencyText
+        self.recencyTier = recencyTier
+        self.isActive = isActive
+        self.octiconLoader = octiconLoader
+    }
+
+    package var body: some View {
+        Group {
+            SidebarChip(
+                icon: .system(.clock), octiconLoader: octiconLoader,
+                text: recencyText, style: recencyChipStyle)
+            if isActive {
+                SidebarChip(
+                    icon: .system(.playCircleFill), octiconLoader: octiconLoader,
+                    text: nil, style: .accent(.accentColor))
             }
         }
     }
@@ -285,9 +286,12 @@ struct RepoExplorerUnassociatedPaneRow: View {
         .buttonStyle(.plain)
         .onHover { isHovering = $0 }
         .accessibilityLabel(
-            [primaryText, secondaryLine?.text, isDrawerPane ? "Drawer" : nil, recencyText, isActive ? "Active" : nil]
-                .compactMap { $0 }
-                .joined(separator: ", ")
+            [
+                primaryText, secondaryLine?.text, isDrawerPane ? "Drawer" : nil, recencyText,
+                isActive ? "Active" : nil,
+            ]
+            .compactMap { $0 }
+            .joined(separator: ", ")
         )
     }
 }

@@ -1,5 +1,7 @@
 import Foundation
 
+struct BridgeContentSharedLoadAbandoned: Error {}
+
 final class BridgeContentSharedLoad: @unchecked Sendable {
     private let lock = NSLock()
     private let task: Task<BridgeContentLoadResult, any Error>
@@ -27,7 +29,7 @@ final class BridgeContentSharedLoad: @unchecked Sendable {
                 return completion
             }
             if isAbandoned {
-                return .failure(CancellationError())
+                return .failure(BridgeContentSharedLoadAbandoned())
             }
             waiterById[waiterId] = waiter
             return nil

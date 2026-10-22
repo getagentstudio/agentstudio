@@ -361,9 +361,6 @@ package actor WorktreeAnnotationServiceActor {
         _ props: WorktreeAnnotationSQLiteRepository.PrepareOutputProps
     ) async throws -> WorktreeAnnotationSQLiteRepository.PreparedOutput {
         try requireMutationAllowed()
-        guard props.expectedProjectionRevision == projectionRevision else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
         return try await publishCorrelatedMutation { try await repositoryAccess.prepareOutput(props) }
     }
 
@@ -379,27 +376,6 @@ package actor WorktreeAnnotationServiceActor {
     ) async throws -> WorktreeAnnotationSessionDetail {
         try requireAvailableForReads()
         return try await repositoryAccess.fetchSessionDetail(sessionID: sessionID)
-    }
-
-    func outputSessionDetail(
-        sessionID: WorktreeAnnotationSessionID,
-        expectedSessionRevision: Int,
-        expectedProjectionRevision: Int
-    ) async throws -> WorktreeAnnotationSessionDetail {
-        try requireAvailableForReads()
-        guard projectionRevision == expectedProjectionRevision else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
-        let detail = try await repositoryAccess.fetchSessionDetail(sessionID: sessionID)
-        guard projectionRevision == expectedProjectionRevision else {
-            throw WorktreeAnnotationServiceError.staleSourceEpoch
-        }
-        guard detail.session.semanticRevision == expectedSessionRevision else {
-            throw WorktreeAnnotationRepositoryError.conflict(
-                currentRevision: detail.session.semanticRevision
-            )
-        }
-        return detail
     }
 
     @discardableResult

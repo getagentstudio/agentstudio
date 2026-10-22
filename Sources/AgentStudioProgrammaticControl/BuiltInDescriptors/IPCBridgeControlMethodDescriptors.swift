@@ -204,7 +204,7 @@ package struct IPCBridgeControlMethodDescriptors: Sendable {
             )
             return try IPCBuiltInDescriptorSupport.read(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 parameters: IPCBridgeContentGetParams(
                     handle: "self",
                     contentHandleId: contentHandle.handleId,

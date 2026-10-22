@@ -5,13 +5,13 @@ import Observation
 @MainActor
 @Observable
 package final class SessionStatusAtom {
-    @ObservationIgnored private let statuses = AtomFamily<PaneId, AgentSessionStatus>(
+    @ObservationIgnored private let statuses = AtomFamily<PaneId, PaneAgentStatusPresentation>(
         telemetryLabel: "sessions_status", isContentEqual: ==)
     @ObservationIgnored private let aggregateRevision = AtomRevision()
 
     package init() {}
 
-    package func value(for paneId: PaneId) -> AgentSessionStatus? {
+    package func value(for paneId: PaneId) -> PaneAgentStatusPresentation? {
         statuses.value(for: paneId)
     }
 

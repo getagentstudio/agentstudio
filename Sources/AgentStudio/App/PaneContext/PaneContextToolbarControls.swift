@@ -17,8 +17,9 @@ struct PaneContextToolbarControls: View {
 
     var body: some View {
         let display = readers.contextDisplayForPane(paneId)
-        let input = RefreshInput(display: display, isDrawer: readers.isDrawerPane(paneId))
-        Group {
+        let input = RefreshInput(
+            display: display, isDrawer: readers.isDrawerPane(paneId))
+        VStack(alignment: .leading, spacing: AppStyles.Shell.Sidebar.rowContentSpacing) {
             if display != nil, let messageChip {
                 PaneContextPopoverHost(
                     paneId: paneId, presentation: .messages(messageChip), location: .pane, readers: readers,
@@ -36,5 +37,24 @@ struct PaneContextToolbarControls: View {
         -> PaneMessageChipModel?
     {
         display.map { RepoExplorerPaneMessageCountProjection.make(display: $0, isDrawer: isDrawer) }
+    }
+}
+
+/// The sidebar's keyed Agent Line, rendered as a readout without an action or help.
+struct PaneContextToolbarAgentLine: View {
+    let paneId: PaneId
+    let readers: PaneContextUIReaders
+    let octiconLoader: OcticonLoader
+
+    var body: some View {
+        if let detail = readers.contextDisplayForPane(paneId)?.agentLine {
+            RepoExplorerPaneContextLineView(
+                line: .agent(detail), isAgentLine: true, octiconLoader: octiconLoader, showsTooltip: false
+            )
+            .background {
+                AccessibilityLabelBridge(
+                    identifier: "paneSurfaceToolbar.agentLine", label: detail.summary, role: .staticText)
+            }
+        }
     }
 }

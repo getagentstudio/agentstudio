@@ -727,10 +727,11 @@ extension WebKitSerializedTests {
             traceRecorder: BridgeProductWebKitCarrierTraceRecorder,
             reviewSourceProviderTransform: (any BridgeReviewSourceProvider) -> any BridgeReviewSourceProvider = { $0 },
             worktreeAnnotationStore: WorktreeAnnotationServiceActor? = nil,
-            worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil
+            worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor? = nil,
+            gitReadContext suppliedGitReadContext: BridgeGitReadContext? = nil
         ) -> BridgePaneController {
             let paneId = UUIDv7.generate()
-            let gitReadContext = makeBridgeGitReadContext(rootURL: repoURL)
+            let gitReadContext = suppliedGitReadContext ?? makeBridgeGitReadContext(rootURL: repoURL)
             let statusPhysicalGate = AgentStudioGitStatusPhysicalGate()
             return BridgePaneController(
                 paneId: paneId,

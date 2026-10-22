@@ -145,6 +145,48 @@ struct TerminalActivityRouterTests {
         }
     }
 
+    @Test("a real first-render outcome notifies the injected onFirstRender callback")
+    func realFirstRenderOutcomeNotifiesOnFirstRenderCallback() async {
+        let bus = EventBus<RuntimeEnvelope>()
+        let atom = TerminalActivityAtom(outputBurstThreshold: 30)
+        final class FirstRenderCallbackRecorder: @unchecked Sendable {
+            private let lock = NSLock()
+            private(set) var notifiedPaneIDs: [UUID] = []
+
+            func record(_ paneID: UUID) {
+                lock.lock()
+                notifiedPaneIDs.append(paneID)
+                lock.unlock()
+            }
+        }
+        let recorder = FirstRenderCallbackRecorder()
+        let router = TerminalActivityRouter(
+            bus: bus,
+            activityAtom: atom,
+            callbackHandlingAccess: { nil },
+            onFirstRender: { paneID in recorder.record(paneID) },
+            surfaceIDForPaneID: { $0 },
+            lastOutputLineReader: { _ in .surfaceStale }
+        )
+        let paneId = PaneId.generateUUIDv7()
+
+        await router.start()
+        // `consumeTerminalActivityInput` -> `projector.ingest` -> `emit` ->
+        // `outcomeSink` -> `consumeProjectionOutcomes` is one unbroken
+        // `await` chain, no detached task in between -- `onFirstRender` has
+        // already been called, synchronously, by the time this returns.
+        await ingestActivity(
+            paneId: paneId,
+            totals: [10],
+            context: TerminalActivityProjectionContext(
+                isAttended: false, isAgentClassified: false, outputBurstThreshold: 30),
+            through: router
+        )
+
+        #expect(recorder.notifiedPaneIDs == [paneId.uuid])
+        await router.stop()
+    }
+
     @Test("typed activity aggregate is debounced into one derived settled fact")
     func typedActivityAggregateIsDebouncedIntoOneDerivedSettledFact() async throws {
         let bus = EventBus<RuntimeEnvelope>()

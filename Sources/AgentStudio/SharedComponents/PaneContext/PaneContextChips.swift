@@ -2,9 +2,12 @@ import AgentStudioInfrastructure
 import SwiftUI
 
 extension PaneContextChipTone {
+    @MainActor package var foregroundColor: Color { style.foreground }
+
     @MainActor fileprivate var style: SidebarChip.Style {
         switch self {
         case .neutral: .neutral
+        case .accent: .accent(AppStyles.General.Accent.primaryColor)
         case .info: .info
         case .success: .success
         case .warning: .warning

@@ -10,13 +10,13 @@ package enum ClaudeCodePackageInstallerError: Error, Equatable, Sendable {
     case hooksValueNotAnObject(String)
 }
 
-/// Installs and removes Agent Studio's Claude Code integration inside one
+/// Installs Agent Studio's Claude Code integration inside one
 /// Claude Code configuration directory.
 ///
 /// Ownership is carried by the hook command itself: a matcher group is ours
 /// exactly when one of its commands names this package's hook script. Nothing
 /// else in `settings.json` is read as ownership, so a user's own hooks — even
-/// on the same events — survive install, reinstall and uninstall untouched.
+/// on the same events — survive install and reinstall untouched.
 package struct ClaudeCodePackageInstallation: Sendable {
     /// Any hook command containing this path fragment belongs to this package.
     package static let ownershipMarker = "/AgentPackage/providers/claude/hooks/agentstudio-claude-hook.sh"
@@ -59,8 +59,7 @@ package struct ClaudeCodePackageInstallation: Sendable {
         }
         let skillContents = try Data(contentsOf: sourceSkillURL)
         var settings = try readSettingsObject()
-        // Uninstall already leaves a non-object `hooks` alone. Install must
-        // refuse it for the same reason: replacing it would throw away a value
+        // Replacing a non-object hooks value would throw away configuration
         // this package never wrote and cannot read.
         if let present = settings["hooks"], objectValue(present) == nil {
             throw ClaudeCodePackageInstallerError.hooksValueNotAnObject(settingsURL.path)
@@ -90,36 +89,6 @@ package struct ClaudeCodePackageInstallation: Sendable {
         try Data(packageMarkerContents.utf8).write(to: skillMarkerURL, options: .atomic)
     }
 
-    /// Removes exactly this package's hook groups and its marked skill. Event
-    /// keys and the `hooks` container are dropped when nothing else occupies
-    /// them, so uninstalling a fresh install restores the original document.
-    package func uninstall(notice: (String) -> Void) throws {
-        try requireWritableConfigurationDirectory()
-        var settings = try readSettingsObject()
-        if var hooksByEvent = objectValue(settings["hooks"]) {
-            for (event, groupsValue) in hooksByEvent {
-                guard let groups = arrayValue(groupsValue) else { continue }
-                let retained = groups.filter { !isOwned($0) }
-                guard retained.count != groups.count else { continue }
-                if retained.isEmpty {
-                    hooksByEvent.removeValue(forKey: event)
-                } else {
-                    hooksByEvent[event] = .array(retained)
-                }
-            }
-            if hooksByEvent.isEmpty {
-                settings.removeValue(forKey: "hooks")
-            } else {
-                settings["hooks"] = .object(hooksByEvent)
-            }
-        }
-        try writeAtomically(.object(settings), to: settingsURL)
-        guard FileManager.default.isReadableFile(atPath: skillMarkerURL.path) else {
-            notice("notice: no agentstudio skill installed at \(skillDirectoryURL.path)")
-            return
-        }
-        try FileManager.default.removeItem(at: skillDirectoryURL)
-    }
 }
 
 extension ClaudeCodePackageInstallation {

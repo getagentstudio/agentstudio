@@ -97,6 +97,7 @@ struct S5PaneCLIContext: Sendable {
 
     func storedNumber() async throws -> (epoch: Int64?, value: Int64?, claimID: String?) {
         let url = storeURL
+        let sessionRef = "\(writer.provider):\(writer.conversationId)"
         return try await valueFromDedicatedThread {
             var configuration = Configuration()
             configuration.readonly = true
@@ -104,8 +105,8 @@ struct S5PaneCLIContext: Sendable {
             defer { try? queue.close() }
             return try queue.read { database in
                 let row = try Row.fetchOne(
-                    database, sql: "SELECT epoch, value, claim_id FROM cli_state WHERE kind = ?",
-                    arguments: ["titleWriteNumber"])
+                    database, sql: "SELECT epoch, value, claim_id FROM cli_state WHERE kind = ? AND session_ref = ?",
+                    arguments: ["titleWriteNumber", sessionRef])
                 let epoch: Int64? = row?["epoch"]
                 let value: Int64? = row?["value"]
                 let claimID: String? = row?["claim_id"]
@@ -192,12 +193,18 @@ struct S5PaneCLIContext: Sendable {
 func withS5PaneCLIContext<Output: Sendable>(
     dropFirstClaimReply: Bool = false, orderedWriteProof: S5OrderedWriteProof? = nil,
     heldReply: (id: JSONRPCIdentifier, step: HeldStep<Data>)? = nil, heldRead: HeldStep<Void>? = nil,
-    changesPageSize: Int? = nil,
+    changesPageSize: Int? = nil, bindSession: Bool = true,
     _ body: (S5PaneCLIContext) async throws -> Output
 ) async throws -> Output {
     let executableURL = try cliExecutableURL()
+    let claimWorkspaceID = UUIDv7.generate()
     let output = try await withPaneContextIPCDomain { domain in
-        let writer = try await domain.bind()
+        let writer: IPCPaneWriterClaim
+        if bindSession {
+            writer = try await domain.bind()
+        } else {
+            writer = IPCPaneWriterClaim(provider: "claude-code", conversationId: "unbound")
+        }
         let port = S5RecordingPaneContextPort(
             base: domain.adapter(), dropFirstClaimReply: dropFirstClaimReply, orderedWriteProof: orderedWriteProof,
             changesPageSize: changesPageSize)
@@ -205,7 +212,12 @@ func withS5PaneCLIContext<Output: Sendable>(
         return try await withLiveServer(
             makeFixture: {
                 try LiveServerFixture(
-                    channel: .debug, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)], paneContextPort: port,
+                    channel: .debug, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)],
+                    sessionsPort: AgentStudioIPCSessionsAdapter(ingestion: domain.ingestion, now: { domain.time.now }),
+                    paneContextPort: port,
+                    paneClaimAdmission: .init(membershipRefusal: { claim in
+                        claim.paneId == domain.paneId && claim.workspaceId == claimWorkspaceID ? nil : .otherWorkspace
+                    }),
                     makeConnectionIO: { connection in
                         port.wire.recordConnection()
                         let frames = S5CLIFrameRecorder(wire: port.wire)
@@ -218,6 +230,7 @@ func withS5PaneCLIContext<Output: Sendable>(
                                 return bytes
                             },
                             send: { bytes in
+                                if let hold = port.takeRejectedLoginHold(bytes) { try hold.arriveBlocking(bytes) }
                                 if let heldReply,
                                     let text = String(data: bytes, encoding: .utf8),
                                     let reply = try? JSONRPCCodec.decodeResponse(text), reply.id == heldReply.id
@@ -248,6 +261,7 @@ func withS5PaneCLIContext<Output: Sendable>(
                         environment: [
                             "AGENTSTUDIO_IPC_SOCKET": fixture.paths.socketURL.path,
                             "AGENTSTUDIO_PANE_TOKEN": token.rawValue,
+                            "AGENTSTUDIO_WORKSPACE_ID": claimWorkspaceID.uuidString,
                             "AGENTSTUDIO_PANE_ID": domain.paneId.uuidString,
                             "AGENTSTUDIO_CLI": executableURL.path,
                             "CLAUDE_CODE_SESSION_ID": writer.conversationId,
@@ -276,6 +290,8 @@ final class S5CLIClientOwner: @unchecked Sendable {
 struct S5TitleAttempt: Sendable {
     let text: String?
     let number: IPCPaneWriteNumber
+    let writer: IPCPaneWriterClaim?
+    let paneClaim: IPCPaneClaim?
 }
 
 /// Observes and holds the real typed admission boundary; every outcome still
@@ -283,6 +299,8 @@ struct S5TitleAttempt: Sendable {
 final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendable {
     private let base: any AppIPCPaneContextPort
     private let lock = NSLock()
+    private var rejectedLoginHold: HeldStep<Data>?
+    private var rejectedLoginHolds: [HeldStep<Data>] = []
     private var titleAttempts: [S5TitleAttempt] = []
     private var lineCount = 0
     private var sentMessages: [IPCPaneMessageSendParams] = []
@@ -319,6 +337,26 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
     var claims: [IPCPaneWriterClaimEpochParams] { lock.withLock { claimAttempts } }
     var changes: [IPCPaneMessageChangesParams] { lock.withLock { changeRequests } }
 
+    func holdNextRejectedLogin() -> HeldStep<Data> {
+        let step = HeldStep<Data>("S5 rejected login before response delivery", cancellation: .holdThroughCancellation)
+        lock.withLock {
+            rejectedLoginHold = step
+            rejectedLoginHolds.append(step)
+        }
+        return step
+    }
+
+    func takeRejectedLoginHold(_ bytes: Data) -> HeldStep<Data>? {
+        guard let frame = String(data: bytes, encoding: .utf8),
+            let response = try? JSONRPCCodec.decodeResponse(frame), response.id == .number(1),
+            response.error != nil
+        else { return nil }
+        return lock.withLock {
+            defer { rejectedLoginHold = nil }
+            return rejectedLoginHold
+        }
+    }
+
     func holdNextChanges(in scope: UUID) -> HeldStep<IPCPaneMessageChangesResult> {
         let step = HeldStep<IPCPaneMessageChangesResult>(
             "S5 first answer page before reply", cancellation: .holdThroughCancellation)
@@ -353,6 +391,7 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
     }
 
     func releaseHeldWork() {
+        for hold in lock.withLock({ rejectedLoginHolds }) { hold.release() }
         for hold in lock.withLock({ holds }) { hold.release() }
         for hold in lock.withLock({ changesHolds }) { hold.release() }
     }
@@ -360,7 +399,9 @@ final class S5RecordingPaneContextPort: AppIPCPaneContextPort, @unchecked Sendab
     func setTitle(paneId: UUID, params: IPCPaneTitleSetParams) async throws -> IPCPaneOrderedWriteResult {
         if let proof = orderedWriteProof { proof.facts.sink(proof.scope, .orderedWriteSent) }
         let held = lock.withLock { () -> (UUID, HeldStep<IPCPaneTitleSetParams>)? in
-            titleAttempts.append(.init(text: params.text, number: params.writeNumber))
+            titleAttempts.append(
+                .init(text: params.text, number: params.writeNumber, writer: params.writer, paneClaim: params.paneClaim)
+            )
             let held = nextTitleHold
             nextTitleHold = nil
             return held

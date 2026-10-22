@@ -173,7 +173,8 @@ extension AppIPCBuiltInMethodRegistrations {
                         parameters, handle: parameters.handle, context: context)
                 },
                 connectionHandler: { parameters, _, target in
-                    try await port.setLine(paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters)
+                    try await port.setLine(
+                        paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters)
                 },
                 execution: .inline
             ).erase(),
@@ -185,7 +186,8 @@ extension AppIPCBuiltInMethodRegistrations {
                         parameters, handle: parameters.handle, context: context)
                 },
                 connectionHandler: { parameters, _, target in
-                    try await port.setTitle(paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters)
+                    try await port.setTitle(
+                        paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters)
                 },
                 execution: .inline
             ).erase(),
@@ -225,8 +227,13 @@ enum AppIPCPaneContextTargetSupport {
     static func credentialTarget<Parameters: Sendable>(
         _ parameters: Parameters, handle: String, context: AppIPCConnectionContext
     ) throws -> AppIPCTargetResolution<Parameters> {
-        guard case .spawnedPaneAgent(let boundPaneId, _)? = context.principal?.kind else {
-            throw AuthorizationError(reason: .unauthorized)
+        let boundPaneId: String
+        switch context.principal?.kind {
+        case .spawnedPaneAgent(let paneId, _): boundPaneId = paneId
+        case .paneClaim(let paneId, _):
+            try context.revalidatePaneClaim()
+            boundPaneId = paneId.uuidString
+        default: throw AuthorizationError(reason: .unauthorized)
         }
         guard handle == "self" else { throw AppIPCPaneContextError(reason: .notOwnPane) }
         guard

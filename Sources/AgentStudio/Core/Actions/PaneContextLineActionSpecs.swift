@@ -11,6 +11,33 @@ enum PaneContextLineActionSpecs {
         }
         return ActionSpec(label: "Agent Line", helpText: "Show this agent's work", icon: icon)
     }
+    static func connectionIssue(_ reason: AgentConnectionRefusalReason) -> ActionSpec {
+        let text: String =
+            switch reason {
+            case .credentialNotRecognized, .intentRequiresToken:
+                "Messages unavailable · restart this shell to reconnect"
+            case .paneNotFound:
+                "Agent identity unavailable · run this from an open Agent Studio pane"
+            case .paneRetired:
+                "Agent identity unavailable · this pane has closed"
+            case .otherWorkspace:
+                "Agent identity unavailable · run this from the matching workspace"
+            case .noSessionId:
+                "Agent identity unavailable · the provider did not supply a session ID"
+            case .undecodablePayload:
+                "Agent identity unavailable · the provider hook report could not be read"
+            case .queueFull:
+                "Agent report not accepted · the app’s report queue is full"
+            case .appUnavailable:
+                "Agent request unavailable · Agent Studio could not be reached"
+            case .deadlineExceeded:
+                "Agent request unavailable · the app did not reply in time"
+            case .orderingStoreUnavailable:
+                "Agent Line unavailable · restart Agent Studio"
+            }
+        return ActionSpec(label: text, helpText: text, icon: .system(.flag))
+    }
+
     static func sessionStatus(_ status: AgentSessionStatus) -> ActionSpec {
         let text: String
         let icon: CommandIcon
@@ -29,7 +56,7 @@ enum PaneContextLineActionSpecs {
             icon = .system(.xmarkOctagon)
         case .working(let work):
             text = work == .monitoring ? "Working · monitoring" : "Working"
-            icon = .system(.circleFill)
+            icon = work == .monitoring ? .system(.circleDotted) : .system(.circleFill)
         case .idle(let state):
             let word =
                 switch state {

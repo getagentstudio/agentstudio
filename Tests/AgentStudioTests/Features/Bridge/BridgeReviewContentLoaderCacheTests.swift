@@ -207,6 +207,99 @@ struct BridgeReviewContentLoaderCacheTests {
         }
     }
 
+    @Test("a successor waits for an abandoned provider then loads fresh content without overlapping reads")
+    func successorWaitsForAbandonedProviderAndLoadsFreshContent() async throws {
+        let admission = try BridgeProductAdmissionTestContext.make()
+        let handle = makeLoaderCacheHandle(content: "successor")
+        let gate = HeldStep<Void>("abandoned provider", cancellation: .holdThroughCancellation)
+        let provider = makeLoaderCacheProvider(
+            results: [makeContentResult(handle: handle, data: "successor")],
+            gate: gate,
+            checksCancellationAfterGate: true
+        )
+        let cache = BridgeReviewContentLoaderCache(provider: provider)
+        try await abandonInitialLoaderCacheLoad(cache, handle: handle, admission: admission.context, gate: gate)
+        let successor = try await startLoaderCacheSuccessor(
+            cache, handle: handle, admission: admission.context, gate: gate
+        )
+
+        gate.release()
+        let successorOutcome = await successor.value
+        await cache.closeAndDrain()
+
+        #expect(throws: Never.self) {
+            let loaded = try successorOutcome.get()
+            #expect(loaded.result.data == Data("successor".utf8))
+            #expect(loaded.observation.cacheResult == .providerLoad)
+        }
+        #expect(await provider.recordedContentRequestsCount() == 2)
+        #expect(await provider.recordedFinishedContentLoadCountsAtRequestStart() == [0, 1])
+        #expect(await provider.recordedObservedCancellationCount() == 1)
+        #expect((await cache.diagnosticSnapshot).inFlightLoadCount == 0)
+    }
+
+    @Test("a successor cancelled while an abandoned provider drains starts no new read")
+    func cancelledSuccessorStartsNoProviderRead() async throws {
+        // Post-wait cancellation guard; this companion can pass on main.
+        let admission = try BridgeProductAdmissionTestContext.make()
+        let handle = makeLoaderCacheHandle(content: "cancelled-successor")
+        let gate = HeldStep<Void>("abandoned provider", cancellation: .holdThroughCancellation)
+        let provider = makeLoaderCacheProvider(
+            results: [makeContentResult(handle: handle, data: "cancelled-successor")],
+            gate: gate,
+            checksCancellationAfterGate: true
+        )
+        let cache = BridgeReviewContentLoaderCache(provider: provider)
+        try await abandonInitialLoaderCacheLoad(cache, handle: handle, admission: admission.context, gate: gate)
+        let successor = try await startLoaderCacheSuccessor(
+            cache, handle: handle, admission: admission.context, gate: gate
+        )
+
+        successor.cancel()
+        gate.release()
+        let successorOutcome = await successor.value
+        await cache.closeAndDrain()
+
+        expectLoaderCacheCancellation(successorOutcome)
+        #expect(await provider.recordedContentRequestsCount() == 1)
+        #expect(await provider.recordedFinishedContentLoadCountsAtRequestStart() == [0])
+        #expect((await cache.diagnosticSnapshot).inFlightLoadCount == 0)
+    }
+
+    @Test("closing while a successor waits drains the provider and reports closed rather than cancellation")
+    func closingWhileSuccessorWaitsReportsClosedAndDrains() async throws {
+        let admission = try BridgeProductAdmissionTestContext.make()
+        let handle = makeLoaderCacheHandle(content: "closed-successor")
+        let gate = HeldStep<Void>("abandoned provider", cancellation: .holdThroughCancellation)
+        let provider = makeLoaderCacheProvider(
+            results: [makeContentResult(handle: handle, data: "closed-successor")],
+            gate: gate,
+            checksCancellationAfterGate: true
+        )
+        let cache = BridgeReviewContentLoaderCache(provider: provider)
+        try await abandonInitialLoaderCacheLoad(cache, handle: handle, admission: admission.context, gate: gate)
+        let successor = try await startLoaderCacheSuccessor(
+            cache, handle: handle, admission: admission.context, gate: gate
+        )
+
+        await closeLoaderCacheReleasingProvider(cache, provider: provider, gate: gate)
+        let successorOutcome = await successor.value
+
+        switch successorOutcome {
+        case .success:
+            Issue.record("Expected closed cache to reject the waiting successor")
+        case .failure(let failure as BridgeContentLoadObservedFailure):
+            #expect((failure.underlyingError as? BridgeReviewContentLoaderCacheError) == .closed)
+        case .failure(let error):
+            Issue.record("Expected observed closed cache error, got \(error)")
+        }
+        #expect(await provider.recordedContentRequestsCount() == 1)
+        let snapshot = await cache.diagnosticSnapshot
+        #expect(snapshot.isClosed)
+        #expect(snapshot.inFlightLoadCount == 0)
+        #expect(snapshot.cachedContentCount == 0)
+    }
+
     @Test("byte-bounded LRU evicts the least recently used immutable item")
     func byteBoundedLRUEvictsLeastRecentlyUsedItem() async throws {
         let admission = try BridgeProductAdmissionTestContext.make()
@@ -249,7 +342,8 @@ private func makeLoaderCacheHandle(
 
 private func makeLoaderCacheProvider(
     results: [BridgeContentLoadResult],
-    gate: HeldStep<Void>? = nil
+    gate: HeldStep<Void>? = nil,
+    checksCancellationAfterGate: Bool = false
 ) -> BridgeReviewSourceProviderFake {
     BridgeReviewSourceProviderFake(
         comparison: BridgeEndpointComparison(
@@ -261,6 +355,121 @@ private func makeLoaderCacheProvider(
             results.map { ($0.handle.handleId, $0) },
             uniquingKeysWith: { _, replacement in replacement }
         ),
-        contentLoadGate: gate
+        contentLoadGate: gate,
+        checksCancellationAfterGate: checksCancellationAfterGate
     )
+}
+
+private func abandonInitialLoaderCacheLoad(
+    _ cache: BridgeReviewContentLoaderCache,
+    handle: BridgeContentHandle,
+    admission: BridgeProductAdmissionContext,
+    gate: HeldStep<Void>
+) async throws {
+    let arrival = Task { try await gate.firstArrival() }
+    let original = Task {
+        defer { arrival.cancel() }
+        return try await cache.loadObserved(handle: handle, productAdmission: admission)
+    }
+    do {
+        try await arrival.value
+    } catch {
+        gate.release()
+        original.cancel()
+        let outcome = await original.result
+        await cache.closeAndDrain()
+        Issue.record("Original load ended before provider arrival: \(outcome)")
+        throw error
+    }
+    original.cancel()
+    expectLoaderCacheCancellation(await original.result)
+    #expect((await cache.diagnosticSnapshot).inFlightLoadCount == 1)
+}
+
+private func startLoaderCacheSuccessor(
+    _ cache: BridgeReviewContentLoaderCache,
+    handle: BridgeContentHandle,
+    admission: BridgeProductAdmissionContext,
+    gate: HeldStep<Void>
+) async throws -> Task<Result<BridgeContentLoadObservedResult, any Error>, Never> {
+    let suspension = HeldStep<Void>("successor yielded cache actor")
+    let arrival = Task { try await suspension.firstArrival() }
+    let successor = Task {
+        defer { arrival.cancel() }
+        return await loadSuccessorWithSuspensionSignal(
+            cache, handle: handle, admission: admission, suspension: suspension
+        )
+    }
+    do {
+        try await arrival.value
+    } catch {
+        gate.release()
+        suspension.release()
+        successor.cancel()
+        let outcome = await successor.value
+        await cache.closeAndDrain()
+        Issue.record("Successor ended before yielding cache actor: \(outcome)")
+        throw error
+    }
+    return successor
+}
+
+private func loadSuccessorWithSuspensionSignal(
+    _ cache: isolated BridgeReviewContentLoaderCache,
+    handle: BridgeContentHandle,
+    admission: BridgeProductAdmissionContext,
+    suspension: HeldStep<Void>
+) async -> Result<BridgeContentLoadObservedResult, any Error> {
+    // This child needs the same actor. The inline load reaches its first await
+    // before the child can signal; the provider gate is still held at lookup.
+    let signal = Task {
+        _ = cache.diagnosticSnapshot
+        try await suspension.arrive(())
+    }
+    let outcome: Result<BridgeContentLoadObservedResult, any Error>
+    do {
+        outcome = .success(try await cache.loadObserved(handle: handle, productAdmission: admission))
+    } catch {
+        outcome = .failure(error)
+    }
+    suspension.release()
+    _ = await signal.result
+    return outcome
+}
+
+private func closeLoaderCacheReleasingProvider(
+    _ cache: isolated BridgeReviewContentLoaderCache,
+    provider: BridgeReviewSourceProviderFake,
+    gate: HeldStep<Void>
+) async {
+    let releaseMilestone = HeldStep<Void>("close yielded before releasing provider")
+    releaseMilestone.release()
+    let release = Task {
+        #expect(cache.diagnosticSnapshot.isClosed)
+        try? await releaseMilestone.arrive(())
+        gate.release()
+    }
+    await cache.closeAndDrain()
+    // Synchronous snapshot: an actor hop here could let an early close finish
+    // its provider after returning but before the assertion reads the count.
+    #expect(provider.recordedFinishedContentLoadCount() == 1)
+    // Check before joining the child: an early-returning close must fail here.
+    #expect(releaseMilestone.recordedArrivals.count == 1)
+    #expect(cache.diagnosticSnapshot.inFlightLoadCount == 0)
+    await release.value
+}
+
+private func expectLoaderCacheCancellation(
+    _ outcome: Result<BridgeContentLoadObservedResult, any Error>
+) {
+    switch outcome {
+    case .success:
+        Issue.record("Expected cancelled content load")
+    case .failure(let failure as BridgeContentLoadObservedFailure):
+        #expect(failure.underlyingError is CancellationError)
+    case .failure(is CancellationError):
+        break
+    case .failure(let error):
+        Issue.record("Expected cancellation, got \(error)")
+    }
 }

@@ -167,6 +167,7 @@ enum IPCBuiltInDescriptorSupport {
     static func read<Parameters, Result>(
         name: String,
         description: String,
+        callIntent: IPCCallIntent = .control,
         parameters: Parameters,
         result: Result,
         privilege: IPCPrivilegeClass,
@@ -182,6 +183,7 @@ enum IPCBuiltInDescriptorSupport {
         try IPCMethodDescriptor(
             name: name,
             description: description,
+            callIntent: callIntent,
             examples: [
                 .init(description: "Representative \(name) result", parameters: parameters, result: result)
             ],

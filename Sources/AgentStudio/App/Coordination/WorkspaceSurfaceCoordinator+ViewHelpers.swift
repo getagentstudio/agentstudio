@@ -371,10 +371,74 @@ extension WorkspaceSurfaceCoordinator {
                 Self.logger.warning("repair \(String(describing: repairAction)): pane not in store")
                 return
             }
+            // A5 (advisor review 2026-10-01): `restorePhaseLatch` (SR6b) lives
+            // on the native surface, not the pane, so tearing down and
+            // rebuilding that surface silently drops an open restore phase --
+            // nothing else ends it, since `TerminalActivityProjector`'s own
+            // pane-keyed restore state intentionally survives surface
+            // replacement and waits for this latch's input signal. Carry it
+            // across the repair by hand: capture it from the surface about to
+            // be torn down, and re-arm it on whatever surface replaces it.
+            //
+            // R2-2 (review round 2, Lead 2026-10-01): a failed replacement
+            // below used to discard this local value outright -- the
+            // projector's own phase survives the failure (by design), but
+            // nothing was left to reinstall once a *later* repair finally
+            // succeeded, so that surface's first real input did nothing and
+            // activity stayed suppressed forever. Falling back to
+            // `pendingRestorePhaseLatchesByPaneID` covers the case where an
+            // earlier attempt already failed and no surface exists yet to
+            // capture the generation from directly.
+            let preservedRestorePhaseLatch =
+                viewRegistry.terminalView(for: paneId)?.ghosttySurface?.restorePhaseLatch
+                ?? pendingRestorePhaseLatchesByPaneID[paneId]
+            // R3-1 (review round 3, Lead decision 2026-10-02): recorded
+            // before teardown, not only on a later failure branch. Geometry
+            // can come back unavailable here (`createViewForRepair` ->
+            // `createViewForContentUsingCurrentGeometry` -> empty bounds ->
+            // a preparing placeholder, `nil`) without this attempt counting
+            // as the explicit failure case below -- `createViewForRepair`
+            // still returns non-`nil` for a `TerminalStatusPlaceholderView`.
+            // The eventual real mount, whether a later explicit repair or
+            // ordinary visible/active-tab recovery's plain
+            // `createViewForContent`, reads this pending entry at the one
+            // shared successful-mount boundary (`createView`/
+            // `createTopologyIndependentTerminalView`,
+            // WorkspaceSurfaceCoordinator+ViewLifecycle.swift) and installs
+            // it there -- recording it here, unconditionally, is what makes
+            // that boundary able to find it regardless of which caller
+            // eventually succeeds.
+            if let preservedRestorePhaseLatch {
+                pendingRestorePhaseLatchesByPaneID[paneId] = preservedRestorePhaseLatch
+            }
             teardownView(for: paneId, shouldUnregisterRuntime: false)
             guard createViewForRepair(for: pane) != nil else {
                 Self.logger.error("repair recreateSurface failed for pane \(paneId)")
+                // R2-2: the generation stays pending through this failed
+                // attempt (recorded above, before teardown) -- a later
+                // repair that succeeds (recreateSurface again, or
+                // createMissingView) still reinstalls it. The projector's
+                // own phase is left untouched either way; this never
+                // clears it and never re-runs cold classification.
                 return
+            }
+            // `createViewForRepair` returns the bare content view (a
+            // `TerminalPaneMountView` as `NSView`), not the `PaneHostView`
+            // wrapper `mountedContent(as:)` is declared on
+            // (`PaneHostView.swift:139`) -- that wrapper is a different
+            // object, built and registered inside `registerHostedView`
+            // (`WorkspaceSurfaceCoordinator+ViewLifecycle.swift:53-58`),
+            // which every terminal creation path this repair can reach
+            // (`createTopologyIndependentTerminalView`'s own success case,
+            // confirmed by reading it directly) already calls before
+            // returning. Re-apply through the same registry lookup the
+            // capture above used, symmetric with it, instead of downcasting
+            // this function's own return value.
+            if let preservedRestorePhaseLatch {
+                viewRegistry.terminalView(for: paneId)?.ghosttySurface?.restorePhaseLatch =
+                    preservedRestorePhaseLatch
+                // R2-2: reinstalled for real -- no longer pending.
+                pendingRestorePhaseLatchesByPaneID.removeValue(forKey: paneId)
             }
             Self.logger.info("Repaired view for pane \(paneId)")
 
@@ -392,6 +456,16 @@ extension WorkspaceSurfaceCoordinator {
             guard createViewForRepair(for: pane) != nil else {
                 Self.logger.error("repair createMissingView failed for pane \(paneId)")
                 return
+            }
+            // R2-2 (review round 2, Lead 2026-10-01): this path can also be
+            // the one that finally succeeds after an earlier
+            // `.recreateSurface` attempt failed and left a generation
+            // pending -- reinstall it here too, the same way
+            // `.recreateSurface`'s own success path does above.
+            if let preservedRestorePhaseLatch = pendingRestorePhaseLatchesByPaneID[paneId] {
+                viewRegistry.terminalView(for: paneId)?.ghosttySurface?.restorePhaseLatch =
+                    preservedRestorePhaseLatch
+                pendingRestorePhaseLatchesByPaneID.removeValue(forKey: paneId)
             }
             Self.logger.info("Created missing view for pane \(paneId)")
 

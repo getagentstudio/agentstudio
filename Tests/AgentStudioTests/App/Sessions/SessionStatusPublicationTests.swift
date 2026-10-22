@@ -13,10 +13,10 @@ struct SessionStatusPublicationTests {
     func equalityUsesDesiredValue() {
         let mailbox = SessionStatusPublicationMailbox()
         let paneId = PaneId.generateUUIDv7()
-        #expect(mailbox.offer(.working(.active), for: paneId))
-        #expect(!mailbox.offer(.working(.active), for: paneId))
-        #expect(mailbox.takeBatch() == [paneId: .set(.working(.active))])
-        #expect(!mailbox.offer(.working(.active), for: paneId))
+        #expect(mailbox.offer(.init(status: .working(.active)), for: paneId))
+        #expect(!mailbox.offer(.init(status: .working(.active)), for: paneId))
+        #expect(mailbox.takeBatch() == [paneId: .set(.init(status: .working(.active)))])
+        #expect(!mailbox.offer(.init(status: .working(.active)), for: paneId))
         #expect(mailbox.takeBatch().isEmpty)
     }
 
@@ -24,22 +24,22 @@ struct SessionStatusPublicationTests {
     func returnToPreviousValueIsNotSuppressed() {
         let mailbox = SessionStatusPublicationMailbox()
         let paneId = PaneId.generateUUIDv7()
-        mailbox.offer(.working(.active), for: paneId)
+        mailbox.offer(.init(status: .working(.active)), for: paneId)
         _ = mailbox.takeBatch()
-        mailbox.offer(.needsYou(.question), for: paneId)
-        #expect(mailbox.offer(.working(.active), for: paneId))
-        #expect(mailbox.takeBatch() == [paneId: .set(.working(.active))])
+        mailbox.offer(.init(status: .needsYou(.question)), for: paneId)
+        #expect(mailbox.offer(.init(status: .working(.active)), for: paneId))
+        #expect(mailbox.takeBatch() == [paneId: .set(.init(status: .working(.active)))])
     }
 
     @Test("retirement joins the mailbox and rejects every later set")
     func retiredPaneNeverResurrects() {
         let mailbox = SessionStatusPublicationMailbox()
         let paneId = PaneId.generateUUIDv7()
-        mailbox.offer(.working(.active), for: paneId)
+        mailbox.offer(.init(status: .working(.active)), for: paneId)
         mailbox.retire(paneId)
-        #expect(!mailbox.offer(.idle(.ended), for: paneId))
+        #expect(!mailbox.offer(.init(status: .idle(.ended)), for: paneId))
         #expect(mailbox.takeBatch() == [paneId: .remove])
-        #expect(!mailbox.offer(.working(.active), for: paneId))
+        #expect(!mailbox.offer(.init(status: .working(.active)), for: paneId))
         #expect(mailbox.takeBatch().isEmpty)
     }
 
@@ -51,11 +51,14 @@ struct SessionStatusPublicationTests {
             mailbox: mailbox, sink: { batch in recorded.withLock { $0.append(batch) } })
         let firstPane = PaneId.generateUUIDv7()
         let secondPane = PaneId.generateUUIDv7()
-        mailbox.offer(.idle(.ended), for: firstPane)
-        mailbox.offer(.needsYou(.approval), for: secondPane)
+        mailbox.offer(.init(status: .idle(.ended)), for: firstPane)
+        mailbox.offer(.init(status: .needsYou(.approval)), for: secondPane)
         await lane.publishPending()
-        #expect(recorded.withLock { $0 } == [[firstPane: .set(.idle(.ended)), secondPane: .set(.needsYou(.approval))]])
-        #expect(!mailbox.offer(.idle(.ended), for: firstPane))
+        #expect(
+            recorded.withLock { $0 } == [
+                [firstPane: .set(.init(status: .idle(.ended))), secondPane: .set(.init(status: .needsYou(.approval)))]
+            ])
+        #expect(!mailbox.offer(.init(status: .idle(.ended)), for: firstPane))
         await lane.publishPending()
         #expect(recorded.withLock { $0.count } == 1)
         await lane.shutdown()
@@ -74,7 +77,7 @@ struct SessionStatusPublicationTests {
                 try? await heldSink.arrive(batch)
             })
         let paneId = PaneId.generateUUIDv7()
-        mailbox.offer(.working(.active), for: paneId)
+        mailbox.offer(.init(status: .working(.active)), for: paneId)
         let firstDrain = Task { await lane.publishPending() }
         let arrival: [PaneId: SessionStatusPublication]
         do {
@@ -86,15 +89,63 @@ struct SessionStatusPublicationTests {
             await lane.shutdown()
             throw error
         }
-        #expect(arrival == [paneId: .set(.working(.active))])
-        mailbox.offer(.needsYou(.approval), for: paneId)
-        mailbox.offer(.idle(.done), for: paneId)
-        mailbox.offer(.working(.monitoring), for: paneId)
-        #expect(!mailbox.offer(.working(.monitoring), for: paneId))
+        #expect(arrival == [paneId: .set(.init(status: .working(.active)))])
+        mailbox.offer(.init(status: .needsYou(.approval)), for: paneId)
+        mailbox.offer(.init(status: .idle(.done)), for: paneId)
+        mailbox.offer(.init(status: .working(.monitoring)), for: paneId)
+        #expect(!mailbox.offer(.init(status: .working(.monitoring)), for: paneId))
         heldSink.release()
         await firstDrain.value
         await lane.publishPending()
-        #expect(recorded.withLock { $0 } == [[paneId: .set(.working(.active))], [paneId: .set(.working(.monitoring))]])
+        #expect(
+            recorded.withLock { $0 } == [
+                [paneId: .set(.init(status: .working(.active)))], [paneId: .set(.init(status: .working(.monitoring)))],
+            ])
         await lane.shutdown()
     }
+    @Test("an issue-only change publishes the cohesive value and equal repeats are suppressed")
+    func connectionIssueParticipatesInEquality() {
+        let mailbox = SessionStatusPublicationMailbox()
+        let pane = PaneId.generateUUIDv7()
+        let connected = PaneAgentStatusPresentation(status: .needsYou(.approval))
+        let disconnected = PaneAgentStatusPresentation(
+            status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)
+        #expect(mailbox.offer(connected, for: pane))
+        _ = mailbox.takeBatch()
+        #expect(mailbox.offer(disconnected, for: pane))
+        #expect(!mailbox.offer(disconnected, for: pane))
+        #expect(mailbox.takeBatch() == [pane: .set(disconnected)])
+    }
+
+    @Test("shutdown drains a final removal behind an in-flight status publication")
+    func shutdownJoinsFinalRemoval() async throws {
+        let mailbox = SessionStatusPublicationMailbox()
+        let held = HeldStep<[PaneId: SessionStatusPublication]>("status sink held before quit removal")
+        let recorded = Mutex<[[PaneId: SessionStatusPublication]]>([])
+        let lane = SessionStatusPublicationLane(
+            mailbox: mailbox,
+            sink: { batch in
+                recorded.withLock { $0.append(batch) }
+                try? await held.arrive(batch)
+            })
+        let pane = PaneId.generateUUIDv7()
+        let presentation = PaneAgentStatusPresentation(
+            status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)
+        mailbox.offer(presentation, for: pane)
+        await lane.start()
+        do {
+            _ = try await held.firstArrival()
+            mailbox.retire(pane)
+            let shutdown = Task { await lane.shutdown() }
+            held.release()
+            await shutdown.value
+            #expect(recorded.withLock { $0 } == [[pane: .set(presentation)], [pane: .remove]])
+            #expect(!mailbox.offer(presentation, for: pane))
+        } catch {
+            held.release()
+            await lane.shutdown()
+            throw error
+        }
+    }
+
 }

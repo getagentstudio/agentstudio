@@ -116,6 +116,14 @@ jobs:
           # Nothing is installed through mise in this job, so there is nothing to cache.
           cache: false
 
+      - name: Restore lint tools cache
+        id: lint-tools-cache-restore
+        if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
+        uses: actions/cache/restore@v4
+        with:
+          path: .build-ci/lint-tools
+          key: lint-tools-linux-${{ runner.arch }}-image-8de8ea332a61-${{ hashFiles('scripts/install-ci-lint-tools.sh') }}
+
       - name: Install lint tools
         if: ${{ !cancelled() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) }}
         run: bash scripts/install-ci-lint-tools.sh
@@ -125,6 +133,13 @@ jobs:
         run: |
           swift-format --version
           swiftlint version
+
+      - name: Save lint tools cache
+        if: ${{ success() && (needs.changes.result != 'success' || (needs.changes.outputs.scope != 'docs')) && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.lint-tools-cache-restore.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v4
+        with:
+          path: .build-ci/lint-tools
+          key: ${{ steps.lint-tools-cache-restore.outputs.cache-primary-key }}
 
       - name: Restore architecture lint build cache
         id: architecture-cache-restore

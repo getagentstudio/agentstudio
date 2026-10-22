@@ -310,6 +310,10 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
     private func providerCommandExit(
         readInput: @escaping @Sendable () -> Data
     ) -> Int32? {
+        if props.arguments.first == "package", let action = props.arguments.dropFirst().first, action != "install" {
+            props.standardErrorSink("agentstudio package: unknown subcommand \(action)")
+            return 1
+        }
         let isHook: Bool = props.arguments.first == "hook"
         let readHookInput: @Sendable () throws -> Data = {
             if let hookDeadline {
@@ -319,7 +323,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         }
         let providerDiagnostics: @Sendable (String) -> Void
         if isHook {
-            providerDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
+            providerDiagnostics = { [environment = props.environment] label in
+                CLIDiagnostics.recordHook(label, environment: environment)
+            }
         } else {
             providerDiagnostics = props.standardErrorSink
         }
@@ -343,7 +349,9 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         let isHook: Bool = props.arguments.first == "hook"
         let packageDiagnostics: @Sendable (String) -> Void
         if isHook {
-            packageDiagnostics = { _ in CLIDiagnostics.record(.providerHookFailed) }
+            packageDiagnostics = { [environment = props.environment] label in
+                CLIDiagnostics.recordHook(label, environment: environment)
+            }
         } else {
             packageDiagnostics = props.standardErrorSink
         }

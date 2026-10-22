@@ -197,6 +197,11 @@ extension AppDelegate {
             }
             try composition.server.start()
             appIPCServer = composition.server
+            if !(await Self.prepareAppCLIOrderingStore(
+                at: composition.server.paths.cliStoreURL, channel: cliStoreChannel))
+            {
+                appLogger.warning("App CLI ordering store unavailable; title and Agent Line writes may be refused")
+            }
             appLogger.info("App IPC server started at \(composition.socketURL.path, privacy: .private)")
             publishDebugCredentialEscrow(socketURL: composition.socketURL)
             startPaneCLIOutboxDrain(sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
@@ -211,6 +216,19 @@ extension AppDelegate {
                 return reason
             }
             return .initializationCancelled
+        }
+    }
+
+    /// Old pane shells discover this channel's shared store through the published IPC runtime.
+    @concurrent nonisolated private static func prepareAppCLIOrderingStore(
+        at url: URL, channel: CLIStoreChannel
+    ) async -> Bool {
+        do {
+            let writer = try CLIStore.openWriter(url: url, channel: channel).get()
+            try writer.close()
+            return true
+        } catch {
+            return false
         }
     }
 
@@ -440,6 +458,7 @@ extension AppDelegate {
             commandDispatcher: commandDispatcherForBoot()
         )
         let commandCatalogProjectionInputs = commandPort.commandCatalogProjectionInputs()
+        let paneClaimDirectory = atomStore.core.workspacePaneGraph.paneContextMembershipDirectory
         let ports = AgentStudioAppIPCPorts(
             queryPort: AgentStudioIPCQueryAdapter(
                 runtimeId: runtimeId,
@@ -480,7 +499,15 @@ extension AppDelegate {
                 workspaceStore: store, performanceTraceRecorder: performanceTraceRecorder),
             agentAuthorizationTelemetry: AgentStudioIPCAgentAuthorizationTelemetry(
                 performanceTraceRecorder: performanceTraceRecorder),
-            paneContextPort: sessionsComposition.paneContextIPCAdapter
+            paneContextPort: sessionsComposition.paneContextIPCAdapter,
+            paneClaimAdmission: .init(membershipRefusal: { [paneClaimDirectory] claim in
+                switch paneClaimDirectory.claimMembership(paneId: claim.paneId, workspaceId: claim.workspaceId) {
+                case .live: nil
+                case .paneNotFound: .paneNotFound
+                case .paneRetired: .paneRetired
+                case .otherWorkspace: .otherWorkspace
+                }
+            })
         )
         let eventBroker = IPCEventBroker()
         guard

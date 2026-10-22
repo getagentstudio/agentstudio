@@ -49,7 +49,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .message,
                 examples: [
                     .init(
                         description: "Representative pane.message.send call",
@@ -83,7 +83,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .message,
                 examples: [
                     .init(
                         description: "Representative pane.message.ask call",
@@ -120,7 +120,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .message,
                 examples: [
                     .init(
                         description: "Representative pane.message.withdraw call",
@@ -152,7 +152,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 examples: [
                     .init(
                         description: "Representative pane.message.changes call",
@@ -184,7 +184,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .status,
                 examples: [
                     .init(
                         description: "Representative pane.line.set call",
@@ -200,7 +200,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 executionOwner: .paneContextService,
                 principalAvailability: .authenticated,
                 resultSemantics: .discriminated,
-                documentedErrors: Self.errors,
+                documentedErrors: Self.statusWriteErrors,
                 isMutating: true,
                 correlationPolicy: .required,
                 agentEligibility: entryEligibility
@@ -216,7 +216,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .status,
                 examples: [
                     .init(
                         description: "Representative pane.title.set call",
@@ -234,7 +234,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 executionOwner: .paneContextService,
                 principalAvailability: .authenticated,
                 resultSemantics: .discriminated,
-                documentedErrors: Self.errors,
+                documentedErrors: Self.statusWriteErrors,
                 isMutating: true,
                 correlationPolicy: .required,
                 agentEligibility: entryEligibility
@@ -250,7 +250,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .status,
                 examples: [
                     .init(
                         description: "Representative pane.writer.claimEpoch call",
@@ -266,7 +266,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 executionOwner: .paneContextService,
                 principalAvailability: .authenticated,
                 resultSemantics: .discriminated,
-                documentedErrors: Self.errors,
+                documentedErrors: Self.statusWriteErrors,
                 isMutating: true,
                 correlationPolicy: .required,
                 agentEligibility: entryEligibility
@@ -282,7 +282,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
             let examples = inputs.examples
             return try IPCMethodDescriptor(
                 name: entryName,
-                description: entrySummary,
+                description: entrySummary, callIntent: .read,
                 examples: [
                     .init(
                         description: "Representative pane.context.get call",
@@ -305,6 +305,16 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                 agentEligibility: entryEligibility
             )
         })
+
+    private static var statusWriteErrors: [IPCMethodErrorCase] {
+        errors
+            + [
+                IPCAgentConnectionRefusalReason.paneNotFound, .paneRetired, .otherWorkspace, .intentRequiresToken,
+            ].map { reason in
+                IPCMethodErrorCase(
+                    reason: reason.rawValue, description: "Pane claim admission refused: \(reason.rawValue).")
+            }
+    }
 
     private static var errors: [IPCMethodErrorCase] {
         [

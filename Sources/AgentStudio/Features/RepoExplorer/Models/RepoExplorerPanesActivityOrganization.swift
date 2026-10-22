@@ -3,6 +3,8 @@ import Foundation
 
 struct RepoExplorerPinnedActivityMember: Sendable {
     let paneID: UUID
+    let tabIndex: Int
+    let paneIndexInTab: Int
     let activityTime: PaneActivityTime?
     let isDrawer: Bool
     let ownerPaneID: UUID?
@@ -50,6 +52,8 @@ extension RepoExplorerProjection {
                             let facts = input.paneFacts[destination.paneId]
                             return RepoExplorerPinnedActivityMember(
                                 paneID: destination.paneId,
+                                tabIndex: destination.tabIndex,
+                                paneIndexInTab: destination.paneIndexInTab,
                                 activityTime: facts?.paneActivityTime,
                                 isDrawer: facts?.isDrawerPane == true,
                                 ownerPaneID: facts?.drawerOwnerPaneID
@@ -154,7 +158,11 @@ extension RepoExplorerProjection {
             })
         return RepoExplorerPinnedActivityBucket.allCases.compactMap { bucket in
             let sorted = visible.filter { bucketByID[$0.paneID] == bucket }.sorted { lhs, rhs in
-                activityPrecedes(
+                if bucket == .active {
+                    return (lhs.tabIndex, lhs.paneIndexInTab, lhs.paneID.uuidString)
+                        < (rhs.tabIndex, rhs.paneIndexInTab, rhs.paneID.uuidString)
+                }
+                return activityPrecedes(
                     lhsPaneID: lhs.paneID, lhsTime: lhs.activityTime,
                     rhsPaneID: rhs.paneID, rhsTime: rhs.activityTime
                 )
@@ -190,7 +198,11 @@ extension RepoExplorerProjection {
                     ? fact?.drawerOwnerPaneID ?? destination.paneId : destination.paneId
                 return activityByPaneID[groupingID]?.unpinnedBucket == bucket
             }.sorted { lhs, rhs in
-                activityPrecedes(
+                if bucket == .active || bucket == .justNow {
+                    return (lhs.tabIndex, lhs.paneIndexInTab, lhs.paneId.uuidString)
+                        < (rhs.tabIndex, rhs.paneIndexInTab, rhs.paneId.uuidString)
+                }
+                return activityPrecedes(
                     lhsPaneID: lhs.paneId, lhsTime: facts[lhs.paneId]?.paneActivityTime,
                     rhsPaneID: rhs.paneId, rhsTime: facts[rhs.paneId]?.paneActivityTime
                 )
@@ -304,6 +316,7 @@ extension RepoExplorerProjection {
             isActive: row.isActive,
             agentLine: facts?.contextDisplay?.agentLine,
             sessionStatus: facts?.sessionStatus,
+            connectionIssue: facts?.connectionIssue,
             messageCount: pinnedRow.messageChip?.count ?? 0
         )
         return pinnedRow

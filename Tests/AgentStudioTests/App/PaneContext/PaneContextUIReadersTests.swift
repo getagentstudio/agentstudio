@@ -20,7 +20,7 @@ struct PaneContextUIReadersTests {
             let pane = store.createPane(title: "Terminal title")
             let paneId = PaneId(existingUUID: pane.id)
             let statusAtom = SessionStatusAtom()
-            statusAtom.apply([paneId: .set(.idle(.ended))])
+            statusAtom.apply([paneId: .set(.init(status: .idle(.ended)))])
             let display = PaneContextDisplay(
                 revision: .init(7), agentTitle: "Agent title", agentLine: nil,
                 own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
@@ -70,4 +70,5 @@ struct PaneContextUIReadersTests {
             #expect(readers.titleForPane(.generateUUIDv7()) == nil)
         }
     }
+
 }

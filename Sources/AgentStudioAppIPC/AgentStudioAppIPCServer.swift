@@ -166,7 +166,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         principalRegistry.shutdown()
         stopListenerAndConnections()
         principalRegistry.revokeAllGrants()
-        try? FileManager.default.removeItem(at: paths.metadataURL)
+        AgentStudioIPCFilesystem.removeMetadata(paths: paths)
     }
 
     /// Ends the accepting side: no new connection is admitted, live ones are
@@ -180,7 +180,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         schedulePersistence(of: shutdownSnapshot)
         stopListenerAndConnections()
         principalRegistry.revokeAllGrants()
-        try? FileManager.default.removeItem(at: paths.metadataURL)
+        AgentStudioIPCFilesystem.removeMetadata(paths: paths)
     }
 
     /// Waits for the credential writes queued by `stopAcceptingConnections()`.
@@ -321,6 +321,14 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             throw refusal
         }
         guard let registration else { throw AgentStudioAppIPCRequestError.methodNotFound }
+        // The descriptor declares whether a method runs before authentication, the
+        // same source the typed registration enforces; only status intent may use a claim.
+        if connectionState.principal == nil,
+            registration.descriptor.metadata.principalAvailability == .authenticated,
+            registration.descriptor.metadata.callIntent != .status
+        {
+            throw AppIPCPaneClaimError(reason: .intentRequiresToken)
+        }
         let replyEnvelopeOverheadBytes =
             request.method == "pane.context.get"
             ? try AppIPCPaneContextReplyBudget.envelopeOverheadBytes(id: replyId) : 0
@@ -328,36 +336,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             contextId: connectionId, channel: channel,
             authenticatedContext: connectionState.authenticatedContext,
             authenticate: { [self] params in
-                do {
-                    let authenticatedContext = try await authenticator.login(
-                        subjectToken: AgentStudioIPCSubjectToken(rawValue: params.token)
-                    ).authenticatedContext
-                    guard authenticatedContextIsAllowedOnChannel(authenticatedContext) else {
-                        principalRegistry.releaseLease(authenticatedContext)
-                        throw AgentStudioIPCAuthenticationError(reason: .unauthenticated)
-                    }
-                    guard recordAuthenticatedContext(authenticatedContext, for: connection) else {
-                        principalRegistry.releaseLease(authenticatedContext)
-                        throw AgentStudioIPCAuthenticationError(reason: .unauthenticated)
-                    }
-                    if let replaced = connectionState.replaceAuthenticatedContext(authenticatedContext) {
-                        principalRegistry.releaseLease(replaced)
-                    }
-                    if let candidate = authenticatedContext.persistenceCandidate {
-                        schedulePersistence(of: [candidate])
-                    }
-                    let principal = authenticatedContext.principal
-                    let readThrough = await cliStoreReadThroughPort?.readThrough()
-                    return .authenticated(
-                        principalId: principal.principalId, runtimeId: principal.runtimeId,
-                        accessMode: principal.accessMode, cliStoreReadThrough: readThrough)
-                } catch {
-                    if let rejected = connectionState.rejectAuthentication() {
-                        principalRegistry.releaseLease(rejected)
-                    }
-                    clearAuthenticatedContext(for: connection)
-                    throw error
-                }
+                try await authenticateConnection(params, connection: connection, connectionState: connectionState)
             },
             authenticationStatus: {
                 // Status is the connection-local principal snapshot. Login
@@ -371,7 +350,8 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             connectionEndCause: { [self] in
                 connectionState.endCause ?? (serverIsStopping() ? .stopping : .eof)
             },
-            replyEnvelopeOverheadBytes: replyEnvelopeOverheadBytes
+            replyEnvelopeOverheadBytes: replyEnvelopeOverheadBytes,
+            paneClaimAdmission: service.ports.paneClaimAdmission, runtimeId: service.configuration.runtimeId
         )
         let tools = AppIPCTargetResolutionTools { [self] rawHandle in
             try await canonicalHandle(fromRawHandle: rawHandle, principal: context.principal)
@@ -388,6 +368,42 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             // Only the new pane-context methods use their typed field refusal;
             // every existing registration keeps its established error bytes.
             throw AppIPCPaneContextError.schemaRefusal(error)
+        }
+    }
+
+    private func authenticateConnection(
+        _ params: IPCAuthLoginParams, connection: UnixSocketConnection,
+        connectionState: AgentStudioAppIPCConnectionState
+    ) async throws -> IPCAuthStatusResult {
+        do {
+            let authenticatedContext = try await authenticator.login(
+                subjectToken: AgentStudioIPCSubjectToken(rawValue: params.token)
+            ).authenticatedContext
+            guard authenticatedContextIsAllowedOnChannel(authenticatedContext) else {
+                principalRegistry.releaseLease(authenticatedContext)
+                throw AgentStudioIPCAuthenticationError(reason: .unauthenticated)
+            }
+            guard recordAuthenticatedContext(authenticatedContext, for: connection) else {
+                principalRegistry.releaseLease(authenticatedContext)
+                throw AgentStudioIPCAuthenticationError(reason: .unauthenticated)
+            }
+            if let replaced = connectionState.replaceAuthenticatedContext(authenticatedContext) {
+                principalRegistry.releaseLease(replaced)
+            }
+            if let candidate = authenticatedContext.persistenceCandidate {
+                schedulePersistence(of: [candidate])
+            }
+            let principal = authenticatedContext.principal
+            let readThrough = await cliStoreReadThroughPort?.readThrough()
+            return .authenticated(
+                principalId: principal.principalId, runtimeId: principal.runtimeId,
+                accessMode: principal.accessMode, cliStoreReadThrough: readThrough)
+        } catch {
+            if let rejected = connectionState.rejectAuthentication() {
+                principalRegistry.releaseLease(rejected)
+            }
+            clearAuthenticatedContext(for: connection)
+            throw error
         }
     }
 
@@ -501,6 +517,8 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         switch context.principal.kind {
         case .spawnedPaneAgent:
             true
+        case .paneClaim:
+            false
         case .automationClient, .futureMCPClient, .unsafeDebugClient:
             channel == .debug
         }
@@ -605,7 +623,7 @@ extension IPCPrincipal {
         switch kind {
         case .spawnedPaneAgent(let boundPaneId, _):
             boundPaneId == paneId
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             false
         }
     }
@@ -614,7 +632,7 @@ extension IPCPrincipal {
         switch kind {
         case .spawnedPaneAgent(let boundPaneId, let boundWorkspaceID):
             boundPaneId == paneId && boundWorkspaceID == workspaceID
-        case .automationClient, .futureMCPClient, .unsafeDebugClient:
+        case .automationClient, .futureMCPClient, .unsafeDebugClient, .paneClaim:
             false
         }
     }

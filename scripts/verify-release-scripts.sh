@@ -222,6 +222,162 @@ HOMEBREW_TAP_LOCAL_PATH="$tap_dir" DRY_RUN=1 SKIP_BREW_STYLE=1 \
 test -f "$tap_dir/Casks/agent-studio@beta.rb"
 test ! -f "$tap_dir/Casks/agent-studio.rb"
 
+# Exercise real commits and pushes with macOS's Bash 3.2, including a stale clone.
+make_tap_push_fixture() {
+  local fixture_dir="$1"
+  mkdir -p "$fixture_dir"
+  git init --bare --initial-branch=main -q "$fixture_dir/origin.git"
+  git -C "$fixture_dir/origin.git" config receive.denyNonFastForwards true
+  git clone -q "$fixture_dir/origin.git" "$fixture_dir/writer"
+  git -C "$fixture_dir/writer" config user.name "AgentStudio Release Tests"
+  git -C "$fixture_dir/writer" config user.email "release-tests@agentstudio.invalid"
+  git -C "$fixture_dir/writer" config commit.gpgsign false
+  mkdir -p "$fixture_dir/writer/Casks"
+  "$ROOT_DIR/scripts/render-homebrew-cask.sh" stable 0.0.53 "$SHA" \
+    > "$fixture_dir/writer/Casks/agent-studio.rb"
+  "$ROOT_DIR/scripts/render-homebrew-cask.sh" beta 0.0.53-beta.1 "$SHA" \
+    > "$fixture_dir/writer/Casks/agent-studio@beta.rb"
+  git -C "$fixture_dir/writer" add Casks
+  git -C "$fixture_dir/writer" commit -q -m "Seed both channels"
+  git -C "$fixture_dir/writer" push -q origin main
+  git clone -q "$fixture_dir/origin.git" "$fixture_dir/updater"
+  git -C "$fixture_dir/updater" config commit.gpgsign false
+}
+
+for selected_channel in stable beta; do
+  fixture_dir="$tap_dir/push-race-$selected_channel"
+  make_tap_push_fixture "$fixture_dir"
+  if [[ "$selected_channel" == stable ]]; then
+    selected_cask="agent-studio.rb"
+    selected_tag="v0.0.54"
+    other_channel=beta
+    other_cask="agent-studio@beta.rb"
+    other_version="0.0.54-beta.1"
+  else
+    selected_cask="agent-studio@beta.rb"
+    selected_tag="v0.0.54-beta.1"
+    other_channel=stable
+    other_cask="agent-studio.rb"
+    other_version="0.0.54"
+  fi
+  "$ROOT_DIR/scripts/render-homebrew-cask.sh" "$other_channel" "$other_version" "$SHA" \
+    > "$fixture_dir/writer/Casks/$other_cask"
+  git -C "$fixture_dir/writer" add Casks
+  git -C "$fixture_dir/writer" commit -q -m "Publish other channel first"
+  git -C "$fixture_dir/writer" push -q origin main
+  other_channel_commit="$(git -C "$fixture_dir/writer" rev-parse HEAD)"
+  if [[ "$selected_channel" == beta ]]; then
+    # A known upstream commit produces the other non-fast-forward status.
+    git -C "$fixture_dir/updater" fetch -q origin main
+    expected_rejection="[rejected] (non-fast-forward)"
+  else
+    expected_rejection="[rejected] (fetch first)"
+  fi
+
+  if ! HOMEBREW_TAP_LOCAL_PATH="$fixture_dir/updater" DRY_RUN=0 SKIP_BREW_STYLE=1 \
+    /bin/bash "$ROOT_DIR/scripts/update-homebrew-tap.sh" "$selected_channel" "$selected_tag" "$SHA" \
+    > "$fixture_dir/update.log" 2>&1; then
+    cat "$fixture_dir/update.log" >&2
+    echo "$selected_channel tap update failed to recover from the other channel's push" >&2
+    exit 1
+  fi
+  assert_contains "$(<"$fixture_dir/update.log")" "$expected_rejection"
+  test "$(git -C "$fixture_dir/origin.git" rev-list --count main)" = 3
+  git -C "$fixture_dir/origin.git" merge-base --is-ancestor "$other_channel_commit" main
+  test "$(git -C "$fixture_dir/origin.git" rev-parse main)" = \
+    "$(git -C "$fixture_dir/updater" rev-parse HEAD)"
+  git -C "$fixture_dir/origin.git" show "main:Casks/$other_cask" > "$fixture_dir/actual-other.rb"
+  cmp "$fixture_dir/writer/Casks/$other_cask" "$fixture_dir/actual-other.rb"
+  "$ROOT_DIR/scripts/render-homebrew-cask.sh" "$selected_channel" "${selected_tag#v}" "$SHA" \
+    > "$fixture_dir/expected-selected.rb"
+  git -C "$fixture_dir/origin.git" show "main:Casks/$selected_cask" > "$fixture_dir/actual-selected.rb"
+  cmp "$fixture_dir/expected-selected.rb" "$fixture_dir/actual-selected.rb"
+  echo "tap push recovery passed: $selected_channel (3 commits; both casks preserved)"
+done
+
+fixture_dir="$tap_dir/push-conflict"
+make_tap_push_fixture "$fixture_dir"
+"$ROOT_DIR/scripts/render-homebrew-cask.sh" stable 0.0.55 "$SHA" \
+  > "$fixture_dir/writer/Casks/agent-studio.rb"
+git -C "$fixture_dir/writer" add Casks
+git -C "$fixture_dir/writer" commit -q -m "Conflicting stable release"
+git -C "$fixture_dir/writer" push -q origin main
+origin_before_conflict="$(git -C "$fixture_dir/origin.git" rev-parse main)"
+if HOMEBREW_TAP_LOCAL_PATH="$fixture_dir/updater" DRY_RUN=0 SKIP_BREW_STYLE=1 \
+  /bin/bash "$ROOT_DIR/scripts/update-homebrew-tap.sh" stable v0.0.54 "$SHA" \
+  > "$fixture_dir/update.log" 2>&1; then
+  echo "conflicting tap rebase unexpectedly succeeded" >&2
+  exit 1
+fi
+assert_contains "$(<"$fixture_dir/update.log")" "CONFLICT (content)"
+assert_contains "$(<"$fixture_dir/update.log")" "could not apply"
+test "$(git -C "$fixture_dir/origin.git" rev-parse main)" = "$origin_before_conflict"
+test -n "$(git -C "$fixture_dir/updater" ls-files --unmerged)"
+echo "tap rebase conflict passed: nonzero exit; Git error retained; origin unchanged"
+
+fixture_dir="$tap_dir/push-denied"
+make_tap_push_fixture "$fixture_dir"
+cat > "$fixture_dir/origin.git/hooks/pre-receive" <<'REJECT_TAP_PUSH'
+#!/bin/bash
+echo attempt >> push-attempts
+echo "tap push denied by server policy" >&2
+printf '\t[rejected] (fetch first)\n' >&2
+exit 1
+REJECT_TAP_PUSH
+chmod +x "$fixture_dir/origin.git/hooks/pre-receive"
+origin_before_denial="$(git -C "$fixture_dir/origin.git" rev-parse main)"
+if HOMEBREW_TAP_LOCAL_PATH="$fixture_dir/updater" DRY_RUN=0 SKIP_BREW_STYLE=1 \
+  /bin/bash "$ROOT_DIR/scripts/update-homebrew-tap.sh" stable v0.0.54 "$SHA" \
+  > "$fixture_dir/update.log" 2>&1; then
+  echo "server-denied tap push unexpectedly succeeded" >&2
+  exit 1
+fi
+assert_contains "$(<"$fixture_dir/update.log")" "tap push denied by server policy"
+assert_contains "$(<"$fixture_dir/update.log")" $'\t[rejected] (fetch first)'
+assert_contains "$(<"$fixture_dir/update.log")" "[remote rejected]"
+denied_push_attempts="$(wc -l < "$fixture_dir/origin.git/push-attempts" | tr -d ' ')"
+if [[ "$denied_push_attempts" != 1 ]]; then
+  cat "$fixture_dir/update.log" >&2
+  echo "server-denied tap push made $denied_push_attempts attempts; expected exactly 1" >&2
+  exit 1
+fi
+test "$(git -C "$fixture_dir/origin.git" rev-parse main)" = "$origin_before_denial"
+echo "tap server rejection passed: one attempt; Git error retained; origin unchanged"
+
+fixture_dir="$tap_dir/push-exhausted"
+make_tap_push_fixture "$fixture_dir"
+mkdir -p "$fixture_dir/bin"
+# Inject another real remote commit immediately before each real push.
+cat > "$fixture_dir/bin/git" <<'RACE_TAP_PUSH'
+#!/bin/bash
+set -euo pipefail
+if [[ "${1:-}" == push ]]; then
+  printf '%s\n' "$*" >> "$TAP_PUSH_RACE_DIR/push-attempts"
+  "$TAP_PUSH_REAL_GIT" -C "$TAP_PUSH_RACE_DIR/writer" commit --allow-empty -q -m "Concurrent tap update"
+  "$TAP_PUSH_REAL_GIT" -C "$TAP_PUSH_RACE_DIR/writer" push -q origin main
+fi
+exec "$TAP_PUSH_REAL_GIT" "$@"
+RACE_TAP_PUSH
+chmod +x "$fixture_dir/bin/git"
+if PATH="$fixture_dir/bin:$PATH" TAP_PUSH_RACE_DIR="$fixture_dir" TAP_PUSH_REAL_GIT="$(command -v git)" \
+  HOMEBREW_TAP_LOCAL_PATH="$fixture_dir/updater" DRY_RUN=0 SKIP_BREW_STYLE=1 \
+  /bin/bash "$ROOT_DIR/scripts/update-homebrew-tap.sh" stable v0.0.54 "$SHA" \
+  > "$fixture_dir/update.log" 2>&1; then
+  echo "continually outdated tap push unexpectedly succeeded" >&2
+  exit 1
+fi
+assert_contains "$(<"$fixture_dir/update.log")" "[rejected] (fetch first)"
+assert_contains "$(<"$fixture_dir/update.log")" "error: failed to push some refs"
+assert_contains "$(<"$fixture_dir/update.log")" "Homebrew tap push failed after 3 attempts"
+test "$(wc -l < "$fixture_dir/push-attempts" | tr -d ' ')" = 3
+while IFS= read -r push_arguments; do
+  test "$push_arguments" = "push --porcelain origin main"
+done < "$fixture_dir/push-attempts"
+test "$(git -C "$fixture_dir/origin.git" rev-list --count main)" = 4
+git -C "$fixture_dir/origin.git" show main:Casks/agent-studio.rb > "$fixture_dir/actual-selected.rb"
+cmp "$fixture_dir/writer/Casks/agent-studio.rb" "$fixture_dir/actual-selected.rb"
+echo "tap push exhaustion passed: 3 ordinary pushes; last Git error retained; remote cask unchanged"
+
 fake_bin="$tap_dir/fake-bin"
 fake_homebrew="$tap_dir/fake-homebrew"
 mkdir -p "$fake_bin" "$fake_homebrew/Library/Taps"

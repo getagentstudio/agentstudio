@@ -93,7 +93,7 @@ terminals not running Agent Studio; remote/multi-machine operators.
   records needs-you with a request id → user returns, sees it in Sessions,
   answers in the pane (U7, U13); later slices let them answer from Sessions.
 - C3: runs one install → each provider's config gains the Agent Studio hooks
-  → uninstall removes exactly those entries (U5, U6).
+  → reinstall preserves unrelated settings without duplicate hooks (U5, U6).
 
 ## Goal boundary (confirmed; amended by AA on 2026-09-15 and AB/AC on 2026-09-16)
 

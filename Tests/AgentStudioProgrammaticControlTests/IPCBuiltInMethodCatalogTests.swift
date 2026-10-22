@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 54 unique static methods in name order")
+    @Test("catalog exposes exactly 55 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 54)
+        #expect(Set(names).count == 55)
         #expect(names == names.sorted())
     }
 
@@ -46,6 +46,9 @@ struct IPCBuiltInMethodCatalogTests {
         #expect(catalog.systemAndAuth.systemPing.principalAvailability == .preAuthentication)
         #expect(catalog.systemAndAuth.authLogin.principalAvailability == .preAuthentication)
         #expect(catalog.systemAndAuth.authStatus.principalAvailability == .preAuthentication)
+        #expect(
+            catalog.erasedDescriptors.filter { $0.metadata.principalAvailability == .preAuthentication }
+                .map(\.metadata.name).sorted() == ["auth.login", "auth.status", "system.ping"])
         #expect(
             catalog.erasedDescriptors.filter { $0.metadata.responseDelivery == .subscription }
                 .map(\.metadata.name) == ["events.subscribe"]
@@ -344,6 +347,7 @@ struct IPCBuiltInMethodCatalogTests {
             "session.event",
             "session.query",
             "session.refusal",
+            "session.status",
             "system.identify",
             "system.ping",
             "system.version",
@@ -374,6 +378,7 @@ struct IPCBuiltInMethodCatalogTests {
         let established: [String] = [
             "auth.login", "auth.status", "events.subscribe", "events.unsubscribe",
             "session.event", "session.query", "session.refusal",
+            "session.status",
         ]
         var inventory: [String: IPCAgentEligibility?] = [:]
         for name in expectedStaticMethodNames { inventory[name] = .some(.notYetAllowed) }
@@ -413,6 +418,7 @@ struct IPCBuiltInMethodCatalogTests {
             "pane.writer.claimEpoch",
             "session.event",
             "session.refusal",
+            "session.status",
             "terminal.send",
             "ui.arrangements.open",
             "ui.commandBar.open",
@@ -460,6 +466,7 @@ struct IPCBuiltInMethodCatalogTests {
             "session.event",
             "session.query",
             "session.refusal",
+            "session.status",
             "sidebar.grouping.get",
             "sidebar.surface.get",
             "system.identify",

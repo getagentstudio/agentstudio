@@ -109,6 +109,7 @@ struct LiveServerFixture: Sendable {
     init(
         accessMode: IPCAccessMode = .agentStudioOnly,
         channel: AgentStudioIPCChannel = .debug,
+        separateSocketDirectory: Bool = false,
         panes: [IPCPaneSummary] = [],
         queryPort: (any AppIPCQueryPort)? = nil,
         runtimePort: any AppIPCRuntimePort = FakeRuntimePort(),
@@ -125,6 +126,7 @@ struct LiveServerFixture: Sendable {
         ownPaneScopes: [AppIPCOwnPaneScope] = [],
         cliStoreReadThroughPort: (any AppIPCCLIStoreReadThroughPort)? = nil,
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
+        paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
         eventBroker: IPCEventBroker = IPCEventBroker(),
         makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
         makeConnectionWriter: @escaping @Sendable (AppIPCConnectionIO, Int) -> AgentStudioAppIPCConnectionWriter = {
@@ -145,7 +147,9 @@ struct LiveServerFixture: Sendable {
         // directory rather than leak it, since a throw here never returns a
         // fixture for the async scope to tear down.
         do {
-            paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootURL)
+            paths = AgentStudioIPCPathResolver().paths(
+                rootDirectory: rootURL,
+                socketDirectory: separateSocketDirectory ? rootURL.appending(path: "ipc-socket") : nil)
             let ports = AgentStudioAppIPCPorts(
                 queryPort: queryPort ?? FakeQueryPort(runtimeId: runtimeId, panes: panes),
                 layoutPort: FakeLayoutPort(),
@@ -160,7 +164,7 @@ struct LiveServerFixture: Sendable {
                 // terminal with an empty drawer, so its own pane is itself.
                 ownPaneScopePort: StaticOwnPaneScopePort(scopes: ownPaneScopes),
                 agentAuthorizationTelemetry: RecordingAgentAuthorizationTelemetry(),
-                paneContextPort: paneContextPort
+                paneContextPort: paneContextPort, paneClaimAdmission: paneClaimAdmission
             )
             let catalog = try makeLiveServerBuiltInCatalog(
                 runtimeId: runtimeId,

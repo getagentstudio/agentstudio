@@ -773,19 +773,29 @@ extension WatchedFolderScanScheduler {
                     $0.1.completionOrdinal < $1.1.completionOrdinal
                 })
             else { return nil }
+            let afterSelection = stateBySourceID[selected.0]?.diagnosticCaseName ?? "absent"
             let resultRegistration = selected.1.result.request.canonicalRoot.registration
             guard currentRootBySourceID[selected.0]?.registration == resultRegistration else {
                 discardStalePendingResult(sourceID: selected.0)
                 continue
             }
+            let beforeLeaseCreation = stateBySourceID[selected.0]?.diagnosticCaseName ?? "absent"
             let leased = LeasedResult(pending: selected.1, leaseID: .make())
-            switch stateBySourceID[selected.0] {
+            let reread = stateBySourceID[selected.0]
+            switch reread {
             case .pendingResult:
                 stateBySourceID[selected.0] = .leasedResult(leased)
             case .pendingResultAndDirty(_, let dirty):
                 stateBySourceID[selected.0] = .leasedResultAndDirty(leased, dirty)
-            default:
-                preconditionFailure("selected result must remain pending until leased")
+            case let unexpected:
+                Self.failPendingResultLease(
+                    stateBySourceID.captureLeaseLookup(
+                        selectedSourceID: selected.0, selected: selected.1,
+                        checkpoints: .init(
+                            afterSelection: afterSelection, beforeLeaseCreation: beforeLeaseCreation,
+                            afterLeaseCreation: unexpected?.diagnosticCaseName ?? "absent"),
+                        candidateCount: candidates.count)
+                )
             }
             return WatchedFolderScanResultLease(
                 leaseID: leased.leaseID,
