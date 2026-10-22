@@ -199,8 +199,14 @@ extension WatchedFolderScanScheduler {
             guard let sourceID = firstReadySourceID else { return nil }
             readySelectionCount = saturatingIncrement(readySelectionCount)
             readySelectionWorkUnitCount = saturatingIncrement(readySelectionWorkUnitCount)
-            guard let state = statesBySourceID[sourceID], let queued = queuedScan(from: state) else {
-                preconditionFailure("ready-root queue and scheduling state must remain synchronized")
+            let state = statesBySourceID[sourceID]
+            guard let state, let queued = queuedScan(from: state) else {
+                WatchedFolderScanScheduler.failReadyRootSynchronization(
+                    stored: state,
+                    readyCount: counts.ready,
+                    scheduledRootCount: statesBySourceID.count,
+                    readyNodeCount: readyNodesBySourceID.count
+                )
             }
             return queued
         }
