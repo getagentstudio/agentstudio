@@ -120,6 +120,7 @@ test('browser.close joins host retirement while leaving its launch usable', asyn
 	await Promise.all([fixture.ready, decoy.ready]);
 	let connected = true;
 	const controlled = {
+		contexts: (): [] => [],
 		close: async (): Promise<void> => {
 			connected = false;
 		},

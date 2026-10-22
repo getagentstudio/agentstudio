@@ -448,6 +448,21 @@ export class BridgeWebTestLaunch {
 				await runAllOwnedCleanupOperations({
 					operations: [
 						{
+							name: 'browser contexts',
+							run: async (): Promise<void> => {
+								const outcomes = await Promise.allSettled(
+									(this.#browser?.contexts() ?? []).map(async (context): Promise<void> => {
+										await context.close(this.#browserCloseOptions);
+									}),
+								);
+								const failures = outcomes.flatMap((outcome): unknown[] =>
+									outcome.status === 'rejected' ? [outcome.reason] : [],
+								);
+								if (failures.length > 0)
+									throw new AggregateError(failures, 'Owned browser context closure failed.');
+							},
+						},
+						{
 							name: 'browser connection',
 							run: async (): Promise<void> => {
 								await this.#closeBrowser?.(this.#browserCloseOptions);
@@ -499,8 +514,10 @@ export class BridgeWebTestLaunch {
 			this.#backend === null
 				? null
 				: handleLaunchPromise(this.#backend.stop(), 'stop starting backend');
+		// Only a pending acquisition needs host death to release its join. A
+		// connected browser closes contexts over the live protocol before host stop.
 		const earlyBrowserHostStop =
-			this.#browserHost === null
+			this.#browserHost === null || this.#browser !== null
 				? null
 				: handleLaunchPromise(this.#browserHost.stop(), 'stop starting Chromium host');
 		await Promise.all(this.#acquisitions);
