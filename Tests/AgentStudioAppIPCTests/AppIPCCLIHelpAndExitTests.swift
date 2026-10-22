@@ -5,7 +5,7 @@ import Testing
 
 @Suite("App IPC CLI help and exit codes", .serialized)
 struct AppIPCCLIHelpAndExitTests {
-    @Test("local help works in a real CLI process with no app", arguments: [["--help"], ["help"]])
+    @Test("local help works in a real CLI process with no app", arguments: [["--help"], ["help"], ["help", "--help"]])
     func localHelpNeedsNoApp(arguments: [String]) async throws {
         let output = try await runCLI(
             executableURL: cliExecutableURL(), arguments: arguments, environment: offlineEnvironment())
@@ -15,6 +15,12 @@ struct AppIPCCLIHelpAndExitTests {
             output.exitCode == 0,
             "stderr: \(String(bytes: output.standardError, encoding: .utf8) ?? "Invalid UTF-8 stderr")")
         #expect(output.standardError.isEmpty)
+        if arguments == ["help", "--help"] {
+            let root = try await runCLI(
+                executableURL: cliExecutableURL(), arguments: ["--help"], environment: offlineEnvironment())
+            #expect(root.exitCode == 0)
+            #expect(output.standardOutput == root.standardOutput)
+        }
         for name in ["system.identify", "terminal.send", "pane.close", "drawer.toggle", "session.query"] {
             #expect(text.contains(name), "missing compiled method: \(name)")
         }
@@ -42,6 +48,29 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(text.contains("handle"))
         #expect(text.contains("input"))
         #expect(text.contains("correlationId"))
+    }
+
+    @Test("auth.login help describes its credential and JSON stdin forms without argv credentials")
+    func authLoginHelpMatchesAcceptedSyntax() async throws {
+        let output = try await runCLI(
+            executableURL: cliExecutableURL(), arguments: ["auth.login", "--help"], environment: offlineEnvironment())
+        let text = try #require(String(bytes: output.standardOutput, encoding: .utf8))
+        let expected = """
+            auth.login — Authenticate this connection with the owning runtime credential.
+            Usage: agentstudio auth.login
+                   agentstudio auth.login --stdin
+            agentstudio auth.login uses the resolved credential: the pane's inherited token, or a raw token from agentstudio --token-stdin auth.login.
+            agentstudio auth.login --stdin reads the JSON parameter object from standard input.
+            --token-stdin and --stdin can't be combined.
+            JSON fields:
+              token (required) — Bearer credential supplied by the owning runtime
+            """
+        #expect(output.exitCode == 0)
+        #expect(output.standardError.isEmpty)
+        #expect(text == expected + "\n")
+        #expect(!text.contains("--token <value>"))
+        #expect(!text.contains("--json"))
+        #expect(!text.contains("example-runtime-credential"))
     }
 
     @Test("live help explicitly fetches commands and prints a real advertised command")
