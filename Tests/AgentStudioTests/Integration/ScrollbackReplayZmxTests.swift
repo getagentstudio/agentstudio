@@ -68,8 +68,14 @@ extension E2ESerializedTests.ScrollbackCaptureIntegrationTests {
             let observed = try await ScrollbackZmxConsole.readOutput(from: pipe.fileHandleForReading, through: marker)
             #expect(observed.contains(marker))
             Issue.record("EOF cannot satisfy the console marker observation")
-        } catch let failure as POSIXError {
-            #expect(failure.code == .EIO)
+        } catch let failure as ScrollbackConsoleFailure {
+            switch failure {
+            case .outputEndedBeforeMarker(let marker, let observed):
+                #expect(marker == Data("absent console marker".utf8))
+                #expect(observed.isEmpty)
+            case .producerExitedBeforeFIFO:
+                Issue.record("A pipe EOF must name the missing marker")
+            }
         }
     }
 
