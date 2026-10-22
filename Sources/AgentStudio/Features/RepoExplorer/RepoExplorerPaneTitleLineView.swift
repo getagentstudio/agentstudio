@@ -8,19 +8,24 @@ package struct RepoExplorerPaneTitleLineView: View {
     let isDrawerPane: Bool
     let octiconLoader: OcticonLoader
     let shortcutDisplay: ShortcutDisplayText?
+    let maximumLineCount: Int
 
     package init(
         text: String, isDrawerPane: Bool, octiconLoader: OcticonLoader,
-        shortcutDisplay: ShortcutDisplayText? = nil
+        shortcutDisplay: ShortcutDisplayText? = nil, maximumLineCount: Int = 1
     ) {
         self.text = text
         self.isDrawerPane = isDrawerPane
         self.octiconLoader = octiconLoader
         self.shortcutDisplay = shortcutDisplay
+        self.maximumLineCount = maximumLineCount
     }
 
     package var body: some View {
-        HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
+        HStack(
+            alignment: maximumLineCount > 1 ? .firstTextBaseline : .center,
+            spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing
+        ) {
             (isDrawerPane ? AppEntityIcon.drawer : .pane).swiftUIImage(
                 loader: octiconLoader,
                 size: AppStyles.Shell.Sidebar.rowIdentityIconSize
@@ -31,7 +36,7 @@ package struct RepoExplorerPaneTitleLineView: View {
             )
             Text(text)
                 .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
-                .lineLimit(1)
+                .lineLimit(maximumLineCount, reservesSpace: maximumLineCount > 1)
                 .truncationMode(.tail)
                 .layoutPriority(1)
                 .foregroundStyle(.primary)

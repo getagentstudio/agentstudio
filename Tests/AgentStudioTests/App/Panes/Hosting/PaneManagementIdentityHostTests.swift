@@ -62,9 +62,9 @@ struct PaneManagementIdentityHostTests {
             try #require(hidden == .cancelled(requested: true), "Native hide must request cancellation")
             try await clock.cancelledWorker(pane: pane, input: replacementInput)
             #expect(clock.pendingSleepCount == 0)
-            let hiddenPixels = try fixture.pixels()
+            try fixture.expectHidden()
             clock.advance(by: .seconds(300))
-            #expect(try fixture.pixels() == hiddenPixels)
+            try fixture.expectHidden()
             try await clock.finish()
             fixture.close()
         } catch {
@@ -166,33 +166,9 @@ private final class NativeCardFixture {
     }
 
     func expectRendered(text: String, active: Bool) throws {
-        // The expected clock text and active glyph are literal. Only unrelated
-        // title/identity content is shared with the real context in this reference.
-        let reference = NSHostingView(
-            rootView: AnyView(
-                ManagementPaneIdentityStrip(
-                    context: context, octiconLoader: loader, lines: [.title("Clock proof")],
-                    recencyText: text, recencyTier: .strongBlue, isActive: active
-                )
-                .frame(maxWidth: .infinity)
-                .background(AppStyles.Shell.PaneChrome.background)
-                .frame(width: 1000, height: 320, alignment: .topLeading)
-                .background(Color.black)
-                .environment(\.colorScheme, .dark)))
-        reference.frame = host.frame
-        let referenceWindow = NSWindow(
-            contentRect: reference.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
-        referenceWindow.isReleasedWhenClosed = false
-        referenceWindow.appearance = NSAppearance(named: .darkAqua)
-        referenceWindow.contentView = reference
-        referenceWindow.orderFront(nil)
-        defer {
-            referenceWindow.contentView = nil
-            referenceWindow.close()
-        }
-        #expect(
-            try pixels() == Self.pixels(in: reference),
-            "The actual mounted card must paint \(text) and active=\(active), including the active glyph")
+        let elements = PaneIdentityCardFixture.elements(in: host)
+        #expect(elements.contains { $0.label == "Activity \(text)" }, "The mounted activity value must match exactly")
+        try PaneIdentityCardFixture.expectContained(in: host)
         // A second oracle bypasses the strip entirely: otherwise a strip that
         // ignored its recency/active arguments could make both sides equally wrong.
         try expectIndependentChip(
@@ -205,7 +181,10 @@ private final class NativeCardFixture {
                 text: nil, style: .accent(.accentColor)), present: active, name: "active-\(text)")
     }
 
-    func pixels() throws -> Data { try Self.pixels(in: host) }
+    func expectHidden() throws {
+        #expect(PaneIdentityCardFixture.frames(in: host)["container"] == nil)
+        #expect(!(try PaneManagementIdentityTestInk.ink(in: host, maximumX: nil)).points.contains(true))
+    }
 
     func close() {
         host.rootView = AnyView(EmptyView())
@@ -213,14 +192,6 @@ private final class NativeCardFixture {
         window.close()
         atoms.paneActivityTime.apply([.remove(context.paneId)])
         store.removePane(context.paneId)
-    }
-
-    private static func pixels(in view: NSView) throws -> Data {
-        view.layoutSubtreeIfNeeded()
-        view.displayIfNeeded()
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
-        return try #require(bitmap.representation(using: .png, properties: [:]))
     }
 
     private func expectIndependentChip(_ chip: SidebarChip, present: Bool, name: String) throws {
@@ -243,7 +214,7 @@ private final class NativeCardFixture {
         let needle = try PaneManagementIdentityTestInk.ink(in: reference, maximumX: nil)
         #expect(needle.points.contains(true), "Independent chip reference must contain actual glyph/text ink")
         let found = PaneManagementIdentityTestInk.contains(
-            needle, in: try PaneManagementIdentityTestInk.ink(in: host, maximumX: 360))
+            needle, in: try PaneManagementIdentityTestInk.ink(in: host, maximumX: nil))
         #expect(found == present, "Independent \(name) chip ink must be present=\(present)")
     }
 

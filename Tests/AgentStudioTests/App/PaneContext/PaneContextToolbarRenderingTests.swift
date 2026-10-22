@@ -207,7 +207,11 @@ struct PaneContextToolbarRenderingTests {
             let reference = mountCard(
                 AnyView(
                     Text(row.text)
-                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium))
+                        .font(
+                            .system(
+                                size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium,
+                                design: row.id == "pane" ? .monospaced : .default)
+                        )
                         .foregroundStyle(Color.white.opacity(0.92))
                         .textSelection(.enabled)
                         .fixedSize()

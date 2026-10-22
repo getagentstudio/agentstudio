@@ -206,6 +206,7 @@ private final class StoredMessageCardFixture {
     }
 
     func expectRendered(age: String, chip: String) throws {
+        try PaneIdentityCardFixture.expectContained(in: host)
         let rendering = PaneContextToolbarRenderingTests()
         let labels = rendering.accessibilityLabels(in: host)
         #expect(labels.contains { $0.contains("Working") })
@@ -234,7 +235,7 @@ private final class StoredMessageCardFixture {
         #expect(
             PaneManagementIdentityTestInk.contains(
                 chipNeedle,
-                in: try PaneManagementIdentityTestInk.ink(in: host, maximumX: 360)),
+                in: try PaneManagementIdentityTestInk.ink(in: host, maximumX: nil)),
             "The activity chip must paint its own literal value independently of the message age")
     }
 }

@@ -44,7 +44,7 @@ enum PaneManagementIdentityTestInk {
         let maximumY = ink.map(\.y).max()!
         let width = maximumX - minimumX + 1
         let height = maximumY - minimumY + 1
-        let allowedMisses = width * height / 20
+        let allowedMisses = 0
         for originY in 0...(haystack.height - height) {
             for originX in 0...(haystack.width - width) {
                 var misses = 0

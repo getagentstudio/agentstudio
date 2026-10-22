@@ -11,14 +11,17 @@ package struct RepoExplorerPaneContextLineView: View {
     let isAgentLine: Bool
     let octiconLoader: OcticonLoader
     let showsTooltip: Bool
+    let maximumLineCount: Int
 
     package init(
-        line: RepoExplorerPaneContextLine, isAgentLine: Bool, octiconLoader: OcticonLoader, showsTooltip: Bool = true
+        line: RepoExplorerPaneContextLine, isAgentLine: Bool, octiconLoader: OcticonLoader,
+        showsTooltip: Bool = true, maximumLineCount: Int = 1
     ) {
         self.line = line
         self.isAgentLine = isAgentLine
         self.octiconLoader = octiconLoader
         self.showsTooltip = showsTooltip
+        self.maximumLineCount = maximumLineCount
     }
     package var body: some View {
         if showsTooltip {
@@ -29,7 +32,10 @@ package struct RepoExplorerPaneContextLineView: View {
     }
 
     private var content: some View {
-        HStack(spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing) {
+        HStack(
+            alignment: maximumLineCount > 1 ? .firstTextBaseline : .center,
+            spacing: AppStyles.Shell.Sidebar.groupIconTitleSpacing
+        ) {
             line.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.Shell.Sidebar.branchIconSize)
                 .opacity(
                     opacityPulseIsActive && pulseIsDimmed
@@ -56,7 +62,7 @@ package struct RepoExplorerPaneContextLineView: View {
             Text(line.text)
                 .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
                 .foregroundStyle(isAgentLine ? Color.primary : Color.secondary)
-                .lineLimit(1)
+                .lineLimit(maximumLineCount, reservesSpace: maximumLineCount > 1)
                 .truncationMode(.tail)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             if let ageText = line.ageText {
