@@ -58,6 +58,5 @@ func hiddenPaneContextSettledKeys(
 
 /// Time-derived facts participate in the existing in-memory detail revision.
 struct PaneContextReadTimeVersion: Sendable, Equatable {
-    let lineStale: Bool?
     let visibleSettledIds: Set<PaneContextRetentionMessage.Key>
 }

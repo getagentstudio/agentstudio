@@ -15,7 +15,7 @@ struct CLIBackgroundSessionTests {
             var environment = context.callEnvironment(store: nil, useStore: true)
             environment[marker] = marker == "CLAUDE_JOB_DIR" ? "/fixture/background-job" : "bg"
             let commands = [
-                ["line", "background line", "--working"], ["title", "background title"],
+                ["line", "background line"], ["title", "background title"],
                 ["notify", "background notice"], ["ask", "background question", "--reason", "blocked"],
             ]
             for arguments in commands {

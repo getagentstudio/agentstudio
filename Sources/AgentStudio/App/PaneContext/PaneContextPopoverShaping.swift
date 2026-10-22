@@ -127,23 +127,9 @@ enum PaneContextPopoverShaping {
     }
 
     private nonisolated static func line(_ detail: AgentLineDetail) -> AgentLinePopoverModel {
-        let work: AgentLineWorkModel
-        switch detail.work {
-        case .working(.indeterminate): work = .working(.indeterminate)
-        case .working(.step(let current, let total)): work = .working(.step(current: current, total: total))
-        case .monitoring(let text): work = .monitoring(text)
-        case .blockedOnYou(let text): work = .blockedOnYou(action: text)
-        case .done: work = .done
-        case .failed(let summary): work = .failed(summary: summary)
-        }
-        let lifetime: AgentLineLifetimeModel
-        switch detail.lifetime {
-        case .untilReplaced: lifetime = .untilReplaced
-        case .expires(let at): lifetime = .expires(at: at)
-        }
-        return AgentLinePopoverModel(
-            summary: detail.summary, work: work, detail: detail.detail, refs: detail.refs.map(action),
-            writer: sender(detail.writer), updatedAt: detail.updatedAt, lifetime: lifetime, stale: detail.stale)
+        AgentLinePopoverModel(
+            summary: detail.summary, refs: detail.refs.map(action),
+            writer: sender(detail.writer), updatedAt: detail.updatedAt)
     }
 
 }

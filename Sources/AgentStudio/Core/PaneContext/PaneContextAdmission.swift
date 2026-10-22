@@ -35,19 +35,10 @@ enum PaneContextAdmission {
         guard let line else { return nil }
         let limits = AppPolicies.PaneContext.self
         if line.summary.utf8.count > limits.maximumLineSummaryBytes
-            || (line.detail?.utf8.count ?? 0) > limits.maximumLineDetailBytes
             || line.refs.count > limits.maximumLineRefs
             || line.refs.contains(where: { actionBytes($0) > limits.maximumLineRefBytes })
         {
             return .tooLarge(.agentLine)
-        }
-        switch line.work {
-        case .monitoring(let text), .blockedOnYou(let text), .failed(let text):
-            if text.utf8.count > limits.maximumLineWorkBytes { return .tooLarge(.agentLine) }
-        case .working(.step(let current, let total)):
-            if current > limits.maximumLineStep || total > limits.maximumLineStep { return .tooLarge(.agentLine) }
-            if current < 0 || total <= 0 || current > total { return .invalidField(.agentLine) }
-        case .working(.indeterminate), .done: break
         }
         return nil
     }

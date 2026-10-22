@@ -191,30 +191,9 @@ extension PaneContextIPCMapping {
 
     static func line(_ value: AgentLineDetail) -> IPCPaneAgentLineDetail {
         IPCPaneAgentLineDetail(
-            summary: value.summary, work: work(value.work), detail: value.detail,
-            refs: value.refs.map(action), lifetime: lifetime(value.lifetime), writer: sender(value.writer),
-            updatedAt: value.updatedAt, stale: value.stale)
-    }
-
-    static func work(_ value: AgentLineWork) -> IPCPaneAgentLineWork {
-        switch value {
-        case .working(let progress):
-            switch progress {
-            case .indeterminate: return .working(progress: .indeterminate)
-            case .step(let current, let total): return .working(progress: .step(current: current, total: total))
-            }
-        case .monitoring(let target): return .monitoring(target: target)
-        case .blockedOnYou(let action): return .blockedOnYou(action: action)
-        case .done: return .done
-        case .failed(let summary): return .failed(summary: summary)
-        }
-    }
-
-    static func lifetime(_ value: AgentLineLifetime) -> IPCPaneAgentLineLifetime {
-        switch value {
-        case .untilReplaced: .untilReplaced
-        case .expires(let at): .expires(at: at)
-        }
+            summary: value.summary,
+            refs: value.refs.map(action), writer: sender(value.writer),
+            updatedAt: value.updatedAt)
     }
 
     static func session(_ value: SessionSummary) -> IPCPaneSessionSummary {
