@@ -32,11 +32,18 @@ struct RepoExplorerMessageDeadlineHostTests {
                         == fixture.written.updatedAt.addingTimeInterval(180))
                 #expect(atoms.paneActivityTime.value(for: fixture.paneID) == nil)
 
+                let deadlineTask = try #require(await fixture.adapter.deadlineWorker.presentationDeadlineTask)
                 // No line, hook, activity, preference, or demand write occurs here.
                 fixture.clock.controlled.advance(by: .seconds(55))
+                await deadlineTask.value
+                try await fixture.clock.facts.expectNext(in: 0, .ended(cancelled: false))
+                let admittedGeneration = fixture.adapter.cachedProjectionRequest?.generation
+                try #require(
+                    admittedGeneration == generation + 1,
+                    "Deadline ended without admission: cancelled=\(deadlineTask.isCancelled), expected generation \(generation + 1), saw \(String(describing: admittedGeneration))"
+                )
                 try await fixture.expectPublished(generation + 1)
                 await fixture.adapter.waitForDeadlineWorkerUpdate()
-                try await fixture.clock.facts.expectNext(in: 0, .ended(cancelled: false))
                 try await fixture.clock.expectRegistration(after: .seconds(60), at: .seconds(115))
                 #expect(try fixture.expectVisibleMessage(age: "3 min ago") == rowID)
                 #expect(ObjectIdentifier(fixture.host.host) == hostIdentity)
