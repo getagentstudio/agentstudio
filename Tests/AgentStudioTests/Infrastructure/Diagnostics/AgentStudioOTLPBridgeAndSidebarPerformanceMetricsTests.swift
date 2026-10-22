@@ -90,7 +90,7 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
     }
 
     @Test
-    func outlineApplyProxyProjectsOutcomeAndReconciliationCounts() throws {
+    func outlineApplyProxyKeepsOutcomeAndDurationWithoutUnlistedCounts() throws {
         let record = AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: 140,
             severityText: .info,
@@ -112,24 +112,9 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
         let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: record))
 
         #expect(metricEvent.dimensionTuples.contains { $0 == ("outcome", "changed") })
-        #expect(
-            metricEvent.samples.contains {
-                $0.label == "agentstudio_performance_repo_explorer_outline_apply_proxy_rows_total_count"
-                    && $0.value == 42
-            }
-        )
-        #expect(
-            metricEvent.samples.contains {
-                $0.label == "agentstudio_performance_repo_explorer_outline_apply_proxy_rows_changed_count"
-                    && $0.value == 7
-            }
-        )
-        #expect(
-            metricEvent.samples.contains {
-                $0.label == "agentstudio_performance_repo_explorer_outline_apply_proxy_equal_publish_count"
-                    && $0.value == 0
-            }
-        )
+        #expect(metricEvent.samples.isEmpty)
+        #expect(metricEvent.elapsedMilliseconds == 3)
+        #expect(metricEvent.measurements.count == 1)
     }
 
     @Test
@@ -236,16 +221,10 @@ struct AgentStudioOTLPBridgeSidebarMetricTests {
             metricEvent.samples == [
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.bridge.swift.metadata_scheduler_queue_wait",
-                    label: "agentstudio_bridge_demand_queue_depth",
-                    dimensions: expectedDimensions,
-                    value: 7
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.bridge.swift.metadata_scheduler_queue_wait",
                     label: "agentstudio_bridge_demand_scheduler_queue_wait_ms",
                     dimensions: expectedDimensions,
                     value: 12.5
-                ),
+                )
             ])
     }
 

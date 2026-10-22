@@ -300,12 +300,6 @@ struct AgentStudioOTLPPerformanceMetricsTests {
             metricEvent.samples == [
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.git.status",
-                    label: "agentstudio_performance_git_has_git_internal_changes",
-                    dimensions: expectedDimensions,
-                    value: 1
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.git.status",
                     label: "agentstudio_performance_git_pending_count",
                     dimensions: expectedDimensions,
                     value: 64
@@ -425,21 +419,9 @@ struct AgentStudioOTLPPerformanceMetricsTests {
             metricEvent.samples == [
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.git.backoff",
-                    label: "agentstudio_performance_git_backoff_attempt_count",
-                    dimensions: expectedDimensions,
-                    value: 3
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.git.backoff",
                     label: "agentstudio_performance_git_backoff_ms",
                     dimensions: expectedDimensions,
                     value: 500
-                ),
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.git.backoff",
-                    label: "agentstudio_performance_git_backoff_open",
-                    dimensions: expectedDimensions,
-                    value: 1
                 ),
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.git.backoff",
@@ -478,12 +460,6 @@ struct AgentStudioOTLPPerformanceMetricsTests {
         ]
         #expect(
             metricEvent.samples == [
-                AgentStudioOTLPPerformanceMetricSample(
-                    eventName: "performance.atom.read",
-                    label: "agentstudio_performance_atom_cache_hit",
-                    dimensions: expectedDimensions,
-                    value: 0
-                ),
                 AgentStudioOTLPPerformanceMetricSample(
                     eventName: "performance.atom.read",
                     label: "agentstudio_performance_atom_cached_key_count",

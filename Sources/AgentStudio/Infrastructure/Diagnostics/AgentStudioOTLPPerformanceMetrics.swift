@@ -179,6 +179,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         let samples: [AgentStudioOTLPPerformanceMetricSample] = record.attributes.compactMap { element in
             let (key, value) = element
             guard key != "agentstudio.performance.elapsed_ms" else { return nil }
+            guard AgentStudioOTLPMeasurementList.names.contains(key) else { return nil }
             guard let numericValue = Self.doubleValue(value) else { return nil }
             guard let metricLabel = Self.metricLabel(for: key) else { return nil }
             return AgentStudioOTLPPerformanceMetricSample(
@@ -647,9 +648,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             return doubleValue
         case .int(let intValue):
             return Double(intValue)
-        case .bool(let boolValue):
-            return boolValue ? 1 : 0
-        case .string, .stringArray, .none:
+        case .bool, .string, .stringArray, .none:
             return nil
         }
     }
@@ -660,7 +659,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             return metricLabel(prefix: "agentstudio_performance", suffix: suffix)
         }
 
-        guard allowedBridgeMetricAttributeKeys.contains(attributeKey) else { return nil }
+        guard attributeKey.hasPrefix("agentstudio.bridge.") else { return nil }
         let suffix = String(attributeKey.dropFirst("agentstudio.bridge.".count))
         return metricLabel(prefix: "agentstudio_bridge", suffix: suffix)
     }
