@@ -105,6 +105,82 @@ struct PaneContextToolbarRenderingTests {
         }
     }
 
+    @Test("a card with no activity still paints the sidebar clock chip")
+    func cardPaintsUnknownActivityClock() throws {
+        let context = PaneManagementContext(
+            paneId: UUIDv7.generate(), identityRows: [], statusChips: nil,
+            targetPath: nil, showsIdentityBlock: true)
+        let loader = makeTestOcticonLoader()
+        let mounted = mountCard(
+            AnyView(ManagementPaneIdentityStrip(context: context, octiconLoader: loader)), width: 1000)
+        defer { mounted.window.orderOut(nil) }
+        let reference = mountCard(
+            AnyView(
+                SidebarChip(icon: .system(.clock), octiconLoader: loader, text: "—", style: .neutral)),
+            width: nil)
+        defer { reference.window.orderOut(nil) }
+        let referenceInk = try ink(in: reference.host, minimumBrightness: 80)
+        #expect(referenceInk.mask.contains(true), "The independent clock reference must paint")
+        #expect(
+            containsTextInk(referenceInk, in: try ink(in: mounted.host, minimumBrightness: 80)),
+            "The card must paint the same clock and unknown-activity text as the sidebar")
+    }
+
+    @Test(
+        "extracting activity chips leaves the sidebar row pixels unchanged",
+        arguments: [false, true],
+        [RepoExplorerPaneRecencyTier.strongBlue, .mediumBlue, .mutedBlue, .faintBlue, .grey])
+    func sidebarActivityPixelsRemainUnchanged(isActive: Bool, tier: RepoExplorerPaneRecencyTier)
+        throws
+    {
+        let loader = makeTestOcticonLoader()
+        let actual = mountCard(
+            AnyView(
+                RepoExplorerPaneRowContent(
+                    primaryText: "Terminal", secondaryLine: nil, branchContextText: nil, branchStatus: nil,
+                    recencyText: "12m", recencyTier: tier, isActive: isActive,
+                    isDrawerPane: false, octiconLoader: loader)), width: 420)
+        defer { actual.window.orderOut(nil) }
+        // Frozen from the pre-extraction row at 8c5fef8bc; no call to the extracted renderer.
+        let reference = mountCard(
+            AnyView(
+                VStack(alignment: .leading, spacing: AppStyles.Shell.Sidebar.rowContentSpacing) {
+                    RepoExplorerPaneTitleLineView(
+                        text: "Terminal", isDrawerPane: false, octiconLoader: loader)
+                    SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+                        RepoExplorerPaneChipOverflow { _ in
+                            HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
+                                SidebarChip(
+                                    icon: .system(.clock), octiconLoader: loader, text: "12m",
+                                    style: frozenRecencyStyle(tier))
+                                if isActive {
+                                    SidebarChip(
+                                        icon: .system(.playCircleFill), octiconLoader: loader,
+                                        text: nil, style: .accent(.accentColor))
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.leading, 0)
+                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+            ), width: 420)
+        defer { reference.window.orderOut(nil) }
+        #expect(actual.host.bounds == reference.host.bounds)
+        #expect(try pixels(in: actual.host) == pixels(in: reference.host))
+    }
+
+    private func frozenRecencyStyle(_ tier: RepoExplorerPaneRecencyTier) -> SidebarChip.Style {
+        switch tier {
+        case .strongBlue: .accent(AppStyles.Shell.Sidebar.chipInfoColor)
+        case .mediumBlue: .accent(AppStyles.Shell.Sidebar.recencyMediumBlue)
+        case .mutedBlue: .accent(AppStyles.Shell.Sidebar.recencyMutedBlue)
+        case .faintBlue: .accent(AppStyles.Shell.Sidebar.recencyFaintBlue)
+        case .grey: .neutral
+        }
+    }
+
     @Test("lineless cards paint complete identity values", arguments: [1340.0, 2000.0])
     func cardDoesNotTruncateIdentities(width: Double) throws {
         let pane = try #require(UUID(uuidString: "01A15E24-74DE-761D-A3FA-959D7FBCA58C"))
@@ -154,7 +230,8 @@ struct PaneContextToolbarRenderingTests {
         return MountedToolbar(host: host, window: window)
     }
 
-    private func ink(in host: NSView) throws -> (width: Int, height: Int, mask: [Bool]) {
+    private func ink(in host: NSView, minimumBrightness: UInt8 = 160) throws -> (width: Int, height: Int, mask: [Bool])
+    {
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: host.bounds))
         host.cacheDisplay(in: host.bounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
@@ -168,7 +245,7 @@ struct PaneContextToolbarRenderingTests {
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
         let mask = stride(from: 0, to: bytes.count, by: 4).map {
-            bytes[$0] > 160 && bytes[$0 + 1] > 160 && bytes[$0 + 2] > 160
+            bytes[$0] > minimumBrightness && bytes[$0 + 1] > minimumBrightness && bytes[$0 + 2] > minimumBrightness
         }
         return (image.width, image.height, mask)
     }

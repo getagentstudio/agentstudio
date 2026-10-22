@@ -18,17 +18,17 @@ enum RepoExplorerPinnedActivityBucket: Int, CaseIterable, Equatable, Sendable {
 
 /// One derivation from the clock's monotonic occurrence and one capture reference pair.
 /// The derived wall date is used only to answer local-calendar questions.
-struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
+package struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
     let age: Duration?
     let activityDate: Date?
-    let clockText: String
-    let recencyTier: RepoExplorerPaneRecencyTier
-    let isActive: Bool
+    package let clockText: String
+    package let recencyTier: RepoExplorerPaneRecencyTier
+    package let isActive: Bool
     let unpinnedBucket: RepoExplorerActivityBucket
     let pinnedBucket: RepoExplorerPinnedActivityBucket
-    let nextPresentationChangeDate: Date?
+    package let nextPresentationChangeDate: Date?
 
-    static func make(
+    package static func make(
         time: PaneActivityTime?,
         referenceInstant: ContinuousClock.Instant,
         wallNow: Date,
@@ -49,7 +49,8 @@ struct RepoExplorerPaneActivityProjection: Equatable, Sendable {
 
         let age = max(.zero, time.orderingInstant.duration(to: referenceInstant))
         let components = age.components
-        let ageSeconds = Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
+        let ageSeconds =
+            Double(components.seconds) + Double(components.attoseconds) / 1_000_000_000_000_000_000
         let activityDate = wallNow.addingTimeInterval(-ageSeconds)
         let unpinnedBucket = RepoExplorerActivityBucket.classify(
             activityAt: activityDate,

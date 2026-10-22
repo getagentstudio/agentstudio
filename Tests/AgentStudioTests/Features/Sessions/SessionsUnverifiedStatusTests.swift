@@ -74,7 +74,7 @@ struct SessionsUnverifiedStatusTests {
             }
             let latest = try #require(await ingestion.lastRefusal(paneId: pane))
             #expect(latest.reason == .queueFull)
-            #expect(latest.count == 2)
+            #expect(latest.count == 1)
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: pane)]
                     == .set(.init(status: .working(.active), connectionIssue: .queueFull)))
@@ -107,6 +107,8 @@ struct SessionsUnverifiedStatusTests {
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
             let mailbox = await ingestion.statusPublicationMailbox
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart)
+            await ingestion.recordRefusal(
+                paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
             _ = mailbox.takeBatch()
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnDone)
             #expect(
@@ -121,16 +123,15 @@ struct SessionsUnverifiedStatusTests {
 
             #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended))))
             #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
-            #expect(await ingestion.lastRefusal(paneId: pane)?.count == 4)
+            #expect(await ingestion.lastRefusal(paneId: pane)?.count == 1)
             _ = try await Self.submit(ingestion, pane: pane, session: "B", signal: .turnStart)
             #expect(
-                mailbox.takeBatch()[key]
-                    == .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized)))
+                mailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
             #expect(try await Self.protectedCounts(fixture) == Array(repeating: 0, count: 10))
         }
     }
 
-    @Test("status and refusal publish together, leave protected SQLite tables untouched, and verified binding wins")
+    @Test("quiet unverified hooks leave protected SQLite tables untouched and verified binding clears explicit refusal")
     func noIdentityWritesAndVerifiedPrecedence() async throws {
         let fixture = try SessionsDatabaseFixture()
         let pane = UUIDv7.generate()
@@ -142,10 +143,15 @@ struct SessionsUnverifiedStatusTests {
                 ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
             #expect(applied == .hookApplied)
             let batch = statusMailbox.takeBatch()
-            #expect(batch[key] == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
+            #expect(batch[key] == .set(.init(status: .needsYou(.approval))))
             #expect(try await ingestion.readSessionStatus(paneId: pane) == .unbound)
             #expect(try await Self.protectedCounts(fixture) == before)
-            #expect(await ingestion.lastRefusal(paneId: pane)?.intent == .status)
+            #expect(await ingestion.lastRefusal(paneId: pane) == nil)
+            await ingestion.recordRefusal(
+                paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
+            #expect(
+                statusMailbox.takeBatch()[key]
+                    == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
             _ = try await ingestion.submitHook(
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified",
@@ -153,14 +159,14 @@ struct SessionsUnverifiedStatusTests {
             #expect(statusMailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await Self.submit(ingestion, pane: pane, signal: .turnDone) == .hookAcceptedWithoutStatus)
-            #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
+            #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(statusMailbox.takeBatch().isEmpty)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
         }
     }
 
     @Test(
-        "a bound pane records an unverified hook or refusal without changing verified status",
+        "a bound pane records only explicit refusals without changing verified status",
         arguments: [false, true])
     func boundPaneRecordsRefusalWithoutApplyingStatus(refusalOnly: Bool) async throws {
         let fixture = try SessionsDatabaseFixture()
@@ -184,9 +190,13 @@ struct SessionsUnverifiedStatusTests {
             }
             #expect(outcome == (refusalOnly ? .refusalRecorded : .hookAcceptedWithoutStatus))
             let refusal = await ingestion.lastRefusal(paneId: pane)
-            #expect(refusal?.reason == .credentialNotRecognized)
-            #expect(refusal?.intent == .status)
-            #expect(refusal?.count == 1)
+            if refusalOnly {
+                #expect(refusal?.reason == .credentialNotRecognized)
+                #expect(refusal?.intent == .status)
+                #expect(refusal?.count == 1)
+            } else {
+                #expect(refusal == nil)
+            }
             #expect(statusMailbox.takeBatch().isEmpty)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
             #expect(try await Self.protectedCounts(fixture) == protectedBefore)
@@ -278,10 +288,12 @@ struct SessionsUnverifiedStatusTests {
     func heldOlderExitCannotReleaseNewMain() async throws {
         let fixture = try SessionsDatabaseFixture()
         let pane = UUIDv7.generate()
-        let origin = ContinuousClock.now
         let oldExit = HeldStep<ContinuousClock.Instant>("old terminal exit before Sessions ingress")
         try await withSessionsIngestion(repository: fixture.makeRepository()) { ingestion in
             let statusMailbox = await ingestion.statusPublicationMailbox
+            await ingestion.recordRefusal(
+                paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
+            let origin = ContinuousClock.now
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart, instant: origin)
             let pendingExit = Task {
                 try await oldExit.arrive(origin + .seconds(1))
@@ -365,7 +377,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(try await pending.value == .hookAcceptedWithoutStatus)
             try await recorder.expectNext(in: pane, 1)
             try await recorder.expectNext(in: pane, 0)
-            #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
+            #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]

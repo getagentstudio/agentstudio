@@ -27,7 +27,9 @@ struct PaneManagementIdentityRenderingArchitectureTests {
         #expect(!strip.contains(".truncationMode(.middle)"))
         #expect(!strip.contains("readSessionStatus("))
         #expect(strip.contains("await sessionIdentity.refresh("))
-        #expect(strip.contains(".onDisappear { sessionIdentity.close() }"))
+        #expect(strip.contains("sessionIdentity.close()"))
+        #expect(strip.contains("relativeTimeRefresh.hide()"))
+        #expect(strip.contains(".onChange(of: input)"))
         #expect(!strip.contains("verifiedIdentity?.session(for:"))
     }
 }

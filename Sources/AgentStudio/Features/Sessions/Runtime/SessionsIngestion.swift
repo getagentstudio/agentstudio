@@ -336,8 +336,8 @@ extension SessionsIngestion {
                         pending.continuation.resume(returning: .notAccepted)
                         break
                     }
-                    storeRefusal(paneId: paneId, refusal: pending.refusal, recordedAt: pending.recordedAt)
                     guard let hook = pending.hook else {
+                        storeRefusal(paneId: paneId, refusal: pending.refusal, recordedAt: pending.recordedAt)
                         publishStatus(paneId: paneId)
                         pending.continuation.resume(returning: .refusalRecorded)
                         break
