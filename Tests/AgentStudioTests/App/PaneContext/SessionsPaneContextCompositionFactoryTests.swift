@@ -318,7 +318,8 @@ struct CompositionFactoryFixture: Sendable {
 
     @concurrent static func make(
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
-        ownerId: PaneId = .generateUUIDv7()
+        ownerId: PaneId = .generateUUIDv7(),
+        wallNow: (@Sendable () -> Date)? = nil
     ) async throws -> Self {
         let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
@@ -370,7 +371,7 @@ struct CompositionFactoryFixture: Sendable {
         let composition = SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
-                wallNow: { now },
+                wallNow: wallNow ?? { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
                 performanceTraceRecorder: performanceTraceRecorder))

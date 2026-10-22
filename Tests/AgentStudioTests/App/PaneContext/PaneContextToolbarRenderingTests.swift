@@ -471,7 +471,7 @@ struct PaneContextToolbarRenderingTests {
                 tooltip: spec.controlTooltipRenderValue(), isEnabled: true, isSelected: false), perform: {})
     }
 
-    private func pixels(in host: NSView, rect: CGRect? = nil) throws -> Data {
+    func pixels(in host: NSView, rect: CGRect? = nil) throws -> Data {
         let region = rect ?? host.bounds
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: region))
         host.cacheDisplay(in: region, to: bitmap)

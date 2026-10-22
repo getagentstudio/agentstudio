@@ -244,18 +244,20 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let octiconLoader: OcticonLoader
     let store: WorkspaceStore
     let clock: ActivityClock
+    let wallNow: Date?
     @State private var sessionIdentity = PaneManagementSessionIdentity()
     @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
 
     init(
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
-        clock: ActivityClock,
+        clock: ActivityClock, wallNow: Date? = nil,
         onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
     ) {
         self.context = context
         self.octiconLoader = octiconLoader
         self.store = store
         self.clock = clock
+        self.wallNow = wallNow
         _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
     }
 
@@ -275,8 +277,9 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         )
         .frame(maxWidth: .infinity)
         .background(AppStyles.Shell.PaneChrome.background)
-        .onAppear { relativeTimeRefresh.startOrReplace(input, clock: clock) }
-        .onChange(of: input) { _, changed in relativeTimeRefresh.startOrReplace(changed, clock: clock) }
+        .onAppear { relativeTimeRefresh.startOrReplace(input, clock: clock, wallNow: wallNow) }
+        .onChange(of: input) { _, changed in relativeTimeRefresh.startOrReplace(changed, clock: clock, wallNow: wallNow)
+        }
         // This task reads on every appearance and observable status change, never from a cache.
         // Equal/coalesced rebinding while continuously open refreshes on the next appearance;
         // semantic status deliberately remains separate from binding identity.

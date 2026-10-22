@@ -117,16 +117,16 @@ struct RepoExplorerPaneContextLineTests {
         #expect(variants.compact.lines == variants.expanded.lines)
         #expect(variants.compact.lines.count == 5)
         #expect(variants.compact.fallbackLineCount == 6)
-        guard case .agentLine(let workLine) = variants.compact.lines[3],
-            case .sessionStatus(let statusLine) = variants.compact.lines[4]
+        guard case .sessionStatus(let statusLine) = variants.compact.lines[3],
+            case .agentLine(let messageLine) = variants.compact.lines[4]
         else {
             Issue.record("Agent Line and Session status must remain separate ordered lines")
             return
         }
-        #expect(workLine.text == "Watching CI")
-        #expect(workLine.icon == .system(.textBubble))
-        #expect(workLine.tone == .neutral)
-        #expect(workLine.glyphMotion == .still)
+        #expect(messageLine.text == "Watching CI")
+        #expect(messageLine.icon == .system(.textBubble))
+        #expect(messageLine.tone == .neutral)
+        #expect(messageLine.glyphMotion == .still)
         #expect(statusLine.icon == .system(.flag))
         #expect(statusLine.text == "Needs you · approval")
     }
@@ -176,26 +176,26 @@ struct RepoExplorerPaneContextLineTests {
         #expect(drawerRow.variants?.compact.lines == drawerRow.variants?.expanded.lines)
     }
 
-    @Test("Needs you and the scoped connection warning remain separate lines in both row variants")
+    @Test("Needs you stays in both rows while its scoped connection warning stays in the card")
     func connectionIssueNeverHidesStatus() throws {
         let variants = RepoExplorerPaneRowVariants.make(
             title: "Pane", branchContext: nil, note: nil, isDrawer: false, branchStatus: nil, isActive: false,
             sessionStatus: .needsYou(.approval), connectionIssue: .credentialNotRecognized, now: .distantPast)
         #expect(variants.compact.lines == variants.expanded.lines)
-        try #require(variants.compact.lines.count == 3)
-        guard case .sessionStatus(let status) = variants.compact.lines[1],
-            case .connectionIssue(let connection) = variants.compact.lines[2]
-        else {
-            Issue.record("Status and connection issue must be distinct ordered lines")
+        #expect(variants.compact.lines.map(\.kind) == [.title, .sessionStatus])
+        let card = RepoExplorerPaneRowVariants.informationLines(
+            title: "Pane", note: nil, agentLine: nil, sessionStatus: .needsYou(.approval),
+            connectionIssue: .credentialNotRecognized, now: .distantPast)
+        try #require(card.count == 3)
+        guard case .sessionStatus(let status) = card[1], case .connectionIssue(let connection) = card[2] else {
+            Issue.record("Status and connection issue must remain distinct ordered card lines")
             return
         }
         #expect(status.text == "Needs you · approval")
         #expect(connection.text == "Messages unavailable · restart this shell to reconnect")
-        #expect(
-            connection.tooltip.text
-                == "Messages unavailable · restart this shell to reconnect")
+        #expect(connection.tooltip.text == "Messages unavailable · restart this shell to reconnect")
         #expect(connection.tone == .warning)
-        #expect(variants.compact.fallbackLineCount == 4)
+        #expect(variants.compact.fallbackLineCount == 3)
     }
 
 }
