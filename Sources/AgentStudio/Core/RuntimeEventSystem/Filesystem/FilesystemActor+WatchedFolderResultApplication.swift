@@ -47,19 +47,25 @@ extension FilesystemActor {
         while !Task.isCancelled {
             switch await watchedFolderScanScheduler.nextResultLease(for: consumer) {
             case .leased(let lease):
+                let submittedDiagnostics = lease.submittedDiagnostics
                 await applyWatchedFolderScanResult(lease.result)
                 let resolution = await watchedFolderScanScheduler.resolveResultLease(
                     for: consumer,
                     leaseID: lease.leaseID,
+                    submittedDiagnostics: submittedDiagnostics,
                     resolution: .transferred
                 )
+                recordResultLeaseObservation(resolution, submitted: submittedDiagnostics, at: .afterResolve)
                 await recordLogicalDebtSnapshotIfChanged()
+                recordResultLeaseObservation(resolution, submitted: submittedDiagnostics, at: .beforeSwitch)
                 switch resolution {
                 case .transferred, .staleResultDiscarded:
                     break
                 case .queuedForRetry:
+                    await reportResultLeaseCustodyFailure(consumer: consumer, lease: lease)
                     preconditionFailure("transferred result cannot be queued for retry")
                 case .rejected:
+                    await reportResultLeaseCustodyFailure(consumer: consumer, lease: lease)
                     preconditionFailure("FilesystemActor lost exact result-lease custody")
                 }
             case .cancelled, .consumerUnbound, .schedulerShutDown:

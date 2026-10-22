@@ -163,6 +163,7 @@ struct ValidationSchedulerFixture {
         await scheduler.resolveResultLease(
             for: consumer,
             leaseID: lease.leaseID,
+            submittedDiagnostics: lease.submittedDiagnostics,
             resolution: .transferred
         )
     }

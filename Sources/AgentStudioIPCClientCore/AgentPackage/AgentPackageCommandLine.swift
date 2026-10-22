@@ -17,26 +17,17 @@ package enum AgentPackageSubcommand: Equatable, Sendable {
             guard arguments.count == 3 else { return nil }
             return .hook(provider: arguments[1], eventName: arguments[2])
         case "package":
-            guard arguments.count >= 3 else { return nil }
-            let home = providerHomePath(Array(arguments.dropFirst(3)))
-            switch arguments[1] {
-            case "install": return .install(provider: arguments[2], providerHomePath: home)
-            default: return nil
+            guard case .install(let installation) = AgentPackageGrammar.parse(Array(arguments.dropFirst())) else {
+                return nil
+            }
+            switch installation {
+            case .claude: return nil
+            case .codex(let path): return .install(provider: "codex", providerHomePath: path)
+            case .cursor(let path): return .install(provider: "cursor", providerHomePath: path)
             }
         default:
             return nil
         }
-    }
-
-    /// Accepts the provider-specific home flag (`--codex-home <path>`) and the
-    /// neutral spelling, so each provider slice adds a name rather than a parser.
-    private static func providerHomePath(_ arguments: [String]) -> String? {
-        guard arguments.count == 2,
-            ["--codex-home", "--provider-home"].contains(arguments[0])
-        else {
-            return nil
-        }
-        return arguments[1]
     }
 }
 

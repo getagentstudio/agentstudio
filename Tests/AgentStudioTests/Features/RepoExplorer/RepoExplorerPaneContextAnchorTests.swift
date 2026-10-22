@@ -21,7 +21,7 @@ struct RepoExplorerPaneContextAnchorTests {
                         rowId: paneID.uuidString, primaryText: "Pane")
                     pane.variants = RepoExplorerPaneRowVariants.make(
                         title: "Pane", branchContext: nil, note: nil, isDrawer: false,
-                        branchStatus: nil, isActive: false, sessionStatus: status)
+                        branchStatus: nil, isActive: false, sessionStatus: status, now: .distantPast)
                     let presentation = RepoExplorerMaterializedRowPresentation.pane(pane)
                     return RepoExplorerMaterializedRow(
                         id: .tabPane(groupID: "panes", paneID: paneID),

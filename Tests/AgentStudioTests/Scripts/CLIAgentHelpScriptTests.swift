@@ -120,19 +120,51 @@ struct CLIAgentHelpScriptTests {
 
     @Test("the bundled skill teaches offline help before the seven pane verbs")
     func bundledSkillNamesTheDiscoveryEntryPoints() throws {
-        let source = Self.repositoryRoot.appending(
-            path: "Sources/AgentStudio/Resources/AgentPackage/skills/agentstudio/SKILL.md")
-        let text = try String(contentsOf: source, encoding: .utf8)
-        #expect(text.contains("## Help"))
-        #expect(text.contains("\"$AGENTSTUDIO_CLI\" help"))
-        #expect(text.contains("\"$AGENTSTUDIO_CLI\" <method> --help"))
-        #expect(!text.contains("## The four calls"))
-        let help = try #require(text.range(of: "## Help"))
-        let paneVerbs = try #require(text.range(of: "## The pane-context verbs"))
-        #expect(help.lowerBound < paneVerbs.lowerBound)
-        for verb in ["notify", "ask", "withdraw", "answers", "line", "title", "pane"] {
-            #expect(text.contains("\"$AGENTSTUDIO_CLI\" \(verb)"))
+        let skill = Self.repositoryRoot.appending(path: "Sources/AgentStudio/Resources/AgentPackage/skills/agentstudio")
+        let text = try String(contentsOf: skill.appending(path: "SKILL.md"), encoding: .utf8)
+        // These paths and examples come from the reviewed ba54fd8de skill,
+        // whose root introduces offline help and routes to bundled references.
+        let expectedReferences: Set<String> = [
+            "references/worktrees.md", "references/pane-communication.md", "references/pane-context.md",
+            "references/commands-and-ipc.md", "references/panes-and-terminals.md",
+            "references/worktree-recovery.md", "references/recovery.md",
+        ]
+        let pattern = try NSRegularExpression(pattern: #"references/[A-Za-z0-9._/-]+[.]md"#)
+        let matches = pattern.matches(in: text, range: NSRange(text.startIndex..., in: text))
+        let paths = try matches.map { match in
+            String(text[try #require(Range(match.range, in: text))])
         }
+        #expect(Set(paths) == expectedReferences)
+        let firstReference = try #require(matches.first).range.location
+        let help = try #require(text.range(of: "\"$AS_CLI\" --help"))
+        let offline = try #require(text.range(of: "Local help works without the app"))
+        #expect(NSRange(help, in: text).location < firstReference)
+        #expect(NSRange(offline, in: text).location < firstReference)
+
+        var references: [String: String] = [:]
+        for path in Set(paths) {
+            let bundledFile = skill.appending(path: path)
+            var isDirectory: ObjCBool = false
+            try #require(
+                FileManager.default.fileExists(atPath: bundledFile.path, isDirectory: &isDirectory)
+                    && !isDirectory.boolValue, "Unresolved bundled skill reference: \(path)")
+            references[path] = try String(contentsOf: bundledFile, encoding: .utf8)
+        }
+        let commands = try #require(references["references/commands-and-ipc.md"])
+        let methodHelp = try #require(commands.range(of: "\"$AS_CLI\" command.execute --help"))
+        #expect(commands.contains("known `METHOD --help` read the compiled local contracts without connecting"))
+        for example in ["help --live", "system.capabilities", "command.list", "system.identify"] {
+            let commandExample = try #require(commands.range(of: "\"$AS_CLI\" \(example)"))
+            #expect(methodHelp.lowerBound < commandExample.lowerBound)
+        }
+        let linkedText = references.values.joined(separator: "\n")
+        for verb in ["notify", "ask", "withdraw", "answers", "line", "title", "pane"] {
+            #expect(
+                linkedText.contains("\"$AS_CLI\" \(verb) ") || linkedText.contains("\"$AS_CLI\" \(verb)\n"),
+                "No friendly \(verb) example in the root's bundled references")
+        }
+        #expect(!text.contains("## The four calls"))
+        #expect(!linkedText.contains("## The four calls"))
     }
 
     fileprivate static var repositoryRoot: URL {

@@ -146,6 +146,56 @@ struct AgentStudioIPCClientCoreTests {
         }
     }
 
+    @Test("auth.login JSON stdin decodes its token as a method parameter")
+    func authLoginReadsJSONStandardInput() throws {
+        let invocation = try AgentStudioIPCClientArguments.parse(
+            ["--socket", "/tmp/app.sock", "auth.login", "--stdin"],
+            descriptors: makeCatalog().erasedDescriptors, environment: [:],
+            correlationIDGenerator: { UUIDv7.generate() },
+            standardInputProvider: { Data(#"{"token":"json-input-fixture"}"#.utf8) })
+        #expect(
+            try JSONDecoder().decode(
+                IPCAuthLoginParams.self, from: invocation.descriptorInvocation.normalizedParameters.data
+            ).token == "json-input-fixture")
+    }
+
+    @Test("bare auth.login uses the pane's resolved credential without reading stdin")
+    func authLoginUsesInheritedCredential() throws {
+        let invocation = try AgentStudioIPCClientArguments.parse(
+            ["--socket", "/tmp/app.sock", "auth.login"],
+            descriptors: makeCatalog().erasedDescriptors,
+            environment: ["AGENTSTUDIO_PANE_TOKEN": "inherited-input-fixture"],
+            correlationIDGenerator: { UUIDv7.generate() },
+            standardInputProvider: {
+                Issue.record("Inherited credentials do not consume input")
+                return Data()
+            })
+        #expect(
+            try JSONDecoder().decode(
+                IPCAuthLoginParams.self, from: invocation.descriptorInvocation.normalizedParameters.data
+            ).token == "inherited-input-fixture")
+    }
+
+    @Test(
+        "auth.login refuses argv credentials, JSON argv and conflicting stdin modes",
+        arguments: [
+            ["auth.login", "--token", "argv-fixture"],
+            ["auth.login", "--json", #"{"token":"argv-fixture"}"#],
+            ["--token-stdin", "auth.login", "--stdin"],
+        ])
+    func authLoginRefusesUnsupportedInput(arguments: [String]) throws {
+        let descriptors = try makeCatalog().erasedDescriptors
+        #expect(throws: AgentStudioIPCClientError.self) {
+            try AgentStudioIPCClientArguments.parse(
+                ["--socket", "/tmp/app.sock"] + arguments,
+                descriptors: descriptors, environment: [:], correlationIDGenerator: { UUIDv7.generate() },
+                standardInputProvider: {
+                    Issue.record("Refused syntax must not read input")
+                    return Data()
+                })
+        }
+    }
+
     @Test("pane environment supplies canonical endpoint and credential without input")
     func paneEnvironmentSuppliesIdentity() throws {
         let invocation = try AgentStudioIPCClientArguments.parse(

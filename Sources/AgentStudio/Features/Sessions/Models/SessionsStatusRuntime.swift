@@ -46,7 +46,6 @@ struct SessionsStatusRuntime {
                     occurredAt: binding.endedAt ?? binding.startedAt, admittedAt: admittedAt, turnId: nil), to: &state)
         }
         state.openAsks = pendingAsks[generation] ?? previous?.openAsks ?? state.openAsks
-        state.lineWork = previous?.lineWork
         if let viewedAt = latestViewedAt[binding.paneId] {
             SessionStatusReducer.apply(
                 .init(

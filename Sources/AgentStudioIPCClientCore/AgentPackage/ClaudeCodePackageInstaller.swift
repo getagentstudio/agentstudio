@@ -44,20 +44,15 @@ package struct ClaudeCodePackageInstallation: Sendable {
     }
 
     private var settingsURL: URL { configurationDirectory.appending(path: "settings.json") }
-    private var skillMarkerURL: URL { skillDirectoryURL.appending(path: ".agentstudio-package") }
-    private var sourceSkillURL: URL { packageRoot.appending(path: "skills/agentstudio/SKILL.md") }
 
     /// Merges this package's hook groups into `settings.json` and installs the
     /// model skill. Nothing is written until every input is readable, so a
     /// rejected install leaves the directory exactly as it was.
     package func install(notice: (String) -> Void) throws {
         try requireWritableConfigurationDirectory()
-        guard FileManager.default.isReadableFile(atPath: hookScriptURL.path),
-            FileManager.default.isReadableFile(atPath: sourceSkillURL.path)
-        else {
+        guard FileManager.default.isReadableFile(atPath: hookScriptURL.path) else {
             throw ClaudeCodePackageInstallerError.packageResourcesUnavailable(packageRoot.path)
         }
-        let skillContents = try Data(contentsOf: sourceSkillURL)
         var settings = try readSettingsObject()
         // Replacing a non-object hooks value would throw away configuration
         // this package never wrote and cannot read.
@@ -81,12 +76,12 @@ package struct ClaudeCodePackageInstallation: Sendable {
             hooksByEvent[event.rawValue] = .array(groups)
         }
         settings["hooks"] = .object(hooksByEvent)
+        let skill = try PreparedAgentSkillDirectory(
+            source: packageRoot.appending(path: "skills/agentstudio"), providerHome: configurationDirectory,
+            marker: Data(packageMarkerContents.utf8))
+        defer { skill.discardStaging() }
         try writeAtomically(.object(settings), to: settingsURL)
-        try FileManager.default.createDirectory(
-            at: skillDirectoryURL, withIntermediateDirectories: true
-        )
-        try skillContents.write(to: skillDirectoryURL.appending(path: "SKILL.md"), options: .atomic)
-        try Data(packageMarkerContents.utf8).write(to: skillMarkerURL, options: .atomic)
+        try skill.publish(to: skillDirectoryURL)
     }
 
 }

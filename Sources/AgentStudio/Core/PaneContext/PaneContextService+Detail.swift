@@ -84,18 +84,9 @@ func capturePaneContextDetail(
         guard let newest = rows.filter({ liveRank($0.detail) != nil }).map(\.position).max() else { return nil }
         return LiveMessageCursor(rank: 0, position: newest + 1)
     }
-    let line = try PaneContextStorage.line(database, paneId: paneId, now: instant)
-    let readTimeVersions = try sources.enumerated().map { index, source in
-        let stale: Bool?
-        if source == paneId {
-            stale = line?.stale
-        } else if try PaneContextStorage.isRetired(database, paneId: source) {
-            stale = nil
-        } else {
-            stale = try PaneContextStorage.lineStaleness(database, paneId: source, now: instant)
-        }
-        return PaneContextReadTimeVersion(
-            lineStale: stale,
+    let line = try PaneContextStorage.line(database, paneId: paneId)
+    let readTimeVersions = sources.indices.map { index in
+        PaneContextReadTimeVersion(
             visibleSettledIds: Set(
                 messages[index].filter { $0.settledAt != nil }.map { PaneContextRetentionMessage($0).key }))
     }

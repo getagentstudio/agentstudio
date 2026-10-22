@@ -111,6 +111,7 @@ organization, always load command specs and directory structure together.
 | MainActor, debounce, Ghostty samples, sidebar rows | [Performance Lane](#performance-lane-directive) below | You infer hop shape from `@MainActor` and skip source admission. |
 | Designing or reviewing an atom, store, coordinator, actor, bus case, observer, timer, cache, projection, or MainActor hop | [MainActor And Atom Boundaries skill](.codex/skills/agentstudio-mainactor-atom-boundaries/SKILL.md) | You put gating, ordering, deadlines, retention, or I/O in an atom, or approve a lint-clean diff that still breaks the atom-method rule. |
 | Writing or reviewing any test (Swift Testing, Vitest, Playwright E2E) or test support | [Writing Tests skill](.codex/skills/agentstudio-writing-tests/SKILL.md) | You write a wait with only a success exit that hangs CI for ten minutes, a diagnostic that destroys the real error, a test of a test helper, or a test in the wrong lane. |
+| Observing a debug build's pane UI, an agent's status in the pane that displays it, the drawer toolbar, the ⌘R card, credential warnings, or terminal lifecycle and restore | [Verify Agent Studio skill](.agents/skills/verify-agentstudio/SKILL.md) | You drive the production app or its zmx, accept an acknowledgement as the outcome, or report agent-status coverage without running the four agent setups. |
 
 Do not infer hop shape from `@MainActor` annotations in this file.
 

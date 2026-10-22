@@ -19,11 +19,10 @@ func capturePaneContextDisplay(
 ) throws -> PaneContextDisplaySnapshot? {
     guard try !PaneContextStorage.isRetired(database, paneId: paneId) else { return nil }
     let instant = now()
-    try PaneContextStorage.expireLines(database, now: instant, sources: sources)
     var readTimeVersions: [PaneContextReadTimeVersion] = []
     let messages: [[PaneMessageCountInput]] = try sources.map { source in
         guard try !PaneContextStorage.isRetired(database, paneId: source) else {
-            readTimeVersions.append(.init(lineStale: nil, visibleSettledIds: []))
+            readTimeVersions.append(.init(visibleSettledIds: []))
             return []
         }
         let rows = try PaneContextStorage.messageProjections(database, paneId: source)
@@ -32,13 +31,12 @@ func capturePaneContextDisplay(
         let visible = rows.filter { !$0.retention.displayHidden && !hidden.contains($0.retention.key) }
         readTimeVersions.append(
             PaneContextReadTimeVersion(
-                lineStale: try PaneContextStorage.lineStaleness(database, paneId: source, now: instant),
                 visibleSettledIds: Set(visible.filter { $0.retention.settledAt != nil }.map { $0.retention.key })))
         return visible.map(\.counts)
     }
     return PaneContextDisplaySnapshot(
         title: try PaneContextStorage.title(database, paneId: paneId),
-        line: try PaneContextStorage.line(database, paneId: paneId, now: instant),
+        line: try PaneContextStorage.line(database, paneId: paneId),
         sourceRevisions: try sources.map { try PaneContextStorage.revision(database, paneId: $0) },
         messages: messages, readTimeVersions: readTimeVersions)
 }

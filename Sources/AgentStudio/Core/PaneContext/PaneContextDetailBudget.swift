@@ -20,13 +20,9 @@ enum PaneContextDetailBudget {
         var count = (title?.utf8.count ?? 0) + AppPolicies.PaneContext.maximumActionBytes
         if let line {
             count +=
-                line.summary.utf8.count + (line.detail?.utf8.count ?? 0)
+                line.summary.utf8.count
                 + line.refs.reduce(0) { $0 + PaneContextAdmission.actionBytes($1) }
                 + AppPolicies.PaneContext.maximumActionBytes
-            switch line.work {
-            case .monitoring(let text), .blockedOnYou(let text), .failed(let text): count += text.utf8.count
-            default: break
-            }
         }
         if let session {
             count +=

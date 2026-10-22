@@ -64,7 +64,7 @@ struct PaneContextPopoverHost: View {
             .background {
                 AccessibilityPressBridge(
                     identifier: "pane-context.agent-line",
-                    label: LocalActionSpec.showPaneAgentLine(.done).actionSpec.label, help: line.tooltip.text,
+                    label: LocalActionSpec.showPaneAgentLine.actionSpec.label, help: line.tooltip.text,
                     action: requestOpen)
             }
         }

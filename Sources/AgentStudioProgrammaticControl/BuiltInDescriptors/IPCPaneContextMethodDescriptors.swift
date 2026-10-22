@@ -178,7 +178,7 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
     static let lineSetEntry = IPCBuiltInMethodEntry<IPCPaneLineSetParams, IPCPaneOrderedWriteResult>(
         name: "pane.line.set",
         summary:
-            "Set or clear the ordered Agent Line. Summary/work <= 200 UTF-8 bytes, detail <= 2 KiB, steps <= 10000, refs <= 8 with each <= 512 encoded bytes.",
+            "Set or clear the ordered agent message. Summary <= 200 UTF-8 bytes, optional refs <= 8 with each <= 512 encoded bytes.",
         modelCalls: [], correlationPolicy: .required, agentEligibility: .ownPane,
         makeDescriptor: { entryName, entrySummary, _, entryEligibility, inputs in
             let examples = inputs.examples
@@ -189,7 +189,8 @@ package struct IPCPaneContextMethodDescriptors: Sendable {
                     .init(
                         description: "Representative pane.line.set call",
                         parameters: IPCPaneLineSetParams(
-                            handle: "self", line: nil, writeNumber: IPCPaneWriteNumber(epoch: 1, counter: 1),
+                            handle: "self", line: .init(summary: "Current agent message", refs: []),
+                            writeNumber: IPCPaneWriteNumber(epoch: 1, counter: 1),
                             correlationId: examples.correlationId), result: .applied)
                 ],
                 exposure: .allChannels,

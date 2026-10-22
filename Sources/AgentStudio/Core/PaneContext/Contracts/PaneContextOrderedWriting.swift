@@ -72,23 +72,11 @@ package struct PaneLineWriteRequest: Sendable, Equatable {
 
 package struct AgentLineInput: Sendable, Equatable {
     package let summary: String
-    package let work: AgentLineWork
-    package let detail: String?
     package let refs: [MessageAction]
-    package let lifetime: AgentLineLifetime
 
-    package init(
-        summary: String,
-        work: AgentLineWork,
-        detail: String?,
-        refs: [MessageAction],
-        lifetime: AgentLineLifetime
-    ) {
+    package init(summary: String, refs: [MessageAction]) {
         self.summary = summary
-        self.work = work
-        self.detail = detail
         self.refs = refs
-        self.lifetime = lifetime
     }
 }
 

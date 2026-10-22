@@ -189,6 +189,8 @@ extension WatchedFolderScanScheduler {
 
         var scheduledRootCount: Int { statesBySourceID.count }
 
+        var currentTransitionOrdinal: UInt64 { transitionOrdinal }
+
         var recentTransitions: [SchedulingTransition] {
             guard transitionHistory.count == 32 else { return transitionHistory }
             return Array(transitionHistory[nextTransitionIndex...] + transitionHistory[..<nextTransitionIndex])
@@ -360,4 +362,28 @@ extension WatchedFolderScanScheduler {
 enum RegistrationAdmissionResult {
     case accepted
     case rejected(WatchedFolderScanSubmissionRejection)
+}
+
+extension WatchedFolderScanScheduler {
+    func readySelectionInspection() -> ReadySelectionInspection {
+        ReadySelectionInspection(
+            selectionCount: stateBySourceID.readySelectionCount,
+            workUnitCount: stateBySourceID.readySelectionWorkUnitCount,
+            readyRootCount: stateBySourceID.counts.ready,
+            scheduledRootCount: stateBySourceID.scheduledRootCount
+        )
+    }
+
+    func replaceSchedulingState(
+        for sourceID: FilesystemSourceID,
+        with replacement: RootSchedulingState
+    ) {
+        stateBySourceID[sourceID] = replacement
+    }
+
+    @discardableResult
+    func removeSchedulingState(for sourceID: FilesystemSourceID) -> RootSchedulingState? {
+        stateBySourceID.removeValue(forKey: sourceID)
+    }
+
 }

@@ -16,14 +16,6 @@ extension SessionsIngestion: SessionOpenAskInput {
         if let paneId = statusRuntime.bindings[update.bindingGenerationId]?.paneId { publishStatus(paneId: paneId) }
     }
 
-    package func receiveAgentLine(work: AgentLineWork?, bindingGenerationId: UUID) async {
-        guard !isStatusClosed else { return }
-        guard var state = statusRuntime.states[bindingGenerationId] else { return }
-        state.lineWork = work
-        statusRuntime.states[bindingGenerationId] = state
-        if let paneId = statusRuntime.bindings[bindingGenerationId]?.paneId { publishStatus(paneId: paneId) }
-    }
-
     package func sessionSummary(paneId: UUID) async throws -> SessionSummary? {
         try await restoreStatusIfNeeded(paneId: paneId)
         consumePaneViewedBatch()
