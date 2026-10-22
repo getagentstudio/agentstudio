@@ -73,6 +73,7 @@ final class WorkspaceSurfaceCoordinator {
     var terminalActivityRouter: TerminalActivityRouter?
     let coldStartAttachExitBinding = ColdStartAttachExitBinding()
     var paneActivityClock: PaneActivityClock?
+    var scrollbackStore: ScrollbackStore?
     var scrollbackSnapshotter: ScrollbackSnapshotter?
     var scrollbackRetirementTasksByID: [UUID: Task<Void, Never>] = [:]
     var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?

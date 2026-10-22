@@ -465,6 +465,7 @@ extension AppDelegate {
                 self?.requestTraceIdentityRefresh()
             }
         )
+        workspaceSurfaceCoordinator.scrollbackStore = scrollbackStore
         let scrollbackBackend = ZmxBackend(configuration: workspaceSurfaceCoordinator.sessionConfig)
         if let backend = scrollbackBackend {
             installScrollbackSnapshotter(using: backend)

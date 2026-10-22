@@ -15,6 +15,51 @@ import Testing
 struct ScrollbackWorkspaceLifecycleTests {
     init() { installTestCoreAtomsIfNeeded() }
 
+    @Test("direct discard deletes saved output when capture is unavailable")
+    func directDiscardWithoutSnapshotterDeletesSnapshot() async throws {
+        try await withWorkspace(installsSnapshotter: false) { fixture in
+            let pane = fixture.store.createPane(zmxSessionID: .generateUUIDv7(), residency: .backgrounded)
+            #expect(await fixture.store.flushAsync() == .persisted)
+            let paneID = PaneId(existingUUID: pane.id)
+            _ = try await fixture.scrollback.store(paneId: paneID, capture: Data("previous launch output".utf8))
+            let snapshotURL = fixture.scrollback.snapshotURL(for: paneID)
+            #expect(await withoutBlockingCooperativePool { FileManager.default.fileExists(atPath: snapshotURL.path) })
+
+            try await fixture.coordinator.execute(.purgeOrphanedPane(paneId: pane.id))
+            await fixture.coordinator.shutdown()
+
+            #expect(fixture.store.paneAtom.pane(pane.id) == nil)
+            #expect(await withoutBlockingCooperativePool { !FileManager.default.fileExists(atPath: snapshotURL.path) })
+        }
+    }
+
+    @Test("boot undo recovery deletes expired saved output when capture is unavailable")
+    func bootUndoExpiryWithoutSnapshotterDeletesSnapshot() async throws {
+        try await withWorkspace(installsSnapshotter: false) { fixture in
+            let pane = fixture.store.createPane(zmxSessionID: .generateUUIDv7())
+            let tab = Tab(paneId: pane.id)
+            fixture.store.appendTab(tab)
+            #expect(await fixture.store.flushAsync() == .persisted)
+            let paneID = PaneId(existingUUID: pane.id)
+            _ = try await fixture.scrollback.store(paneId: paneID, capture: Data("expired undo output".utf8))
+            let snapshotURL = fixture.scrollback.snapshotURL(for: paneID)
+            #expect(await withoutBlockingCooperativePool { FileManager.default.fileExists(atPath: snapshotURL.path) })
+            try await fixture.coordinator.execute(.closeTab(tabId: tab.id))
+            let close = try #require(
+                try await fixture.datastore.fetchAvailableUndoCloses(workspaceID: fixture.workspaceID).first)
+            let recovery = try await fixture.store.recoverUndoJournal(
+                time: .init(
+                    utc: close.expiresAt.addingTimeInterval(1), bootID: close.deadlineBootID,
+                    uptimeNanoseconds: close.deadlineUptimeNanoseconds + 1))
+            #expect(!recovery.retiredCloses.isEmpty)
+
+            fixture.coordinator.installUndoJournalRecovery(recovery)
+            await fixture.coordinator.shutdown()
+
+            #expect(await withoutBlockingCooperativePool { !FileManager.default.fileExists(atPath: snapshotURL.path) })
+        }
+    }
+
     @Test("committed direct discard retires a pane snapshot through the shared route")
     func directDiscardDeletesSnapshot() async throws {
         try await withWorkspace { fixture in
@@ -145,9 +190,10 @@ struct ScrollbackWorkspaceLifecycleTests {
 
     private func withWorkspace(
         expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil,
+        installsSnapshotter: Bool = true,
         _ body: (ScrollbackWorkspaceFixture) async throws -> Void
     ) async throws {
-        let fixture = try ScrollbackWorkspaceFixture(expiryHold: expiryHold)
+        let fixture = try ScrollbackWorkspaceFixture(expiryHold: expiryHold, installsSnapshotter: installsSnapshotter)
         var bodyError: (any Error)?
         do { try await body(fixture) } catch { bodyError = error }
         await fixture.coordinator.shutdown()
@@ -179,7 +225,7 @@ private final class ScrollbackWorkspaceFixture {
     let recorder: FactRecorder<ScrollbackSnapshotterScope, ScrollbackSnapshotterFact>
     let lifecycleFacts = ScrollbackLifecycleRecorder()
 
-    init(expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil) throws {
+    init(expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil, installsSnapshotter: Bool = true) throws {
         let sqliteFixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
         datastore = try preparedWorkspaceSQLiteDatastore(from: sqliteFixture.backend)
         store = WorkspaceStore(
@@ -233,7 +279,8 @@ private final class ScrollbackWorkspaceFixture {
                 lifecycleFacts.append(fact)
                 source.sink(scope, fact)
             })
-        coordinator.scrollbackSnapshotter = snapshotter
+        coordinator.scrollbackStore = scrollback
+        if installsSnapshotter { coordinator.scrollbackSnapshotter = snapshotter }
     }
 }
 
