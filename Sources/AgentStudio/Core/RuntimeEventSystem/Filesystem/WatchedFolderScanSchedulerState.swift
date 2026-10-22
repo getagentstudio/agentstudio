@@ -175,6 +175,9 @@ extension WatchedFolderScanScheduler {
         private var readyNodesBySourceID: [FilesystemSourceID: ReadyRootNode] = [:]
         private var firstReadySourceID: FilesystemSourceID?
         private var lastReadySourceID: FilesystemSourceID?
+        private var transitionHistory: [SchedulingTransition] = []
+        private var nextTransitionIndex = 0
+        private var transitionOrdinal: UInt64 = 0
         private(set) var counts = StateCounts()
         private(set) var readySelectionCount: UInt64 = 0
         private(set) var readySelectionWorkUnitCount: UInt64 = 0
@@ -185,6 +188,11 @@ extension WatchedFolderScanScheduler {
         }
 
         var scheduledRootCount: Int { statesBySourceID.count }
+
+        var recentTransitions: [SchedulingTransition] {
+            guard transitionHistory.count == 32 else { return transitionHistory }
+            return Array(transitionHistory[nextTransitionIndex...] + transitionHistory[..<nextTransitionIndex])
+        }
 
         @discardableResult
         mutating func removeValue(
@@ -238,6 +246,25 @@ extension WatchedFolderScanScheduler {
             }
 
             statesBySourceID[sourceID] = replacement
+            recordTransition(sourceID: sourceID, previous: previous, replacement: replacement)
+        }
+
+        private mutating func recordTransition(
+            sourceID: FilesystemSourceID, previous: RootSchedulingState?, replacement: RootSchedulingState?
+        ) {
+            transitionOrdinal = saturatingIncrement(transitionOrdinal)
+            let transition = SchedulingTransition(
+                ordinal: transitionOrdinal, sourceHash: UInt32(truncatingIfNeeded: sourceID.hashValue),
+                fromState: previous?.diagnosticStateCase ?? .absent,
+                toState: replacement?.diagnosticStateCase ?? .absent,
+                // A same-case write may replace demand or result payload; only absent removal is a no-op.
+                isNoOp: previous == nil && replacement == nil)
+            if transitionHistory.count < 32 {
+                transitionHistory.append(transition)
+            } else {
+                transitionHistory[nextTransitionIndex] = transition
+            }
+            nextTransitionIndex = (nextTransitionIndex + 1) % 32
         }
 
         private mutating func appendReadySourceID(_ sourceID: FilesystemSourceID) {
