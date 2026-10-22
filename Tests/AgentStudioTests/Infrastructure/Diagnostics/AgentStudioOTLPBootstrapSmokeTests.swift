@@ -4,8 +4,81 @@ import Testing
 
 @testable import AgentStudioInfrastructure
 
+@MainActor
 @Suite(.serialized)
 struct AgentStudioOTLPBootstrapSmokeTests {
+    @Test
+    func perSignalEnvironmentEndpointWinsOverConfiguredEndpoint() async throws {
+        let sharedCollector = try LoopbackOTLPHTTPCollector()
+        let logsCollector = try LoopbackOTLPHTTPCollector()
+        defer {
+            sharedCollector.cancel()
+            logsCollector.cancel()
+        }
+        try await sharedCollector.start()
+        try await logsCollector.start()
+        let endpointKeys = [
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+        ]
+        let originalEnvironment = ProcessInfo.processInfo.environment
+        defer {
+            for key in endpointKeys {
+                if let value = originalEnvironment[key] {
+                    setenv(key, value, 1)
+                } else {
+                    unsetenv(key)
+                }
+            }
+        }
+        for key in endpointKeys { unsetenv(key) }
+        let sharedEndpoint = try sharedCollector.endpoint().absoluteString
+        let logsEndpoint = try logsCollector.endpoint().appendingPathComponent("v1/logs").absoluteString
+        setenv("OTEL_EXPORTER_OTLP_ENDPOINT", sharedEndpoint, 1)
+        setenv("OTEL_EXPORTER_OTLP_LOGS_ENDPOINT", logsEndpoint, 1)
+
+        var environment = ProcessInfo.processInfo.environment
+        environment["AGENTSTUDIO_TRACE_TAGS"] = "runtime"
+        environment["AGENTSTUDIO_TRACE_BACKEND"] = "otlp"
+        let configuration = AgentStudioTraceConfiguration.from(environment: environment)
+        #expect(configuration.backend.includesOTLP)
+        #expect(configuration.otlpEndpoint?.absoluteString == sharedEndpoint)
+        let configuredEndpoint = try #require(configuration.otlpEndpoint)
+        let bootstrapper = AgentStudioOTLPBootstrapper()
+        let sink = AgentStudioOTLPTraceSink(
+            context: AgentStudioOTLPTraceSinkContext(
+                endpoint: configuredEndpoint, otlpProtocol: .httpProtobuf
+            ),
+            bootstrapper: bootstrapper
+        )
+        let runtime = AgentStudioTraceRuntime(
+            configuration: configuration,
+            processIdentifier: 952,
+            serviceVersion: "endpoint-precedence-version",
+            sessionID: "endpoint-precedence-session",
+            sinkFactory: AgentStudioTraceSinkFactory(
+                makeJSONLSink: { _ in fatalError("JSONL is not used by this OTLP-only test") },
+                makeOTLPSink: { _ in sink }
+            )
+        )
+        await runtime.record(tag: .runtime, body: "runtime.endpoint.precedence")
+        try await runtime.shutdown()
+        // Shutdown is the producer's closing outcome. Closing the receiver streams
+        // makes a missing request fail immediately rather than waiting for success only.
+        sharedCollector.cancel()
+        logsCollector.cancel()
+        let logsRequest = try #require(
+            await logsCollector.waitForRequest(pathSuffix: "/v1/logs", containing: "runtime.endpoint.precedence")
+        )
+        #expect(logsRequest.method == "POST")
+        #expect(
+            await sharedCollector.waitForRequest(pathSuffix: "/v1/logs", containing: "runtime.endpoint.precedence")
+                == nil
+        )
+    }
+
     @Test
     func otelConfigurationAppliesExplicitLogBatchBackpressurePolicy() throws {
         let configuration = try AgentStudioOTLPBootstrapper.otelConfiguration(
