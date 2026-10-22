@@ -20,6 +20,27 @@ import { createTabOwnershipReplacementHold } from './bridge-viewer-vite-tab-owne
 import BridgeWebE2ERunner from './bridge-web-e2e-runner.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
+vi.mock('../../scripts/dev-server/owned-bridge-web-browser-host.ts', () => ({
+	startOwnedBridgeWebBrowserHost: async (props: { readonly onSpawn?: (host: unknown) => void }) => {
+		const host = {
+			pid: 0,
+			wsEndpoint: 'ws://controlled-browser',
+			whenExited: Promise.resolve(),
+			stdoutTail: (): string => '',
+			stderrTail: (): string => '',
+			stop: async () => ({
+				exitCode: 0,
+				exitSignal: null,
+				forcedTerminationRequired: false,
+				ownedProcessAliveAfterStop: false,
+				browserGroups: [],
+			}),
+		};
+		props.onSpawn?.(host);
+		return host;
+	},
+}));
+
 test('a failed body names its already-pending browser close and joins it across owner abort', async () => {
 	const owner = new AbortController();
 	const closeEntered = makeDeferred<void>();
@@ -40,7 +61,7 @@ test('a failed body names its already-pending browser close and joins it across 
 		isConnected: (): boolean => connected,
 		on: (): void => {},
 	} as unknown as Browser;
-	const launchChromium = vi.spyOn(chromium, 'launch').mockResolvedValue(controlledBrowser);
+	const launchChromium = vi.spyOn(chromium, 'connect').mockResolvedValue(controlledBrowser);
 	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 	const task = { id: 'tq127-failed-body-close', name: 'TQ127 failed journey browser retirement' };
 	const body = handleLaunchPromise(

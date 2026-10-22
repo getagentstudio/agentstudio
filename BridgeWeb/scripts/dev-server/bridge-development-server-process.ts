@@ -21,7 +21,13 @@ export interface OwnedBridgeDevelopmentServer {
 	readonly whenExited: Promise<void>;
 }
 
+export interface OwnedBrowserProcessGroupCleanup {
+	readonly pid: number;
+	readonly outcome: 'killed' | 'gone' | 'alive after stop';
+}
+
 export interface OwnedBridgeDevelopmentServerCleanup {
+	readonly browserGroups?: readonly OwnedBrowserProcessGroupCleanup[];
 	readonly exitCode: number | null;
 	readonly exitSignal: NodeJS.Signals | null;
 	readonly forcedTerminationRequired: boolean;
@@ -315,6 +321,7 @@ export async function bridgeDevelopmentServerProcessOwnsListeningPort(props: {
 export async function stopOwnedBridgeDevelopmentServerProcess(
 	child: OwnedBridgeDevelopmentServerProcessControl,
 	lifecycleOutcome: Promise<BridgeDevelopmentServerLifecycleOutcome>,
+	reportedGroups?: () => readonly number[],
 ): Promise<OwnedBridgeDevelopmentServerCleanup> {
 	const pid = child.pid ?? null;
 	const outcomeBeforeStop = await settledValue(lifecycleOutcome);
@@ -331,11 +338,32 @@ export async function stopOwnedBridgeDevelopmentServerProcess(
 	let outcome = await withBoundedTimeoutOrNull(lifecycleOutcome, shutdownTimeoutMilliseconds);
 	if (outcome === null) {
 		forcedTerminationRequired = true;
+		for (const group of reportedGroups?.() ?? []) {
+			try {
+				process.kill(-group, 'SIGKILL');
+			} catch (error: unknown) {
+				if (!(error instanceof Error && 'code' in error && error.code === 'ESRCH')) throw error;
+			}
+		}
 		child.kill('SIGKILL');
 		outcome = await withBoundedTimeoutOrNull(lifecycleOutcome, shutdownTimeoutMilliseconds);
 	}
 	const exit = outcome?.kind === 'exit' ? outcome : null;
 	return {
+		...(reportedGroups === undefined
+			? {}
+			: {
+					browserGroups: reportedGroups().map(
+						(pid): OwnedBrowserProcessGroupCleanup => ({
+							pid,
+							outcome: processIsAlive(-pid)
+								? 'alive after stop'
+								: forcedTerminationRequired
+									? 'killed'
+									: 'gone',
+						}),
+					),
+				}),
 		exitCode: exit?.code ?? null,
 		exitSignal: exit?.signal ?? null,
 		forcedTerminationRequired,

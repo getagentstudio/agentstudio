@@ -8,6 +8,7 @@ import { BridgeViewerOwnedViteServer } from '../verify-bridge-viewer-worktree-de
 import { createOwnedVerifierJourneyDeadline } from '../verify-bridge-viewer-worktree-dev-server/verifier-journey-deadline.ts';
 import {
 	startOwnedBridgeDevelopmentServer,
+	runAllOwnedCleanupOperations,
 	type OwnedBridgeDevelopmentServer,
 } from './bridge-development-server-process.ts';
 import { BridgeWebLaunchStepDiagnostics } from './bridge-web-launch-step-diagnostics.ts';
@@ -32,6 +33,10 @@ import {
 	type HandledLaunchPromise,
 	type LaunchPromiseOutcome,
 } from './handled-launch-promise.ts';
+import {
+	startOwnedBridgeWebBrowserHost,
+	type OwnedBridgeWebBrowserHost,
+} from './owned-bridge-web-browser-host.ts';
 export type {
 	BridgeWebOwnedProductDataClient,
 	BridgeWebTestLaunchCleanup,
@@ -50,6 +55,7 @@ export class BridgeWebTestLaunch {
 	readonly #acquisitions = new Set<Promise<LaunchPromiseOutcome<unknown>>>();
 	#backend: OwnedBridgeDevelopmentServer | null = null;
 	#browser: Browser | null = null;
+	#browserHost: OwnedBridgeWebBrowserHost | null = null;
 	#viteProcess: BridgeViewerOwnedViteServer | null = null;
 	#closeBrowser: Browser['close'] | null = null;
 	#browserCloseOptions: Parameters<Browser['close']>[0];
@@ -257,8 +263,25 @@ export class BridgeWebTestLaunch {
 		this.#requireOpen();
 		if (this.#browser !== null) throw new Error('Test launch already owns a browser.');
 		try {
+			const host = await this.#acquire(
+				(this.#dependencies.startBrowserHost ?? startOwnedBridgeWebBrowserHost)({
+					options,
+					onSpawn: (host): void => {
+						this.#browserHost = host;
+						if (this.#closed)
+							this.#acquisitions.add(
+								handleLaunchPromise(host.stop(), 'late browser host teardown').settled,
+							);
+					},
+				}),
+				(host): void => {
+					this.#browserHost = host;
+				},
+				'Chromium acquisition',
+			);
+			this.#requireOpen();
 			const browser = await this.#acquire(
-				chromium.launch({ ...options, timeout: 0 }),
+				chromium.connect(host.wsEndpoint),
 				(ownedBrowser): void => {
 					this.#browser = ownedBrowser;
 					this.#closeBrowser = ownedBrowser.close.bind(ownedBrowser);
@@ -280,6 +303,23 @@ export class BridgeWebTestLaunch {
 			};
 			return browser;
 		} catch (error: unknown) {
+			if (this.#signal.aborted) {
+				const host = this.#browserHost;
+				const cleanup = await host?.stop();
+				const groups = cleanup?.browserGroups
+					?.map((group): string => `${group.pid}: ${group.outcome}`)
+					.join(', ');
+				const message = `BridgeWeb launch aborted during Chromium acquisition: ${String(this.#signal.reason)}; host pid ${host?.pid ?? 'none'} ${cleanup?.ownedProcessAliveAfterStop === true ? 'host alive after stop' : `exit ${cleanup?.exitCode ?? cleanup?.exitSignal ?? 'unknown'}`}; browser groups ${groups ? `[${groups}]` : 'none reported'}; forced termination ${cleanup?.forcedTerminationRequired ?? false}`;
+				const failure = new Error(message, { cause: error });
+				try {
+					await this.dispose();
+				} catch (cleanupError: unknown) {
+					throw new AggregateError([failure, cleanupError], `${message}; teardown failed`, {
+						cause: cleanupError,
+					});
+				}
+				throw failure;
+			}
 			return await this.disposeAfterFailure(error);
 		}
 	}
@@ -405,7 +445,24 @@ export class BridgeWebTestLaunch {
 	async #disposeBrowser(): Promise<void> {
 		this.#browserDisposal ??= handleLaunchPromise(
 			(async (): Promise<void> => {
-				await this.#closeBrowser?.(this.#browserCloseOptions);
+				await runAllOwnedCleanupOperations({
+					operations: [
+						{
+							name: 'browser connection',
+							run: async (): Promise<void> => {
+								await this.#closeBrowser?.(this.#browserCloseOptions);
+							},
+						},
+						{
+							name: 'browser host',
+							run: async (): Promise<void> => {
+								const cleanup = await this.#browserHost?.stop();
+								if (cleanup?.ownedProcessAliveAfterStop === true)
+									throw new Error('Owned browser host alive after stop.');
+							},
+						},
+					],
+				});
 				const browserDisconnected = !(this.#browser?.isConnected() ?? false);
 				this.#cleanup = { ...this.#cleanup, browserDisconnected };
 				if (!browserDisconnected) throw new Error('Owned browser remained connected after close.');
@@ -442,6 +499,10 @@ export class BridgeWebTestLaunch {
 			this.#backend === null
 				? null
 				: handleLaunchPromise(this.#backend.stop(), 'stop starting backend');
+		const earlyBrowserHostStop =
+			this.#browserHost === null
+				? null
+				: handleLaunchPromise(this.#browserHost.stop(), 'stop starting Chromium host');
 		await Promise.all(this.#acquisitions);
 		const childOutcomes = await Promise.all(childStops.map((stopping) => stopping.settled));
 		const rootOutcome = await this.#root.settled;
@@ -451,6 +512,7 @@ export class BridgeWebTestLaunch {
 				name: 'browser',
 				run: async (): Promise<void> => {
 					await this.#disposeBrowser();
+					await earlyBrowserHostStop?.value();
 				},
 			},
 			{
