@@ -644,6 +644,11 @@ coordinated with the CI Lead, and cannot replace or weaken the current receipts.
 | U7 | R8 observations preserved — C5 | E3, E6 | Startup recorder and callback trace owner | Existing startup record and instance trace drain | Existing Infrastructure tag/body/attributes | Record from early launch; drain on shutdown | Export/drain failure contained; scrub unchanged | Existing launched startup/terminal verifier and export privacy seam |
 | U2, U4 | R9 activity binding scoped — C2 | E6, E8 | Activity router and injected routing adapter | Fixed activity context/input operations | Existing TerminalActivitySourceInput/context in Terminal | Existing started/stopped state | Missing/stopped input stays local; no global override | Two fixtures with separate activity routers and correlated teardown |
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 E1–E9 are covered by the binding table. C1–C5 and V1–V8 are covered by the rows
 above and the production/fixture graphs. U5/U6 and D2 remain owner-superseded;
 none of their guard behavior is realized. D1 is realized by one production
@@ -694,6 +699,11 @@ by the same source contraction/scheduler policies and marker-scoped proof.
 Accessibility and visible styling have no changed surface. No network,
 authentication or persisted-data boundary changes. Swift 6.4 Sendable-implying
 conformances remain in their owning type declarations when those types change.
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 ## Source basis and remaining feasibility proof
 
