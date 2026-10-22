@@ -133,12 +133,13 @@ struct AgentStudioOTLPMeasurementListTests {
                 "agentstudio.bridge.slice": .string("review_metadata"),
             ]) { current, _ in current }
         }
-        return AgentStudioOTLPProjectedLogRecord(
-            timeUnixNano: 460, severityText: .info,
-            body: isBridge ? "performance.bridge.webkit.push_envelope" : "performance.git.status",
-            traceID: nil, spanID: nil, parentSpanID: nil, resource: [:],
-            scope: .init(name: "agentstudio.performance", version: "test"), attributes: attributes
-        )
+        return AgentStudioOTLPTraceProjection.project(
+            AgentStudioTraceRecord(
+                timeUnixNano: 460, severityText: .info,
+                body: isBridge ? "performance.bridge.webkit.push_envelope" : "performance.git.status",
+                traceID: nil, spanID: nil, parentSpanID: nil, resource: [:],
+                scope: .init(name: "agentstudio.performance", version: "test"), attributes: attributes
+            ))
     }
 
     private struct MeasurementSourceEntry: Sendable {

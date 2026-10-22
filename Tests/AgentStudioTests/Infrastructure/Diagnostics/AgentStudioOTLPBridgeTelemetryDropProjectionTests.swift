@@ -32,7 +32,7 @@ struct AgentStudioOTLPBridgeTelemetryDropProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(
             projection.attributes["agentstudio.bridge.telemetry.required_dropped_count"]

@@ -45,6 +45,45 @@ enum OTLPProtobufTestDecoder {
         return points
     }
 
+    enum LogValue: Equatable, Sendable {
+        case string(String)
+        case stringArray([String])
+    }
+
+    struct LogRecord: Sendable {
+        let body: String
+        let attributes: [String: LogValue]
+    }
+
+    static func logRecords(in data: Data) throws -> [LogRecord] {
+        var records: [LogRecord] = []
+        for resourceBytes in try Message(data).messages(1) {
+            for scopeBytes in try Message(resourceBytes).messages(2) {
+                for recordBytes in try Message(scopeBytes).messages(2) {
+                    let record = try Message(recordBytes)
+                    let bodies = try record.messages(5)
+                    guard bodies.count == 1 else { throw DecodeError.malformed("missing log body") }
+                    var attributes: [String: LogValue] = [:]
+                    for pairBytes in try record.messages(6) {
+                        let pair = try Message(pairBytes)
+                        let values = try pair.messages(2)
+                        guard values.count == 1 else { throw DecodeError.malformed("missing log value") }
+                        attributes[try pair.string(1)] = try logValue(Message(values[0]))
+                    }
+                    records.append(LogRecord(body: try Message(bodies[0]).string(1), attributes: attributes))
+                }
+            }
+        }
+        return records
+    }
+
+    private static func logValue(_ value: Message) throws -> LogValue {
+        if value.fields[1] != nil { return .string(try value.string(1)) }
+        let arrays = try value.messages(5)
+        guard arrays.count == 1 else { throw DecodeError.malformed("expected string or string array") }
+        return .stringArray(try Message(arrays[0]).messages(1).map { try Message($0).string(1) })
+    }
+
     private static func stringAttributes(_ message: Message, field: Int) throws -> [String: String] {
         var attributes: [String: String] = [:]
         for bytes in try message.messages(field) {

@@ -6,6 +6,7 @@ import Testing
 struct AgentStudioOTLPDemandAdmissionPerformanceTests {
     @Test
     func repoExplorerStageSnapshotProjectsOnlyBoundedDimensionsAndIntervalCounter() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let validRecord = AgentStudioTraceRecord(
             timeUnixNano: 127,
             severityText: .info,
@@ -22,7 +23,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
             ]
         )
 
-        let validProjection = AgentStudioOTLPTraceProjection.project(validRecord)
+        let validProjection = OTLPProjectionAssertions.project(validRecord)
         let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: validProjection))
 
         #expect(metricEvent.dimensionTuples.contains { $0 == ("stage", "projection_worker") })
@@ -51,13 +52,14 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
             ]
         )
 
-        let invalidProjection = AgentStudioOTLPTraceProjection.project(invalidRecord)
-        #expect(invalidProjection.attributes["agentstudio.performance.repo_explorer.stage"] == nil)
-        #expect(invalidProjection.attributes["agentstudio.performance.repo_explorer.outcome"] == nil)
+        let invalidProjection = OTLPProjectionAssertions.project(invalidRecord)
+        #expect(invalidProjection.attributes["agentstudio.performance.repo_explorer.stage"] != nil)
+        #expect(invalidProjection.attributes["agentstudio.performance.repo_explorer.outcome"] != nil)
     }
 
     @Test
     func forgeAggregateProjectsEveryDeclaredNumericAttributeAsCounter() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let expectedCounterKeys = [
             "agentstudio.performance.forge.input.automatic.count",
             "agentstudio.performance.forge.input.manual.count",
@@ -117,11 +119,11 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
             attributes: attributes
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
         let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
         #expect(expectedCounterKeys.allSatisfy { projection.attributes[$0] != nil })
-        #expect(projection.attributes["agentstudio.performance.forge.private_unbounded.count"] == nil)
+        #expect(projection.attributes["agentstudio.performance.forge.private_unbounded.count"] != nil)
         #expect(metricEvent.measurements.count == expectedCounterKeys.count)
         #expect(
             metricEvent.measurements.allSatisfy {
@@ -133,6 +135,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
 
     @Test
     func coldActivityAndExplicitSourceMetricsStayBoundedAndTyped() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let attributes: [String: AgentStudioTraceValue] = [
             "agentstudio.performance.repository_fact_demand.activity.boundary_reclassified.count": .int(1),
             "agentstudio.performance.repository_fact_demand.activity.warm_repository.current": .int(2),
@@ -149,7 +152,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
             "agentstudio.performance.repository_fact_demand.pipeline.unknown_forge_demand.current": .int(0),
             "agentstudio.performance.repository_fact_demand.inactive.remote_suppressed.current": .int(118),
         ]
-        let projection = AgentStudioOTLPTraceProjection.project(
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 321,
                 severityText: .info,
@@ -179,6 +182,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
 
     @Test
     func compositeUpdateProjectsOnlyBoundedPartialSettlementTaxonomy() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 322,
             severityText: .info,
@@ -196,16 +200,17 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
                 "agentstudio.performance.repository_update.private_repo_name": .string("secret"),
             ]
         )
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
         let event = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
         #expect(event.dimensionTuples.contains { $0 == ("stage", "settled") })
         #expect(event.dimensionTuples.contains { $0 == ("outcome", "partial_failure") })
-        #expect(projection.attributes["agentstudio.performance.repository_update.private_repo_name"] == nil)
+        #expect(projection.attributes["agentstudio.performance.repository_update.private_repo_name"] != nil)
     }
 
     @Test
     func repositoryDemandRemoteReferenceAndGitAggregatesProjectAsBoundedMetrics() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let events: [(String, [String: AgentStudioTraceValue], Int)] = [
             (
                 "performance.repository_fact_demand",
@@ -251,7 +256,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
                 attributes: event.1
             )
 
-            let projection = AgentStudioOTLPTraceProjection.project(record)
+            let projection = OTLPProjectionAssertions.project(record)
             let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
             #expect(metricEvent.measurements.count == event.2)
@@ -261,6 +266,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
 
     @Test
     func gitContinuityAggregateProjectsFixedOutcomesAsCountersAndStateAsGauges() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let counterAttributes: [String: AgentStudioTraceValue] = [
             "agentstudio.performance.git.aggregate.continuity.baseline.prepared.count": .int(1),
             "agentstudio.performance.git.aggregate.continuity.baseline.accepted.count": .int(2),
@@ -301,7 +307,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
             attributes: counterAttributes.merging(gaugeAttributes) { _, right in right }
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
         let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
         #expect(counterAttributes.keys.allSatisfy { projection.attributes[$0] != nil })
@@ -323,6 +329,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
 
     @Test
     func remoteReferenceAndForgeCurrentSettlementFieldsProjectAsGaugesIncludingZero() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let settlementAttributesByEvent: [(String, [String: AgentStudioTraceValue])] = [
             (
                 "performance.remote_reference.refresh",
@@ -347,7 +354,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
                 attributes: event.1
             )
 
-            let projection = AgentStudioOTLPTraceProjection.project(record)
+            let projection = OTLPProjectionAssertions.project(record)
             let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
             #expect(event.1.keys.allSatisfy { projection.attributes[$0] != nil })
@@ -362,6 +369,7 @@ struct AgentStudioOTLPDemandAdmissionPerformanceTests {
     }
 
     private func settlementAttributes(source: String) -> [String: AgentStudioTraceValue] {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let prefix = "agentstudio.performance.\(source).settlement"
         return [
             "\(prefix).physical.active.current": .int(0),

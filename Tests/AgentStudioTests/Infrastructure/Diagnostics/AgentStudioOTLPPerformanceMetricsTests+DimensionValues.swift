@@ -117,13 +117,14 @@ extension AgentStudioOTLPPerformanceMetricsTests {
     ) -> AgentStudioOTLPProjectedLogRecord {
         var metricAttributes = attributes
         metricAttributes["agentstudio.performance.elapsed_ms"] = .double(7.5)
-        return AgentStudioOTLPProjectedLogRecord(
-            timeUnixNano: 459, severityText: .info, body: eventName,
-            traceID: nil, spanID: nil, parentSpanID: nil,
-            resource: resource,
-            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
-            attributes: metricAttributes
-        )
+        return AgentStudioOTLPTraceProjection.project(
+            AgentStudioTraceRecord(
+                timeUnixNano: 459, severityText: .info, body: eventName,
+                traceID: nil, spanID: nil, parentSpanID: nil,
+                resource: resource,
+                scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+                attributes: metricAttributes
+            ))
     }
 
     struct MetricDimensionValueCase: Sendable {

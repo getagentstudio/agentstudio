@@ -130,9 +130,3 @@ extension AgentStudioOTLPPerformanceMetricEvent {
         }
     }
 }
-
-extension AgentStudioOTLPTraceProjection {
-    static func isAllowedControlledStringValue(key: String, value: String) -> Bool {
-        AgentStudioOTLPPerformanceMetricEvent.isAllowedControlledStringValue(key: key, value: value)
-    }
-}
