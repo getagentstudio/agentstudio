@@ -101,6 +101,13 @@ package enum AppStyles {
 
     package enum Shell {
         package enum Sidebar {
+            package static let paneInfoColumnMinimumWidth: CGFloat = 200
+            package static let paneInfoTwoColumnWidth: CGFloat =
+                paneInfoColumnMinimumWidth * 2 + AppStyles.General.Spacing.loose
+            package static let paneLineRotationSpeed = 0.35
+            package static let paneLinePulseMinimumOpacity = 0.6
+            package static let paneLinePulseMaximumOpacity = 1.0
+            package static let paneLinePulsePeriod = 1.6
             package static let pendingFactsSymbolEffectSpeed = 0.35
             package static let statusUnavailableForegroundOpacity: CGFloat = 0.7
             package static let minimumWidth: CGFloat = 200
@@ -373,6 +380,7 @@ package enum AppStyles {
                     srgbRed: 29.0 / 255.0, green: 31.0 / 255.0, blue: 35.0 / 255.0, alpha: 1.0
                 ))
             package static let trailingClusterSpacing: CGFloat = AppStyles.General.Spacing.standard
+            package static let agentLineMaxWidth: CGFloat = 360
             package static let labeledActionTrailingPadding: CGFloat = AppStyles.General.Spacing.standard
             package static let dividerHeight: CGFloat = 16
             package static let dividerHorizontalPadding = AppStyles.General.Spacing.standard

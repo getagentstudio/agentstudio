@@ -166,7 +166,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         principalRegistry.shutdown()
         stopListenerAndConnections()
         principalRegistry.revokeAllGrants()
-        try? FileManager.default.removeItem(at: paths.metadataURL)
+        AgentStudioIPCFilesystem.removeMetadata(paths: paths)
     }
 
     /// Ends the accepting side: no new connection is admitted, live ones are
@@ -180,7 +180,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         schedulePersistence(of: shutdownSnapshot)
         stopListenerAndConnections()
         principalRegistry.revokeAllGrants()
-        try? FileManager.default.removeItem(at: paths.metadataURL)
+        AgentStudioIPCFilesystem.removeMetadata(paths: paths)
     }
 
     /// Waits for the credential writes queued by `stopAcceptingConnections()`.

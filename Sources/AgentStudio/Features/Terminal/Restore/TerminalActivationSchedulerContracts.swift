@@ -19,15 +19,23 @@ package struct TerminalActivationAdmission: Equatable, Sendable {
     package let generation: WorkspaceContentMountGeneration
     package let descriptor: TerminalActivationDescriptor
     package let attempt: Int
+    /// SR1: this pane's restore decision, computed once by `mount()` before
+    /// the terminal lane activates (Program Design item 1) and installed on
+    /// the admission port ahead of any claim. `nil` for a pane the launch
+    /// cohort never covered — the mount effect then falls back to today's
+    /// plain attach (`TerminalRestoreRuntime.startupCommand(for:kind:)`).
+    package let restoreKind: TerminalRestoreKind?
 
     package init(
         generation: WorkspaceContentMountGeneration,
         descriptor: TerminalActivationDescriptor,
-        attempt: Int
+        attempt: Int,
+        restoreKind: TerminalRestoreKind? = nil
     ) {
         self.generation = generation
         self.descriptor = descriptor
         self.attempt = attempt
+        self.restoreKind = restoreKind
     }
 }
 

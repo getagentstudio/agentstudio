@@ -56,6 +56,11 @@ package enum AgentStudioIPCClientArguments {
         }
         guard index < arguments.count else { throw invalidArguments() }
         let methodArguments = Array(arguments[index...])
+        if let method = methodArguments.first, PaneSessionReportingPolicy.isPaneReportingMethod(method),
+            PaneSessionReportingPolicy.isBackgroundSession(environment: environment)
+        {
+            throw PaneCLICommandFailure.backgroundSession
+        }
         guard !(consumesTokenInput && methodArguments.dropFirst().first == "--stdin") else {
             throw invalidArguments()
         }

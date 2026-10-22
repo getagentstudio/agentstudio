@@ -1,5 +1,6 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
+import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import SwiftUI
 
@@ -14,38 +15,25 @@ struct ManagementPaneIdentityCardBoundsPreferenceKey: PreferenceKey {
 struct ManagementPaneIdentityStrip: View {
     let context: PaneManagementContext
     let octiconLoader: OcticonLoader
+    var lines: [RepoExplorerPaneRowLine] = []
+    var isDrawerPane = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            ForEach(context.identityRows) { row in
-                HStack(spacing: AppStyles.General.Spacing.tight) {
-                    rowIcon(for: row.icon)
-                        .foregroundStyle(.secondary.opacity(0.92))
-                        .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
-
-                    Text(caption(for: row))
-                        .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
-                        .foregroundStyle(.secondary.opacity(0.72))
-                        .textCase(.uppercase)
-                        .fixedSize()
-
-                    Text(row.text)
-                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium))
-                        .foregroundStyle(.primary.opacity(0.92))
-                        .lineLimit(1)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .help(row.toolTip ?? row.text)
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(accessibilityLabel(for: row))
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .top, spacing: AppStyles.General.Spacing.loose) {
+                informationColumn
+                    .frame(
+                        minWidth: AppStyles.Shell.Sidebar.paneInfoColumnMinimumWidth, maxWidth: .infinity,
+                        alignment: .leading)
+                identityGrid
+                    .fixedSize(horizontal: true, vertical: true)
+                    .frame(
+                        minWidth: AppStyles.Shell.Sidebar.paneInfoTwoColumnWidth,
+                        alignment: .leading)
             }
-
-            if let statusChips = context.statusChips {
-                WorkspaceStatusChipRow(
-                    octiconLoader: octiconLoader,
-                    model: statusChips,
-                    accentColor: AppStyles.General.Accent.primaryColor
-                )
+            VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
+                informationColumn
+                identityColumn
             }
         }
         .padding(.horizontal, 18)
@@ -66,12 +54,118 @@ struct ManagementPaneIdentityStrip: View {
         .background {
             AccessibilityLabelBridge(
                 identifier: "paneManagement.identityStrip",
-                label: context.identityRows.map(\.text).joined(separator: ", ")
+                label: informationAccessibilityLabels.joined(separator: ", ")
             )
         }
         .padding(.horizontal, AppStyles.General.Spacing.loose)
         .padding(.vertical, AppStyles.General.Spacing.loose)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var informationAccessibilityLabels: [String] {
+        let lineLabels = lines.map { line in
+            switch line {
+            case .title(let text), .note(let text), .worktreeBranch(let text): text
+            case .agentLine(let value), .sessionStatus(let value), .connectionIssue(let value): value.text
+            }
+        }
+        return lineLabels + context.identityRows.map(accessibilityLabel(for:))
+    }
+
+    private var informationColumn: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(lines, id: \.kind) { line in
+                switch line {
+                case .title(let text):
+                    RepoExplorerPaneTitleLineView(
+                        text: text, isDrawerPane: isDrawerPane, octiconLoader: octiconLoader)
+                case .note(let text):
+                    SidebarMetadataLine(icon: .systemName("long.text.page.and.pencil"), text: text)
+                case .agentLine(let line):
+                    RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
+                case .sessionStatus(let line), .connectionIssue(let line):
+                    RepoExplorerPaneContextLineView(line: line, isAgentLine: false, octiconLoader: octiconLoader)
+                case .worktreeBranch:
+                    EmptyView()
+                }
+            }
+            if let statusChips = context.statusChips,
+                SidebarGitStatusChips.hasContent(branchStatus: statusChips.branchStatus, usesPanesLoadingChip: true)
+            {
+                SidebarStatusChipRow(isPendingPullRequestFacts: false) {
+                    SidebarGitStatusChips(
+                        branchStatus: statusChips.branchStatus, octiconLoader: octiconLoader, usesPanesLoadingChip: true
+                    )
+                }
+            }
+        }
+    }
+
+    private var identityColumn: some View {
+        ViewThatFits(in: .horizontal) {
+            identityGrid.fixedSize(horizontal: true, vertical: true)
+            VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
+                ForEach(context.identityRows) { row in identityRow(row) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var identityGrid: some View {
+        Grid(
+            alignment: .leading, horizontalSpacing: AppStyles.General.Spacing.loose,
+            verticalSpacing: AppStyles.General.Spacing.standard
+        ) {
+            identityPair("repo", "branch")
+            identityPair("worktree", "cwd")
+            identityPair("session", "pane")
+            if let fallback = context.identityRows.first(where: { $0.id == "fallback" }) {
+                GridRow { identityRow(fallback).gridCellColumns(2) }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func identityPair(_ leadingId: String, _ trailingId: String) -> some View {
+        let leading = context.identityRows.first { $0.id == leadingId }
+        let trailing = context.identityRows.first { $0.id == trailingId }
+        if leading != nil || trailing != nil {
+            GridRow {
+                if let leading {
+                    identityRow(leading, minimumWidth: AppStyles.Shell.Sidebar.paneInfoColumnMinimumWidth)
+                } else {
+                    Color.clear.frame(width: 0, height: 0)
+                }
+                if let trailing {
+                    identityRow(trailing, minimumWidth: AppStyles.Shell.Sidebar.paneInfoColumnMinimumWidth)
+                } else {
+                    Color.clear.frame(width: 0, height: 0)
+                }
+            }
+        }
+    }
+
+    private func identityRow(_ row: PaneManagementIdentityRow, minimumWidth: CGFloat? = nil) -> some View {
+        HStack(spacing: AppStyles.General.Spacing.tight) {
+            rowIcon(for: row.icon)
+                .foregroundStyle(.secondary.opacity(0.92))
+                .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
+            Text(caption(for: row))
+                .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
+                .foregroundStyle(.secondary.opacity(0.72))
+                .textCase(.uppercase)
+                .fixedSize()
+            Text(row.text)
+                .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium))
+                .foregroundStyle(.primary.opacity(0.92))
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(minWidth: minimumWidth)
+        .controlHelp(ControlTooltipResolver.resolve(.dynamicData(.stateReadout, text: row.toolTip ?? row.text)))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel(for: row))
     }
 
     @ViewBuilder
@@ -99,8 +193,10 @@ struct ManagementPaneIdentityStrip: View {
             return "Worktree \(row.text)"
         case "cwd":
             return "Current directory \(row.text)"
-        case "note":
-            return "Note \(row.text)"
+        case "session":
+            return "Session \(row.text)"
+        case "pane":
+            return "Pane \(row.text)"
         default:
             return row.text
         }
@@ -116,8 +212,10 @@ struct ManagementPaneIdentityStrip: View {
             return "worktree"
         case "cwd":
             return "cwd"
-        case "note":
-            return "note"
+        case "session":
+            return "session"
+        case "pane":
+            return "pane"
         default:
             return ""
         }
@@ -125,15 +223,35 @@ struct ManagementPaneIdentityStrip: View {
 }
 
 struct ManagementPaneIdentityOverlay: View {
+    @Environment(\.paneContextUIReaders) private var readers
     let context: PaneManagementContext
     let octiconLoader: OcticonLoader
+    let store: WorkspaceStore
+    @State private var sessionIdentity = PaneManagementSessionIdentity()
+    @State private var lines: [RepoExplorerPaneRowLine] = []
 
     var body: some View {
+        let input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
+        let sessionReadTrigger = PaneManagementIdentityCapture.SessionReadTrigger(
+            paneId: context.paneId, presentation: input.sessionPresentation)
         ManagementPaneIdentityStrip(
-            context: context,
-            octiconLoader: octiconLoader
+            context: context.includingVerifiedLiveSession(sessionIdentity.summary),
+            octiconLoader: octiconLoader,
+            lines: lines, isDrawerPane: input.isDrawer
         )
         .frame(maxWidth: .infinity)
         .background(AppStyles.Shell.PaneChrome.background)
+        .task(id: input) {
+            let prepared = await PaneManagementIdentityCapture.lines(input)
+            guard !Task.isCancelled else { return }
+            lines = prepared
+        }
+        // This task reads on every appearance and observable status change, never from a cache.
+        // Equal/coalesced rebinding while continuously open refreshes on the next appearance;
+        // semantic status deliberately remains separate from binding identity.
+        .task(id: sessionReadTrigger) {
+            await sessionIdentity.refresh(paneId: sessionReadTrigger.paneId, readers: readers)
+        }
+        .onDisappear { sessionIdentity.close() }
     }
 }

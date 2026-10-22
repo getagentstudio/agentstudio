@@ -109,6 +109,7 @@ struct LiveServerFixture: Sendable {
     init(
         accessMode: IPCAccessMode = .agentStudioOnly,
         channel: AgentStudioIPCChannel = .debug,
+        separateSocketDirectory: Bool = false,
         panes: [IPCPaneSummary] = [],
         queryPort: (any AppIPCQueryPort)? = nil,
         runtimePort: any AppIPCRuntimePort = FakeRuntimePort(),
@@ -146,7 +147,9 @@ struct LiveServerFixture: Sendable {
         // directory rather than leak it, since a throw here never returns a
         // fixture for the async scope to tear down.
         do {
-            paths = AgentStudioIPCPathResolver().paths(rootDirectory: rootURL)
+            paths = AgentStudioIPCPathResolver().paths(
+                rootDirectory: rootURL,
+                socketDirectory: separateSocketDirectory ? rootURL.appending(path: "ipc-socket") : nil)
             let ports = AgentStudioAppIPCPorts(
                 queryPort: queryPort ?? FakeQueryPort(runtimeId: runtimeId, panes: panes),
                 layoutPort: FakeLayoutPort(),

@@ -32,7 +32,8 @@ struct PaneCLICommandRunner: Sendable {
     }
 
     private func reportCredentialRefusal(tokenOutcome: IPCSessionTokenOutcome) {
-        guard deadline.remainingBudget > .zero,
+        guard !PaneSessionReportingPolicy.isBackgroundSession(environment: props.environment),
+            deadline.remainingBudget > .zero,
             let claim = ProviderHookStatusReporting.paneClaim(environment: props.environment)
         else { return }
         // Report only the refusal through the existing status client. The
@@ -214,8 +215,21 @@ struct PaneCLICommandRunner: Sendable {
                         stream: stream, key: primaryKey, reservation: reservations[0], correlationID: correlationID),
                     store: store, descriptors: descriptors, client: client)
                 return
+            } catch let failure as IPCDescriptorRemoteFailure
+                where writer != nil && failure.documentedReason == IPCSessionFailureReason.bindingRequired
+            {
+                guard let reservation = reservations.last else {
+                    throw PaneCLICommandFailure.orderingStoreUnavailable
+                }
+                try orderedWrite(
+                    PaneOrderedWriteRequest(
+                        intent: intent,
+                        attribution: PaneWriteAttribution(writer: nil, paneClaim: nil, tokenOutcome: nil),
+                        stream: stream, key: paneKey, reservation: reservation, correlationID: correlationID),
+                    store: store, descriptors: descriptors, client: client)
+                return
             } catch let failure as IPCDescriptorClientFailure where failure.disposition == .authenticationRejected {
-                // Only login rejection permits fallback. Both writer slots were
+                // Login rejection permits the unauthenticated fallback. Both writer slots were
                 // reserved before login, so this older intent cannot be renumbered.
             }
         }
@@ -336,6 +350,9 @@ struct PaneCLICommandRunner: Sendable {
         if let id = props.environment["CODEX_THREAD_ID"], !id.isEmpty {
             return .init(provider: "codex", conversationId: id)
         }
+        if let id = props.environment["CURSOR_CONVERSATION_ID"], !id.isEmpty {
+            return .init(provider: "cursor", conversationId: id)
+        }
         return nil
     }
 
@@ -353,42 +370,19 @@ struct PaneCLICommandRunner: Sendable {
     }
 
     private func openStore(allowOrderingDiscovery: Bool = false) -> CLIStore? {
-        let path: String
-        let channel: CLIStoreChannel
-        if let explicitPath = props.environment["AGENTSTUDIO_CLI_STORE"], !explicitPath.isEmpty {
-            guard
-                let explicitChannel = props.environment["AGENTSTUDIO_CLI_STORE_CHANNEL"]
-                    .flatMap(CLIStoreChannel.init(rawValue:))
-            else { return nil }
-            path = explicitPath
-            channel = explicitChannel
-        } else {
-            guard allowOrderingDiscovery, let discovered = discoveredOrderingStore() else { return nil }
-            path = discovered.path
-            channel = discovered.channel
-        }
+        let hasExplicitStore = props.environment["AGENTSTUDIO_CLI_STORE"].map { !$0.isEmpty } ?? false
+        guard allowOrderingDiscovery || hasExplicitStore,
+            let location = CLIOrderingStoreLocation.resolve(
+                environment: props.environment, socketPath: global.configuration.socketPath)
+        else { return nil }
         switch CLIStore.openWriter(
-            url: URL(fileURLWithPath: path), channel: channel, migrationLockWaitBudget: { deadline.remainingBudget })
+            url: location.url, channel: location.channel, migrationLockWaitBudget: { deadline.remainingBudget })
         {
         case .success(let writer): return writer
         case .failure(let failure):
             CLIDiagnostics.record(.init(cleanupFailure: failure))
             return nil
         }
-    }
-
-    private func discoveredOrderingStore() -> (path: String, channel: CLIStoreChannel)? {
-        guard let socket = props.environment["AGENTSTUDIO_IPC_SOCKET"], !socket.isEmpty,
-            socket == global.configuration.socketPath
-        else { return nil }
-        let directory = URL(fileURLWithPath: socket).deletingLastPathComponent()
-        guard let data = try? Data(contentsOf: directory.appending(path: "runtime.json")),
-            let metadata = try? JSONDecoder().decode(CLIOrderingRuntimeMetadata.self, from: data),
-            metadata.socketPath == socket, let channel = CLIStoreChannel(rawValue: metadata.channel)
-        else { return nil }
-        let storeURL = directory.appending(path: "cli.sqlite")
-        guard FileManager.default.fileExists(atPath: storeURL.path) else { return nil }
-        return (storeURL.path, channel)
     }
 
     private func invocation(_ name: String, parameters: some Encodable, descriptors: [IPCAnyMethodDescriptor]) throws
@@ -417,11 +411,13 @@ struct PaneCLICommandRunner: Sendable {
 }
 
 enum PaneCLICommandFailure: Error {
+    case backgroundSession
     case orderingStoreUnavailable
     case stale(IPCPaneWriteStaleness)
 
     var description: String {
         switch self {
+        case .backgroundSession: "background session: not attached to a pane"
         case .orderingStoreUnavailable: "unavailable(orderingStoreUnavailable)"
         case .stale(let reason):
             switch reason {
@@ -431,11 +427,6 @@ enum PaneCLICommandFailure: Error {
             }
         }
     }
-}
-
-private struct CLIOrderingRuntimeMetadata: Decodable {
-    let socketPath: String
-    let channel: String
 }
 
 /// Who an ordered title or Agent Line write is attributed to: a session writer with a

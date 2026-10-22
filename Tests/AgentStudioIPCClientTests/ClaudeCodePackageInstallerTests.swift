@@ -213,7 +213,7 @@ struct ClaudeCodePackageInstallerTests {
         return nil
     }
 
-    @Test("Unrelated settings and unrelated hooks survive install and uninstall")
+    @Test("Unrelated settings and unrelated hooks survive install")
     func unrelatedSettingsSurvive() throws {
         // Arrange
         let fixture = try ClaudeCodePackageFixture.make()
@@ -231,21 +231,27 @@ struct ClaudeCodePackageInstallerTests {
         let original = JSONValue.object([
             "model": .string("opusplan"),
             "env": .object(["MY_FLAG": .string("1")]),
-            "hooks": .object(["PreToolUse": .array([userHook]), "PostToolUse": .array([userHook])]),
+            "hooks": .object([
+                "PreToolUse": .array([userHook]), "PostToolUse": .array([userHook]),
+                "ForeignEvent": .array([]),
+            ]),
         ])
         try fixture.writeSettings(original)
 
         // Act
         try fixture.installation.install(notice: { _ in })
         let afterInstall = try fixture.settingsFields()
-        try fixture.installation.uninstall(notice: { _ in })
 
         // Assert
         #expect(afterInstall["model"] == .string("opusplan"))
         #expect(afterInstall["env"] == .object(["MY_FLAG": .string("1")]))
         #expect(try fixture.hookGroups(for: "PreToolUse").contains(userHook))
-        #expect(try fixture.hookGroups(for: "PostToolUse") == [userHook])
-        #expect(try fixture.readSettings() == original)
+        #expect(try fixture.hookGroups(for: "PostToolUse").contains(userHook))
+        guard case .object(let hooks) = afterInstall["hooks"] else {
+            Issue.record("Expected installed hooks object")
+            return
+        }
+        #expect(hooks["ForeignEvent"] == .array([]))
     }
 
     @Test("Reinstalling the same package changes nothing and reports nothing")
@@ -301,25 +307,6 @@ struct ClaudeCodePackageInstallerTests {
         #expect(try Data(contentsOf: fixture.settingsURL) == expected)
     }
 
-    @Test("Uninstall removes exactly the package's entries and its marked skill")
-    func uninstallRemovesOnlyOwnedEntries() throws {
-        // Arrange
-        let fixture = try ClaudeCodePackageFixture.make()
-        defer { fixture.tearDown() }
-        try fixture.installation.install(notice: { _ in })
-
-        // Act
-        try fixture.installation.uninstall(notice: { _ in })
-
-        // Assert
-        #expect(try fixture.settingsFields()["hooks"] == nil)
-        #expect(
-            !FileManager.default.fileExists(
-                atPath: fixture.configurationDirectory.appending(path: "skills/agentstudio").path
-            )
-        )
-    }
-
     @Test("A missing configuration directory fails without writing anything")
     func missingConfigurationDirectoryWritesNothing() throws {
         // Arrange
@@ -339,8 +326,7 @@ struct ClaudeCodePackageInstallerTests {
         #expect(!FileManager.default.fileExists(atPath: absent.path))
     }
 
-    /// Uninstall already steps around a non-object `hooks`. Install replacing it
-    /// would destroy a value the package never wrote.
+    /// Install must not replace a value the package never wrote.
     @Test("A non-object hooks value aborts the install and writes nothing")
     func nonObjectHooksValueAbortsInstall() throws {
         // Arrange
@@ -404,8 +390,8 @@ struct ClaudeCodePackageCommandTests {
         #expect(outcomes.allSatisfy { $0 == nil })
     }
 
-    @Test("Install and uninstall run against an explicit configuration directory")
-    func installAndUninstallThroughTheCommand() throws {
+    @Test("Install runs against an explicit configuration directory")
+    func installThroughTheCommand() throws {
         // Arrange
         let fixture = try ClaudeCodePackageFixture.make()
         defer { fixture.tearDown() }
@@ -429,14 +415,11 @@ struct ClaudeCodePackageCommandTests {
         // Act
         let installExit = run("install")
         let installedGroups = try fixture.hookGroups(for: "SessionStart")
-        let uninstallExit = run("uninstall")
 
         // Assert
         #expect(installExit == 0)
-        #expect(uninstallExit == 0)
         #expect(errors.isEmpty)
         #expect(installedGroups.count == 1)
-        #expect(try fixture.settingsFields()["hooks"] == nil)
     }
 
     @Test("An unreadable configuration directory reports one line and exits one")

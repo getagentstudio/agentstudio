@@ -23,9 +23,16 @@ struct UnverifiedPaneStatusRuntime: Sendable {
         var pane: PaneState
         if let previous = panes[hook.paneId] {
             pane = previous
-            if let main = pane.main, main != candidate { return false }
+            let cursorPrompt = candidate.provider == "cursor" && signal.name == .turnStart
+            if let main = pane.main, main != candidate {
+                guard cursorPrompt, main.provider == "cursor" else { return false }
+                pane.released.insert(main)
+                pane.main = nil
+            }
             if pane.main == nil {
-                guard !pane.released.contains(candidate) || signal.name == .sessionStart else { return false }
+                guard !pane.released.contains(candidate) || signal.name == .sessionStart || cursorPrompt else {
+                    return false
+                }
                 pane.main = candidate
                 pane.establishedAt = hook.admissionInstant
                 pane.status = SessionStatusState(binding: .bound(UUIDv7.generate()))
@@ -50,8 +57,9 @@ struct UnverifiedPaneStatusRuntime: Sendable {
         return true
     }
 
-    mutating func commandFinished(paneId: UUID, reportedAt: ContinuousClock.Instant, at: Date) {
-        guard var pane = panes[paneId], let main = pane.main, pane.establishedAt < reportedAt else { return }
+    @discardableResult
+    mutating func commandFinished(paneId: UUID, reportedAt: ContinuousClock.Instant, at: Date) -> Bool {
+        guard var pane = panes[paneId], let main = pane.main, pane.establishedAt < reportedAt else { return false }
         pane.sequence += 1
         SessionStatusReducer.apply(
             .init(
@@ -60,6 +68,7 @@ struct UnverifiedPaneStatusRuntime: Sendable {
         pane.released.insert(main)
         pane.main = nil
         panes[paneId] = pane
+        return true
     }
 
     mutating func viewed(paneId: UUID, at: ContinuousClock.Instant) {

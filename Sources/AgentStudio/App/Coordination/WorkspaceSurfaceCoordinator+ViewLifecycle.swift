@@ -130,13 +130,33 @@ extension WorkspaceSurfaceCoordinator {
         return viewRegistry.terminalSurfaceCreationAuthority(for: paneID, generation: generation)
     }
 
+    /// R3-1 (Lead decision 2026-10-02): the one install point `createView`
+    /// and `createTopologyIndependentTerminalView` both call at their own
+    /// successful-mount moment -- the shared boundary ordinary
+    /// visible/active-tab recovery reaches too, not just repair's own
+    /// explicit success branches. `armedRestoreGeneration` (cold-start's
+    /// own just-armed value) wins when both are present; `pane.id`'s
+    /// pending entry is cleared only once actually installed.
+    private func installRestorePhaseLatchIfPending(
+        onto surface: Ghostty.SurfaceView,
+        for paneID: UUID,
+        armedRestoreGeneration: RestoreGeneration? = nil
+    ) {
+        let generationToInstall = armedRestoreGeneration ?? pendingRestorePhaseLatchesByPaneID[paneID]
+        surface.restorePhaseLatch = generationToInstall
+        if generationToInstall != nil {
+            pendingRestorePhaseLatchesByPaneID.removeValue(forKey: paneID)
+        }
+    }
+
     @discardableResult
     func createView(
         for pane: Pane,
         worktree: Worktree,
         repo: Repo,
         initialFrame: NSRect? = nil,
-        treatAsRestoredSessionStart: Bool = false
+        treatAsRestoredSessionStart: Bool = false,
+        restoreKind: TerminalRestoreKind? = nil
     ) -> TerminalPaneMountView? {
         guard isCurrentTerminalPane(pane) else { return nil }
         if let existing = viewRegistry.terminalView(for: pane.id), existing.surfaceId != nil { return existing }
@@ -158,7 +178,8 @@ extension WorkspaceSurfaceCoordinator {
                 for: pane,
                 shellCommand: shellCommand,
                 treatAsRestoredSessionStart: treatAsRestoredSessionStart,
-                context: .worktree
+                context: .worktree,
+                restoreKind: restoreKind
             )
         else { return nil }
 
@@ -199,6 +220,8 @@ extension WorkspaceSurfaceCoordinator {
             surfaceManager.attach(managed.id, to: pane.id)
             traceSurfaceAttached(pane: pane, surfaceID: managed.id)
 
+            installRestorePhaseLatchIfPending(onto: managed.surface, for: pane.id)
+
             let view = TerminalPaneMountView(
                 surfaceOperations: terminalSurfaceOperations,
                 worktree: worktree,
@@ -208,13 +231,7 @@ extension WorkspaceSurfaceCoordinator {
                 showsRestorePresentationDuringStartup: startupPreparation.showsRestorePresentationDuringStartup,
                 performanceTraceRecorder: performanceTraceRecorder
             )
-            view.onRepairRequested = { [weak self] paneId in
-                self?.submitWorkspaceAction(.repair(.recreateSurface(paneId: paneId)))
-            }
-            view.displaySurface(managed.surface)
-            if let runtime = preparedRuntime?.runtime {
-                view.bind(runtime: runtime)
-            }
+            connectMountedTerminalView(view, displaying: managed.surface, preparedRuntime: preparedRuntime)
 
             registerHostedView(mountedView: view, for: pane.id)
             traceSurfaceDisplayed(pane: pane, surfaceID: managed.id)
@@ -253,7 +270,9 @@ extension WorkspaceSurfaceCoordinator {
         for pane: Pane,
         initialFrame: NSRect? = nil,
         treatAsRestoredSessionStart: Bool = false,
-        authority: TerminalSurfaceCreationAuthority
+        authority: TerminalSurfaceCreationAuthority,
+        restoreKind: TerminalRestoreKind? = nil,
+        armedRestoreGeneration: RestoreGeneration? = nil
     ) -> TopologyIndependentTerminalMountResult {
         guard isCurrentTerminalPane(pane) else { return .failed(.startupPreparationFailed) }
         if let existing = viewRegistry.terminalView(for: pane.id), let surfaceID = existing.surfaceId {
@@ -277,7 +296,8 @@ extension WorkspaceSurfaceCoordinator {
                 for: pane,
                 shellCommand: shellCommand,
                 treatAsRestoredSessionStart: treatAsRestoredSessionStart,
-                context: .floating(launchDirectory: launchDirectory)
+                context: .floating(launchDirectory: launchDirectory),
+                restoreKind: restoreKind
             )
         else { return .failed(.startupPreparationFailed) }
 
@@ -323,9 +343,16 @@ extension WorkspaceSurfaceCoordinator {
                     to: pane,
                     preparedRuntime: preparedRuntime
                 )
-            else {
-                return .failed(.surfaceAttachmentFailed)
-            }
+            else { return .failed(.surfaceAttachmentFailed) }
+            // SR6b: nil except a just-armed cold surface, or (R3-1, Lead
+            // decision 2026-10-02) a generation an earlier repair attempt
+            // recorded in `pendingRestorePhaseLatchesByPaneID`
+            // (`executeRepair`, +ViewHelpers.swift) because this pane had
+            // no mountable surface yet -- this shared boundary is what
+            // ordinary visible/active-tab recovery reaches too, not just
+            // repair's own explicit success branches.
+            installRestorePhaseLatchIfPending(
+                onto: attachedSurface, for: pane.id, armedRestoreGeneration: armedRestoreGeneration)
 
             let view = TerminalPaneMountView(
                 surfaceOperations: terminalSurfaceOperations,
@@ -335,13 +362,7 @@ extension WorkspaceSurfaceCoordinator {
                 showsRestorePresentationDuringStartup: startupPreparation.showsRestorePresentationDuringStartup,
                 performanceTraceRecorder: performanceTraceRecorder
             )
-            view.onRepairRequested = { [weak self] paneId in
-                self?.submitWorkspaceAction(.repair(.recreateSurface(paneId: paneId)))
-            }
-            view.displaySurface(attachedSurface)
-            if let runtime = preparedRuntime?.runtime {
-                view.bind(runtime: runtime)
-            }
+            connectMountedTerminalView(view, displaying: attachedSurface, preparedRuntime: preparedRuntime)
 
             registerHostedView(mountedView: view, for: pane.id)
             traceSurfaceDisplayed(pane: pane, surfaceID: managed.id)
@@ -400,7 +421,8 @@ extension WorkspaceSurfaceCoordinator {
         for pane: Pane,
         shellCommand: String,
         treatAsRestoredSessionStart: Bool,
-        context: TerminalSurfaceStartupContext
+        context: TerminalSurfaceStartupContext,
+        restoreKind: TerminalRestoreKind? = nil
     ) -> TerminalSurfaceStartupPreparation? {
         let paneIPCEnvironment = ipcLifecycle.environment(pane.id, store.identityAtom.workspaceId)
         switch pane.provider {
@@ -411,7 +433,7 @@ extension WorkspaceSurfaceCoordinator {
                     "\(context.diagnosticsTracePrefix) zmxDiagnostics pane=\(diagnostics.paneId) session=\(diagnostics.sessionId) socketPathLen=\(diagnostics.socketPathLength) socketPathHeadroom=\(diagnostics.socketPathHeadroom) maxSocketPathLen=\(diagnostics.maxSocketPathLength)"
                 )
             }
-            if let attachCommand = terminalRestoreRuntime.zmxAttachCommand(for: pane) {
+            if let attachCommand = terminalRestoreRuntime.startupCommand(for: pane, kind: restoreKind) {
                 traceZmxAttachPrepared(pane: pane, diagnostics: diagnostics)
                 // Prevent nested Agent Studio launches from inheriting an outer zmx session.
                 var environmentVariables = paneIPCEnvironment
@@ -507,6 +529,10 @@ extension WorkspaceSurfaceCoordinator {
             unregisterHostedView(for: paneId)
         }
         refreshBridgePaneActivities()
+
+        // R3-2 (Lead decision 2026-10-02): ordinary teardown and child exit
+        // close the same pending mount check with one unavailable outcome.
+        closePendingPostAttachRecreationCheck(paneID: paneId)
 
         if shouldUnregisterRuntime {
             let runtimePaneId = PaneId(existingUUID: paneId)

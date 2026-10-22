@@ -85,6 +85,19 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(output.standardOutput.isEmpty)
     }
 
+    @Test("removed package commands reject locally", arguments: ["claude", "codex", "cursor"])
+    func removedPackageCommandsRejectLocally(provider: String) async throws {
+        let output = try await runCLI(
+            executableURL: cliExecutableURL(), arguments: ["package", "uninstall", provider],
+            environment: offlineEnvironment())
+
+        #expect(output.exitCode == 1)
+        #expect(output.standardOutput.isEmpty)
+        #expect(
+            String(bytes: output.standardError, encoding: .utf8)
+                == "agentstudio package: unknown subcommand uninstall\n")
+    }
+
     @Test("a real server refusal exits nonzero in the CLI process")
     func remoteErrorsExitNonzero() async throws {
         let observed = try await runRecordedCLIInvocation(

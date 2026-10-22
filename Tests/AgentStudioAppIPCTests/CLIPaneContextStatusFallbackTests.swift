@@ -15,7 +15,7 @@ import Testing
 struct CLIPaneContextStatusFallbackTests {
     @Test(
         "refused-token title and line allocate a pane epoch then reuse it", arguments: ["title", "line"],
-        ["claude", "codex"])
+        ["claude", "codex", "cursor"])
     func firstAndCachedEpochUsePaneWriter(verb: String, provider: String) async throws {
         try await withRefusedTokenPaneCLIContext(provider: provider) { context in
             let first = await runFallbackCLI(context, arguments: [verb, "first"])
@@ -74,6 +74,11 @@ struct CLIPaneContextStatusFallbackTests {
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
                     == .set(.init(status: .unknown, connectionIssue: .credentialNotRecognized)))
+            let reason = try #require(refusal?.reason)
+            let warning = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
+            #expect(warning.label == "Messages unavailable · restart this shell to reconnect")
+            #expect(warning.helpText == warning.label)
+            #expect(!warning.helpText.contains(reason.rawValue))
         }
     }
 
@@ -191,11 +196,11 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "missing, mismatched or unreadable runtime metadata refuses without an ordering mutation",
-        arguments: ["missing", "mismatched", "unreadable", "channelMismatch", "missingStore"])
+        arguments: ["missing", "mismatched", "unreadable", "channelMismatch", "missingStore", "mismatchedMissingStore"])
     func missingStoreIsLocalRefusal(metadataCase: String) async throws {
         try await withRefusedTokenPaneCLIContext { context in
             let directory = context.fixture.paths.socketURL.deletingLastPathComponent()
-            let hasStore = metadataCase != "missingStore"
+            let hasStore = metadataCase != "missingStore" && metadataCase != "mismatchedMissingStore"
             if hasStore {
                 var seedEnvironment = context.environment
                 seedEnvironment["AGENTSTUDIO_CLI_STORE"] = directory.appending(path: "cli.sqlite").path
@@ -210,7 +215,7 @@ struct CLIPaneContextStatusFallbackTests {
                 let metadataURL = directory.appending(path: "runtime.json")
                 switch metadataCase {
                 case "missing": try FileManager.default.removeItem(at: metadataURL)
-                case "mismatched":
+                case "mismatched", "mismatchedMissingStore":
                     try Data(#"{"socketPath":"/another/socket","channel":"debug"}"#.utf8).write(to: metadataURL)
                 case "unreadable": try Data("invalid metadata".utf8).write(to: metadataURL)
                 case "channelMismatch":
@@ -222,8 +227,8 @@ struct CLIPaneContextStatusFallbackTests {
             }
             let result = await runFallbackCLI(
                 context, arguments: ["title", "refused"], environment: context.environment)
-            #expect(result.exitCode != 0)
-            #expect(result.standardError.contains("orderingStoreUnavailable"))
+            #expect(result.exitCode == 1)
+            #expect(result.standardError == "unavailable(orderingStoreUnavailable)")
             #expect(context.port.wire.methods == methodsBefore)
             #expect(context.port.claims.count == claimsBefore)
             #expect(context.port.titles.count == titlesBefore)
@@ -248,8 +253,8 @@ struct CLIPaneContextStatusFallbackTests {
                 context, arguments: ["pane.title.set", "--json", json], environment: tokenless)
             #expect(competing.exitCode == 0)
             let refused = await runFallbackCLI(context, arguments: ["title", "lower"])
-            #expect(refused.exitCode != 0)
-            #expect(refused.standardError.contains("lastAccepted"))
+            #expect(refused.exitCode == 1)
+            #expect(refused.standardError == "stale(lastAccepted)")
             #expect(context.port.titles.filter { $0.text == "lower" }.count == 1)
             #expect(try await context.title() == "higher")
             #expect(await runFallbackCLI(context, arguments: ["title", "next"]).exitCode == 0)
@@ -259,7 +264,7 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "an older refused-token call cannot overwrite a newer title through an explicit or discovered store",
-        arguments: [false, true], ["claude", "codex"])
+        arguments: [false, true], ["claude", "codex", "cursor"])
     func heldOlderCallIsRejected(discoverStore: Bool, provider: String) async throws {
         try await withRefusedTokenPaneCLIContext(provider: provider) { context in
             var seedEnvironment = context.callEnvironment(store: nil, useStore: true)
@@ -307,9 +312,10 @@ private func withRefusedTokenPaneCLIContext<Output: Sendable>(
     try await withS5PaneCLIContext(bindSession: bindSession) { context in
         var environment = context.environment
         environment["AGENTSTUDIO_PANE_TOKEN"] = "unrecognized-pane-cli-fixture-token"
-        if provider == "codex" {
+        if provider == "codex" || provider == "cursor" {
             environment.removeValue(forKey: "CLAUDE_CODE_SESSION_ID")
-            environment["CODEX_THREAD_ID"] = context.writer.conversationId
+            environment[provider == "codex" ? "CODEX_THREAD_ID" : "CURSOR_CONVERSATION_ID"] =
+                context.writer.conversationId
         }
         return try await body(
             S5PaneCLIContext(

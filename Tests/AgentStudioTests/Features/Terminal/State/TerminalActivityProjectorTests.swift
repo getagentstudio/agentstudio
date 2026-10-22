@@ -212,12 +212,12 @@ struct TerminalActivityProjectorTests {
             if case .compactStateChanged = outcome { return true }
             return false
         }
-        let firstOutputCount = recorder.outcomes.count { outcome in
-            if case .firstOutput = outcome { return true }
+        let firstRenderCount = recorder.outcomes.count { outcome in
+            if case .firstRender = outcome { return true }
             return false
         }
         #expect(compactCount == 1)
-        #expect(firstOutputCount == 1)
+        #expect(firstRenderCount == 1)
     }
 
     @Test("aggregate preserves transient entry and exit from pinned bottom")
@@ -656,11 +656,11 @@ struct TerminalActivityProjectorTests {
             recorder.batches[0].map { outcome in
                 switch outcome {
                 case .compactStateChanged: return "compact"
-                case .firstOutput: return "firstOutput"
+                case .firstRender: return "firstRender"
                 case .paneObservationChanged: return "observation"
                 default: return "unexpected"
                 }
-            } == ["compact", "firstOutput", "observation"]
+            } == ["compact", "firstRender", "observation"]
         )
         #expect(recorder.batches[1].count == 1)
         #expect(

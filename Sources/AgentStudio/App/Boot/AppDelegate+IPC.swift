@@ -197,6 +197,11 @@ extension AppDelegate {
             }
             try composition.server.start()
             appIPCServer = composition.server
+            if !(await Self.prepareAppCLIOrderingStore(
+                at: composition.server.paths.cliStoreURL, channel: cliStoreChannel))
+            {
+                appLogger.warning("App CLI ordering store unavailable; title and Agent Line writes may be refused")
+            }
             appLogger.info("App IPC server started at \(composition.socketURL.path, privacy: .private)")
             publishDebugCredentialEscrow(socketURL: composition.socketURL)
             startPaneCLIOutboxDrain(sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
@@ -211,6 +216,19 @@ extension AppDelegate {
                 return reason
             }
             return .initializationCancelled
+        }
+    }
+
+    /// Old pane shells discover this channel's shared store through the published IPC runtime.
+    @concurrent nonisolated private static func prepareAppCLIOrderingStore(
+        at url: URL, channel: CLIStoreChannel
+    ) async -> Bool {
+        do {
+            let writer = try CLIStore.openWriter(url: url, channel: channel).get()
+            try writer.close()
+            return true
+        } catch {
+            return false
         }
     }
 

@@ -1,6 +1,8 @@
 # Session restore after a reboot: how it is built
 
-Date: 2026-09-30, revision 21 (owner, option A: warm and unverified reconnects carry the restore script as a fallback plan; the post-attach check is telemetry only). Revision 20 (owner: the CLI store has one writer). `cli_lifecycle_report` rows are immutable, the hook writes once, the app's settlement pass is gone, and cleanup deletes only rows at or below the mark the app returns at login. Unread rows are never deleted. Revision 19 (the N3 residual). The output trigger now comes from the projector's activity window, which opens and closes once per burst and repeats after every quiet. The compact output state has no repeating start edge. Every discarded window sends its close.
+Date: 2026-10-02, revision 23 (R1 as built): item 5's check runs at the pane's first render, and its outcome names exactly what it can see (`matchedAtFirstRender`, `recreated`, `uncheckable(reason)`). Revision 22 lives on the R3 branch and is merged when R3 takes R1.
+
+Revision 21 (2026-09-30; owner, option A: warm and unverified reconnects carry the restore script as a fallback plan; the post-attach check is telemetry only). Revision 20 (owner: the CLI store has one writer). `cli_lifecycle_report` rows are immutable, the hook writes once, the app's settlement pass is gone, and cleanup deletes only rows at or below the mark the app returns at login. Unread rows are never deleted. Revision 19 (the N3 residual). The output trigger now comes from the projector's activity window, which opens and closes once per burst and repeats after every quiet. The compact output state has no repeating start edge. Every discarded window sends its close.
 
 Revision 18 (R3 review round 3, N1–N3):
 - an exit is a trigger for a fresh look, never a record by itself, so a zmx-killed agent keeps its positive look;
@@ -61,8 +63,8 @@ R1 and R2 don't depend on R3.
 | zmx session identity | `ZmxSessionControl.observe(path:bootID:)` returns `ZmxSessionIdentity`: the boot id, the daemon's and the terminal leader's process incarnations, the process group, and `sessionCreatedAt`. It verifies the peer and parent relationships. `retire` already relies on "a local process can't survive a kernel boot". The ownership journal records an identity only for sessions whose cleanup is pending. `created=` in `zmx list` is whole-second wall clock (`loop.zig:616`). | `ZmxSessionControl.swift:26-43,45-60`; `ZmxBackend.swift:323-333`; `WorkspaceCoreRepository+SessionOwnership.swift:88-104` |
 | Launch ordering | Launch holds terminal activation, starts `mount()` as an `async let`, waits for the first interactive frame, releases activation, schedules IPC initialization (ingestion, sweep, spool drain, server), and only then awaits mount settlement. IPC initialization and terminal activation run independently of each other. | `AppDelegate+LaunchRestore.swift:63-72`; `AppDelegate+IPC.swift:180-191` |
 | Activation settlement | The activation fleet releases a pane once its native surface is mounted, not once zmx, the shell or an agent is ready. | `TerminalActivationScheduler.swift:347-368`; `PreparedTerminalMountAdmissionPort.swift:264-270`; `WorkspaceSurfaceCoordinator+TerminalContentMounting.swift:116-122` |
-| Activity input sink | `submitTerminalActivityInput` awaits an optional sink and returns `Void`. With no router bound, it silently does nothing. The router binds in a boot `Task` after `projector.configure`. | `GhosttyActionRouter+TerminalActivityInput.swift:33-40`; `AppDelegate+TerminalActivityBoot.swift:42-44`; `TerminalActivityRouter.swift:139-160` |
-| Synchronous ordered boundary | `TerminalLocalActionAccumulator` orders its per-surface state under an `NSLock`, taken synchronously from callbacks; title barriers already detach this way. | `TerminalLocalActionAccumulator.swift:343-365,455-460` |
+| Activity input sink | (Updated 2026-10-16 after main's #517 injection.) Source input reaches the injected `TerminalActivityRouter` through the routing host's `submitActivityInput` dependency. Before the router is ready, `awaitSourceInputReady` holds waiters; readiness or stop releases them. | `GhosttyActionRoutingHost.swift:14-36`; `TerminalActivityRouter.swift:225-240,271` |
+| Synchronous ordered boundary | `TerminalLocalActionAccumulator` orders its per-surface state under a `Mutex`, taken synchronously from callbacks; title barriers already detach this way. | `TerminalLocalActionAccumulator.swift:148-175` |
 | Process output | `ProcessExecutor` decodes stdout to a trimmed `String`, so bytes aren't preserved. zmx doesn't bound scrollback by bytes (`max_scrollback_bytes = null`, `loop.zig:219-223`). | `Infrastructure/ProcessExecutor.swift:131-134` |
 
 ## Entity binding
@@ -161,9 +163,24 @@ R1 and R2 don't depend on R3.
    The result type is `ColdStartOutcome = .handedOff | .failed(ColdStartFailure) | .unobservable(ColdStartUnobservableReason)`, where `ColdStartUnobservableReason = .watchRegistrationFailed(errno: Int32) | .identityUnverifiable | .processArgsUnreadable(errno: Int32)`. It's the observer's total result.
    - **Nothing is left behind.** The token disappears with the final `exec`, so the person's shell carries no restore variable. The token never reaches logs, telemetry or OTLP.
 4. **Staggered starts (SR4).** Cold starts use the existing activation scheduler unchanged. `TerminalActivationScheduler` claims and activates **one prepared terminal at a time**, visible first (`AppPolicies.TerminalActivation.restoreMaximumConcurrentAdmissions = 1`; its single worker is what keeps candidate selection race-free). Activating a cold pane mounts its surface, which starts its `zmx attach`, and the worker moves on once it's mounted. So starts are staggered by activation, but the login shells may still be initializing together. **There's no separate start-slot limit:** gating the single worker on a slot would stall warm panes behind a cold pane's handoff, and a claim-time "not yet" outcome would be a new scheduler seam. That seam is added only if the 20-cold-pane measurement (Proof, R1) shows a real CPU or latency problem. The startup observer (item 3) runs per cold pane, with no slot. Its watch task is owned by the coordinator, cancelled on retirement and at teardown, and announces its outcome as a typed fact.
-5. **Recreation after attach (SR2a).** For warm and unverified panes, one off-main `observe` after the attach settles is compared by **identity** with the warm baseline from item 1:
-   - a different identity means zmx recreated the session. The pane has already shown SR3's notice, because the reconnect carried the restore script (item 2), so this check only records the recreation in telemetry;
-   - a missing baseline or a failed observation is recorded as unverifiable. Nothing is shown in the pane.
+5. **Recreation after attach (SR2a).** For warm and unverified panes, one off-main `observe` is compared by **identity** with the warm baseline from item 1.
+   - **When it runs: the pane's first render.** Attach completion itself can't be observed:
+     - zmx has no attached-client query;
+     - Ghostty has no PTY event;
+     - the handoff token can't tell an attach that created the session from a session that was already alive.
+
+     So the coordinator arms the check at mount (`beginPostAttachRecreationCheckIfNeeded`). It keeps the pending check by pane (`pendingPostAttachRecreationChecksByPaneID`) and runs it when the router's `.firstRender` arrives (`receivePostAttachFirstRender`). Ghostty renders before any PTY data, so that first render comes right after the native mount. The `observe` and the comparison run in a `@concurrent nonisolated` helper; the main actor only arms the check and records the result.
+   - **What it can say** (`PaneRecreationCheckOutcome`):
+     - `recreated`: a different identity answered. This is definitive whenever it's seen. The pane has already shown SR3's notice, because the reconnect carried the restore script (item 2), so the check only records the recreation in telemetry.
+     - `matchedAtFirstRender`: the baseline identity still answered at first render. This doesn't claim the session survived the attach: a recreation between this look and the real attach completing is invisible to it by construction.
+     - `uncheckable(reason)`, with these reasons:
+       - `missingBaseline`: an unverified pane, which never had a baseline;
+       - `paneUnavailableBeforeFirstRender`: exit, retirement, unmount or cancellation before the first render;
+       - `observationFailed(ZmxSessionControlFailure)`, including the pre-setsid window right after a recreation;
+       - `observationFailedUnrecognized`.
+
+     Nothing is shown in the pane for any outcome.
+   - `PaneRecreationChecker.checkForRecreation` stays a pure comparison of two identity blobs.
 
    A PID or a clock is never a substitute for identity.
 
@@ -511,7 +528,7 @@ Terminal and Sessions never import each other. App joins them through the Core r
     - a session that never creates its socket, with its attach exiting → failure;
     - unobservable cases, each taking `.unobservable` (no false failure, no false handoff): a `kqueue` registration error, an `observe` timeout, a process-args read failure;
     - `.refused` → cold, `.unresponsive` → unverified, in the same successful list;
-    - **option A:** a session killed between the check and the reconnect → the restore script runs and the pane shows SR3's notice. A live warm or unverified session reconnects with the same token and prints nothing. The post-attach check records the recreation by identity;
+    - **option A:** a session killed between the check and the reconnect → the restore script runs and the pane shows SR3's notice. A live warm or unverified session reconnects with the same token and prints nothing. The post-attach check, run at first render, records the recreation by identity (`recreated`), and an unverified pane records `uncheckable(missingBaseline)`;
     - staggered starts: 20 cold panes begin one at a time in visible-first order, a warm pane mounted alongside isn't delayed, and the first frame isn't delayed; the shells' combined start cost is measured (a marker-scoped trace), and a start limit is added only if it shows a problem;
     - the first frame published while the probe is held.
   - **Journey:** cold panes show fresh shells and notices.

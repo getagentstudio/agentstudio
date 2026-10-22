@@ -72,6 +72,16 @@ extension GhosttyActionRoutingHost {
             equalWriteSuppressedCount = 0
         }
         let compactApplyServiceTime = compactApplyStartedAt.duration(to: clock.now)
+        if let restorePhaseEnd = batch.restorePhaseEnd, !Task.isCancelled {
+            await submitActivityInput(
+                .orderedControl(
+                    surfaceID: surfaceID,
+                    paneID: paneUUID,
+                    precedingAggregate: restorePhaseEnd.precedingAggregate,
+                    control: .restorePhaseEnded(restorePhaseEnd.generation)
+                )
+            )
+        }
         let activityProjectionRoundTrip = await publishActivityProjectionIfNeeded(
             batch,
             paneUUID: paneUUID,

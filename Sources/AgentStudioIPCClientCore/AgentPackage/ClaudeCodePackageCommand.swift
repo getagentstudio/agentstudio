@@ -27,7 +27,7 @@ package struct ClaudeCodePackageCommandInputs {
     }
 }
 
-/// Parses `agentstudio package install|uninstall claude [--config-dir <path>]`
+/// Parses `agentstudio package install claude [--config-dir <path>]`
 /// and runs it against the resolved Claude Code configuration directory.
 package enum ClaudeCodePackageCommand {
     package static let commandPrefix = ["package"]
@@ -42,10 +42,7 @@ package enum ClaudeCodePackageCommand {
         else {
             return nil
         }
-        guard verb == "install" || verb == "uninstall" else {
-            inputs.errorSink("agentstudio package: expected install or uninstall, got \(verb)")
-            return 1
-        }
+        guard verb == "install" else { return nil }
         let options = Array(inputs.arguments.dropFirst(3))
         guard let configurationDirectory = resolvedConfigurationDirectory(options: options, inputs: inputs)
         else {
@@ -58,13 +55,8 @@ package enum ClaudeCodePackageCommand {
             providerVersion: resolvedProviderVersion(options: options, inputs: inputs)
         )
         do {
-            if verb == "install" {
-                try installation.install(notice: inputs.noticeSink)
-                inputs.noticeSink("installed agentstudio Claude Code hooks in \(configurationDirectory.path)")
-            } else {
-                try installation.uninstall(notice: inputs.noticeSink)
-                inputs.noticeSink("removed agentstudio Claude Code hooks from \(configurationDirectory.path)")
-            }
+            try installation.install(notice: inputs.noticeSink)
+            inputs.noticeSink("installed agentstudio Claude Code hooks in \(configurationDirectory.path)")
             return 0
         } catch {
             inputs.errorSink("agentstudio package \(verb) claude failed: \(describe(error))")

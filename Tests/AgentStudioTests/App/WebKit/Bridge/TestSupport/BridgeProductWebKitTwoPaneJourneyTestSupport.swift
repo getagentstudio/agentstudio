@@ -54,116 +54,6 @@ struct BridgeProductWebKitTwoPaneJourneyProof: Sendable {
     let updatingReviewStatus: BridgeProductWebKitTwoPanePositionSnapshot
 }
 
-actor BridgeProductWebKitGatedReviewSourceProvider: BridgeReviewSourceProvider {
-    private let base: any BridgeReviewSourceProvider
-    private var blockedComparisonCount = 0
-    private var comparisonCount = 0
-    private var isNextComparisonArmed = false
-    private var blockedSteps: [HeldStep<Void>] = []
-    private var blockedCountWaiters: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
-
-    init(base: any BridgeReviewSourceProvider) {
-        self.base = base
-    }
-
-    func resolveReviewDefaultTarget() async throws -> BridgeReviewComparisonDefaultTargetIdentity? {
-        try await base.resolveReviewDefaultTarget()
-    }
-
-    func captureReviewComparisonTargets(
-        _ request: BridgeReviewComparisonTargetsCaptureRequest
-    ) async throws -> BridgeReviewComparisonTargetsCapture {
-        try await base.captureReviewComparisonTargets(request)
-    }
-
-    func captureContributionComparison(_ request: BridgeContributionComparisonRequest) async throws
-        -> BridgeContributionComparisonCapture
-    {
-        await recordAndBlockComparisonIfArmed()
-        return try await base.captureContributionComparison(request)
-    }
-
-    func armNextComparison() {
-        isNextComparisonArmed = true
-    }
-
-    @discardableResult
-    func releaseBlockedComparisons() -> Int {
-        let steps = blockedSteps
-        blockedSteps.removeAll()
-        for step in steps { step.release() }
-        return steps.count
-    }
-
-    func snapshot() -> (comparisonCount: Int, blockedComparisonCount: Int) {
-        (comparisonCount, blockedComparisonCount)
-    }
-
-    func waitForBlockedComparisonCount(_ count: Int) async -> Int {
-        if blockedComparisonCount < count {
-            await withCheckedContinuation { continuation in
-                blockedCountWaiters.append((count: count, continuation: continuation))
-            }
-        }
-        return blockedComparisonCount
-    }
-
-    func resolveEndpoint(_ request: BridgeEndpointResolutionRequest) async throws
-        -> BridgeSourceEndpoint
-    {
-        try await base.resolveEndpoint(request)
-    }
-
-    func compareEndpoints(_ request: BridgeEndpointComparisonRequest) async throws
-        -> BridgeEndpointComparison
-    {
-        await recordAndBlockComparisonIfArmed()
-        return try await base.compareEndpoints(request)
-    }
-
-    private func recordAndBlockComparisonIfArmed() async {
-        comparisonCount += 1
-        if isNextComparisonArmed {
-            isNextComparisonArmed = false
-            let step = HeldStep<Void>("blocked review comparison", cancellation: .holdThroughCancellation)
-            blockedSteps.append(step)
-            blockedComparisonCount += 1
-            let readyWaiters = blockedCountWaiters.filter { blockedComparisonCount >= $0.count }
-            blockedCountWaiters.removeAll { blockedComparisonCount >= $0.count }
-            for waiter in readyWaiters { waiter.continuation.resume() }
-            try? await step.arrive(())
-        }
-    }
-
-    func readTree(_ request: BridgeTreeReadRequest) async throws -> BridgeTreeReadResult {
-        try await base.readTree(request)
-    }
-
-    func readReviewItemDescriptor(_ request: BridgeReviewItemDescriptorRequest) async throws
-        -> BridgeReviewItemDescriptor
-    {
-        try await base.readReviewItemDescriptor(request)
-    }
-
-    func resolveCheckpointEndpoint(_ request: BridgeCheckpointEndpointRequest) async throws
-        -> BridgeSourceEndpoint
-    {
-        try await base.resolveCheckpointEndpoint(request)
-    }
-
-    func loadContent(_ request: BridgeContentLoadRequest) async throws -> BridgeContentLoadResult {
-        try await base.loadContent(request)
-    }
-
-    func streamContent(
-        _ request: BridgeContentStreamRequest,
-        chunkByteCount: Int,
-        emitChunk: BridgeContentStreamEmitter
-    ) async throws -> BridgeContentStreamResult {
-        try await base.streamContent(request, chunkByteCount: chunkByteCount, emitChunk: emitChunk)
-    }
-}
-
 @MainActor
 enum BridgeProductWebKitTwoPaneJourneyTestSupport {
     private struct ControllerInput {
@@ -172,7 +62,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
         let initialActivity: BridgePaneActivity
         let gitWorkingTreeStatusProvider: any GitWorkingTreeStatusProvider
         let repoURL: URL
-        let reviewProvider: any BridgeReviewSourceProvider
+        let reviewProvider: BridgeProductWebKitGatedReviewSourceProvider
         let title: String
         let traceRecorder: BridgeProductWebKitCarrierTraceRecorder
         let worktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator
@@ -246,6 +136,10 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 gitReadContext: paneTwoGitReadContext
             )
         )
+        defer {
+            paneOneReviewProvider.comparisonEvents.finish()
+            paneTwoReviewProvider.comparisonEvents.finish()
+        }
         let paneOne = makeController(
             ControllerInput(
                 closingSource: paneOneClosingSource,
@@ -538,7 +432,7 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
             )
         }
         _ = try await requireBlockedComparison(
-            input.paneOneReviewProvider,
+            input,
             expectedCount: 1,
             milestone: "batch 701 Review comparison hold"
         )
@@ -634,7 +528,8 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
 
     private static func makeController(_ input: ControllerInput) -> BridgePaneController {
         let paneId = UUIDv7.generate()
-        return BridgePaneController(
+        let comparisonEvents = input.reviewProvider.comparisonEvents
+        let controller = BridgePaneController(
             paneId: paneId,
             state: BridgePaneState(
                 panelKind: .diffViewer,
@@ -668,8 +563,18 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
                 input.closingSource.recordBootstrapFailure(reason)
                 try await BridgePaneController.dispatchProductSessionBootstrapFailure(
                     page: page, requestId: requestId, reason: reason, contentWorld: contentWorld)
-            }
+            },
+            reviewBuildAdmissionFactSink: comparisonEvents.record
         )
+        _ = input.closingSource.observe { wake in
+            if case .closed(let closure) = wake { comparisonEvents.retire(closure.reason.description) }
+        }
+        withObservationTracking {
+            _ = controller.canReloadWebView
+        } onChange: {
+            comparisonEvents.retire("pane teardown started")
+        }
+        return controller
     }
 
     private static func seedPositionFixture(at repoURL: URL, prefix: String) async throws {
@@ -750,53 +655,19 @@ enum BridgeProductWebKitTwoPaneJourneyTestSupport {
     }
 
     static func requireBlockedComparison(
-        _ provider: BridgeProductWebKitGatedReviewSourceProvider,
+        _ input: JourneyInput,
         expectedCount: Int,
         milestone: String
     ) async throws -> Int {
         try await awaitBridgeWebKitMilestone(milestone) {
-            let blockedComparisonCount = await provider.waitForBlockedComparisonCount(expectedCount)
-            guard blockedComparisonCount == expectedCount else {
+            let comparison = try await input.paneOneReviewProvider.waitForBlockedComparisonCount(expectedCount)
+            try #require(input.paneOne.activeReviewRefreshTaskId == comparison.attemptID)
+            guard comparison.count == expectedCount else {
                 throw JourneyError.conditionFailed(
-                    "\(milestone) observed comparison count \(blockedComparisonCount), expected \(expectedCount)"
+                    "\(milestone) observed comparison count \(comparison.count), expected \(expectedCount)"
                 )
             }
-            return blockedComparisonCount
-        }
-    }
-
-    static func requireNativeControlQuiescence(
-        _ controller: BridgePaneController,
-        afterRequestSequence: Int
-    ) async throws {
-        await controller.worktreeRefreshDriver.awaitActiveFileOperations()
-        guard let installation = await controller.productSessionOwner.activeInstallation,
-            await installation.session.waitUntilControlReplayIdle(
-                afterRequestSequence: afterRequestSequence
-            )
-        else {
-            throw JourneyError.conditionFailed(
-                "native Review activation did not settle its control admission"
-            )
-        }
-        guard await installation.session.waitUntilProducerFramesQuiescent() else {
-            throw JourneyError.conditionFailed("native Review activation lost its producer session")
-        }
-        var owner = await controller.productSessionOwner.snapshot()
-        if owner.queuedFrameCount > 0 || owner.inFlightFrameReceiptCount > 0 {
-            // A Review publication admitted after the first idle observation is still in flight.
-            guard await installation.session.waitUntilProducerFramesQuiescent() else {
-                throw JourneyError.conditionFailed("native Review activation lost its producer session")
-            }
-            owner = await controller.productSessionOwner.snapshot()
-        }
-        guard owner.queuedFrameCount == 0, owner.inFlightFrameReceiptCount == 0 else {
-            throw JourneyError.conditionFailed(
-                "native Review activation left frame delivery queued after producer quiescence "
-                    + "(ownerQueued=\(owner.queuedFrameCount), "
-                    + "ownerReceipts=\(owner.inFlightFrameReceiptCount), "
-                    + "retiring=\(owner.retiringInstallationCount))"
-            )
+            return comparison.count
         }
     }
 
