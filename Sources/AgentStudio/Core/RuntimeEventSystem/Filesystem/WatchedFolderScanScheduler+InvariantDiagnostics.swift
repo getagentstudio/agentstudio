@@ -6,22 +6,14 @@ extension WatchedFolderScanScheduler {
 
     /// Reports the lease trap's reread state to distinguish a missing entry from a different case.
     static func failPendingResultLease(
-        reread: RootSchedulingState?,
-        candidateCount: Int,
-        scheduledRootCount: Int,
-        pendingCount: Int,
-        leasedCount: Int
+        _ snapshot: LeaseLookupSnapshot
     ) -> Never {
-        let observed = reread?.diagnosticCaseName ?? "absent"
-        Self.logger.fault(
-            """
-            Selected result must remain pending until leased; reread state: \(observed, privacy: .public), \
-            candidates: \(candidateCount, privacy: .public), \
-            scheduled roots: \(scheduledRootCount, privacy: .public), \
-            pending: \(pendingCount, privacy: .public), \
-            leased: \(leasedCount, privacy: .public)
-            """
-        )
+        let observed = snapshot.checkpoints.afterLeaseCreation
+        // Keep each bounded entry in its own record instead of one large dynamic string.
+        for line in Self.formatLeaseLookup(snapshot).split(separator: "\n") {
+            Self.logger.fault(
+                "Lease lookup \(snapshot.selectedResult.reportText, privacy: .public): \(line, privacy: .public)")
+        }
         preconditionFailure("selected result must remain pending until leased; reread state: \(observed)")
     }
 
