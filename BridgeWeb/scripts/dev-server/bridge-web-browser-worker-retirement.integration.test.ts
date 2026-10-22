@@ -1,14 +1,23 @@
 import { expect, test } from 'vitest';
 
+import {
+	closeBridgeViewerE2ETestBrowsers,
+	launchBridgeViewerE2EChromium,
+} from '../../tests/e2e/bridge-viewer-vite-e2e-browser.ts';
+import { createOwnedProductJourneyDeadline } from '../verify-bridge-viewer-worktree-dev-server/product-only-real-router-journey-deadline.ts';
+import { closeBridgeViewerProductJourneyBrowser } from '../verify-bridge-viewer-worktree-dev-server/product-only-real-router-page.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise } from './handled-launch-promise.ts';
 
-test.for(['browser.close', 'launch.dispose'] as const)(
+test.for(['browser.close', 'launch.dispose', 'journey', 'E2E helper', 'journey deadline'] as const)(
 	'harness %s delivers dedicated Worker close before disconnecting the real host',
 	async (closeThrough, context) => {
 		const launch = await BridgeWebTestLaunch.start({ signal: context.signal });
 		try {
-			const browser = await launch.launchBrowser({ channel: 'chrome', headless: true });
+			const browser =
+				closeThrough === 'E2E helper'
+					? await launchBridgeViewerE2EChromium({ testSignal: context.signal })
+					: await launch.launchBrowser({ channel: 'chrome', headless: true });
 			const page = await browser.newPage();
 			page.setDefaultTimeout(0);
 			const workerCreated = handleLaunchPromise(
@@ -38,7 +47,17 @@ test.for(['browser.close', 'launch.dispose'] as const)(
 				events.push('browser disconnected');
 			});
 			if (closeThrough === 'browser.close') await browser.close();
-			else await launch.dispose();
+			else if (closeThrough === 'launch.dispose') await launch.dispose();
+			else if (closeThrough === 'journey')
+				await closeBridgeViewerProductJourneyBrowser({ page, browser });
+			else if (closeThrough === 'E2E helper')
+				await closeBridgeViewerE2ETestBrowsers(context.signal);
+			else {
+				const owner = new AbortController();
+				const deadline = createOwnedProductJourneyDeadline({ signal: owner.signal, page, browser });
+				owner.abort(new Error('journey deadline fixture'));
+				await deadline.dispose();
+			}
 			// Disconnect is the terminal observation. Missing Worker.close fails here
 			// without awaiting an event the retired connection can no longer deliver.
 			expect(events).toEqual(['worker closed', 'browser disconnected']);
@@ -48,6 +67,7 @@ test.for(['browser.close', 'launch.dispose'] as const)(
 			);
 		} finally {
 			await launch.dispose();
+			if (closeThrough === 'E2E helper') await closeBridgeViewerE2ETestBrowsers(context.signal);
 		}
 	},
 );
