@@ -142,12 +142,15 @@ final class RepoExplorerProjectionAdapter {
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         recencyNow: @escaping @MainActor @Sendable () -> Date = Date.init,
         deadlineNow: @escaping @Sendable () -> Date = Date.init,
+        continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         recencyDelay: AsyncDelay = .taskSleep,
         initialProjectionTrigger: AppPolicies.SidebarProjection.Trigger = .startupDiagnostic,
         onProjectionSuppressed:
             @escaping @MainActor @Sendable (
                 RepoExplorerProjectionResult
             ) -> Void = { _ in },
+        onProjectionCompletion:
+            @escaping @MainActor @Sendable (RepoExplorerMaterializedProjection.ProjectionCompletion) -> Void = { _ in },
         project:
             @escaping @Sendable (RepoExplorerProjectionWork) throws(CancellationError)
             -> RepoExplorerProjectionResult = { work throws(CancellationError) in
@@ -190,11 +193,13 @@ final class RepoExplorerProjectionAdapter {
             },
             onProjectionCompletion: { [weak self] _, completion in
                 self?.handleProjectionCompletion(completion)
+                onProjectionCompletion(completion)
             }
         )
         deadlineWorker = RepoExplorerProjectionWorker(
             deadlineDelay: recencyDelay,
             deadlineNow: deadlineNow,
+            continuousNow: continuousNow,
             onDeadline: { [weak self] generation, preparedDeadline in
                 self?.applyPreparedPresentationDeadline(preparedDeadline, generation: generation)
             }

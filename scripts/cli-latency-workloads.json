@@ -17,7 +17,7 @@
     },
     {
       "name": "line",
-      "argv": ["line", "benchmark line ${sampleId}", "--working", "--step", "1/2"],
+      "argv": ["line", "benchmark line ${sampleId}"],
       "budgetClass": "hookOrNotice",
       "fixtureRequirement": "ownedPane"
     },
