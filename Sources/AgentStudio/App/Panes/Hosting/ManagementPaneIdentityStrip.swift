@@ -143,8 +143,8 @@ struct ManagementPaneIdentityStrip: View {
                 .frame(minWidth: 0, alignment: .leading)
                 .clipped()
                 .background { identityBounds("\(row.id).text", label: row.text) }
-            if ["pane", "session"].contains(row.id) {
-                copyButton(row)
+            if let copyValue = row.copyValue {
+                copyButton(row, copyValue: copyValue)
             }
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
@@ -152,11 +152,11 @@ struct ManagementPaneIdentityStrip: View {
         .background { identityBounds(row.id, label: presentation.accessibilityLabel(for: row)) }
     }
 
-    private func copyButton(_ row: PaneManagementIdentityRow) -> some View {
+    private func copyButton(_ row: PaneManagementIdentityRow, copyValue: String) -> some View {
         let spec = presentation.copyAction(for: row)
         return Button {
             NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(row.text, forType: .string)
+            NSPasteboard.general.setString(copyValue, forType: .string)
         } label: {
             spec.icon.swiftUIImage(loader: octiconLoader, size: AppStyles.Shell.Sidebar.branchIconSize)
                 .frame(width: AppStyles.Shell.Sidebar.branchIconSize)
@@ -168,7 +168,7 @@ struct ManagementPaneIdentityStrip: View {
         .controlHelp(
             spec.controlTooltipRenderValue(
                 provenance: .localAction(rawValue: row.id == "session" ? "copySessionId" : "copyPaneId"),
-                textOverride: "\(spec.helpText): \(row.text)")
+                textOverride: "\(spec.helpText): \(copyValue)")
         )
         .background { identityBounds("\(row.id).copy", label: spec.label) }
     }

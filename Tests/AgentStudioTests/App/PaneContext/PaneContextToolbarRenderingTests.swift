@@ -193,8 +193,10 @@ struct PaneContextToolbarRenderingTests {
             .init(id: "worktree", icon: .system("folder"), text: "alpha-repo", toolTip: nil),
             .init(id: "branch", icon: .system("folder"), text: "main", toolTip: nil),
             .init(id: "cwd", icon: .system("folder"), text: "alpha-repo", toolTip: nil),
-            .init(id: "session", icon: .system("folder"), text: "codex · known-conversation", toolTip: nil),
-            .init(id: "pane", icon: .system("folder"), text: pane.uuidString, toolTip: nil),
+            .init(
+                id: "session", icon: .system("folder"), text: "codex · known-conversation", toolTip: nil,
+                copyValue: "known-conversation"),
+            .init(id: "pane", icon: .system("folder"), text: pane.uuidString, toolTip: nil, copyValue: pane.uuidString),
         ]
         let context = PaneManagementContext(
             paneId: pane, identityRows: rows, statusChips: nil, targetPath: nil, showsIdentityBlock: true)
