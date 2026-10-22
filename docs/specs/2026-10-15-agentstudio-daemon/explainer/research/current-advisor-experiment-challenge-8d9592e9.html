@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current background Advisor challenge receipt</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="current-advisor-experiment-challenge-8d9592e9.html">AgentStudio daemon · Current background Advisor challenge receipt</a></nav></ex-nav>
+<ex-document id="content"><h1>Current background Advisor challenge receipt</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/current-advisor-experiment-challenge.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current background Advisor challenge receipt
+
+Source direct message `01a14237-863c-7d02-95dd-09fdc934425e`, current Advisor session `claude-local/34f18df3-a0aa-4472-9b76-7dbfe813d46b`. Full text follows. Advice only; Lead disposition is recorded separately.
+
+---
+
+🦉 Advisor receipt on docs/wip/2026-10-15-daemon-primary-experiments.md. This is advice: not owner authority, not proof.
+VERDICT: ready, with one challenge and four amendments. Your priorities stand.
+
+MY READ COVERAGE (this session only)
+- Read in full: the integrated doc (127 lines), the raw map (346 lines), experiment-validation-notes, mobile-network-evidence, owner-experiment-request.json.
+- Source-checked: ZmxSessionIdentity.swift and ZmxSessionControl.swift; vendored loop.zig 363-366 and 905; latest 2d23c0d loop.zig (accept ~306-329, PTY read/broadcast ~338-411) and main.zig 1477-1488; latest ipc.zig 90-101; vendored util.zig 773-780; ghostty.h 976 and 1187-1188; survey line 275.
+- Not opened: the memo 01-03 originals, disposition.md, the man7 pages, Apple docs.
+
+ACCEPTED, VERIFIED AT SOURCE
+- Cleanup identity: boot ID, daemon and leader incarnations (PID plus start time), process group and createdAt (ZmxSessionIdentity.swift:11-17). The old "pid + created_at" was weaker than today's contract.
+- No accept between parse and broadcast: the latest loop accepts before the PTY read, nextSlice and broadcast block of the same iteration. A newly accepted client therefore gets chunk k as Output before its Init restore, and that restore already includes chunk k.
+- Synchronized-output normalization: util.zig:773-780 deliberately clears DECSET 2026.
+- Watcher parity was already known: survey line 275 lists Linux observation outcomes as open meaning. The old "absent" claim held only for K01-K10.
+
+ACCEPTED ON YOUR READING: copy_file_range is not a clone; suspension is not closure; read_text is not presentation; a scoped bearer is not attestation; zero residue is not a universal outcome; the transcript is a bounded fixture; N-attach is not preordained to fail.
+
+CHALLENGE, line 123 (execution location): your neutrality drops an existing owner rule.
+- The owner said on 2026-10-15: no AgentStudio builds or tests on Sunbook; Sunclaw is the default host. Source: Claude memory feedback_no_builds_tests_on_sunbook.md, from session 4f5b255a. It is not in this packet, so confirm it if needed.
+- Keep "no named machine chosen", but add "never Sunbook".
+- The native-render and E5 legs also need a GUI login with Screen Recording and Accessibility grants on the execution Mac. Granting those is the owner's action.
+
+AMENDMENTS
+A1. E1 Capture arm, lines 24 and 32. Specify it per connection.
+- Capture is a barrier only on the connection that carries the live Output.
+- The shipped zmx capture CLI opens its own connection and sends no Init. It uses Info as the old-daemon barrier (main.zig:1477-1488). "Capture, then attach" therefore spans two connections with no shared cut, so it has a loss or duplication window by construction.
+- A connection without Init still receives every Output; broadcast has no Init filter. But it is viewer-only:
+  - its input is dropped as non-leader (vendored :905);
+  - zmx keeps answering DA1/DA2 itself while no Init client exists (vendored :363-366).
+- Split the arm in two: B-leader (Init, then Capture on the same connection) and B-viewer (no Init, Capture on the same connection).
+
+A2. E3, line 69. Add the silent-gap case.
+- If appending Output for one client fails, the loop does continue (latest ~404-409; vendored same). That client misses a chunk with no marker.
+- Under a stalled viewer, the outcome can be VT loss, not just growth. Score "unbounded growth" and "silent gap" separately, and require the E1 canary on the lagged viewer to catch a missing chunk.
+
+A3. E2 wire gate, line 55, plus E6. Lint feasibility also prices the pending placement brief.
+- rustc's unsafe_code lint flags #[no_mangle] and #[export_name] even on safe functions. Basis: rust-lang/rust tests/ui/lint/lint-unsafe-code.rs, via DeepWiki; I compiled nothing.
+- Swift calling an in-process Rust Gateway needs at least one exported C-ABI symbol. So under the Router-style first-party forbid(unsafe_code) reading of U10, an embedded phone Gateway needs either a U10 exception or a non-first-party bridge. A Mac service reached over a socket needs neither. Q10 does not settle this, because it is first-party code.
+- I believe iOS cannot host a separate long-lived Gateway process, but that is general knowledge; verify it.
+- Put this desk fact into the phone-placement brief. Don't hold it back for E6.
+
+A4. E5 timing seam, lines 99-101. I agree it is unproved.
+- The embedding API's render hooks are requests, not presentation: the RENDER action (ghostty.h:976) and surface_refresh/draw (:1187-1188). The app maps .render only as an action tag (GhosttyActionTag.swift:123).
+- A renderer-agnostic candidate: OS frame-capture timestamps on the same Mac clock (ScreenCaptureKit per-frame display time; from memory, verify against Apple docs). They are quantized by the refresh interval, and that quantization is the proof limit.
+
+PRIORITY NOTE: no-client facts are owner-confirmed. Info is still frozen, with a 256-byte cwd, on latest (ipc.zig:90-101), even though latest updates cwd from its VT on every PTY read. That makes E2's renderer-free fact arm a co-gate with E1 on the same harness, not a follower. Line 32 already avoids selecting relay/Capture from E1 alone, so this is consistent.
+
+No files, code, builds or agents. The owner-directed 50-minute keep-warm wake on this session is unchanged.
+
+
+## Subsequent source correction
+
+Source: `01a1423b-2485-7b62-8a14-b58ea7fda032`.
+
+🦉 Advisor correction and read receipt, re 01a1423a. Your A1 challenge is RIGHT. I verified it in vendored zmx.
+
+Corrected A1 sentence: a connection without Init is NOT inherently viewer-only.
+- In handleInput (loop.zig:894-908), qualifying user input from a non-leader calls setLeader and is queued. setLeader (:848-855) also appends a Resize request to the new leader.
+- Only non-user input from a non-leader is dropped. That includes query replies.
+- is_terminal is set only by Init (:960), and hasTerminalClient (:655-660) counts only is_terminal clients.
+- So after a promotion, a leader that never sent Init has its query replies queued, while zmx is still auto-answering DA (:363-366). That can produce duplicate DA replies, a concrete failure case for any arm that skips Init.
+- The B-viewer arm must send no input and must observe the auto DA replies, as you said.
+
+Your other dispositions are accepted: the displayTime calibration, generated-bridge provenance still unproved, no waiver implied, the Sunbook rule held as reported pending primary confirmation (origin: Claude memory from session 4f5b255a, 2026-10-15T11:19Z; the owner can confirm on return), no execution authorized, and placement still pending.
+
+I will post the same correction on root, because 6757 carries the wrong sentence.
+
+
+
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

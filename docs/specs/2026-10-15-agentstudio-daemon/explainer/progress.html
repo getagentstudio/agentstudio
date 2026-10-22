@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · What we built and what we tried</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Understand the system</a><a href="features.html">Explore AgentStudio features</a><a href="progress.html">What was built and tried</a><a href="walkthroughs.html">Follow a workflow</a><a href="delivery.html">MVP and integration phases</a><a href="requirements.html">Requirements</a><a href="architecture.html">Technical architecture</a><a href="communication.html">Communication</a><a href="data.html">Data ownership</a><a href="schema.html">Tables and fields</a><a href="sequence.html">Spec dependencies</a><a href="experiments.html">Experiments and decisions</a><a href="research.html">Research library</a><a href="../index.html">All specification documents</a></nav></ex-nav>
+<ex-document id="content"><h1>What we built and what we tried</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+[Current work report](progress.html) · [Markdown source](../../../../tmp/practices-research/2026-10-21-daemon-progress/progress.md) · [Project overview](index.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## What we built and what we tried
+
+**The design, reader and isolated Rust/Swift/native prototypes exist. The distributed Rust product does not yet exist.** Live experiments now cover ZMX on Mac and Linux, native Ghostty reattachment, real Swift-to-Rust Unix sockets, crash/receipt boundaries, Linux watch loss, the unchanged Swift EventBus under mixed-topic pressure, and real typed Tokio coordination, first-demand invalidation, scheduled eligibility and causal-prerequisite comparisons. Formatted Capture remains lossy, and ZMX leadership remains separate from our controller authorization.
+
+**Latest owner correction:** lossy ZMX terminal restoration is acceptable; Ghostty stays unforked. Exact terminal/parser-state equality is no longer an initial-integration prerequisite. Work on serialization and automatic agent restoration belongs at ZMX. [IP13](../initial-profile.html) records that decision; automatic reattachment versus dead-process/restart recovery is still being clarified. The original failed comparisons below remain honest results under their original strict oracle.
+
+Evidence checked on 21 October 2026, beginning at 06:27 Toronto time. “Lead” below means this Codex session; “Advisor team” means the Claude Advisor and its commissioned workers. A report attributed to another session is distinguished from an experiment I executed myself. The tables describe the inspected pins and finite cases, not every version or platform.
+
+**22 October follow-up:** the larger Capture stress run on `7f0ffdb` completed: all 110 exact live suffixes, but exact final plain text in 4/110 Capture and 18/55 Init reconstructions. The separate saved-wire audit passed 4,531 assertions; all 558 watched process exits were observed.
+
+[Capture results](research/capture-stress-results-3ed0d442.html) · [Next experiments](research/remaining-experiments-730ff28a.html). The experiment tree distinguishes pending Git, Bridge, provider-hook and iOS work from these terminal results.
+
+**Independent check and transport follow-up:** the independent saved-byte Capture scorer found no disagreements. Its blank-bottom-row overwrite explanation is supported by the pinned serializer and raw cases; a ZMX-only repair remains untested. The [new Bridge transport design](../increments/00-qualification/bridge-gateway-transport/index.html) now has its own ten-stop walkthrough and planned T1–T3 observations. A minimal UniFFI compiler/source probe ran: its consumer passes the unsafe lint while generated wrappers contain unsafe, so that green result does not qualify the iOS binding under U10. Eighty-two source/report files are now retained with the design; large raw evidence and mixed review/discussion records remain separate.
+
+## Built by the Lead
+
+- **System and migration design**
+  - Eleven responsibility areas and eight proposed increments, from qualification to the broader client experience.
+  - A 42-feature hierarchical migration checklist, sixteen detailed branches and an operation crosswalk covering AgentStudio and `agentstudio-git`.
+  - Storage classification for 86 logical tables and 597 catalogued columns, with explicit unresolved ownership, identity and replication admission. This is a design inventory, not migrated data.
+  - Host/Gateway/native-client boundaries, typed operation and fact-processing proposals, source witnesses, cancellation/custody and currentness rules.
+- **Human reader and walkthroughs**
+  - HTML generated from the current Markdown sources, feature trees and shared guided reading paths, with a separate walkthrough of the experiments.
+  - Browser inspection of selected diagrams, navigation, narrow layouts and actual Next/Previous routes; this does not mean every page received a separate visual audit.
+  - Local source/link checks and the version-matched Demistify checker. The [evidence ledger](../../../../tmp/practices-research/2026-10-21-daemon-progress/evidence-ledger.json) records each checked generation and its exact counts, keeping earlier observations separate.
+- **Bounded component qualification**
+  - Ran the existing upstream complete-snapshot tests, inspected the failure, corrected only the package working directory and retained both logs.
+  - Independently checked decisive source for native-surface consumption, context recovery and Git mutation custody. Source inspection is not a runtime pass.
+  - Built and ran an isolated Rust/Tokio/SQLite custody fixture and a real Swift socket client: nine declared fault scenarios matched through each client.
+  - Built and ran a native PTY relay fixture on Sunclaw: actual ZMX Capture/live output and a fresh reattachment displayed the two declared markers without a Ghostty fork. A wrong-output control failed as intended.
+  - Ran the reverse native text-input path, three original ZMX control-version combinations and the missing new-client/old-backend refusal. The old adapter timed out against the new backend; the narrow version-1 candidate preserved the checked observation/refusal/retirement path. [Control results](research/zmx-control-results-9ba26365.html).
+  - Built and ran a standalone consumer of public `zmx.create`: controlled interactive Bash initialization, same-name preservation and actual two-process retirement. [Creation results and readiness limit](research/zmx-create-results-53c724a9.html).
+  - Built and ran the first scoped-owner versus shared-hub Tokio comparison: 26 normal profiles matched and 14 deliberately broken controls were detected. [Coordination results and remaining decision](research/coordination-results-79b2791e.html).
+  - Ran the partial-invalidation follow-up: four normal first-demand cases matched, eight wrong controls failed, and all 78 task joins completed. [First-demand results](research/demand-results-d271a95d.html).
+  - Ran controlled real Tokio timer eligibility: eight normal cases matched, fourteen wrong controls failed, and all 171 task joins completed. [Scheduled eligibility results](research/eligibility-results-90c62d11.html).
+  - Ran causal-prerequisite delivery: eight normal cases matched, twelve controls were detected, and all 190 task joins completed. [Causal delivery results](research/causality-results-31f69e29.html).
+  - Ran the unchanged Swift EventBus component with mixed-topic pressure: two expected incomplete baselines, four qualified filtered/recovery matches and two detected stale-reply controls. All 48 owned fixture task joins completed. [Quiet-input results](research/eventbus-live-results-586afb46.html).
+  - Ran a fresh canary through both legal sides of the unchanged bus's replay/live handoff: four normal cases matched and two real omission/duplicate controls were detected. All 36 fixture joins completed. [Handoff results](research/replay-handoff-results-6abc1fd0.html).
+
+These artifacts are visible through the [system guide](index.html), [feature hierarchy](features.html), [MVP proposal](delivery.html) and [storage matrix](../designs/02-data-ownership-replication/storage-placement-matrix.html). Counts establish coverage of recorded declarations, not delivered feature parity.
+
+## Systems that actually ran
+
+| System | Who ran or built it | Actual boundary reached |
+| --- | --- | --- |
+| Scratch ZMX `0a18bee` binary | Advisor team | Compiled upstream binary and live per-session Unix sockets, real shells/PTYS and synthetic protocol clients on macOS arm64. This binary is separate from AgentStudio's vendored binary. |
+| Scratch ZMX `7f0ffdb` binary | Lead, today | Built the fetched current upstream source with Zig 0.16.0/ReleaseSafe; 105/105 upstream tests passed. A separate CLI build and isolated `version` invocation succeeded. No app or session was started by this check. |
+| Temporary Linux VM and ZMX `7f0ffdb` | Lead, follow-up | Actual Linux version/task execution, synthetic copy/metadata and basic inotify observations. Reflink unavailable on this tested filesystem; the separate full-copy arm retained the measured state. See the [Linux follow-up](research/linux-followup-0db23976.html). |
+| Linux inotify fault fixture on the existing Sprite | Sol Researcher Worker; Lead checked source/raw records and independent comparison | Actual overflow and directory replacement on ext4 `/tmp`; finite closed-producer recovery observations. See [watch results](research/linux-watch-results-340b436a.html). |
+| Renderer-free Linux ZMX fact fixture | Sol Researcher original run; Sol typed repair; Lead checked and ran repaired sources | Five interactive phases plus task mode, title/CWD limits, no-peer progress and pidfd cleanup. Checked rerun exited 0. See [Linux fact results](research/linux-fact-results-04a3b516.html). |
+| Standalone Ghostty VT at `8af6897` | Lead | Existing upstream snapshot/continuation tests compiled and ran on this Mac. No native surface, GUI, Host or Gateway was started by that run. |
+| Native Ghostty PTY relay and private ZMX task | Lead, on Sunclaw | Fresh native views displayed the selected lossy Capture/live profile and reattached to the same process incarnations. Existing framework identity recorded; source-build receipt unavailable. See [native/socket results](research/native-and-socket-results-49880ceb.html). |
+| Copied Swift session control and two source-built ZMX versions | Lead, on Sunclaw; independently checked by Sol Researcher | Three original combinations plus a separate new-client/old-backend refusal. Matching cases retain identity-safe retirement; the fourth direction returned two typed timeouts with the original execution unchanged. See [control results](research/zmx-control-results-9ba26365.html). |
+| Public ZMX create consumer | Lead build/run on Sunclaw; Sol staged driver and independently checked evidence | Interactive Bash reached a controlled rc milestone; duplicate create preserved execution; two real exits and final completed. Prompt readiness and independent kernel peer classification remain unqualified. [Creation results](research/zmx-create-results-53c724a9.html). |
+| Rust/Tokio worker, SQLite and Swift AF_UNIX client | Lead, isolated local/Sunclaw fixtures | Actual cross-process requests, crashes, partial replies and fresh-connection observation across nine declared scenarios. Central authority and file-effect adapters are stand-ins. |
+| Temporary LaunchAgent plus shell/ZMX probes | Advisor, under its reported direct owner authorization | Actual macOS folder-access allow/deny results. This was a shell stand-in, not a Rust Host daemon or signed service integration. |
+| Typed Tokio owner/channel comparison | Sol Worker staged Rust; Lead authored oracle, built and ran | 40 fresh processes: 26 normal matches, 14 detected wrong modes. Actual task joins and scoped retention; no heap, latency, Swift/socket or topology-selection claim. [Coordination results](research/coordination-results-79b2791e.html). |
+| Partial-invalidation and first-demand instrument | Sol Worker staged Rust; Lead authored oracle, built and ran | 12 fresh processes: four normal matches and eight detected controls, with healthy other views and actual scoped reads. Later verifier tightening rechecked retained reports; no runtime rerun. [First-demand results](research/demand-results-d271a95d.html). |
+| Scheduled eligibility and stale callbacks | Sol Worker staged Rust; Lead authored oracle, built and ran | 22 fresh processes: eight normal matches and fourteen detected controls; real paused Tokio timers, exact candidate disposal and 171 completed joins. Shared rules, different delivery paths; no physical latency/native proof. [Eligibility results](research/eligibility-results-90c62d11.html). |
+| Causal prerequisites and obsolete admitted delivery | Sol Worker staged Rust; Lead authored literal oracle, built and ran | 20 fresh processes: eight normal matches and twelve detected controls, across retain/requery mechanisms and direct/hub paths; actual first replies and installation journals, 190 completed joins. [Causal results](research/causality-results-31f69e29.html). |
+| Existing Swift EventBus live overflow | Sol Worker staged exact source subset/fixture; Lead authored oracle and ran on Sunclaw | Eight fresh processes: two honest incomplete baselines, four qualified filtered/recovery matches and two detected wrong first replies; 48 completed fixture joins. Synthetic source/provider, not the full production Git pipeline. [Quiet-input results](research/eventbus-live-results-586afb46.html). |
+| Existing Swift bus replay/live canary | Sol Workers staged source/schema/common checks; Lead authored literals, semantic checker and runner, then executed on Sunclaw | Six fresh processes: four normal replay/live matches and two detected omit/double-apply controls; 36 completed joins. Fresh component cohort, not durable reconnect. [Handoff results](research/replay-handoff-results-6abc1fd0.html). |
+| HTML design reader | Lead | Generated pages served on loopback and inspected in Chrome. This is documentation tooling. |
+| Router messages and timed wakes | Lead | Stored schedules, delivery receipts and failed native submissions. Timer creation did not produce reliable background work. |
+
+The pre-existing AgentStudio Swift app and `agentstudio-git` supplied the source baseline. Their existence is not new implementation by this effort. No new Host/Gateway network, database replication service or iOS runtime has been demonstrated.
+
+## Experiments and results
+
+### EX0 — Pin, build and environment preflight
+
+**Advisor team.** Built ZMX `0a18bee7d3555b7822d1cb79cca2304d6ef2711b` with Zig 0.16.0 into the experiment directory. It contains Capture and the version-1 IPC header. The binary still prints version `0.8.1`, so that string cannot establish protocol identity. Source pin and binary hash are retained in the [EX0 report](research/EX0-zmx-pin-findings-8c61be8b.html).
+
+The remote `sunclaw` target was reported reachable and identified as a **Mac**, not Linux. Lead's later local tool preflight found Rust/Cargo 1.98.1 and Swift 6.3.3 available. Fly authentication failed in that check and `sprite` was absent from PATH. That earlier preflight did not provision a Linux guest. A later owner-authorized [Linux follow-up](research/linux-followup-0db23976.html) now has actual execution results.
+
+### EX1 — Interactive execution without a viewer
+
+**Advisor team; live backend experiment.** An interactive login shell continued with no viewer. Eight later attachment snapshots contained the expected detached marker, title and explicitly emitted CWD; the shell identity continued across attachment changes. See the [EX1 report](research/EX1-report-7b505154.html).
+
+This establishes feasibility at the tested pin. It does not select a supported Host creation API: immediate-EOF attach used an undocumented branch, ordinary piped attach temporarily joined as a client, and detached run used task-mode bash. Automatic shell integration and Host-local agent input were not established by the marker.
+
+### EX2a — Capture, live bytes and restoration
+
+**Advisor team; live backend experiment.** All 110 measured Capture cuts retained the exact following raw-output suffix. Nevertheless, **0 of 110 Capture reconstructions** and **0 of 55 Init reconstructions** matched the uninterrupted oracle's final line state in the finite corpus. The uninterrupted-stream control matched, and deliberate dropped/duplicated lines were detected. See the [report](research/EX2a-report-2461364a.html) and [raw score summary](../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/summary.json).
+
+The distinction matters: FIFO ordering worked, while the formatted restore omitted state needed for correct continuation. Failures included split Unicode/escape sequences, title, cursor effects and saved primary history during alternate-screen capture. The oracle and replay shared a VT engine, so common defects remain possible. This was not native AgentStudio rendering or the complete client/Gateway/Host route.
+
+### EX2c — Existing complete-snapshot component
+
+**Lead; executed upstream tests.** Initial run: 87 passes and two relative-fixture `FileNotFound` failures, exit 1. After correcting only the working directory: **89 of 89 executions passed**, exit 0, across overlapping roots containing 44 and 45 tests. These are not 89 independent behaviors. Both logs and the exact command are in the [component report](research/report-d2526250.html).
+
+This was useful optional component research. The owner's later IP13 direction means complete-state import is not a prerequisite for moving forward with lossy ZMX restoration, and Ghostty must remain unforked. It does not make ZMX export that state or make AgentStudio import it. The source-checked embedded native surface has a different handle/API; its text-input call is not an output or binary-checkpoint import call.
+
+### EX2b follow-up — Actual native PTY and lossy ZMX reattachment
+
+**Lead, executed on Sunclaw.** An unchanged native Ghostty framework consumed real producer output through its normal PTY. The correct text/query case passed; a deliberately wrong first line failed while its query still passed. Actual ZMX Capture plus an exact live suffix then passed the declared lossy text profile, and a second fresh native view recovered both markers with no repeated input. Daemon, task shell and held-child PID/start identities remained unchanged. Three actual process-exit events followed explicit cleanup. Two earlier fixture failures exposed an empty leadership/resize notification and the need to clear/home the fresh view before non-clearing Capture. [Detailed results and limits](research/native-and-socket-results-49880ceb.html).
+
+This is native parser/text and finite reattachment proof, not pixel presentation, full route, arbitrary TUI restoration, installed-session cutover or automatic agent resurrection. Ghostty source and the product vendor checkout were not changed.
+
+**Additional reverse leg:** native surface text input `x` reached the relay's actual PTY and the ZMX child, which produced the exact live suffix; final native text and fresh-view reattachment passed. The run retained the input byte, two local native query fences, matching process identities and three cleanup exit events. This is surface text submission, not physical key/IME/general paste or controller authorization. [Native input evidence](research/native-zmx-results-7c7d163d.html#source--additional-native-text-input-arm).
+
+### EX5 — Viewers, controller authority, queries and resize
+
+**Advisor team; live foreground-child experiment.** The final fixture retained 32 correlated observations, 24 passing receipt checks and 400 audited IPC frames. Input from a nonleader—even a socket without Init—could take leadership. Send bypassed leadership; a split terminal reply promoted a viewer. Query and focus behavior differed from control ownership. See the [EX5 report](research/EX5-report-5cb07634.html).
+
+The Host must enforce the selected one-controller/viewer rule before backend effects. The result does not select the controller-loss UX or prove that exactly one backend socket is the only valid implementation. Native Ghostty and a slow-viewer recovery policy were not qualified by these checks.
+
+### EX3 precursor — Matching control version and process-safe retirement
+
+**Lead, executed on Sunclaw; independent source/raw-data check.** The copied current adapter observed and retired its matching old backend. Against the new backend it returned a typed timeout, exit 2. A narrow version-1 candidate observed the independently checked process identity, refused an altered incarnation while the original family stayed alive, and returned `pending` followed by `completed` after three kernel process-exit events. All nine expected exits across the three private cases were observed. [Results, sequence and limits](research/zmx-control-results-9ba26365.html).
+
+This is the control-version prerequisite, not the installed-session cutover experiment. The runner's aggregate exit 0 alone is weaker than final-completion proof; the actual raw replies and independent exit records establish this run's completion. Product source and vendor remain unchanged.
+
+### EX3 fourth direction — New control against an old survivor
+
+**Sol Worker staged; Lead checked and ran one new private task session.** Observation and independently preconditioned retirement each returned typed timeout/exit 2. Four exact process/Info/boot readbacks remained unchanged. Separate old-CLI cleanup produced three registered kernel exit events and an absent endpoint, despite a retained old-backend SIGKILL warning whose cause is unqualified. [Fourth-direction result and limits](research/zmx-control-results-9ba26365.html#source--fourth-direction-the-upgraded-client-meets-an-old-daemon). No installed session was touched.
+
+### EX1 follow-up — Public creation and controlled initialization
+
+**Lead build/run on Sunclaw; Sol staged the driver and independently checked evidence.** A standalone consumer of public `zmx.create` returned true, while the interactive Bash rc stayed behind a controlled barrier. A duplicate returned false without replacing the same daemon/shell family. After release, the rc validated the backend's exact DA1 response and a later plain Capture contained its marker. Retirement returned pending, then two actual process exits and completed. [Results and exact scope](research/zmx-create-results-53c724a9.html).
+
+The milestone is controlled initialization, not ordinary prompt readiness. Both backend Info queries reported zero other clients, while the independent `lsof` classification remained inconclusive. No attach operation, native view, Rust startup or product adoption was part of this case.
+
+### EX7 — macOS service supervision and privacy
+
+**Advisor; newly incorporated evidence.** Retained raw logs show the control script and its ZMX shell could access the three probed folders. Direct launchd bash was denied. The first launchd/ZMX-shell run stalled; its repeated run succeeded. The Advisor reports that the owner approved privacy prompts identifying the scratch ZMX binary between those runs. See the [EX7 report](research/EX7-report-19f1a1d2.html).
+
+I inspected that report and its allow/deny logs; I did not rerun it or inspect the live TCC database. It establishes those observed arms, not a universal rule about every daemon, code-signing identity or update. A signed SMAppService helper, Full Disk Access and rebuild/grant continuity were not tested. The Advisor reports the LaunchAgent was unloaded and its installed plist removed; the scratch plist remains evidence. It also reports **three privacy grants remain** for the experiment ZMX binary. No permission was changed by this Lead.
+
+### EX8 follow-up — Actual custody cuts and Swift socket client
+
+**Lead.** The isolated Rust/Tokio worker recorded SQLite phases around a create-new file effect, with crashes at causal cut signals. The original eight cases matched through each client; an independent check added an oversized-response case, reproduced the mismatch and verified its repair. All nine then matched through Rust and real Swift AF_UNIX clients. A partial or lost reply produced uncertainty; fresh-connection observation recovered the receipt. The same admitted receipt existed both before and after the effect, so it was insufficient evidence for automatic retry. Raw replies, SQLite/effect readbacks and all worker/client closures were checked. [Detailed results and stand-in boundaries](research/native-and-socket-results-49880ceb.html).
+
+### Linux watch follow-up — Overflow and replacement
+
+**Sol Researcher Worker; Lead checked.** The actual queue overflow omitted 256 of 16,640 creates; a closed-producer scan found them all. An old directory watch followed the renamed inode; a distinct replacement watch and scan observed the new path's later and earlier children. Fourteen checks passed, zero failed, and exported evidence hashes matched. This was ext4 `/tmp`, not the earlier overlay-root copy fixture. [Watch report and remaining parity gaps](research/linux-watch-results-340b436a.html).
+
+### Renderer-free Linux facts — Available data and limits
+
+**Sol Researcher original run; Sol Worker typed repair; Lead executed and checked the repair.** The checked run exited 0: five interactive phases plus task completion, three sensitivity checks, nine no-peer boundary records and six actual pidfd exits. The same interactive process continued. Explicit titles were recoverable, but two different long CWD URIs collided in Info's 256-byte field, and process CWD changes without OSC stayed absent from Info. [Detailed source/currentness and quality limits](research/linux-fact-results-04a3b516.html). These are explicit backend stimuli, not delivered Host-local provider/hooks or a complete fact pipeline.
+
+### E3 follow-up — Real owner/channel comparison
+
+**Sol Worker staged Rust; Lead authored the independent oracle, built and ran the instrument.** All 26 normal runs matched; all 14 deliberately broken controls were detected, including premature closure despite eventual task joins. A held observer did not stop required owner/active effects; removing every observer did not stop the Host's state/effect application. All declared keys survived the bulk/skew profile. [Results, diagrams and limits](research/coordination-results-79b2791e.html).
+
+Both candidates satisfy this finite profile. There is no speed or heap result, and the prepared-view subprofiles use a common dedicated owner rather than different A/B paths. This does not select a bus or establish the remaining E3 native, invalidation, deadline, recovery and cross-producer causal cases.
+
+### E3 C3 follow-up — Partial invalidations and first fresh demand
+
+**Sol Worker staged Rust; Lead independently authored the oracle, built and ran.** Four normal runs preserved all 24/25 entries at the first qualified demand. Eight real controls were detected, including a false hidden-prefix close despite correct values. Other views and shared invariants stayed healthy. All 12 process receipts exited 0 and all 78 owned-task joins completed. [Walk through the demand result](research/demand-results-d271a95d.html).
+
+Source revision alone did not prove merged completeness. The retained-dirty mechanism worked in these in-memory cases; native fulfillment, concurrent demand/read changes, tombstones, clocks, causal prerequisites and real Host capability reads remain separate. The independent check led to stronger oracle gates before execution and one additional final-diagnostic check afterwards, evaluated against unchanged retained raw data.
+
+### E3 C4 follow-up — Scheduled eligibility and old callbacks
+
+**Sol Worker staged Rust; Lead authored the literal oracle, built and ran.** Eight normal cases matched and fourteen real controls were rejected across both fact-delivery paths. A value arriving at virtual time 15 remained due at 20 from its last publication at 10. Held callbacks could not overwrite a replacement lifetime or deadline. All 22 processes exited 0, all 171 task joins completed and counted queues drained. [Walk through the timer result](research/eligibility-results-90c62d11.html).
+
+An independent source/evidence check confirmed the finite outcomes. The source/timer rules are shared; the A/B paths differ. This is paused current-thread semantics, not a latency measurement, native publication or a topology winner. Repeated pending-equality branches and full C4 remain open.
+
+### E3 C13 follow-up — A valid snapshot before its prerequisite
+
+**Sol Worker staged Rust; Lead authored the literal oracle, built and ran.** Eight normal cases matched and twelve actual wrong controls were detected in 20 fresh processes. Retaining the early snapshot and retaining a scoped requery obligation both worked under direct feeds and a real shared hub. All 190 task joins completed and 280 queue meters drained. [Walk through causal delivery](research/causality-results-31f69e29.html).
+
+The checker separately observes actual first caller replies and every installation. One control temporarily installs obsolete data even though its first fresh reply and final state are correct; another replies with stale data before repairing its final bank. Both are rejected at the intended view and worktree. These finite two-thread in-memory results do not select a bus or establish native, actual Git/SQL/replication, overload, fairness or latency behavior.
+
+### E3 C12 follow-up — Quiet invalidations behind ignored traffic
+
+**Sol Worker staged the unchanged source component; Lead authored the literal oracle, built and ran on Sunclaw.** Eight processes exited 0: two coarse baselines were explicitly incomplete, four narrowed/recovery cases returned current first views, and two actual stale-reply controls were detected. Every coarse reader lost one of the two quiet canaries. The filtered subscribers lost none; full-known-scope provider recomputation recovered current values before qualified replies. All 48 owned fixture tasks completed. [Follow the actual loss and recovery](research/eventbus-live-results-586afb46.html).
+
+This invokes the existing live batch API with synthetic envelopes and a fake filesystem/Git provider. The inspected production sources do not call that batch entry. Current Git also needs some topology handling, so the filesystem-only profile does not select a product fix. The full Git path, native/socket publication, cardinality/skew, concurrent recovery, performance and full C12 remain open. Internal bus termination-cleanup tasks have no join handles and remain unobserved.
+
+### E3 C14 follow-up — One canary across replay and live
+
+**Sol Workers staged source and typed observation checks; Lead authored independent literals/semantics, built and ran.** Four normal cases applied one canary exactly once and returned 7 through both legal publication positions and topic interests. Two real controls returned 0 or 14 from view1 despite receiving the canary once; both were rejected while other views and common checks stayed healthy. All six processes exited 0 and all 36 owned tasks joined. [Follow the replay/live handoff](research/replay-handoff-results-6abc1fd0.html).
+
+The current bus captures replay and registers atomically; no internal race was fabricated. This is one fresh source-component cohort with a synthetic non-idempotent observer, not deduplication across reconnects or a durable resume contract. Full C6/C14, premature-close negative sensitivity, independent-producer concurrency, native/socket publication and performance remain open.
+
+## What has not been built or run
+
+- **Rust product implementation**
+  - Host daemon, Gateway, shared Rust client library and new CLI adapter: not built by this effort.
+  - Complete generated CLI/Swift schema/version compatibility remains open. A private opposite-language socket fixture now passes its nine declared fault scenarios.
+  - Gateway-to-Host network protocol, pairing and multiple-Host isolation: not demonstrated.
+- **Terminal integration**
+  - EX2b complete app/network/native route and general restoration: unqualified. The finite native ZMX Capture/live and fresh-view profile now passes.
+  - EX3 actual installed-session cleanup/cutover race: not run.
+  - EX8 actual Host/Git/provider/central-authority custody remains unbuilt. The isolated Rust/Swift file-effect/SQLite prototype has run.
+- **Other platforms and features**
+  - Complete Linux shell/fact/worktree-fork and product watch-recovery contracts, iOS Gateway/renderer, remote Git/worktrees, provider/context migration and shared database-copy integration: not demonstrated. The [first Linux follow-up](research/linux-followup-0db23976.html) and [watch fault results](research/linux-watch-results-340b436a.html) cover narrower executed primitive observations.
+  - Performance comparisons, release thresholds and a full remote-terminal user journey: no passing evidence.
+
+The four-document design is also unfinished: remaining Program Design contracts, the separate Verification Design and current formal review are still open. Five independent risk reports supply source-backed candidates; they are not product tests or a whole-design acceptance.
+
+## Why there was no overnight build
+
+The 45-minute wake was saved and active. From 22:12 on 20 October through 06:27 on 21 October Toronto time, **all twelve inspected deliveries failed before native turn submission**, reporting `invalidResumeResponse` during `thread/resume`. There was no accepted wake turn in that set. The Lead therefore did not perform the proposed overnight experiments or implementation. The previous promise was a work queue with a disclosed delivery limitation, not completed work.
+
+The earlier reviewer operation supplied no usable verdict. A fresh read-only inspection of the exact independent Reviewer on 22 October reports it unloaded with unavailable history and logged-out authentication. Its previously rejected resume has not been retried; a prepared review packet is not a submitted or completed review. The current report uses actual files and recorded results rather than inferring progress from timers, sent messages or a quiet session.
+
+## ZMX advancement now authorized
+
+The owner has now authorized moving ZMX forward in this worktree. Today's upstream lookup returns **`7f0ffdb999833a1817dd3c6222c269d4ed4a7548`**, six commits beyond the experiment pin. Fetch succeeded; the product vendor checkout was still `8bab1f0` at this report's initial inspection. The fetched source was then built and tested in isolation; the product checkout remains unchanged.
+
+**Completed today by the Lead:** 43/43 upstream build steps and **105/105 tests passed**, exit 0. A separate 43/43-step CLI build passed, exit 0. The binary is retained at `tmp/experiments/2026-10-21-zmx-7f0/install/bin/zmx`; its SHA-256 is `89290268a5504c0019cbf5bff6d3fa1f544dbc5b788096e8fa33231f5a4a134b`. The [result record and exact commands](../../../../tmp/experiments/2026-10-21-zmx-7f0/result.json), [test log](../../../../tmp/experiments/2026-10-21-zmx-7f0/build-test-host-permission.log) and [CLI build log](../../../../tmp/experiments/2026-10-21-zmx-7f0/build-cli.log) preserve what ran. The initial sandboxed compilation failed before test execution with a cache-manifest permission denial; the same command succeeded after the host granted it. An initial `version` invocation also lacked the isolated directory setting and was denied during log initialization; with an explicit fixture `ZMX_DIR` it succeeded. That Mac build/version check launched no sessions; the later Linux follow-up used only its own synthetic task and VM. No production session was inspected or changed.
+
+These are upstream component results. They do not establish the app integration, Linux parity or the restoration behavior at this newer pin. The binary still reports `0.8.1`, reinforcing the need for the exact source and artifact identities.
+
+The newer source adds `zmx.create` as a Zig package API, with explicit create options. A standalone public-package consumer has now run against that exact source: it created a controlled interactive Bash without using attach and preserved it on a duplicate create. Its Boolean preceded the separately observed initialization milestone. [Actual creation evidence](research/zmx-create-results-53c724a9.html). This does not select a Rust API or establish ordinary prompt readiness, all error/race behavior or Host integration.
+
+A pin-only update is insufficient: AgentStudio's existing `ZmxSessionControl` directly reads and writes the old private header. The new header has a protocol-version byte and a different length offset. That mismatch has now been reproduced, and a copied version-1 candidate has passed the finite observation/refusal/retirement profile against the new backend. [Actual compatibility results](research/zmx-control-results-9ba26365.html). Product adoption, full-app validation and installed-session transition still remain. The old experiment results remain attached to `0a18bee`; latest-source success cannot be inferred from them. No installed-session transition is selected by the worktree authorization.
+
+## Focused ZMX integration design
+
+The next integration has its own [design folder and guided reader](../increments/00-qualification/zmx-worktree-adoption/index.html), with a Specification, Program Design and Verification Design linked to the existing shared Requirements. It covers the paired vendor/control-protocol update, native attach/input/reattach and existing verified cleanup in a private worktree root. The proof design requires the actual product adapter, native app and ReleaseFast binary; copied-source experiments do not close those gates. No product integration, full-app build or new runtime proof has happened yet.
+
+The source follow-up found a pre-existing list issue at both old and new pins: error-row names can be interpreted as healthy by unused list-based backend APIs. Production native restore uses exact stored-ID attach, and production cleanup uses direct identity control. The generic list name extractor is also used to detect unresolved test cleanup; filtering it indiscriminately would weaken that verification. This issue is recorded separately and the focused integration leaves list behavior unchanged.
+
+## Short reading path and document cleanup
+
+Use three pages for the project: [system overview](index.html), [feature tree](features.html), then [MVP and phases](delivery.html). Use this page for actual work/results, and open raw evidence only when needed.
+
+The document audit found useful history mixed with stale status labels. The [audit and cleanup dispositions](research/document-value-audit-05d1bcc2.html) distinguish current design, superseded recommendations, useful historical evidence and redundant aliases. The cleanup corrects blanket “unexecuted” claims, adds the omitted EX7 result, removes an empty catalog section and places long reference lists behind disclosures. It preserves raw experiment reports, the original research supplied by the owner and old redirect URLs. No data, source experiment or evidence archive is deleted.
+
+</script></ex-markdown><ex-presentation id="work-completed" title="Built, tried, still missing" description="Who built what, the executed experiments and the next ZMX boundary."><ex-step to="progress.html#source--built-by-the-lead">Start with what the Lead actually produced: design, reader tooling and bounded component evidence.</ex-step><ex-step to="progress.html#source--systems-that-actually-ran">Separate existing upstream systems and experiment stand-ins from the Rust product that still needs building.</ex-step><ex-step to="progress.html#source--experiments-and-results">Read the executed probes, who ran each and what each observation can establish.</ex-step><ex-step to="research/native-zmx-results-7c7d163d.html#source--what-ran">Follow the native proof: the backend snapshot and live bytes reach Ghostty, while its local query reply cannot be supplied by ZMX.</ex-step><ex-step to="research/capture-stress-results-3ed0d442.html#source--follow-one-split-character">An exact live suffix can follow an incomplete snapshot. Follow one split character, then compare the larger completed matrix by element rather than treating a driver exit as display fidelity.</ex-step><ex-step to="research/zmx-control-results-9ba26365.html#source--three-combinations-actually-ran">A vendor pin alone breaks the old control adapter. Compare the actual matching and mismatched versions before treating an upgrade as integrated.</ex-step><ex-step to="research/zmx-create-results-53c724a9.html#source--api-return-and-readiness-are-separate">Session creation, shell initialization and an ordinary prompt are different milestones. Follow the public API case without turning its Boolean into a readiness receipt.</ex-step><ex-step to="research/coordination-results-79b2791e.html#source--follow-one-slow-observer">Both real Tokio delivery candidates preserve this finite profile. Follow a held observer and separate a semantic result from a bus or performance decision.</ex-step><ex-step to="research/demand-results-d271a95d.html#source--follow-the-first-fresh-demand">Complete snapshots can hide a lost dirty scope. Follow actual partial invalidations to the first fresh result, then see why correct revision or final values alone cannot prove it.</ex-step><ex-step to="research/eligibility-results-90c62d11.html#source--follow-an-old-callback-after-replacement">A finished timer can leave an old callback alive. Follow exact candidate disposal, then see the off-boundary input that tests what the deadline is anchored to.</ex-step><ex-step to="research/causality-results-31f69e29.html#source--follow-a-snapshot-that-arrives-early">A valid snapshot may arrive before its prerequisite. Follow retained-candidate and requery recovery, then the bad intermediate installation that a correct final state hides.</ex-step><ex-step to="research/eventbus-live-results-586afb46.html#source--follow-a-quiet-invalidation-through-loss-and-recovery">Ignoring traffic after dequeue does not protect quiet work. Follow the unchanged Swift bus, the actual loss, and recovery that must finish before the first fresh reply.</ex-step><ex-step to="research/replay-handoff-results-6abc1fd0.html#source--follow-the-two-legal-handoff-positions">The current subscription handoff is atomic. Follow a fresh canary through replay or live delivery, then distinguish one receipt from one actual application.</ex-step><ex-step to="research/socket-custody-results-b1dfff8a.html#source--what-ran">Follow the request across the real Swift socket, effect and receipt boundaries; a lost response must preserve uncertainty.</ex-step><ex-step to="research/linux-watch-results-340b436a.html#source--linux-watch-overflow-and-directory-replacement">Filesystem events can be incomplete. See the actual overflow and replaced-inode cases before assuming a watch is a complete source of truth.</ex-step><ex-step to="research/linux-fact-results-04a3b516.html#source--what-the-records-show">A running execution can outlive all views, but Info alone loses facts. Separate explicit terminal observations from the Host pipeline still to build.</ex-step><ex-step to="progress.html#source--what-has-not-been-built-or-run">These product and integration boundaries still have no passing run.</ex-step><ex-step to="progress.html#source--why-there-was-no-overnight-build">A saved timer did not become a submitted work turn; the delivery receipts explain the limit.</ex-step><ex-step to="progress.html#source--zmx-advancement-now-authorized">The new worktree authorization enables the next bounded upgrade, with its real caller compatibility obligations.</ex-step><ex-step to="progress.html#source--short-reading-path-and-document-cleanup">Use a short current reading path and retain historical evidence without treating it as current status.</ex-step></ex-presentation>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

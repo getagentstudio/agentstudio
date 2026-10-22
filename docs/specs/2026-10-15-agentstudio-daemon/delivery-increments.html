@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Delivery increments: from remote terminal to the full Host backend</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="explainer/index.html">Understand the system</a><a href="explainer/features.html">Explore AgentStudio features</a><a href="explainer/progress.html">What was built and tried</a><a href="explainer/walkthroughs.html">Follow a workflow</a><a href="explainer/delivery.html">MVP and integration phases</a><a href="explainer/requirements.html">Requirements</a><a href="explainer/architecture.html">Technical architecture</a><a href="explainer/communication.html">Communication</a><a href="explainer/data.html">Data ownership</a><a href="explainer/schema.html">Tables and fields</a><a href="explainer/sequence.html">Spec dependencies</a><a href="explainer/experiments.html">Experiments and decisions</a><a href="explainer/research.html">Research library</a><a href="index.html">All specification documents</a><a href="delivery-increments.html">AgentStudio daemon · Delivery increments: from remote terminal to the full Host backend</a></nav></ex-nav>
+<ex-document id="content"><h1>Delivery increments: from remote terminal to the full Host backend</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](delivery-increments.md) · [Research library](explainer/research.html) · [MVP](explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Delivery increments: from remote terminal to the full Host backend
+
+This is the proposed delivery cut for the owner's request to split the project into an MVP and usable integration increments. It references the single [Requirements](user-requirements.html), the [observable Specification](2026-10-15-agentstudio-daemon.html) and the [eleven bounded domain designs](designs/README.html). It is a scope/dependency proposal for discussion, not an implementation plan, selected release commitment or permission to discard later requirements.
+
+The [direct source messages](research/owner-inputs/mvp-and-integration-explainer-request.html) authorize an MVP/integration proposal. They do not approve this particular I0–I7 order; the Requirements' unselected release ranking remains unchanged. Program Designs may link here for reader navigation but cannot consume its order as governing authority. The [initial profile](initial-profile.html) supplies selected directions; open detail below does not reopen corrected IP3 worktree CLI routing/activation, one-controller/viewers, shared tabs/layout/read marks, or invalid-writer refusal.
+
+The two structures answer different questions. DS01–DS11 own contracts and their eventual Program Designs. The increments below assemble slices of those contracts into a working user outcome. Completing a topic document does not deliver an increment; completing one increment does not complete all of its contributing topic designs.
+
+The [increment specification index](increments/README.html) contains a filled profile for I0 and every I1–I7 outcome, including the [remote-terminal MVP specification](increments/01-remote-terminal/specification.html). Each names the app integration seam, visible normal/failure boundaries, required evidence and exact missing contracts. They reuse the shared Requirements and domain-contract meanings rather than copying them into competing sources.
+
+The newer [migration map](designs/11-operations-integration/migration-map.html) connects this proposal to hierarchical feature/command/data coverage and the detailed near-term slice. Its dependency relationships guide planning; I-label order remains a proposed release cut.
+
+## Recommended first usable outcome
+
+Make **I1 a real remote-terminal MVP integrated into AgentStudio**: a Mac client reaches its Rust Gateway, the Gateway reaches a named Mac/Linux Host, and a real Ghostty surface displays and controls the Host's continuing ZMX execution. The user can detach, close the app, return and observe the same continuing execution. An explicit terminate operation remains separate.
+
+Do not make the first release wait for every Git operation, annotation workflow or layout-sharing decision. Also do not call a QUIC byte echo, a local CLI attachment or a running shell behind a mock a delivered remote terminal. The actual Swift/Gateway/Host/ZMX route and native terminal interaction are the first useful boundary.
+
+Exact MVP public method names, controller-handoff/resize/focus details, private-fleet admission details and restoration/readiness guarantees remain to be settled in its contributing contracts. This proposal does not infer those answers from the word MVP. Mac/Linux counterpart obligations remain required for every capability included in a released profile; a Linux leaf probe cannot substitute for them.
+
+## Increments and completion evidence
+
+| Increment | What becomes usable | Contributing specification/design slices | Entry and integration boundary | What closes it |
+| --- | --- | --- | --- | --- |
+| I0 — Qualify the foundations | Engineering evidence for the first route; not a user release | DS01 schema/outcomes, DS03 trust/lease distinctions, DS04 restoration, DS11 safety/build | Real Swift/UDS/Rust exchange; bounded ZMX/native restoration; isolated Linux capability and actual Host launch investigations | E1/E2/E4 feasibility plus honest unsupported/inconclusive results; no transport winner inferred from echo |
+| I1 — Remote terminal MVP | Address a Host; create/access its execution; view/input/resize under the selected control policy; detach/reconnect; explicitly terminate | DS01, terminal subset of DS02/DS03/DS04, DS09 routing/client control, DS10 Ghostty integration, minimal DS11 packaging | Existing local Ghostty startup becomes a declared gateway-backed terminal attachment path; Host owns execution establishment and backend attachment | Real app ↔ Gateway ↔ Mac/Linux Host ↔ ZMX journey; known corpus plus continuation; last-view/app/Gateway loss does not terminate; correct target and truthful failed/unknown outcomes |
+| I2 — Autonomous agents, facts and context | Supported provider inputs, binding, title/line/activity, notices, asks and answers keep working when Swift and every Gateway are absent | DS02 transactions, DS03 authority/write validity, DS04 fact sources, DS07, native context projection in DS10 | Provider hooks/CLI on the executing machine enter Host-local admission; client reads and person actions use the declared frontend route | Real provider-shaped inputs and retained context transactions; stale binding/scope refusal; answer/EOF/deadline races; no renderer-owned sole fact source |
+| I3 — Repository discovery and Git reads | Correctly attributed repository/worktree inventory, status, branch/review facts, diff/tree/content reads on a remote Host | DS05 reads/observations, DS01 paths/results, DS02 observation validity, DS08 finite-content read subset, DS09/10 query publication | Current filesystem/Git pipeline becomes Host operations; sidebar/review consumers receive prepared, Host-qualified observations | Actual Mac/Linux repository fixtures; partial/stale/lost-coverage results remain distinct; wrong Host/equal paths cannot alias; source→transport→viewer currentness proof |
+| I4 — Git mutations and complete worktree fork | Selected create/remove/lock/prune/ref/remote operations and the Linux counterpart of worktree fork | DS05 mutations, DS06, DS03 effect authority, DS09 CLI | Shared Git mechanics/library supplies the Host; existing CLI and native create/remove policies consume those operations rather than reimplement them | Real refs/admin/index/files/metadata and receipt/residue proof on both platforms; joined cancellation; uncertain promotion/removal never becomes a false untouched failure |
+| I5 — Reviews, annotations and declared outputs | Remote file/review products; annotation editing; prepared output with exact revisions and a named native/file destination | DS08, DS02 workflow transactions, DS03 native scope, DS10 viewer/effect boundary | Host constructs products/owns annotation workflow; BridgeWeb/Swift remain supported clients; actual native destinations stay explicit | Real source and worker/native rendering; stale revision/edit races; known effect plus failed finalization remains partial/unknown; copy arrival never repeats an output effect |
+| I6 — Selected replicated state and shared views | Chosen database copies/refill and prepared views; shared tabs/layout and declared read marks, with exact element/subject/reader scope still to finish | DS02/03, shared fleet-sync integration, DS09/10 | Faithful selected rows/cursors are distinct from derived query state and Swift schemas. Integrate reused replication/session/lease rules through their ports | Real writer→capture→session→receiver→query/client path, two receivers, schema/keys/transactions, retention/refill, no-Mac renewal and selected central-outage behavior |
+| I7 — Broader client and operational profiles | Supported phone/MCP/CLI capabilities and simultaneous multi-client operation; installation/upgrade/config/privacy/shutdown profiles | DS01/03/09/10/11 plus every exposed capability | Thin adapters use the same authoritative operations. Phone UX talks to its iOS Gateway, which reaches Hosts without a required Mac relay; native UI stays UX-owned | Real supported devices and artifact/version pairs, concurrent Gateways/Hosts, controller policy, interrupted traffic, bounded resources and measured acceptance workloads |
+
+I0 is a qualification gate. I1–I7 are candidate product increments. These labels do not select calendar dates, PRs, exact files or test commands. Independent work may overlap where its input contracts are stable. For example, Git schema/platform research can proceed alongside terminal qualification.
+
+## Cross-cutting work starts early
+
+Do not postpone Host-qualified identity, one schema authority, target validation, strong outcome types, Tokio task ownership, first-party no-unsafe or platform contracts until I7. They constrain I0/I1 from the start. Likewise, I6 names the broad replication/user experience; the data and write-authority contracts needed by an earlier increment must be resolved before that earlier increment writes those records.
+
+The many-to-many Host/Gateway model is required by U16/U18 and shapes the first public contract. A demonstration using one Host does not close that requirement. Each released capability profile must declare which concurrency outcomes it proves; the whole project cannot be accepted until both multiplicities work through real services.
+
+The control plane owns database leases. This proposal does not introduce a temporary Gateway issuer while the authority server is deferred. If an increment needs lease-governed persistence, its real authority integration and the relevant G13 outcomes are dependencies. A stand-in may support bounded development, but cannot close its real integration gate. SQL lease state does not imply a running process is stopped or an external effect was undone.
+
+## I1: the remote-terminal contract to complete first
+
+| Boundary | Required outcome already authorized | Exact contract/design work before implementation |
+| --- | --- | --- |
+| Addressing | The selected Host remains the target across requests, connections and views; no inferred-default effect | Enrollment/discovery, source/incarnation identity, authority and allowed target profile |
+| Execution establishment | Host execution can continue without a Swift view | Replace current attach-triggered creation with a Host-owned establishment/readiness contract; distinguish accepted, process established and attach-ready |
+| Native rendering | Swift presents the remote terminal and sends user control through Gateway | Actual Ghostty surface/PTY relay integration, byte/control framing, buffering and native callback return path |
+| Restoration | A new view receives a correct state plus ordered continuation | Select required screen/modes/history profile; evaluate Init/Capture/live cut; E1 proves parser/native legs separately |
+| Control | Input and resize are authorized at the addressed session | IP2 selects one input/resize controller and other viewers; finish acquisition/handoff, focus and viewport rules, including when another viewport may change child dimensions |
+| Lifecycle | Last pane closes → detach; presentation/network loss alone does not terminate | Attachment cleanup versus explicit session kill; distinguish natural exit and selected restart/re-adoption promise |
+| Failure | A lost response does not invent success, failure, rollback or safe replay | Actual submission/effect receipts, bounded cancellation/join, reconnect authority and resource profile |
+| Platform | Same included capability contract on Mac and Linux Hosts | Actual ZMX/backend binary, process/peer/path/PTY realization and packaging proof on both |
+
+Current-source anchors: [handle creation and attach command](../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift), [native startup selection](../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ViewLifecycle.swift), [Ghostty command construction](../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift). Current handle creation does not itself launch the shell. The local `zmx attach` process is passed directly as the surface command. Neither that source path nor `terminal.snapshot` establishes a remote terminal or a restored cell snapshot.
+
+I1 remains an incomplete contributing contract until these gaps are settled; this document is not an accepted I1 Program Design. The proposed technical realization is shown in the explainer alongside source evidence and alternatives.
+
+## How changes reach AgentStudio
+
+1. **Define the selected operation and typed boundary.** The one contract authority supplies Rust domain/wire validation and generated or validated Swift-facing shapes. A transport wrapper is not another business implementation.
+2. **Build the capability at the Host owner.** Backend adapters isolate ZMX, Git, filesystem, process and selected storage dependencies. The Mac and Linux implementations satisfy the same declared behavior, with explicit supported differences.
+3. **Expose it through the macOS/iOS Gateway.** Gateway routing keeps Host origin, caller/target authority, subscription and delivery state separate from domain truth. CLI/MCP presentation adapters reuse operations.
+4. **Bind the existing app consumer.** Terminal hosting, sidebar query, command execution, context/review or native-output integration changes at its current owning port. Keep native rendering and thin MainActor publication; do not move an actor graph verbatim into one Rust bus.
+5. **Cut over that capability's actual callers.** The target uses one authority path for that capability. No generic compatibility proxy, permanent dual writer, undocumented direct mode or second command catalog is selected. Unmoved capabilities retain their existing owners until their own designed cutover; they do not become two writers of the moved truth.
+6. **Build/package/import and prove the real path.** Rust service artifacts, the pinned Git/backend dependencies, generated protocol artifacts and the Swift app are paired deliberately. Exact repo/package placement, build tasks, installer and supported version matrix belong in the bounded Program Design and later implementation plan. A code build alone does not prove the app loaded the intended service/binary.
+
+Moving persisted user data needs a separately selected migration/cutover contract: old data reader, target unit/schema, identity/lease binding, interruption/recovery and safe refusal. Creating a fresh development fixture does not authorize ignoring installed user state or running two production writers. Machine/database-writer transfer remains outside current scope.
+
+## Coverage: nothing disappears behind the MVP label
+
+| Accepted need | Main integration increments and continuing obligation |
+| --- | --- |
+| U1/U11 Host roles and Mac/Linux parity | I1 establishes the route/terminal profile; I2–I5 add full backend capabilities on both platforms; I7 composes operation |
+| U2 attached-machine CLI | I1 contract/targeting; I2 Host-local inputs; I4 Git/worktree CLI; I7 final adapters/installation; IP3 selects worktree machine CLI → attached local Host daemon and activation when absent; startup/readiness/failure, discovery and non-session authority remain open |
+| U3 efficient communication | I0/E5 observation feasibility, I1 real path, I3–I6 realistic load, I7 accepted workload/budgets |
+| U4 full survey/backend scope | All increments; the18-family disposition and all15 K contracts remain present |
+| U5 Linux fork | I0/E4 leaf feasibility; I4 complete counterpart, including failure/residue |
+| U6 platform interfaces | I0 onward, every included Host capability; no silent Linux removal |
+| U7/U8/U9/U10 Rust standards, Tokio, types/tests, no unsafe | Every increment from I0; DS11 integrates rather than defers them; IP6 fixes first-party versus pinned safe-interface dependency scope; concrete inventory and compliance remain G11 |
+| U12/U17 macOS/iOS Gateway and required socket route | I0/I1 and every frontend increment; Host-local in-session work stays its separate selected class |
+| U13 pragmatic Rust/Swift/bus boundary | I1 terminal client integration, I2 facts/context, I3/I5 views, I6 selected data sharing |
+| U14 detach versus terminate | I1, then all attachment/controller clients |
+| U15 no-client sessions, authorized inputs and facts | I1 proves execution continuity; I2 completes the authorized integration/fact profile. A shell-only I1 does not discharge the whole U15 obligation |
+| U16 multiple Gateways/devices | Model/trust/control from I1; real concurrency coverage as each capability is exposed; broader client/device profile I7 |
+| U18 multiple Hosts | Model/routing from I1; every result/resource path remains Host-qualified; real isolation proof before whole-project acceptance |
+| U19 real Swift/socket schemas | I0 and each changed method/event/frame throughout; no self-roundtrip substitute |
+| U20/U21 central lease authority/separation | All state-bearing increments needing it; I6 full selected replication profile; no temporary Gateway issuer or current transfer workflow |
+| U22 shared tabs/layout and read marks | I6 broad experience; earlier slices preserve the shared/native distinction and qualified subjects. Exact additional marker families remain with Sun; no per-device-only substitute |
+
+The remaining detail and decision homes stay G1–G13 in the Specification under the selected initial profile. This proposal changes organization and suggested delivery priority; it does not supply missing contracts or claim planning readiness.
+
+The owner's S28 direction adds the iOS Gateway role and preferred Gateway/UX-client names. It does not select a new release ranking: iOS runtime/startup/suspension and schema proof are required wherever an increment includes that platform, and the whole project retains the iOS obligation.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

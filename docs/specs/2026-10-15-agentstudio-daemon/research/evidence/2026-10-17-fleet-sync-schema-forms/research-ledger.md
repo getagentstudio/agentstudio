@@ -1,0 +1,59 @@
+# Current fleet-sync source-form census
+
+2026-10-17. Continuation of the AgentStudio daemon design, not implementation or migration execution. Product HEAD remains `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`; inspected library is `53995d76150259464e7158c479c1e84bce7c51b3`. Shared work trace is Router root `01a1418c-c98b-7592-bdfe-bc3ea9168464`.
+
+## Question and grant
+
+Which of the86 current table declarations conflicts with the five now-checked library source forms: missing declared PK, non-TEXT PK component, missing explicit NOT NULL on a PK component, attached trigger, virtual table? This informs DS02's schema prerequisite explanation. It does not select exports, database homes, migrations, key values/write-path behavior or actual engine admission. Source forms are not a full engine/schema compatibility check.
+
+The original owner requested Sol xhigh research fanout. Three bounded Researcher Workers used `gpt-6.1-sol`, effort `xhigh`, fresh history and native Worker lifecycle: `/root/core_current_key_forms`, `/root/context_current_key_forms`, `/root/review_cli_current_key_forms`. Complete/Local/Task after supplying the exact rule contract; the owner's explicit model/effort preference overrides the ordinary Workhorse/default research pick. Each received the role charter, exact membership, source/rule pointers, source-only grant, unique scratch write pair, proof limits and no delegation/board/Advisor authority. The Lead retained all governing meaning, integration and acceptance. Preflight verified current checkout/HEAD/dirt, readable source/catalog/rules, supported native model route and265GiB free; no credential, database or service was needed.
+
+## Evidence reduction
+
+| Worker slice | Rows | Known conflict | No known conflict in these forms | Source coverage returned |
+| --- | ---: | ---: | ---: | --- |
+| Core | 28 | 26 | 2 | Twelve complete migration files,1463 lines,19 registration entries; exact library rule files |
+| Agent/context | 24 | 21 | 3 | Six complete migration files,1489 lines; final replacements and registration order; exact library rule files |
+| Client/CLI/search | 34 | 21 | 13 | Seven complete owning DDL files, registration/later-ALTER and CLI profile paths; exact library rule files |
+| Total | 86 | 68 | 18 | Source reads only; overlap in shared registration files is not counted as independent files |
+
+The three JSON/Markdown handbacks beside this ledger retain queries, complete row sets, primary anchors, source hashes, nulls and unknowns. They found no discrepancy in the earlier declaration evidence; the earlier comparison simply used a narrower profile. Their claims were accepted only after the Lead independently recomputed each row from the catalog, compared exact86-row membership, PK declaration fields and reason sets, opened the actual library parser/inspection/stored-key and pending-write validation paths, and reopened decisive Core/global-topology/trigger and Local/CLI examples. All24 anchored AgentStudio product files byte-match the unchanged HEAD; `source-identities.json` retains that check. `lead-form-summary.json` is the reduced result; `data-catalog-before-current-profile.json` preserves the prior catalog.
+
+Reason counts are nonexclusive:44 missing explicit NOT NULL,14 non-TEXT key component,16 attached-trigger tables,3 missing PK,1 virtual table. Per database: Core26/28, Local39/53, CLI1/3, search2/2 have a known checked conflict. The initial reason label PrimaryKeyNullable was corrected in all commissions to PrimaryKeyOmitsExplicitNotNull: this is a declaration rule and must not imply that INTEGER rowid aliases admit NULL. Forty of the44 are single TEXT keys; four are INTEGER declarations.
+
+Every row retains canonical stored UUIDv7 values, immutable writes, installed schema, engine admission and target membership as unproved. For example, final `repo_tag` declares non-null TEXT components but one component is a general trimmed1–64-character tag; passing a type/declaration check does not prove all supported tag values are canonical UUIDv7. A table written indirectly by another table's trigger also needs transaction/integrity closure even if it has no attached trigger itself. No stored rows or all mutation paths were inspected.
+
+## Source routes and nulls
+
+Current catalog and earlier source evidence were discovery → exact current product migration/order/DDL and pinned library predicates → parent aggregation → reader rendering. No external API/version fact required a web search; no saved-reader/session/credential/DB/runtime class was needed. Helpers' memory discovery did not supply any adopted current fact. No independent formal review was commissioned; these are evidence Workers, and the Lead's reduction is not a review verdict. Closed Advisor remained closed.
+
+Parent queries included `rg -n 'CREATE TABLE (repo_tag|arrangement_layout_divider)|arrangement_layout_divider|cli_store_identity|CREATE TABLE.*cli_state'` in scoped migration/CLI owners; `rg -n 'catalog-markdown|Captured-profile form|source_schema_evidence|profile_form_comparison'` in the existing document artifacts; and exact catalog membership/source-field computations. A guessed glob `Sources/AgentStudioCLIStore/CLIState*` had no match; `CLIStore+State.swift` was then found and its creation/update path opened. This was a lookup miss, not missing functionality. Aggregated report output was truncated; the Lead separately reduced the machine-readable rows and read the material claims/limits, rather than treating truncated output as coverage. All parent accepted classification claims are supported by the primary rule/source checks and per-row comparison, not helper confidence alone.
+
+## Catalog and reader repair
+
+The JSON catalog adds `fleet_sync_current_implementation_profile` and a separately pinned `fleet_sync_current_source_form_comparison` for every row. Historical declaration/profile facts,86-table/597-column membership and all placement proposals remain unchanged. No target table is adopted or migrated by these fields. Schema prerequisites and the library-fit explanation now distinguish68 known form conflicts and18 form-only nonconflicts from actual compatibility.
+
+During this work the Lead found a real document defect: `catalog-markdown/cli.md` had only its introductory paragraph, while the schema page labelled that tab as three tables. The JSON contained the three rows. An earlier rendered-completeness claim therefore exceeded its actual observation. The CLI Markdown body was regenerated using the catalog's exact `ipc/cli.sqlite` database membership; it now contains cli_store_identity, cli_outbox and cli_state with2/6/7 columns. Used reference definitions were restored from the owning evidence report, so raw reference notation does not stand in for clickable source links. No product data was missing or changed.
+
+Every schema Markdown section now displays the separate current five-form label/reasons and its unproved value/write/admission boundary. Parent source-to-reader checks compare actual headings and column rows with the catalog, not only tab labels. Existing renderer, tables and navigation are reused; no new application or bus mechanism was introduced. The check results and actual-browser observations are added below after the final artifacts are generated.
+
+No SQL, product/library tests/builds, native app/service, migration, cloud probe, Git mutation or current-schema database inspection occurred. Four pre-existing dirty PNGs are untouched. This bounded evidence loop completes source-form classification and reader coverage; the broader design retains G4/N1/G13, target schema/membership/currentness decisions, structural confirmation and independent review. No stand-in was built and no current/runtime compatibility claim is made.
+
+## Final document and browser observations
+
+Matching Demistify1.2.1/source `26809124481d4f25f8c779ed64ca1ecda41d399a` embed/check completed **198 files:0 errors,0 warnings**, exit0. Raw logs, current HTML hashes and `document-validation.json` are beside this ledger. Validation found73 adjacent Markdown/HTML pairs,1,103 existing local targets,0 missing targets/absolute preview links/unexplained source-hash mismatches; the earlier DS02 README navigation-only frozen delta remains separately classified, with the original frozen baseline preserved. Docs-scoped `git diff --check` exited0; product diff across Sources/BridgeWeb/Package.swift remains empty.
+
+Actual Brave schema tab observations, after clicking each tab:
+
+| Tab | Real rendered table sections | Actual column rows | Visible current-form labels | Known conflicts / form-only nonconflicts |
+| --- | ---: | ---: | ---: | --- |
+| Core | 28 | 137 | 28 | 26 / 2 |
+| Local | 53 | 437 | 53 | 39 / 14 |
+| CLI | 3 | 15 | 3 | 1 / 2 |
+| Search | 2 | 8 | 2 | 2 / 0 |
+
+The first raw DOM textContent measurement counted both embedded Markdown source and rendered text, doubling label counts. The observation was corrected to rendered innerText before interpretation; actual headings/column DOM rows independently matched the source catalog. This was an instrument distinction, not duplicated UI. CLI's real headings and2/6/7 column rows were observed, and the restored source references render as links rather than raw reference syntax. No claim rests only on tab labels.
+
+The current prerequisite reader renders the86/68/18 per-database table and source-only limits. Narrow viewport440px produced425px page width and714px table within369px horizontal-scroll wrapper; desktop was restored to1728px/1713px, with no dialog left. Final screenshot: `/Users/shravansunder/.codex/visualizations/2026/10/15/01a1418c-8bbd-76c0-abb9-71d9cc571ee6/agentstudio-current-schema-forms.jpg`. Tab marked deliverable. Existing tab binding was reacquired within the same selected Brave browser after turn-scoped ownership expired; no browser replacement or alternate UI control route was used.
+
+The source-form task and missing CLI reader body are closed at their actual source/document proof levels. This does not close canonical stored-value/immutable-write/real-engine evidence, selected exports/migrations, the missing named brief file, unresolved owner semantics, complete Program Designs or planning readiness. No timer or new wake was created; all three evidence Workers completed.

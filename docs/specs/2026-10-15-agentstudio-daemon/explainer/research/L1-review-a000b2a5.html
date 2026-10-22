@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · L1 — Contract core risk review</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L1-review-a000b2a5.html">AgentStudio daemon · L1 — Contract core risk review</a></nav></ex-nav>
+<ex-document id="content"><h1>L1 — Contract core risk review</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-20-full-spec-review/L1-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## L1 — Contract core risk review
+
+## 1 Basis
+
+[source] Reviewer: 🔎 Reviewer Sidekick, L1, with no authorship history in the target. Commission: 🦉 Advisor `claude-local/1436a6c8-f1aa-4b7b-bf4e-124ade68856b`, supplied by the owner. This report supplies risk candidates and evidence; the Advisor and Lead retain disposition. The commissioned six-section risk procedure narrows the design-review workflow: this is a specification-only lane examination with supporting structural excerpts, without a delivery judgment or further reviewer delegation.
+
+[source] Manifest: [spec-manifest-sha256.txt](../../../../../tmp/practices-research/2026-10-20-full-spec-review/spec-manifest-sha256.txt), SHA-256 `c18425249969dd319bd63580af7556f88da65aae1b3dfb4a853120f3309d147a`. Both checks with `shasum -a 256 -c` returned exit 0 and 116 matching entries. **Lane files changed against the manifest: zero.** All twenty lane Markdown files were read throughout, including DS01's experiment and DS09's research note. Linked text was opened only to resolve a lane claim; its coverage is stated below.
+
+[source] Current source identities: AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`, branch `feat/daemon`; agentstudio-git `4cca397dfc869857064da4e9ec8289ea46adc479`; vendored zmx `8bab1f0173b07e79835ea372d749af3dbf0d0842`; vendored Ghostty `2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33`. These were read with `git rev-parse`. The AgentStudio package's Git dependency matches the supplied Git revision at [Package.swift:37](../../../../../Package.swift).
+
+[source] Authority also includes the packet's first-hand owner decisions, cited here as **O1–O9**, in the supplied order. In particular O7 expressly includes a Mac CLI addressing a remote daemon with `--host vm-1`; O8 requests latest zmx with Capture changes. These records take precedence over older artifact paraphrases. No provider transcript, board, other review, prohibited scratch inventory, or `docs/wip` artifact was opened. A memory-registry discovery search supplied no evidence to this review; findings were formed from the target, opened source, and supplied owner records.
+
+[spec text] The model reconstructed from the lane is: Host owns machine execution and admitted domain work; device Gateway routes frontend requests and prepares authorized observations; actual native effects belong to the addressed UX client. Execution, attachment, connection, provider binding, native view, grant and database-writer authority have distinct lifetimes. Shared composition/read markers concern logical meaning rather than actual native viewing. The principal correction to that reconstruction from the packet is that remote machine CLI access is already owner-directed, rather than an unresolved Gateway-route choice.
+
+[inference] Coverage accounting:
+- **complete — lane textual examination:** all sections of the nine root files; DS01 scope/K13, operation map, communication paths and socket procedure; DS03 scope/K14; DS09 scope/K2, prepared-view contracts/lifetime/failure cases and CLI grammar. A single lane-wide examination retained these seams together; no separate chunk judgments are claimed.
+- **complete — source and authority comparison within named paths:** entry routing, pane authority/close wiring, representative effect-time native checks, context read/write boundaries, terminal establishment/retirement/controller/serialization, subscription lifetime, codec/framing and package/platform baseline.
+- **complete — scope defense within this lane:** Host/Gateway routes map to U1/U2/U12/U17/U18; execution/attachments to U14/U15/U16; writer authority to U20/U21; prepared views to U13/R15/R16; logical sharing to U22; protocol proof to U9/U19; migration accounting to U23. Candidate libraries and module names are proposals, not compulsory new owners. Deleting an optional library is allowed if the required outcome remains; none of the findings requires a new journal, spool, service, global clock or endpoint per SDK helper.
+- **partial — transitive behavior coverage:** the 57-name declaration index was inspected, but this report does not claim a fresh audit of every parameter variant or every transitive effect behind all 57 methods. The report's behavioral findings cite the actual paths opened.
+- **partial — visual/derivative coverage:** Mermaid source was read. Unmanifested HTML readers, SVG/PNG assets and rendered pixels were not inspected. No visual equivalence claim is made.
+- **not executed — runtime/proof collection:** the command grant was read-only inspection. No builds, tests, service launches, network probes, filesystem mutations, signing or physical-device runs occurred. Experiment proposals below are prospective.
+- **outside this lane:** complete DS02/DS04–DS08/DS10–DS11 examination, current upstream library verification, full migration-map reconciliation and a four-document assessment. The missing Verification Design is explicitly identified by [index.md:12](../../design-index.html); it is not silently supplied here.
+
+[source] No product write was issued. The final tracked-modification query listed four images outside the target (`docs/images/agent-studio-file-diff-review.png`, `agent-studio-pane-drawers.png`, `agent-studio-parallel-agent-terminals.png`, `agent-studio-repository-command-bar.png`); none was opened or edited. The Git package's tracked-modification query returned no paths. The sole authorized write for this reviewer is this report. Hash comparison establishes the pinned target's content, not absence of unrelated concurrent workspace activity.
+
+[source] The following are SHA-256 prefixes for files whose content or anchored excerpts were opened. Source and workflow listings include partial/excerpt reads; a hash is identity evidence, not semantic coverage. Search-only discovery does not establish whole-file review. Paths in the first two lists are relative to the specification root.
+
+### Lane files
+
+```text
+c1e936a51e966002  2026-10-15-agentstudio-daemon.md
+b9e67ba514493ec6  user-requirements.md
+5e194c597746d5e0  domain-entities.md
+2150050422daa619  initial-profile.md
+306904c355f72530  capability-contracts.md
+90e7c51ca19b301e  delivery-increments.md
+efa3e47ea63d2490  documents.md
+30ed01be8c1c524d  index.md
+a51bf8444ecfd956  README.md
+8da9c3cccb2b95dc  designs/01-service-contracts/README.md
+b719093b4c2b8243  designs/01-service-contracts/specification.md
+492f43d946625ebd  designs/01-service-contracts/communication-design.md
+d3e3d5bd85629e0c  designs/01-service-contracts/rpc-operation-map.md
+c70bddb393722fba  designs/01-service-contracts/experiments/swift-socket-compatibility.md
+005afb046af7bfb6  designs/03-authority-control-plane/README.md
+4d96060e64e39413  designs/03-authority-control-plane/specification.md
+bd623f0db55b2325  designs/09-gateway-cli/README.md
+b748c85f4341aa7b  designs/09-gateway-cli/specification.md
+bacb2ebffeff84f9  designs/09-gateway-cli/prepared-view-boundaries.md
+2b7ace854248e2b3  designs/09-gateway-cli/research/cli-entry-surface.md
+```
+
+### Linked specification files
+
+```text
+b6a293400d0f692a  research/topology-risks.md
+7e7a741a0e71ebd4  research/owner-inputs/worktree-cli-host-direction-2026-10-19.md
+9f20b12e3781c571  designs/11-operations-integration/near-term-migration.md
+e34aeeed3f405fea  designs/11-operations-integration/research/ios-gateway-hosting-evidence.md
+```
+
+### Current source and architecture reads
+
+[source] AgentStudio-relative paths, with sibling-repository paths absolute:
+
+```text
+e271212bdea2e117  docs/architecture/README.md
+742e673e5d5d3091  docs/architecture/structure/directory_structure.md
+3fc63608b6df5480  docs/architecture/commands/command_specs.md
+1f37ca4c804fb2d7  Package.swift
+92364222ad65b82c  Sources/AgentStudioIPCClient/main.swift
+8eca31461fd8ac7c  Sources/AgentStudioWorktreeOperations/WorktreeCommandLine.swift
+b3b9e0123b72fc33  Sources/AgentStudioIPCTransport/IPCFramePolicy.swift
+40e84702b94a09ba  Sources/AgentStudioAppIPC/AgentStudioIPCRegistryAuthorization.swift
+0a531e75cbdc36fa  Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift
+6a8ae24b87f1cc18  Sources/AgentStudioAppIPC/AgentStudioIPCAuthentication.swift
+8ba8c2a483e3ce46  Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+Undo.swift
+d2dd843e1ef4efac  Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift
+93288f5a9599c47b  Sources/AgentStudio/Core/Models/StableKey.swift
+a60b1716b456811f  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift
+d4851ff11eff4165  Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift
+6493a217ef9d59fe  Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift
+43d4c05cee0b2069  Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift
+a7abc98daa8d9053  Sources/AgentStudio/Core/PaneContext/PaneContextService.swift
+2712693645a1b987  Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift
+22ea3c4b60620262  Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift
+3f68b74ac4272336  Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift
+8eb019f38bce6b78  Sources/AgentStudioAppIPC/AppIPCBuiltInPresentationAndEventRegistrations.swift
+e83a85acbdf8168a  Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBuiltInMethodIndex.swift
+7d341fb290d9d285  Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift
+fb28e4d7039861b5  Sources/AgentStudioAppIPC/IPCEventBroker.swift
+ac052b264b513383  Sources/AgentStudioIPCTransport/JSONRPCCodec.swift
+dc60f5cc209e125e  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift
+34bdba0a78d93ada  Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift
+ed1bf17c23b57836  Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift
+4714a36f5aad9b2b  Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift
+acb1b9ea6dc55af3  Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift
+73f8df67d294b46a  Sources/AgentStudioIPCTransport/NDJSONFrameDecoder.swift
+2e9e1daab576809f  vendor/zmx/src/ipc.zig
+7db5c93f0453bbe5  vendor/zmx/src/loop.zig
+1b3bf400a8410231  vendor/zmx/src/main.zig
+34520fef99a1dc5c  vendor/zmx/src/util.zig
+a3b2528465f9ef84  vendor/zmx/build.zig.zon
+d8605b0491088890  /Users/shravansunder/code/projects/agentstudio-git/Package.swift
+26c46f1566b977a7  /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/APFSStrictCloneMaterializer.swift
+ac6c61ac3b44dd24  /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitContracts/GitWorktreeForkContracts.swift
+```
+
+### Workflow reads
+
+[source] Paths relative to the active sunstack-dev `2.92.0` install:
+
+```text
+115dfcb379392898  skills/role-reviewer/SKILL.md
+944b26f8a3d37e16  skills/role-reviewer/references/working-with-lead.md
+4044e86b0d0b36c6  skills/principle-read-ground-truth-first/SKILL.md
+bcefa14adeb0a6f2  skills/principle-read-ground-truth-first/references/example_scenarios.md
+fd40eee5890508a4  skills/principle-verify-before-accepting/SKILL.md
+7bc37576a829faf0  skills/principle-verify-before-accepting/references/example_scenarios.md
+32182d88e8cf58a9  skills/principle-name-the-tradeoffs/SKILL.md
+a296e27e9c37b790  skills/principle-name-the-tradeoffs/references/example_scenarios.md
+fcecebecefa5a5ed  skills/principle-experiment-before-proposing/SKILL.md
+73ca491d5be20cd8  skills/principle-experiment-before-proposing/references/example_scenarios.md
+6271dd262b738c30  skills/practices-research/SKILL.md
+a8c4ea3386ff1b7c  skills/practices-research/references/tool-routing.md
+763f7ecb46a22f36  skills/practices-research/references/lane-packets.md
+e238c5b231374ae1  skills/spec-program-review/SKILL.md
+7bdd9207c4d9c5d3  skills/spec-program-review/references/reviewing-common-method.md
+8f171c94f5d23eef  skills/spec-program-review/references/reviewing-specification.md
+5d9db7e0525b0caf  skills/spec-program-review/references/lanes/dispel.md
+de7dca5924a361de  skills/spec-program-review/references/lanes/lane-schema.md
+4b9615e0de7166f0  skills/spec-program-review/references/finding-and-reduction-schema.md
+478b5fda72fa17c0  skills/spec-program-review/references/coordination-and-chunking.md
+cdc144b4f9c2d255  skills/spec-program-review/references/lanes/mode-complete-reviewer.md
+90465d3274af6230  skills/principle-write-for-the-reader/SKILL.md
+9cd6052b2e1fe952  shared-references/design-documents.md
+```
+
+## 2 High-risk spaces, ranked by cost-if-wrong times thinness of support
+
+[inference] Scores below are ordinal triage, not measured probabilities: consequence and support-thinness each range from 1 to 5. “Thin” concerns the selected target realization, not whether a current-source citation exists. Several risks are explicitly admitted by the spec; identifying them does not assert that the author hid them.
+
+### H1 — Host identity must reach storage and effect targets, not stop at an envelope — 5 × 5 = 25
+
+**Kind:** stored data; contract; premise many pieces rest on.
+
+[spec text] E23 identifies a *running* Host instance while stable identity after restart remains G3/G12 ([domain-entities.md:21](../../domain-entities.html)). E7/E8 require Host-qualified resource identity ([domain-entities.md:39](../../domain-entities.html)); R11/R12 forbid misattribution and inferred-machine effects ([2026-10-15-agentstudio-daemon.md:140](../../2026-10-15-agentstudio-daemon.html)). The near-term slice explicitly needs the association/import contract ([designs/11-operations-integration/near-term-migration.md:66](../../designs/11-operations-integration/near-term-migration.html)).
+
+[source] [Sources/AgentStudio/Core/Models/StableKey.swift:7](../../../../../Sources/AgentStudio/Core/Models/StableKey.swift) derives identity from a canonicalized local path. [Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:17](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift) makes repository and worktree stable keys globally unique, without a Host column in those declarations. These are current local contracts, not evidence of a future Host namespace.
+
+[inference] Two Hosts with equal paths, or a restarted/replaced service with a reused local ID, can be distinguished on the wire but still alias in a native cache, persisted association or destructive operation. Later repair can require reshaping already stored identifiers and every consumer. Before fixing public references, distinguish execution boundary, stable Host resource identity, service incarnation and backend incarnation; state the selected continuity/refusal outcome. Preserve O3's host/VM boundaries without deciding O5's deployment/workspace cardinality. Smallest correction: complete this identity/import contract, not an automatic global database re-key. Route: spec-design -> program-design. Confirmation: equal-path Hosts plus replacement/reconnect cases remain distinct at both stored lookup and actual effect targets.
+
+### H2 — View-independent authorization needs a real replacement for pane membership — 5 × 4 = 20
+
+**Kind:** security; ownership.
+
+[spec text] R9 requires authorized session input with every Gateway and Swift absent; E18 says in-session authorization concerns Host execution, not pane presence ([2026-10-15-agentstudio-daemon.md:138](../../2026-10-15-agentstudio-daemon.html), [domain-entities.md:108](../../domain-entities.html)). K14 deliberately leaves credential custody, scope and effect races open ([designs/03-authority-control-plane/specification.md:13](../../designs/03-authority-control-plane/specification.html)).
+
+[source] The current close owner invalidates removed pane IDs before teardown ([Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+Undo.swift:13](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+Undo.swift)); [Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift:117](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift) wires that to IPC principal invalidation. Each ordinary authenticated request rechecks its context ([Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift:309](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift)), and [Sources/AgentStudioAppIPC/AgentStudioIPCAuthentication.swift:395](../../../../../Sources/AgentStudioAppIPC/AgentStudioIPCAuthentication.swift) requires current canonical pane membership. Hooks use that app IPC path and can return zero without usable credentials ([Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift:30](../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift), [Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift:126](../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift)).
+
+[inference] Preserving only the backend process can leave the detached shell alive but its hooks/messages unauthorized. Removing membership checks wholesale creates the opposite failure: stale or cross-session writers remain effective. The minimum launch contract must bind local credentials, authenticated execution context, provider binding where applicable, revocation and effect-time checks independently of E16. This is already required by the near-term text at [designs/11-operations-integration/near-term-migration.md:60](../../designs/11-operations-integration/near-term-migration.html), not a request for a new identity service. Also preserve unbound notices: [Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift:20](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift) checks binding only for a new ask. E11's “E1 ... and its E10 binding” wording ([domain-entities.md:65](../../domain-entities.html)) must not become a universal provider-binding prerequisite. Route: spec-design -> program-design. Confirmation: valid pre/post-detach input, stale binding and revoked/cross-target input are independently observed at Host admission and the actual transaction.
+
+### H3 — Invalid writer authority intersects effects and read-side writes before broad replication ships — 5 × 4 = 20
+
+**Kind:** stored data; security; irreversible step.
+
+[spec text] IP4 fixes pause/refusal without a new intake spool and preserves running execution ([initial-profile.md:12](../../initial-profile.html)). K14 leaves initial setup, authority/copy binding, commit rules and renewal open ([designs/03-authority-control-plane/specification.md:9](../../designs/03-authority-control-plane/specification.html)). Delivery explicitly says any earlier state-bearing increment needs its real authority dependency, even though the authority server is later work ([delivery-increments.md:37](../../delivery-increments.html)).
+
+[source] Compact display capture enters a SQL write closure ([Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift:106](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift)). A detail read first calls `ensureOpen`; that opening can settle synchronously waiting asks in a write transaction ([Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift:27](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift), [Sources/AgentStudio/Core/PaneContext/PaneContextService.swift:93](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService.swift)). Thus “read” versus “mutation” in an API name is not a gate classification.
+
+[inference] A lease policy that gates only obvious RPC mutations can permit unauthorized maintenance; gating an entire read blindly can discard otherwise permitted last-known display. An external process can also start or terminate before a later registry write is refused. Unspecified outcomes encourage reporting a failed commit as no external effect. Resolve the write classes, authority establishment, validity at transaction/effect boundaries, loss-of-coverage and reconciliation outcomes for the first selected slice. Do not substitute a Gateway issuer or a development stand-in for integration evidence. Route: spec-design -> program-design. Confirmation: controlled expiry/revocation during held work, with independent backend and database readback. Deleting replication from the early slice does not remove any lease-governed writes that the chosen registry/context contract still requires.
+
+### H4 — iOS Gateway hosting is a separate feasibility dependency from a shared codec — 4 × 5 = 20
+
+**Kind:** premise many pieces rest on; contract.
+
+[spec text] R3 requires the device's own Rust Gateway without a Mac relay; R13 requires its actual socket interoperability ([2026-10-15-agentstudio-daemon.md:132](../../2026-10-15-agentstudio-daemon.html), [2026-10-15-agentstudio-daemon.md:142](../../2026-10-15-agentstudio-daemon.html)). The linked mobile note labels startup/runtime/socket/lifecycle work unexecuted and its mixed-language linkage an inference ([designs/11-operations-integration/research/ios-gateway-hosting-evidence.md:7](../../designs/11-operations-integration/research/ios-gateway-hosting-evidence.html), [designs/11-operations-integration/research/ios-gateway-hosting-evidence.md:13](../../designs/11-operations-integration/research/ios-gateway-hosting-evidence.html)).
+
+[source] The opened app package declares macOS 26 ([Package.swift:4](../../../../../Package.swift)); the current terminal surface explicitly uses the macOS platform tag and NSView ([Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:393](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift)). This supports the Mac baseline only. The external library APIs quoted by the mobile note were not independently reverified under this lane's command grant.
+
+[inference] Successful Mac socket traffic leaves safe Rust startup, local socket custody, Tokio lifetime, Swift scene integration and suspension/reconnect unanswered. If these require a different hosting form, process assumptions can propagate into service identity, cancellation and packaging. Complete a minimal target qualification before treating the Mac process diagram as portable. This does not require a second mobile process or choose FFI. Route: program-design -> verification-design. Confirmation: X4; physical-device lifecycle remains separately unobserved by a simulator result.
+
+### H5 — Capture-bearing ZMX plus the actual native renderer must define restoration — 4 × 5 = 20
+
+**Kind:** contract; premise many pieces rest on.
+
+[spec text] I1 requires the real surface and continuing execution, not byte echo ([delivery-increments.md:15](../../delivery-increments.html)); restore/history/mode semantics and the exact backend profile remain open ([delivery-increments.md:51](../../delivery-increments.html)). O8 selects latest zmx with Capture changes. The recorded `2d23c0d440583736f365a55aa09cb2c82b0fe7fa` is an uninstalled candidate recorded on October 15, not a current-upstream verification ([research/topology-risks.md:12](../../research/topology-risks.html)).
+
+[source] Vendored IPC has Init/History but no Capture tag in [vendor/zmx/src/ipc.zig:6](../../../../../vendor/zmx/src/ipc.zig). Init can resize and serializes state under specific prior-client/output conditions ([vendor/zmx/src/loop.zig:950](../../../../../vendor/zmx/src/loop.zig)). Serialization explicitly suppresses synchronized-output replay and omits tabstop restoration ([vendor/zmx/src/util.zig:769](../../../../../vendor/zmx/src/util.zig)). Its Ghostty dependency is `8af6897...`, distinct from the app vendor ([vendor/zmx/build.zig.zon:7](../../../../../vendor/zmx/build.zig.zon)). The current app hands a startup command to a Ghostty surface ([Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:393](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift)).
+
+[inference] A correct visible string can hide wrong modes, cursor/history, query responses or continuation after a fragmented escape sequence. Vendored Init behavior cannot qualify a different Capture implementation. First encode the owner-selected backend direction, then freeze the exact candidate, restoration profile and snapshot/live boundary against the actual renderer. The cheaper parser leg can eliminate a bad candidate before native integration, but cannot replace it. Route: spec-design -> program-design -> verification-design. Confirmation: X1 with a prefix/restoration/suffix oracle. Capture behavior matters decisively here.
+
+### H6 — Continuing execution custody and destructive cleanup cannot follow connection lifetime — 4 × 4 = 16
+
+**Kind:** ownership; irreversible step.
+
+[spec text] R5/R6 separate detach and termination; shared operation interpretation separates admission, state commit, external effect and response ([2026-10-15-agentstudio-daemon.md:134](../../2026-10-15-agentstudio-daemon.html), [capability-contracts.md:53](../../capability-contracts.html)). The near-term slice recognizes queued old cleanup and post-effect response loss ([designs/11-operations-integration/near-term-migration.md:47](../../designs/11-operations-integration/near-term-migration.html)).
+
+[source] Current handle creation only creates a directory and returns a handle; the shell starts on attach ([Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:182](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift)). Current SQL marks a session pending cleanup when pane and available-Undo references are absent ([Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift:174](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift)); its cleanup worker invokes backend retirement ([Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift:103](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift)). Retirement checks incarnation and returns pending after sending Kill ([Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift:46](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift)).
+
+[inference] An old cleanup job can destroy a newly service-owned execution. A connection-cancelled create task can orphan started work; a lost reply can trigger duplicate creation; a sent Kill can be reported as completed termination. These are distinct observations within one custody boundary, not a reason to invent blanket retries or exactly-once execution. Close operation-specific create/access/detach/terminate outcomes, task ownership, installed-session cutover and supported reconciliation. Route: spec-design -> program-design. Confirmation: X6 and explicit drain/join evidence for old destructive work; a fresh empty fixture alone cannot establish installed-session handling.
+
+### H7 — ZMX leadership is not the selected controller authorization — 4 × 4 = 16
+
+**Kind:** security; contract.
+
+[spec text] IP2 permits at most one input/resize controller and says a phone viewer neither takes control nor resizes execution merely by attaching ([initial-profile.md:10](../../initial-profile.html)). R7/G4 retain handoff, no-controller and focus detail ([2026-10-15-agentstudio-daemon.md:136](../../2026-10-15-agentstudio-daemon.html), [2026-10-15-agentstudio-daemon.md:188](../../2026-10-15-agentstudio-daemon.html)).
+
+[source] Vendored zmx makes a nonleader the leader on detected user input ([vendor/zmx/src/loop.zig:894](../../../../../vendor/zmx/src/loop.zig)), assigns a leader during Init if absent ([vendor/zmx/src/loop.zig:950](../../../../../vendor/zmx/src/loop.zig)), and can assign one during Resize ([vendor/zmx/src/loop.zig:1026](../../../../../vendor/zmx/src/loop.zig)). Input buffering can drop a new payload when capped ([vendor/zmx/src/loop.zig:873](../../../../../vendor/zmx/src/loop.zig)). These mechanics contain no AgentStudio authenticated grant.
+
+[inference] Directly translating each admitted viewer into an unrestricted backend terminal client can allow input takeover or resize; indiscriminately suppressing viewer return traffic can mishandle terminal query responses. “Accepted” must also not mean the child consumed bytes. Specify allowed control and reply traffic at the Host boundary, including the no-controller case; backend leadership alone cannot be the authority. This names the obligation, not a mandatory number of backend connections. Route: spec-design -> program-design. Confirmation: X2 on the selected Capture-bearing revision; the current automatic-leadership source must be rechecked there.
+
+### H8 — Prepared-view validity has to include every source and the native generation — 4 × 3 = 12
+
+**Kind:** contract; stored data.
+
+[spec text] R16 forbids complete-current claims for incomplete/unestablished coverage; R17 adds qualitative progress for healthy participating shared-state readers ([2026-10-15-agentstudio-daemon.md:145](../../2026-10-15-agentstudio-daemon.html)). The candidate contract preserves family-specific witnesses, generation and failure dispositions ([designs/09-gateway-cli/prepared-view-boundaries.md:108](../../designs/09-gateway-cli/prepared-view-boundaries.html)); capacities, retention and source-read profiles remain open.
+
+[source] Current compact capture rechecks source membership after an await ([Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift:106](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift)), whereas the opened detail operation uses its captured source view without the same post-read membership comparison ([Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift:27](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift)). Existing subscriptions are connection/principal-bound runtime records, without replay input ([Sources/AgentStudioAppIPC/IPCEventBroker.swift:66](../../../../../Sources/AgentStudioAppIPC/IPCEventBroker.swift)).
+
+[inference] Treating a copied position as current Host truth, or retaining an old failure after newer intent, can mislabel stale membership/permission as current even when displayed counts match. Conversely, endless supersession can leave a healthy reader stale. The proposed fences address the right dimensions, but do not yet establish the complete source set, bounded scheduling or recovery behavior. Freeze family contracts and exercise stale-success, stale-error, source-reset and slow-reader cases. Route: program-design -> verification-design. Confirmation: X7; no global cross-Host snapshot is required. Moving less preparation from the existing Swift worker remains a credible smaller realization if comparative evidence favors it.
+
+### H9 — Reverse native dispatch creates a reentrant authority and result boundary — 4 × 3 = 12
+
+**Kind:** security; contract; ownership.
+
+[spec text] Gateway resolves an admitted live native route, and the native owner rechecks target/currentness; a combined command may issue a nested Host request ([designs/01-service-contracts/communication-design.md:32](../../designs/01-service-contracts/communication-design.html), [designs/01-service-contracts/communication-design.md:60](../../designs/01-service-contracts/communication-design.html)). Origin/delegation and Host-initiated native effects remain unselected details at line 64.
+
+[source] Current focus requires the actual active window and pane ([Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:37](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift)). Command preparation uses declared argument/exposure/privilege metadata; execution revalidates the durable target before dispatch ([Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift:60](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift), [Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift:117](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift)). Current per-request authentication at [Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift:309](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift) does not itself specify cross-process delegation.
+
+[inference] A Gateway loop awaiting native completion can obstruct that native operation's nested Host request. Route replacement or weak client registration can send a command to a different app/device. A disconnect after dispatch cannot establish no effect. Preserve catalog and native-owner checks, define trusted client-route lifetime and actual outcome custody, and validate nested progress. Do not turn a selected native operation into a generic remote script server. Route: spec-design -> program-design. Confirmation: X8; no additional application service is necessary merely to perform this check.
+
+### H10 — Whole-feature parity can be lost between “selected capability” and inventory coverage — 5 × 2 = 10
+
+**Kind:** contract; premise many pieces rest on.
+
+[spec text] O1 requires translating every current feature with client-facing contracts intact; U23 records the hierarchical strangler obligation ([user-requirements.md:53](../../user-requirements.html)). R4 applies to each *selected* E5 and E5's complete contract set remains open ([2026-10-15-agentstudio-daemon.md:85](../../2026-10-15-agentstudio-daemon.html), [2026-10-15-agentstudio-daemon.md:133](../../2026-10-15-agentstudio-daemon.html)). The root U-to-contract table ends at U22 ([2026-10-15-agentstudio-daemon.md:203](../../2026-10-15-agentstudio-daemon.html)); the capability map explicitly says final selection is unsettled ([capability-contracts.md:90](../../capability-contracts.html)).
+
+[source] CLI worktree execution has an early pre-IPC branch ([Sources/AgentStudioIPCClient/main.swift:13](../../../../../Sources/AgentStudioIPCClient/main.swift), [Sources/AgentStudioWorktreeOperations/WorktreeCommandLine.swift:55](../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLine.swift)). The Git package supplies a separate macOS-only package and strict APFS materializer ([agentstudio-git/Package.swift:39](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Package.swift#L39), [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/APFSStrictCloneMaterializer.swift:31](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/APFSStrictCloneMaterializer.swift#L31)). A 57-method inventory therefore cannot by itself represent the entire preservation boundary.
+
+[inference] Endpoint selection is legitimate; silently omitting an existing user outcome is not. A downstream implementer could interpret “not selected” as permission to drop a feature, or mark it preserved because its name appears in a map. Tie U23 to explicit feature/entry/outcome preservation and any owner-directed changes, including CLI output/partial effects and native outcomes. This does not require publishing every internal SDK helper. Route: spec-design, with the full migration reconciliation remaining the integration lane's responsibility. Confirmation: an outcome-level crosswalk covers every current feature, and each changed client contract has authority. Removing inventories would not remove the parity obligation.
+
+## 3 Contradictions
+
+### C1 — Direct remote worktree CLI is owner-directed, but the spec keeps it open
+
+[spec text] [user-requirements.md:32](../../user-requirements.html), [initial-profile.md:11](../../initial-profile.html), [2026-10-15-agentstudio-daemon.md:141](../../2026-10-15-agentstudio-daemon.html) and [designs/09-gateway-cli/specification.md:23](../../designs/09-gateway-cli/specification.html) leave direct CLI access from a different machine unselected. The source-record interpretation explicitly says the phrase “remote daemon” does not settle it ([research/owner-inputs/worktree-cli-host-direction-2026-10-19.md:19](../../research/owner-inputs/worktree-cli-host-direction-2026-10-19.html)).
+
+[source — owner record] Packet O7 expressly adds the Mac CLI `--host vm-1` use case, rejects routing worktree CLI through Gateway, and confirms the Mac also has a daemon. Current implementation is local early dispatch at [Sources/AgentStudioIPCClient/main.swift:13](../../../../../Sources/AgentStudioIPCClient/main.swift); it cannot settle the new remote contract.
+
+[inference] A Mac-side remote worktree command can be rejected as outside scope or incorrectly classified as frontend CLI and routed through Gateway. Smallest correction: record the selected direct CLI-to-addressed-Host outcome, keeping exact authentication, target discovery and local activation separate. Do not infer remote auto-provisioning. A new owner decision on the route is unnecessary. Route: spec-design. Confirmation: all quoted open-choice cells agree with O7 and the same named command has one intended target/effect boundary. Category: doc vs owner decision.
+
+### C2 — Latest zmx with Capture has been reduced to an optional evaluation
+
+[spec text] S8 says newer upstream is “eligible for design evaluation” ([user-requirements.md:66](../../user-requirements.html)); the near-term backend profile remains wholly open ([designs/11-operations-integration/near-term-migration.md:72](../../designs/11-operations-integration/near-term-migration.html)).
+
+[source — owner record] Packet O8 requests use of latest zmx with Capture changes. [vendor/zmx/src/ipc.zig:6](../../../../../vendor/zmx/src/ipc.zig) confirms the opened vendor has no Capture tag; [research/topology-risks.md:12](../../research/topology-risks.html) records the separate uninstalled candidate.
+
+[inference] Vendor-only qualification could be consumed as sufficient while omitting the owner-requested backend direction. Smallest correction: make the Capture-bearing target direction explicit while keeping the exact verified commit and actual behavior qualification unresolved. This is a design correction, not authorization to replace live sessions. Route: spec-design. Confirmation: requirement, backend profile and experiment inputs distinguish the baseline vendor from the selected Capture-bearing target. Category: doc vs owner decision.
+
+### C3 — DS03's brief reopens the already selected invalid-writer policy
+
+[spec text] [designs/03-authority-control-plane/README.md:20](../../designs/03-authority-control-plane/README.html) calls expiry-paused writes versus indefinite offline writes a pending owner choice. [initial-profile.md:12](../../initial-profile.html) and [designs/03-authority-control-plane/specification.md:9](../../designs/03-authority-control-plane/specification.html) already select pause/refusal without a new spool.
+
+[inference] A designer following the brief can reopen or implement indefinite writes despite the scoped contract. Smallest correction: replace that pending high-level choice with the remaining exact gates, setup/renewal and truthful outcome contracts. Route: spec-design. Confirmation: the brief preserves IP4 and leaves only its detailed boundaries open. Category: doc vs doc.
+
+### C4 — DS01's brief still says ordinary Mac CLI routing is unresolved
+
+[spec text] [designs/01-service-contracts/README.md:22](../../designs/01-service-contracts/README.html) leaves ordinary Mac CLI routing unresolved. IP3 and K13 already classify worktree machine CLI through Host with local activation, and UX/frontend CLI through Gateway ([initial-profile.md:11](../../initial-profile.html), [designs/01-service-contracts/specification.md:9](../../designs/01-service-contracts/specification.html)). C1 further supplies the current remote-machine correction.
+
+[inference] “Ordinary Mac CLI” is broad enough to undo the selected worktree route. Smallest correction: name only the remaining verb membership, startup, admission and target-discovery details; retain each settled class. Route: spec-design. Confirmation: the brief cannot be read as reopening machine worktree CLI's service choice. Category: doc vs doc.
+
+### C5 — Older prepared-view/RPC prose still calls shared viewed state and offline display unselected
+
+[spec text] [designs/01-service-contracts/rpc-operation-map.md:50](../../designs/01-service-contracts/rpc-operation-map.html) explicitly leaves completed-agent viewed scope as “one client versus shared same-user clients.” [designs/09-gateway-cli/prepared-view-boundaries.md:98](../../designs/09-gateway-cli/prepared-view-boundaries.html) calls offline display a pending selection; its line 248 again says viewing policy is open. In contrast, IP1 and IP12 select authorized last-known display and shared completed-agent viewed meaning ([initial-profile.md:9](../../initial-profile.html), [initial-profile.md:20](../../initial-profile.html)), and the prepared-view chapter itself acknowledges those selections at [designs/09-gateway-cli/prepared-view-boundaries.md:273](../../designs/09-gateway-cli/prepared-view-boundaries.html).
+
+[inference] A future display contract can choose a per-device-only completion mark or treat offline display as optional product direction. Smallest correction: keep the selected high-level meanings and name only exact audience/version/conflict/retention and extra-marker-family gaps. Route: spec-design -> program-design. Confirmation: earlier sections and tables agree with the chapter's final paragraph and IP1/IP12. Category: doc vs doc.
+
+[source + inference] **No additional doc-vs-source contradiction is established for the inspected behavior paths.** Current pane-bound authority, local attach-triggered creation and platform-specific code intentionally differ from the desired service design. Those differences support H1–H9; they are not mislabeled here as defects merely because the target redesign changes them.
+
+## 4 Premises that need an experiment
+
+[inference] These are proposed discriminators, not performed work. Every oracle must be frozen against the selected capability/profile before execution. Event/operation-owned closure establishes negative observations; elapsed silence does not.
+
+### X1 — Capture restoration and continuation compose with the actual Ghostty surface
+
+[spec text] Claim: the selected backend can restore the required terminal state and continue live output through the real route ([delivery-increments.md:50](../../delivery-increments.html), [designs/01-service-contracts/communication-design.md:110](../../designs/01-service-contracts/communication-design.html)).
+
+[source] Current Init/serialization and distinct VT dependency are at [vendor/zmx/src/loop.zig:950](../../../../../vendor/zmx/src/loop.zig), [vendor/zmx/src/util.zig:769](../../../../../vendor/zmx/src/util.zig), [vendor/zmx/build.zig.zon:7](../../../../../vendor/zmx/build.zig.zon). Source cannot show a new Capture implementation composing with the differently pinned native renderer.
+
+[inference] Cheapest decisive sequence: isolated backend/parser prefix–capture–restore–suffix comparison first, then feed that same real producer output through the command-backed Ghostty component, then compose the service route. Corpus: split UTF-8/CSI/OSC/DCS, alternate screen, cursor/mode changes, scrollback, resize and query-return cases required by the frozen profile. Oracle: independent expected screen/modes/cursor and subsequent suffix behavior, exactly qualified continuation with no duplicated or missing promised bytes; visible text alone is insufficient. Environment: this Mac first; Fly Sprites Linux or sunclaw for Host counterpart. **Latest-zmx Capture matters: yes.** Confirm the exact selected upstream commit, actual Capture message/response and sizing semantics, output-cut/ordering behavior, Init interactions, version negotiation and its VT dependency. `2d23c0d...` is only the recorded candidate; it is not checked out or verified current here.
+
+### X2 — Controller/viewer authority survives backend leadership, disconnect and query responses
+
+[spec text] Claim: a viewer cannot acquire input/resize authority simply by attaching ([initial-profile.md:10](../../initial-profile.html); H7).
+
+[source] Automatic leadership and capped input are visible at [vendor/zmx/src/loop.zig:894](../../../../../vendor/zmx/src/loop.zig) and [vendor/zmx/src/loop.zig:1026](../../../../../vendor/zmx/src/loop.zig). They cannot settle the future authenticated Host policy.
+
+[inference] Cheapest experiment: one real execution, two admitted attachments with different viewport sizes, a controlled child input/geometry recorder, then detach/reconnect/handoff under the selected policy. Include viewer user input, viewer resize, controller input, terminal-generated query replies and a deliberately nonreading child. Oracle: only authorized user control changes child input/size; query traffic follows the specified owner; actual accepted/written/consumed observations remain distinct. Environment: this Mac, repeated on the selected Linux Host environment. **Capture matters: conditional** for obtaining a viewer snapshot without control/resize effects; the authority distinction is required regardless. Reopen the chosen Capture revision's leader/Init/Resize/Input behavior before interpreting the result.
+
+### X3 — Authorized Host-local context remains useful after presentation disappears
+
+[spec text] Claim: R9/R10 survive Swift/Gateway absence while IP4 still governs invalid-authority writes ([2026-10-15-agentstudio-daemon.md:138](../../2026-10-15-agentstudio-daemon.html), [initial-profile.md:12](../../initial-profile.html)).
+
+[source] Current authority depends on pane membership ([Sources/AgentStudioAppIPC/AgentStudioIPCAuthentication.swift:395](../../../../../Sources/AgentStudioAppIPC/AgentStudioIPCAuthentication.swift)); hooks can return zero without admitted input ([Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift:126](../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift)); context writes and ask binding predicates are at [Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift:20](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift).
+
+[inference] Cheapest experiment after the minimal real Host ingress exists: start a real session with its Host-local environment, submit known notice/ask/provider-shaped inputs, remove all views/Gateways, repeat, then revoke or replace the relevant credential/binding and repeat the refused cases. Expire the writer grant separately. Oracle: independently read exact authoritative messages/binding/settlement and selected fact coverage; distinguish scope refusal, gate refusal and accepted records. Include a notice before provider binding, since asks and notices differ. Exit zero and a queued producer receipt are not the oracle. Environment: this Mac and one Fly Sprites Linux or sunclaw Host. **Capture matters: no** for context authority; terminal-fact coverage needs its chosen independent fact source and may require separate backend qualification.
+
+### X4 — The safe iOS hosting candidate can run the actual socket/lifecycle path
+
+[spec text] Claim: the device's Gateway can meet R3/R13 under IP6 ([2026-10-15-agentstudio-daemon.md:132](../../2026-10-15-agentstudio-daemon.html), [initial-profile.md:14](../../initial-profile.html)). The mobile candidate is explicitly unbuilt ([designs/11-operations-integration/research/ios-gateway-hosting-evidence.md:15](../../designs/11-operations-integration/research/ios-gateway-hosting-evidence.html)).
+
+[source] The actual baseline is macOS package/surface code at [Package.swift:4](../../../../../Package.swift) and [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:393](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift); no opened runnable artifact establishes iOS behavior.
+
+[inference] Cheapest experiment: a minimal signed/simulator iOS application with the actual selected Rust runtime/bootstrap, Swift UX producer/consumer and local socket, using first-party unsafe prohibition and resolved dependency evidence. Exercise foreground connection, interruption and the actual scene/lifecycle transitions; connect to a continuing Host session. Oracle: real requests/replies reach the intended Host, runtime/socket ownership closes or resumes as specified, and lifecycle loss does not terminate execution. Environment: **this Mac**, initially its iOS simulator. That can falsify build/link/socket assumptions; it cannot establish physical-device suspension or background availability. No physical-device access is established by this packet, so that later observation remains an explicit evidence need. **Capture matters: no** for bootstrap/socket qualification.
+
+### X5 — Independent Swift/Rust consumers preserve the selected numeric and presence semantics
+
+[spec text] Claim: every selected schema/variant has real opposite-language compatibility ([2026-10-15-agentstudio-daemon.md:142](../../2026-10-15-agentstudio-daemon.html)); the detailed case corpus is at [designs/01-service-contracts/experiments/swift-socket-compatibility.md:43](../../designs/01-service-contracts/experiments/swift-socket-compatibility.html).
+
+[source] Generic JSON numbers use Double ([Sources/AgentStudioIPCTransport/JSONRPCCodec.swift:3](../../../../../Sources/AgentStudioIPCTransport/JSONRPCCodec.swift)); the current response reader uses optional decoding before result/error validation ([Sources/AgentStudioIPCTransport/JSONRPCCodec.swift:199](../../../../../Sources/AgentStudioIPCTransport/JSONRPCCodec.swift)). NDJSON separately handles stream framing and encoded-byte bounds ([Sources/AgentStudioIPCTransport/NDJSONFrameDecoder.swift:72](../../../../../Sources/AgentStudioIPCTransport/NDJSONFrameDecoder.swift)). These traces motivate cases, not a claim of a reproduced application incident.
+
+[inference] Cheapest experiment: actual compiled Swift and Rust production directions over UDS with independently authored bytes, fragmented/coalesced frames, raw numeric tokens around the selected range, missing/null/result/error combinations, unknown variants and per-pair refusal. Keep authority/targets otherwise valid. Oracle: exact intended values or the specified refusal before owner invocation; the wrong numeric spelling must not be rounded in the test producer. Environment: this Mac, with the separately qualified mobile counterpart later. **Capture matters: no** for control schema; selected terminal binary frames require additional coverage.
+
+### X6 — Effect custody and known/unknown results survive loss at every boundary
+
+[spec text] Claim: lost responses and cancellation do not imply no effect, rollback or safe repeat ([capability-contracts.md:53](../../capability-contracts.html), [designs/01-service-contracts/specification.md:21](../../designs/01-service-contracts/specification.html)).
+
+[source] Handle preparation starts no execution ([Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:182](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift)); Kill submission returns pending ([Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift:46](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift)); old app cleanup can send retirement after references disappear ([Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift:103](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift)).
+
+[inference] Cheapest experiment: hold a real create/terminate operation immediately before backend effect, after effect but before record commit, and after commit but before reply. Cut Gateway delivery, cancel the attempt and change writer validity at those gates. Separately hold old cleanup across service-custody adoption. Oracle: independent process/incarnation and durable-state readback produce the selected known/refused/partial/unknown result; no automatic duplicate creation, namesake kill, or orphaned unaccounted task. Negative observations close on correlated operation facts. Environment: this Mac first, then selected Linux environment because process-inspection primitives differ. **Capture matters: no** for basic process/effect custody; backend incarnation/control compatibility still needs its exact revision.
+
+### X7 — Prepared views preserve source validity and eventually update under supersession
+
+[spec text] Claim: generation/source fences and bounded preparation can satisfy R16 and selected R17 progress ([designs/09-gateway-cli/prepared-view-boundaries.md:174](../../designs/09-gateway-cli/prepared-view-boundaries.html), [2026-10-15-agentstudio-daemon.md:146](../../2026-10-15-agentstudio-daemon.html)).
+
+[source] Current compact/detail reads have different post-await membership checks ([Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift:106](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift), [Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift:27](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift)). Source cannot prove the proposed scheduler, replica-read binding or native publication.
+
+[inference] Cheapest experiment: one concrete view family with real source read and production preparation/application, controllably holding generation A success and A failure while B changes membership/source lifetime. Add one unavailable Host, an equal-value validity change and a stalled consumer. Oracle: A never replaces B; incomplete/unknown coverage is explicit; equal paint does not suppress changed scope/authority; after quiescence an available authorized shared reader incorporates the latest established resource state without reopen. Bound retained work/bytes under the declared profile. Compare retaining the existing Swift worker against the Gateway move if performance is offered as justification. Environment: this Mac with two isolated sources; remote legs on Fly Sprites or sunclaw as needed. **Capture matters: no**, unless a selected view explicitly depends on a Capture-derived fact.
+
+### X8 — A reverse native call can issue its nested Host request without misrouting or stalling
+
+[spec text] Claim: the routing owner keeps progressing while a native operation awaits its own Host request ([designs/01-service-contracts/communication-design.md:62](../../designs/01-service-contracts/communication-design.html)).
+
+[source] Existing native dispatch is asynchronous and validates actual targets ([Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift:117](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift), [Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:37](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift)); that code has no future Gateway reentrancy guarantee.
+
+[inference] Cheapest experiment: one real admitted reverse native command that awaits a correlated Host call through the same Gateway; simultaneously remove/re-register the native route and lose the result after a known native effect. Oracle: nested request and parent operation each reach their declared closing fact, no replacement client receives the old call, unrelated Host traffic progresses, and lost post-dispatch results retain uncertainty. Observe the actual native owner, not only a transport echo. Environment: this Mac with an isolated debug/native client and two explicitly named source contexts. **Capture matters: no.**
+
+## 5 Owner-decision gaps
+
+[inference] Only product-policy choices are listed here. Exact crate grouping, codec, queue implementation and proof-driver wiring remain engineering work. O7's remote CLI route and O8's Capture direction need correction in the artifacts, not another owner vote. O5's deployment/workspace cardinality remains deliberately open; no reviewed lane claim requires settling it merely to conduct the named experiments.
+
+### ODG1 — What happens to terminal control when its controller disappears?
+
+[spec text] IP2 fixes one controller/viewers, but G4 leaves acquisition, handoff, revocation and no-controller behavior open ([initial-profile.md:10](../../initial-profile.html), [2026-10-15-agentstudio-daemon.md:188](../../2026-10-15-agentstudio-daemon.html)). I1 exposes control and reconnect ([delivery-increments.md:26](../../delivery-increments.html)).
+
+[source] Vendored zmx's takeover-on-input behavior is concrete ([vendor/zmx/src/loop.zig:894](../../../../../vendor/zmx/src/loop.zig)); it is backend mechanics, not owner authority for the distributed UX.
+
+[inference] The near-term public control contract still needs an initial user-visible policy: who can request/take control after disconnect, what existing viewers observe, and whether reconnect restores any authority. Retaining an unavailable controller and explicit claim versus automatic reassignment have different user/control risks. The owner or delegated product authority selects that outcome; the Lead can realize it. This need not prescribe unlimited concurrency or numeric fanout. Route: caller -> spec-design. Confirmation: a concrete disconnect/handoff scenario has one permitted child-input/resize outcome and refusal behavior.
+
+### ODG2 — Which Host/backend restart and re-adoption promise is actually offered?
+
+[spec text] E23's restart identity, E1's failure identity and G3 are intentionally open ([domain-entities.md:21](../../domain-entities.html), [2026-10-15-agentstudio-daemon.md:53](../../2026-10-15-agentstudio-daemon.html), [2026-10-15-agentstudio-daemon.md:187](../../2026-10-15-agentstudio-daemon.html)). Near-term create/access explicitly requires a selected restart/retained-record promise ([designs/11-operations-integration/near-term-migration.md:57](../../designs/11-operations-integration/near-term-migration.html)).
+
+[source] Current retirement protects an observed incarnation and treats failed inspection differently from extinction ([Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift:46](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift)); current creation's returned handle does not establish a running child ([Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:182](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift)).
+
+[inference] Access across connection loss is settled; access across Host restart, surviving backend process, reboot or reinstallation is not. The initial externally visible continuity/retained-record/refusal promise affects identity and stored state before first public create/access fields are fixed. A disconnect-only experiment can proceed without pretending to answer restart. The owner selects tolerated loss/re-adoption behavior; this does not settle workspace deployment cardinality or authorize writer transfer. Route: caller -> spec-design. Confirmation: each included failure boundary says whether the same E1 is accessible, ended, unknown or explicitly refused, with its retained-data meaning.
+
+### ODG3 — Which workload and tolerance define efficient service communication?
+
+[spec text] IP8 selects exploratory desktop/remote investigation while explicitly reserving mandatory workload and tolerances to the owner ([initial-profile.md:16](../../initial-profile.html), [2026-10-15-agentstudio-daemon.md:194](../../2026-10-15-agentstudio-daemon.html)).
+
+[source] Existing framing has distinct request/response bounds ([Sources/AgentStudioIPCTransport/IPCFramePolicy.swift:16](../../../../../Sources/AgentStudioIPCTransport/IPCFramePolicy.swift)), and terminal construction reaches a real native renderer ([Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:393](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift)). Neither is an observed latency or resource baseline.
+
+[inference] The near-term slice can gather costs, but cannot establish U3's product efficiency without a selected workload/reference and tolerated response, bandwidth/CPU/memory/recovery behavior. The owner selects what interactions and environments matter; the Lead chooses measurements and engineering budgets derived from that choice. A serializer or localhost RTT cannot decide native key-to-visible response. Route: caller -> spec-design -> verification-design. Confirmation: one matched current-versus-target interaction workload has an agreed observation boundary and tolerance before comparative results are interpreted.
+
+## 6 Checked and found consistent
+
+### K1 — Requirements and Specification have separate identities; unfinished proof design is explicit
+
+[spec text] [user-requirements.md:140](../../user-requirements.html), [2026-10-15-agentstudio-daemon.md:7](../../2026-10-15-agentstudio-daemon.html) and [index.md:9](../../design-index.html) consistently distinguish Requirements, observable contracts, structural work and the absent Verification Design. Delivery order is expressly a proposal ([delivery-increments.md:5](../../delivery-increments.html)). [inference] The report does not turn folder presence, inventory counts or prospective experiments into implemented behavior.
+
+### K2 — Local machine/session work is distinguished from frontend service entry
+
+[spec text] R1/R9/R12 and DS09 separate Host-local input from E4 frontend attempts ([2026-10-15-agentstudio-daemon.md:130](../../2026-10-15-agentstudio-daemon.html), [designs/09-gateway-cli/specification.md:6](../../designs/09-gateway-cli/specification.html)). [source] Existing early worktree dispatch and hooks really are separate current paths ([Sources/AgentStudioIPCClient/main.swift:13](../../../../../Sources/AgentStudioIPCClient/main.swift), [Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift:30](../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift)). [inference] This is a useful responsibility distinction; C1 corrects its incomplete remote-machine coverage rather than removing it.
+
+### K3 — Linux counterpart means complete behavior, not a file-clone leaf
+
+[spec text] R4/IP7 explicitly retain complete capability and refusal/partial contracts within one qualified Linux profile ([2026-10-15-agentstudio-daemon.md:133](../../2026-10-15-agentstudio-daemon.html), [initial-profile.md:15](../../initial-profile.html)). [source] The Git package is macOS-declared and its APFS materializer has directories, leaves, hard links and metadata responsibilities ([agentstudio-git/Package.swift:39](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Package.swift#L39), [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/APFSStrictCloneMaterializer.swift:31](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/APFSStrictCloneMaterializer.swift#L31)). [inference] These anchors justify qualifying the complete operation separately from a lower-level Linux clone probe; no Linux execution was observed here.
+
+### K4 — Current terminal snapshot is metadata, not restoration bytes
+
+[spec text] [designs/01-service-contracts/rpc-operation-map.md:111](../../designs/01-service-contracts/rpc-operation-map.html) and its terminal proof boundary retain that distinction. [source] [Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift:46](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) returns lifecycle/backend/capability/sequence/timestamp and renderer flags, without screen bytes. [inference] This avoids using the existing method as false proof of H5.
+
+### K5 — Socket qualification separates actual producer/consumer semantics from roundtrips
+
+[spec text] The procedure distinguishes shape, real UDS interoperability and actual domain/native integration, and names receiver-side invalid cases ([designs/01-service-contracts/experiments/swift-socket-compatibility.md:25](../../designs/01-service-contracts/experiments/swift-socket-compatibility.html), [designs/01-service-contracts/experiments/swift-socket-compatibility.md:81](../../designs/01-service-contracts/experiments/swift-socket-compatibility.html)). [source] Generic Double numbers, nullable response decoding and fragmented stream decoding are distinct actual paths ([Sources/AgentStudioIPCTransport/JSONRPCCodec.swift:3](../../../../../Sources/AgentStudioIPCTransport/JSONRPCCodec.swift), [Sources/AgentStudioIPCTransport/JSONRPCCodec.swift:199](../../../../../Sources/AgentStudioIPCTransport/JSONRPCCodec.swift), [Sources/AgentStudioIPCTransport/NDJSONFrameDecoder.swift:72](../../../../../Sources/AgentStudioIPCTransport/NDJSONFrameDecoder.swift)). [inference] The procedure correctly labels the proposed fractional-token discriminator as unexecuted; this report claims no reproduced numeric incident.
+
+### K6 — Subscription, authenticated connection and database authority are not interchangeable
+
+[spec text] E17–E19/K14 distinguish these lifetimes ([domain-entities.md:107](../../domain-entities.html), [designs/03-authority-control-plane/specification.md:9](../../designs/03-authority-control-plane/specification.html)); the RPC map disclaims existing resume support ([designs/01-service-contracts/rpc-operation-map.md:38](../../designs/01-service-contracts/rpc-operation-map.html)). [source] [Sources/AgentStudioAppIPC/IPCEventBroker.swift:66](../../../../../Sources/AgentStudioAppIPC/IPCEventBroker.swift) creates subscription records with principal and connection, and unsubscribe checks both; [Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift:362](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift) implements connection-local auth status. [inference] Those baseline facts do not supply a writer lease, durable logical-interest resume or effect receipt, and the lane generally preserves the distinction.
+
+[inference] Section counts: Basis — 0 changed-lane findings; High-risk spaces — 10; Contradictions — 5; Premises needing experiments — 8; Owner-decision gaps — 3; Checked and found consistent — 6. Cross-references connect related issues; these counts are not additive unique-defect counts. No correction, product implementation or runtime result is claimed.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

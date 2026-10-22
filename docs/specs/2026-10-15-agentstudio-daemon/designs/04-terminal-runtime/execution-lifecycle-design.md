@@ -1,0 +1,157 @@
+# Execution creation, facts and terminal attachment ownership
+
+Host-owned creation and facts are independent of presentation; closing a terminal view detaches, while explicit termination acts on the continuing execution. The design removes the current pane/Undo coupling to backend retirement. This realizes U14/U15 and R5/R6/R10/C3 under the existing [DS04 contract](specification.md), without selecting a cleanup timer, controller policy, crash-recovery promise or public protocol.
+
+The shared [Requirements](../../user-requirements.md), [system Specification](../../2026-10-15-agentstudio-daemon.md) and [candidate entity bindings](../11-operations-integration/program-design-workbench.md#bind-the-specifications-entities-before-naming-packages) remain the governing inputs. This is a bounded structural proposal, not a complete accepted DS04 Program Design. IP3 now selects machine-scoped worktree CLI → attached local Host daemon, with local activation when absent. UX/frontend CLI retains Gateway → addressed Host access. Eligible authorized Host-local session input is the separate R9/R12 path; neither route is an implicit fallback for the other.
+
+## Bind the resources before moving cleanup
+
+| Entity | Decision owner | Representation / home | Boundary still open |
+| --- | --- | --- | --- |
+| E1 execution session | Host session capability; backend owns actual continuing process/terminal execution | Candidate `host_session_runtime` and `session_contracts` from the shared binding table; Host-qualified session reference | G3's incarnation, restart/re-adoption and ended-record persistence; no new schema here |
+| E2 terminal attachment | Host attachment capability; native client owns its local view | Candidate `terminal_attachment`; selected session plus declared client-view association | G4/G8 attachment replacement, remote cleanup, control/focus and acknowledgement |
+| E3 connection | Its local/network adapter | Transient connection context; not an execution identity | Selected admission/replacement/resource profiles |
+| E4 request attempt | Calling frontend and addressed capability owner | Correlation and operation-specific outcome, separate from E1/E2 | G8's effect observation, reconciliation and duplicate semantics |
+| E16 client view | Native hosting/composition | Existing pane/surface and retained intent, referring to the addressed session | G9's arrangement scope/home; reference lifetime does not become execution ownership |
+| E23 Host instance | Host identity/admission integration | Addressed Host context accompanying the session reference | G3/G8/G12 identity and supported platform pairing |
+
+These are the existing binding candidates, not new service/crate declarations. A stored arrangement reference, an open socket or a task handle cannot independently decide that an execution has ended.
+
+## Current entry-to-effect path
+
+Inspected AgentStudio source remains at `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. No lifecycle behavior was executed in this work.
+
+| Step | Current source behavior | Why the target differs |
+| --- | --- | --- |
+| Eligibility | [Ownership query](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift:174) marks an owned session pending when no terminal pane and no available Undo-close member reference it. | No-view/Undo absence cannot by itself authorize termination of a service-backed E1 session. |
+| Composition | [Boot wiring](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:464) starts cleanup and supplies a native-attachment predicate from the local SurfaceManager. | One app's local native count is not a distributed session-lifetime authority. |
+| Cleanup work | [Coordinator pass](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift:70) reads batches, observes identity, then attempts retirement; it rechecks its stopped/native conditions before backend work. | Keep presentation release separate from any explicitly authorized Host termination. Do not mechanically migrate this eligibility rule into Rust. |
+| Ordering | [Datastore operation](../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+SessionCleanup.swift:20) holds workspace persistence ordering across the bounded callback and result write, without keeping a SQLite transaction across the await. It checks matching pending identity before retirement. | This is a local ownership-order mechanism, not a cross-Gateway lock or proof that copied rows authorize termination. |
+| Backend observation | [ZMX adapter](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:323) distinguishes endpoint absence, observed identity and unavailable inspection, then passes expected evidence to retirement. | Preserve truthful observations; mere socket/name presence does not establish the intended execution. Linux realization remains required. |
+| External effect | [Verified control](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift:46) protects mismatched/replacement identity; sending Kill returns pending. Extinction concerns the recorded process family, and denied process inspection is not absence. | Explicit termination needs actual effect/reconciliation observations. A request/transport return cannot report verified extinction. These Darwin mechanisms are baseline evidence, not the selected Linux contract. |
+| Shutdown | [Coordinator shutdown](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift:325) stops admission, finishes wakeups, cancels and joins the cleanup task. | Join old client-owned retirement work during cutover; a cancellation request cannot undo a Kill already sent. |
+
+The existing ZMX attachment-loss behavior is a separate capability: [Detach](../../../../../vendor/zmx/src/loop.zig:1048) closes that client without requesting shutdown-on-last. This source distinction is necessary but not runtime proof of the new app→Gateway→Host journey.
+
+## Create execution before attaching a view
+
+`host_session_runtime` owns creation and listing, as well as continuing execution custody. Its backend-establishment port is consumed independently of the attachment owner. Today [createPaneSession](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:182) prepares a handle/directory and relies on later attach to start execution. The target must not call that helper and report an executing session, or require a hidden Ghostty view to complete creation.
+
+```mermaid
+sequenceDiagram
+    participant Client as Frontend
+    participant Gateway as Mac Gateway
+    participant Session as Host session owner
+    participant Backend as Host backend adapter
+    Client->>Gateway: Create intent for an explicit Host
+    Gateway->>Session: Addressed operation and caller context
+    Session->>Session: Admit scope and own creation work
+    Session->>Backend: Establish execution without a viewer
+    Backend-->>Session: Actual backend observation or unresolved result
+    Session-->>Gateway: Result at its declared boundary
+    Gateway-->>Client: Same operation result
+    Note over Session,Backend: Creation does not create a terminal attachment
+    opt A view is attached later
+        Client->>Gateway: Attach the existing session
+        Gateway->>Session: Admitted attachment request
+        Session->>Backend: Attach to that execution
+    end
+```
+
+[Standalone rendered diagram](assets/execution-lifecycle-1.svg)
+
+| Operation role | Inputs, owner and actual observation boundary |
+| --- | --- |
+| Create | Host-qualified scope and selected launch configuration enter Host admission. The session owner owns the backend attempt and resulting E1 association; current backend preparation, launch request and observed execution are separate stages |
+| Backend establishment | The Host terminal adapter supplies an implementation behind the owning port. E1's terminal qualification must prove a renderer-free realization for the selected ZMX pin; this is not a claim that a particular private IPC command already launches it |
+| Retained registry work | Where the selected profile retains session state, the owner uses the actual gated Host write port. Backend execution can change before a later write or response fails; do not turn that into known noncreation or automatically kill/recreate it |
+| List | Host registry/source reads return their actual execution evidence and coverage. Listing is not a native-surface census; stale/missing backend evidence does not authorize launching a replacement |
+| Attach later or never | E2 refers to the established E1 under its selected identity/control contract. A successful creation does not require E16, a Gateway subscription or a native terminal renderer |
+
+Public creation/readiness/uncertain-result and restart/adoption guarantees remain G3/G8/G13. No durable launch journal, automatic retry, shell-ready heuristic or new backend emulator is selected. Qualification must observe actual backend establishment with no view, not just directory creation, a returned handle or a mock backend result.
+
+## Terminal facts have a Host-owned source and lifetime
+
+Host `host_terminal_facts` owns the fact path beneath the E1 session runtime. Its `terminal_fact_source` port is implemented by the Host terminal/backend and selected Host-local integration adapters. This owner, not a Swift view or Gateway subscription, admits source-qualified samples/transitions, preserves their meaning and writes selected retained E22 observations through the Host's actual storage port. The retained write therefore uses the same writer-gate integration as other Host data; G13 still controls unavailable-write outcomes.
+
+```mermaid
+flowchart LR
+    Source["Qualified backend or Host-local source"] --> Admit["Host fact admission"]
+    Admit --> Facts["Host terminal fact owner"]
+    Facts --> Write["Guarded observation write"]
+    Write --> Read["Host read or selected copy"]
+    Read --> View["Gateway prepared view"]
+```
+
+[Standalone rendered diagram](assets/execution-lifecycle-2.svg)
+
+| Fact class | Source responsibility and qualification |
+| --- | --- |
+| Terminal title/CWD | The selected backend metadata or shell-integration adapter must establish the actual terminal source/scope. Existing Ghostty callbacks are a baseline to account for, not a renderer-free Host implementation. Context title/line overrides remain different values |
+| Output activity | Host-side terminal/source observation can supply its declared activity meaning while no native viewer is present. Raw byte observation is not a completed shell command or proof of inactivity |
+| Shell completion and physical exit | The respective shell/backend/process source must supply its actual witness. A relay ending, quiet output or a lost socket cannot become remote execution exit |
+| Provider/context state | The existing Host provider/context owners supply their own qualified facts; they do not get reclassified as terminal parser state merely because the UI combines them |
+
+The port's admitted values carry E1/Host subject, source lifetime/scope/position or coverage, fact kind and its typed payload. Missing source, invalidated source and known partial/unestablished coverage remain explicit; no successful empty/default fact is synthesized. The source-specific adapter contracts determine ordered transitions versus replaceable latest values before contraction. Retention/export and the exact required fact set remain G6; this is not a transcript or row-per-byte event log.
+
+E1's [backend/restoration experiment](experiments/terminal-restoration.md), plus E2's no-client cases, discriminate which selected facts the current/newer backend actually supplies. If its existing VT state/IPC cannot supply a required source, return that concrete backend/source gap before choosing an extension. Do not add a second Host parser/emulator by assumption or claim a byte relay implements R10. A Host-owned backend reader, if required by the qualified realization, is E1 work rather than a user view; its control/focus effects must still satisfy G4.
+
+The session runtime owns source readers, fact admission and their bounded work through its actual lifetime. Closing the last view or every Gateway connection cannot release that custody. Source loss, actual execution end, Host shutdown and lease invalidity remain distinct inputs under their selected contracts. Removing Swift and every Gateway must leave the source→admission→guarded observation path composed; actual no-client source/write evidence is the proof.
+
+## Target calls keep the two primitives apart
+
+```mermaid
+flowchart TB
+    View["Client view closes"] --> Local["Release native view and local delivery"]
+    View -. "detach request, if delivered" .-> Attach["Host attachment owner"]
+    Attach --> Release["Reconcile that viewing association"]
+    User["Explicit authorized terminate"] --> Session["Host execution-session owner"]
+    Session --> Backend["Backend identity / effect adapter"]
+    Backend --> Observe["Actual outcome or unresolved effect"]
+```
+
+[Standalone rendered diagram](assets/execution-lifecycle-3.svg)
+
+There is deliberately no close-view→terminate call. The Host session owner is the decision boundary for an explicit termination operation; its adapter performs and observes the platform effect. The local/native release belongs to the client. The Gateway routes and reports the addressed operation; it does not infer termination from its client count or copied state.
+
+Losing a connection can leave the remote attachment outcome unobserved. Local view disappearance therefore does not prove the Host has released an attachment, and it never proves the execution ended. G4/G8 must define replacement and bounded resource-recovery behavior; this diagram introduces no timeout, automatic successor or background retry.
+
+## What each observation actually establishes
+
+| Observation | Establishes | Does not establish |
+| --- | --- | --- |
+| Native view released | This client's native presentation boundary ended | Host detach accepted, global viewer count, execution exit |
+| Detach request handed off | The observed caller/transport boundary was crossed | Remote attachment cleanup or safe replay of another operation |
+| Host attachment release observed | The selected E2 association ended at its declared boundary | E1 termination or permission to clean up an unrelated view |
+| Terminate admitted | The Host accepted the authorized operation under its selected contract | Backend signal delivered, child exit or complete cleanup |
+| Backend request sent | That observed backend-control boundary was crossed | Extinction of the intended original process family |
+| Original execution absence established | The selected backend observation establishes that absence | Replacement-process absence, erased history or successful cleanup of all external residue |
+| Endpoint/permission uncertainty | The execution outcome is not established by that observation | Failure, success, rollback or permission to kill a namesake |
+
+The public result variants, retained reconciliation obligations and platform evidence format remain G3/G7/G8. The observations above constrain their meanings without inventing a universal operation journal or exactly-once guarantee.
+
+## Cutover must remove the former destructive owner
+
+Before a service-backed session can satisfy R5, its client pane/Undo cleanup path must no longer admit backend retirement merely because local references disappeared. Keep reference/history cleanup separate from explicit execution termination. Do not give both the old Swift sweeper and a new Host owner destructive authority over the same execution.
+
+The structural cutover has four boundaries:
+
+1. Identify the selected existing sessions and the actual backend evidence under the chosen G3/G12 adoption contract. A reused directory/socket name alone is insufficient.
+2. Stop new old-owner retirement admission for those resources and join admitted work. Reconcile already-sent external effects; cancellation is not rollback.
+3. Establish the Host session owner's custody and the client reference binding under that same identity contract. Persistent row transformation, storage home and interruption recovery remain designed DS02/G3 work, not an inferred migration here.
+4. Only then expose the service-backed view/Undo reference path. Stale old cleanup metadata cannot become a new termination authority. No permanent dual writer, compatibility proxy or live-session replacement is selected.
+
+This is structural migration responsibility, not a file/task plan or permission to edit stored user data. A clean development fixture does not establish installed-session cutover. If the adoption/cutover contract is unresolved, the actual migration waits.
+
+## Failure and proof cases
+
+- Create through the real Host backend with no E16 view, then attach later or never. Observe actual establishment separately from handle/registry creation and returned response; a delayed/lost reply cannot justify another launch.
+- Keep the selected Host fact source and actual observation write operating with Swift and all Gateways absent. Independently witness title/CWD/activity or other selected fact classes at their declared source; backend capability/source gaps remain explicit rather than being filled by a hidden renderer.
+- Close the final view, exhaust any selected client Undo retention, close Swift and lose Gateway connectivity while an independently observed workload continues. The same execution must remain continuing through the declared return journey; no hidden native surface may stand in for absence.
+- Lose the detach response. The client can know its view ended without claiming Host attachment cleanup or session termination. Exact recovery follows the selected G4/G8 profile.
+- Overlap an old queued cleanup with the cutover. Observe quiescence/join and reconcile any effect already sent; do not prove safety only by checking the new client code path.
+- Replace a backend endpoint/name while an operation carries old execution evidence. Observe the selected refusal/unknown/original-family outcome and the untouched replacement through the real platform adapter.
+- Attempt explicit termination without the selected privilege, and separately with valid privilege but denied process inspection. A local socket or viewer association is not itself authority; inspection denial is not extinction.
+- Reopen a retained client reference after natural exit or Host failure. G3 must define the outcome; do not silently create a different execution and present it as the continuing original one.
+
+Host facts remain independent of view/Gateway presence under R10. IP4 fixes invalid-writer pause/refusal; exact G6 history and G13 gate/coverage outcomes remain. IP2 fixes one controller/other viewers and IP3 fixes worktree machine CLI → attached local Host with local activation when absent; UX/frontend CLI remains through Gateway. Exact handoff/focus/restoration, optional cleanup and supported backend/source behavior still need their contracts and real proof; no source diagram, surviving shell alone or mock closes them.

@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Full spec review: synthesis of high-risk spaces and experiments (🦉 Advisor)</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="SYNTHESIS-399218b3.html">AgentStudio daemon · Full spec review: synthesis of high-risk spaces and experiments (🦉 Advisor)</a></nav></ex-nav>
+<ex-document id="content"><h1>Full spec review: synthesis of high-risk spaces and experiments (🦉 Advisor)</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-20-full-spec-review/SYNTHESIS.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Full spec review: synthesis of high-risk spaces and experiments (🦉 Advisor)
+
+Scratch advice for the 🦁 Lead and the owner. It does not govern anything.
+
+The owner asked for it, verbatim: "i want full spec reviwe first and acertaain high risk spaces and tell teh lead to do experiemtns".
+
+## Basis
+
+**Target.** The spec, pinned by `spec-manifest-sha256.txt` (sha256 prefix c18425249969dd31, 116 files).
+
+**Reviewers.** Five ran independently. None read another's report, any advisor note or any tmp research.
+
+| Lane | Scope | Model | Report sha256 | Anchors resolving |
+|---|---|---|---|---|
+| L1 | contract core: root docs, DS01, DS03, DS09 | Sol xhigh | c1429b08563d1e9f | 232/232 |
+| L2 | DS02, DS07 | Sol xhigh | 9459e3f8a4719940 | 91/103; the 12 misses are agent-fleet-sync paths outside this checkout |
+| L3 | DS04, DS10, experiments | Sol xhigh | b3d6f89b39103a1f | 185/185 |
+| L4 | DS05, DS06, DS08, DS11 | Sol xhigh | 0b27441ad52f63e8 | 204/204 |
+| X5 | cross-domain premises (Claude Opus, native) | Claude Opus | 1f235727fd913edc | 106/107; the miss is an abbreviated filename |
+
+**What I checked myself.**
+- iOS `NullPty` (`vendor/ghostty/src/pty.zig:19-22,55-58`).
+- The claude-local -32603 failure mode, which is why X5 ran natively.
+- Everything else is the reviewers' anchored findings. I correlated them; I did not re-verify each one.
+
+**Method.** I group findings that several reviewers reached independently. Convergence is the strongest signal. The tag after each cluster title says where it is decided:
+
+| Tag | Meaning |
+|---|---|
+| **EXP** | needs an experiment |
+| **LEAD** | a design or contract decision the Lead can make |
+| **OWNER** | needs the owner |
+
+## Correlated high-risk spaces, ranked
+
+**A. Terminal restoration and the native relay** · *EXP* · reached by L1-H5, L3-H2, L4-H3, X5-HR4
+- The near-term spine assumes that latest-zmx Capture/Init plus a PTY-facing relay behind Ghostty restores a fresh viewer at a clean cut and keeps going. Nobody has observed this.
+- Vendored 0.8.1 has no Capture tag, and no clean viewerless start: `run` forces bash in task mode, and `attach` takes leadership and resizes.
+- Without a viewerless start, the Host cannot create a session independent of a view, which is the whole point of R5/R6.
+
+**B. The old destructive cleanup can kill a new Host-owned session** · *EXP + LEAD* · reached by L1-H6, L3-H1, L4-H1, L2-R1
+- The installed-session cutover changes ownership. Durable identity and the retirement owner must change together.
+- Today's pane/Undo sweeper (`WorkspaceSurfaceCoordinator+SessionCleanup`) still holds kill authority.
+- This is a real race that four independent reviews flagged.
+
+**C. Host-independent facts and Host-local integration** · *EXP* · reached by L2-R8, L3-H3, L4-H5, plus the earlier M1/Part 4
+- A surviving shell is not a working integration. It still needs a fact producer (title, CWD, command completion), a launch environment (TERMINFO, shell integration) and the Host-local agent ingress.
+- None of these is selected or observed.
+
+**D. Host identity must reach storage and effect targets** · *LEAD, with an OWNER persisted-format choice* · reached by L1-H1, L4-H2, X5-HR5
+- Path-hash UNIQUE keys have no Host qualifier.
+- The first persisted remote association forces the namespace decision.
+
+**E. Product controller vs zmx leadership (IP2)** · *EXP + OWNER* · reached by L1-H7, L3-H4
+- zmx's leader heuristic is not the selected single-controller authorization.
+- What happens on controller loss or handoff is an owner decision (see O-F below).
+
+**F. The iOS Gateway** · *EXP + OWNER* · reached by L1-H4, L3-H9, L4-H9, X5-HR3, X5-HR7
+- iOS has no terminal renderer: Ghostty's only termio backend is exec, and on iOS the PTY is `NullPty`.
+- Safe startup under IP6 (the first-party unsafe ban vs a C entry) is unproven.
+- This holds back V4 and I7, but not the Mac near-term slice.
+
+**G. Lease gating before any issuer exists** · *OWNER* · reached by X5-HR1, L1-H3
+- The near-term slice's registry writes are lease-gated, but the issuer is later work.
+- Under IP4, every create becomes "effect plus record gap".
+- That couples the daemon's timeline to the control plane, which the owner called orthogonal.
+
+**H. Trust boundaries** · *OWNER + LEAD*
+- The owner's `--host` path has no trust edge in the spec (X5-HR2).
+- Remote output reaches the Mac clipboard with automatic confirmation (L3-H5, X5-HR6).
+- Same-user processes can drive zmx sockets outside Host admission (X5-HR9).
+- Pane membership needs a view-independent replacement for authorization (L1-H2).
+- Replication can disclose more than a view may show (L2-R2).
+
+**I. Shared layout, Undo and custody no longer share one commit** · *LEAD, with OWNER for the stored home* · reached by L2-R6, L3-H6, X5-HR8
+- Today's single commit splits across the Host and the devices.
+- The designated-Host home intersects the owner's deliberately open cardinality question.
+
+**J. Linux fork and observation parity** · *EXP* · reached by L4-H7, L4-H8, X5-HR12
+- APFS clonefile copy-on-write and FSEvents need safe Linux counterparts, qualified on the owner's real environments.
+
+**K. Mac Host process identity and supervision** · *EXP + OWNER* · X5-HR10
+- Who starts and keeps alive the Mac Host: the app, the CLI, or launchd/SMAppService?
+- Its signing and privacy (TCC) identity decides whether shells under it can reach ~/Documents. The current zmx TCC orphan problem shows this is real.
+
+**L. Contracts weaker than a remote caller may infer** · *LEAD, mostly later slices*
+- Command receipts and terminal DTOs (L3-H7).
+- Prepared-view validity (L1-H8) and reverse native dispatch (L1-H9).
+- Subscription continuity (L3-H8).
+- Output recovery (L4-H4) and watch continuity (L4-H8).
+- Repository-wide mutation custody (L4-H6).
+- Context recovery activation (L2-R3), context-count mapping (L2-R7) and the atomic value/witness read (L2-R5).
+- The gap between whole-feature parity and "selected capability" (L1-H10).
+
+## Experiments for the Lead to run, in priority order
+
+The owner allows three environments: this Mac, Fly Sprites (Linux; owner account, CLI login; never print secrets) and sunclaw (remote, `sunclaw.tailad69a0.ts.net`).
+
+The owner wants "latext zmx with capture chagtnes". `2d23c0d` is only the recorded candidate (`research/topology-risks.md:12`). It is not checked out locally, and upstream should be rechecked at preflight.
+
+Rules for every experiment:
+- Always use an isolated `ZMX_DIR`. The default root is production.
+- Scratch only; no product edits.
+
+| # | Experiment | Settles | Environment | Needs latest zmx? | Sources |
+|---|---|---|---|---|---|
+| EX0 | Preflight: pin the latest zmx with Capture; build it for the Mac and Linux; confirm Fly Sprites CLI login and sunclaw reachability | Lets everything else run | Mac + Sprite + sunclaw | it *is* the pin | X5-D3/D12, L3-X1 |
+| EX1 | Viewerless create: a Host stand-in creates an interactive user shell with no viewer, detaches, then a real Ghostty attaches. Observe leadership, size and control | A, R5/R6 | Mac, then Linux | yes | X5-P1 |
+| EX2 | Capture cut: same-connection Init+Capture under continuous output with split UTF-8/CSI/OSC at every cut; element-wise oracle plus a canary suffix; then through the real Ghostty relay | A | Mac, then Linux | decisive | L1-X1, L3-X1, L4-X1, X5-P2 |
+| EX3 | Installed-session cutover race: old sweeper vs Host-owned session; inject late cleanup and replacement | B | Mac | no | L4-X2, L3-H1 |
+| EX4 | Renderer-free facts and Host-local integration: launch with the selected env/TERM/resources and no clients; emit title/CWD/completion; drive an ask/notice with no presentation | C | Sprite first (packaging), then Mac | partly | L3-X2, L4-X7, L1-X3, L2-X2 |
+| EX5 | Two viewers and IP2 control: handoff, queries, resize, a slow viewer | E | Mac | yes (leadership changed?) | L1-X2, L3-X3 |
+| EX6 | Linux fork and watch: safe CoW/reflink or full-copy counterpart, inotify loss and live replacement | J | Sprite (and sunclaw if it's Linux) | no | L4-X4, L4-X6 |
+| EX7 | Mac Host supervision and TCC: a launchd/SMAppService-started daemon creates shells; check Documents access and orphan behaviour | K | Mac | no | X5-HR10 |
+| EX8 | Effect custody under loss: drop replies at every boundary; check known/unknown results and no replay | contract L, R6 | Mac | no | L1-X6, L4-X5 |
+| later | iOS safe startup and renderer (after owner decision O-I); Swift/Rust codec; prepared views; reverse native call; route efficiency; storage/replication | F, L | device or simulator, Mac | — | L1-X4/X5/X7/X8, L4-X8/X9, L2-X1/X3 |
+
+EX1 and EX2 come first because the whole near-term spine rests on them. If they fail, the relay design changes before any Rust is written.
+
+## Owner decisions (deduplicated)
+
+The Lead brings each to the owner as one brief at a time.
+
+**These hold up the near-term slice:**
+- **O-A.** Which Host stores are lease-gated before an issuer exists? Is a development issuer acceptable, or does Host-local state stay ungated for now? (G)
+- **O-B.** For `--host vm-1`: does the Mac daemon relay, or does the CLI connect directly? What credential admits the caller? The owner leaned toward "same architecture", i.e. via the Mac daemon; please confirm. (H)
+- **O-C.** zmx: the exact pin; whether the app's local path moves to it too; what happens to installed 0.8.1 sessions. (A)
+- **O-D.** Do remote-origin native effects, such as OSC 52 clipboard, get the same automatic consent? (H)
+- **O-E.** Are same-user processes inside a Host trusted with sessions outside Host admission? (H)
+- **O-F.** When a controller disappears or another device asks for control, what happens, and whose focus does the child see? (E)
+- **O-G.** What restart/re-adoption promise do we make, and what does a retained session mean after natural exit or Host failure? (B; parity: sessions survive app updates today)
+- **O-H.** What starts and supervises the Mac Host, under which signing and privacy identity? (K)
+
+**Later:**
+- **O-I.** The iOS terminal renderer (F).
+- **O-J.** Where shared workspace state lives (I).
+- **O-K.** The agent-server layer's ingress (X5-HR11).
+- **O-L.** Coverage promised for partial restoration.
+- **O-M.** Whether shared selection and close propagate across devices.
+- **O-N.** The efficiency workload.
+
+## What I'd tell the owner
+
+The spec is broad and internally careful. The near-term remote terminal slice still rests on unobserved premises (A, C, E), and on three governance choices nobody has made yet (O-A lease gating, O-B the `--host` trust edge, O-C the zmx pin). Run EX0–EX2 first: they decide whether the relay design survives.
+
+## Experiment results so far
+
+These ran under the owner's grant. The binary is zmx main `0a18bee`, and every run used the isolated `ZMX_DIR` `tmp/ex/z`. Details are in `tmp/experiments/2026-10-20-zmx-latest/`.
+
+| # | Result | Report sha256 | Changes |
+|---|---|---|---|
+| EX0 | Upstream main is `0a18bee`, 6 commits beyond the spec's `2d23c0d`. Commit `35b8783` made a **breaking** wire change: same-version daemons and clients only, `protocol_version=1`, and `Unsupported` for unknown tags. sunclaw is a remote **Mac**; Fly is not logged in. | n/a (EX0-zmx-pin-findings.md) | The spec's latest-zmx analysis is stale. O-C now has to plan for the installed 0.8.1 daemons. |
+| EX1 | Viewerless creation is **feasible**: an interactive login shell with no viewer, and later attaches got the marker, title and cwd with correct leadership and resize. It needs main (`c0d157e` snapshot-on-every-Init). The cleanest path (immediate-EOF attach) is undocumented, and `run -d` gives task-mode bash. | 185f079afe9174d9 | Cluster A is feasible. A detached-create entry in the zmx fork or upstream is recommended. |
+| EX2a | **Capture-then-Output fails.** Raw ordering is clean (110/110 suffixes), but 0/110 Capture and 0/55 Init reconstructions match the oracle. Causes: parser state isn't in the snapshot, Capture omits the title, alt-screen cuts lose primary history, Init loses scrollback, and the cursor overwrites a line. | 5a947a03a90d79dc | Cluster A's relay premise is broken. This is the spec's E1 backend/protocol-change branch; candidates are zmx fork fixes, a Host-owned VT plus raw ring, or explicit resync. |
+| EX5 | **zmx leadership is not IP2.** Any input takes leadership, Send bypasses it, disconnect leaves no leader, DA1 is answered twice or not at all, and a split reply promoted a viewer to leader. | 992f9034fbc5a8fe | Cluster E: the Host must own control policy and be the sole zmx client. O-E and O-F get concrete grounds. |
+
+**Remaining:**
+- EX2b (Ghostty relay), EX3 (cutover race, debug app) and EX8 (Host prototype) are the Lead's.
+- EX4 and EX6 (Linux) need the owner's Fly login.
+- EX7 (launchd/TCC) needs the owner's explicit OK, because it touches LaunchAgents.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 722.028 535" width="722.028" height="535" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 722px; --diagram-readable-width: 578px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"></polygon>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"></polyline>
+  </marker>
+</defs>
+<line class="lifeline" data-actor="UI" x1="70" y1="70" x2="70" y2="505" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Render" x1="210.69400000000002" y1="70" x2="210.69400000000002" y2="505" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Gateway" x1="353.557" y1="70" x2="353.557" y2="505" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Host" x1="493.557" y1="70" x2="493.557" y2="505" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="ZMX" x1="633.557" y1="70" x2="633.557" y2="505" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<g class="message" data-from="UI" data-to="Gateway" data-label="Attach attempt" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="70" y1="90" x2="353.557" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="211.7785" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Attach attempt</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Host" data-label="Admit attachment" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="353.557" y1="130" x2="493.557" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="423.557" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admit attachment</text>
+</g>
+<g class="message" data-from="Host" data-to="ZMX" data-label="Attach / restore cut" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="493.557" y1="170" x2="633.557" y2="170" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="563.557" y="160" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Attach / restore cut</text>
+</g>
+<g class="message" data-from="ZMX" data-to="Host" data-label="Restore + live bytes" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="633.557" y1="210" x2="493.557" y2="210" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="563.557" y="200" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Restore + live bytes</text>
+</g>
+<g class="message" data-from="Host" data-to="Gateway" data-label="Bound stream" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="493.557" y1="250" x2="353.557" y2="250" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="423.557" y="240" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Bound stream</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Render" data-label="Terminal buffers" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="353.557" y1="290" x2="210.69400000000002" y2="290" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="282.1255" y="280" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Terminal buffers</text>
+</g>
+<g class="message" data-from="Render" data-to="UI" data-label="Native render" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="210.69400000000002" y1="330" x2="70" y2="330" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="140.347" y="320" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Native render</text>
+</g>
+<g class="message" data-from="Render" data-to="Gateway" data-label="Input / control" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="210.69400000000002" y1="370" x2="353.557" y2="370" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="282.1255" y="360" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Input / control</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Host" data-label="Attachment input" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="353.557" y1="410" x2="493.557" y2="410" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="423.557" y="400" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Attachment input</text>
+</g>
+<g class="message" data-from="Host" data-to="ZMX" data-label="Admitted input / resize" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="493.557" y1="450" x2="633.557" y2="450" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="563.557" y="440" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admitted input / resize</text>
+</g>
+<g class="note" data-position="over" data-actors="UI,Host">
+  <polygon points="212.8205,458 344.7365,458 350.7365,464 350.7365,481 212.8205,481" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <polygon points="344.7365,458 350.7365,464 344.7365,464" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <text x="281.7785" y="469.5" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">View loss detaches only</text>
+</g>
+<g class="actor" data-id="UI" data-label="Swift" data-type="participant">
+  <rect x="30" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="70" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Swift</text>
+</g>
+<g class="actor" data-id="Render" data-label="Ghostty + relay" data-type="participant">
+  <rect x="150" y="30" width="121.388" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="210.69400000000002" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Ghostty + relay</text>
+</g>
+<g class="actor" data-id="Gateway" data-label="Gateway" data-type="participant">
+  <rect x="311.38800000000003" y="30" width="84.338" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="353.557" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Gateway</text>
+</g>
+<g class="actor" data-id="Host" data-label="Host" data-type="participant">
+  <rect x="453.557" y="30" width="80" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="493.557" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host</text>
+</g>
+<g class="actor" data-id="ZMX" data-label="ZMX backend" data-type="participant">
+  <rect x="575.086" y="30" width="116.942" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="633.557" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">ZMX backend</text>
+</g>
+</svg>

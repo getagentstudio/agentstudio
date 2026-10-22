@@ -1,0 +1,48 @@
+{
+  "source_path": "/Users/shravansunder/.codex/sessions/2026/10/15/rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+  "source_scope": "Only this owner-authorized session, selected user research and instructions plus three relevant selection exchanges. No other provider sessions or unrelated tool output.",
+  "files": [
+    {
+      "file": "01-local-sockets-and-terminal-transport.md",
+      "source_session": "rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+      "source_line": 927,
+      "source_timestamp": "2026-10-15T22:49:07.264Z",
+      "utf8_bytes": 13557,
+      "characters": 13399,
+      "sha256": "4b3fadc7a8602e6b479673955f391a8328a2de8521e12fc52e19678dac61a109",
+      "extraction": "exact response_item user text; no added newline or edits"
+    },
+    {
+      "file": "02-shared-typed-api-and-rpc-stack.md",
+      "source_session": "rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+      "source_line": 1348,
+      "source_timestamp": "2026-10-15T23:11:05.120Z",
+      "utf8_bytes": 7553,
+      "characters": 7491,
+      "sha256": "c1364642b9ca300ff79fc780efdd5f98edcb2791eeffeb52025975e383f6eb32",
+      "extraction": "exact response_item user text; no added newline or edits"
+    },
+    {
+      "file": "03-session-connection-and-subscription-lifetimes.md",
+      "source_session": "rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+      "source_line": 1350,
+      "source_timestamp": "2026-10-15T23:11:05.122Z",
+      "utf8_bytes": 3043,
+      "characters": 3015,
+      "sha256": "9090673e5ec9425dfcfb6735a009c2006f9989a4d4d28beb466ae12fde5d01de",
+      "extraction": "exact response_item user text; no added newline or edits"
+    },
+    {
+      "file": "owner-instructions-and-corrections.json",
+      "utf8_bytes": 8891,
+      "sha256": "29d5b4cc26f9d21271e7b8d7ef0e8bffb0a8dc3c5babd81cb3c7c0032ebf6b33",
+      "extraction": "structured container; source text / raw tool argument-output strings preserved"
+    },
+    {
+      "file": "owner-selections.json",
+      "utf8_bytes": 3570,
+      "sha256": "c8d2771b148424ce6ab82d41ccd6b5306889795e8262186073339df0e02c792f",
+      "extraction": "structured container; source text / raw tool argument-output strings preserved"
+    }
+  ]
+}

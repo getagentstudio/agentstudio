@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 827.6699999999998 249.4" width="827.6699999999998" height="249.4" style="--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#f1efed;--surface:#1a3236;width:100vw;max-width:100vw;height:auto;background:#171d26" data-traced="">
+<style>
+
+  text { font-family: 'Source Sans 3', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<polyline class="edge" data-from="Arrangement" data-to="View" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="0 or more native projections" points="342.78200000000004,75.35 564.01,75.35" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Marker" data-to="Observation" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="0 or more scoped observations" points="298.32199999999995,174.05 564.01,174.05" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<g class="edge-label" data-from="Arrangement" data-to="View" data-label="0 or more native projections">
+  <rect x="386.78200000000004" y="59.350000000000016" width="147.142" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="460.35300000000007" y="74.50000000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">0 or more native projections</text>
+</g>
+<g class="edge-label" data-from="Marker" data-to="Observation" data-label="0 or more scoped observations">
+  <rect x="342.32199999999995" y="158.05" width="163.774" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="424.20899999999995" y="173.20000000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">0 or more scoped observations</text>
+</g>
+<g class="node" data-id="Arrangement" data-label="E25 Shared workspace composition
+same logical resource as tabs/layout change
+current / changed / removed" data-shape="rectangle" id="source--diagram-6--Arrangement">
+  <rect x="40.00000000000006" y="40" width="302.782" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="191.39100000000005" y="75.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="191.39100000000005" dy="-12.350000000000001">E25 Shared workspace composition</tspan><tspan x="191.39100000000005" dy="16.900000000000002">same logical resource as tabs/layout change</tspan><tspan x="191.39100000000005" dy="16.900000000000002">current / changed / removed</tspan></text>
+</g>
+<g class="node" data-id="View" data-label="E16 Client view target
+actual device hierarchy
+present / absent" data-shape="rectangle" id="source--diagram-6--View">
+  <rect x="564.01" y="40" width="181.258" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="654.639" y="75.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="654.639" dy="-12.350000000000001">E16 Client view target</tspan><tspan x="654.639" dy="16.900000000000002">actual device hierarchy</tspan><tspan x="654.639" dy="16.900000000000002">present / absent</tspan></text>
+</g>
+<g class="node" data-id="Marker" data-label="E26 Shared read marker
+reader scope + kind-qualified subject
+unread or viewed; coverage qualified" data-shape="rectangle" id="source--diagram-6--Marker">
+  <rect x="40" y="138.7" width="258.32199999999995" height="70.7" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="169.16099999999997" y="174.04999999999998" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="169.16099999999997" dy="-12.350000000000001">E26 Shared read marker</tspan><tspan x="169.16099999999997" dy="16.900000000000002">reader scope + kind-qualified subject</tspan><tspan x="169.16099999999997" dy="16.900000000000002">unread or viewed; coverage qualified</tspan></text>
+</g>
+<g class="node" data-id="Observation" data-label="E22 Scoped observation
+current / superseded / incomplete" data-shape="rectangle" id="source--diagram-6--Observation">
+  <rect x="564.01" y="147.15" width="237.57399999999993" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="682.7969999999999" y="174.05" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="682.7969999999999" dy="-3.9000000000000012">E22 Scoped observation</tspan><tspan x="682.7969999999999" dy="16.900000000000002">current / superseded / incomplete</tspan></text>
+</g>
+</svg>

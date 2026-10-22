@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1252.797 239.93333333333334" width="1252.797" height="239.93333333333334" style="width:100vw;max-width:100vw;height:auto;--surface-content:#171d26;--ink:#f1efed;--accent-soft:#1a3236;--rule:#2c3542;--fg:#f1efed;--bg:#171d26;--accent:#6fc0ca;--surface:#1a3236;--border:#2c3542" data-traced="">
+<style>
+
+  text { font-family: 'Source Sans 3', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<polyline class="edge" data-from="First" data-to="Host" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Host-directed communication" points="256.826,92.51666666666668 298.601,92.51666666666668 298.601,119.96666666666667 490.495,119.96666666666667 490.495,147.41666666666669 506.4385,147.41666666666669" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Second" data-to="Host" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="simultaneous use supported" points="264.977,173.03333333333333 490.495,173.03333333333333 490.495,165.35000000000002 506.4385,165.35000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="First" data-to="OtherHost" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="also connected to a distinct Host" points="256.826,74.58333333333334 292.826,74.58333333333334 292.826,66.9 506.4385,66.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Host" data-to="Session" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="connection loss does not end" points="810.7024999999999,156.38333333333335 1047.841,156.38333333333335" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)"></polyline>
+<g class="edge-label" data-from="First" data-to="Host" data-label="Host-directed communication">
+  <rect x="306.601" y="103.96666666666667" width="151.89399999999998" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="382.548" y="119.11666666666667" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Host-directed communication</text>
+</g>
+<g class="edge-label" data-from="Second" data-to="Host" data-label="simultaneous use supported">
+  <rect x="308.977" y="157.03333333333333" width="149.518" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="383.736" y="172.18333333333334" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">simultaneous use supported</text>
+</g>
+<g class="edge-label" data-from="First" data-to="OtherHost" data-label="also connected to a distinct Host">
+  <rect x="300.826" y="50.90000000000001" width="165.55599999999998" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="383.60400000000004" y="66.05000000000001" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">also connected to a distinct Host</text>
+</g>
+<g class="edge-label" data-from="Host" data-to="Session" data-label="connection loss does not end">
+  <rect x="850.7589999999999" y="140.38333333333335" width="153.08200000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="927.3" y="155.53333333333336" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">connection loss does not end</text>
+</g>
+<g class="node" data-id="First" data-label="E24 Gateway instance
+one running service on Mac A" data-shape="rectangle" id="source--diagram-1--First">
+  <rect x="40" y="56.650000000000006" width="216.826" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="148.413" y="83.55000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="148.413" dy="-3.9000000000000012">E24 Gateway instance</tspan><tspan x="148.413" dy="16.900000000000002">one running service on Mac A</tspan></text>
+</g>
+<g class="node" data-id="Host" data-label="E23 Host instance
+one running service in one work environment" data-shape="rectangle" id="source--diagram-1--Host">
+  <rect x="506.4385" y="129.48333333333335" width="304.26399999999995" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="658.5704999999999" y="156.38333333333335" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="658.5704999999999" dy="-3.9000000000000012">E23 Host instance</tspan><tspan x="658.5704999999999" dy="16.900000000000002">one running service in one work environment</tspan></text>
+</g>
+<g class="node" data-id="Second" data-label="E24 Gateway instance
+one runtime on Mac B or iPhone" data-shape="rectangle" id="source--diagram-1--Second">
+  <rect x="40.00000000000003" y="146.13333333333335" width="224.97699999999998" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="152.48850000000002" y="173.03333333333336" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="152.48850000000002" dy="-3.9000000000000012">E24 Gateway instance</tspan><tspan x="152.48850000000002" dy="16.900000000000002">one runtime on Mac B or iPhone</tspan></text>
+</g>
+<g class="node" data-id="OtherHost" data-label="E23 Another Host instance
+independent work environment" data-shape="rectangle" id="source--diagram-1--OtherHost">
+  <rect x="506.4385" y="40" width="221.27199999999996" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="617.0745" y="66.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="617.0745" dy="-3.9000000000000012">E23 Another Host instance</tspan><tspan x="617.0745" dy="16.900000000000002">independent work environment</tspan></text>
+</g>
+<g class="node" data-id="Session" data-label="E1 Execution session" data-shape="rectangle" id="source--diagram-1--Session">
+  <rect x="1047.841" y="137.93333333333334" width="164.95600000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1130.319" y="156.38333333333333" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">E1 Execution session</text>
+</g>
+</svg>

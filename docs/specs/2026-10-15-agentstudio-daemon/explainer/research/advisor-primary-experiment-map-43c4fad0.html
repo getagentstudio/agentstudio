@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Advisor primary discriminating experiment map</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-primary-experiment-map-43c4fad0.html">AgentStudio daemon · Advisor primary discriminating experiment map</a></nav></ex-nav>
+<ex-document id="content"><h1>Advisor primary discriminating experiment map</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-primary-experiment-map.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Advisor primary discriminating experiment map
+
+Original direct message: `01a1422d-b1bd-7c71-b87d-06b796f3385e`, existing Claude Advisor, commission `01a14223-8280-7652-a540-e8e2cb73dd41`. Full proposal copied below. No experiments were executed; Lead validation and final integration are separate.
+
+---
+
+🦉 Advisor -> 🦁 Lead: PRIMARY DISCRIMINATING EXPERIMENT MAP (commission DM 01a14223). Proposal only. Nothing was run, built, prototyped or measured. Every "source prior" below is a prediction from reading source, not an exercised result. You validate; the owner authorizes any execution later.
+
+Pins: AgentStudio 624300332 | agentstudio-git 4cca397d | zmx vendored 8bab1f0 (v0.8.1; its own Ghostty dependency is 8af6897c, vendor/zmx/build.zig.zon:8) | zmx latest 2d23c0d | app Ghostty 2fb0c9cac | Router 691cd560 (Tokio 1.52.3, Quinn 0.11.11) | Tokio 1.53.3 a85c3f5 and the Apple/Tailscale URLs are your anchors; I did not re-open them.
+Read this pass: requirements, disposition, README, owner-instructions JSON, K01-K10 (full), second-pass evidence, edge cases, plus fresh anchor checks listed inline. I did NOT read the full survey, typed-api addendum, research-ledger or mobile-network-evidence.md. I deliberately did NOT open experiment-validation-notes.md, so this map stays independent of your validation.
+
+=== 0. RANKING (by how much the result changes architecture) ===
+CORRECTNESS GATES (run first; throughput comparisons are meaningless until these settle):
+ E1  Restore + live-cut parser continuity through the real native render path  -> decides Host terminal-state ownership and the K04 render entry. 5 downstream dependents.
+ E2  No-client continuity, authority and lost-effect receipts  -> decides Host domain: fact derivation, operation record, re-adoption registry.
+ E3  Multi-client fanout, slow viewer, control ownership, retained memory (correctness half)  -> decides who owns fanout and the memory budget.
+ E4  Linux Host parity: fork, identity primitives, filesystem watching  -> decides which capabilities are parity and which are typed refusals. Independent; can run in parallel.
+PERFORMANCE (after the gates):
+ E5  Equivalent full-route key-to-correct-visible-echo, bulk contention, compression  -> decides connection/congestion separation, per-class compression and Host-retained review state. Judged only against owner tolerances.
+CONDITIONAL:
+ E6  iOS socket/lifecycle legs. Runs only after the owner's placement choice and never chooses it. The placement-independent part (a suspended phone loses its connection; it must reattach and resync without input replay) is merged into E1/E3.
+
+Feasibility class: [X] runs against existing artifacts plus a harness; [S] needs a separately authorized spike (implementation); [D] desk classification, read-only.
+E1 A/B/R arms [X], arm C [S] | E2a [X], E2b-d [S], E2c classification [D] | E3 N-attach arm [X], Host-fanout arm [S] | E4a/b/c primitive probes [X on Linux VM], full fork contract [S] | E5 T0 [X] needs an echo probe, T1-T3 [S] | E6 [S] + device.
+
+=== 1. DEPENDENCY / DECISION MAP ===
+  (owner) D-tol: restore-fidelity, echo, memory tolerances ---------------------------+
+                                                                                     v
+  E1 restore/cut ---+--> D-term: Host terminal state  <--- E2a renderer-free facts   E5 judged
+     |              |      (a) zmx pass-through + relay                               only against
+     |              |      (b) zmx protocol extension w/ ordered cut                  D-tol
+     |              |      (c) Host-owned VT/byte state
+     |              +--> E3 resync arm (needs a valid cut) --> E5 (fanout arm fixed)
+     |              +--> E6 resume-after-suspension
+     +--> K04 render entry: relay behind Ghostty PTY  vs  native backend change
+  (owner) D-ingress: agent CLI while Gateway absent (A/B/C) --> E2b ingress leg only
+  (owner) D-place: Mac service vs embedded phone Gateway --> E6 branch; E3 load distribution
+  (owner) D-fork-policy: unsupported Linux FS behavior <-- E4 supplies the matrix only
+  E4 ---- independent, parallel ----
+  E2c/E2d ---> D-oprec: Host operation record + re-adoption registry (yes/no, retention per class)
+
+Key synthesis: E1 and E2a feed the SAME node. If zmx cannot expose title, activity or prompt marks (E2a), the Host needs per-session VT state anyway. That makes option (c) cheaper to justify, even if E1 alone would allow (a).
+
+=== 2. SHARED HARNESS AND SAFETY (applies to all) ===
+- Headless VT oracle: ghostty_vt at BOTH revisions (8af6897c = zmx's VT; 2fb0c9cac = app renderer). zmx already links ghostty_vt as a Zig module (loop.zig handleInit takes *ghostty_vt.Terminal), so this is feasible without new native code in the app.
+- Native-render observables: ghostty_surface_read_text (vendor/ghostty/include/ghostty.h:1238) for visible text. Mode state via in-band queries (DECRQM, DSR 6n CPR) sent to both the reference and the native surface. Attributes and pixels by sampled screenshot only.
+- Isolation:
+  - dedicated ZMX_DIR/socket root per run; never attach to or enumerate the user's live zmx sessions;
+  - debug identity only, background launch (open -g), never pkill AgentStudio;
+  - builds and tests on Sunclaw, not Sunbook.
+- Cleanup: verified by incarnation (pid + created_at from zmx Info). Sending Kill is not extinction (X20; ZmxSessionControl.swift:82). Do not infer absence from an inspection failure.
+- Content: synthetic corpora only, no real transcripts (blind spot 11).
+- Clocks: per-process monotonic durations with correlated IDs. Never subtract timestamps across processes or machines; only same-clock client round trips are end-to-end.
+- Stop rule: any oracle that fails its negative control makes that run INVALID, not passing.
+
+=== E1  Restore + live-cut parser continuity through the real native render path ===
+Decision moved: D-term (a/b/c) and the K04 render entry. Also gates:
+- E3 resync;
+- E5 echo correctness;
+- E6 resume;
+- memo-01 "hidden terminals snapshot on activation" (L238);
+- memo-03 ordered reconnect handoff.
+
+Hypotheses:
+- H1.1 Serializer fidelity (positive control): at a quiescent cut (parser in ground state, nothing in flight), the restore payload alone reproduces the reference state for every state element.
+- H1.2 Cut race: with continuous output, restore followed by live bytes has no duplication or omission at the cut.
+- H1.3 Parser continuity: for cuts inside CSI/OSC/DCS/APC/UTF-8, the fresh renderer interprets the next bytes exactly as the reference does.
+- H1.4 Pin skew: zmx's VT (8af6897c) and the app renderer (2fb0c9cac) agree on the restored state.
+- H1.5 Render path: H1.1-H1.4 hold on the real Ghostty surface through a relay behind its PTY, with network-like rechunking.
+
+Source prior (predicts H1.2/H1.3 failure on arm A; not exercised):
+- Accept adds the client before later broadcasts (loop.zig:405-415 appends to every client's write_buf).
+- handleInit (loop.zig:950-1000) serializes Terminal state, not the stream parser's partial-sequence state. It appends restore as ordinary Output after whatever is already queued, and it resizes the VT before serializing.
+- Latest Capture (2d23c0d loop.zig#L1151) has no cut, epoch or watermark.
+
+NEW from this pass: the OSC 133;A rewrite (util.zig:314) runs per PTY read chunk (loop.zig:404, buf[0..n]) and keeps no carry-over state. A 133;A split across reads is therefore broadcast unrewritten. The reference transcript must apply the same transform, and the split case must be in the corpus.
+
+Arms and comparators:
+- A: vendored 8bab1f0 Init restore (today's baseline).
+- B: latest 2d23c0d Capture then attach, and B': latest Init.
+- R: reference/truth. The Host retains the full raw transcript and replays it into a fresh VT. It is also the "no-snapshot" comparator, with unbounded memory.
+- C: ordered-cut extension (stamped byte offset, or delaying the cut to a ground-state boundary). Pre-registered as the failure branch only; it needs an authorized prototype. Not proposed to build now.
+
+Workload:
+1. Adversarial short corpus, exhaustive cut at EVERY byte offset:
+   - SGR, CSI with params;
+   - OSC 0/2 title, OSC 7 pwd, OSC 8 hyperlink, OSC 133 A/B/C/D (incl. A split across reads), DCS (DECRQSS/XTGETTCAP);
+   - UTF-8 2/3/4-byte, combining, wide/emoji;
+   - 1049 alt-screen enter/exit;
+   - DECSTBM, origin mode, autowrap edge with pending_wrap, DECSC/DECRC, tab stops, insert mode, cursor style;
+   - bracketed paste 2004, mouse 1000/1006, synchronized output 2026 begun but not ended at the cut.
+2. A synthetic agent-TUI corpus (full-screen redraw cadence like Claude Code/Codex; synthetic text) with sampled cuts.
+3. A live high-rate producer during attach, plus a resize during restore.
+
+Oracle: per-element equality, reference VT(full transcript, post-rewrite) vs fresh VT(restore + post-cut bytes):
+- grid cells (codepoint, width, attrs, hyperlink);
+- cursor (pos, pending_wrap, style, visibility);
+- active screen; mode set; scroll region; tab stops; title; pwd; prompt marks;
+- scrollback rows, classified separately because Capture limits rows, not bytes.
+Plus a next-byte canary after each cut: colored text and DSR 6n. The rendered attributes and the CPR reply must match the reference. Native leg: read_text, DECRQM/CPR answers, sampled pixels.
+
+Negative controls: a cut shifted by +1/-1 byte, a dropped chunk, and one deliberately unrestored element must each be DETECTED.
+
+Failure/race cases:
+- client attaches between a PTY read and its broadcast;
+- two clients Init concurrently (vacant-leadership claim and resize, loop.zig:960-975);
+- resize between Capture and attach;
+- old daemon receiving Capture (barrier main.zig#L1477-L1522; Info has no version field);
+- shell exits mid-restore.
+
+Pass / fail / inconclusive -> consequence:
+- PASS (H1.1-H1.5 on B): D-term (a). The Host terminal plane is byte relay plus Capture, with no Host VT. Latest-zmx adoption becomes a compatibility/upgrade question.
+- H1.1 fails for element X: the snapshot is lossy for X. Either the owner tolerates losing X (restore-fidelity tolerance), or the state owner changes ((b) or (c)).
+- H1.1 passes, H1.2/H1.3 fail: an ordered cut is required. Choose (b) zmx extension (fork or upstream ownership cost) vs (c) Host per-session parser (CPU/memory per session, measured in E3).
+- Headless passes, native fails: render-path or pin problem. K04 decides between a relay fix and a native backend change.
+- H1.4 fails: zmx-VT/app-renderer pin alignment becomes a release contract.
+- INCONCLUSIVE: an element is unobservable through the oracle. Name it; never count it as a pass.
+
+Measurements:
+- Correctness: divergence counts per element x cut class x arm x pin.
+- Resource: restore payload bytes, zmx snapshot CPU and allocations, relay RSS/CPU/fds.
+- Time to first correct frame: recorded, secondary.
+
+Proof limits: bounded by corpus and pins. Says nothing about network behavior, every TUI, pixel identity beyond sampled cuts, or restart durability. A pass on B does not cover sessions started under 8bab1f0.
+
+Strongest competing interpretation: the overlap is benign. The snapshot is a clear-and-redraw that overwrites earlier raw bytes, zmx's single-threaded poll loop makes Init atomic relative to PTY reads, and only scrollback duplicates. E1 discriminates this directly by scoring screen, modes, parser state and scrollback separately. If only scrollback diverges, the interpretation wins and (a) stands with a scrollback tolerance. I did not read how the zmx attach client treats output that arrives before the Init response, so the experiment observes it rather than me guessing.
+
+=== E2  No-client continuity, authority and lost-effect receipts ===
+Decision moved: Host domain ownership.
+- Does the Host derive terminal facts (feeds D-term)?
+- Does the Host keep an operation record per op class (D-oprec)?
+- Does the Host need its own durable session registry for re-adoption?
+- Where does the detached-authority verifier live?
+
+E2a  Renderer-free fact derivation [X]
+- Source prior: zmx Info (ipc.zig:79-94) carries cmd, cwd (MAX_CWD_LEN 256, so deep paths truncate), pid, created_at, task_ended_at, exit code. It has NO title, activity, bell or prompt marks. Its wire shape is frozen ("Do NOT add fields"), so new stats need new tags.
+- Scripted session with no surface ever attached (blind spots 7/8, X18): OSC 2 title changes, cd into a path longer than 256 bytes, output bursts and idle gaps, OSC 133 marks, bell, non-zero exit.
+- Oracle: the Host-observable fact stream vs the facts that app-pin Ghostty derives from the full transcript (same events, same order; coalescing only under a DECLARED policy).
+- Negative control: attach the real surface and confirm today's path reproduces the reference facts.
+- Consequence:
+  - Info alone is enough only for exit/cwd. Otherwise the choice is zmx extension vs Host VT parsing, the same node as E1.
+  - Cwd truncation needs a typed "truncated/unknown" fact, or acceptance by the owner.
+
+E2b  Detached authority [baseline X; rest S]
+- Baseline now: a pane-scoped agent CLI call with the app closed. Record today's refusal shape (PaneIPCIdentityOwner.swift:68; X02 bearer lifecycle).
+- Later spike: issue authority -> close app and drop Gateway -> agent call admitted by Host (U15) -> revoke while Gateway disconnected -> next call refused. Then Host restart -> verifier reload. A bearer copied into another session's environment is refused (peer UID plus session binding, K09).
+- Oracle: admitted/refused decisions vs an expected authority table, with revocation effective at a recorded Host revision.
+- The ingress leg runs only AFTER D-ingress (A/B/C) and is never used to choose it.
+
+E2c  Lost-effect receipts [D then S]
+- First, a desk classification over the 44 Git ops (33 local + 10 remote + 1 discovery) plus IPC methods plus terminal input. Classify each as queryable post-state / needs op-id dedup / never retried. Pick one representative per class: read (status); create (worktree fork; name collision); non-idempotent append (terminal input submit); settle-once (pane ask answer vs EOF, X05).
+- Faults at four points: before Host admit | after admit, before commit | after commit, before reply (blind spot 4) | after reply, before client receipt. Then the caller retries with the same op id.
+- Oracle:
+  - an INDEPENDENT effect count (filesystem/branch state, harness-side PTY input log, settlement record);
+  - the caller sees "uncertain", not success or failure, when the reply is lost (X03; IPCDescriptorClientTests.swift:251);
+  - reconcile returns the committed state or an explicit unknown;
+  - no duplicate effect for dedup classes;
+  - terminal input is never auto-replayed (K05: no per-input ack; drop beyond 256 KiB at loop.zig:866).
+- Negative control: disable dedup and confirm the oracle catches the duplicate.
+- Consequence: D-oprec. Either the Host keeps an op record with per-class retention, or post-state queries suffice. It also fixes which user-facing contracts must surface "uncertain".
+
+E2d  Host restart and re-adoption [S]
+- SIGKILL the Host with sessions live and an ask/annotation/outbox in flight (blind spot 6). Restart.
+- Oracle:
+  - sessions re-adopted by verified incarnation;
+  - no duplicates;
+  - activity "unknown until checkpoint" (X12);
+  - in-flight work resolves as uncertain/refused, never as success.
+- Negative control: a different process with a reused pid must NOT be adopted.
+- Consequence: whether the Host needs its own durable registry plus boot identity (K09: WorkspaceUndoJournalClock.swift:4) instead of rediscovering through the zmx socket directory.
+
+E2 pass/fail summary: each leg's result picks an owner shape. None of them chooses owner policy (cleanup, retention, ingress). Proof limit: representative classes, not all 44 ops.
+
+Strongest competing interpretation: rank E2 above E1. Authority and no-client operation define the Host domain whatever the terminal plane is. If the owner tolerates lossy restore, E1 shrinks to a contract test. My ranking is therefore conditional on the restore-fidelity tolerance.
+
+=== E3  Multi-client fanout, slow viewer, control ownership, retained memory ===
+Decision moved: the fanout owner (zmx N-attach vs Host single attach with bounded per-viewer queues vs Gateway-level fanout), where the memory budget lives, and the observable resize/controller contract (U16 does not settle policy).
+
+Hypotheses:
+- H3.1 A stalled viewer cannot raise retained bytes ANYWHERE in the path beyond a declared budget.
+- H3.2 The active viewer's correct-echo stays within the owner's tolerance while another viewer stalls.
+- H3.3 After resuming, the stalled viewer reaches the E1 oracle state through resync, with no input replay.
+- H3.4 A 40-column viewer attaching does not resize a 160-column leader without an explicit control transfer.
+
+Source prior (K05):
+- Every client gets every chunk appended to a growable write_buf, and no per-client cap was found (loop.zig:405-415, drain at :506).
+- Init claims vacant leadership and resizes.
+- Non-leader input can be ignored; PTY input drops at the cap.
+
+Arms:
+- N-attach: one zmx attachment per client [X]. This is also the NEGATIVE CONTROL: it must show growth, which proves the meter works.
+- 1-attach Host fanout, bounded per-viewer queue, drop -> resnapshot via E1 [S].
+- Gateway fanout, if a Mac Gateway multiplexes local clients [S].
+
+Workload:
+- a 160x48 leader typing at a fixed cadence;
+- a 40x20 viewer;
+- a stalled viewer (SIGSTOP the reader, or stop reading the socket);
+- a 100 MB bulk producer plus bursty TUI redraw;
+- control transfer events.
+
+Oracle:
+- Retained bytes per layer, sampled at fixed OUTPUT-VOLUME checkpoints, not time:
+  - zmx phys_footprint/heap;
+  - Host per-viewer queue bytes;
+  - kernel socket buffers (Linux ss -m skmem; macOS netstat Send-Q/Recv-Q);
+  - transport flow-control windows;
+  - snapshot allocations.
+- PTY size via TIOCGWINSZ, and the shell's SIGWINCH count.
+- Active-viewer correct-echo distribution.
+- Stalled-viewer final state vs the E1 oracle.
+
+Second negative control: disable resnapshot; the stalled viewer must diverge.
+
+Failure/race cases:
+- viewer resumes during a resnapshot;
+- leader disconnects mid-burst (vacancy, then the next Init claims leadership);
+- control transfer during a resize;
+- a queue drop exactly at a sequence boundary.
+
+Consequence:
+- N-attach is acceptable only if zmx write_buf becomes bounded, which needs a zmx change per source.
+- Host fanout is viable only with E1's cut.
+- If Host fanout plus resync passes, the Host owns viewer queues and the budget.
+- The resize-policy result is input to an owner contract, not the contract itself.
+
+Placement conditional: run both load distributions. Mac service means few Gateway->Host connections, with per-client queues at the Gateway. Embedded phone Gateway means one Gateway->Host connection per phone, with per-Gateway queues at the Host. Neither result chooses placement.
+
+Measurements: total retained bytes vs output volume, CPU per viewer, and per-session Host parse cost if E1(c)/E2a apply. The memory budget and echo inflation are OWNER TOLERANCES.
+
+Proof limit: the viewer count and workloads tested; not adversarial clients.
+
+=== E4  Linux Host parity (independent track) ===
+Decision moved: which capabilities are parity and which are typed refusals (open item 6; U5/U6/U11), and the platform realization of each contract.
+
+E4a  Fork
+- FICLONE (or copy_file_range) across btrfs, XFS reflink=1, ext4 (expected refusal), tmpfs, overlayfs, NFS, using loop-mounted images on a pinned kernel.
+- openat2 RESOLVE_BENEATH/NO_SYMLINKS containment, with symlink/ancestor-swap injection (F02).
+- Metadata: mode, ns mtime, xattr/ACL, hardlinks, FIFO/device refusal, sparse holes, non-UTF-8 names, nested repos/alternates, LFS pointers.
+- Index adoption: the stat-cache trap; post-fork status must be clean without a full rehash wherever macOS achieves that.
+- Branch CAS, rollback and cancellation residue (F11/F12). Induce ENOSPC and kill mid-clone.
+- Baseline: the agentstudio-git macOS contract and its tests (WorktreeForkEligibility.swift:23; rollback integration tests).
+- Oracle: one contract-matrix row per case, recorded as equivalent / typed refusal / divergence. No residue.
+
+E4b  Identity and authority primitives
+- Peer credentials (SO_PEERCRED vs getpeereid).
+- Process incarnation (pidfd + start time vs Darwin proc info).
+- Boot identity (boot_id/CLOCK_BOOTTIME vs Darwin).
+- File identity stability across bind/overlay mounts.
+- Oracle: the same typed contract tests pass on both platforms. Negative control: pid-reuse injection.
+
+E4c  Filesystem watching parity. NEW and absent from K01-K10: second-pass mentions it only in a null.
+- Today: Darwin FSEvents recursive streams (DarwinLocalFSEventNativeStream.swift:60; DarwinFSEventStreamConfiguration.swift:6).
+- Linux, from my general knowledge (UNVERIFIED; please open man7 inotify(7) and fanotify_mark(2)): inotify needs one watch per directory, capped by fs.inotify.max_user_watches, and overflows with IN_Q_OVERFLOW. Recursive fanotify marks need privilege.
+- Workload: several large worktrees with a known ground-truth change set.
+- Oracle: event coverage vs ground truth. Overflow must become an explicit rescan fact, never silent loss.
+- Consequence: the Linux Host may need a different invalidation design (rescan-on-overflow, git-status-driven refresh). That moves cache/refresh owners, which is architecture, not a port.
+
+Byte-name domain (X26, open item 11) is merged as a case in each leg.
+
+Proof limits: pinned kernel and filesystem versions. The full fork contract needs the Linux implementation [S]. Primitive probes can run first.
+
+Competing interpretation: E4 is a port, not a discriminator. That holds for E4b. It fails for E4a's unsupported-filesystem policy and probably for E4c.
+
+=== E5  Equivalent full-route latency, contention, compression ===
+Needs: E1 render path, E3 fanout arm, and owner tolerances (none exist; I invent none).
+
+Arms:
+- T0 today: Ghostty -> PTY -> zmx attach relay (ZmxBackend.swift:202) -> UDS -> zmx.
+- T1 Mac-local mandated route: relay -> UDS -> Gateway -> UDS -> Host -> zmx. Two added process hops.
+- T2 remote: relay -> UDS -> Gateway -> network -> Linux Host -> zmx. Path type (Tailscale direct / DERP / peer relay, per your anchor) is recorded per run as a COVARIATE.
+- T3 interactive + bulk: one connection with separate streams vs separate connections. Quinn priority is not a reservation, and streams share one congestion controller (K10 anchors).
+- Compression off/on per traffic class, on identical payloads.
+- Sub-arm (K08): review refresh with Host-retained proportional seeds vs full recompute (GitReviewRefreshSeed is non-Codable).
+
+Workload:
+- fixed-cadence printable keystrokes in a known-echo shell and in a full-screen TUI;
+- concurrently: Bridge review medium/large (bridge-viewer-benchmark-workloads.ts:76), git refresh (verify-git-refresh-performance-workload.sh:64), CLI families (cli-latency-workloads.json:4), and a 50 MB terminal flood on another session.
+
+Oracle: key-to-CORRECT-visible-echo.
+- Key injection and glyph-present frame are timestamped on the same client monotonic clock. Correct means the expected glyph and attributes at the expected cell.
+- Bytes-level relay in/out is a secondary split that excludes rendering.
+- Per-owner stage durations (Gateway admit->forward, Host admit->zmx write, zmx read->fanout) on each process's own clock, with correlated IDs.
+- CLI benchmark (benchmark-cli-latency.pl:63) is fork-to-waitpid. Keep it separate from socket RTT.
+- Compression: wire bytes, CPU per byte, allocations, first-visible and last-byte times, interactive tails during bulk.
+
+Negative controls: an injected +N ms at the Gateway must shift the distribution by about N (proves attribution). With stty -echo the oracle must report NO correct echo, not a fast frame.
+
+Failure cases:
+- netem loss/RTT on the Linux edge;
+- Mac sleep/wake;
+- migration vs new connection vs process restart, measured separately, with no hidden input replay.
+
+Pass/fail: against OWNER TOLERANCE only. Report p50/p95/p99/max with n. A correctness failure (wrong or missing echo) is counted separately and never traded against a percentile. p95 is not a correctness deadline.
+
+Consequence:
+- T1 over T0 dominated by hop count: the cost of the mandated route is surfaced to the owner, not engineered around (S13).
+- Tails inflate only in the shared-connection arm: separate connection/congestion domain for the terminal.
+- Compression is decided per class.
+- Recompute cost decides whether the Host retains per-viewer review state.
+
+Proof limit: machines, network paths and workloads tested.
+
+=== E6  iOS socket/lifecycle (conditional on D-place; never chooses it) ===
+Placement-independent obligation (merged into E1/E3): a suspended phone app loses its client connection under EITHER placement. Resume must reattach and resync through E1 with no input replay. Only the location of Gateway state across suspension changes.
+
+If the owner picks the embedded phone Gateway:
+- H6.1 In-process UnixStream::pair carries client<->Gateway (your Tokio anchor).
+- H6.2 If a separate process is needed, App Group container UDS works. Check that sun_path length (104 bytes on Darwin; my general knowledge, please verify) against real container path lengths.
+- H6.3 On suspension/jetsam: the fate of the Gateway->Host connection, Host-side disconnect detection, and resume correctness.
+- Oracle: Host sessions continue (U15); E1 oracle on reattach; E2c no duplicate effects; behavior inside the documented background budget (your Apple anchor).
+
+If the owner picks the Mac service:
+- pairing/auth;
+- path type;
+- Gateway unreachable while the Mac sleeps (the dependency the owner was told about);
+- reconnect after wake.
+
+Real device plus spike; nothing now.
+
+=== MERGED / DEFERRED (with reason) ===
+- Codec/serializer microbenchmarks (tarpc/MessagePack vs Protobuf): DEFER until E5 stage attribution shows encode/decode is a material share (K10).
+- QUIC vs TCP/TLS bake-off: MERGED into E5-T3 arms only if contention shows up there.
+- Mosh-style state sync: DEFER; it is considered only if E1 fails toward (c) and the cost is unacceptable.
+- Canonical transcript: NOT an experiment; a purpose/retention/privacy decision.
+- Mixed zmx versions and capability refusal (X27, item 12): Capture against an old daemon is MERGED into E1. The full matrix is a contract test, and the hard-cutover policy belongs to the owner.
+- Two-client layout race (blind spot 1): DEFER; it would test an unchosen controller/layout policy.
+- Same path on two Hosts (blind spot 5): a type/design decision (machine qualification). The byte-name part is MERGED into E4.
+- Host restart mid-ask/outbox (blind spot 6): MERGED into E2d.
+- MCP adapter: no discriminating unknown; it follows the typed API and authority.
+- Remote Git op latency: MERGED into E5 as a bulk class. Correctness parity is in E4.
+
+=== OWNER TOLERANCES NEEDED (labelled; none invented) ===
+T-restore-fidelity (which elements may be lost, e.g. scrollback rows) | T-echo Mac-local and remote per path type | T-bulk interference on interactive | T-memory per session/per viewer | T-disconnect detection | T-cwd truncation | D-fork-policy for unsupported Linux filesystems (a policy, not a tolerance).
+
+=== NEW SOURCE-DERIVED ITEMS THIS PASS (predictions, unexercised; please verify) ===
+1. zmx Ghostty dependency 8af6897c differs from the app's 2fb0c9cac (build.zig.zon:8). Blind spot 9 is concrete, not hypothetical.
+2. Info cwd is capped at 256 bytes, has no title/activity field, and its shape is frozen (ipc.zig:79-94). This bears on U15 facts.
+3. The OSC 133;A rewrite is per read chunk with no carry-over (util.zig:314; loop.zig:404).
+4. ghostty_surface_read_text exists (ghostty.h:1238), so a native-leg text oracle is feasible. Modes go through in-band DECRQM/CPR.
+5. Filesystem-watcher parity is absent from K01-K10 (E4c).
+6. Phone suspension and reconnect are a placement-independent obligation.
+
+=== WHAT THIS DOES NOT ESTABLISH ===
+No runtime, benchmark, device, network or Linux result. No feasibility proof for [S] items. Rankings are advice conditional on owner tolerances, not owner authority. Edge-case coverage is not certified exhaustive. Memo claims are not validated by citation here.
+
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

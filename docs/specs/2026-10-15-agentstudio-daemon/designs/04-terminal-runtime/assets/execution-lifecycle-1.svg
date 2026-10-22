@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 713.71 593" width="713.71" height="593" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 720px; --diagram-readable-width: 571px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"></polygon>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"></polyline>
+  </marker>
+</defs>
+<g class="block" data-type="opt" data-label="A view is attached later">
+  <rect x="30" y="403" width="653.71" height="140" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="30" y="403" width="159.55" height="18" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="36" y="412" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">opt [A view is attached later]</text>
+</g>
+<line class="lifeline" data-actor="Client" x1="84.392" y1="70" x2="84.392" y2="563" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Gateway" x1="225.03199999999998" y1="70" x2="225.03199999999998" y2="563" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Session" x1="396.053" y1="70" x2="396.053" y2="563" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Backend" x1="592.268" y1="70" x2="592.268" y2="563" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<g class="message" data-from="Client" data-to="Gateway" data-label="Create intent for an explicit Host" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="84.392" y1="90" x2="225.03199999999998" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="154.712" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Create intent for an explicit Host</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Session" data-label="Addressed operation and caller context" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="225.03199999999998" y1="130" x2="396.053" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="310.5425" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Addressed operation and caller context</text>
+</g>
+<g class="message" data-from="Session" data-to="Session" data-label="Admit scope and own creation work" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="396.053,170 426.053,170 426.053,190 396.053,190" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></polyline>
+  <text x="434.053" y="180" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admit scope and own creation work</text>
+</g>
+<g class="message" data-from="Session" data-to="Backend" data-label="Establish execution without a viewer" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="396.053" y1="240" x2="592.268" y2="240" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="494.1605" y="230" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Establish execution without a viewer</text>
+</g>
+<g class="message" data-from="Backend" data-to="Session" data-label="Actual backend observation or unresolved result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="592.268" y1="280" x2="396.053" y2="280" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="494.1605" y="270" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual backend observation or unresolved result</text>
+</g>
+<g class="message" data-from="Session" data-to="Gateway" data-label="Result at its declared boundary" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="396.053" y1="320" x2="225.03199999999998" y2="320" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="310.5425" y="310" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Result at its declared boundary</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Client" data-label="Same operation result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="225.03199999999998" y1="360" x2="84.392" y2="360" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="154.712" y="350" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Same operation result</text>
+</g>
+<g class="message" data-from="Client" data-to="Gateway" data-label="Attach the existing session" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="84.392" y1="443" x2="225.03199999999998" y2="443" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="154.712" y="433" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Attach the existing session</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Session" data-label="Admitted attachment request" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="225.03199999999998" y1="483" x2="396.053" y2="483" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="310.5425" y="473" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admitted attachment request</text>
+</g>
+<g class="message" data-from="Session" data-to="Backend" data-label="Attach to that execution" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="396.053" y1="523" x2="592.268" y2="523" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="494.1605" y="513" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Attach to that execution</text>
+</g>
+<g class="note" data-position="over" data-actors="Session,Backend">
+  <polygon points="375.0095,368 607.3115,368 613.3115,374 613.3115,391 375.0095,391" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <polygon points="607.3115,368 613.3115,374 607.3115,374" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <text x="494.1605" y="379.5" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Creation does not create a terminal attachment</text>
+</g>
+<g class="actor" data-id="Client" data-label="Frontend" data-type="participant">
+  <rect x="40" y="30" width="88.78399999999999" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="84.392" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Frontend</text>
+</g>
+<g class="actor" data-id="Gateway" data-label="Mac Gateway" data-type="participant">
+  <rect x="168.784" y="30" width="112.49599999999998" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="225.03199999999998" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Mac Gateway</text>
+</g>
+<g class="actor" data-id="Session" data-label="Host session owner" data-type="participant">
+  <rect x="321.28" y="30" width="149.546" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="396.053" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host session owner</text>
+</g>
+<g class="actor" data-id="Backend" data-label="Host backend adapter" data-type="participant">
+  <rect x="510.826" y="30" width="162.884" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="592.268" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host backend adapter</text>
+</g>
+</svg>

@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · ZMX adoption: owners, protocol and safe cleanup</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="program-design.html">AgentStudio daemon · ZMX adoption: owners, protocol and safe cleanup</a></nav></ex-nav>
+<ex-document id="content"><h1>ZMX adoption: owners, protocol and safe cleanup</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](program-design.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## ZMX adoption: owners, protocol and safe cleanup
+
+[Specification](specification.html) · [Shared Requirements](../../../user-requirements.html) · [Verification Design](verification-design.html)
+
+Update the existing native integration and its control adapter together. Keep ZMX as the execution owner and Ghostty as the native renderer. A small pure codec inside the existing Core module separates byte validation from descriptor/process work; it adds no daemon, actor, protocol server or persisted state.
+
+## Where each entity lives
+
+```mermaid
+flowchart LR
+    E1["E1 Backend revision"] --> Build["Vendor build — modified ZMX pin"]
+    E2["E2 Terminal execution"] --> ZMX["ZMX daemon — existing process owner"]
+    E3["E3 Native attachment"] --> Surface["SurfaceManager / TerminalRestoreRuntime — existing"]
+    E4["E4 Cleanup evidence"] --> Journal["Workspace journal + ZmxSessionControl — existing"]
+    E5["E5 Control exchange"] --> Control["ZmxSessionControl — modified"]
+    Control --> Codec["ZmxControlProtocol — new, pure Core boundary"]
+```
+
+| Entity | Semantic owner | Module/home and change | Schema/type home and boundary shape | Disposition and convention |
+| --- | --- | --- | --- | --- |
+| E1 Backend revision | Vendor preparation | existing build infrastructure; modified ZMX gitlink | vendor Git revision and produced executable; selected source is `7f0ffdb999833a1817dd3c6222c269d4ed4a7548` | build artifact, not new product data; existing committed-gitlink verification |
+| E2 Terminal execution | ZMX daemon | existing ZMX process boundary | upstream terminal/daemon state; app addresses it with existing Core `ZmxSessionID` opaque text | process-owned; durable session text preserved verbatim, new IDs remain UUIDv7 |
+| E3 Native attachment | Native surface owner | existing App `SurfaceManager`, existing Terminal `TerminalRestoreRuntime` | existing surface/attachment identity and `ZmxSessionID`; CLI attach arguments plus isolated `ZMX_DIR` | runtime-only; existing native composition, no extra state owner |
+| E4 Cleanup evidence | Workspace journal for durable obligation; `ZmxSessionControl` for OS observation | existing Core persistence and runtime owners; no schema change | existing `ZmxSessionIdentity`: version:Int=1, bootID:String, daemon/terminalLeader:`ZmxProcessIncarnation` (pid:Int32, startSeconds:UInt64, startMicroseconds:UInt64), processGroupID:Int32, sessionCreatedAt:UInt64; JSON Data at existing datastore boundary | persisted evidence; existing Codable/Equatable/Sendable value conventions |
+| E5 Control exchange | `ZmxSessionControl` | modified existing Core runtime; new internal `ZmxControlProtocol` value codec in the same module | upstream byte shape below; internal typed command/header/info values; errors remain existing `ZmxSessionControlFailure` or cancellation | descriptor/request-local; pure parser and Sendable value types, no public API promotion |
+
+E4's two responsibilities remain separate: the journal decides whether an obligation exists and persists its progress; the runtime adapter alone decides what the OS observation establishes. Neither list output nor the codec can complete a journal obligation.
+
+## Component composition
+
+| Owner | Job, consumers and reason to change | Remains authoritative / changes |
+| --- | --- | --- |
+| Vendor preparation | Produce and verify the executable consumed by setup, tests and app packaging; changes with source/build policy | existing local/shared-output verification; update only ZMX pin |
+| Native surface composition | Construct a view with the exact attach command; consumed by pane/view lifecycle; changes with native presentation | existing path and outer Ghostty pin |
+| Workspace cleanup owner | Query durable work, guard native attachments, sequence observe/retire and persist results; changes with cleanup policy | existing coordinator/datastore/journal contract and retry scheduling |
+| `ZmxSessionControl` | Own one descriptor/deadline and OS identity validation; consumed by `ZmxBackend` async wrappers; changes with local process/socket mechanics | same-connection safety and off-main boundary; delegate byte encoding/decoding to codec |
+| `ZmxControlProtocol` | Encode the two control commands and validate/decode frames; consumed only by control adapter and module tests; changes with pinned private protocol | new pure internal boundary; all private offsets/tags/version checks have one Swift home |
+| ZMX daemon | Own the PTY process family and reply to control/attachment clients; changes with upstream execution/serialization | selected upstream source, no local vendor patch |
+
+The codec earns its boundary because malformed-byte behavior can be checked without a process, socket, clock or UI. Keeping those rules private inside socket I/O would force every malformed-header test through live process setup. A new package or general transport framework would add no necessary behavior.
+
+## One terminal from the app to ZMX
+
+```mermaid
+sequenceDiagram
+    participant App as Existing App surface composition
+    participant Restore as TerminalRestoreRuntime
+    participant Native as Existing Ghostty surface
+    participant ZMX as Selected ZMX CLI / daemon
+    App->>Restore: unchanged sync — exact stored ZmxSessionID
+    Restore-->>App: unchanged — attach command or unavailable
+    App->>Native: unchanged sync — command + isolated environment
+    Native->>ZMX: changed executable — attach exact ID, shell -i -l
+    ZMX-->>Native: PTY bytes / existing attach restoration
+    Native-->>App: unchanged native display
+    Native->>ZMX: unchanged native input through attach
+    Note over App,ZMX: Dispose attachment, retain execution; a fresh surface repeats this path
+```
+
+Current source: [surface startup](../../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ViewLifecycle.swift), [restore command](../../../../../../Sources/AgentStudio/Features/Terminal/Restore/TerminalRestoreRuntime.swift), [CLI command/environment](../../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift). These links describe the current path; the changed edge is the paired backend executable, not a new route. A handle remains preparation, not proof that a shell started. Unavailable configuration continues returning no attach command to the existing startup failure path.
+
+## One cleanup request through validation
+
+```mermaid
+sequenceDiagram
+    participant Journal as Existing cleanup coordinator / journal
+    participant Backend as ZmxBackend
+    participant Control as ZmxSessionControl
+    participant Codec as New internal codec
+    participant Peer as ZMX peer + local OS
+    Journal->>Backend: unchanged await — observe exact session ID
+    Backend->>Control: unchanged off-main — endpoint, boot
+    Control->>Codec: added sync — encode Info
+    Codec-->>Control: changed — v1 header
+    Control->>Peer: same bounded descriptor — Info bytes
+    Peer-->>Control: header, bounded payload
+    Control->>Codec: added sync — validate before field extraction
+    alt Invalid / incompatible frame
+        Codec-->>Control: invalidResponse
+        Control-->>Journal: typed failure, no identity / Kill authorization
+    else Valid Info
+        Codec-->>Control: terminalPID, createdAt
+        Control->>Peer: unchanged — same-UID peer + process incarnation checks
+        Control-->>Journal: existing evidence JSON
+        Journal->>Journal: unchanged — persist evidence before retirement
+        Journal->>Backend: unchanged await — retire with recorded evidence
+        Backend->>Control: unchanged — fresh observation on retirement connection
+        Control->>Peer: unchanged — verify original identity; then changed v1 Kill
+        Control-->>Journal: unchanged — pending, not completed
+        Journal->>Backend: unchanged later pass — reconcile original family
+        Backend-->>Journal: completed only after existing extinction/boot guard
+    end
+```
+
+Current sources: [cleanup sequencing](../../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift), [async wrapper](../../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift), [descriptor and process checks](../../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift), [evidence schema](../../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionIdentity.swift). The initial observation and retirement are separate attempts; the retirement itself inspects and sends Kill on its own same descriptor. The codec never performs I/O or makes a retirement decision.
+
+## Exact protocol and internal interfaces
+
+The schema authority is selected upstream [src/ipc.zig](https://github.com/neurosnap/zmx/blob/7f0ffdb999833a1817dd3c6222c269d4ed4a7548/src/ipc.zig#L47) (`Header`, `Info`, `Tag`, `PROTOCOL_VERSION`) together with [handleInfo](https://github.com/neurosnap/zmx/blob/7f0ffdb999833a1817dd3c6222c269d4ed4a7548/src/loop.zig#L1101). The local source is mirrored by the internal codec, checked against literal upstream bytes and real replies. The current Swift reader uses length offset 1 and sends version 0; the target replaces that interpretation completely.
+
+| Boundary | Target shape / contract |
+| --- | --- |
+| Control → ZMX | Info tag 6 or Kill tag 5; exactly 8 header bytes: tag:u8 at 0, version:u8=1 at 1, reserved:u16=0 at 2, payloadLength:u32 little-endian at 4; zero payload |
+| ZMX → control | Same header; only Output tag 1 may precede Info tag 6. Validate header size, version, reserved bytes, accepted tag and existing payload cap before payload allocation/read. |
+| Info payload → typed facts | Exactly 552 bytes; terminalPID:Int32 little-endian at 8, createdAt:UInt64 little-endian at 528, protocol version byte=1 at 545. No optional/defaulted field. |
+| Internal command | closed enum `info | kill`; no arbitrary caller-provided tag |
+| Internal header | validated `output(payloadLength:Int) | info(payloadLength:Int)`; unsupported tags are rejected at entry |
+| Internal Info | immutable required terminalPID:Int32 and createdAt:UInt64; parsed values still require the existing OS identity checks |
+| Control result | existing `Data?` observation (nil only for positive endpoint absence), `pending | completed` retirement, existing typed control failure, or cancellation |
+
+The [existing refusal bounds](specification.html#source--c1-control-compatibility) remain owned by `AppPolicies.WorkspacePersistence`. Each skipped Output frame shares the same deadline; it cannot reset it. The codec does not own timing or retry policy.
+
+Pure codec operations encode a command, decode an exactly sized header under the supplied payload limit, and decode Info. `ZmxSessionControl.Connection` keeps its partial-read/write loops, cancellation checks, descriptor lifetime and bounded polling. EOF remains unavailable, and a truncated pure input remains invalidResponse. `ZmxBackend` retains its `@concurrent nonisolated` observation/retirement wrappers. Nothing moves onto MainActor and no observation event is added.
+
+## Failure and overlap
+
+| State / overlap | Detection, containment and result | Recovery owner |
+| --- | --- | --- |
+| Valid header, incomplete payload / EOF | descriptor read fails; no parsed identity and no completion inferred | existing cleanup loop may inspect again |
+| Wrong header/body version, nonzero reserved bytes, unsupported tag, oversized length | codec refuses before using fields or allocating the declared payload | same loop; no legacy decoder or fallback |
+| Stream emits Output before Info | validate and consume bounded frames, retaining the original deadline | connection owner; no new queue |
+| Endpoint replaced between attempts | retirement opens a descriptor then checks its peer and session against recorded evidence; names alone never authorize Kill | existing runtime adapter; mismatch remains unresolved |
+| Native attachment retained | existing `canRetire` guard refuses before destructive callback | existing native cleanup owner |
+| Cancellation before Kill | existing cancellation check throws; no new write admitted | existing caller shutdown/join |
+| Cancellation/error after a possible write | result does not establish death; durable obligation retains its original evidence | later existing reconciliation pass, freshly guarded |
+| Original family extinct, endpoint replaced/stale | complete original obligation without signalling the endpoint | existing OS/process observation owner |
+
+The state progression remains `unobserved → recorded → pending → completed`, with failures retaining unresolved work. Sending Kill cannot jump to completed. New boot or positively extinct original family can complete without signalling. These are existing cleanup transitions, not a new detached-session lifetime policy.
+
+The process/socket boundary is a trust boundary. Local same-UID peer checks and boot/process start-time evidence guard the execution; codec validation guards untrusted bytes. Assets are unrelated processes and persisted cleanup evidence. List output, terminal text and `zmx --version` are not identity authority. The change adds no credentials, data export, terminal transcript or telemetry payload.
+
+## Private adoption and release separation
+
+Use the existing local-vendor preparation boundary for the changed pin, producing worktree-private outputs. Shared output preparation deliberately rejects differing committed pins; changing verification to accept a mismatch would remove the pairing guarantee. Outer Ghostty stays at its existing source pin even when its private output must be prepared locally.
+
+There is one decoder and one selected backend for this isolated worktree. An old-protocol endpoint encountered by control is refused; attach to a surviving old endpoint is not a supported proof target. No coexistence phase, root migration, automated old-session retirement, packaging publication or rollback over live executions is designed here. The later installed-session transition needs its own policy. Reverting source is possible; rolling back a process family or provider state is not implied.
+
+## What is real in proof
+
+```mermaid
+flowchart LR
+    Unit["Core tests"] -->|"literal valid / invalid bytes"| Codec["Real internal codec"]
+    Fixture["Private Unix peer"] -->|"fragmented frames; read to EOF"| Control["Product socket adapter"]
+    Native["Private native app"] -->|"real attach / input / output"| ZMX["Exact ReleaseFast ZMX"]
+    Control <-->|"Info / guarded Kill"| ZMX
+    Kernel["Kernel process / exit events"] -->|"independent identity / extinction"| Proof["Assertions"]
+    Native --> Proof
+    Control --> Proof
+```
+
+Unit bytes replace the peer, not the parser. A controlled socket peer is a stand-in for malformed-wire scenarios, not real-backend acceptance. The real backend and native app remain required for their respective outcomes. Kernel observations must concern the exact registered incarnations; an empty list or successful Kill response is insufficient. Existing test helpers' polling waits do not define the proof contract; necessary waits use exact fixture/process events and runner-owned hang bounds.
+
+## Requirement-to-owner trace
+
+| U | R and contract | E | Owner | Interface | Shape and home | State | Failure | Proof seam |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| U24, U9 | R1 / C1 versioned control | E1,E4,E5 | `ZmxSessionControl` and codec | typed Info/Kill encoding, header/Info decode | v1 fields above, internal Core codec; upstream ipc.zig authority | inspecting → validated | invalidResponse / existing unavailable, timeout or cancellation | literal-byte parser, allocation-guard inspection, real socket and exact-backend replies; V1 |
+| U24 | R2 / C2 native attachment | E1,E2,E3 | native surface composition | existing exact-ID attach + native input/output | existing TerminalRestoreRuntime command, Ghostty PTY, upstream attach bytes | attached → detached → fresh attachment to same execution | existing surface startup failure; replacement fails proof | actual private app surfaces plus independent execution witnesses; V2 |
+| U24, U9 | R3 / C3 verified cleanup | E2,E4,E5 | journal for obligation; runtime control for evidence/effect | existing observe/retire callbacks | existing Core JSON identity and cleanup-status enum; codec v1 bytes | recorded → pending → completed | mismatch/unverifiable remain unresolved; extinct original leaves endpoint alone | durable cleanup entry + real peer and kernel lifecycle; V3 |
+| U24 | R4 / C4 isolation | E1,E2,E3 | vendor preparation and private app launch | existing pin/output verification, private root | committed gitlinks and existing build/launch identity | selected source → paired private build → private run | mismatched/shared output refuses preparation | source/build/input-root inspection and actual private app target; V4 |
+
+All four R rows have a concrete realization. E1/E2/E3/E4/E5 are bound above; C1/C2/C3/C4 and V1/V2/V3/V4 remain owned by the linked Specification. Invalid wire combinations are rejected at the codec entry; an arbitrary control command is unrepresentable in its command enum; invalid process identity is rejected at the existing runtime guard. No new persisted schema is needed.
+
+## Alternatives and remaining limits
+
+Inline replacement of offsets in the existing connection would be smaller initially, but forces malformed-wire checks through socket/process setup. The selected internal pure codec costs one small code boundary and focused tests; the maintainer pays that cost to make protocol changes inspectable. A general RPC library or another service would not help this private two-command boundary. Revisit the small codec if upstream supplies a stable safe binding or AgentStudio adopts a broader backend adapter contract.
+
+The existing name-only list health/inventory mismatch is deliberately outside this change. Production native restore and verified cleanup do not call those APIs; a later health/inventory design must distinguish responsiveness, absence and unresolved entries without weakening generic cleanup verification. No new monitoring caller is wired here.
+
+Deviations and unresolved decisions: installed old-session transition and dead-agent/process-restart restoration remain outside this slice; they must be settled before those later behaviors are implemented. Exact-state restoration, a Ghostty fork, public-create adoption and a new Host/Gateway path are not prerequisites for this bounded native integration.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

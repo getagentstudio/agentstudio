@@ -1,0 +1,306 @@
+# Find an AgentStudio feature
+
+This is a product-feature tree, separate from the system architecture and specification-folder tree. It organizes the existing survey around what a person does in AgentStudio. Choose an area, or expand the complete feature tree to find an individual feature and follow its responsibilities into the detailed design.
+
+**Placement is proposed, not implemented.** Host means the Mac/Linux Host daemon; Gateway means the Rust runtime on macOS or iOS; UX client means the actual Mac/iPhone interface and its native owners. **Split** means different parts of one feature live in different places. **Decision** identifies an unsettled ownership or support choice. Current refusals and dormant/debug paths remain visible rather than being promoted into working features.
+
+The full tree remains visible across MVP and later phases. Existing increment labels are proposals for discussion, not accepted priorities. This guide selects no behavior change, public exposure, table export or new platform guarantee. The existing operation maps remain the source for named-method coverage and detailed limits.
+
+## Repositories, Git and worktrees
+
+**Integration proposal:** repository/content reads in [I3](../increments/03-repository-reads/specification.md), Git mutations and complete worktree operations in [I4](../increments/04-git-worktrees/specification.md). Backend/platform qualification starts in I0. These are navigation into the existing proposal, not an approved delivery order.
+
+### Discover repositories and watched folders
+
+**Placement: Split.** Host scans and validates machine-local repositories/worktrees and acquires filesystem changes. Gateway prepares addressed repository inventory. UX client supplies selected interests and displays the repository explorer. A native folder chooser stays native; a remote watched path belongs to its Host.
+
+**Still open:** autonomous coverage, demand policy, source/currentness and supported remote path selection. [Details](../designs/05-git-discovery/specification.md).
+
+### Read status, tracked paths and ignored files
+
+**Placement: Split.** Host owns Git status/ignore/index acquisition and exact detail requests. Gateway prepares qualified sidebar/status observations. UX client displays them and requests relevant detail. The UI does not become the sole source of repository facts.
+
+**Still open:** refresh budgets and exact observation/retention profiles. [All Git operations](../designs/05-git-discovery/git-operation-map.md).
+
+### Inspect branches, remotes and pull requests
+
+**Placement: Split.** Host owns refs, branch-use/integration evidence and remote/Forge acquisition under an explicitly available credential capability. Gateway prepares branch/PR views. UX client selects comparisons and can initiate the actual native browser action for a PR. This does not provision `gh` credentials on every VM; credential custody/distribution and unavailable-credential behavior remain explicit contracts in the [acquisition map](../designs/11-operations-integration/capability-placement-map.md#gitremoteforge-refresh).
+
+**Still open:** demanded branch coverage, stale/rate-limited/truncated states and refresh policy. [Acquisition paths](../designs/11-operations-integration/capability-placement-map.md).
+
+### Clone, fetch, push and manage branches
+
+**Placement: Host work with UX client interaction.** Host performs admitted Git network and branch mutations at the addressed repository, including staged refresh cleanup. Gateway routes and prepares operation status. UX client gathers intent and displays actual known, failed or uncertain outcomes.
+
+**Still open:** selected public exposure, credentials and cancellation/result boundaries. Not every Git SDK method automatically becomes a remote method. [Operation map](../designs/05-git-discovery/git-operation-map.md).
+
+### Create or fork a worktree
+
+**Placement: Split.** Host owns destination/application policy, Git/filesystem mutation and reconciliation. Gateway routes to that Host and prepares refreshed inventory. UX client owns branch/mode input and selected pane follow-up. Existing modes include creation from the default branch, creation from a selected branch and forking current files.
+
+**Still open:** full supported Linux fork profile, residue/cancellation and launch-after-create behavior. Typed wrapper refusals are separate from the real interactive feature. [Full worktree contract](../designs/06-worktree-fork/specification.md).
+
+### Remove, archive, prune and lock worktrees
+
+**Placement: Host work with UX client interaction.** Host performs selected application/Git policies and machine effects. Gateway reports qualified state and operation results. UX client presents choices and effects on its current views. Pruning stale administration is different from removing a live worktree.
+
+**Still open:** complete application policy, activity evidence, archive/cleanup and failure contracts. [Worktree policy](../designs/06-worktree-fork/specification.md).
+
+### Pin repositories and open associated worktrees
+
+**Placement: Split / Decision.** Host provides worktree identity and actual execution/CWD context. Gateway prepares association views. UX client retains current pane residency, selection and native opening. Repository/pane pinning and membership preferences need their own declared persistence/sharing scope.
+
+**Still open:** shared versus client-local preferences and exact target/result semantics. [Native command paths](../designs/10-swift-client/command-execution-map.md).
+
+## Terminals and continuing sessions
+
+**Integration proposal:** the usable remote terminal in [I1](../increments/01-remote-terminal/specification.md), autonomous provider/session fact integration in [I2](../increments/02-agents-context/specification.md). Source and lifecycle correctness apply from the first included path.
+
+### Start and list terminal executions
+
+**Placement: Host work with UX client interaction.** Host establishes/discovers continuing executions and owns their registry/backend lifetime. Gateway routes and prepares session lists. UX client requests execution and creates its own view. A viewer is not required to establish the execution.
+
+**Still open:** backend qualification, registry/establishment outcomes and public shapes. [Execution lifecycle](../designs/04-terminal-runtime/execution-lifecycle-design.md).
+
+### Attach, restore and follow terminal output
+
+**Placement: Split.** Host owns the backend attachment and ordered restoration/live handoff. Gateway transports the reliable terminal lane and manages its connectivity. UX client renders the bytes in its actual terminal surface. Slow viewers need bounded handling without silently losing arbitrary terminal bytes.
+
+**Still open:** qualified backend restoration, backpressure and protocol choice. [Terminal specification](../designs/04-terminal-runtime/specification.md).
+
+### Type, resize and hand off control
+
+**Placement: Split / Decision.** UX client captures input and viewport intent. Gateway routes the addressed attachment's traffic. Host applies actual input and selected resize/control authority. The control policy for several viewers is not inherited automatically from ZMX.
+
+**Selected:** one controller with other attachments viewing. **Still open:** actual acquisition/handoff/revocation, focus, attachment identity and uncertain-input outcomes. [Terminal contract](../designs/04-terminal-runtime/specification.md).
+
+### Detach, reconnect and terminate
+
+**Placement: Split.** UX client closes or reopens its view. Gateway replaces communication connections; exact attachment reuse/replacement and logical subscription/interest continuity remain open profiles. Host retains continuing execution independently, with explicit termination and natural/backend exit separate from detachment. Returning to the same continuing execution remains required.
+
+**Still open:** attachment/subscription reconnect profiles, backend restart/re-adoption and selected retention. No last-pane or connection-loss timeout is a termination rule. [Lifetime design](../designs/04-terminal-runtime/execution-lifecycle-design.md).
+
+### Read terminal facts and navigate rendered history
+
+**Placement: Split.** Host owns qualified execution/process/backend fact acquisition independently of the UX client. Gateway prepares admitted observations. UX client owns native scrolling, prompt navigation and rendering-specific state. A renderer fact cannot be manufactured from a process-status row.
+
+**Still open:** renderer-free fact source qualification and truthful queued/applied results. [Facts and native navigation](../designs/10-swift-client/command-execution-map.md).
+
+## Agents, hooks and context
+
+**Integration proposal:** autonomous agents/context in [I2](../increments/02-agents-context/specification.md); broader packaging and client operation in [I7](../increments/07-clients-operation/specification.md). This does not defer authority or currentness requirements from the earlier included operations.
+
+### Receive provider hooks and agent lifecycle input
+
+**Placement: Host.** Authorized hooks and in-session CLI/context inputs reach their local Host. Provider-qualified identities, admission and binding/lifecycle reduction run without Swift or a connected Mac. Gateway prepares selected status; UX client displays it.
+
+**Still open:** concrete admission/source fences and provider/platform profiles. [Agent/context contract](../designs/07-agents-context/specification.md).
+
+### Show sessions, status and attention
+
+**Placement: Split; read marks shared.** Host owns provider/session facts and admitted reduction. Gateway prepares the authorized status view; UX client owns actual viewing. The owner selected shared read marks across devices. Provider completion, user viewing and delivery remain separate facts; the shared marker's exact subject/scope/coverage must be bound.
+
+**Still open:** concrete shared-reader/subject mapping, source revision coverage, authority home, reconciliation and retention. Sharing itself is selected. [Host context lifecycle](../designs/07-agents-context/host-context-lifecycle-design.md).
+
+### Read context and update the agent title or line
+
+**Placement: Split.** Host admits addressed context inputs, producer ordering and retained values. Gateway prepares view data. UX client publishes the current title/line at its actual surface. Producer ordering and caller authority are distinct.
+
+**Still open:** closed result/schema shapes and stale-writer/currentness behavior. [Context operation map](../designs/01-service-contracts/rpc-operation-map.md).
+
+### Send notices, ask questions and settle answers
+
+**Placement: Split.** Host owns admitted message/ask/withdrawal and retained settlement semantics. Gateway routes and prepares the appropriate view. UX client presents the notice/question and supplies actual user input; presentation is not answer settlement.
+
+**Still open:** exact answer/delivery/recovery contracts and data retention. [Context lifecycle](../designs/07-agents-context/host-context-lifecycle-design.md).
+
+### Install and remove provider integration packages
+
+**Placement: Split / Decision.** Selected machine/provider-root installation effects belong on the addressed machine. Gateway routes remote work; CLI formats/requesters stay thin. Native consent and locally shipped bootstrap resources retain their actual owner.
+
+**Still open:** daemon-absent bootstrap, packaging/version pairing, uninstall custody and partial writes. Installed files are not proof of provider trust or authentication. [Install boundaries](../designs/11-operations-integration/capability-placement-map.md).
+
+## Files, comparisons and viewers
+
+**Integration proposal:** finite repository/content reads in [I3](../increments/03-repository-reads/specification.md), the complete review workflow in [I5](../increments/05-review-output/specification.md). Native viewer behavior remains explicitly represented alongside each remote part.
+
+### Browse the file tree and read exact content
+
+**Placement: Split.** Host acquires addressed filesystem/Git content with its source identity and bounds. Gateway prepares selected finite content and file-tree views. UX client owns actual file selection and presentation. Host paths remain Host-qualified.
+
+**Still open:** remote path representation, bounds and stale/deleted/error results. [File and review contract](../designs/08-files-review-output/specification.md).
+
+### Display code and Markdown
+
+**Placement: UX client with prepared data.** UX client hosts CodeViewer/Bridge rendering, selection, scrolling and Markdown display modes. Host supplies qualified content; Gateway prepares portable view material. Current native/viewer readiness remains distinct from content acquisition.
+
+**Still open:** device-specific support and exact viewer-control results. [Bridge operation map](../designs/08-files-review-output/bridge-operation-map.md).
+
+### Choose comparisons and inspect diffs
+
+**Placement: Split.** Host resolves Git revisions/comparison targets and acquires diffs/content. Gateway prepares the selected comparison/file list. UX client displays and navigates it. Empty, failed and stale comparisons remain different.
+
+**Still open:** request/source generations and complete supported comparison behavior. [Git operation details](../designs/05-git-discovery/git-operation-map.md).
+
+### Publish a review and mark files viewed
+
+**Placement: Split / Decision.** Host owns qualified source/workflow state. Gateway prepares review candidates. UX client owns actual publication/visibility and reports meaningful viewing. Delivery, publication and viewing are separate milestones.
+
+**Still open:** whether review-file viewed marks join the shared set is the scoped question with Sun; completed-agent viewed sharing is settled. If included, review/file subject and source-coverage binding must be specified. Actual native publication results remain distinct; delivery does not count as viewing. [Review lifetime map](../designs/08-files-review-output/bridge-operation-map.md).
+
+### Browse web pages and control local viewers
+
+**Placement: UX client.** Native web surfaces, reload, expand/collapse, scroll-to-file, reveal/search/filter and viewer telemetry retain actual viewer targets. Gateway can route selected external native controls to the addressed UX client. Host source work remains a separate responsibility.
+
+**Still open:** which controls are exposed to CLI/MCP and phone support. [Native versus source operations](../designs/01-service-contracts/rpc-operation-map.md).
+
+## Annotations, drafts and output
+
+**Integration proposal:** complete annotation/review/output journeys in [I5](../increments/05-review-output/specification.md). Replication is not a replacement for the workflow transactions or actual output effect.
+
+### Keep annotations attached to the right source
+
+**Placement: Split.** Host validates source fingerprints, comparison/session relationships and continuity choices. Gateway prepares qualified projections. UX client supplies relevant viewer/editor source context. Source refresh can have an admitted state effect; it is not always a pure cache refill.
+
+**Still open:** exact source/currentness and exported history. [Annotation operations](../designs/08-files-review-output/annotation-operation-map.md).
+
+### Create, edit, flush, revert and save drafts
+
+**Placement: Split.** UX client/declared editor owns the live edit buffer. Host owns admitted edit custody, revision checks and saved workflow transactions. Gateway routes and prepares views. Edit acquisition, flush, revert and save have different receipts.
+
+**Still open:** selected edit/source authority and recovery behavior. [Draft operation details](../designs/08-files-review-output/annotation-operation-map.md).
+
+### Resolve threads and recover annotation sessions
+
+**Placement: Split.** Host owns selected session/thread state and admitted recovery acknowledgements. Gateway prepares the catalog/detail views. UX client presents recovery choices and actual viewing; it does not turn delivery into a viewed receipt.
+
+**Still open:** retained recovery/history, lifecycle policy and viewing scope. [Annotation lifecycle design](../designs/08-files-review-output/annotation-output-lifecycle-design.md).
+
+### Prepare, inspect and explicitly repeat output
+
+**Placement: Host workflow plus Gateway/UX client delivery.** Host prepares exact attempt bytes, selected scope and workflow history. Gateway exposes authorized immutable content. UX client performs the declared effect. Inspecting prepared content does not prove output succeeded; repeat is a selected workflow operation.
+
+**Still open:** attempt retention, explicit repeat authority and unknown outcomes. [Output lifecycle](../designs/08-files-review-output/annotation-output-lifecycle-design.md).
+
+### Copy, choose an output folder and reveal output
+
+**Placement: Split / native effect.** Actual clipboard, native chooser and Finder/editor reveal run at their addressed UX client destination. Host-local filesystem output remains Host-local. Gateway routes declared requests/results; Host workflow finalization stays separate from the external effect.
+
+**Still open:** destination authority, consent/refusal, supported device behavior and partial/unknown outcomes. [Native output boundary](../designs/08-files-review-output/annotation-operation-map.md).
+
+## Windows, panes and everyday UX client interaction
+
+**Integration proposal:** native integration needed for the terminal in [I1](../increments/01-remote-terminal/specification.md), selected replicated/sharing experience in [I6](../increments/06-replication/specification.md), broader devices/exposure in [I7](../increments/07-clients-operation/specification.md). Existing native features retain an explicit home; these labels do not silently remove them from the UX client.
+
+### Create windows, tabs and panes
+
+**Placement: Split.** The proposed designated Host owns shared logical tabs/panes/layout; the UX client owns actual native windows and projected view objects. Creating a terminal pane can also request an execution on its addressed Host. Gateway sequences/routes those parts and prepares state. Shared model commit, native application and execution establishment are separate outcomes.
+
+**Still open:** exact command results and arrangement sharing. [All typed execution paths](../designs/10-swift-client/command-execution-map.md).
+
+### Move, extract, resize and undo closed views
+
+**Placement: Split.** Logical pane moves, tab membership and layout edits go to the proposed workspace Host authority. Actual view movement/measurement stays in the UX client, with Gateway preparation between them. Local navigation/Undo history cannot overwrite newer shared state without an admitted revision-checked mutation. Native projection loss does not imply execution termination.
+
+**Still open:** exact shared logical/native projection, durable/transient meaning and complete close/Undo/cutover semantics. Shared tabs/layout is required. [Swift client contract](../designs/10-swift-client/specification.md).
+
+### Focus panes, navigate tabs and pin views
+
+**Placement: UX client.** Actual focus and selected/pinned native view navigation stay with native owners. Gateway routes selected external requests to the right UX client. Host process state cannot prove that focus changed.
+
+**Still open:** supported external controls and truthful pending/applied/failed results; some typed pinned-navigation routes currently refuse. [Command result boundaries](../designs/10-swift-client/command-execution-map.md).
+
+### Open drawers, management mode and zoomed viewers
+
+**Placement: UX client.** Drawer attachment/focus, management navigation, zoom and viewer placement stay at their native surface. Some actions also establish Host terminal execution through Gateway routing. No catch-all command bus or new coordinator is selected here.
+
+**Still open:** exact effect/result contracts; several current typed drawer paths log without observing an effect. [Native owner map](../designs/10-swift-client/command-execution-map.md).
+
+### Search, group and filter sidebars
+
+**Placement: Split.** Host supplies qualified machine/session facts. Gateway prepares selected semantic rows, filtering/grouping under the settled view policy. UX client captures interaction and applies changed prepared results; MainActor does not perform heavy joins or source acquisition.
+
+**Still open:** per-client interests, preference sharing and final projection shapes. [Prepared-view boundaries](../designs/09-gateway-cli/prepared-view-boundaries.md).
+
+### Save and restore arrangements
+
+**Placement: Shared Host-owned model proposed.** The owner selected shared tabs/layout; the Lead proposes an explicitly designated existing Host for that workspace's composition, with Gateway read copies/preparation and actual UX client projections. Native geometry/residency stay distinct. Per-device-only arrangement is not the selected alternative; logical layout selection must be separated from per-device focus/navigation.
+
+**Still open:** exact portable elements, stable designation/identity, schema/import, logical layout-selection and close/Undo details, persistence and recovery. The initial proposed conflict rule checks the base revision rather than silently replacing another device's state. [Shared-state design](../designs/10-swift-client/shared-client-state-design.md).
+
+### Use the command bar and shortcuts
+
+**Placement: UX client interaction with addressed execution.** The existing command identity/display catalog remains the source of labels, shortcuts and dispatch meaning. UX client presents the command bar. Host work routes through Gateway; native work reaches the actual UX client owner.
+
+**Still open:** selected public exposure and complete target/result schemas. [Command inventory and exposure](../designs/10-swift-client/command-operation-map.md).
+
+### Edit pane notes and open external destinations
+
+**Placement: Split / native effect.** Native note presentation, copy-current-path, editor choice, Finder and browser initiation stay on the addressed UX client. Host identity/source is retained when referring to remote files or repositories. Local app initiation is not proof that the destination loaded.
+
+**Still open:** note/pinning persistence scope and remote path UX. [Native effect paths](../designs/10-swift-client/command-execution-map.md).
+
+## Settings, integrations and operation
+
+**Integration proposal:** qualification in [I0](../increments/00-qualification/specification.md), selected copy/refill experience in [I6](../increments/06-replication/specification.md), broader installation/client operation in [I7](../increments/07-clients-operation/specification.md). Each earlier included feature still requires its actual configuration, admission and failure boundary.
+
+### Preferences, sign-in and private credentials
+
+**Placement: Split / Decision.** UX client owns native sign-in/consent and local presentation preferences. Each machine keeps its own declared configuration and credentials. Host work uses its actual credentials. Gateway exposes only authorized status, not raw private material.
+
+**Selected:** paired private fleet. **Still open:** portable settings, actual enrollment/revocation, user/shared-scope binding, native consent and credential contracts. [Authority and operation](../designs/03-authority-control-plane/specification.md).
+
+### CLI, MCP, socket methods and subscriptions
+
+**Placement: Split.** Frontend CLI/MCP are thin adapters through Gateway; addressed Host work executes on Host, selected native work at the UX client. Authorized Host-local in-session inputs use their Host directly. Connection correlation, subscription delivery and application effects remain distinct.
+
+**Selected:** worktree machine CLI uses its attached local Host daemon and starts or activates it when absent; authorized Host-local session input stays local. UX/frontend CLI retains Gateway access. **Still open:** exposed subset, local admission/readiness/failure, frontend-verb classification, direct remote connection versus local Host relay/credential, protocol/version shapes and recovery. [57 RPC operations](../designs/01-service-contracts/rpc-operation-map.md).
+
+### Retained state, read copies and offline views
+
+**Placement: Split / Decision.** Host owns selected domain state; Gateway receives faithful selected copies and prepares views; UX client owns actual UI state. Central owns lease authority. A copied row cannot issue commands or become another writer.
+
+**Selected:** authorized last-known data marked offline; invalid-writer work pauses/refuses without a new spool; current retention meaning and no new full audit. **Still open:** exact units/tables, gate/coverage outcomes, retention bounds and refill. [Data ownership](../designs/02-data-ownership-replication/specification.md).
+
+### Diagnostics, telemetry and developer surfaces
+
+**Placement: Each process plus UX client inspection.** Host, Gateway and UX client produce their own scrubbed diagnostics under the existing observability system. Viewer telemetry remains viewer-specific. The Bridge development HTTP host remains a qualification surface, not an additional production daemon.
+
+**Still open:** operational result/privacy/lifetime profiles. [Operational integration](../designs/11-operations-integration/specification.md).
+
+### Install, start, stop and update the system
+
+**Placement: Each declared deployment owner.** Host is a Rust service artifact. Gateway uses a separate Mac service or an embedded iOS runtime; a separate iOS daemon process is not assumed. S32 sends native control through Mac UDS or selected iOS FFI and Bridge content directly through loopback HTTP/WebSocket. The [transport slice](../increments/00-qualification/bridge-gateway-transport/index.md) names the owners and unqualified native binding. Backend/Git resources must be supplied on the supported machine.
+
+**Selected:** first-party unsafe forbidden, pinned dependencies through safe interfaces allowed, one qualified initial Linux profile. **Still open:** concrete bindings, packaging/supervision, permissions, version pairing and full qualification/deployment proof. [Rust/build design](../designs/11-operations-integration/rust-engineering-design.md).
+
+## Unavailable, debug and uncertain paths
+
+**Integration proposal:** none selected for restoring dormant behavior or publishing debug surfaces. Record an explicit product decision before assigning one; current refusal/effect limits remain part of the migration evidence.
+
+### Keep dormant and refused commands visible
+
+**Placement: Decision / unavailable today.** The current typed path refuses twelve Inbox commands, three retired Panes-sort commands and four worktree-creation wrappers; two pinned-navigation routes separately refuse for state availability. The interactive worktree feature still exists. These rows must not silently become working remote features or vanish from coverage.
+
+**Still open:** intentional public product selection, restoration or exclusion. Current debug/testing exposure is not permission to publish every method. [Exact command-by-command evidence](../designs/10-swift-client/command-execution-map.md).
+
+### Preserve honest effect and completion boundaries
+
+**Placement: All affected owners.** Current queued terminal operations, void focus triggers, drawer logging, native initiation, SQL commit and actual rendering do not all prove the same result. Each migrated feature needs its own truthful supported outcome and failure boundary.
+
+**Still open:** the concrete public shapes and their real-path proof. This catalog records the gap and does not repair product code. [Current result limits](../designs/10-swift-client/command-execution-map.md).
+
+## Coverage and deeper inventories
+
+The feature tree is a reading view over the existing survey. These inventories overlap; their counts are not additive feature totals. Coverage here means an explicit place to investigate every recorded family and operation, not that every branch or proposed remote realization is already finished.
+
+- [154 command identities and actual immediate execution paths](../designs/10-swift-client/command-execution-map.md).
+- [57 RPC method names](../designs/01-service-contracts/rpc-operation-map.md).
+- [44 Git SDK requirements, including two fork entries](../designs/05-git-discovery/git-operation-map.md).
+- [16 Bridge semantic calls](../designs/08-files-review-output/bridge-operation-map.md).
+- [22 nested annotation kinds](../designs/08-files-review-output/annotation-operation-map.md).
+- [18 surveyed families, acquisition and proposed paths](../designs/11-operations-integration/capability-placement-map.md).
+
+CLI worktree commands, repository inventory, Git/remote/Forge refresh, native creation and Git package map to Repositories/Git/worktrees. Provider hooks, pane verbs, session context and provider-package installation map to Agents/hooks/context. Terminal maps to Terminals/sessions. Bridge File/Review maps to Files/comparisons/viewers; annotations/output maps to Annotations/drafts/output. Workspace/layout/commands and native OS ingress/effects map to UX client interaction and their native-effect leaves. RPC framing/serving, observability/configuration, system installation and the development HTTP host map to Settings/integrations/operation. Every recorded survey family has an explicit home here.
+
+Exact table classification remains in the data catalog, with current writers/readers, transaction groups and copy/projection distinctions. It is a separate view linked from the system guide, not another feature tree or an approved export list. Public shapes, selected policy choices and Verification Design remain unfinished.

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1472.015 246.70000000000002" width="1472.015" height="246.70000000000002" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 1472px; --diagram-readable-width: 1178px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<polyline class="edge" data-from="Swift" data-to="Local" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="244.96999999999997,58.45 268.96999999999997,58.45 268.96999999999997,90.9 292.96999999999997,90.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="CLI" data-to="Local" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="244.96999999999997,123.35000000000001 268.96999999999997,123.35000000000001 268.96999999999997,90.9 292.96999999999997,90.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Local" data-to="Routing" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="478.674,90.9 526.674,90.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Routing" data-to="Remote" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="690.8889999999999,90.9 719.3349999999999,90.9 719.3349999999999,123.35000000000001 747.781,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Remote" data-to="Admission" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="914.219,123.35000000000001 933.7730000000001,123.35000000000001 933.7730000000001,155.8 953.3270000000001,155.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Agent" data-to="LocalIngress" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="708.6730000000001,188.25 747.781,188.25" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="LocalIngress" data-to="Admission" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="896.435,188.25 933.7730000000001,188.25 933.7730000000001,155.8 953.3270000000001,155.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Admission" data-to="Owner" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1180.527,155.8 1228.527,155.8" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Routing" data-to="ClientRoute" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="690.8889999999999,90.9 719.3349999999999,90.9 719.3349999999999,58.45 747.781,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="ClientRoute" data-to="NativeOwner" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="981.6499999999999,58.45 1020.7579999999998,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<g class="node" data-id="Swift" data-label="Swift / native client" data-shape="rectangle" id="source--diagram-1--Swift">
+  <rect x="99.27999999999997" y="40" width="145.69" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="172.12499999999997" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Swift / native client</text>
+</g>
+<g class="node" data-id="Local" data-label="Gateway socket contract" data-shape="rectangle" id="source--diagram-1--Local">
+  <rect x="292.96999999999997" y="72.45" width="185.70399999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="385.82199999999995" y="90.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Gateway socket contract</text>
+</g>
+<g class="node" data-id="CLI" data-label="Frontend CLI / MCP adapter" data-shape="rectangle" id="source--diagram-1--CLI">
+  <rect x="40" y="104.9" width="204.96999999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="142.48499999999999" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Frontend CLI / MCP adapter</text>
+</g>
+<g class="node" data-id="Routing" data-label="Mac Gateway routing" data-shape="rectangle" id="source--diagram-1--Routing">
+  <rect x="526.674" y="72.45" width="164.21499999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="608.7814999999999" y="90.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Mac Gateway routing</text>
+</g>
+<g class="node" data-id="Remote" data-label="Host network ingress" data-shape="rectangle" id="source--diagram-1--Remote">
+  <rect x="747.781" y="104.9" width="166.43800000000005" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="831" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host network ingress</text>
+</g>
+<g class="node" data-id="Admission" data-label="Host caller and target admission" data-shape="rectangle" id="source--diagram-1--Admission">
+  <rect x="953.3270000000001" y="137.35000000000002" width="227.19999999999996" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1066.9270000000001" y="155.8" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host caller and target admission</text>
+</g>
+<g class="node" data-id="Agent" data-label="Host-local agent / hook / CLI context" data-shape="rectangle" id="source--diagram-1--Agent">
+  <rect x="461.4660000000001" y="169.8" width="247.20699999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="585.0695000000001" y="188.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host-local agent / hook / CLI context</text>
+</g>
+<g class="node" data-id="LocalIngress" data-label="Host-local ingress" data-shape="rectangle" id="source--diagram-1--LocalIngress">
+  <rect x="747.781" y="169.8" width="148.654" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="822.108" y="188.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host-local ingress</text>
+</g>
+<g class="node" data-id="Owner" data-label="Authoritative Host capability" data-shape="rectangle" id="source--diagram-1--Owner">
+  <rect x="1228.527" y="137.35000000000002" width="203.48799999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1330.271" y="155.8" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Authoritative Host capability</text>
+</g>
+<g class="node" data-id="ClientRoute" data-label="Addressed native-client dispatch" data-shape="rectangle" id="source--diagram-1--ClientRoute">
+  <rect x="747.781" y="40" width="233.86899999999994" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="864.7154999999999" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Addressed native-client dispatch</text>
+</g>
+<g class="node" data-id="NativeOwner" data-label="Actual native owner and admission" data-shape="rectangle" id="source--diagram-1--NativeOwner">
+  <rect x="1020.7579999999998" y="40" width="242.01999999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1141.7679999999998" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Actual native owner and admission</text>
+</g>
+</svg>

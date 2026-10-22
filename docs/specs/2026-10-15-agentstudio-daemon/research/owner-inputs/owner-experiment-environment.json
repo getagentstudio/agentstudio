@@ -1,0 +1,27 @@
+{
+  "source_session": "rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+  "note": "Later direct owner messages offering Fly Linux test resources, specifying flyctl and requesting login. Separate environment/test authority; no product implementation or Gateway placement decision is inferred. Supplement to the original frozen source packet.",
+  "messages": [
+    {
+      "source_line": 3191,
+      "source_timestamp": "2026-10-16T01:16:19.831Z",
+      "source_kind": "response_item.user.input_text",
+      "text": "ok i have acces to fly you can pin u pa linux box ther ei fyou need be",
+      "sha256": "df9078637648616fc7efbc0a802a38738d6bd3896c5c8dd25c3b52a0e5744380"
+    },
+    {
+      "source_line": 3199,
+      "source_timestamp": "2026-10-16T01:16:34.174Z",
+      "source_kind": "response_item.user.input_text",
+      "text": "if you ened to test thigns use fly ctl and i can log in for you know",
+      "sha256": "ef148ff4b2f5b0a1031ef62887828647d1a421f4d580c3b9e4ae837c476ba850"
+    },
+    {
+      "source_line": 3203,
+      "source_timestamp": "2026-10-16T01:16:37.123Z",
+      "source_kind": "response_item.user.input_text",
+      "text": "start the login",
+      "sha256": "740dd1fd0cfb0921c41e4016ee9e845ae8dda41e1d4fb228a6aac19033bc8cac"
+    }
+  ]
+}

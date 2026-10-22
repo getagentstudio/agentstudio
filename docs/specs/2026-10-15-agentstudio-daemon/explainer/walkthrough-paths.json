@@ -1,0 +1,384 @@
+{
+  "scope": "Explanatory reading paths through existing content. Narration does not select a new contract or prove an implementation.",
+  "paths": [
+    {
+      "id": "whole-system",
+      "title": "The whole system",
+      "description": "Understand the three roles, follow one operation, and connect the architecture to usable features.",
+      "stops": [
+        {
+          "to": "index.html#system-parts",
+          "narration": "Start with the division of work: the UX client is the interface, the Gateway on Mac or iOS connects and prepares, and the Mac/Linux Host does the machine work. Keep these three owners in mind as we follow a feature."
+        },
+        {
+          "to": "index.html#gateway-on-each-device",
+          "narration": "Now place the roles on real devices. Mac and iPhone each have a UX client and a Rust Gateway; either Gateway can reach the addressed Hosts. The phone path does not require a Mac relay. iOS hosting and suspension need their own qualification, while Host execution continues independently."
+        },
+        {
+          "to": "features.html#feature-areas",
+          "narration": "Now look at the product rather than the services. These are the AgentStudio areas we have to account for. A service diagram alone cannot tell us whether Git, reviews, context or native controls were left behind."
+        },
+        {
+          "to": "features.html#feature-create-or-fork-a-worktree",
+          "narration": "Take one familiar feature. Creating a worktree needs Host policy and Git effects, a Gateway-prepared repository view, and UX client interaction. Moving the backend does not move the entire feature into one Rust service."
+        },
+        {
+          "to": "index.html#follow-a-request",
+          "narration": "Follow that work to the correct machine: the frontend names a Host and the Gateway routes to it. Host-local agent input has its own local entry; native UI actions return to the actual addressed UX owner."
+        },
+        {
+          "to": "index.html#what-crosses-each-connection",
+          "narration": "The same connection carries different kinds of work. Commands need results, observations need validity, and terminal bytes need ordered delivery. Replicating a row is not a substitute for executing a command."
+        },
+        {
+          "to": "data.html#data-boundaries",
+          "narration": "Separate the data products before choosing a database layout. The Host's authoritative state, faithful read copies, Gateway-prepared views and actual native state answer different questions. The central lease authority is another boundary."
+        },
+        {
+          "to": "index.html#what-survives-a-disconnect",
+          "narration": "Test the model by removing the screen or network connection. Execution continues independently; viewing, connections and attempts have their own lifetimes. An uncertain effect must not become a blind retry."
+        },
+        {
+          "to": "delivery.html#usable-increments",
+          "narration": "These responsibilities become usable integration slices. The proposed terminal MVP joins Host, Gateway and the real UX client; later agent, Git, review and shared-state work remains visible. This is a proposed sequence, not completed remote functionality."
+        }
+      ]
+    },
+    {
+      "id": "feature-to-design",
+      "title": "From a feature to its design",
+      "description": "Use worktree creation to connect the feature hierarchy, workflow, full contract and integration slice.",
+      "stops": [
+        {
+          "to": "index.html#read-the-project-in-two-ways",
+          "narration": "Use two connected maps: system rules explain the common boundaries, while the feature hierarchy tells us what each existing product capability becomes. Neither replaces the other."
+        },
+        {
+          "to": "features.html#feature-tree",
+          "narration": "Find the feature in its product category. The tree is a navigation aid: expand an area, then use its link to inspect the actual responsibilities rather than treating a folder name as a feature."
+        },
+        {
+          "to": "features.html#feature-create-or-fork-a-worktree",
+          "narration": "Here the familiar action is split into current behavior, proposed Host/Gateway/UX client roles and unmade choices. Keeping those apart lets us improve placement without accidentally inventing behavior."
+        },
+        {
+          "to": "walkthroughs.html#worktree-choose-the-creation-mode",
+          "narration": "The workflow makes the feature concrete. Default-branch creation, selected-branch creation and forking current files are different intents; an unavailable typed wrapper does not erase the existing interactive path."
+        },
+        {
+          "to": "../designs/06-worktree-fork/specification.html#source--k4-worktree-fork-and-application-worktree-policy",
+          "narration": "The owning contract adds what a short feature summary cannot: validation, Git administration, file and metadata behavior, cancellation and residue. Linux parity must cover the full selected contract within its qualified profile."
+        },
+        {
+          "to": "walkthroughs.html#worktree-reconcile-success-and-failure",
+          "narration": "Return to the user-visible consequence. Discovery must reconcile after both success and failure; a created directory or a successful transport reply is not enough to claim a complete worktree."
+        },
+        {
+          "to": "../increments/04-git-worktrees/specification.html#source",
+          "narration": "The integration slice gathers Host mechanics and policy, Gateway observations, native behavior and real platform proof. This is where we judge the complete feature, while the detailed contract remains its source of meaning."
+        }
+      ]
+    },
+    {
+      "id": "incoming-data",
+      "title": "From incoming data to the screen",
+      "description": "Follow typed acquisition, Host state, read copies, view preparation and MainActor publication.",
+      "stops": [
+        {
+          "to": "index.html#follow-incoming-data-to-the-screen",
+          "narration": "Follow one source update toward the screen. Keep its Host, subject and ordering/currentness information attached. Ordered facts and replaceable refresh work need different admission policies; adding a debounce is not the classification."
+        },
+        {
+          "to": "../designs/09-gateway-cli/prepared-view-boundaries.html#source--what-moves-and-what-stays-native",
+          "narration": "This ownership map shows the cut: the Host admits source truth, the Gateway captures and prepares semantic views, and the UX client admits and publishes them. UX client intent is an input to preparation, not authority to rewrite Host truth."
+        },
+        {
+          "to": "data.html#replication-flow",
+          "narration": "Selected replication supplies one kind of read input. Capture, receiver apply and acknowledgement have their own boundaries. A faithful copy is useful source state; it is not a new execution owner or a replay instruction for native effects."
+        },
+        {
+          "to": "../designs/09-gateway-cli/prepared-view-boundaries.html#source--coordination-owner-calls-and-qualified-fact-fanout",
+          "narration": "Now ask whether everything needs a bus. Commands go to actual owners; admitted facts and latest view intent feed declared capture and pure preparation. Fanout serves named consumers instead of making one global enum own every operation."
+        },
+        {
+          "to": "../designs/09-gateway-cli/prepared-view-boundaries.html#source--view-preparation-lifetime",
+          "narration": "A view can change while work is in flight. Follow the desired generation from waiting to preparation to offering, and then through replacement or closure. Cancellation alone cannot prove an old result is safe to publish."
+        },
+        {
+          "to": "../designs/07-agents-context/context-count-preparation.html#source--from-host-state-to-one-chip",
+          "narration": "Make the pipeline concrete with a context chip. The Host domain classifies message state into four per-context counts. The Gateway combines them using the shared logical pane and its owned children; collapsing a drawer or adapting the phone layout does not change that scope. Membership and count sources each need valid witnesses."
+        },
+        {
+          "to": "../designs/09-gateway-cli/prepared-view-boundaries.html#source--walk-a-superseded-result-through-the-boundary",
+          "narration": "Use the superseded-result example to see why witnesses matter. The result must still match the intended view and its source coverage when offered; equal-looking values or a finished task do not establish currentness."
+        },
+        {
+          "to": "../designs/09-gateway-cli/prepared-view-boundaries.html#source--one-walkable-interaction",
+          "narration": "The final sequence keeps heavy capture, scheduling and transforms off MainActor. The UX client then publishes changed UI values and applies its actual native plan on MainActor. Delivery, publication and the user's viewing remain different observations."
+        },
+        {
+          "to": "experiments.html#proof-boundaries",
+          "narration": "End at proof rather than a crate choice. Compile-time types help compose internal transforms, but real Swift/Rust socket schemas, mixed versions, source validity and native behavior need their own evidence. The current procedures are still unexecuted."
+        }
+      ]
+    },
+    {
+      "id": "terminal-walkthrough",
+      "title": "Remote terminal",
+      "description": "Separate execution from viewing, then follow restore, input, detach and the terminal MVP.",
+      "stops": [
+        {
+          "to": "walkthroughs.html#terminal-choose-a-machine-and-session",
+          "narration": "Start with a specific Host and continuing execution. A machine name or matching session label elsewhere cannot silently replace that target when the original Host is unavailable."
+        },
+        {
+          "to": "../designs/04-terminal-runtime/execution-lifecycle-design.html#source--create-execution-before-attaching-a-view",
+          "narration": "The Host establishes execution before a view attaches. Notice the separate results: a prepared handle, a backend observation and attach readiness are not interchangeable. The app must not be needed to keep execution alive."
+        },
+        {
+          "to": "walkthroughs.html#terminal-attach-and-render",
+          "narration": "Now add a viewer to that execution. Restored terminal state must join continuing output in order. A text capture alone cannot prove that a fresh renderer has the correct terminal state or that no bytes were lost at the join."
+        },
+        {
+          "to": "experiments.html#capture",
+          "narration": "This is why Capture needs an experiment rather than a confident label. Screen text, terminal-state restoration and live continuation are different products. The real ZMX-to-Ghostty path must decide which restoration mechanism works."
+        },
+        {
+          "to": "walkthroughs.html#terminal-type-and-resize",
+          "narration": "Return input to the same Host attachment. The initial profile permits one input/resize controller and other viewers; opening a phone view does not seize control. Accepted bytes still do not prove the child consumed them."
+        },
+        {
+          "to": "../designs/04-terminal-runtime/execution-lifecycle-design.html#source--target-calls-keep-the-two-primitives-apart",
+          "narration": "Compare closing a view with explicitly terminating execution. They lead to different owners and effects. A lost detach message may leave attachment reconciliation, but it must not turn the close into an execution kill."
+        },
+        {
+          "to": "walkthroughs.html#terminal-close-and-return",
+          "narration": "Reconnect to the same continuing execution through a replacement connection. Exact attachment/subscription reuse remains to specify; uncertainty about an earlier input must remain visible rather than trigger automatic resending."
+        },
+        {
+          "to": "../increments/01-remote-terminal/specification.html#source--what-proves-this-increment",
+          "narration": "The MVP is the complete real-app path: display, input, restore/live handoff, detach, reconnect and explicit termination, with target isolation and slow viewers. A working socket or surviving shell proves only part of that feature."
+        }
+      ]
+    },
+    {
+      "id": "worktree-walkthrough",
+      "title": "Create a worktree",
+      "description": "Follow creation intent through Host policy, filesystem effects, reconciliation and the UX client.",
+      "stops": [
+        {
+          "to": "walkthroughs.html#worktree-choose-the-creation-mode",
+          "narration": "Begin with the user's creation intent and addressed repository. A default branch, an explicitly selected branch and a fork of current files request different behavior; preserve that meaning before selecting a transport."
+        },
+        {
+          "to": "walkthroughs.html#worktree-validate-and-create-on-the-host",
+          "narration": "The Host owns validation, destination exclusion, application policy and Git mechanics. The Gateway routes the request; it does not duplicate those rules. A publication hold keeps intermediate work from appearing as finished discovery."
+        },
+        {
+          "to": "../designs/06-worktree-fork/specification.html#source--k4-worktree-fork-and-application-worktree-policy",
+          "narration": "Zoom into the difficult counterpart: full fork includes registration, HEAD/index, eligible files, metadata, names, special nodes and cleanup. The initial Linux profile can be narrow, but success inside it must satisfy the complete selected contract."
+        },
+        {
+          "to": "walkthroughs.html#worktree-reconcile-success-and-failure",
+          "narration": "Creation can leave effects before a later failure. Releasing the hold and rescanning after either outcome makes discovery truthful. Cancellation or failed cleanup must report residue rather than pretending the destination was untouched."
+        },
+        {
+          "to": "walkthroughs.html#worktree-prepare-the-repository-view",
+          "narration": "Only then follow admitted operation and discovery information into the Gateway's repository view. Git completion, refreshed inventory admission and subscriber delivery are separate milestones; a copied row cannot authorize the original effect."
+        },
+        {
+          "to": "../designs/09-gateway-cli/prepared-view-boundaries.html#source--what-moves-and-what-stays-native",
+          "narration": "Place that view in the common architecture. Host observations become qualified preparation inputs, and the native client checks currentness before applying values. This is how the feature uses the common pipeline without becoming a global-bus command."
+        },
+        {
+          "to": "walkthroughs.html#worktree-apply-the-result-in-the-ide",
+          "narration": "The UX client owns actual publication and selected native follow-up. Opening or focusing a pane is a further native result, not proof implied by successful Git creation. Launch-after-create behavior still needs its own contract."
+        },
+        {
+          "to": "../increments/04-git-worktrees/specification.html#source",
+          "narration": "Integration closes only when real refs, administration, files and supported metadata agree with the contract on Mac and Linux, including races and partial outcomes. A filesystem-clone microbenchmark cannot accept the whole feature."
+        }
+      ]
+    },
+    {
+      "id": "review-walkthrough",
+      "title": "Review an annotated diff",
+      "description": "Follow source revision, actual viewing, saved annotations and a separately observed output effect.",
+      "stops": [
+        {
+          "to": "walkthroughs.html#review-read-the-addressed-source",
+          "narration": "Begin with an addressed Host, worktree and comparison. The Host reads the actual source and returns qualified finite content. Correct bytes alone cannot prove that the comparison or source revision is still current."
+        },
+        {
+          "to": "walkthroughs.html#review-publish-the-view-and-track-actual-viewing",
+          "narration": "The UX client publishes the review in its real viewer. Arrival, publication and a user reading are different events. Shared read marks cannot be set simply because background bytes reached a device; exact extra marker-family scope remains under clarification."
+        },
+        {
+          "to": "walkthroughs.html#review-edit-and-save-annotations",
+          "narration": "Keep the edit buffer distinct from saved annotation state. Host admission checks the relevant revision and edit custody; flush, save, revert and changing the annotation context are different operations."
+        },
+        {
+          "to": "walkthroughs.html#review-prepare-an-exact-output-attempt",
+          "narration": "Preparing output freezes the selected saved revisions and exact bytes for one attempt. Inspecting that content proves what could be sent, not that a clipboard or file has actually changed."
+        },
+        {
+          "to": "../designs/08-files-review-output/annotation-output-lifecycle-design.html#source--one-explicit-attempt-through-the-required-route",
+          "narration": "Follow the complete sequence: Host preparation commits first, the actual destination performs the effect, and an authenticated report returns for Host finalization. Those are separate outcomes across separate owners."
+        },
+        {
+          "to": "walkthroughs.html#review-perform-the-destination-effect",
+          "narration": "The destination must be real and addressed. A remote filesystem path is not automatically a Mac or phone URL, and a Host's permission is not universal clipboard consent. Native cancellation, partial mutation and uncertain results retain their meaning."
+        },
+        {
+          "to": "../designs/08-files-review-output/annotation-output-lifecycle-design.html#source--interruptions-and-concurrency-retain-separate-truths",
+          "narration": "Consider the failure between effect and finalization. The clipboard may already have changed even if the recording write fails. Copy replay or a generic transport retry must not repeat the effect or report it as known not to have happened."
+        },
+        {
+          "to": "../increments/05-review-output/specification.html#source",
+          "narration": "The review increment joins real source reads, Gateway views, native editing, immutable output and destination effects. Its proof must cover revision races and partial outcomes, not merely content hashes or a successful callback."
+        }
+      ]
+    },
+    {
+      "id": "shared-state",
+      "title": "One workspace across devices",
+      "description": "Distinguish shared tabs and read state from native projection, then examine authority and conflicts.",
+      "stops": [
+        {
+          "to": "index.html#where-the-data-lives",
+          "narration": "Start with the selected outcome: participating devices share tabs/layout and read marks. Sharing logical state does not make Host truth, read copies, prepared views and native geometry the same kind of state."
+        },
+        {
+          "to": "../domain-entities.html#source--shared-workspace-composition-and-read-state",
+          "narration": "Name what is shared before choosing a store. One logical workspace can have several native projections; a read marker has a reader scope and kind-qualified subject. Native view identity is not a substitute for either resource."
+        },
+        {
+          "to": "../designs/10-swift-client/shared-client-state-design.html#source--ownership-and-tradeoff",
+          "narration": "The current proposal gives shared composition to one explicitly designated existing Host, while subject-owned read marks follow their own Host. This reuses Host writes and Gateway reads, but shared edits depend on that authority Host being available."
+        },
+        {
+          "to": "../designs/10-swift-client/shared-client-state-design.html#source--portable-selection-and-local-navigation",
+          "narration": "Separate portable layout intent from each device's physical screen and focus. Active-tab/arrangement selection is an explicit open classification; today's local column is not a reason to silently keep it local. A phone's flattened projection is not a topology edit."
+        },
+        {
+          "to": "../designs/10-swift-client/shared-client-state-design.html#source--creating-execution-and-placing-its-view-are-different-commits",
+          "narration": "One action can cross two Host owners. Establishing an execution and placing its shared view are different commits. If placement conflicts, is refused or remains uncertain, preserve the known execution and report the partial result without killing or duplicating it."
+        },
+        {
+          "to": "../designs/10-swift-client/shared-client-state-design.html#source--read-marker-detail-and-current-limits",
+          "narration": "Read state needs a qualified subject, covered source version and trusted reader scope. A viewed completion cannot mark a later unseen completion read. Additional annotation, review-file and context-notice marker coverage is still the scoped question with Sun."
+        },
+        {
+          "to": "../designs/10-swift-client/shared-client-state-design.html#source--failure-and-proof-seams",
+          "narration": "Challenge the proposal with two Gateways editing the same base, an unavailable workspace Host and native mounting failure after commit. Agreement is per authoritative resource, with honest stale/offline coverage; it does not promise one cross-Host snapshot."
+        },
+        {
+          "to": "../increments/06-replication/specification.html#source",
+          "narration": "The shared-state increment must select eligible units, preserve real transactions and prove independent receivers and client behavior. Under the proposed realization, replication supports this experience; current table counts and an unintegrated library are not passing product proof."
+        }
+      ]
+    },
+    {
+      "id": "stored-state",
+      "title": "Where stored state lives",
+      "description": "Follow authority, real transactions, private checkpoints, copy audience and native state through the full inventory.",
+      "stops": [
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--start-with-the-owners",
+          "narration": "Start with the owners. The Host does machine work, one designated existing Host owns shared layout, and Mac and iPhone each have a Gateway and native UX client. These are roles, so one machine may carry more than one."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--four-questions-for-every-stored-value",
+          "narration": "A storage location alone is not enough. Ask who decides the value, what must commit with it, who may receive it, and what is prepared from it. A private cursor can share a transaction with public workflow state without becoming a copied field."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-matrix.html#source--complete-table-map",
+          "narration": "Now use the complete inventory. Every current table has a proposed owner or explicit hold, transaction references and a separate copy disposition. The column details remain in the catalog. Coverage of 86 tables does not mean the legacy schema is compatible or selected for export."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--preserve-the-transactions-that-carry-meaning",
+          "narration": "These real transaction groups constrain the redesign. Binding and context, accepted notice and private cursor, and graph and Undo cannot be split casually. Core then Local saving and native effects are already separate boundaries; do not invent an atomic transaction across them."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--walk-one-private-checkpoint-through-the-public-view",
+          "narration": "Follow a notice. The addressed Host admits the operation and required private checkpoint in one commit. Only eligible facts reach a read copy and prepared view. Copy arrival does not mean a person read it. The currently wired notice checkpoint is different from hook intake."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--mixed-rows-need-a-semantic-split",
+          "narration": "The old pane row mixes logical layout, execution, derived repository facets and residency. Undo serializes several of those meanings too. These require explicit field and transaction cuts; moving a Codable blob cannot settle the architecture. The close/Undo guarantee is a concrete unresolved risk."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--whole-copy-access-is-a-real-boundary",
+          "narration": "Receiving a faithful copy is permission to receive its whole declared scope. A sidebar filter after receipt cannot hide private data. An eligible whole-unit copy and an authorized scoped Host read are different paths; no redacted replica or extra publication database is assumed."
+        },
+        {
+          "to": "../designs/02-data-ownership-replication/storage-placement-design.html#source--contract-trace-and-proof-seams",
+          "narration": "Finish with what would prove the design: real transaction failures, current-source coverage, independent receivers and native publication on both device profiles. This remains a design proposal. Mixed fields, Undo, audience, recovery and the actual copy-read adapter must close before schema adoption."
+        }
+      ]
+    },
+    {
+      "id": "migration-path",
+      "title": "From features to Rust",
+      "description": "Follow feature coverage, commands, incoming data, dependencies and the next migration slice.",
+      "stops": [
+        {
+          "to": "../designs/11-operations-integration/migration-map.html#source--the-route-through-the-work",
+          "narration": "Start with the whole migration. These edges are prerequisites, not release dates. Terminal and repository work share boundary contracts; Git effects and reviews need their source reads. Shared state, native clients and operations attach when each feature first needs them."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-feature-checklist.html#migration-feature-tree",
+          "narration": "Use the hierarchy to find every currently recorded feature. Expand one branch and follow its separate link. Delivery boxes remain open: mapping a feature or reviewing a document does not mean the actual client uses Rust."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-detail-branches.html#migration-detail-tree",
+          "narration": "Look beneath the broad feature names. Preview generations, zoom companions, browser memory, private approvals, Git support and startup resources each need an explicit migration disposition. Retained declarations stay distinguishable from active features; these branches refine existing homes rather than create a crate or remote method per helper."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-map.html#source--subsystems-before-crates",
+          "narration": "Group work by responsibility before creating crates. Host execution, Git, context and annotation owners have different reasons to change. The Gateway routes and prepares; native UX still owns actual display and effects. Fleet and bot services are outside this migration."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-map.html#source--dependency-direction",
+          "narration": "Read these arrows as code dependencies. Capability code uses domain contracts and its own narrow ports; adapters implement those ports. Tokio and concrete resources meet in composition. This follows the Router Rust example without copying every dependency or creating a crate per box."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-operation-crosswalk.html#source--how-one-command-reaches-its-work",
+          "narration": "Find commands by their current identity and layer. App commands, RPC methods and Git SDK operations overlap but serve different contracts. Split a compound action across its actual Host, workspace and native owners, with a result for each boundary."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-map.html#source--observations-are-not-commands",
+          "narration": "Now follow data in the other direction. Admit typed source observations and required order, update the real owner, then prepare a qualified view. Refresh demand may coalesce where replaceable; asks, saved mutations and terminal bytes cannot be discarded by a generic debounce."
+        },
+        {
+          "to": "../designs/11-operations-integration/migration-map.html#source--strangle-one-capability-at-a-time",
+          "narration": "A migration slice is more than a new library. Preserve its contract, implement at the new owner, connect real consumers, prove the selected outcome and retire the replaced backend route. Unmigrated features continue through their current owner; no indefinite second writer is introduced."
+        },
+        {
+          "to": "../designs/11-operations-integration/near-term-migration.html#source--the-current-path-and-the-replacement-boundary",
+          "narration": "Zoom into the proposed next spine. Replace the local attach and pane-driven cleanup ownership with Host execution and an independent attachment, through the Gateway to the actual native renderer. Closing a view must not kill execution."
+        },
+        {
+          "to": "../designs/11-operations-integration/near-term-migration.html#source--where-the-current-responsibilities-split",
+          "narration": "Separate the jobs hidden inside today’s local terminal. Preparing a handle is not starting execution; native startup is not remote attachment; sending Kill is not observed exit. Give each result to its actual Host, Gateway or native owner, and retire the old pane-driven termination authority."
+        },
+        {
+          "to": "../designs/11-operations-integration/near-term-migration.html#source--near-term-contract-closures",
+          "narration": "Only this near-term stretch gets this level of detail. Session identity, actual readiness, control, restoration, socket shapes, task lifetime, storage gates and old cleanup cutover must be settled. Unrelated future schemas and workspace cardinality do not become reasons to design everything first."
+        },
+        {
+          "to": "../designs/04-terminal-runtime/terminal-api-ownership.html#source--current-status-and-snapshot-fields",
+          "narration": "Check each value at its real source. The current terminal snapshot is metadata, not screen cells; native renderer health is not Host execution readiness. A Host-local agent must not need a hidden viewer to get its declared execution facts, while a missing native view cannot produce a fabricated renderer result."
+        },
+        {
+          "to": "../designs/04-terminal-runtime/session-operation-boundaries.html#source--walk-one-create-through-failure",
+          "narration": "Follow the operation through a difficult ending. The Host may observe execution before a required record write or caller response fails. Those are separate outcomes. Frontend and admitted Host-local inputs reach one capability owner through distinct origins; losing a viewer cannot turn known backend evidence into rollback or safe replay."
+        },
+        {
+          "to": "../designs/11-operations-integration/near-term-migration.html#source--what-must-be-observed-before-calling-it-migrated",
+          "narration": "Finish at the real result: actual app, Gateway, Host and backend behavior, honest failures, counterpart platforms and obsolete-path removal. The separate Verification Design and ready slice plan supply execution details. This map is neither implementation evidence nor a completed feature."
+        }
+      ]
+    }
+  ]
+}

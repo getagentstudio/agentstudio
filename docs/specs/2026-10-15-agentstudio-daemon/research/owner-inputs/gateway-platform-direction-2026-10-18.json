@@ -1,0 +1,26 @@
+{
+  "source": "Direct owner correction in the Lead conversation,2026-10-18",
+  "sessionId": "01a1418c-8bbd-76c0-abb9-71d9cc571ee6",
+  "messages": [
+    "\u276f just tok be clear the deamon client is ios/mac both shoud run both",
+    "acktually deamon gatewway is better name  which talks to ux client"
+  ],
+  "selectedMeaning": [
+    "Gateway is the preferred name for the previously named Client daemon",
+    "Rust Gateway role runs on macOS and iOS",
+    "The UX client talks to Gateway; Host role remains macOS/Linux"
+  ],
+  "supersedes": [
+    "S6 Mac-only Gateway boundary",
+    "Mac-required relay for phone UX",
+    "S27 Client daemon/IDE app working names"
+  ],
+  "notInferred": [
+    "iOS always-on daemon execution",
+    "selected Rust/Swift business FFI or bootstrap mechanism",
+    "new codec or compression algorithm",
+    "product implementation authorization",
+    "new release ranking"
+  ],
+  "capture": "Current direct conversation, not provider transcript recovery"
+}

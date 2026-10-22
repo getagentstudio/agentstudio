@@ -1,0 +1,94 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1269.947 446.55" width="1269.947" height="446.55" style="width:100vw;max-width:100vw;height:auto;--surface-content:#171d26;--ink:#f1efed;--accent-soft:#1a3236;--rule:#2c3542;--fg:#f1efed;--bg:#171d26;--accent:#6fc0ca;--surface:#1a3236;--border:#2c3542" data-traced="">
+<style>
+
+  text { font-family: 'Source Sans 3', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<g class="subgraph" data-id="H" data-label="Addressed Host">
+  <rect x="79.68699999999978" y="40" width="440.293" height="113.80000000000001" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="79.68699999999978" y="40" width="440.293" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="91.68699999999978" y="54" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Addressed Host</text>
+</g>
+<g class="subgraph" data-id="G" data-label="Device Gateway: macOS or iOS">
+  <rect x="782.9199999999998" y="146.025" width="421.027" height="119.57500000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="782.9199999999998" y="146.025" width="421.027" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="794.9199999999998" y="160.025" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Device Gateway: macOS or iOS</text>
+</g>
+<g class="subgraph" data-id="C" data-label="Native client">
+  <rect x="58" y="181.8" width="510.6879999999999" height="195.60000000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="58" y="181.8" width="510.6879999999999" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="70" y="195.8" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Native client</text>
+</g>
+<polyline class="edge" data-from="Truth" data-to="Capture" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Qualified state or selected copy read" points="511.2909999999999,110.9 764.9199999999998,110.90000000000002 764.9199999999998,208.47500000000002 798.9199999999998,208.475" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Prepare" data-to="Admit" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Prepared value and validity" points="1187.947,222.7 1221.947,222.70000000000002 1221.947,387.40000000000003 40,387.40000000000003 40,252.70000000000002 84.84349999999989,252.70000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Intent" data-to="Prepare" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Declared client view intent" points="545.3769999999997,334.5 764.9199999999998,334.5 764.9199999999998,236.925 1011.4439999999998,236.925 1011.4439999999998,231.66666666666669 1047.444,231.66666666666669" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Input" data-to="Truth" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="280.1804999999999,110.9 346.33499999999987,110.9" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Capture" data-to="Prepare" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="999.4439999999998,208.47500000000002 1011.4439999999998,208.47500000000002 1011.4439999999998,213.73333333333335 1047.444,213.73333333333335" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Admit" data-to="Apply" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="316.48949999999985,252.70000000000002 346.33499999999987,252.70000000000002" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<g class="edge-label" data-from="Truth" data-to="Capture" data-label="Qualified state or selected copy read">
+  <rect x="569.9799999999998" y="94.90000000000002" width="186.94000000000005" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="663.4499999999998" y="110.05000000000003" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Qualified state or selected copy read</text>
+</g>
+<g class="edge-label" data-from="Prepare" data-to="Admit" data-label="Prepared value and validity">
+  <rect x="1067.399" y="371.40000000000003" width="146.548" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="1140.6729999999998" y="386.55" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Prepared value and validity</text>
+</g>
+<g class="edge-label" data-from="Intent" data-to="Prepare" data-label="Declared client view intent">
+  <rect x="618.6879999999999" y="318.5" width="138.23199999999997" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="687.8039999999999" y="333.65" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Declared client view intent</text>
+</g>
+<g class="node" data-id="Input" data-label="Provider / Git / file sources" data-shape="rectangle" id="source--diagram-1--Input">
+  <rect x="84.84349999999989" y="92.45" width="195.33700000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="182.5119999999999" y="110.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Provider / Git / file sources</text>
+</g>
+<g class="node" data-id="Truth" data-label="Admitted domain state
+and observations" data-shape="rectangle" id="source--diagram-1--Truth">
+  <rect x="346.33499999999987" y="84" width="164.95600000000002" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="428.8129999999999" y="110.9" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="428.8129999999999" dy="-3.9000000000000012">Admitted domain state</tspan><tspan x="428.8129999999999" dy="16.900000000000002">and observations</tspan></text>
+</g>
+<g class="node" data-id="Capture" data-label="Authorized source capture" data-shape="rectangle" id="source--diagram-1--Capture">
+  <rect x="798.9199999999998" y="190.025" width="200.524" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="899.1819999999998" y="208.47500000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Authorized source capture</text>
+</g>
+<g class="node" data-id="Prepare" data-label="Typed semantic
+view preparation" data-shape="rectangle" id="source--diagram-1--Prepare">
+  <rect x="1047.444" y="195.8" width="140.503" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1117.6955" y="222.70000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="1117.6955" dy="-3.9000000000000012">Typed semantic</tspan><tspan x="1117.6955" dy="16.900000000000002">view preparation</tspan></text>
+</g>
+<g class="node" data-id="Admit" data-label="Decode / currentness admission" data-shape="rectangle" id="source--diagram-1--Admit">
+  <rect x="84.84349999999989" y="234.25" width="231.646" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="200.66649999999987" y="252.7" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Decode / currentness admission</text>
+</g>
+<g class="node" data-id="Apply" data-label="Publish values
+native layout / application" data-shape="rectangle" id="source--diagram-1--Apply">
+  <rect x="346.33499999999987" y="225.8" width="187.18599999999998" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="439.9279999999999" y="252.70000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="439.9279999999999" dy="-3.9000000000000012">Publish values</tspan><tspan x="439.9279999999999" dy="16.900000000000002">native layout / application</tspan></text>
+</g>
+<g class="node" data-id="Intent" data-label="Semantic client intent
+filter / membership / interest" data-shape="rectangle" id="source--diagram-1--Intent">
+  <rect x="346.33499999999987" y="307.6" width="199.04199999999994" height="53.800000000000004" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="445.8559999999998" y="334.5" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)"><tspan x="445.8559999999998" dy="-3.9000000000000012">Semantic client intent</tspan><tspan x="445.8559999999998" dy="16.900000000000002">filter / membership / interest</tspan></text>
+</g>
+</svg>

@@ -1,0 +1,20 @@
+# Terminal sessions, attachments and facts: observable contracts
+
+This is the DS04 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.md). The separate [Requirements](../../user-requirements.md) authorize its meaning; the [domain definitions](../../domain-entities.md) and shared [operation interpretation](../../capability-contracts.md#shared-interpretation-of-an-operation) apply. Its [design brief](README.md) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.md) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K5 — Terminal sessions, control and facts
+
+**Consumer / entities / basis:** terminal user and detached agent; E1/E2/E3/E16/E19/E22; U14/U15/U16, R5–R7. Session creation, backend preparation, child launch, attachment, input admission, child consumption, termination and verified cleanup are distinct boundaries.
+
+| Surface | Observable contract boundary | Exact unresolved behavior |
+| --- | --- | --- |
+| Create/list/terminate execution | An execution identity is not a backend directory/handle or pane. Explicit terminate remains separate from detach. Process lookup permission failure cannot establish extinction. Pending old-family retirement differs from a verified absent family/new backend boot. | Natural exit, Host crash/restart/re-adoption and ended-session retention G3; selected creation/termination receipt G8. |
+| Attach/detach/reconnect | A continuing session permits no views under R5/R6. A replacement connection is not a new execution. Snapshot and subsequent live bytes need an explicitly ordered handoff; dropped/duplicated stateful VT bytes cannot count as correct restoration. | Exact attachment reuse, snapshot/live fence, scrollback/current-screen coverage and gap recovery G4/G6/G8. |
+| Input | Current `terminal.send` accepts Unicode paste/key semantics, not arbitrary binary input. Native handoff is not proof of child consumption. Lost input acknowledgement cannot justify automatic replay. | Target raw-byte versus paste/key operations and delivery acknowledgements G1/G8. The source's lone CR/LF handling does not establish CRLF behavior. |
+| Viewport/focus/control | Current RPC advertises resize vocabulary but refuses programmatic rows/columns; native geometry is pixel-based. IP2 selects one input/resize controller with other attachments viewing. Native focus and backend leadership remain distinct. | Actual control acquisition/handoff/revocation, no-controller state, competing viewport/focus and attachment identity remain G4. A viewer's presence or a hidden Host attachment cannot silently select control or child-visible focus. |
+| Status/snapshot/wait | Current status/snapshot are runtime summaries, not terminal cells. Six current wait conditions have different meanings; attachReady currently observes runtime-ready and does not prove a backend handshake. | Required target readiness, causal sequence, terminal cells/history and bounded waiting contract G6/G8. |
+| Facts/activity | Output bytes, title, CWD, shell-command completion, provider activity and physical process exit have distinct provenance/meaning. Quiet duration/row growth alone do not prove idleness or exit. U15 requires terminal/activity facts while views and Gateway connections are absent. | Exact fact set, source/revision, ordered-versus-latest, viewport dependence, missing-history and retention profile G6. Renderer-derived source behavior does not satisfy this by itself. |
+
+**Proof:** real backend/PTY/process and renderer interaction, independent workload continuation after last view and Gateway loss, Host fact witnesses without Swift, authorized-input proof under K7's selected path, reconnect screen/state comparisons and competing clients. Binary echo alone is not parser, pixels, focus, control or key-to-visible-echo proof. E1/E2/E5 experiment documents define discriminators, not passing results.

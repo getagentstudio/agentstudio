@@ -1,0 +1,126 @@
+# Session operations inside the Rust Host
+
+**The Host owns the operation; transports deliver calls and observations.** Both frontend and eligible Host-local input reach the same session capability owner, through different admission paths. That owner decides which backend effect is allowed, keeps the operation independent of a disappearing viewer, and reports only the boundary its evidence establishes.
+
+This is an internal structural excerpt for the [near-term slice](../11-operations-integration/near-term-migration.md), under K5 and R5–R10/R11–R16. It reuses the [entity bindings](../11-operations-integration/program-design-workbench.md#bind-the-specifications-entities-before-naming-packages), [Rust conventions](../11-operations-integration/research/router-rust-standards.md) and [execution-lifecycle cutover](execution-lifecycle-design.md). It defines responsibility and evidence boundaries without selecting a public method/codec, persistence profile, restart promise, controller takeover policy or backend restoration algorithm. Those remaining contract/feasibility gaps are explicit below.
+
+## Entity, type and module homes
+
+The code names below are candidate **new modules**, not a crate per row. The Specification's entity meanings remain unchanged.
+
+| Entity / value | Owner and code home | Shape at this internal boundary | State disposition / remaining gap |
+| --- | --- | --- | --- |
+| E1 execution session | Host `host_session_runtime`; `session_contracts` | `SessionRef { host: HostId, session: SessionId }`, both required validated values; backend locator/evidence stays private to the backend integration | `HostId` is the selected addressed-owner identity, not a newly running process instance. Its exact stable/replacement mapping and the retained registry remain G3/G12 gaps; this excerpt selects no reinstall/recovery promise. |
+| E2 attachment | Host `terminal_attachment`; `terminal_contracts` | `AttachmentRef { session: SessionRef, attachment: AttachmentId }`; its actual client-view association is separately required for a user attachment | Live association/control/delivery state. G4/G8 still fixes replacement, cleanup and stream binding. An internal backend source reader is not automatically a user E2 attachment. |
+| E3 connection | Actual local/network adapter; `connection_contracts` | `ConnectionRef` with its adapter/channel lifetime; it is not a field of `SessionId` | Transient. Connection custody cannot own execution lifetime. |
+| E4 frontend attempt | Frontend caller and Gateway/Host admission; `operation_contracts` | `Frontend { attempt: FrontendAttemptRef, gateway: GatewayInstanceRef }` inside server-constructed `InvocationOrigin` | One frontend submission, not a durable business-operation key. Forwarding is not another invocation. |
+| R9/R12 Host-local input | Host-local admission; `authority_contracts` | `HostLocal { admission: AdmittedHostInput }`, the other `InvocationOrigin` variant | Runtime admission plus operation-specific retained meanings. An in-session input binds the applicable E1/E10 scope; non-session authority remains its selected profile. It is **not E4** and needs no invented frontend attempt. |
+| E17/E18 admitted caller/scope | Actual Host admission; `principal_admission` / `authority_contracts` | `AdmittedPrincipal` and capability-specific admitted target/scope; constructors stay at the trusted admission owner | Authentication, capability scope, current binding and database-writer validity remain separate checks. No cross-service principal continuity or local-process attestation is implied. |
+| E22 execution/fact observation | Host source owner; `host_terminal_facts` / `observation_contracts` | Source-qualified subject, source lifetime/position/coverage and a closed value variant; raw backend/process handles stay in adapters | Selected retained versus transient meaning and producer coverage remain G6/G13. Missing evidence is not an empty successful observation. |
+| E23 Host instance | Host composition/admission; `service_contracts` | `HostInstanceRef` qualifies actual runtime/channel/source observations separately from `SessionRef`'s owner identity | E23 is a running service instance under the current Specification. Mapping selected `HostId` to that instance, stable installation/replacement identity and re-adoption remain G3/G12. A reconnect cannot silently mint a replacement execution. |
+
+UUIDv7 applies to newly generated application identities, not imported provider IDs or an OS PID. Separate newtypes prevent exchanging session, attachment, frontend-attempt and service identities. Constructors validate meanings after wire/row decoding. The internal origin/principal values are constructed from trusted ingress/admission, never accepted because a payload claims `HostLocal` or names a device.
+
+The current [restore owner](../../../../../Sources/AgentStudio/Features/Terminal/Restore/TerminalRestoreRuntime.swift:27) reuses the exact persisted ZMX identity after the app restarts. The new service/update profile must deliberately preserve the selected continuation/adoption outcome; qualifying a session solely by a newly running process instance would prevent that mapping. A saved name alone is still not backend-incarnation evidence. G3 must bind both the retained reference and the actual backend observation before a restart/update claim is made.
+
+`InvocationOrigin` classifies external submitted calls only. Backend observations, natural-exit reconciliation and any selected retention/re-adoption work use owner-private typed entrypoints under their actual runtime/source custody. They must not fabricate `HostLocal` admission or an E4. An internal trigger is not an all-powerful principal: selected write gates, subject/identity checks and effect policy still apply at the relevant owner.
+
+## Composition and permitted dependencies
+
+```mermaid
+flowchart LR
+    Network["Host network ingress"] --> Admission["Host admission"]
+    Local["Host-local ingress"] --> Admission
+    Admission --> Session["Session capability owner"]
+    Session --> Backend["Backend port"]
+    Session --> Store["Guarded record port"]
+    Session --> Facts["Fact-source owner"]
+    Adapter["ZMX and platform adapters"] --> Backend
+    Data["Host data integration"] --> Store
+```
+
+Arrows name calls or implemented ports, not network connections. Process composition constructs these owners/adapters and supplies the one Tokio runtime. Pure decisions and contract modules do not import Tokio sockets, SQL rows, Swift/AppKit, ZMX private headers or native process handles. Async operation/task ownership belongs to the runtime modules. The Gateway imports the selected operation/observation contracts, not the Host session implementation; sharing an API does not create a second backend owner.
+
+| Internal interface | Consumer → owner | Behavioral boundary / reason for the seam |
+| --- | --- | --- |
+| Session capability call | Admitted ingress → `host_session_runtime` | One place applies session identity, lifecycle and operation rules for both ingress classes. The capability is a direct typed call, not a command broadcast. |
+| Backend establishment/inspection/termination | Session owner → backend adapter | OS/backend behavior can vary and must be observed independently. A returned directory or attach-command string is not observed execution. Mac/Linux mechanics stay behind this port. |
+| Selected registry/observation write | Session/fact owner → Host data integration | Actual write admission, transaction and commit observation stay at the storage boundary. Excluding a private field from copies does not remove its co-commit predicate. |
+| Admitted attachment delivery | Attachment owner → selected backend/network delivery integration | Session/control identity, restore/live binding and slow-viewer outcome remain explicit. Dropping delivery does not call termination. |
+| Domain observation offering | Owning transition/source → its eligible subscribers/readers | Offer admitted facts or qualified state, with their actual ordering/coverage. This is not a universal bus or a guarantee that every fact is durable. |
+
+These seams correspond to actual external, storage, lifecycle or trust boundaries. Pure ID formatting, an enum match or an immutable projection needs no interface merely to make the diagram symmetrical. Exact crate splits follow these dependencies/platform/reuse reasons; no per-table or per-operation crate multiplication is selected.
+
+## Backend results must carry evidence
+
+The following closed internal result shapes name what the adapter can establish. They are not serialized public schemas. Private witness/error payloads belong in the backend adapter contract and must be concretely bound by the selected Mac/Linux profile; an opaque witness is not proof that the adapter can produce it.
+
+```text
+EstablishObservation
+  NotDispatched { reason: BackendDispatchRefusal }
+  RejectedWithoutExecution { receipt: BackendRejection }
+  ExecutionIdentityObserved { identity: VerifiedBackendIdentity }
+  Unresolved { query: BackendAttemptQuery, reason: BackendUncertainty }
+
+InspectOriginalExecution
+  IdentityObserved { identity: VerifiedBackendIdentity }
+  OriginalExecutionAbsent { expected: VerifiedBackendIdentity, evidence: AbsenceEvidence }
+  EndpointConflictObserved { expected: VerifiedBackendIdentity, conflict: EndpointConflictEvidence }
+  Unestablished { expected: VerifiedBackendIdentity, reason: InspectionFailure }
+
+TerminateObservation
+  NotDispatched { expected: VerifiedBackendIdentity, reason: BackendDispatchRefusal }
+  EndpointConflictObserved { expected: VerifiedBackendIdentity, conflict: EndpointConflictEvidence }
+  RequestSubmitted { expected: VerifiedBackendIdentity }
+  OriginalExecutionAbsent { expected: VerifiedBackendIdentity, evidence: AbsenceEvidence }
+  Unresolved { expected: VerifiedBackendIdentity, reason: BackendUncertainty }
+```
+
+Each variant's payload is required; a `success` boolean with optional error/evidence fields cannot replace it. Bounded reason enums must distinguish the actually supported refusal/inspection/failure cases, translating private I/O/SQL/backend errors at their owner. Exact reason members and native evidence types remain the selected adapter/profile's contract gap; open strings or catch-all defaults are not an accepted implementation substitute.
+
+`ExecutionIdentityObserved` does not mean a shell prompt is ready, a renderer exists or a registry write committed. `RequestSubmitted` does not mean the original process family is extinct. `Unestablished` does not mean absent. The current [verified retirement path](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift:46) already requires these distinctions, including replacement protection and inspection-denied behavior. Linux must supply equivalent selected observations; Darwin mechanisms cannot be copied as a portability claim.
+
+`EndpointConflictObserved` carries actual mismatch evidence and protects that endpoint; it neither establishes the original family's extinction nor requires a fully reconstructed identity for the replacement. A missing endpoint while original processes are unproven remains unresolved. The source's changed-kernel-boot absence rule needs an independently qualified Linux equivalent; equal PID/path text or a new service instance is not that witness. Dispatch refusal covers actual backend preconditions as well as availability; it is not a synonym for caller-policy rejection.
+
+`BackendAttemptQuery` identifies the actual backend attempt/subject that could be inspected. It cannot promise retained reconciliation after restart unless G3/G8 select and realize that promise. It is not an automatic retry key or a new operation journal.
+
+## Walk one create through failure
+
+1. Frontend ingress has a validated request and authenticated channel; Host-local ingress has its own admitted input. Each constructs its real origin, then asks the Host capability owner to admit the selected target and operation. If the operation requires guarded record work, check actual writer validity during admission before dispatching the backend. An already-invalid grant cannot be converted into an intentional effect-plus-record-gap path.
+2. The owner establishes operation custody and calls backend establishment. Today [createPaneSession](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:183) only prepares a directory/handle; using it unchanged cannot establish the new boundary.
+3. The adapter reports one of the closed establishment observations. The owner retains the session/backend association only with its actual evidence and declared record policy; it does not publish a running shell from a handle alone.
+4. If the selected operation requires a record write, the Host data integration rechecks the real writer gate at the transaction/commit boundary. The admission check is not a reservation or promise that authority stays valid during async backend work. Later invalidation, storage failure or an uncertain commit can leave actual execution behind; classify known effect plus failed/unresolved record work honestly rather than report known noncreation or silently kill/recreate it. Exact G13 admission/dispatch/commit policy must be bound to the real engine; no long-lived SQLite transaction or new grace grant is inferred.
+5. The caller receives only the selected operation's declared result at that evidence/record boundary. If response delivery fails, the caller knows less than the Host. Connection loss cannot manufacture rollback, another session or safe retry. No cross-hop receipt proves native application or child consumption.
+
+```mermaid
+flowchart TB
+    Admission["Create admission"] --> Gate["Required writer-validity check"]
+    Gate -->|"not admitted"| Refusal["Report that exact boundary"]
+    Gate -->|"admitted"| Backend["Backend establishment"]
+    Backend -->|"not dispatched or definitive rejection"| Refusal["Report that exact boundary"]
+    Backend -->|"identity observed"| Record["Required guarded record work"]
+    Backend -->|"unresolved"| Unknown["Preserve uncertainty"]
+    Record -->|"commit observed"| Result["Selected operation result"]
+    Record -->|"failure or uncertain commit"| Partial["Known backend effect plus record gap"]
+    Result --> Delivery["Caller response delivery"]
+    Delivery -.->|"loss cannot revoke custody"| Execution["Independently owned execution"]
+```
+
+The profile must still choose required readiness, retained registry work, effect/record recovery and caller-facing variants before implementation. This structure does not infer an ungated registry, compensating kill, durable intake spool, automatic retry or exactly-once execution. IP4's invalid-writer behavior and R5/R6's execution independence both remain binding.
+
+## Task custody and concurrent calls
+
+The Host session runtime owns admitted execution-related work independently of each frontend delivery scope. An attachment/delivery owner owns that attachment's readers/writers and cleanup; backend fact readers belong to the execution/source lifetime if the qualified backend needs them. The process root tracks, cancels and joins its actual Tokio work. Closing a socket can cancel replaceable reads or delivery as their contracts permit; it cannot silently cancel continuing session custody or terminate the external process.
+
+One session's control/attachment state has one decision owner. A controller witness is checked against the current admitted attachment/control state at the declared effect boundary; a stale authorization captured before an await cannot silently authorize later input. G4 must settle the ordering cut for handoff versus already admitted/queued input, resize and child-visible focus. At-most-one control does not itself decide whether a handoff drains, refuses or reconciles earlier work. This gap belongs in the terminal control contract, not an implementation lock or generic retry loop.
+
+Different Hosts and independently keyed resources keep independent progress. A connection task, global actor or held synchronous lock cannot serialize all Host work by accident. Blocking backend/Git/OS work uses the smallest justified blocking unit; libraries start no nested runtimes. Task cancellation, transport closure, backend effect and external execution absence remain different observations.
+
+## What can now be tested, and what still blocks a ready slice
+
+- A typed internal origin cannot turn Host-local input into E4 or trust a payload-supplied principal. Host-qualified references cannot route an equal local session label to another Host. These are construction/admission invariants, followed by actual route proof.
+- Deliberately return `Unestablished` from inspection: the owner must not publish termination or delete the original association as if absence were observed. Swap the backend identity: the old termination request must protect the replacement.
+- Begin with an invalid required writer grant: backend dispatch must not occur. Separately admit with a valid grant, establish backend identity, then invalidate authority or fail the selected record write: retain the actual backend effect and record gap. A build that ignores early invalidity, says nothing was created after an observed effect, or retries automatically fails the corresponding case.
+- Hold backend work, close the initiating view/connection, then observe its actual allowed custody/result. Separately observe the external execution; a task handle alone cannot establish survival.
+
+These are structural proof seams, not executed tests. Final public shapes and compatibility, backend witness/readiness/restoration feasibility, registry/restart profile, current-control handoff ordering, source coverage and required resource bounds remain explicit gaps. The separate Verification Design must bind those selected contracts to real Host/Gateway/Swift/backend journeys. This excerpt advances the internal How; it is not a complete Program Design, a ready implementation plan or product proof.

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · AgentStudio daemon design</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="explainer/index.html">Understand the system</a><a href="explainer/features.html">Explore AgentStudio features</a><a href="explainer/progress.html">What was built and tried</a><a href="explainer/walkthroughs.html">Follow a workflow</a><a href="explainer/delivery.html">MVP and integration phases</a><a href="explainer/requirements.html">Requirements</a><a href="explainer/architecture.html">Technical architecture</a><a href="explainer/communication.html">Communication</a><a href="explainer/data.html">Data ownership</a><a href="explainer/schema.html">Tables and fields</a><a href="explainer/sequence.html">Spec dependencies</a><a href="explainer/experiments.html">Experiments and decisions</a><a href="explainer/research.html">Research library</a><a href="index.html">All specification documents</a></nav></ex-nav>
+<ex-document id="content"><h1>AgentStudio daemon design</h1>
+<ex-markdown id="folder-guide"><script type="text/markdown">
+## AgentStudio daemon design
+
+Open the [HTML system guide](explainer/index.html), [complete feature tree](explainer/features.html), or [concept-led walkthroughs](explainer/walkthroughs.html). The walkthrough player carries one explanation across the system, feature, contract and integration pages. The current roles are Host daemon (macOS/Linux), Gateway (macOS/iOS) and UX client. The [MVP and delivery sequence](explainer/delivery.html) proposes usable cuts through that full design; [all documents](documents.html) remain linked. Every Markdown document has a same-folder HTML reader; the Markdown remains the editable source.
+
+For source work, start with the [design-set entry and reading paths](design-index.html), then the [bounded design sequence](designs/README.html). It separates the large extraction surface into eleven designs, with explicit contract inputs and one home for each capability family.
+
+The [shared-library integration picture](designs/02-data-ownership-replication/research/fleet-sync-consumer-fit.html) explains Host writes, Gateway copies, central lease control and optional durable delivery using the newer six-PR `agent-fleet-sync` implementation baseline.
+
+The [capability acquisition and placement map](designs/11-operations-integration/capability-placement-map.html) follows all eighteen source families from acquisition to client. Its operation index opens the 57 app RPC methods, 44 Git SDK requirements, 16 Bridge calls, 22 annotation kinds and the separate 154 command identities. It distinguishes checked current sources from proposed placement and remaining contracts.
+
+- [Requirements](user-requirements.html): authorized outcomes, constraints and owner sources.
+- [Observable Specification](2026-10-15-agentstudio-daemon.html): shared entities, obligations and exact unresolved contracts.
+- [Capability catalog](capability-contracts.html): all eighteen surveyed families, shared operation semantics and links to the fifteen scoped capability contracts.
+- [Domain definitions](domain-entities.html): stable resource and identity meanings shared by every design.
+
+The individual designs carry their own scope, evidence, questions and proof boundaries. Program Designs are authored when their required contracts are settled; folders and carried-forward draft specifications do not imply design readiness. This work remains design-only.
+
+The current design completion contract has four distinct artifacts: Requirements, Specification, Program Design and Verification Design, followed by their independent review. A proof seam in Program Design or an experiment proposal does not replace Verification Design's requirement-by-requirement proof strategy. No empty downstream document stands in for unfinished design.
+
+</script></ex-markdown><h2 id="folder-files">Documents in this folder</h2><ex-markdown id="folder-documents"><script type="text/markdown">
+- [AgentStudio service system: observable specification: Markdown](2026-10-15-agentstudio-daemon.md) · [HTML](2026-10-15-agentstudio-daemon.html)
+- [AgentStudio daemon design: Markdown](README.md) · [HTML](README.html)
+- [Capability and interface contracts: Markdown](capability-contracts.md) · [HTML](capability-contracts.html)
+- [Delivery increments: from remote terminal to the full Host backend: Markdown](delivery-increments.md) · [HTML](delivery-increments.html)
+- [AgentStudio daemon: all design documents: Markdown](documents.md) · [HTML](documents.html)
+- [Service domain and identity: Markdown](domain-entities.md) · [HTML](domain-entities.html)
+- [AgentStudio daemon: design-set entry: Markdown](index.md) · [HTML](design-index.html)
+- [Initial service profile: Markdown](initial-profile.md) · [HTML](initial-profile.html)
+- [AgentStudio Host and Gateway: user requirements: Markdown](user-requirements.md) · [HTML](user-requirements.html)
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

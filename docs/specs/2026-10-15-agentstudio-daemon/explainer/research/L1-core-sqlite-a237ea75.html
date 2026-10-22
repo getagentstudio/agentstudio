@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Core SQLite inventory (candidate labels; no placement verdict)</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L1-core-sqlite-a237ea75.html">AgentStudio daemon · Core SQLite inventory (candidate labels; no placement verdict)</a></nav></ex-nav>
+<ex-document id="content"><h1>Core SQLite inventory (candidate labels; no placement verdict)</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-16-advisor-storage-placement/L1-core-sqlite.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+source HEAD 624300332f5e50f7bb8cbb9fc786d5e5b4a3d462
+
+# Core SQLite inventory (candidate labels; no placement verdict)
+
+### Final schema (exists after migration 018)
+
+| table | db | one-line meaning | identity keys | write-pattern label | writer count |
+|---|---|---|---|---|---:|
+| workspace | core.sqlite | workspace catalog row | workspace UUID | current-state | 1 |
+| app_workspace_selection | core.sqlite | selected workspace singleton | singleton, workspace UUID | user-preference | 1 |
+| watched_path | core.sqlite | watched directory path | UUID, path string, stable key | current-state | 1 |
+| repo | core.sqlite | repository topology record | repo UUID, path, stable key | current-state | 1 |
+| worktree | core.sqlite | worktree topology record | worktree UUID, repo UUID, path, stable key | current-state | 1 |
+| unavailable_repo | core.sqlite | unavailable repository marker with absence timing | repo UUID, boot identity | current-state | 1 |
+| unavailable_worktree | core.sqlite | unavailable worktree marker and absence timing | worktree UUID, boot identity | current-state | 1 |
+| repo_tag | core.sqlite | repository tag membership | repo UUID, tag | current-state | 1 |
+| pane | core.sqlite | pane domain record and placement/residency metadata | pane UUID, workspace, repo/worktree, parent pane | current-state | 1 |
+| pane_content_terminal | core.sqlite | terminal pane provider/lifetime/session reference | pane UUID, terminal/zmx session | current-state | 1 |
+| pane_content_webview | core.sqlite | webview pane URL/title/options | pane UUID, URL | current-state | 1 |
+| pane_content_code_viewer | core.sqlite | code viewer path and scroll target | pane UUID, filesystem path | current-state | 1 |
+| pane_content_payload | core.sqlite | plugin or non-built-in pane payload | pane UUID, payload kind | current-state | 1 |
+| drawer | core.sqlite | drawer owned by parent pane | drawer UUID, parent pane UUID | current-state | 1 |
+| drawer_pane | core.sqlite | drawer child membership and order | drawer UUID, pane UUID | current-state | 1 |
+| tab_shell | core.sqlite | tab identity and display metadata | tab UUID, workspace UUID | current-state | 1 |
+| tab_pane | core.sqlite | top-level tab pane membership/order | tab UUID, pane UUID | current-state | 1 |
+| tab_arrangement | core.sqlite | named/default tab layout | arrangement UUID, tab UUID | current-state | 1 |
+| arrangement_layout_pane | core.sqlite | pane rows/order/ratio in arrangement | arrangement UUID, pane UUID | current-state | 1 |
+| arrangement_layout_divider | core.sqlite | divider row/order in arrangement | arrangement UUID, divider UUID | current-state | 1 |
+| arrangement_minimized_pane | core.sqlite | minimized pane membership | arrangement UUID, pane UUID | current-state | 1 |
+| arrangement_drawer_view | core.sqlite | drawer view and row split ratio in arrangement | arrangement UUID, drawer UUID | current-state | 1 |
+| drawer_view_layout_pane | core.sqlite | drawer child/minimized row and ratio | arrangement UUID, drawer UUID, pane UUID | current-state | 1 |
+| drawer_view_layout_divider | core.sqlite | drawer view divider and order | arrangement UUID, drawer UUID, divider UUID | current-state | 1 |
+| drawer_view_minimized_pane | core.sqlite | minimized drawer pane membership | arrangement UUID, drawer UUID, pane UUID | current-state | 1 |
+| workspace_terminal_session_ownership | core.sqlite | durable ownership and cleanup state for terminal session | terminal/zmx session ID, process identity | current-state | 1 |
+| workspace_undo_close | core.sqlite | undo-close operation snapshot/lifecycle | close ID, workspace ID, close sequence, deadline | append-history | 1 |
+| workspace_undo_close_member | core.sqlite | pane/session membership for undo-close record | close ID, pane UUID, session ID | append-history | 1 |
+
+### Migration artifacts (not present after migration 018)
+
+| table incarnation | db | disposition | migration evidence | write-pattern label |
+|---|---|---|---|---|
+| legacy_workspace_import_status | core.sqlite | dropped | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:99` | migration-artifact |
+| workspace_sqlite_snapshot_status | core.sqlite | dropped | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:98` | migration-artifact |
+| pane_tag | core.sqlite | dropped if present | migration 010: `WorkspaceCoreMigrations+RepositoryTopology.swift:4` | migration-artifact |
+| worktree_tag | core.sqlite | dropped if present | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:7` | migration-artifact |
+| watched_path (pre-013 incarnation) | core.sqlite | dropped, replaced by `watched_path_global_new` renamed to `watched_path` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:89,91` | migration-artifact |
+| repo (pre-013 incarnation) | core.sqlite | dropped, replaced by `repo_global_new` renamed to `repo` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:90,92` | migration-artifact |
+| worktree (pre-013 incarnation) | core.sqlite | dropped, replaced by `worktree_global_new` renamed to `worktree` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:88,93` | migration-artifact |
+| repo_tag (pre-013 incarnation) | core.sqlite | dropped, replaced by `repo_tag_global_new` renamed to `repo_tag` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:86,94` | migration-artifact |
+| unavailable_repo (pre-013 incarnation) | core.sqlite | dropped, replaced by global table; rebuilt again from retention table in migration 018 | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:87,95`; migration 018: `WorkspaceCoreMigrations+RepositoryAbsence.swift:13-14` | migration-artifact |
+| workspace_sqlite_snapshot_status_old | core.sqlite | temporary rename/copy table, then dropped | migration 007: `WorkspaceCoreMigrations.swift:234-250` | migration-artifact |
+| pane_content_terminal (pre-017 incarnation) | core.sqlite | dropped and replaced by ownership-aware incarnation renamed to same final name | migration 017: `WorkspaceCoreMigrations+SessionOwnership.swift:35-36` | migration-artifact |
+| pane_content_terminal_with_ownership | core.sqlite | temporary rebuilt table renamed to final `pane_content_terminal` | migration 017: `WorkspaceCoreMigrations+SessionOwnership.swift:24-36` | migration-artifact |
+| watched_path_global_new | core.sqlite | renamed to final `watched_path` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:9-15,91` | migration-artifact |
+| repo_global_new | core.sqlite | renamed to final `repo` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:17-27,92` | migration-artifact |
+| worktree_global_new | core.sqlite | renamed to final `worktree` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:29-40,93` | migration-artifact |
+| repo_tag_global_new | core.sqlite | renamed to final `repo_tag` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:42-50,94` | migration-artifact |
+| unavailable_repo_global_new | core.sqlite | renamed to final `unavailable_repo` | migration 013: `WorkspaceCoreMigrations+GlobalTopology.swift:52-55,95` | migration-artifact |
+| unavailable_repo_retention | core.sqlite | renamed to final `unavailable_repo` | migration 018: `WorkspaceCoreMigrations+RepositoryAbsence.swift:4-14,20-35` | migration-artifact |
+
+## Shared database and read model
+
+1. **Store/path/opening site:** `core.sqlite` resolves through `AppDataPaths.coreSQLiteURL()` to `AppDataPaths.rootDirectory()/core.sqlite`; root defaults to `~/.agentstudio` in stable/beta release channels and `~/.agentstudio-db` for debug, with `AGENTSTUDIO_DATA_DIR` overriding either. `coreSQLiteURL` does not take channel; see `Sources/AgentStudio/Infrastructure/AppDataPaths.swift:4-10,22-28,72-78`. Factory default: `Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreFactory.swift:10`. Pool and migration open: `Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift:923-933`; repository type is `WorkspaceCoreRepository`.
+2. **Schema source:** migration order is `WorkspaceCoreMigrations.swift:14-37`. Each section below points to the final DDL block (column types/nullability/defaults, PK/UNIQUE/FK actions, indexes, and CHECKs are expressed there). Named alterations and copy/rename artifacts are noted in Exceptions. No schema was inferred from a Codable model.
+3. **Materialized reads:** `WorkspaceCoreRepository` returns `AuthoritativeSnapshot` / topology, pane graph, tab graph, and ownership records. `WorkspaceSQLiteDatastoreActor` prepares a backend and passes these to `WorkspaceStore`/atoms; read-call anchors are cited per table. The writer is the `WorkspaceCoreRepository` instance on the datastore actor's pool. Multi-table save methods execute inside GRDB `write` closures; exact method/file/line is listed per row below.
+4. **Events:** repository transaction completion returns/feeds the datastore's accepted snapshot/capture flow; no per-table bus event was found adjacent to core repository writes. Where a corresponding `WorkspaceStore`/atom assignment is outside these SQL sites, its table-specific event mapping is not established here.
+
+## Table records
+
+For item 2, the cited DDL is the final table definition after all migrations unless marked artifact below. FK actions/indexes/checks/defaults are the SQL in that block. For items 5-6, listed sites are the SQL-bearing core repository sites found by searching `INSERT INTO`, `UPDATE`, `DELETE FROM`, `ON CONFLICT`, and `FROM <table>` in `Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository*.swift`; this is source search evidence, not a claim that non-SQL projections do not exist.
+
+### Workspace and repository topology
+
+#### workspace
+1. Core store/path: shared core path above. 2. Final DDL: `WorkspaceCoreMigrations.swift:128-134` (`id TEXT PRIMARY KEY`, `name TEXT NOT NULL`, `created_at/updated_at REAL NOT NULL`; updated-at index at 159). 3. One row is a named workspace. 4. Workspace UUID; no path key. 5. `WorkspaceCoreRepository.swift:49-60,193-205` upsert and `:103-111` update; removal at `:277-278`, same transaction removes selection and marks available undo rows evicted. 6. Reads `:72-97,146-152,418-433,498-516`; materialized by `WorkspaceCoreRepository` snapshots, then workspace atoms via datastore actor. 7. current-state. 8. No table-specific post-commit event found at writer. 9. Explicit delete workspace; FK cascade removes workspace-owned rows. 10. user-scoped.
+
+#### app_workspace_selection
+1. Core store/path above. 2. Final DDL `WorkspaceCoreMigrations.swift:136-144`: integer singleton PK constrained to 1; nullable active workspace FK `ON DELETE SET NULL`; updated time required. 3. Active workspace selection singleton. 4. singleton key and workspace UUID; no path. 5. `WorkspaceCoreRepository.swift:444-453` upsert. 6. read `:403-408`, materialized with selected workspace snapshot by `WorkspaceCoreRepository`. 7. user-preference. 8. No table-specific event adjacent to SQL. 9. Workspace deletion nulls FK; selection writer changes it. 10. user-scoped.
+
+#### legacy_workspace_import_status
+1. Core store/path above. 2. DDL `WorkspaceCoreMigrations.swift:147-157`: workspace PK/FK cascade, required source path, nullable import/archive timestamps and last error. 3. Per-workspace legacy import progress. 4. workspace UUID and filesystem source path. 5-6. Current SQL search `rg -n 'legacy_workspace_import_status' Sources/AgentStudio/Core/State Sources/AgentStudio/App` returned only migration definitions/cleanup; no current application writer or reader found. 7. migration-artifact. 8. None found. 9. Dropped during global topology migration (`WorkspaceCoreMigrations+GlobalTopology.swift:99`). 10. contains-filesystem-path, user-scoped.
+
+#### watched_path
+1. Core store/path above. 2. Final global DDL is created as `watched_path_global_new` at `WorkspaceCoreMigrations+GlobalTopology.swift:9-15`, renamed to `watched_path` at `:91`; see final migration block for columns and constraints. Original workspace DDL `WorkspaceCoreMigrations.swift:165-173` is superseded. 3. Watched filesystem root. 4. ID, path string and stable key; path is machine filesystem path. 5. `WorkspaceCoreRepository+TopologyMutation.swift:54,299-308`; topology snapshot replacement writer; same transaction also writes repo/worktree/absence/tag topology. 6. `WorkspaceCoreRepository+Topology.swift:263-270`; materialized in repository topology record, then repository topology atom. 7. current-state. 8. Topology snapshot is returned after transaction; no named event found at SQL writer. 9. Replaced on topology reconciliation; workspace/global migration cleanup. 10. contains-filesystem-path, machine-scoped.
+
+#### repo
+1. Core store/path above. 2. Final DDL is `repo_global_new` at `WorkspaceCoreMigrations+GlobalTopology.swift:17-27`, renamed at `:92`; supersedes `WorkspaceCoreMigrations.swift:175-185`; later sidebar migration adds/renames pin and note (`WorkspaceCoreMigrations+RepoSidebarMetadata.swift:4-8`, `WorkspaceCoreMigrations+SidebarPins.swift:4`). 3. Repository topology record with display metadata. 4. repo UUID, stable key, repository path; path is machine filesystem path. 5. `WorkspaceCoreRepository+TopologyMutation.swift:180-191,222-237,317-346`; plus metadata/tag mutations in `WorkspaceCoreRepository+RepoSidebarMetadata.swift:10-78`; same topology transaction writes related worktree, watched path, tags and unavailable markers. 6. `WorkspaceCoreRepository+Topology.swift:275-299,408-416`; topology record/atom. 7. current-state. 8. topology snapshot returned after commit; no named event found adjacent. 9. retention deletes at `WorkspaceCoreRepository+Retention.swift:18-22`; cascading worktrees, tags and absence rows. 10. contains-filesystem-path, machine-scoped.
+
+#### worktree
+1. Core store/path above. 2. Final DDL `worktree_global_new` `WorkspaceCoreMigrations+GlobalTopology.swift:29-40`, renamed `:93`; supersedes initial DDL `WorkspaceCoreMigrations.swift:187-201`; sidebar note is added at `WorkspaceCoreMigrations+RepoSidebarMetadata.swift:10`; global topology DDL includes global scope fields. 3. Worktree under a repository. 4. worktree/repo UUID, stable key, filesystem path. 5. `WorkspaceCoreRepository+TopologyMutation.swift:16,205-216,243-257,352-383`; same topology transaction can write repo, tags, watched paths and unavailable markers. 6. `WorkspaceCoreRepository+Topology.swift:305-317,408-426`; topology record/atom. 7. current-state. 8. topology snapshot returned after commit; no table-specific event found adjacent. 9. `WorkspaceCoreRepository+Retention.swift:18-20`; parent repo/workspace cascades. 10. contains-filesystem-path, machine-scoped.
+
+#### unavailable_repo
+1. Core store/path above. 2. Initial DDL `WorkspaceCoreMigrations.swift:203-211`, global replacement `WorkspaceCoreMigrations+GlobalTopology.swift:52-55,82-95`, then final absence-timing schema is rebuilt by `WorkspaceCoreMigrations+RepositoryAbsence.swift:4-14,20-35`; final columns are repo_id PK/FK cascade plus first-absent/anchor/boot/uptime/elapsed, with all-null-or-complete CHECK. 3. Repository absence marker/timing. 4. repo UUID and boot identity; no path key in final table. 5. `RepositoryAbsenceStorage.swift:37-38,41-44,70-96`, called in topology mutation transaction (`WorkspaceCoreRepository+TopologyMutation.swift:11,29`); same transaction also replaces topology rows. 6. `RepositoryAbsenceStorage.swift:25-27,48-68`; `WorkspaceCoreRepository+Topology.swift:125-157`; returned in topology record/atom. 7. current-state. 8. topology snapshot returned on commit. 9. replaced on topology reconciliation; FK cleanup on repo deletion. 10. machine-scoped.
+
+#### repo_tag
+1. Core store/path above. 2. Final DDL from `repo_tag_global_new` `WorkspaceCoreMigrations+GlobalTopology.swift:42-50`, renamed `:94`; workspace scoped predecessor DDL `WorkspaceCoreMigrations+RepositoryTopology.swift:7-23` superseded. 3. Tag attached to repo. 4. repo UUID + tag string; not a filesystem path. 5. `WorkspaceCoreRepository+TopologyMutation.swift:165,389-398`; tag replacement also in `WorkspaceCoreRepository+RepoSidebarMetadata.swift:68-87`, transaction with topology/metadata. 6. reads `WorkspaceCoreRepository+Topology.swift:319-327` and `WorkspaceCoreRepository+RepoSidebarMetadata.swift:94-104`; topology record/atom. 7. current-state. 8. returned topology snapshot. 9. removed/replaced with repo tags; cascading repo deletion. 10. machine-scoped.
+
+## Pane and tab graph
+
+#### pane
+1. Core store/path above. 2. Final DDL starts `WorkspaceCoreMigrations.swift:256-285`; subsequent initial columns through `:368`; final mutations: source binding renamed/dropped (`:80-86`), pane topology facets dropped (`WorkspaceCoreMigrations+PaneTopologyFacets.swift:7-8`), association facets re-added (`WorkspaceCoreMigrations+PaneAssociation.swift:3-11`), independent pin added (`WorkspaceCoreMigrations+SidebarPins.swift:7`). Final columns include ID/workspace/content type/execution backend, launch directory/title/note/CWD/checkout, residency/undo/orphan data, kind/parent, timestamps, facet repo/worktree IDs, and pin. FK actions, CHECKs and cross-workspace triggers are in the cited DDL/migrations. 3. A workspace pane with content, residency and optional hierarchy/facets. 4. pane/workspace/repo/worktree/parent UUIDs and filesystem paths in cwd/launch/orphan fields. 5. `WorkspaceCoreRepository+PaneGraphMutation.swift:77-107,156` plus association updates `WorkspaceCoreRepository+PaneAssociations.swift:37`; main graph writes also write content subtype, drawer and membership rows in same transaction. 6. `WorkspaceCoreRepository+PaneGraph.swift:127-158`, `+PaneGraphCodecs.swift`; materialized as pane graph then `WorkspacePaneAtom`. 7. current-state. 8. snapshot/capture accepted by datastore then atom state; no per-table bus event found next to SQL. 9. pane removal via graph mutation; workspace cascade; undo may retain serialized close snapshot. 10. contains-filesystem-path, user-scoped.
+
+#### pane_content_terminal
+1. Core store/path above. 2. Final DDL is rebuilt in `WorkspaceCoreMigrations+SessionOwnership.swift:24-37` then rename at `:35-36`: pane ID PK/FK cascade, required provider/lifetime, nullable session FK to ownership with RESTRICT; session index `:38`; triggers `:40-79`. Original table `WorkspaceCoreMigrations.swift:370-375` and added nullable session at `:56` are superseded. 3. Provider/lifetime and optional durable terminal session for a terminal pane. 4. pane UUID and terminal/zmx session ID. 5. graph writer `WorkspaceCoreRepository+PaneGraphMutation.swift:167-179`; ownership registration/cleanup writers `WorkspaceCoreRepository+SessionOwnership.swift:81-120,182`; graph transaction also pane and other pane graph tables. 6. `WorkspaceCoreRepository+PaneGraphCodecs.swift:149-181`, session readers `WorkspaceCoreRepository+SessionOwnership.swift:192-219`; materialized into pane graph and session cleanup work. 7. current-state. 8. datastore snapshot after graph commit; cleanup owner may emit session effects (not a direct SQL-adjacent event). 9. pane FK cascade, cleanup ownership/journal pruning. 10. references-process-or-terminal-session, user-scoped.
+
+#### pane_content_webview
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:377-383`: pane PK/FK cascade; required URL/title/navigation flag; content type triggers at `:465-490`. 3. Webview pane content. 4. pane UUID and URL (not filesystem path). 5. `WorkspaceCoreRepository+PaneGraphMutation.swift:183-194`, in pane graph write transaction. 6. `WorkspaceCoreRepository+PaneGraphCodecs.swift:188-205`, pane graph materialization. 7. current-state. 8. accepted pane graph snapshot. 9. pane delete/workspace cascade. 10. user-scoped.
+
+#### pane_content_code_viewer
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:385-390`: pane PK/FK cascade, required file_path, nullable scroll line; viewer triggers `:492-517`. 3. Code viewer pane content. 4. pane UUID and filesystem path string. 5. `WorkspaceCoreRepository+PaneGraphMutation.swift:198-210`; graph transaction. 6. `WorkspaceCoreRepository+PaneGraphCodecs.swift:214-229`; pane graph. 7. current-state. 8. accepted pane graph snapshot. 9. pane delete/workspace cascade. 10. contains-filesystem-path, user-scoped.
+
+#### pane_content_payload
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:392-397`: pane PK/FK cascade, required payload kind/JSON; supported type trigger in `:519-539`. 3. Serialized built-in/plugin pane payload. 4. pane UUID and payload kind; payload may carry app-defined IDs/paths (not established by schema). 5. `WorkspaceCoreRepository+PaneGraphMutation.swift:213-220`; graph transaction. 6. `WorkspaceCoreRepository+PaneGraphCodecs.swift:237-250`; pane graph. 7. current-state. 8. accepted pane graph snapshot. 9. pane delete/workspace cascade. 10. user-scoped; payload locality unknown.
+
+#### drawer
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:399-404`: drawer ID PK, parent pane FK cascade, unique parent. 3. Optional drawer owned by pane. 4. drawer and parent pane UUID. 5. `WorkspaceCoreRepository+PaneGraphMutation.swift:223-233`, graph transaction. 6. `WorkspaceCoreRepository+PaneGraphCodecs.swift:62-84`; pane graph materializer. 7. current-state. 8. accepted graph snapshot. 9. parent pane cascade or graph deletion. 10. references-window-screen-or-view.
+
+#### drawer_pane
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:406-415`: drawer/pane FKs cascade, composite PK, unique pane and drawer-order, required sort index; workspace triggers `:417-440`. 3. Drawer pane membership and order. 4. drawer/pane UUIDs. 5. `WorkspaceCoreRepository+PaneGraphMutation.swift:29-40,236-245`, graph transaction. 6. `WorkspaceCoreRepository+PaneGraphCodecs.swift:255-270`, graph materializer. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite and FK cascade. 10. references-window-screen-or-view.
+
+#### tab_shell
+1. Core store/path above. 2. DDL `WorkspaceCoreMigrations.swift:520-527`; color column added by `WorkspaceCoreMigrations+RepositoryTopology.swift:25-31` with hex CHECK; required ID/workspace/name/sort index and workspace cascade. 3. Tab identity/display shell. 4. tab/workspace UUID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:33-78`, metadata `WorkspaceCoreRepository+RepoSidebarMetadata.swift:53-64`; graph transaction also writes tab memberships/arrangements. 6. `WorkspaceCoreRepository+TabGraph.swift:94-140`, metadata reader `+RepoSidebarMetadata.swift:125-137`; tab graph atom. 7. current-state. 8. accepted tab graph snapshot. 9. tab graph replacement and workspace cascade. 10. references-window-screen-or-view, user-scoped.
+
+#### tab_pane
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:529-554`: tab/pane FKs cascade; composite PK, unique pane and per-tab sort index; workspace guard triggers. 3. Top-level pane membership/order. 4. tab and pane UUID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:93-118`; transaction also rewrites shells/arrangements. 6. `WorkspaceCoreRepository+TabGraph.swift:180-191`; tab graph atom. 7. current-state. 8. accepted tab graph snapshot. 9. tab/pane cascade and graph rewrite. 10. references-window-screen-or-view.
+
+#### tab_arrangement
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:557-566`; required id/tab/name/default/sort, `is_default` CHECK and tab/sort unique; partial one-default-per-tab unique index at `:568-571`. `shows_minimized_panes` was dropped at `:62`. 3. Named/default layout for tab. 4. arrangement/tab UUID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:82-151`; transaction writes pane/divider/minimized/drawer-view descendants. 6. `WorkspaceCoreRepository+TabGraph.swift:143-178`; tab graph atom. 7. current-state. 8. accepted tab graph snapshot. 9. graph replacement/tab cascade. 10. references-window-screen-or-view.
+
+#### arrangement_layout_pane
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:573-604`: arrangement/pane FKs cascade, composite PK, unique sort index per arrangement, required ratio. 3. Pane row/order/ratio in a tab arrangement. 4. arrangement/pane UUID. 5. generic table insert in `WorkspaceCoreRepository+TabGraphMutation.swift:282-292`; transaction with full tab graph rewrite. 6. `WorkspaceCoreRepository+TabGraph.swift:194-202`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. arrangement/pane cascade or rewrite; adjacent-divider pruning trigger `WorkspaceCoreMigrations.swift:614-630`. 10. references-window-screen-or-view.
+
+#### arrangement_layout_divider
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:609-612`: arrangement FK cascade, composite PK and unique order; no FK on divider ID. 3. Divider row/order in arrangement. 4. arrangement UUID and divider ID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:294-304`; graph transaction. 6. `WorkspaceCoreRepository+TabGraph.swift:204-216`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite; adjacent divider deleted by pane-delete trigger at `WorkspaceCoreMigrations.swift:614-630`. 10. references-window-screen-or-view.
+
+#### arrangement_minimized_pane
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:632-637`: composite PK; arrangement/pane FKs cascade; workspace consistency triggers `:639-663`. 3. Minimized panes in arrangement. 4. arrangement/pane UUID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:172-184`; graph transaction. 6. `WorkspaceCoreRepository+TabGraph.swift:218-231`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite/FK cascade. 10. references-window-screen-or-view.
+
+#### arrangement_drawer_view
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:665-675`: composite PK, required row split ratio, arrangement/drawer FKs cascade; consistency triggers `:677-707`. 3. Drawer view state in a tab arrangement. 4. arrangement/drawer UUID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:187-204`; graph transaction. 6. `WorkspaceCoreRepository+TabGraph.swift:234-292`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite/FK cascade. 10. references-window-screen-or-view.
+
+#### drawer_view_layout_pane
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:709-725`: arrangement/drawer/pane keys, row_kind/order/ratio, composite PK and unique row order; composite owner FK cascade and pane FK cascade; workspace guards `:727-748`. 3. Pane row in drawer view layout. 4. arrangement/drawer/pane UUID. 5. dynamic pane-table insert `WorkspaceCoreRepository+TabGraphMutation.swift:282-292`; graph transaction. 6. `WorkspaceCoreRepository+TabGraph.swift:294-328`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite/FK cascade; divider pruning trigger `WorkspaceCoreMigrations.swift:752-779`. 10. references-window-screen-or-view.
+
+#### drawer_view_layout_divider
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:750-760`: arrangement/drawer/row kind/divider keys, composite PK, unique row order and owner FK cascade. 3. Drawer view divider row/order. 4. arrangement/drawer UUID and divider ID. 5. dynamic divider insert `WorkspaceCoreRepository+TabGraphMutation.swift:294-304`; graph transaction. 6. `WorkspaceCoreRepository+TabGraph.swift:299-360`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite and adjacent divider trigger at `WorkspaceCoreMigrations.swift:762-779`. 10. references-window-screen-or-view.
+
+#### drawer_view_minimized_pane
+1. Core store/path above. 2. `WorkspaceCoreMigrations.swift:782-789`: arrangement/drawer/pane composite PK, composite owner FK and pane FK cascade; workspace guards `:791-817`. 3. Minimized pane membership in drawer view. 4. arrangement/drawer/pane UUID. 5. `WorkspaceCoreRepository+TabGraphMutation.swift:261-274`; graph transaction. 6. `WorkspaceCoreRepository+TabGraph.swift:362-378`; tab graph atom. 7. current-state. 8. accepted graph snapshot. 9. graph rewrite/FK cascade. 10. references-window-screen-or-view.
+
+## Snapshot, session ownership, and undo
+
+#### workspace_sqlite_snapshot_status
+1. Core store/path above. 2. Historical DDL `WorkspaceCoreMigrations.swift:238-248`: workspace PK/FK cascade, nullable staged/completed times. Earlier one-column form at `:225-231` and `_old` copy are superseded; this table itself is dropped during global topology migration at `WorkspaceCoreMigrations+GlobalTopology.swift:98`. 3. Per-workspace staging/completion state. 4. workspace UUID. 5-6. Search `rg -n 'workspace_sqlite_snapshot_status' Sources/AgentStudio/Core/State Sources/AgentStudio/App` found migrations only; no live writer/reader in searched scope. 7. migration-artifact. 8. Not found. 9. Dropped by global topology migration. 10. user-scoped.
+
+#### workspace_terminal_session_ownership
+1. Core store/path above. 2. Final DDL `WorkspaceCoreMigrations+SessionOwnership.swift:4-22`: session ID PK/nonblank CHECK, cleanup state default/check, timestamps/error/process identity, consistency CHECKs; cleanup-state index at `:81-83`. 3. Durable ownership/cleanup lifecycle for zmx session. 4. terminal session ID and process identity BLOB (not an OS path). 5. `WorkspaceCoreRepository+UndoClose.swift:44-47`; `WorkspaceCoreRepository+SessionOwnership.swift:81-120,182-186`; same transactions include terminal pane and undo membership where relevant. 6. `WorkspaceCoreRepository+SessionOwnership.swift:33-79,101-219`; cleanup work records consumed by terminal session cleanup owner. 7. current-state. 8. cleanup requests/results flow to `WorkspaceTerminalSessionCleanupWork`; no event name established by SQL-only search. 9. `WorkspaceCoreRepository+UndoPruning.swift:72-78` deletes unreferenced completed sessions; pane/undo constraints retain live identities. 10. references-process-or-terminal-session, machine-scoped.
+
+#### workspace_undo_close
+1. Core store/path above. 2. DDL `WorkspaceCoreMigrations+SessionOwnership.swift:85-100`: close ID PK, workspace/sequence/kind/timestamps/state/snapshot version/payload/deadline boot+uptime; state/kind/timing checks, snapshot required while available, unique workspace sequence. Indexes `:102-107`. 3. Pane/tab close snapshot and lifecycle. 4. close ID, workspace UUID, sequence, deadline boot ID; snapshot can include pane/session refs. 5. `WorkspaceCoreRepository+UndoClose.swift:22-86`; state update/restore at `+UndoRestore.swift:40-44`, `+UndoRecovery.swift:30-58`, workspace replacement at `WorkspaceCoreRepository.swift:268`; same close transaction inserts ownership and member rows. 6. reads `+UndoClose.swift:14-16,69-110`, `+UndoRecovery.swift:11-103`, `+UndoRestore.swift:15-19`, `+SessionOwnership.swift:128-140`; materialized as undo records and timer deadline work. 7. append-history. 8. `WorkspaceUndoCloseWrite` result/accepted snapshot; no bus event found at SQL site. 9. expiration, eviction caps, restore, workspace replacement and pruning in `+UndoPruning.swift`, `+UndoRecovery.swift`, `+UndoClose.swift`. 10. user-scoped; may reference terminal session.
+
+#### workspace_undo_close_member
+1. Core store/path above. 2. DDL `WorkspaceCoreMigrations+SessionOwnership.swift:109-115`: close/pane composite PK, close FK cascade, nullable session FK RESTRICT; indexes `:117-124`; insert/delete/update guards `:125-160`. 3. Pane and optional session membership captured by an undo close. 4. close ID, pane UUID, session ID. 5. `WorkspaceCoreRepository+UndoClose.swift:52-55`; `+UndoPruning.swift:62`; same close transaction with undo operation and session ownership. 6. `WorkspaceCoreRepository+UndoRecovery.swift:101-103`, `+SessionOwnership.swift:17-24,187-219`, `+UndoPruning.swift:12-16`; undo/cleanup work records. 7. append-history. 8. included in undo close accepted result; no named event found. 9. deleted with/pruning undo record; guards prevent mutation while available. 10. references-process-or-terminal-session, user-scoped.
+
+## Exceptions
+
+- Extra migration tables found beyond the packet list: `workspace_sqlite_snapshot_status_old` (temporary rename/copy/drop, `WorkspaceCoreMigrations.swift:234-250`); `pane_content_terminal_with_ownership` (copy then rename, `WorkspaceCoreMigrations+SessionOwnership.swift:24-37`); `watched_path_global_new`, `repo_global_new`, `worktree_global_new`, `repo_tag_global_new`, `unavailable_repo_global_new` (global topology copy/rename/drop, `WorkspaceCoreMigrations+GlobalTopology.swift:9-95`); `unavailable_repo_retention` is generated dynamically by `WorkspaceCoreMigrations+RepositoryAbsence.swift:20-35` and renamed to final `unavailable_repo` at `:13-14`. These are migration-artifact labels, not live tables.
+- `workspace_sqlite_snapshot_status_old` is an ALTER rename, not CREATE TABLE; included as an extra intermediate table. `pane_content_terminal_with_ownership` and all `_global_new` tables are explicitly covered above by their final table sections and these artifact notes.
+- Extra final table `unavailable_worktree` is dynamically created by `WorkspaceCoreMigrations+RepositoryAbsence.swift:16-17,20-35`; it was omitted from the packet's CREATE TABLE grep. Its definition uses `worktree_id` PK/FK cascade, first-absent/anchor/boot/uptime/elapsed fields and an all-null-or-complete CHECK. It is a topology absence marker; reads include `WorkspaceCoreRepository+PaneAssociations.swift:16-44`. It is covered in the addendum below.
+- The packet's broad unit list has no final `pane_tag` or `worktree_tag`: source migrations reference/drop legacy `pane_tag` and `worktree_tag`; no live CREATE TABLE remains in the enumerated migrations. `unavailable_worktree` is a real extra final table, described above and below.
+- No workspace/core source migration filename among the requested `WorkspaceCoreMigrations*.swift` files was missing. Additional repair reads: `WorkspaceCoreMigrations+SidebarPins.swift`, `+RepoSidebarMetadata.swift`, `+PaneRecovery.swift`, `+Pre009Backup.swift`, and `+TabGraphLayoutRepair.swift` were searched. PaneRecovery and Pre009Backup contain backup/repair handling but no final live-table ALTER in the `CREATE/ALTER/DROP/RENAME` search; TabGraphLayoutRepair creates/rebuilds the listed graph layout tables. See cited migration index and DDL locations.
+- Event emission and exact UI atom projections are not mechanically keyed per SQL table. The inventory records accepted snapshot / graph materialization owners visible at repository boundaries; no event name is assigned where the SQL search did not establish one.
+- Writer counts in the index count owning repository write paths, not individual SQL statements. Per-table writers may share `WorkspaceCoreRepository+TopologyMutation.swift`, `+PaneGraphMutation.swift`, and `+TabGraphMutation.swift` methods/transactions. Search method: `rg -n 'INSERT INTO|UPDATE [a-z_]+|DELETE FROM|ON CONFLICT' Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository*.swift Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor*.swift`; readers: `rg -n 'FROM <table>' Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository*.swift` expanded for all listed tables. App-side non-SQL searches can find projections, but are not presented as extra persistence writers.
+
+## Extra migration tables and unlisted live table
+
+The following extras have no live repository writer/reader in current source, except `unavailable_worktree`. For the intermediate tables, the stated table-specific search `rg -n '<exact table>' Sources/AgentStudio/Core/State Sources/AgentStudio/App` finds the migration statements only; there is no current in-memory materializer. Shared database/path is the core store described above.
+
+#### workspace_sqlite_snapshot_status_old (migration-artifact)
+1. Core SQLite migration temp table. 2. Renamed from `workspace_sqlite_snapshot_status`, copied to rebuilt table and dropped: `WorkspaceCoreMigrations.swift:234-250`; schema matches the earlier completion timestamp row. 3. Intermediate snapshot status during schema migration. 4. workspace UUID. 5-6. Exact search `rg -n 'workspace_sqlite_snapshot_status_old' Sources/AgentStudio/Core/State Sources/AgentStudio/App`: migration only; no live writer, reader, or materializer. 7. migration-artifact. 8. None. 9. Dropped by same migration. 10. user-scoped.
+
+#### pane_content_terminal_with_ownership (migration-artifact)
+1. Core SQLite migration temp table. 2. DDL `WorkspaceCoreMigrations+SessionOwnership.swift:24-32`, copy/drop/rename `:33-37`; final table is `pane_content_terminal` and its section above has final schema. 3. Intermediate terminal content rows gaining session ownership FK. 4. pane UUID and terminal session ID. 5-6. Exact search `rg -n 'pane_content_terminal_with_ownership' Sources/AgentStudio/Core/State Sources/AgentStudio/App`: migration only; no live writer, reader, or materializer. 7. migration-artifact. 8. None. 9. Dropped after copy in same migration. 10. references-process-or-terminal-session.
+
+#### watched_path_global_new (migration-artifact)
+1. Core SQLite migration temp table. 2. DDL `WorkspaceCoreMigrations+GlobalTopology.swift:9-15`; copied and renamed at `:57-59,91`; fields id/path/stable_key/added_at, ID PK, stable key unique. 3. Staging table for migration from workspace to global watched paths. 4. UUID, path, stable key; path is filesystem path. 5-6. Exact search finds migration only; no live writer/reader/materializer. 7. migration-artifact. 8. None. 9. Renamed to watched_path after old table dropped. 10. contains-filesystem-path, machine-scoped.
+
+#### repo_global_new (migration-artifact)
+1. Core SQLite migration temp table. 2. DDL `WorkspaceCoreMigrations+GlobalTopology.swift:17-27`; copy/rename at `:61-64,92`; fields id/name/repo_path/stable_key/created_at/is_favorite/note, id PK/stable key unique, pin bool CHECK; later final repo columns follow migrations. 3. Staging copy of repository rows for global topology cutover. 4. repo UUID, stable key, repository path. 5-6. Exact search finds migration only; no live writer/reader/materializer. 7. migration-artifact. 8. None. 9. Renamed to repo after predecessor drop. 10. contains-filesystem-path, machine-scoped.
+
+#### worktree_global_new (migration-artifact)
+1. Core SQLite migration temp table. 2. DDL `WorkspaceCoreMigrations+GlobalTopology.swift:29-40`; copy/rename `:67-70,93`; fields id/repo_id/name/path/stable_key/main-worktree/note, FK repo cascade, stable key unique, main-worktree CHECK. 3. Staging copy of worktrees for global topology. 4. worktree/repo UUID, path, stable key. 5-6. Exact search finds migration only; no live writer/reader/materializer. 7. migration-artifact. 8. None. 9. Renamed to worktree. 10. contains-filesystem-path, machine-scoped.
+
+#### repo_tag_global_new (migration-artifact)
+1. Core SQLite migration temp table. 2. DDL `WorkspaceCoreMigrations+GlobalTopology.swift:42-50`; copy/rename `:74-77,94`; repo_id/tag composite PK, repo FK cascade, bounded trimmed-tag CHECK. 3. Staging copy of repo tags. 4. repo UUID and tag. 5-6. Exact search finds migration only; no live writer/reader/materializer. 7. migration-artifact. 8. None. 9. Renamed to repo_tag. 10. machine-scoped.
+
+#### unavailable_repo_global_new (migration-artifact)
+1. Core SQLite migration temp table. 2. DDL `WorkspaceCoreMigrations+GlobalTopology.swift:52-55`; copy/rename `:80-82,95`; repo_id PK/FK cascade. 3. Staging copy of unavailable repo markers. 4. repo UUID. 5-6. Exact search finds migration only; no live writer/reader/materializer. 7. migration-artifact. 8. None. 9. Renamed to unavailable_repo. 10. machine-scoped.
+
+#### unavailable_repo_retention (migration-artifact)
+1. Core SQLite migration temp table. 2. Dynamically created by helper `WorkspaceCoreMigrations+RepositoryAbsence.swift:20-35`, called at `:4`; repo_id PK/FK cascade plus absence clock fields and CHECK. It replaces and is renamed to unavailable_repo at `:5-14`. 3. Intermediate absence-retention state copy. 4. repo UUID and boot identity; no filesystem path. 5-6. Exact search `rg -n 'unavailable_repo_retention' Sources/AgentStudio/Core/State Sources/AgentStudio/App`: migration only; no current materializer. 7. migration-artifact. 8. None. 9. Renamed to final unavailable_repo. 10. machine-scoped.
+
+#### unavailable_worktree (unlisted live table)
+1. Core SQLite path above. 2. Dynamic DDL helper call at `WorkspaceCoreMigrations+RepositoryAbsence.swift:16-17`, table body `:20-35`: `worktree_id` text PK/FK to worktree with cascade; nullable first-absent, anchor, boot, uptime, elapsed fields; CHECK requires all null or a complete nonnegative anchor. 3. Absence-retention record for a worktree. 4. worktree UUID and boot identity; no filesystem path. 5. Writer `RepositoryAbsenceStorage.swift:37-44,70-96`, invoked in topology transaction at `WorkspaceCoreRepository+TopologyMutation.swift:11,29`. 6. `RepositoryAbsenceStorage.swift:25-27,48-68`; availability check `WorkspaceCoreRepository+PaneAssociations.swift:16-44`; materialized with topology record/atom. 7. current-state. 8. accepted topology snapshot after commit; no named event found adjacent. 9. topology replacement and FK cascade on worktree removal. 10. machine-scoped.
+
+#### pane_tag (migration-artifact, dropped if present)
+1. Core SQLite historical table; no current store path/open site. 2. No final schema. Migration 010 drops it with `DROP TABLE IF EXISTS` at `WorkspaceCoreMigrations+RepositoryTopology.swift:4`. 3-4. No current row meaning or identity established from current schema. 5-6. Exact source search `rg -n 'pane_tag' Sources/AgentStudio/Core/State Sources/AgentStudio/App` finds the drop statement only; no current writer, reader or materializer. 7. migration-artifact. 8. None. 9. Dropped by migration 010. 10. not established.
+
+#### worktree_tag (migration-artifact, dropped if present)
+1. Core SQLite historical table; no current store path/open site. 2. No final schema. Migration 013 drops it with `DROP TABLE IF EXISTS` at `WorkspaceCoreMigrations+GlobalTopology.swift:7`. 3-4. No current row meaning or identity established from current schema. 5-6. Exact source search `rg -n 'worktree_tag' Sources/AgentStudio/Core/State Sources/AgentStudio/App` finds the drop statement only; no current writer, reader or materializer. 7. migration-artifact. 8. None. 9. Dropped by migration 013. 10. not established.
+
+- The commissioner also identified local.sqlite drops/renames in `WorkspaceLocalMigrations*.swift` (sessions, local recency, sidebar expansion, PR count, IPC credentials). Those are outside this unchanged `core.sqlite` unit and are not included in its final-schema index. This inventory replays `WorkspaceCoreMigrations` registration order at `WorkspaceCoreMigrations.swift:14-37`; it does not claim a local.sqlite inventory.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

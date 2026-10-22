@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current Advisor E4a challenge</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-e4a-challenge-9eb60e46.html">AgentStudio daemon · Current Advisor E4a challenge</a></nav></ex-nav>
+<ex-document id="content"><h1>Current Advisor E4a challenge</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-e4a-challenge.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current Advisor E4a challenge
+
+Source push: `01a14258-f078-7800-b618-98d21c50304a`. Sender: owner-selected background Advisor `claude-local/34f18df3-a0aa-4472-9b76-7dbfe813d46b`. Advice and source inspection only; no execution or owner authority. Body below preserved as received; the Lead's verified disposition is separate.
+
+🦉 Advisor E4a challenge, re 01a14255. This is advice; nothing was run or provisioned.
+
+READ IN FULL THIS SESSION: daemon-linux-feasibility-probe.md (114 lines), e4-fly-environment-evidence.md (75), e4-safe-linux-primitives-evidence.md (115).
+FRESHLY OPENED:
+- man7 xattr(7);
+- Linux v6.12 Documentation/filesystems/overlayfs.rst:20-49;
+- DeepWiki superfly/flyctl, for agent/WireGuard pointers only.
+PROOF BASIS for each item: [src] = read this turn; [gk] = general knowledge, verify before relying on it.
+
+VERDICT: discriminating and mostly executable. There are nine material gaps. Four of them (G1-G4) could turn a false pass into a "supported" result.
+
+G1. Inode-number reuse breaks (dev, ino) identity on likely Linux profiles. [gk]
+- ext4 and XFS promptly reuse freed inode numbers; NFS carries i_generation for exactly this reason. Btrfs objectids are not reused. APFS file IDs are not reused, so the Mac (device, inode) checks this probe mirrors do not transfer.
+- C5 (unlink-and-recreate replacement) and C10 (owned name replaced before cleanup) can then false-match: a foreign object passes the identity check.
+- Fix: add a reuse-resistant field (statx STATX_BTIME via rustix StatxFlags, checking the returned mask, or the inode generation) and a deliberate reuse attempt per profile. Choosing which field the product uses stays open.
+
+G2. On overlay rootfs P0, file identity is unstable. [src: overlayfs.rst:25-30]
+- Non-directories "may report an st_dev from the lower ... or upper filesystem"; st_ino is unique only with st_dev, "and both of these can change over the lifetime of a non-directory object". Fly's rootfs-size help names overlayfs (your S1).
+- C0's identity calibration must therefore run per profile, and P0 identity verdicts are not comparable with P1.
+
+G3. C6 can be vacuous as written.
+- The opened directory must be moved OUTSIDE the admitted roots, into the foreign root. That root must be on the SAME mount, or rename fails with EXDEV and nothing is tested.
+- The expected observation is that retained-fd writes then land in the foreign tree. Record that as the characterized limit, not as a pass or fail.
+
+G4. C10 tests only "replaced before check".
+- Linux has no unlink-if-identity-matches, so check-then-unlinkat is a TOCTOU. Add a barrier between the identity check and the unlink, and report the window. With G1 it is worse, because even the check can pass on a reused inode.
+- Any remedy (quarantine rename, RENAME_EXCHANGE, and so on) is design, not selected here.
+
+G5. The metadata observer must not be the actor. [src: xattr(7)]
+- "Trusted extended attributes are visible and accessible only to processes that have the CAP_SYS_ADMIN capability". A check run as the fixture user cannot see trusted.* loss, and security.* depends on the LSM.
+- Add a root, read-only observer of both source and destination. Which namespaces are in scope stays policy.
+
+G6. The ACL "explicit gap" may be closable without a new wrapper. [gk]
+- Linux POSIX ACLs are the system.posix_acl_access and system.posix_acl_default xattrs. A safe byte copy with fgetxattr/fsetxattr, run by the file owner, is a candidate safe realization, and the kernel validates the format.
+- Test it as a C8 arm before declaring the gap. A Darwin-to-Linux ACL mapping remains policy.
+
+G7. Linux symlink and FIFO metadata needs named APIs, or C8/C9 default to inconclusive. [src: xattr(7)]
+- "user extended attributes are allowed only for regular files and directories", so corpus setup putting user.* on the symlink or FIFO fails. That is a platform fact, not a probe failure.
+- [gk] Symlink times need utimensat(parentfd, name, AT_SYMLINK_NOFOLLOW), which is a name-based leaf step. Symlink mode cannot be set on Linux.
+
+G8. Add a bind-mount variant to C4. [src: your evidence row on NO_XDEV; flags per D3]
+- A bind mount of a foreign directory placed beneath the admitted root passes BENEATH|NO_SYMLINKS; only NO_XDEV refuses it. The Mac contract (O_RESOLVE_BENEATH plus O_NOFOLLOW_ANY) has no XDEV term.
+- State the C4 flag set explicitly as the Mac-equivalent set, and treat the bind case as a parity characterization. The flag choice stays open.
+
+G9. Executability and resource ownership.
+(a) The procedure never says where the probe binary is built or how it reaches the guest.
+- Building on Sunbook conflicts with the reported owner rule.
+- An in-guest build needs a toolchain download: guest network egress and unpinned provenance.
+- A Sunclaw cross-build needs a Linux linker.
+- Guest tools (losetup, mkfs.xfs or mkfs.btrfs, getfacl) need a declared provenance too, preferably an image digest that already contains them.
+(b) [DeepWiki pointer; verify at a1cf49a5 internal/wireguard/wg.go] fly ssh console and fly ssh sftp:
+- start a long-running local flyctl agent;
+- create or reuse an org WireGuard peer named interactive-<host>-<user>-<n>;
+- persist its private key under wire_guard_state in the flyctl config;
+- do not delete the peer when the session ends.
+That is a side-effect process plus org and credential-bearing config state on Sunbook, and it is missing from the resource inventory. It also writes the owner's config.
+(c) Candidates that may avoid it: the API-based machine exec and machine-config files (--file-local). [gk] Their size limits and behaviour are unverified.
+
+Minor: for suspend evidence beyond boot_id, record CLOCK_MONOTONIC and CLOCK_BOOTTIME deltas per case. They diverge across a real guest suspend, but not necessarily across a VM snapshot restore. [gk] This is a candidate signal only.
+
+NO HIDDEN SELECTIONS FOUND. Filename, unsafe-dependency and normalization policy all stay open, and the corpus deliberately excludes non-UTF-8 names (later F08). G1, G6 and G8 add probes, not policies.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

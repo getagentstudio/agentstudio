@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · What the supplied research contributes</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="disposition.html">AgentStudio daemon · What the supplied research contributes</a></nav></ex-nav>
+<ex-document id="content"><h1>What the supplied research contributes</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](disposition.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## What the supplied research contributes
+
+This is the Lead's topic-by-topic disposition of the original owner research. It is separate from the unchanged source memos and from normative Requirements. A preserved recommendation is not automatically a selected mechanism or a verified library/platform claim.
+
+## Memo 01: local sockets and terminal transport
+
+| Original topic | Source | Current treatment |
+| --- | --- | --- |
+| iOS Unix sockets, socketpair, App Groups and background suspension | [iOS discussion](01-local-sockets-and-terminal-transport.html) | Apple/Tokio primary sources confirm capability and conditions; [source receipts](../../explainer/research/mobile-network-evidence-f7c1efa0.html) distinguish this from a signed-device, app-extension or suspension/resume proof. The settled service boundary is phone client → socket → Mac Gateway → Host; phone-local Gateway placement is not selected |
+| Tokio locally, Quinn remotely, multiplexed RPC/events/terminal traffic | [transport proposal](01-local-sockets-and-terminal-transport.html) | Tokio is owner-required. Quinn, stream layout, local socket profile and serializer remain candidates. Latest owner route requires every frontend to use a Gateway |
+| QUIC reliability versus Mosh state synchronization; optional datagrams | [traffic/Mosh distinction](01-local-sockets-and-terminal-transport.html) | Preserved as transport research. Raw stateful VT bytes cannot be treated as replaceable transient telemetry. Mosh is not selected |
+| JSON-RPC control, binary terminal frames and codec/crate examples | [wire example](01-local-sockets-and-terminal-transport.html) | Candidate only; memo02 later recommends tarpc/MessagePack. The sequence of recommendations is preserved, not converted into an owner selection |
+| ZMX binary IPC, direct Host adapter, existing VT and restoration | [terminal architecture](01-local-sockets-and-terminal-transport.html) | Source-checked against pinned and newer ZMX; current release lacks Capture, newer main has formatted Capture. Neither establishes complete parser/restoration continuity. Header is raw packed8bytes, not Rust C-layout |
+| A40-column phone can disturb a160-column desktop; explicit controller/resize ownership | [concrete case](01-local-sockets-and-terminal-transport.html) | Current leadership mechanisms verified in source; future controller policy still needs an observable contract. Multiple frontend devices are confirmed |
+| One shared ZMX attachment, bounded fanout and slow-viewer resynchronization | [backpressure](01-local-sockets-and-terminal-transport.html) | Preserved candidate; resynchronization depends on a correct restore/live boundary, and total retained memory must include backend/transport/subscriber/snapshot allocations |
+| Capture first, temporary attachment fallback | [fallback](01-local-sockets-and-terminal-transport.html) | Must remain explicit: Init can claim vacant leadership and resize VT/PTY, so a temporary attachment is not a passive snapshot operation. No fallback selected |
+| Canonical transcript separate from viewer delivery | [transcript](01-local-sockets-and-terminal-transport.html) | Separate data-purpose/retention/privacy decision; not inferred from queue management or no-client activity recording |
+| End-to-end echo latency and network RTT matter | [latency discussion](01-local-sockets-and-terminal-transport.html) | Already present in K10 and second-pass evidence; no runtime or target number established. Serialization microbenchmarks cannot substitute for visible echo |
+| Natural output chunking, bounded intentional batching, priority and buffer delivery | [practical choices](01-local-sockets-and-terminal-transport.html) | Measurement candidates, not adopted thresholds. Quinn priority is not a latency reservation; one-byte FFI calls are not assumed |
+| Hidden terminals use snapshot on activation instead of continuous viewer streaming | [hidden-terminal demand](01-local-sockets-and-terminal-transport.html) | Added explicitly to design research. Under U15, suppressing viewer delivery must not stop Host facts/activity. Correct activation still needs restoration/currentness proof |
+| Check Tailscale direct versus DERP before serialization tuning; evaluate Iroh if connectivity needs change | [network path](01-local-sockets-and-terminal-transport.html) | Official Tailscale docs confirm direct/DERP/peer-relay distinctions and status/ping observation methods. No actual route/Tailscale availability or network performance inspected. Iroh remains a candidate; connectivity and RPC serialization are separate concerns |
+| p50/p95/p99 local IPC/RPC RTT, key echo, throughput, reconnect/render and slow-client buffering; mobile transitions/loss/two viewports | [measurement list](01-local-sockets-and-terminal-transport.html) | Carry the complete list into performance obligations. Existing evidence already names key-to-visible-echo and percentiles; exact target/workload bounds remain owner-open. No benchmark results |
+| Full Git/feature/bus survey with Swift as client | [owner's request appended to memo](01-local-sockets-and-terminal-transport.html) | Authorized research/specification goal; covered by inventory, K01–K10, Git33+10+1 operation survey, Swift/native boundary and coordination comparison. A final bus/ownership design is not accepted yet |
+
+## Memo 02: shared typed API
+
+| Original topic | Source | Current treatment |
+| --- | --- | --- |
+| One implementation of each typed operation; thin GUI/CLI/MCP adapters | [reuse principle](02-shared-typed-api-and-rpc-stack.html) | Leading direction; each operation still has one authoritative owner. A single engine crate is not required; no frontend fallback may bypass the Gateway route |
+| tarpc0.38, MessagePack, Quinn adaptation and Unix serde transport | [stack](02-shared-typed-api-and-rpc-stack.html) | Primary-source checked: unary generated Rust API, nested domain Result, generic read/write transport; Quinn adaptation unbuilt. Default MessagePack structs positional. Cancellation/deadline/error and resource limits remain explicit application concerns |
+| Separate RPC, typed subscriptions and binary streams | [interfaces](02-shared-typed-api-and-rpc-stack.html) | Useful semantic separation, without choosing one generic bus or three copies of domain behavior |
+| Proposed crate tree and GatewayClient deployment abstraction | [structure](02-shared-typed-api-and-rpc-stack.html) | Advisory illustration; final DAG/naming follows owner-required Router conventions and confirmed domain boundaries. Current requirements do not authorize a direct frontend→Host mode |
+| Embedded iOS GatewayCore, UniFFI or socketpair | [deployment table](02-shared-typed-api-and-rpc-stack.html) | The owner's Mac-only Gateway instruction and later client→socket→Gateway→Host corrections settle phone placement: phones are clients of a reachable Mac Gateway. Embedded phone GatewayCore remains an advisory proposal outside that selected role. Client-side FFI/runtime mechanisms are not selected, and generated first-party code has no unsafe exemption |
+| quic-rpc, Protobuf/Tonic and cross-language/code-generation alternatives | [comparison](02-shared-typed-api-and-rpc-stack.html) | Checked with pins and limits: quic-rpc aliases iroh-quinn; Tonic has different infrastructure/streaming costs; no speed winner established |
+| Version negotiation and mixed-version tests | [first safeguard](02-shared-typed-api-and-rpc-stack.html) | Explicit admission/refusal can support owner-required hard cutover. Tests may prove incompatible peers are refused; this is not approval for compatibility shims |
+| Application ACKs, idempotency keys where appropriate, meaningful errors | [second safeguard](02-shared-typed-api-and-rpc-stack.html) | Must choose per-operation submission/effect/result/dedup scope and retention, not equate request IDs with idempotence. Keys do not authorize replaying uncertain keyboard input; no automatic-retry policy or durable dedup store is adopted |
+| Intentional MCP subset, rmcp and schemars | [MCP](02-shared-typed-api-and-rpc-stack.html) | MCP is now an explicitly named frontend. Tool exposure must be deliberate and retain the same operation authority; schema generation does not replace semantic validation |
+
+## Memo 03: independent lifetimes
+
+| Original topic | Source | Current treatment |
+| --- | --- | --- |
+| Session, connection, attachment, stream and RPC lifetimes differ | [identity/lifetime model](03-session-connection-and-subscription-lifetimes.html) | Adopted direction; detach/terminate separation is owner-confirmed U14. Logical record, process incarnation and natural exit/failure/reboot remain distinct |
+| Reconnect uses new connection/attachment with same logical session and ordered snapshot/live handoff | [reconnect](03-session-connection-and-subscription-lifetimes.html) | Proposed observable contract; same backend name cannot prove continuity because attach can recreate it. Renderer/parser/restoration proof still required |
+| Host registry, Gateway subscriptions, ZMX process; typed IDs and control | [ownership and operations](03-session-connection-and-subscription-lifetimes.html) | Evidence for domain/authority design, not a final storage/crate layout. Current pane/native/provider/session IDs are distinct |
+| Agent session differs from terminal session | [identity distinction](03-session-connection-and-subscription-lifetimes.html) | Preserved and source-checked against provider binding generations and backend process identities |
+| Desired subscriptions survive transport replacement; Host cursors catch up | [subscription intent](03-session-connection-and-subscription-lifetimes.html) | Retrying observation intent differs from replaying effects. Current socket subscriptions have no cursor and bounded runtime replay is not restart durability; retained window/gap/resnapshot/authorization semantics remain to specify |
+
+## Review and proof boundary
+
+Claude's full-file review confirmed all seven original packet files read and all five manifest file hashes/byte lengths plus23 per-message hashes matched. Lead independently proved source-log fidelity. Advisor did not freshly validate every library/platform claim. Its full and concise receipts are preserved in the [research trace](../../explainer/research/advisor-original-source-review-full-5b1609e1.html).
+
+The review's claim that prior documents had zero key-to-echo coverage is not accepted: K10 already names terminal key-to-visible-echo and `second-pass-evidence.md` names key-to-correct-visible-echo, p95/p99 and measurement conditions. The complete original metric list and concrete mobile/demand cases are now explicit above. Source preservation is complete for the three memos supplied in this session; references to earlier research conversation turns outside these messages remain an upstream-source limit, not reconstructed evidence.
+
+No runtime, benchmark, iOS/Gateway build, Linux parity, production readiness or final design acceptance is established by this coverage map.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

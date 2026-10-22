@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Authority, leases and central control plane: observable contracts</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="specification.html">AgentStudio daemon · Authority, leases and central control plane: observable contracts</a></nav></ex-nav>
+<ex-document id="content"><h1>Authority, leases and central control plane: observable contracts</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](specification.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Authority, leases and central control plane: observable contracts
+
+This is the DS03 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.html). The separate [Requirements](../../user-requirements.html) authorize its meaning; the [domain definitions](../../domain-entities.html) and shared [operation interpretation](../../capability-contracts.html#source--shared-interpretation-of-an-operation) apply. Its [design brief](README.html) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.html) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K14 — Principal, scope, authority and revocation
+
+Database-writer lease authority follows U20/U21/R14: central control plane, separately composable integration, later server implementation and no writer transfer. Another Gateway does not create another issuer; Gateway starts with ready, connected machines. IP4 selects pause/refusal for work requiring invalid/lapsed writer authority, without a new spool or presentation-driven execution termination. Actual setup, authority/copy binding, duration/renewal and precise gate/failure/coverage outcomes remain G13. Writer authority is distinct from principal/authentication leases. Losing a Gateway is not loss of Host-local authority; central registry ownership does not centrally place every record, copy or terminal stream.
+
+**Consumer / entities / basis:** authorized user/agent and operator; E4/E10/E17/E18; U9/U15/U17. Valid operation shape, channel/exposure, capability availability, kind-qualified target and authority are independent admissions. Payload-provided actor/provider/device names are not authenticated identities.
+
+Current same-UID socket/bearer/principal/lease and pane-membership checks are local evidence. IP9 selects a paired private fleet; it does not replace cross-machine credential custody, authentication, shared-user/scope binding, revocation or effect-time checks under G8/G12. One credential creating multiple principals does not prove shared grants or process identity. Internal grant functions do not create a public `permission.*` API absent from the fifty-seven-name catalog.
+
+U15 requires authorized integration during presentation absence. In-session authorization concerns the Host execution context under R9; mere local socket reachability grants no authority. Current grant/revocation checks are a baseline foundation, not an owner-selected independently-revocable cross-service policy. Exact credential, revocation/effect races and retained receipts remain G8/G12; connection authentication does not settle them.
+
+**Proof:** actual allowed/denied actors/scopes at the selected entry and effect boundary, stale binding, cross-target and channel refusal, independent lease survival, revoke-during-held-work and result-loss cases. For R14, additionally establish the designated central issuer, absence of Gateway-issued writer grants, and the selected renewal/expiry behavior with all Gateways (macOS and iOS) absent. Schema correctness, TLS connection or a grant in memory alone is not that proof. No process attestation, regulatory certification or authority-server implementation is implied by this design correction.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

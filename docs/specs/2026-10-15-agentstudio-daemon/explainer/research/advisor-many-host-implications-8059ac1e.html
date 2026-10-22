@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Advisor many-Host implications</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-many-host-implications-8059ac1e.html">AgentStudio daemon · Advisor many-Host implications</a></nav></ex-nav>
+<ex-document id="content"><h1>Advisor many-Host implications</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-many-host-implications.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Advisor many-Host implications
+
+Source: Router root message 01a144f8-a42b-7b43-9298-6e9fddcb0bd0. Advisory claims; not independently verified as a whole or owner-approved mechanisms.
+
+🦉 Advisor: implications, edge cases and issues of the owner's 2026-10-16 corrections. The owner asked for this in my session: "the whole point is to check the implications ... find out edge cases and issues".
+
+Inputs, as you recorded them:
+- a CLI executes on the machine it is attached to, and never runs on the Mac by accident;
+- many Gateways per Host AND many Hosts per Gateway;
+- real Swift <-> UDS <-> Rust schema and behavior compatibility tests.
+The owner also told me "yes in remote host" (a CLI on a remote Host talks to that Host) and "scoped by machine as terminal starts in some machine including local".
+
+MY MODEL OF THE NEW TOPOLOGY
+
+  Mac A: app / CLI / MCP -> Gateway A --+--> Host (Mac A, local)
+  phone ------------------> Gateway A --+--> Host (Linux 1)
+  Mac B: app / CLI -------> Gateway B --+--> Host (Linux 1)    <- shared
+                                        +--> Host (Mac B, local)
+  Inside any Host session: agent / hook / shell CLI -> that same Host
+
+The load-bearing assumption is that a Host instance identity is stable and unique. Routing, scoping, deduplication and authority all key on it, and the spec still leaves it open (E23: G3/G12).
+
+=== A. IDENTITY IS NOW THE ROUTING KEY (decide now) ===
+
+A1. Path-derived IDs collide across Hosts. Repository ID is "common:<path>": agentstudio-git GitRepositoryIdentityResolver.swift:38, LibGit2WorktreeLookup.swift:12, LibGit2AgentStudioGitDiscoveryReadClient.swift:83, LibGit2AgentStudioGitLocalClient.swift:375. Two Linux boxes with /home/u/repo yield the same ID in a Gateway or app aggregate, so a destructive operation (remove worktree, delete branch) can target the wrong machine.
+Recommendation: every Host-owned ID that crosses the Gateway is the pair (Host instance, local ID), as a distinct type. The Gateway and clients never key by a bare ID or path. E7 already says Host-qualified. Extend that to E1, E8-E15 and E19, and make it a K6/K13 contract rather than domain prose.
+
+A2. Where Host identity comes from. Options:
+ (a) hostname or /etc/machine-id. Free, but VM/container clones share machine-id and renames break routing.
+ (b) a UUIDv7 generated at Host install and kept in Host state. Stable, but a cloned VM image or restored backup copies it.
+ (c) (b), plus the Gateway refuses a second live connection claiming the same Host ID and surfaces it as "duplicate Host".
+Recommend (c). The display name is separate and editable.
+
+A3. "Machine" vs Host instance. One machine can run two Hosts: two Unix users, a container, or stable and beta channels (already separate identities and roots, ~/.agentstudio vs ~/.agent-studio-b). The scope should be the Host instance (E23), with the machine as display. That leaves an edge: which Host is "local" for a Mac running both stable and beta?
+
+=== B. "CLI GOES TO THE MACHINE IT'S ATTACHED TO": DEFINE ATTACHMENT (decide now) ===
+
+B1. Inside a Host session, the attachment is that Host, carried by a session-scoped credential the Host issues. If that Host is unreachable or restarting, fail closed. Never fall back to a Mac Gateway.
+
+B2. Outside any session: Terminal.app, an MCP server process, cron or systemd on a Linux box, a plain script. There is no attachment. Recommendation:
+- On a Host machine, a non-session process talks to that machine's Host with same-UID local-operator authority (define that scope).
+- On a Mac, the CLI uses its Gateway and names the target Host, defaulting to the Mac's local Host.
+- Always print the target Host in output.
+The alternative, a mandatory --host everywhere, costs every script a flag. The defaults risk acting on an unexpected machine; echoing the target mitigates that.
+
+B3. Credential escape and leakage:
+- tmux, screen or nohup started inside a session can outlive it. A session-scoped credential then goes stale, and agents running in tmux silently lose integration. Choose: fail with a clear error, or degrade to local-operator authority.
+- ssh from a session to machine C: the environment is not forwarded by default. If it is forwarded (SendEnv) or persisted in a shared-home dotfile, Host C receives Host B's credential and must fail closed, so the credential must be bound to its issuing Host.
+- sudo strips the environment and changes the UID.
+- docker exec has no socket.
+Recommendation: bind the credential to (Host, session, UID), and spec the outlives-session case.
+
+B4. Provider packages per Host. Hooks must be installed on each Host where agents run. Recognized hooks exit 0 even when delivery fails (agent-control report), so a newly attached Host without packages loses agent facts silently.
+Recommendation: each Host advertises package/hook install state, shown per Host.
+
+=== C. ONE GATEWAY, MANY HOSTS (specify) ===
+
+C1. Partial availability. Aggregate results such as "list sessions" carry per-Host status: reachable, unreachable or version-mismatch. An unreachable Host's sessions show as unreachable and are never omitted, because omission reads as "ended". This is the spec's own absent-is-not-empty rule.
+
+C2. Isolation. A slow or high-output Host must not stall the others. The current bounds (4 MiB writer queue, 16 MiB response) are per connection. The Gateway needs a per-Host budget, fairness and an aggregate cap.
+
+C3. Version skew versus hard cutover. Remote Hosts upgrade independently, and the owner's rule forbids compatibility shims. Options:
+ (a) refuse mismatched Gateway/Host pairs at handshake and offer "upgrade this Host". This keeps hard cutover. The cost is that the Host is unreachable until upgraded; its sessions keep running under U15. Upgrading the Host binary while sessions are live then requires sessions to survive a Host restart, which turns G3 from optional into a prerequisite.
+ (b) negotiate N/N-1 versions. Smoother, but it breaks the hard-cutover rule.
+Recommend (a). The G3 consequence is an owner-visible tradeoff for G12.
+
+C4. Duplicate attachment. One Host reached via two addresses (LAN and Tailscale) is deduplicated by Host identity (A2).
+
+C5. Attach and detach. Attaching a Host is a trust act (G8/G12). Detaching leaves its sessions running (U15), and clients show them as "Host detached", not ended.
+
+=== D. MANY GATEWAYS x MANY HOSTS ===
+
+D1. Per-Host authorization of Gateways. If Mac B's Gateway attaches Mac A's local Host, Mac B gets control of Mac A's local terminals. That needs explicit policy. A default of an owner-device allowlist per Host would fit.
+
+D2. Phone reach is amplified. The phone sees every Host only through one Mac's Gateway, so when that Mac sleeps all of them disappear. This is a consequence of the settled S13 choice; note it, don't re-ask.
+
+=== E. TRUST FROM REMOTE HOSTS INTO THE MAC (security) ===
+
+E1. Clipboard. The app auto-approves terminal clipboard READ and WRITE: GhosttyCallbackRouter.swift:107-114 confirms reads with confirmed:true, and :118-137 writes with no prompt. The comments say the owner retained auto-approval for the beta. With remote Hosts, and autonomous agents on them, any remote process can silently read the Mac clipboard with an OSC 52 query, including passwords copied from a password manager, and can overwrite it. The same path already exists for ssh from a local pane, but multi-Host makes remote-origin output the normal case. Options:
+ (a) keep auto-approval: no friction; the user carries the exfiltration risk;
+ (b) per-Host policy: the local Host stays automatic; remote Hosts must ask for (or are denied) reads, and writes are allowed;
+ (c) deny reads everywhere.
+Recommend (b). This revisits an owner decision under a changed trust premise, so it needs an owner brief, not a Lead default.
+
+E2. Other native effects that Host-originated content can trigger: OSC 8 or file:// links, Bridge open-in-editor/browser, reveal in Finder, notifications. K12 says a Host path is not a local URL. Add a per-effect rule for what a remote Host may request, with the origin Host visible.
+
+E3. Agent authority stays on its Host. An agent on Linux 1 must not drive Linux 2 or a Mac Host through the Gateway unless granted. K14 should say authority never crosses Hosts by default.
+
+=== F. THE LOCAL MAC HOST ===
+
+F1. "Including local" means Mac terminals run in the local Host daemon. The prior proof (2026-10-02, launchctl procinfo, CI Lead 13a23d79) showed that zmx sessions not owned by the app become their own TCC-responsible process and lose Full Disk Access and ~/Documents. The local Mac Host must therefore be a stable signed identity that holds FDA. That is the owner's own 10-02 hypothesis: an SMAppService LaunchAgent in the bundle. Without it, local terminals get EPERM on ~/Documents once the app quits. The spec has no TCC row (a grep for TCC/Full Disk/LaunchAgent finds none). Add a platform contract under R2/K15/G12 covering the macOS privacy identity, the first-run grant experience and how a denial is surfaced.
+
+F2. The local Host is launchd-managed and survives app quit (U15). App updates that replace the Host binary under live sessions fall under C3/G3.
+
+=== G. CROSS-HOST OPERATIONS ===
+
+G1. Each operation targets exactly one Host, and there is no cross-Host atomicity. A session cannot move between Hosts: no dragging a terminal to another machine. Copying across Hosts is not a fork.
+
+G2. Context actions (goToPane, openFile) and saved layouts carry (Host, ID). Restoring a layout whose Host is gone shows those panes as unreachable and never deletes them.
+
+G3. Each Host timestamps its own facts, and there is no global order across Hosts. Sorting by "last activity" across Hosts will see clock skew, including negative "ago" values. Order within a Host by its own sequence; make cross-Host display skew-tolerant; never compare Host clocks for correctness.
+
+=== H. SWIFT <-> SOCKET <-> RUST COMPATIBILITY TESTS (owner request) ===
+
+H1. Use one schema source: Rust contracts generating Swift. The 10-01 brainstorm proposed typeshare plus a golden fixture corpus. Tests run over a real socket in both directions. The spec already says a same-process round trip does not prove this.
+
+H2. Cover both hops: client <-> Gateway (UDS) and Gateway <-> Host (network). Prove the Gateway passes Host payloads through without lossy re-encoding.
+
+H3. Concrete hazards:
+- u64 above 2^53 in JSON. Bridge caps integers at 9_007_199_254_740_991, and pane-context UInt64 is canonical text (agent-control report). Swift Int and Rust u64 differ.
+- Non-UTF-8 Linux filenames cannot be JSON strings (git report: String/C conversion is not a Linux byte-name policy). Choose a representation and test it.
+- optional vs null vs absent;
+- unknown enum variants. Under hard cutover, refuse a mismatch at handshake rather than fail decoding mid-stream. The catalog identity is already an exact match (agentstudio-ipc-v2).
+- date and timezone encoding.
+
+H4. Version-skew tests follow C3: a mismatched Host is refused at handshake and the refusal is surfaced cleanly.
+
+=== PRIORITY ===
+Contracts first: A1-A3 and B1-B3. Then C1-C3 and E1 (the owner brief), then F1. The rest go in as rows or gaps.
+Spec homes: E1/E7/E23/E24, K5-K8/K12-K15, G2/G3/G8/G12, V1/V4/V5.
+
+This is advice. The owner's words above are the only owner authority here. You own the edits and the owner brief for E1 (and, later, the C3 tradeoff).
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Full Advisor original-source review</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-original-source-review-full-5b1609e1.html">AgentStudio daemon · Full Advisor original-source review</a></nav></ex-nav>
+<ex-document id="content"><h1>Full Advisor original-source review</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-original-source-review-full.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Full Advisor original-source review
+
+Original direct message: `01a14215-17c6-73c0-bdd0-9e1a7fe8e71a`, received 2026-10-16T00:20:41Z, from the existing Claude Advisor. Copied in full below. This is advice, not owner authority, formal review or executed product proof. Companion concise board result: `01a14211-9d3f-7640-af4e-2a1136143767`, activity6748.
+
+---
+
+🦉 Advisor → 🦁 Lead. Full result for DM 01a1420c (owner-source packet). Concise version: root post 01a14211-9d3f-7640-af4e-2a1136143767 (activity 6748). This is advice, not owner authority, a formal review or proof. I wrote no files and drafted no requirement text.
+
+CORRECTION TO MY ROOT POST
+The phone-route section listed evidence on one side only. I missed two points that favour reading (i):
+- "Gateway rust only on Mac" (22:49:56Z) came 49 seconds after memo 01 was pasted, and memo 01 proposes an iOS-embedded Rust gateway (L61, L117).
+- The owner's first framing at 22:14:39Z was "remote daemon ↔ Rust on Mac ↔ Swift; Cli talks to client deamon".
+The balanced version is in §4a. I will post a short addendum on the thread.
+
+══ 1. READ AND INTEGRITY ══
+I read all seven packet files in full.
+Method: wc -c, then shasum -a 256 against source-manifest.json.
+Results:
+- 01: 13557 bytes, 13399 chars, 4b3fadc7…
+- 02: 7553 bytes, 7491 chars, c1364642…
+- 03: 3043 bytes, 3015 chars, 9090673e…
+- instructions: 8891 bytes, 29d5b4cc…
+- selections: 3570 bytes, c8d2771b…
+- Per-message hashes: I ran jq -j .text | shasum on each message, and 23/23 match.
+- Each memo ends at "." with no added newline.
+- README.md (4178 bytes) is not in the manifest. That is fine; it is the Lead's index.
+Not checked:
+- I did not open the source session JSONL (provider transcripts are off-limits to me). Fidelity to the log therefore rests on your extraction and the manifest.
+- The README's "this exact session" scope is correct, but the memos are excerpts of an external research conversation:
+  - Memo 02 L17 revises "my earlier MessagePack-RPC recommendation". No preserved memo contains that recommendation; memo 01 L128 and L252 recommend JSON-RPC.
+  - Memo 03 L1 opens "Yes. Connection and session must be independent", which answers a question that was not preserved.
+  - The upstream turns may exist outside this session. Only the owner can say. This is a boundary, not a gap in your extraction.
+
+══ 2. MEMO CONTRIBUTIONS ══
+MEMO 01, local sockets and terminal transport
+- iOS:
+  - UDS and socketpair are usable, and App Group covers app↔extension (L3, L11, L54).
+  - iOS suspends apps, so the gateway is an embedded library and the persistent session stays on the remote host (L57, L61, L124).
+  - The iOS gateway is reached through UniFFI in the same process (L37, L117, L120).
+- Transport: Tokio UDS locally, Quinn QUIC remotely, separate streams; no Mosh yet (L66, L96–108, L252).
+- Wire: JSON-RPC 2.0 length-prefixed control plus binary terminal frames (L128, L133). Not jsonrpsee (L190).
+- zmx hazards:
+  - Leader and resize; a 40-column phone can resize a 160-column desktop (L198).
+  - Restoring state is not the same as replaying input (L210).
+  - Validate Capture restore first; otherwise use a temporary ZMX attachment (L214).
+- Performance:
+  - RTT dominates (L231).
+  - Hidden terminals get a snapshot on activation (L238).
+  - Check Tailscale direct vs DERP (L240).
+  - Measure p50/p95/p99 for local IPC RTT, remote RPC RTT, keystroke-to-echo, throughput, reconnect-to-render and max buffered bytes per slow client. Test Wi-Fi→cellular, loss, and two clients (L250).
+- L254 is the owner's own instruction inside the memo body: run a full survey, cover Git features, consider moving the bus to Rust with Swift as a client, and "I don't know what kind of speed and performance we need".
+
+MEMO 02, shared typed API and RPC stack
+- One typed Rust API, with thin frontends for macOS, iOS, CLI and MCP.
+- tarpc 0.38 with MessagePack.
+- Three interfaces: RPC, subscriptions and binary streams (L56–58).
+- Proposed crate tree (L66–89).
+- Caller table (L95–99):
+  - macOS → UDS → daemon
+  - iOS → embedded GatewayCore
+  - CLI → local gateway, or "standalone direct mode"
+  - MCP → local gateway
+- On iOS, a socketpair is an alternative to UniFFI (L103).
+- Compared against quic-rpc and tonic.
+- Safeguards (L136–142):
+  - version negotiation and mixed-version tests;
+  - transport success is not execution success;
+  - idempotency keys;
+  - an intentional MCP subset.
+
+MEMO 03, lifetimes
+- Lifetime table for connection, session, attachment, stream and request.
+- C1→C2 reconnect example.
+- Ownership: the Host owns the session registry, the Gateway owns transport and subscriptions, and zmx owns the process (L36).
+- Snapshot→live handoff must be ordered (L38).
+- ID newtypes and the list of operations.
+- An agent session is not a zmx session (L65).
+- The Gateway remembers desired subscriptions and the Host serves cursors (L71).
+
+SOURCE CHECKS (vendored zmx 8bab1f0 v0.8.1, latest zmx 2d23c0d)
+Confirmed:
+- Input from a non-leader client takes leadership (loop.zig:904–908), which matches L198.
+- The per-client write_buf grows. I found no cap, and a failed append continues (:324, :405). This supports the backpressure concern.
+- Capture is not in 0.8.1. In latest zmx it runs setPwd, serializes the range, then appends to write_buf, with no leader gate.
+- The owner's "We can go to latest zmx" (22:59:20Z) makes L214's first branch testable without the temporary-attach fallback.
+- Tags are non-exhaustive, so an older daemon silently ignores Capture. Mixed zmx versions therefore need capability detection.
+Not validated (I read these claims but did not check them, and made no web checks):
+- iOS UDS, App Group and suspension behaviour
+- Tailscale DERP latency
+- Quinn priority
+- tarpc UDS transport and the QUIC glue
+- quic-rpc 0.20.0 and its lack of UDS
+- rmcp transports
+- UniFFI async
+
+MISSED BY THE PRIOR LEAD DOCS (grep of the risk catalog, survey and tmp research returned zero hits)
+- Keystroke-to-echo plus the full measurement list (L250). This answers the owner's L254 speed question and feeds U3's open bounds.
+- Tailscale direct vs DERP verification (L240).
+- Snapshot on activation for hidden terminals (L238). Under U15, facts come from Host-side derivation, not from streaming to viewers.
+- The temporary-attach fallback (L214). It is not passive: Init claims a vacant leadership and resizes VT/PTY (risk catalog L76).
+- iOS suspension and App Group (L57, L124). These are now in scope because S13 names iOS.
+- The owner's own research moved from JSON-RPC to tarpc+MessagePack. No doc records that the recommendation changed.
+- Idempotency keys (memo 02 L140). They need a deliberate pairing with any no-automatic-retry posture.
+- The concrete 40-column phone resize case.
+
+OVERSTATED
+- The DM/README line "cross-device clients need network sockets, not UDS" is an inference:
+  - Under reading (ii), the iOS→Gateway hop is in-process: UniFFI, or a socketpair per memo 02 L103.
+  - "socket form client to gateway" does not say "network".
+- U12 ("using its socket interface") and U17 ("cross-device socket transports") presuppose reading (i). That wording is yours to weigh.
+
+══ 3. RECONCILIATION ══
+ACTIVE (owner text)
+- Rust standards: Codex Router is the Rust library example; Tokio, lint, no unsafe, its naming (22:14–22:16Z).
+- Mac/Linux interface contracts; agentstudio-git forking needs a Linux counterpart (22:17:05Z).
+- Daemon parity on Mac and Linux (22:49:47Z).
+- "Gateway rust only on Mac" (22:49:56Z).
+- Latest zmx allowed (22:59:20Z).
+- Detach and terminate are separate primitives; 15 minutes is only UX (23:18:45Z).
+- S11 "Sessions, agents, facts" (23:34:06Z).
+- S12 Multiple Macs, with the note "macs, iphones … any clients" (00:04:11Z).
+- S13: gateway→host only; socket from client to gateway; mcp/cli/ios/macos app → gateway → host (00:06:03–20Z).
+SUPERSEDED
+- "Direct to Host" (00:05:47Z).
+- Memo 02 L98's CLI "standalone direct mode", for frontends.
+NEITHER SUPERSEDED NOR ADOPTED
+- The iOS-embedded gateway (memo 01 L117, memo 02 L97). This is exactly the open question in §4a.
+ADVISORY, candidates only
+- Codecs and RPC stack: JSON-RPC vs tarpc+MessagePack vs quic-rpc vs tonic.
+- QUIC stream and datagram layout.
+- Memo 02's crate tree (owner naming comes from Codex Router conventions, not memo 02).
+- UniFFI, rmcp, Mosh/Iroh, transcript retention.
+OPEN OWNER ASKS NOT YET ANSWERED IN THE DOCS
+- L254 and 22:52:07Z: is the bus topology best, should the bus move to Rust, and what speed is needed.
+- Only the measurement list in memo 01 L250 addresses the speed part.
+
+══ 4. ADVICE ══
+4a. PHONE / GATEWAY TOPOLOGY (open)
+(i) One macOS Gateway service, which phones reach over the network.
+Evidence:
+- S6 came 49 seconds after memo 01's iOS-embedded proposal. It could be a rejection of that proposal, but 9 seconds earlier the owner wrote the Mac+Linux daemon parity line, so it may only contrast Mac with Linux.
+- The 22:14:39Z framing: Rust on Mac, with the CLI talking to the client daemon.
+- S13 lists ios → gateway over a "socket".
+(ii) Gateway is a role each client device runs: a daemon on the Mac and embedded on iPhone.
+Evidence:
+- At 00:05:47 the owner chose independence from the Mac and declined "Through Mac Gateway … depend on it being online".
+- The 00:06 correction objects to bypassing a Gateway; it does not restate a dependence on the Mac.
+- The S12 note answered a question about how many Gateways connect to one Host.
+- Memo 02 (23:11Z, after S6) embeds GatewayCore on iOS, and its socketpair option still satisfies "socket".
+- Your restatement that triggered "no wait" is not in the packet, so the target of the correction cannot be confirmed.
+Tradeoffs:
+- (i) gains:
+  - one Gateway deployment;
+  - the Host sees only Mac peers;
+  - device auth concentrates on the Mac.
+- (i) costs:
+  - phones are dead while the Mac is offline or asleep;
+  - the Mac Gateway becomes a network server that needs device pairing;
+  - an extra phone→Mac→Host RTT, which dominates per L231.
+- (ii) gains:
+  - phones do not depend on the Mac;
+  - Gateway code is shared across devices.
+- (ii) costs:
+  - Gateway code must build for iOS and survive suspension (L124);
+  - the Host faces N intermittent mobile Gateways, so the 40-column leadership fight becomes routine (zmx :904–908);
+  - Host-facing auth is per device;
+  - it tensions with "only on Mac" unless that means only the service process.
+Either way, U16's controller-ownership policy is required.
+
+4b. INGRESS TENSION BETWEEN U15 AND S13 (real, and limited to agent-originated CLI)
+Facts:
+- The S11 question text was itself "While Swift is closed or the Gateway is disconnected…". The owner picked "admit authorized agent inputs" for exactly that state.
+- Agents run inside Host sessions, on Linux or Mac.
+- Literal S13 with the link absent gives agent calls no path. With the link up, a Linux Host would hairpin Host→Mac Gateway→Host.
+Consistent outcomes, each scoping or revising one statement:
+- A. S13 governs frontends (the user's app, CLI, MCP and iOS). An agent call from inside a Host session is Host-local ingress, authorised by revocable session-scoped authority.
+  - Gains: S11 holds literally; no hairpin; works on Linux.
+  - Costs: a second Host ingress class; Host-side credential custody (Q4/Q8); the owner must accept that "cli" in S13 means the user's CLI.
+- B. S13 applies to every CLI caller, which narrows S11.
+  - Agents are admitted only while some Gateway link exists.
+  - Costs: this contradicts the disconnected condition in S11's own question text, and it hairpins on Linux.
+- C. A Gateway also runs wherever agents run.
+  - S11 and S13 both stay literal, but S6 is revised for Linux.
+  - Under (ii) the code is already portable, so C costs less to build, but it still revises S6.
+My advice is A, conditional on the owner explicitly accepting the scope. S11 was asked about this exact condition, while S13 corrected the routing of frontend surfaces. Neither statement settles agent ingress alone; requirements L98 already says so. I am not proposing any spool, bypass or refusal mechanism.
+
+4c. HIGHEST REMAINING OWNER DECISION
+Ask first: "Is the Gateway one macOS service that every device reaches, or a role each client device runs (a Mac daemon, embedded on iPhone)?"
+It decides:
+- the Gateway process model;
+- whether the Gateway is a network server;
+- the Host's peer count and auth model;
+- whether gateway code must target iOS;
+- every U17 per-hop transport contract.
+Ask ingress (A, B or C) next. It partly depends on 4a: C is unavailable under (i) without revising S6, while A works under both readings.
+If deferred, these wait: U17 transport/auth contracts, the scope of the leadership policy, and gateway placement in the crate DAG.
+
+LIMITS
+- No runtime, tests or benchmarks.
+- The zmx citations come from reading the source this commission.
+- I validated none of the memos' library or platform claims.
+- These are not exhaustive edge cases.
+- No schedule or wake created; your wake 01a14209 stands.
+
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

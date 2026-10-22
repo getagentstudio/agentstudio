@@ -1,0 +1,186 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Git experiment coverage — bounded source evidence</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="git-experiment-coverage-evidence-8df62670.html">AgentStudio daemon · Git experiment coverage — bounded source evidence</a></nav></ex-nav>
+<ex-document id="content"><h1>Git experiment coverage — bounded source evidence</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../research/evidence/2026-10-15-daemon-extraction-survey/git-experiment-coverage-evidence.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Git experiment coverage — bounded source evidence
+
+Status: **complete source comparison**, 2026-10-16. This document accounts for the existing 44 Git protocol requirements and F01–F13 against the written, unexecuted E1–E6 procedures. It does not author product requirements, test additions, a parity selection, or an execution plan. Counts describe this source catalog, not product acceptance or runtime coverage.
+
+AgentStudio baseline is `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`; the inspected sibling Git checkout is clean at the exact consumer pin `4cca397dfc869857064da4e9ec8289ea46adc479`. Existing modified images and untracked daemon documents belong to the outer task. Only this evidence file was written. No build, test, probe, native app, VM, Fly, credential, runtime, network-service, board, helper, or Advisor operation was performed.
+
+**Platform axis:** all 44 known current SDK-reference realizations in this comparison are macOS reference paths. The manifest supplies an [XCFramework-backed local target](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Package.swift#L17), the remote process implementation [imports Darwin](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/PosixGitProcess.swift#L1), and native promotion [imports CLibGit2Local](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/LibGit2StagedFetchPromoter.swift#L1). This is evidence about the inspected realization, not a claim of impossibility derived solely from `Package.platforms`, nor a global claim about other OSS/Linux implementations. Shared behavioral wording could apply to a future Linux candidate, but these procedures qualify no concrete 44-operation Linux integration harness/realization. E4's proposed Linux leaf stimuli are a separate platform/API discriminator.
+
+## Governing meaning and comparison rule
+
+[Requirements U4–U6 and U11](../../user-requirements.html) require the full survey, Linux fork counterpart, explicit platform contracts and Host macOS/Linux parity. [Requirement boundary](../../user-requirements.html) still leaves per-capability allocation and acceptance meaning open. [Owner-source README](../../research/owner-inputs/README.html) fixes client → socket → Gateway → Host, macOS/Linux Host, macOS Gateway and advisory status of research mechanisms. The [295-line survey](../../research/extraction-survey.html) is observational input; its catalog is not an experiment result.
+
+The [primary map](../../experiments/primary-experiments.html) explicitly says no experiment has executed. Its E2 source desk catalog mentions all 44 operations, but the [A0–A14 procedure](../../designs/07-agents-context/experiments/host-autonomy.html) expressly says its small case set does not replace operation-specific feature coverage. The [Linux procedure](../../designs/06-worktree-fork/experiments/linux-feasibility.html) is a leaf/API discriminator, with full fork parity deferred. [E5](../../designs/11-operations-integration/experiments/route-performance.html) distinguishes cost from feature parity.
+
+Classification is the strongest written relationship found for a row:
+
+- **Named stimulus:** an operation-distinguishing action is explicitly named, even if its Swift identifier is not written. This does not imply complete variants or an implemented harness.
+- **Generic class:** a named workload/failure class is analogous, or the primary map names later expansion, but no operation-specific population, variant and oracle are bound.
+- **Prerequisite only:** a fixture needs related identity/ref/validation/staging evidence before another assay. The relationship is an inference from the procedure and catalog, not an instruction to call that SDK method; raw fixture observations could supply it instead.
+- **Absent:** no distinguishing case or applicable named workload class was found beyond the blanket 44-row catalog, general E2 rules, or generic “Git” wording. This means absent from these procedure texts, not absent from existing code/tests or future scope.
+
+For conservative accounting, the generic A6 loss-at-four-boundaries rule is not credited to every API automatically. Nor does the word “clone” in the Linux filesystem probe mean remote Git `clone`. Independent local-ref observation does not mean network `remoteReferences`. A leaf FICLONE/metadata probe does not mean a `forkWorktree` invocation.
+
+## Protocol identity check and operation matrix — 44/44
+
+Direct extraction from [local/remote protocols](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/AgentStudioGitSDK.swift#L3) and [discovery protocol](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/GitDiscoveryReadContracts.swift#L23) yielded 33 + 10 + 1 distinct names. Equality against the existing [E2 Git catalog](e2-git-operation-evidence.md:34) yielded empty differences in both directions. Convenience overloads/default implementations are not additional requirements. Existing production-use tags below come from that catalog: **P** production-called, **S** SDK-only; they were not re-surveyed in this bounded task.
+
+Result under the rule above: **3 named-stimulus, 14 generic-class, 6 prerequisite-only, 21 absent** rows. These disjoint labels are platform-independent document-specificity counts, **never Linux coverage scores**. The known current SDK realization/reference axis for every row is macOS; future Linux operation integration is unbound. Every row has **zero executed evidence** here.
+
+| Existing row | Operation | Use | Procedure relationship | Exact anchor and observed limit |
+| --- | --- | --- | --- | --- |
+| L01 | `repositoryIdentity` | P | Prerequisite only | [A witness](../../designs/07-agents-context/experiments/host-autonomy.html) and [Linux environment receipt](../../designs/06-worktree-fork/experiments/linux-feasibility.html) need identity evidence; neither selects the SDK path-derived repository-ID read or its missing/inaccessible cases. |
+| L02 | `worktrees` | P | Absent | [A11](../../designs/07-agents-context/experiments/host-autonomy.html) observes refs/private namespace, not main/linked worktree listing, head/lock snapshots or unreadable registration. A list-shaped post-state is not specified. |
+| L03 | `validateWorktree` | P | Prerequisite only | A11's owned repository and [run qualification](../../designs/07-agents-context/experiments/host-autonomy.html) require valid setup; no invalid registration/missing-worktree result assay or SDK validation call is named. |
+| L04 | `createWorktree` | P | Generic class | [E4 expansion](../../experiments/primary-experiments.html) names Git administration/index/CAS and A6 names effect loss. Ordinary detached-checkout/attach/upstream/LFS creation and its distinct rollback limits are not bound to a case; fork is not its substitute. |
+| L05 | `forkWorktree` | P | Named stimulus | **A11: macOS realization/reference; future Linux integration unbound.** [A11](../../designs/07-agents-context/experiments/host-autonomy.html) explicitly includes joined fork cancellation. [E4](../../experiments/primary-experiments.html) names later F01–F13 expansion; [C10](../../designs/06-worktree-fork/experiments/linux-feasibility.html) is proposed Linux leaf cleanup, explicitly not full Linux fork cancellation. Materialization variants, every transaction phase and full receipts are not thereby covered. |
+| L06 | `forkWorktreeEligibility` | P | Generic class | [C1/C3](../../designs/06-worktree-fork/experiments/linux-feasibility.html) characterize clone success/refusal and [E4](../../experiments/primary-experiments.html) names platform profiles. No SDK read-only eligibility operation, nonreservation property or stale eligibility→mutation scenario is bound. |
+| L07 | `pruneStaleWorktree` | S | Absent | No stale-administration prune stimulus. Leaf unlink/cleanup and policy-level prune are different operations; neither supplies this API's prunability result. |
+| L08 | `removeWorktree` | P | Generic class | [A6/A11](../../designs/07-agents-context/experiments/host-autonomy.html) provide general partial-effect/cleanup analogy and [E4](../../experiments/primary-experiments.html) names partial effects. No removal request or separate administration/directory disposition population is specified. |
+| L09 | `lockWorktree` | S | Absent | Ref-lock/CAS wording in [E4](../../experiments/primary-experiments.html) is not Git worktree lock-marker/reason mutation followed by snapshot reread. |
+| L10 | `unlockWorktree` | S | Absent | No worktree unlock stimulus, post-unlock reread failure or prior lock-state scenario. |
+| L11 | `statusObservationPlan` | P | Generic class | [E4](../../experiments/primary-experiments.html) names filesystem-observation continuity/overflow; [E3](../../experiments/primary-experiments.html) names currentness. No SDK scope/config/attribute-plan result, support refusal or identity distinction is bound. |
+| L12 | `statusFacts` | P | Generic class | [E5 workload](../../experiments/primary-experiments.html) names bounded Git/review work and [E4](../../experiments/primary-experiments.html) continuity. No literal-nil versus empty pathspec, untracked/submodule options or clean-baseline assay is bound. |
+| L13 | `exactLineCountDetail` | P | Absent | No independently timestamped full-worktree line-detail stimulus, explicit submodule choice, or separation from scoped facts. Generic Git load does not name this read. |
+| L14 | `completeStatus` | P | Generic class | [E5 workload](../../experiments/primary-experiments.html) can exercise a Git result class, but no sequential facts/line-detail aggregate or mutation-between-subreads case is selected. |
+| L15 | `trackedPaths` | P | Absent | [E4](../../experiments/primary-experiments.html) index adoption is an internal fork operation, not stage-zero tracked-path query/scoping/raw-count behavior. |
+| L16 | `isPathIgnored` | S | Absent | No one-path ignore-query input/result or ignore-rule-change stimulus. Ignored-copy inclusion in the deferred fork list is not this query. |
+| L17 | `ignoredPaths` | S | Absent | No batch-ignore ordered input/result or all-error-versus-partial-array case. |
+| L18 | `branches` | P | Prerequisite only | [A11](../../designs/07-agents-context/experiments/host-autonomy.html) needs independently known refs for an owned repository. No local branch/current/upstream catalog assay is named and its snapshot carries different evidence from exact ref OIDs. |
+| L19 | `remoteNames` | P | Absent | No configured remote-name catalog or name-splitting case. A staged namespace is not configured remote inventory. |
+| L20 | `branchUse` | P | Generic class | [E4 expansion](../../experiments/primary-experiments.html) names ref locks/CAS and [F11](edge-cases.md:37) names branch use. No HEAD/rebase/bisect holding or unreadable-administration query population is bound in the procedures. |
+| L21 | `aheadBehind` | P | Absent | No pinned graph same/ahead/behind/diverged count population. General ref readback does not supply it. |
+| L22 | `assessBranchIntegration` | P | Absent | No same-commit/ancestor/content/empty-delta/squash/remaining/unknown/history-limit assay. Ref CAS is not integration assessment. |
+| L23 | `deleteLocalBranch` | P | Generic class | [E4](../../experiments/primary-experiments.html) ref-lock/CAS and [A11](../../designs/07-agents-context/experiments/host-autonomy.html) partial-ref effects are analogous; no locked expected-tip deletion, checkout protection, absent-name reservation, config/reflog cleanup or uncertain result case is bound. |
+| L24 | `resolveReviewDefaultTarget` | P | Absent | [E5 retained-seed arm](../../experiments/primary-experiments.html) does not select default-target resolution or absence/fallback behavior. |
+| L25 | `captureReviewComparisonTargets` | P | Absent | No capture/cutoff/maximum-row/truncated catalog population. A generic bounded response is not the target-capture operation. |
+| L26 | `resolveRevision` | P | Prerequisite only | [A11](../../designs/07-agents-context/experiments/host-autonomy.html) requires expected/current ref evidence and [E5 run freeze](../../designs/11-operations-integration/experiments/route-performance.html) fixes payload/oracle identity. Neither names revision-resolution target variants, failure, or a selected SDK observer. |
+| L27 | `readTree` | P | Absent | No commit tree/subtree, mode/OID or missing best-effort size assay. “Review/file-content” does not choose a tree API. |
+| L28 | `diff` | P | Generic class | [E5 workload](../../experiments/primary-experiments.html) names review work; no supported/unsupported base/compare pair, rename/binary/mode/hash population is bound. |
+| L29 | `countCommitRange` | P | Absent | No exact/at-least/unrelated/traversal-limit graph count case. |
+| L30 | `summarizeDiffImpact` | P | Absent | No bounded/conservative impact or file/line/blob budget population. |
+| L31 | `contributionDiff` | P | Generic class | [E5](../../experiments/primary-experiments.html) explicitly retains seed versus full-recomputation as a scoped sub-arm; it does not distinguish contribution-base semantics, bind a seed identity/fallback corpus or an actual route realization. |
+| L32 | `directReviewComparison` | P | Generic class | Same [E5 sub-arm](../../experiments/primary-experiments.html); direct selected-target meaning is not separately selected. [Local seed contract](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/GitReviewComparisonContracts.swift#L57) is not a serialized request shape. |
+| L33 | `content` | P | Generic class | [E5](../../experiments/primary-experiments.html) names file-content work and [P5](../../designs/11-operations-integration/experiments/route-performance.html) decoded-byte comparison; no commit/index/contained-working-tree target, size cap, binary/hash or changing-file population is bound. |
+| R01 | `clone` | S | Absent | [C1](../../designs/06-worktree-fork/experiments/linux-feasibility.html) is filesystem data cloning, not remote Git clone. [Linux scope](../../designs/06-worktree-fork/experiments/linux-feasibility.html) explicitly uses no external Git remote; no partial destination/checkout/auth clone case is named elsewhere. |
+| R02 | `fetch` | P | Generic class | [A11](../../designs/07-agents-context/experiments/host-autonomy.html) concerns staged refs, not ordinary whole/branch-targeted fetch, FETCH_HEAD, post-fetch resolution or residue observation. General process/effect loss is only analogy. |
+| R03 | `captureRemoteTrackingSnapshot` | P | Prerequisite only | A11's staged promotion needs captured/staged provenance in its fixture; no sequential configured/effective-URL/common-dir/tracking-ref capture assay or actual SDK setup invocation is bound. |
+| R04 | `stageFetch` | P | Prerequisite only | A11 needs a stage to promote/clean; it does not specify failing network stage/object/private-ref fetch or promotion-guard creation as the assay. Setup is not stage-effect coverage. |
+| R05 | `promoteStagedFetch` | P | Named stimulus | **A11: macOS realization/reference; future Linux integration unbound.** [A11](../../designs/07-agents-context/experiments/host-autonomy.html) explicitly fails staged-ref promotion and observes expected refs/private namespace. [Native promoter](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/LibGit2StagedFetchPromoter.swift#L65) confirms commit failure is indeterminate; no complete lock/expected-old/absence/conflicting-stage population is bound. |
+| R06 | `cleanupStagedFetch` | P | Named stimulus | **A11: macOS realization/reference; future Linux integration unbound.** [A11](../../designs/07-agents-context/experiments/host-autonomy.html) explicitly fails a later cleanup page and observes the exact private namespace. [Cleanup implementation](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/SystemGitRemoteClient+StagedFetchCleanup.swift#L5) confirms pagewise effects. This is a class identification, not a chosen injected page/harness or exhaustive namespace corpus. |
+| R07 | `cleanupAbandonedStagedFetches` | P | Generic class | A11's later-page failure also applies by analogy to this [separate sweep](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/SystemGitRemoteClient+StagedFetchCleanup.swift#L31), but the procedure does not name retained active IDs, malformed/unrecognized refs or cross-namespace sweep cases. |
+| R08 | `push` | S | Absent | No remote server ref/hook mutation or lost push reply stimulus; generic transport loss is not a selected Git push case. |
+| R09 | `remoteReferences` | S | Absent | No network ls-remote/symref/peeled-ref parsing or remote unavailability observation; A11 inspects local canonical/private refs. |
+| R10 | `probeRemoteBranch` | P | Absent | No present/absent/unreachable/timeout configured-remote branch probe population. |
+| D01 | `readDiscoveryCandidate` | P | Absent | No exact-candidate NO_SEARCH/bare/invalid-registration/failure population. Linux path containment and file identity do not exercise repository discovery. |
+
+E1 is terminal restoration, E3 is coordination/fanout and E6 is phone lifecycle. Their common currentness/cancellation/native/transport disciplines can constrain a later Git arm, but the primary texts at [E1](../../experiments/primary-experiments.html), [E3](../../experiments/primary-experiments.html) and [E6](../../experiments/primary-experiments.html) do not select additional Git operations. E2 A13's typed wire gate does not identify which of these 44 methods is transported. E5 P1 expressly says a fixture echo is not a real Git result, but likewise does not select a concrete Git operation.
+
+## Fork/platform matrix — F01–F13
+
+This uses the existing [edge-case IDs and meanings](edge-cases.md:37), not the differently grouped thirteen-item summary from an earlier handback. **8 rows have explicit but partial concrete stimuli; 5 have generic/deferred expansion only.** These are partial, platform-qualified source relationships, not Linux integration coverage scores. Current SDK fork semantics supply the macOS reference; C0–C10 describe proposed Linux leaf probes. All 13 are named by the broad E4 expansion; none is established by an executed result or fully discharged by the leaf procedure. “Deferred” records the written source boundary, not a recommendation to defer a product feature.
+
+| Existing row | Current case | Relationship to actual written procedure | Remaining source-specific limit |
+| --- | --- | --- | --- |
+| F01 | Unsupported filesystem/device/managed location | Named stimulus, partial: [C1–C3](../../designs/06-worktree-fork/experiments/linux-feasibility.html), [profiles P0–P3](../../designs/06-worktree-fork/experiments/linux-feasibility.html) distinguish supporting/refusing/cross-mount/bad-FD/permission cases. | Managed/File-Provider analogue and full fork eligibility/result API are not a case. Profile refusal is not Linux-wide unsupported policy. |
+| F02 | Symlink/ancestor replacement escape | Named stimulus, partial: [C4/C6](../../designs/06-worktree-fork/experiments/linux-feasibility.html) exercise constrained lookup, bind-mount alternative and post-open moved directory. | C6 characterizes limits; it cannot pass a continuous-ancestry promise not selected. Full fork traversal/copy/cleanup integration remains outside the leaf assay. |
+| F03 | Source changes before clone/index adoption | Named stimulus, partial: [C5](../../designs/06-worktree-fork/experiments/linux-feasibility.html) replaces leaf/kind between planning/open; [C0](../../designs/06-worktree-fork/experiments/linux-feasibility.html) qualifies identity observations. | No explicit source-write-during-clone or resulting Git index-adoption case. One-file clone consistency is not multi-file snapshot proof. |
+| F04 | ACL/xattr/mode/time/flag preservation | Named stimulus, partial: [C7/C8](../../designs/06-worktree-fork/experiments/linux-feasibility.html) and [ACL arms](../../designs/06-worktree-fork/experiments/linux-feasibility.html) characterize raw clone metadata, setters, malformed ACL and ACL/chmod order with independent permission observation. | Darwin-to-Linux ACL mapping and product normalization/failure policy remain explicitly outside the Linux-only candidate; some namespaces/flags can remain unobservable. |
+| F05 | Symlink text/inode metadata differs | Named stimulus, partial: [C9](../../designs/06-worktree-fork/experiments/linux-feasibility.html) and [metadata API arms](../../designs/06-worktree-fork/experiments/linux-feasibility.html) name no-follow read/stat/time/owner and target protection. | Linux fixed modes and held-parent/name replacement window are characterized, not silently normalized into full Mac equivalence. |
+| F06 | Hardlinks/protection/rewrite interference | Named stimulus, partial: [C0/C9](../../designs/06-worktree-fork/experiments/linux-feasibility.html) include alias calibration and destination-internal hardlink groups separate from source. | Protected flags, ACL-protected replacement, hardlinked administrative pointer rewrite/refusal are not concrete leaf cases. |
+| F07 | FIFO/socket/device/dataless node | Named stimulus, partial: [corpus](../../designs/06-worktree-fork/experiments/linux-feasibility.html) and [C9](../../designs/06-worktree-fork/experiments/linux-feasibility.html) include FIFO creation/metadata and relative symlink. | Corpus explicitly excludes device/dataless content and has no socket skip/refusal assay. Those omissions are not authority to weaken fork parity. |
+| F08 | Non-UTF-8 name | Generic/deferred: [E4 expansion](../../experiments/primary-experiments.html) names admitted name behavior; [later full fork list](../../designs/06-worktree-fork/experiments/linux-feasibility.html) explicitly retains non-UTF-8. | No invalid-byte filename corpus, wire encoding/refusal or receiving-filesystem collision case. |
+| F09 | Nested repository/submodule/alternates/config closure | Generic/deferred: [E4](../../experiments/primary-experiments.html) names nested Git administration and [later list](../../designs/06-worktree-fork/experiments/linux-feasibility.html) retains topology. | First Linux probe is synthetic files only; no Git administration or pointer-closure case/oracle. |
+| F10 | Sparse index/ignored inclusion/LFS/rewritten metadata | Generic/deferred: [E4](../../experiments/primary-experiments.html) names index adoption/LFS; [later list](../../designs/06-worktree-fork/experiments/linux-feasibility.html) retains ignored/LFS/index behavior. | Sparse file in C1 is not a Git sparse index. No materialization-variant, ignored selection, local LFS-store fill or rewrite receipt assay. |
+| F11 | Branch use/movement before attach/rollback | Generic/deferred: [E4](../../experiments/primary-experiments.html) says ref locks/CAS and [later list](../../designs/06-worktree-fork/experiments/linux-feasibility.html) keeps branch locks. | A11's staged-ref promotion is a different transaction. No fork attach branch-use/expected-tip race or conditional branch undo stimulus. |
+| F12 | Cancellation/failure with blocking work/cleanup live | Named stimulus, partial, separate platforms: [A11](../../designs/07-agents-context/experiments/host-autonomy.html) credits joined fork cancellation to the **macOS realization/reference only; future Linux integration unbound**. [C10](../../designs/06-worktree-fork/experiments/linux-feasibility.html) credits only **proposed Linux leaf cleanup**, with controlled failure and before/after-check replacement. | Neither relationship establishes full Linux fork cancellation. C10 says not full fork/crash recovery. The macOS-reference [journal](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift#L24) is in-memory with identity-owned compensation, not restart preservation. No full Linux phase/worker residue population or qualified integrated fork realization is bound. |
+| F13 | Native error/residue across platform/protocol | Generic/deferred: [E4 oracle](../../experiments/primary-experiments.html) names accurate typed residue/partial effects; C3 captures errno; A13 names generic wire validation. | No named Git error DTO crossing a real route, native-platform tag population, or combined fork error/ordered-residue oracle is bound. Errno readback alone is not protocol parity. |
+
+## Remaining app-policy and interface evidence
+
+- **Native/CLI create:** [survey:145](../../research/extraction-survey.html) records distinct plain/default/selected/native-copy-all and config-selected CLI fork paths plus publication hold/rescan. E2 A11 chooses fork cancellation; neither native publication reconciliation nor CLI branch/start/network/config/changes-only/no-fork behavior has a distinguishing case in these procedures. This is an observed procedure omission, not an extraction or test decision.
+- **Evidence-aware remove/list/prune:** [survey:143](../../research/extraction-survey.html) and [catalog findings:94–100](e2-git-operation-evidence.md:92) distinguish fetching reads/previews, archive, working-change discard, tmp policy, branch retirement, per-artifact results, lock accounting and unknown activity. C10 leaf unlink and A11 staged-ref cleanup are not evidence archival or policy removal. No archive byte/link verification, partial archive, current/main refusal, target aggregation, preview fetch or prune eligibility stimulus was found.
+- **Process/auth:** [Git catalog custody:20–32](e2-git-operation-evidence.md:20) records native read/writer/fork/process/promotion differences. E2 A6/A13 and E5 P1/P9 supply generic loss/cancellation/auth/codec probes, not system-Git SSH/HTTPS credential-helper, environment scrub, prompt policy, bounded output/descendant custody or actual remote auth cases. Fly authentication/control prerequisites at [Linux:35–58](../../designs/06-worktree-fork/experiments/linux-feasibility.html) concern the experiment operator, not product Git authentication.
+- **Opaque review seed:** [source:57–92](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/GitReviewComparisonContracts.swift#L57) directly confirms local-only nonserializable seed and complete/proportional/fallback meanings. [Primary E5:115](../../experiments/primary-experiments.html) explicitly proposes retained seed versus full recomputation as a scoped sub-arm, but no method-specific route/lifetime/seed-identity/fallback population is bound. This is a concrete named cost concept with unbound operation realization, not absence of the concept.
+- **E1/E3/E6 and generic wire gates:** they can supply prerequisite observations or class-level disciplines without covering all Git APIs. No published number of cataloged methods supplies their actual stimulus, effect oracle, failure injection or platform result. The documents themselves preserve this proof limit.
+
+## Source coverage, queries and limits
+
+Read inputs: Requirements 108 lines; owner-source README 39; main survey 295; primary experiments 153; autonomy 99; Linux probe 158; route-cost procedure 106; existing Git desk evidence 200; edge cases 59. These are mutable outer-task documents read on this wake, not frozen accepted specifications. Historical memo bodies, other E1/E3/E6 leaf documents and other evidence files linked inside these inputs were not recursively re-researched: this assignment selects the primary family map plus E2/E4/E5 procedures. No claim here depends on their unsearched implementation/runtime content.
+
+The initial comparison read **six decisive package source units**: `AgentStudioGitSDK.swift`, `GitDiscoveryReadContracts.swift`, `GitReviewComparisonContracts.swift`, `WorktreeForkRollbackJournal.swift`, `LibGit2StagedFetchPromoter.swift`, and `SystemGitRemoteClient+StagedFetchCleanup.swift`. They establish exact API-set identity, opaque-seed boundary, absence of persisted fork recovery, indeterminate promotion and distinct targeted-versus-abandoned cleanup semantics. The bounded platform-axis correction additionally read `Package.swift:1–86` and `PosixGitProcess.swift:1–43`: **eight units total**. Those anchors establish the current artifact/target and Darwin process coupling; no compilation or claim that `Package.platforms` alone prohibits Linux follows. Other product behavior is explicitly attributed to the existing survey/desk evidence, not presented as freshly re-audited backend proof. No new OSS/API question required a network route.
+
+Queries performed:
+
+1. `git status --short`; `git -C /Users/shravansunder/code/projects/agentstudio-git rev-parse HEAD`; `git -C /Users/shravansunder/code/projects/agentstudio-git status --short` — exact package pin/clean state verified; outer task dirty state preserved.
+2. `rg --files docs tmp/practices-research/2026-10-15-daemon-extraction-survey | rg 'daemon|e2-git|edge-cases|requirements|Requirements'` — located the assigned inputs; no alternate document was substituted.
+3. `wc -l` on the nine inputs above — counts recorded; direct numbered reads/chunks supplied the source anchors.
+4. `rg -n 'Git|git|fork|clone|ref|seed|ACL|F0|F1|metadata|LFS|prun|worktree|auth'` on primary/autonomy/Linux/cost — found A11, broad E4/F expansion and E5 seed/workload text; matched words were inspected in context, not treated as API coverage.
+5. Read-only Python extraction: `re.findall(r'^    func (\w+)', ...)` within each protocol block; catalog rows `r'^\| ((?:L|R|D)\d\d) \| \[([^]]+)\]'` — **44 unique names = 44 catalog rows**, `protocol minus catalog = []`, `catalog minus protocol = []`.
+6. Exact identifier query `re.search(r'\b' + operation_name + r'\b', procedure_text)` for all 44 names against the four procedures — no operation identifier in autonomy; primary only `content`/`clone`, Linux only `content`/`clone`/`fetch`, cost only `content`. Those common words are ordinary prose/filesystem/build references, not literal bindings to SDK invocations. Named-stimulus classifications above therefore use the inspected semantic A11 wording rather than fabricated exact-name matches.
+
+Null results above mean searched text, not proof that no future harness could exercise a feature. Existing package tests in the desk report are source scenarios, not runs, and were not reopened beyond the six-unit bound. No new normative IDs, test cases, supported-filesystem policy, API/path contract, recovery mechanism, unsafe waiver, crate/backend choice or feature scope is authored.
+
+Completion receipt: **complete**, 44/44 operation rows and 13/13 existing fork rows mapped; meaningful proof boundary is written-procedure specificity only. All experiment/runtime/parity evidence remains unexecuted. Lead independently checks decisive anchors and owns coverage synthesis and any next requirements/design decision.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

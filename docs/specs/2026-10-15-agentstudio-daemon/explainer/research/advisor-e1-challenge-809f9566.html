@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · advisor e1 challenge</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-e1-challenge-809f9566.html">AgentStudio daemon · advisor e1 challenge</a></nav></ex-nav>
+<ex-document id="content"><h1>advisor e1 challenge</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-e1-challenge.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+🦉 Advisor E1 challenge, re 01a142d0. This is advice; nothing was run.
+
+READ IN FULL: the terminal-restoration-experiment (89 lines), e1-backend-cut-evidence (75), e1-oracle-observation-evidence (31). The Requirements are unchanged since my full read (mtime 20:25). E5's final observer and baseline decisions are as I accepted them at 03:26Z.
+SOURCES OPENED (vendored zmx V):
+- loop.zig:136-160 (attach client Output handling)
+- loop.zig:239-240, 354 and 471 (vt_stream use)
+- loop.zig:1228-1250 (handleOutput)
+- util.zig:769-812 (start of serializeTerminalState)
+Candidate C's Capture path is not re-opened by me; I accept your reading.
+
+ANSWERS TO YOUR FOCUS QUESTIONS
+- L1 vs L2: sound. Injected Output uses the SAME persistent parser as PTY reads: the dispatcher passes &vt_stream (:471) and handleOutput calls vt_stream.nextSlice (:1235). So L1 known-prefix cuts exercise the real backend parser residue. What it cannot cover (no OSC133 rewrite, SIGWINCH, the has_pty_output flag) is already declared.
+- Standalone/native: no conflation found. R11 and R12 are scoped correctly.
+- Two material gaps follow.
+
+F1. Consumer-side parser residue and duplicated scrollback at the Init restore boundary. The procedure covers backend residue (U5) but not consumer residue, so this false pass is uncovered.
+- Pre-Init live Output reaches the consumer BEFORE the restore (ordering 1 and 3), and the real attach client writes every Output payload straight to stdout (loop.zig:154-157).
+- serializeTerminalState begins with color overrides (writeColorOverrides, util.zig:784), then Phase 1 scrollback as styled VT text. There is no leading parser reset; the only clear is Phase 2's visible-screen clear (:797-806).
+- If the last pre-Init chunk ends mid-escape or mid-UTF-8 (PTY reads are arbitrary chunks), the consumer's dangling sequence swallows the restore's FIRST bytes: an override OSC or the start of the scrollback.
+- Separately, pre-Init lines that scrolled into the consumer's scrollback are emitted AGAIN by Phase 1, so they appear twice.
+- Phase 2's clear repairs the visible screen. A visible-screen-plus-suffix checkpoint therefore passes while scrollback and dynamic colours are wrong.
+- The procedure keeps the history prelude separate from the every-cut short corpora (line 40), so this combination is never exercised.
+- Add an R6 sub-case: a history-bearing session plus a colour override, and a pre-Init live chunk ending mid-sequence. Score scrollback rows, their count and order, and dynamic colours, as well as the visible screen and suffix.
+- PROOF LIMIT: the swallow and duplication are predicted from source; whether Ghostty's parser absorbs those exact leading bytes depends on the dangling state, which the case itself measures.
+
+F2. R2's "record whether restore bytes were actually delivered" has no separable observer at L2.
+- The restore is queued as ordinary Output with no boundary marker (U2). Under the silent-fixture profile it can be bracketed: only the restore lies between the attachment's Init handling and its same-connection Info reply, because no other mutation source exists.
+- At L2, with a live producer, PTY Output can interleave whenever Init and Info span iterations, and coalesced writes are not guaranteed to land in one read (your line 56). So restore bytes cannot be separated from live Output.
+- Scope R2's delivery verdict to the silent L1 bracket, and mark it inconclusive at L2 unless a separately qualified distinguishing observation exists. Don't infer the restore from content patterns, which would be circular.
+
+No hidden policy found. The normalization, caps and Capture-coverage declarations are scoped correctly.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

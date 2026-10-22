@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Lead disposition of the independent storage comparison</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="data-lead-advisor-disposition-8822e566.html">AgentStudio daemon · Lead disposition of the independent storage comparison</a></nav></ex-nav>
+<ex-document id="content"><h1>Lead disposition of the independent storage comparison</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/data-lead-advisor-disposition.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Lead disposition of the independent storage comparison
+
+Source baseline: AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`.
+Design/research only. No private databases, product changes, migrations, builds, tests or runtime probes.
+
+## Independent inputs and coverage
+
+- Lead baseline MD: `data-lead-comparison-baseline.md`, SHA256 `714daf0be10c7cd92bacb6b13d29b79dbe6c0318fbd60fcd989d021a0f724a61`.
+- Lead baseline JSON: `data-lead-comparison-baseline.json`, SHA256 `dcd660f5a088080468f39c0f024be44212621e86ecd875d34a766f8d66587290`.
+- Advisor picture: `../2026-10-16-advisor-storage-placement/advisor-storage-placement.md`, SHA256 `04ac17565354a96157cfc1ebbf238bb39dd7fbe5f01b04b6ad660cc4274bc563`.
+- Advisor comparison: `../2026-10-16-advisor-storage-placement/advisor-vs-lead-comparison.md`.
+- Advisor handback: push `01a14527-3557-7551-8ac6-856f80b0f725`, read whole; later phone/Gateway challenge push `01a1452b-891d-7a63-b4aa-5badd4c541c8`, read whole.
+
+Both pictures were written before their authors read the other's. The Advisor reports its picture hash at 14:37:33Z before opening the Lead baseline; the Lead saved and sent its hashes before opening any Advisor storage conclusions. All three immutable inputs remain unchanged. The live WIP and JSON are allowed to evolve with clearly labelled proposals.
+
+Supplement: the Advisor's R2 reducer became available after the initial comparison. Its registration/transaction summary and selected tail rows were inspected, not its whole table. No whole-reducer acceptance is claimed. Two additional storage leads were independently checked in primary code and added to the live catalog: persistent WebKit website data (`WebviewPaneController.swift:35`) and checkpoint methods with no call sites found under Sources (`SurfaceManager.swift:664,681`; bounded rg). Neither changes the 86-table count. A mistaken Git source path was corrected by exact filename discovery to `Sources/AgentStudioGitLocal/Runtime/GitRepositoryIdentityResolver.swift:38`, which was reopened; no source absence was inferred from the failed path.
+
+The Lead read both Advisor artifacts whole and checked the decisive current-source claims below. R1 prior-art is discovery/history support; its external-system conclusions are not independently accepted here. The Advisor's Sol reducer was pending at initial handback. This disposition does not treat a reducer count as proof or an Advisor agreement as owner authority.
+
+Closest verification scenario: **the review finding that was wrong**. Reopen the anchor and separate the surviving fact from a proposed remedy. Also **Ready on structural checks**: schema/table coverage does not prove a distributed topology, recovery, performance or a working migration.
+
+## Comparison and Lead judgment
+
+| Item | Judgment | Decisive evidence / limit |
+| --- | --- | --- |
+| Counts | Agree: 86 logical application tables / 597 named columns. Advisor's original 29-Core count double-counted unavailable_worktree; its comparison corrects to 28 | Lead source catalog: Core28/137 + Local53/437 + CLI3/15 + search2/8. Historical/dynamic/engine bookkeeping counted separately. No installed DB inspection |
+| Host metadata storage | SQLite is a strong proposal for retained workflow state; not logically mandatory from no-client continuity alone | Current SQL keeps scope/binding predicates and dependent writes coherent. U15 does not select crash/reboot persistence. Plain files could implement an equivalent journal/transaction mechanism at additional design cost; saying they cannot ever do so is too strong |
+| Host vs Gateway truth | Converged proposal: machine work/workflow authority at Host; Gateway replicas cannot authorize it | Required work continues with all Gateways absent; multiple Gateways must not become independent writers of Host truth |
+| Δ1 client persistence | Open, split into native memory, portable composition, and mobility/sharing scope | `MainWindowController.swift:152–160,215–218` records native frame callbacks. `local_window_state` mixes frame/width and sidebar preferences in separate save lanes. No benchmark of socket overhead exists. A small saved preference change is not necessarily every native callback |
+| Δ1 phone countercase | Accept as a design risk, not evidence that seamless Gateway switching is already required | A Gateway-only durable layout copy produces per-(device,Gateway) layouts unless a transfer/sync contract exists. Multiple client support alone does not choose portability. One owner brief asks device-following vs per-Gateway vs shared arrangement |
+| Δ2 output attempts | Converged Host-workflow proposal; native effect stays at declared destination | `WorktreeAnnotationSQLiteRepository+Output.swift:362–430`: finalization inserts event, marks attempt succeeded and marks exact saved-revision message membership handled in one SQL write; `:769–792` contains membership predicate. Destination path must retain client/machine context and not be interpreted by the Host |
+| Δ3 CLI state | Converged: retain producer-side ordering/claim semantics; reevaluate queue mechanism | `CLIStore+State.swift:34–71`: pending claim commits before network and later acceptance checks same claim/epoch. It serves independent CLI processes. A daemon restart window survives the removal of Mac availability from Host-local inputs. Source behavior does not mandate the same target schema |
+| Δ4 Forge | Host-derived observation remains Lead default proposal | Git/backend-at-addressed-Host goal supports this. Advisor's assumption that every Host already has GitHub credentials is not verified; do not use it as a fact or silently forward credentials. Per-Host auth, duplicated fetches and provider-policy applicability remain open |
+| Δ5 dormant Inbox | Converged: cleanup candidate, no deletion selected | Openness to cleanup is not an explicit removal/data-loss decision. No feature resurrection or schema deletion |
+| A1 identity collision | Accept concrete collision evidence; no universal ID migration selected | Git SDK `GitRepositoryIdentityResolver.swift:38`: `common:<path>`. Host context is required across machines; Host-private IDs may remain local |
+| A2 install UUID + duplicate-claim refusal | Candidate mechanism only | Host identity/incarnation/restore/cloning/trust need a contract first. A claimed UUID alone authenticates nothing. No install-time persistence or refusal policy adopted |
+| A3 clock/volume portability | Accept machine-local validity; reject a blanket Host home for client deadlines | `WorkspaceCoreMigrations+RepositoryAbsence.swift:20–40`; `WorkspaceLocalMigrations.swift:169–193`; Undo columns. Host absence and filesystem cursor belong to Host. Client Undo clock belongs to whichever client/composition owner evaluates it. Never compare another machine's uptime directly |
+| A4 offline action refusal | Candidate policy, not a selected universal contract | Stale asks must not be admitted as current; generation/revision/settlement checks are necessary. Whether a specific intent can wait, is refused, or returns unknown is operation-specific and open. Do not add a generic Gateway command queue |
+| A5 no-trigger/enum rules | Current Rust SQLx rules inspected; historical no-trigger attribution retained as history | `rust-rules.md:80–102` requires migration files/checked private rows/domain validation and limits CHECKs with an existing-repo exception. The October brainstorm's no-trigger statement does not itself select a replacement for today's guard/pruning behavior. No automatic SQL redesign authorized |
+| Host log / per-Host revision / receipts | Candidate mechanisms, not a default bus architecture | Current latest-value events and bounded replay do not require every transition to be durable. Need explicit snapshot/currentness and loss contracts; commit-before-publication is a real seam. One global Host revision is not selected by agreement between agents |
+| Transaction fence | Preserve in Host domain proposal | `PaneContextService+OrderedWrites.swift:58–75` checks binding in same write; `PaneContextService+Messages.swift:26–43` checks ask binding and handles same-intent commit participation. A network preflight would weaken it |
+| Core/Local and publication | No inferred distributed atomic save | `WorkspaceSQLiteDatastoreActor.swift:147–272` writes Core then Local; native activity publication may precede later persistence. Current visible state does not imply successful durable save |
+
+## Recorded proposal changes
+
+Live WIP/catalog now leave portable client composition/navigation persistence open and propose keeping native window/chrome memory and editor preference with the native client. They preserve the full 86-table/597-column inventory and 35 expanded containers. Every proposal remains distinct from current-source facts and owner decisions. The original independent baselines remain frozen.
+
+The owner-facing question is layout mobility, not an invitation for the owner to choose a database library: when the phone changes Gateways, does its arrangement follow it, change with the Gateway, or synchronize across devices? Lead recommends device-owned arrangements. No answer or silent default is recorded. Physical placement must satisfy that selected behavior and is still downstream design.
+
+Ordinary Mac CLI local-target routing is a separate known N1 decision from the formal specification review, not part of storage placement. Its owner brief is sequenced after the live storage question; the four specification targets remain frozen/not-ready. All six runtime experiment families are unexecuted.
+
+## Remaining work and proof boundary
+
+- Receive the arrangement-scope answer; record only confirmed meaning, then complete physical owner/retention contracts.
+- Bring N1's ordinary Mac CLI route as one subsequent concrete owner brief; do not re-ask G5 or attached-machine target.
+- Define operation-specific retention, restart, corruption and native-effect outcomes before Program Design/schema selection.
+- Use the existing E1/E2/E3/E5/E6 proposal families for terminal continuation, multi-owner races, loss, aggregation/publication cost and phone mobility; no runtime pass is claimed by the source study.
+- Root remains unresolved. No new timed wake, implementation permission, release or design acceptance is inferred.
+
+## Reducer completion follow-up
+
+Advisor push `01a14542-044e-7ac0-968f-637fb8d360df` and its appended comparison addendum read. Lead independently compared every linked R2 Sources/BridgeWeb file with HEAD: **92/92 byte-identical**, zero mismatches; receipt `data-r2-source-identity-check.json`. This establishes source identity, not every semantic claim in the whole 125-row reducer, which has only been read in selected sections.
+
+Decisive new/corrected claims were reopened in source:
+
+- `InboxNotificationSQLiteRepository.swift:24–83` retains replace/append/coalesce and retention writes. `AppDelegate+InboxNotificationBoot.swift:8` states retirement; a Sources call-site search finds only the two boot method declarations. Thus the Advisor's original “no writers” claim is rejected; dormancy/data-preservation stance stays.
+- `StableKey.swift:4–10` canonicalizes the path and keeps eight SHA-256 bytes; `EntityRecency.swift:7–26` uses this key with entity kind for application recency. Host qualification remains necessary. Workspace pane recency is separate.
+- `WorkspaceCoreMigrations+PaneAssociation.swift:3–9` adds plain facet columns with paired-null CHECK. The existing catalog already says no final FK.
+- Final credential DDL has no PK, but a unique pane/record index (`WorkspaceLocalMigrations+IPCCredentials.swift:122–149`); catalog already correct.
+- Sessions cleanup 027 rebuilds evidence without source_occurred_at/permission_handling; no such references occur under Features/Sessions or App/Sessions. Do not generalize this to all Sources: PaneContext has distinct live source_occurred_at columns. No product bug or historical intent is inferred merely from the drop.
+- Newly explicit non-SQL groups: command-bar recents (`CommandBarState.swift:419–446`), runtime discovery metadata and debug escrow (`AgentStudioIPCPaths.swift:175,222`), provider integration configuration (`ClaudeCodePackageInstaller.swift:51`, `CodexPackageInstaller.swift:246`), diagnostic JSONL/legacy text (`AgentStudioJSONLTraceWriter.swift:75,117`; `DebugLog.swift:3`). These source-checked additions do not alter the 86/597 inventory or select new features.
+
+Live WIP/catalog updated with these distinctions. All proposal/owner boundaries remain unchanged; no new question, deletion, implementation, runtime or confidence review is authorized by this handback.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

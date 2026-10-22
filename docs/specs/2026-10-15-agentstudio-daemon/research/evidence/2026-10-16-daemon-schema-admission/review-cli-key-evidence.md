@@ -1,0 +1,108 @@
+# Review, client, CLI and search declared-key evidence
+
+source: Exactly **34 final logical tables** were checked at `feat/daemon` HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`: 29 local client/Review tables, 3 CLI tables and 2 ephemeral search tables. This is authored source DDL, not observed installed schema or data. No SQLite connection, migration, product executable, probe, build, test, network or Router operation was run. ([catalog](../../../designs/02-data-ownership-replication/research/data-catalog.json), [machine-readable evidence](../../../../../../tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.json))
+
+source: **32 tables declare a PK**: 19 single TEXT, 11 composite TEXT and 2 single INTEGER (`cache_metadata.singleton_id`, `cli_outbox.id`). Both search tables have no declared PK; `search_document_fts` is also an external-content FTS5 virtual table. `cli_outbox` alone in this scope explicitly uses AUTOINCREMENT. ([local DDL](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310), [CLI DDL](../../../../../../Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:55), [search DDL](../../../../../../Sources/AgentStudio/Core/Search/SearchService.swift:238))
+
+inference: If these source tables were selected under the frozen proposed profile, the 2 search tables fail SO5/SO6; the 32 PK-bearing ordinary tables satisfy only the stated static key/trigger/virtual shape. This does not select exports, choose a target schema, establish engine compatibility or show migration/replay behavior. The excerpt actually read has SHA-256 `a1341987af7794258c619c52056b1d4f8d02128449946a12c56cc28787e5bb82`. ([frozen SO5-SO7](shared-schema-profile.txt:1))
+
+## Surviving constraints and decisive exceptions
+
+source: Nine FK relationships survive across 7 tables. `local_window_sidebar_collapsed_group.window_id` cascades to `local_window_state.window_id`. Annotation thread→session, message→thread and draft→message cascade; output attempt→session and repeated attempt→attempt restrict; attempt membership→attempt cascades and →message restricts; output event→attempt restricts. All referenced columns are explicit; no ON UPDATE, MATCH or DEFERRABLE clause is authored in these recipes. ([collapsed DDL](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:91), [annotation DDL](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:579))
+
+source: Non-PK uniqueness survives on 8 tables: `local_drawer_cursor(workspace_id) WHERE is_expanded=1` partial index; `local_window_state(window_role)`; `annotation_thread(session_id,created_ordinal)`; `annotation_message(thread_id,ordinal)`; `annotation_output_attempt_message(attempt_id,batch_ordinal)`; `annotation_output_event(attempt_id)`; `cli_outbox(message_id)`; `cli_state(kind,pane_id,session_ref)`. All CHECK expressions appear per row in JSON; no unlisted enum/range checks were inferred from application validation. ([local unique index](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:347), [annotation constraints](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:579), [CLI constraints](../../../../../../Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:80))
+
+source: No authored trigger for these 34 tables was found in the searched first-party owning schema/store paths. SearchIndex synchronizes its external-content FTS table with explicit paired writes, not authored triggers. `search_document_item_id` is a **nonunique** index, and item deduplication in the writer is not a declared key. ([search create/install](../../../../../../Sources/AgentStudio/Core/Search/SearchService.swift:238))
+
+source: `cli_store_identity` has a PK but no SQL singleton/channel-enum constraint. `cli_outbox` has an explicit comment that IDs must never be reused because the app cursor survives purge. Preserving rows alone does not settle engine-maintained allocation state. ([identity/sequence recipe](../../../../../../Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:55))
+
+## Key nullability and rowid form
+
+source: None of the 33 ordinary scoped CREATEs uses STRICT or WITHOUT ROWID. All 11 composite TEXT keys explicitly declare every component NOT NULL; CLI identity/state TEXT keys do too. The 17 single-TEXT local keys omit an explicit NOT NULL clause. Each row records that distinction. `cache_metadata.singleton_id` and `cli_outbox.id` use exact INTEGER PRIMARY KEY without DESC; these are the documented SQLite rowid-alias form. ([local CREATEs](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310), [CLI CREATEs](../../../../../../Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:61), [pane activity CREATE](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneActivity.swift:8))
+
+source: Official SQLite documentation says an ordinary non-STRICT rowid-table TEXT PRIMARY KEY without NOT NULL can contain NULL; exact single-column INTEGER PRIMARY KEY aliases rowid, except the documented inline PRIMARY KEY DESC quirk. STRICT and WITHOUT ROWID enforce PK non-nullability, and neither form is authored here. I read the decisive paragraphs from the parent's cached official extracts, whose hashes are in JSON. ([CREATE TABLE rules](https://www.sqlite.org/lang_createtable.html#the_primary_key), [rowid alias rules](https://www.sqlite.org/lang_createtable.html#rowids_and_the_integer_primary_key), [WITHOUT ROWID](https://www.sqlite.org/withoutrowid.html#differences_from_ordinary_rowid_tables), [STRICT](https://www.sqlite.org/stricttables.html#strict_tables))
+
+inference: A declared key is therefore a narrower fact than a proven non-null replication identity. No row content was inspected, no stored NULL is alleged, and no Turso-equivalence or repair decision follows from these source/documentation facts. ([per-row nullability facts](../../../../../../tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.json))
+
+## Profiles and migration reconstruction
+
+source: The 29 local rows belong to `bootRequiredMigrator`; `openConfiguredLocalRepository` runs `migrateBootRequired()` before returning. Later `migrator` starts with that boot registry and appends optional Sessions, PaneContext, credentials and CLI cursor migrations. Target-name searches in all appended migration source files found no mutation/reference to these 29 tables. Their scoped declarations therefore have the same final expected shape in boot and full profiles. ([registry](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4), [boot opener](../../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+LegacyDrawerPresentation.swift:10), [optional call](../../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+ApplicationLocalTransactions.swift:4))
+
+source: Registration order, rather than numeric sorting, is preserved in JSON. Annotation 007/008/009/010 run before per-screen 007; both distinct 015 migrations then run; pane activity 028 is still boot-required. `local_recent_workspace_target`, `local_window_sidebar_expanded_group` and `cache_pull_request_count` are dropped/replaced and are not extra final rows. ([order and replacements](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4))
+
+source: Conditional paths survive: 003 only replaces the old expanded-group table if it exists; 005 conditionally adds window grouping and copies/drops legacy preference grouping ; 006 annotation CREATE batch only runs if `annotation_session` is absent; message handled/viewed columns are conditional; reviewed-subject column is conditional and originating-workspace removal is conditional. A pre-existing annotation_session is not proof that arbitrary companion definitions match the expected batch. All 8 batch CREATEs (7 annotation_* plus local_recovery_provenance) use literal final names here; no dynamic annotation prefix was found in current production source. ([guards](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:83), [annotation batch/guards](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194), [literal final CREATEs](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:558))
+
+source: Final field changes do not alter declared keys: window repo_grouping_mode→legacy_grouping_mode is removed after new per-screen fields arrive; old RepoExplorer grouping/sort/visibility columns disappear; annotation_session loses originating_workspace_id and gains reviewed-subject JSON; annotation_message gains handled/viewed CHECKs. ([per-screen full migration](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:4), [annotation alterations](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:200), [drawer visibility CHECK](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PanesDrawerVisibility.swift:4))
+
+source: CLI current writer returns only after all 3 known migration identifiers are present; recipes have no later ALTER/DROP. The read-only opener accepts known older subsets, never migrates, and readOutbox explicitly returns an empty batch if cli_outbox is absent. These historical profiles can lack later tables; the 3 rows inventory final writer recipes. SearchIndex creates both tables lazily on its private queue and replaces the queue/index after failure, without a persistent migration profile. ([CLI writer/reader](../../../../../../Sources/AgentStudioCLIStore/CLIStore.swift:142), [outbox absence](../../../../../../Sources/AgentStudioCLIStore/CLIStore.swift:282), [search lifecycle](../../../../../../Sources/AgentStudio/Core/Search/SearchService.swift:54))
+
+## Complete key map
+
+| Database | Table | Declared ordered PK / types | FK count | Additional unique count | CHECK count | Special form |
+|---|---|---|---:|---:|---:|---|
+| local.sqlite | `local_workspace_cursor` | workspace_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_tab_cursor` | workspace_id TEXT, tab_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_arrangement_cursor` | workspace_id TEXT, arrangement_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_drawer_cursor` | workspace_id TEXT, drawer_id TEXT | 0 | 1 | 1 | ordinary |
+| local.sqlite | `local_arrangement_drawer_cursor` | workspace_id TEXT, arrangement_id TEXT, drawer_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_drawer_presentation` | workspace_id TEXT, owner_pane_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_window_state` | window_id TEXT | 0 | 1 | 6 | ordinary |
+| local.sqlite | `local_window_sidebar_collapsed_group` | window_id TEXT, group_key TEXT | 1 | 0 | 0 | ordinary |
+| local.sqlite | `local_editor_preferences` | workspace_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_repo_explorer_preferences` | workspace_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_inbox_notification_preferences` | workspace_id TEXT | 0 | 0 | 1 | ordinary |
+| local.sqlite | `local_entity_recency` | entity_kind TEXT, entity_key TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_workspace_entity_recency` | workspace_id TEXT, entity_kind TEXT, entity_key TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `cache_metadata` | singleton_id INTEGER | 0 | 0 | 2 | ordinary |
+| local.sqlite | `cache_repo_enrichment` | repo_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `cache_worktree_enrichment` | worktree_id TEXT | 0 | 0 | 1 | ordinary |
+| local.sqlite | `local_repository_activity` | repository_stable_key TEXT | 0 | 0 | 1 | ordinary |
+| local.sqlite | `local_repository_activity_cursor` | volume_identifier TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_pane_activity` | pane_id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `annotation_session` | id TEXT | 0 | 0 | 1 | ordinary |
+| local.sqlite | `annotation_thread` | id TEXT | 1 | 1 | 2 | ordinary |
+| local.sqlite | `annotation_message` | id TEXT | 1 | 1 | 6 | ordinary |
+| local.sqlite | `annotation_message_draft` | message_id TEXT | 1 | 0 | 2 | ordinary |
+| local.sqlite | `annotation_output_attempt` | id TEXT | 2 | 0 | 1 | ordinary |
+| local.sqlite | `annotation_output_attempt_message` | attempt_id TEXT, message_id TEXT | 2 | 1 | 2 | ordinary |
+| local.sqlite | `annotation_output_event` | id TEXT | 1 | 1 | 0 | ordinary |
+| local.sqlite | `local_recovery_provenance` | id TEXT | 0 | 0 | 0 | ordinary |
+| local.sqlite | `local_notification_inbox_item` | workspace_id TEXT, id TEXT | 0 | 0 | 2 | ordinary |
+| local.sqlite | `local_notification_inbox_collapsed_group` | workspace_id TEXT, group_key TEXT | 0 | 0 | 0 | ordinary |
+| ipc/cli.sqlite | `cli_store_identity` | store_id TEXT | 0 | 0 | 0 | ordinary |
+| ipc/cli.sqlite | `cli_outbox` | id INTEGER | 0 | 1 | 0 | AUTOINCREMENT |
+| ipc/cli.sqlite | `cli_state` | id TEXT | 0 | 1 | 0 | ordinary |
+| in-memory search | `search_document` | none declared | 0 | 0 | 0 | ordinary |
+| in-memory search | `search_document_fts` | none declared | 0 | 0 | 0 | FTS5 virtual |
+
+source: The map is a view of the 34 individually anchored JSON rows, whose key type fields transcribe declared SQL types. PK columns lacking an explicit NOT NULL clause are listed as such in JSON; documented SQLite nullability/rowid rules are distinguished separately from unobserved linked-engine behavior; no default-action runtime setting was assumed. ([all declarations](../../../../../../tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.json))
+
+## Search and source coverage
+
+source: Source classes walked in order: catalog/prior reports for exact membership and discovery → current owning DDL and registered create/alter/drop paths → current boot/optional and CLI opener guards → frozen proposed SO5-SO7 excerpt. Catalog and prior reports were not decisive DDL evidence. Live OSS/web/engine, saved-research, UI, private databases and runtime classes were skipped because this Worker grant excludes network/execution/probes. At the parent’s narrow follow-up, cached official SQLite PK/nullability/rowid documentation extracts were also read; this is documented semantics, not a running-engine observation. No independent helper was commissioned; parent owns countercheck/acceptance. Source SHA-256 values and the exact boot registration list are in JSON. ([scope and hashes](../../../../../../tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.json))
+
+source: Verbatim decisive queries (all from repository root):
+
+```text
+rg -n 'CREATE|ALTER|DROP|registerMigration|TRIGGER|[Vv]irtual|[Aa]uto[Ii]ncrement' Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations* Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations Sources/AgentStudio/Features/InboxNotification/State/MainActor/Persistence/InboxNotificationSQLiteRepository.swift
+rg -n 'CREATE.*TABLE|CREATE.*TRIGGER|CREATE.*UNIQUE|ALTER.*TABLE' Sources --glob '*.swift' | rg -v 'WorkspaceCoreMigrations|WorkspaceLocalMigrations|CLIStoreMigrator|SearchService'
+rg -n 'CREATE.*TABLE|ALTER.*TABLE|CREATE.*TRIGGER|create.*table|create\(table|tablePrefix|schemaPrefix|prefix' Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations Sources/AgentStudio/Core/State/SQLite --glob '*.swift'
+rg -n -i -U 'create\s+(?:(?:temp|temporary)\s+)?trigger|drop\s+trigger|create\s+virtual\s+table|autoincrement' Sources/AgentStudioCLIStore Sources/AgentStudio/Core/Search Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations* Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations Sources/AgentStudio/Features/InboxNotification/State/MainActor/Persistence
+rg -n -i 'annotation|local_(workspace_cursor|tab_cursor|arrangement_cursor|drawer_cursor|arrangement_drawer_cursor|drawer_presentation|window_state|window_sidebar_collapsed_group|editor_preferences|repo_explorer_preferences|inbox_notification_preferences|entity_recency|workspace_entity_recency|repository_activity|repository_activity_cursor|pane_activity|recovery_provenance|notification_inbox)|cache_(metadata|repo_enrichment|worktree_enrichment)' Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+CLIOutbox.swift
+```
+
+source: Scoped nulls: no alternative production DDL family outside the named migration/CLI/Search sources from the second query; no annotation/recovery dynamic-prefix or alternate CREATE match in the third; no authored scoped trigger match in the fourth; no reference/mutation of these 29 names in optional migration source from the fifth. Wider Sources CREATE/TRIGGER search found core.sqlite triggers, outside this lane; they are not counted here. No null means a user table is empty or runtime state is absent.
+
+source: A guessed filename `WorkspaceLocalMigrations+SessionsPermissionHandling.swift` did not exist; `rg` located registerSessionsPermissionHandling in `WorkspaceLocalMigrations+Sessions.swift`, which was opened. An initial unquoted nonexistent Worktree* glob aborted one search before execution; the corrected explicit-directory search above completed. Neither failed discovery command is used as absence evidence.
+
+source: Static extraction used balanced parentheses and comma splitting of opened CREATE bodies, followed by explicit reconciliation of later ALTER and partial-index clauses. Assertions checked exact 34 catalog membership, 32 declared keys, 9 FKs and 8 additional-uniqueness tables; this is document structure/coverage validation, not a database/test pass. Read-ground-truth “counts passed, meaning wrong” and verify-before-accepting “a second harness” scenarios apply: each decisive declaration was opened, and this handback remains source-only. ([recipes](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310), [rows](../../../../../../tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.json))
+
+## Gaps and proof boundary
+
+gaps: Actual installed migration state, pre-existing guarded annotation schemas and stored rows; searched Current registered migration recipes and openers only; no user database or SQLite execution.; settled by Separately authorized isolated migration/state verification; source guards do not validate arbitrary legacy CREATE definitions. Does not block this final source-DDL inventory; no installed-schema claim.
+
+gaps: Exact engine-created FTS shadow tables/hidden columns, sqlite_sequence DDL and effective linked-SQLite behavior; searched First-party CREATEs, explicit SearchIndex writes, catalog exclusion boundary and CLI AUTOINCREMENT recipe.; settled by Pinned engine primary source and/or separately authorized disposable schema inspection; neither engine survey nor runtime probes is authorized here. Excluded physical objects remain explicitly unresolved, not additional logical table rows.
+
+gaps: Replicated replay/capture/migration/constraint/AUTOINCREMENT compatibility; searched Frozen proposed SO5-SO7 profile and static source declarations; no released-engine or runtime proof read.; settled by Adopted engine/version contract and separately authorized real engine verification for each required behavior. 32 static shape matches are not 32 adopted/engine-compatible exports. No export set, target schema or migration is selected.
+
+inference: **Bounded source inventory complete, runtime/engine compatibility unverified.** No unresolved declared first-party DDL row remains; the explicit gaps above are outside this grant. The parent must inspect anchors before adopting comparisons or making a replication/export decision. ([counts and gaps](../../../../../../tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.json))

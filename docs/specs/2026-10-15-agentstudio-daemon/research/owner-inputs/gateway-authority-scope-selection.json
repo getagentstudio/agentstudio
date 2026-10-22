@@ -1,0 +1,20 @@
+{
+  "source": "Direct owner messages in the AgentStudio Lead conversation, 2026-10-16",
+  "messages_verbatim": [
+    "we wil build the server for this later, rn, assume the authokrity for lease regsitry i8s the gateway, and assume that transferis out of scope",
+    "we can make it a seprate crate or whatever so we can move it easily alter"
+  ],
+  "current_authorized_assumption": "The Gateway is the lease-registry authority for the current AgentStudio design",
+  "scope_exclusions": [
+    "Database-writer transfer is out of current AgentStudio scope",
+    "A standalone authority server is later work"
+  ],
+  "separation_constraint": "Keep authority hosting separately composable so it can be rehosted later; a separate crate is permitted but not mandated",
+  "limits": [
+    "This does not authorize a second lease-rule implementation or a second active issuer for a database",
+    "Rehosting the authority later is different from transferring a database writer",
+    "Lease duration, renewal, expiry and Gateway-unavailable write behavior remain unspecified",
+    "No Host-local autonomy outcome is silently removed",
+    "This is design direction, not implementation or deployment authority"
+  ]
+}

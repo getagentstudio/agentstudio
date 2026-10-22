@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Typed API and independent lifetimes: research addition</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="typed-api-lifetimes-addendum-8481654c.html">AgentStudio daemon · Typed API and independent lifetimes: research addition</a></nav></ex-nav>
+<ex-document id="content"><h1>Typed API and independent lifetimes: research addition</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/typed-api-lifetimes-addendum.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Typed API and independent lifetimes: research addition
+
+Owner supplied two further research memos after the frozen K01–K10 second-opinion packet: a reusable typed Rust API with thin frontends, and independent connection/session/attachment/subscription lifetimes. This addition records the Lead's interpretation and checks. It does not approve tarpc, adopt the sample crate tree, add iOS/MCP delivery, select new state owners or introduce compatibility paths.
+
+## What the two pictures expose
+
+The first memo describes a reusable engine accessed through different transports. The second describes resources and capabilities whose lifetimes differ. Both are needed: reuse alone cannot tell us who may commit an effect, and stable identities alone cannot supply delivery/recovery semantics.
+
+The closest governing examples are “Whose identity?” and “Two services, one status” from one-owner-per-truth, “The id that meant two things” from types-are-communication, and “Pipeline or state machine” from shared-model-first. Their application here is concrete: a replacement connection does not mint a replacement terminal resource; Gateway and Host must not both author its process status; stream and terminal-session identifiers cannot be interchanged merely because both are numbers/UUIDs.
+
+## Reuse and authority
+
+| Candidate principle | Lead interpretation | What still needs evidence or owner meaning |
+| --- | --- | --- |
+| One typed operation implementation | Frontend adapters parse/validate and invoke the authoritative operation; format/table/tool/sidebar projections do not rediscover sessions or reimplement Git policy | Which operation belongs to which owner, including client-native effects and workspace meaning |
+| GatewayCore as reusable engine | Connection supervision, desired subscriptions and client preparation can be reusable Rust behavior | The name must not absorb authoritative Host filesystem/process/session state simply because every frontend calls it |
+| One ergonomic client interface | Share typed operations, errors and intentionally equivalent adapters | A local direct fallback must not silently bypass the owner-required Gateway route, authority, ordering or lifetime. Standalone CLI availability is an open product choice |
+| Generated contracts | Derive each actual boundary shape from one authority and test the real producer/consumer | Rust RPC macros do not by themselves generate a complete Swift contract, MCP exposure policy, semantic validation or terminal/event protocol |
+| MCP as an adapter | A deliberate tool subset can share operation behavior without becoming the internal Host protocol | MCP is additional supplied research, not a confirmed delivery requirement or permission to expose every privileged method |
+| Transport independence | Domain meaning remains stable when an adapter changes | Do not erase observable disconnect, unsupported capability, delivery uncertainty, native-location or cancellation differences |
+
+The supplied tree is illustrative. Its `protocol/types.rs` and single-word modules conflict with the requested responsibility-based naming as final important module names. More materially, a catalog of every DTO is not yet a justified crate boundary; consumer/owner dependencies and separate reason-to-change must determine the eventual DAG. No crates were created.
+
+## Lifetimes to keep distinct
+
+| Concept | Identity / candidate meaning | Failure and ambiguity that must remain visible |
+| --- | --- | --- |
+| Host | The machine/service authority containing target resources | Equal paths on different machines are different targets; process restart and machine replacement differ |
+| Logical terminal session | Stable resource associated with terminal execution | A retained registry row does not prove a process survived natural exit, crash or reboot |
+| Terminal process incarnation | Actual backend/shell family on a particular boot | A reused socket name/PID is not the previous incarnation |
+| Agent run/session | Provider-specific Codex/Claude work and binding | One terminal can host multiple runs; provider history and shell lifetime are not identical |
+| Connection | Authenticated temporary communication relationship | New connection differs from migration of an existing QUIC connection; neither is session recreation |
+| Attachment | A client's admitted view/control relationship to one session | Viewport, input/resize authority, revocation and reconnect fences are not implied by a stream ID |
+| Stream | One delivery channel within a connection/adapter | QUIC stream IDs are connection-local; closing delivery does not by itself terminate the resource |
+| Desired subscription | Client intent to keep observing a selected resource/query | Reestablishing intent must revalidate current authority; retaining it across Gateway restart needs a separate durability choice |
+| Active subscription | An admitted feed in a particular source/connection generation | Its replay availability and completion differ from the desired subscription's lifetime |
+| Operation attempt | One submitted effect with request/deadline/result | Cancellation/timeout/disconnect after admission may leave an effect completed, partial or unknown |
+
+Recommended invariant for later confirmation: **transport disconnect alone does not request session termination**. This does not promise an immortal process or preservation through Host/reboot/storage failure. The memo's “until explicitly terminated” wording needs natural exit, process failure and retirement semantics.
+
+Current evidence already distinguishes resource ownership and process identity: [ownership/Undo protection](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift), [identity cannot be replaced by another incarnation](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift), [boot/process-group retirement and pending result](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift). These are inspected current contracts, not executed proof of a future Host registry.
+
+Further source checks narrow the promise. [Creating a backend handle](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) does not launch the process. [Client disconnect](../../../../../vendor/zmx/src/loop.zig) removes the client/leader independently; [shell EOF](../../../../../vendor/zmx/src/loop.zig) stops the daemon. [Attach/ensure](../../../../../vendor/zmx/src/loop.zig) can create a new daemon for an absent/refused endpoint under the old name. Therefore neither the handle nor a familiar name proves that the previous execution continued. Existing [process identity](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionIdentity.swift) is stronger evidence than those labels.
+
+The refined invariant candidate is: losing a connection, RPC waiter, subscription or attachment does not by itself terminate **or recreate** the logical execution session. Reconnection reconciles its current execution incarnation and observation coverage; an obsolete attachment/controller operation cannot affect a successor. This is a proposed obligation awaiting confirmation, not a current system-wide guarantee.
+
+## Reconnection is more than remembering a subscription
+
+Desired subscriptions may be safely retried only as subscription intent with current authorization and a defined resume/resnapshot outcome. They must not become a queue of mutations or uncertain terminal input. Snapshot-to-live ordering needs an explicit cut and source generation; terminal screen restoration, parser continuation and original output history differ.
+
+`events.subscribe(cursor)` is proposed functionality, not an existing durable broker guarantee. The current socket broker's subscriptions are connection-owned and removed on connection loss; its inspected API has no cursor/replay input. Separate runtime replay is bounded and gap-aware, not durable cross-process recovery. See [socket subscription ownership](../../../../../Sources/AgentStudioAppIPC/IPCEventBroker.swift), [connection removal](../../../../../Sources/AgentStudioAppIPC/IPCEventBroker.swift), [bounded replay/gap](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Replay/EventReplayBuffer.swift).
+
+A future resume contract needs to distinguish a valid retained cursor, a gap requiring a fresh authoritative snapshot, an obsolete source incarnation, changed filter/authority, resource termination and source unavailability. A bare sequence number without its source/order scope is insufficient. A durable recovery log, if chosen, needs explicit purpose/retention/loss guarantees; it is not supplied by a Tokio channel or an RPC library.
+
+The current replay implementation also returns no gap for an empty buffer, and a [new channel's sequence starts at zero](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift). It cannot establish continuity across runtime/process replacement from only a numeric cursor. Current [provider binding generation/resume metadata](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionsDomainModels.swift) likewise does not establish provider execution resumption.
+
+The concrete owner decision this exposes is last-pane close semantics: today's graph/Undo retirement policy can end execution; a detached durable-session model instead retains execution until explicit end or natural failure. The second gains independent views and session survival, while users/operators bear background resource and discoverability costs. **The owner selected A: closing detaches, with detach and terminate kept as separate primitives.** The owner then distinguished those primitives from later UX/policy: a detached-session view could retain sessions or close them after a period such as fifteen minutes. No timeout/default was selected. If cleanup must run without the app, its admitted deadline and reattachment/currentness rule belong to the service, even though the controls are UX. Exact recovery after natural exit, process loss or reboot remains a separate outcome from transport disconnect.
+
+## Sample-type limitations
+
+The examples communicate useful operations, but `session_id: String` and interchangeable numeric tickets are not the requested final domain model. Session, attachment, request and connection identities require distinct validated types; dimensions need semantic bounds; returned stream binding needs session/attachment/connection/authority correlation. Deserialization only proves shape. No final schemas or new public API are authored here.
+
+The memo's mixed-version safeguard can mean testing truthful refusal under an exact-version contract. It must not silently introduce backward-compatibility layers contrary to the owner's hard-cutover standard. Required pairing/channel/capability admission is separate from selecting MessagePack or Protobuf.
+
+## Library check: what is supported
+
+The library lane returned; the Lead independently opened the decisive tarpc context, generated client, cancellation/wire and serde-transport source, the tokio-serde serializer, MessagePack representation documentation, quic-rpc manifest and UniFFI basic scaffolding.
+
+| Candidate | Source-supported fit | Additional contract/cost |
+| --- | --- | --- |
+| tarpc0.38.0 | Generated Rust unary service/client; a domain Result produces `Result<Result<Value, DomainError>, RpcError>`; native Unix serde transport; generic read/write framed transport | Quinn adapter and real interaction proof; distinct event/terminal streaming protocols; authentication, domain authority and version admission remain application responsibilities |
+| tarpc cancellation/deadline | Client future drop schedules cancellation; server aborts top-level handler; deadline is serialized as remaining duration and reconstructed on receiver's monotonic clock | Spawned work is excluded from automatic cancellation; completed effects do not roll back; transport transit is not accounted as a shared absolute deadline; every side-effect owner needs explicit custody/settlement |
+| MessagePack through tokio-serde0.9.0 | Calls `rmp_serde::to_vec`; ordinary structs encode as arrays by default | Field order is wire meaning. No schema negotiation, performance win, compression or backward compatibility follows from that codec |
+| quic-rpc0.20.0 | Four RPC interaction patterns, Rust-to-Rust focus | Its dependency named quinn aliases `iroh-quinn0.13`, not upstream Quinn0.11; UDS/version/deadline integration not established by the memo |
+| Tonic/Protobuf | Explicit generated schema and unary/streaming patterns; UDS possible | HTTP/2/generation/domain conversion and lifetime/resource policy cost; no performance ranking established |
+| rmcp/schemars | Intentional MCP adapter and parameter/schema derivation are credible | Tool exposure/authority must be selected; JSON deserialization/schema generation does not prove semantic validity; MCP negotiation is separate from internal domain/wire admission |
+| UniFFI0.32.2 | Generates Rust/Swift FFI scaffolding, independently of tarpc | Basic generated scaffolding includes unsafe extern functions. Exact compatibility with workspace unsafe lint policy needs an expansion/build proof if selected; no failure/waiver or safe-internals claim is made |
+
+Primary pins: [tarpc generated client](https://github.com/google/tarpc/blob/5d54c216096fb88b0a26d0c431c0483611601110/plugins/src/lib.rs#L765-L798), [wire cancellation scope](https://github.com/google/tarpc/blob/5d54c216096fb88b0a26d0c431c0483611601110/tarpc/src/lib.rs#L255-L290), [relative deadline](https://github.com/google/tarpc/blob/5d54c216096fb88b0a26d0c431c0483611601110/tarpc/src/context.rs#L19-L60), [serde transport/Unix](https://github.com/google/tarpc/blob/5d54c216096fb88b0a26d0c431c0483611601110/tarpc/src/serde_transport.rs#L89-L114), [MessagePack codec](https://github.com/carllerche/tokio-serde/blob/f02a9f65600684eeded47e8f03b3c108e80310d0/src/lib.rs#L448-L487), [compact versus named](https://github.com/3Hren/msgpack-rust/blob/cf880019f72e35a884659a9b29d9eb89b862670b/rmp-serde/src/encode.rs#L1194-L1235), [quic-rpc dependency](https://github.com/n0-computer/quic-rpc/blob/5ed68d4323daa5cfb29539e47f981f0fab80c233/Cargo.toml#L24), [UniFFI generated unsafe functions](https://github.com/mozilla/uniffi-rs/blob/7bc621ee9d0d15371d792612707ba5ed4111f950/uniffi_macros/src/setup_scaffolding.rs#L63-L94).
+
+Resource bounds must be selected deliberately: tarpc client pending/in-flight counts, server concurrency, encoded-frame limits, collection/domain limits, total retained bytes and downstream effect capacity differ. Default length framing is four-byte big-endian with an 8MiB limit in the inspected tokio-util0.7.18 source; it is not a whole-system memory bound. No defaults are adopted here.
+
+The supplied typed API is therefore a useful direction independent of the codec decision. Tarpc is a credible unary candidate rather than an accepted end-to-end protocol. The decisive later proof would exercise real UDS/Quinn producer-consumer interaction, application rejection versus RPC failure, cancellation around effect admission, post-commit disconnect, malformed/oversized/fragmented frames, schema refusal before mutation and streaming backpressure. No prototype or test was run.
+
+## Second-opinion boundary
+
+Both resumed evidence lanes returned. This reduced addition, the explicit detach/terminate decision and qualified original Advisor claims formed one targeted follow-up packet. It does not reopen settled macOS/Linux Host parity or macOS-only Gateway scope. The later U15 selection settles no-client sessions/agent inputs/facts. Library choice, benchmark result, recovery coverage and complete lifecycle acceptance remain open.
+
+The actual targeted reply is root message `01a141e1-ada4-7653-807a-0840b3b7fd51`, activity6735. Advisor accepted all three Lead qualifications: no mandatory third VT; ordered Capture is a candidate per-client barrier rather than a proven parser checkpoint; Gateway replication is a recovery axis and client continuation can remain in Swift. Its library advice accepted the Lead's primary reading rather than independently reopening those libraries this turn. No new runtime/compile proof follows.
+
+### Detachment and agent authority
+
+The important additional countercase is now source-verified. Current [durable close invalidates pane principals](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+Undo.swift). [Authentication requires canonical pane membership](../../../../../Sources/AgentStudioAppIPC/AgentStudioIPCAuthentication.swift), while [Undo retirement final-revokes unowned panes](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift), retires pane-context/activity and signals terminal cleanup. U14 preserves the process after detachment, so copying this authority lifecycle unchanged could leave a running agent unable to report or act.
+
+The no-client outcome also needs an authority subject. The owner directly selected continued sessions, authorized agent inputs and terminal facts/activity (Requirements U15/S11), resolving the earlier pending question. The contract must preserve that work independently of native view lifetime, with current scoped authorization and explicit revocation. This does not grant broader permissions, assume permanent bearer validity or select credential mechanics. A resume hook was not used as selection evidence.
+
+Two advice details are narrowed: not every `RpcError` necessarily implies an unknown effect (it also represents explicit server rejection); delivery loss/deadline after possible effect admission needs an uncertain outcome unless stronger correlated evidence settles it. Likewise side-effect settlement needs explicit lifetime ownership, but a particular spawned-task mechanism is not selected. See [RpcError variants](https://github.com/google/tarpc/blob/5d54c216096fb88b0a26d0c431c0483611601110/tarpc/src/client.rs#L190-L208). Exact-version handshake refusal is a candidate consistent with the requested hard cutover; it is not a codec-supplied guarantee.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

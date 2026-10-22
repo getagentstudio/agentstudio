@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Smaller branches inside the migration map</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="migration-detail-branches.html">AgentStudio daemon · Smaller branches inside the migration map</a></nav></ex-nav>
+<ex-document id="content"><h1>Smaller branches inside the migration map</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](migration-detail-branches.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><h2 id="migration-detail-tree">Find the smaller migration branches</h2><ex-tree id="migration-detail-tree-items" title="Paths inside the feature homes — delivery remains unproven" icon="folder"><script type="text/markdown">
+- [Native interaction and startup](#source--native-interaction-and-startup)
+  - [ ] [Space-held preview without activation](#source--native-interaction-and-startup)
+  - [ ] [Transient zoom companion continuity](#source--native-interaction-and-startup)
+  - [ ] [Renderer argument sanitation](#source--native-interaction-and-startup)
+  - [ ] [Full Disk Access diagnostic locality](#source--native-interaction-and-startup)
+  - [ ] [Browser history, favorites and suggestions](#source--native-interaction-and-startup)
+- [Display identities and private approval workflow](#source--display-identities-and-private-approval-workflow)
+  - [ ] [Local action presentation catalog](#source--display-identities-and-private-approval-workflow)
+  - [ ] [Internal permission workflow](#source--display-identities-and-private-approval-workflow)
+- [Git mechanics and CLI behavior](#source--git-mechanics-and-cli-behavior)
+  - [ ] [Configured positive path patterns](#source--git-mechanics-and-cli-behavior)
+  - [ ] [Git configuration discovery and repository writer custody](#source--git-mechanics-and-cli-behavior)
+  - [ ] [Concrete local client construction](#source--git-mechanics-and-cli-behavior)
+  - [ ] [CLI grammar and submission endings](#source--git-mechanics-and-cli-behavior)
+- [Retained contracts and support without active delivery](#source--retained-contracts-and-support-without-active-delivery)
+  - [ ] [Surface checkpoint helpers versus active health monitoring](#source--retained-contracts-and-support-without-active-delivery)
+  - [ ] [Link membership and pull-request references](#source--retained-contracts-and-support-without-active-delivery)
+  - [ ] [Background file show and approved takeover](#source--retained-contracts-and-support-without-active-delivery)
+- [Storage and launch dependencies](#source--storage-and-launch-dependencies)
+  - [ ] [Migration bookkeeping](#source--storage-and-launch-dependencies)
+  - [ ] [Full remote shell environment](#source--storage-and-launch-dependencies)
+</script></ex-tree><ex-markdown id="source"><script type="text/markdown">
+## Smaller branches inside the migration map
+
+**A broad feature home is not enough to preserve every path inside it.** These named branches refine the [42-leaf feature checklist](migration-feature-checklist.html) and its existing command/data maps. They remain unchecked until their own selected contract, integration and proof boundary is met. Supporting code and dormant declarations are accounted for without becoming new public features.
+
+The whole path remains high-level. Near-term launch/control/source contracts belong in the [remote-session slice](near-term-migration.html); later native, browser, approval and Git details become concrete when their capability is selected. This adds neither a twelfth subsystem nor an independent crate for each row.
+
+## Native interaction and startup
+
+These refine **Focus panes**, **Drawers/management/zoom**, **Browse web pages**, **Diagnostics** and **Install/start/update** in the feature tree. Native application and lifecycle stay at the actual UX owner; remote sources carry their explicit Host context.
+
+- [ ] **Space-held preview without activation.** Preserve hold generation, requested target, pane/tab/provider/session binding, geometry readiness and late-mount currentness. A preview is not ordinary focus or a shared selected tab. Existing owners: [HeldPanePreviewState](../../../../../Sources/AgentStudio/App/Windows/HeldPanePreviewState.swift) and [preview preparation](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+HeldPanePreview.swift). Remote data preparation must not make a stale target current or silently take terminal control.
+- [ ] **Transient zoom companion continuity.** Keep its source/worktree binding, selected surface/visibility, resource-loss behavior and retirement. A retained `zoomPane` command alone cannot preserve those transitions. [Current reconciliation](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ZoomCompanion.swift) composes native presentation with source identity; the source's remote acquisition moves to its Host owner.
+- [ ] **Renderer argument sanitation.** Preserve executable identity and the treatment of LaunchServices `-psn_` arguments before native initialization. [Sanitizer](../../../../../Sources/AgentStudio/App/Boot/GhosttyLaunchArguments.swift) → [actual startup call](../../../../../Sources/AgentStudio/main.swift). This is native packaging/startup behavior, not a Host command or Rust business FFI requirement.
+- [ ] **Full Disk Access diagnostic locality.** Preserve the distinction between actual shell-child access observations and app/service/execution health. The [startup diagnostic](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+FullDiskAccessHealth.swift) probes protected Mac locations off MainActor and records a result; it does not itself grant permission or prove a different Host binary has access. Qualify affected Mac process identities; no Linux Full Disk Access equivalent is inferred.
+- [ ] **Browser history, favorites and suggestions.** Account for `com.agentstudio.urlHistory` and `com.agentstudio.webviewFavorites`, URL deduplication, current 14-day/100-entry history policy, first-run favorites, and favorite-before-history suggestion ordering/cap. [Current service](../../../../../Sources/AgentStudio/Features/Webview/URLHistoryService.swift). Preserve the selected user-data meaning under IP5; relocation or cross-device browser sharing is not selected merely because Gateway prepares some views.
+
+## Display identities and private approval workflow
+
+These refine **Command bar/shortcuts**, **Preferences/private credentials** and **CLI/socket/subscriptions**. Display, request admission, human approval and effect completion are different responsibilities.
+
+- [ ] **Local action presentation catalog.** Preserve all 73 current `LocalActionSpec` cases and their label/help/icon projection, including preview, browser, context, chooser and local editing controls. [Authoritative enum](../../../../../Sources/AgentStudio/Core/Actions/UIActionPresentation.swift). This supplements the 154 `AppCommand` identities; it is not 73 additional Host capabilities. Actual callbacks determine dispatch, and retained Inbox display identities do not reactivate that feature.
+- [ ] **Internal permission workflow.** Map [request/status/grant/pending/resolution methods](../../../../../Sources/AgentStudioAppIPC/AgentStudioIPCPermissionBroker.swift), requester/approver/scope checks and the [grant/revocation ledger](../../../../../Sources/AgentStudioAppIPC/AgentStudioIPCRegistryAuthorization.swift) at their real authority boundaries. Authentication alone does not replace this workflow; a database-writer lease is a different authority. Preserve actual single-settlement and principal-lifetime/revocation predicates. Do not infer a timed grant-expiry policy or publish these internal methods as new RPC/MCP tools from their declarations.
+
+## Git mechanics and CLI behavior
+
+These refine **Create/fork**, **Clone/fetch/branch work**, **Read status/files** and **CLI/socket methods**. Machine-side rules/effects move to the addressed Host and owning Git mechanics library; thin frontends retain their selected syntax and presentation.
+
+- [ ] **Configured positive path patterns.** Preserve `.agentstudio.config.json` → `worktree.include` parsing, error behavior and pattern semantics before using the result for file selection. [Config compilation](../../../../../Sources/AgentStudioWorktreeOperations/AgentStudioRepositoryConfigReader.swift) consumes [GitPathPattern](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/GitPathPattern.swift#L17), including malformed/negative rejection and directory/basename/case matching. This supports selected worktree operations; it is not an extra remote method.
+- [ ] **Git configuration discovery and repository writer custody.** Preserve the actual [libgit2 config-search adapter](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitCInterop/GitConfigSearchPath.c#L3) and [canonical-repository mutation boundary](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Runtime/GitRepositoryWriterRegistry.swift#L11) where the selected Rust implementation depends on equivalent behavior. Do not export C handles or Swift queue identities; Rust task/locking structure follows the same required semantics under the Router standards and selected Mac/Linux profile.
+- [ ] **Concrete local client construction.** The [four-site cutover roster](capability-placement-map.html#source--concrete-git-construction-sites-to-cut-over) includes injectable defaults, a convenience initializer and an inner annotation construction. Remote composition must not invoke a local default against a remote path. Existing seams remain useful; not every construction requires a new abstraction.
+- [ ] **CLI grammar and submission endings.** The [39-group current CLI reference](../09-gateway-cli/research/cli-entry-surface.html) records descriptor/pane/provider/worktree entry paths, flags, defaults, parser edge cases, output/exit and retained helper limits. Preserve the selected forms and exact before-submission offline eligibility at the actual owner. The [operation crosswalk's syntax limit](migration-operation-crosswalk.html#source--cli-entry-syntax-is-another-layer) still applies: 293 semantic declarations do not enumerate every argument/value/schema combination, and the new source reference is not a passed parser or transport test.
+
+## Retained contracts and support without active delivery
+
+These refine **Dormant/refused commands**, **Rendered terminal state** and **File/review views**. A retained declaration is accounted for explicitly; its presence does not authorize a new feature or prove a working production route.
+
+- [ ] **Surface checkpoint helpers versus active health monitoring.** [Save/load/clear checkpoint helpers](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/SurfaceManager.swift) have no production call found by the checked exact-name Sources search. Native surface health monitoring is separately called by initialization; the [backend-health helper](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/SessionRuntime.swift) also has no call found by that search. Preserve or explicitly dispose of retained support data/contracts at cutover; never claim current startup restores a screen from those declarations.
+- [ ] **Link membership and pull-request references.** [PaneLinkMembershipPort](../../../../../Sources/AgentStudio/Core/Models/PaneLinkMembershipPort.swift) declares member/ref mutations, pending-removal settlement and ordered post-commit removal facts. The checked exact-name search found the declaration only. Any later adoption needs actual authority/composition/transaction contracts; generic review display is not an implementation of this interface.
+- [ ] **Background file show and approved takeover.** [PaneAgentShowPort](../../../../../Sources/AgentStudio/Core/Models/PaneAgentShowPort.swift) and [its result contracts](../../../../../Sources/AgentStudio/Core/Models/BridgeAgentShowContract.swift) distinguish background open, actual display, refusal, unavailable and uncertain effects. No concrete production path was found by the checked protocol-name search. Do not expose a privileged takeover tool or silently delete the retained contract merely because another file-open path exists.
+
+## Storage and launch dependencies
+
+These refine **Retained state/read copies**, **Start executions** and **Install/start/update**. They are contract dependencies from first use, not a final cleanup phase.
+
+- [ ] **Migration bookkeeping.** [The counting explanation](../02-data-ownership-replication/README.html#source--how-to-count-the-source-inventory) distinguishes 86 logical tables, 22 historical names and the declared `grdb_migrations` name. Excluding bookkeeping from the logical placement matrix is legitimate; actual store import/migration still must preserve the selected schema status and apply-once migration behavior. Source-name accounting is not a live database read.
+- [ ] **Full remote shell environment.** The [launch evidence](../04-terminal-runtime/research/remote-shell-environment.html) and [near-term closures](near-term-migration.html#source--near-term-contract-closures) cover authority/CLI/store, base environment, helper PATH, terminfo/resources, actual shell fact production, backend nesting and current `NO_COLOR` handling. None is supplied merely by a successful attach socket.
+
+Every branch remains part of its existing capability home. Its detailed implementation order, exact files and tests belong to that slice's later ready plan; its persisted or public-contract choices cannot be inferred from this roster.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

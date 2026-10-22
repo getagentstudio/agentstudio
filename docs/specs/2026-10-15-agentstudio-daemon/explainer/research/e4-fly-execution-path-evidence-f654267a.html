@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · E4a Fly execution-path evidence</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="e4-fly-execution-path-evidence-f654267a.html">AgentStudio daemon · E4a Fly execution-path evidence</a></nav></ex-nav>
+<ex-document id="content"><h1>E4a Fly execution-path evidence</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../research/evidence/2026-10-15-daemon-extraction-survey/e4-fly-execution-path-evidence.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## E4a Fly execution-path evidence
+
+2026-10-15; source-only follow-up to [Advisor G9](advisor-e4a-challenge-9eb60e46.html) and the [current Linux feasibility procedure](../../designs/06-worktree-fork/experiments/linux-feasibility.html), both read in full. Product baseline remains `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. The Lead selects the build/transfer/control method and authors the procedure.
+
+No authenticated Fly call, local Fly command, provisioning, guest access, build/test/prototype, credential inspection/copy, product edit, board action or helper occurred in this follow-up. Only this requested report was written. Public source retrieval is not execution proof.
+
+## Findings that affect G9
+
+1. **`machine exec` uses the HTTPS Machines API in the default inspected path; it does not call the SSH agent/WireGuard setup.** It returns a buffered result rather than a console stream. Its server duration, command/output bounds and timeout process-settlement semantics are not established by the opened source/docs.
+2. **CLI success is not guest success.** Pinned `runMachineExec` prints a nonzero guest exit code but returns no error solely for that result. Its `--json` output comes from a response struct that can omit zero `exit_code` and loses the live API's `exit_signal` field. A foreground control qualification must inspect the real result shape and guest outcome.
+3. **“No WireGuard setup” does not mean “no local flyctl state.”** Common/auth preparers run before `machine exec` or noninteractive launch, create/check config state, can write cache, and conditionally kill a legacy agent from a PID record. A supported `FLY_CONFIG_DIR` override isolates that preparer's config-directory destinations; it is not a credential source or a guarantee of no other local effects.
+4. **G9's classic SSH side effects are real but conditional.** SSH console/SFTP/shell call the agent path. The pinned CLI also has isolated-agent and token-gateway modes, so “always detached” and “always persists a registered peer private key” are too broad. No mode was observed or selected here.
+5. **A foreground in-guest build need not download its toolchain if the selected immutable image already contains it.** That qualifies G9(a)'s necessity claim. No concrete toolchain/tools image, dependency set, payload size, native linker or execution duration has been qualified; the build remains unproved.
+
+## Six primary source units and provenance
+
+The units are bounded call graphs or authoritative contract sets, rather than a broad source/version catalog.
+
+| Unit | Exact sources | Decisive anchors |
+| --- | --- | --- |
+| U1 — CLI exec and preparation | flyctl `v0.4.115`, commit `a1cf49a52b36fba66a2bf0907617bd5aadb8a727`: [exec.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/machine/exec.go#L19-L120), [select.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/machine/select.go#L27-L62), [command.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/command.go#L65-L84), [preparers.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/cmdutil/preparers/preparers.go#L51-L130), [helpers/config.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/helpers/config.go#L8-L20) | Exec arguments/flags 19–51; selection 82; request/response handling 91–120. `newRunE` runs common/auth preparers at command.go 107–123; config-permission temporary write 227–255; cache finalization 170–181; conditional legacy-agent kill/unlink 467–514. Supported config-directory override is explicit. |
+| U2 — Pinned HTTP client and wire types | flyctl [go.mod:79](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/go.mod#L79) pins fly-go `v0.11.3`, dereferenced commit `3a12e8afe47deb642c31a56b8f3822fa96ab8f19`: [machine_types.go](https://github.com/superfly/fly-go/blob/3a12e8afe47deb642c31a56b8f3822fa96ab8f19/machine_types.go#L1196-L1210), [flaps_machines.go](https://github.com/superfly/fly-go/blob/3a12e8afe47deb642c31a56b8f3822fa96ab8f19/flaps/flaps_machines.go#L343-L355), [flaps.go](https://github.com/superfly/fly-go/blob/3a12e8afe47deb642c31a56b8f3822fa96ab8f19/flaps/flaps.go#L59-L98), [http.go](https://github.com/superfly/fly-go/blob/3a12e8afe47deb642c31a56b8f3822fa96ab8f19/http.go#L17-L44), [context.go](https://github.com/superfly/fly-go/blob/3a12e8afe47deb642c31a56b8f3822fa96ab8f19/context.go#L31-L44) | Default HTTPS base; POST exec; JSON body/response. Flaps path prefix at flaps_machines.go 17–19 and flaps.go 246–279. Buffered decoding 179–182. Shared HTTP retries differ from Flaps GET-only retry; see below. |
+| U3 — SSH, agent and WireGuard custody | Same flyctl pin: [SSH console](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/ssh/console.go#L186-L199), [SFTP](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/ssh/sftp.go#L133-L182), [remote.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/agent/remote.go#L14-L45), [agent modes](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/agent/agent.go#L16-L60), [start.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/agent/start.go#L28-L84), [server.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/agent/server/server.go#L278-L305), [wg.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/wireguard/wg.go#L48-L120) | Agent establish/start/reuse; classic state cache/create/save at wg.go 48–70,107–120,164–187. Token tunnel generates in-memory state at server.go 323–369. Machine `--shell` takes this SSH path at [run.go:480–505](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/machine/run.go#L480-L505). |
+| U4 — File injection and image reference | Same flyctl pin: [command_run.go](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/command_run.go#L298-L367), [run.go file merge](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/command/machine/run.go#L932-L936), [image resolver](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/build/imgsrc/resolver.go#L124-L145), [remote reference resolver](https://github.com/superfly/flyctl/blob/a1cf49a52b36fba66a2bf0907617bd5aadb8a727/internal/build/imgsrc/remote_image_resolver.go#L26-L60); same fly-go pin [File type](https://github.com/superfly/fly-go/blob/3a12e8afe47deb642c31a56b8f3822fa96ab8f19/machine_types.go#L922-L939) | Whole local-file read → base64 `raw_value` → Machine config, not SFTP. A path argument takes BuildImage; a non-path image reference takes ResolveReference (command_run.go 73–125). Digest preserved in DeploymentImage.String. Reference resolution can contact local Docker/registry and record build metadata; it is not a proof of zero local/build-related effects. |
+| U5 — Live Fly API/documented payload contract | [Official OpenAPI](https://docs.fly.io/api/machines/openapi.json), JSON pointers `/paths/~1v1~1apps~1{app_name}~1machines~1{machine_id}~1exec/post`, `/components/schemas/MachineExecRequest`, `/components/schemas/flydv1.ExecResponse`, `/components/schemas/fly.File`; [Machine guide, file placement](https://docs.fly.io/machines/flyctl/fly-machine-run#place-data-into-files-on-the-machine) | Read 2026-10-15. OpenAPI bytes SHA-256 `dd8f43b54b02cd28224dd80e487e7a0edd219255892b9cb2b3a26e7f924601bc`. Live/unpinned server contract includes newer fields than the pinned client. Guide warns config injection is unsuitable for large files but supplies no numeric bound. |
+| U6 — Cargo provenance/network controls | Official Cargo [build command](https://doc.rust-lang.org/cargo/commands/cargo-build.html#manifest-options), [registry index JSON format](https://doc.rust-lang.org/cargo/reference/registry-index.html#json-format), [source replacement/directory sources](https://doc.rust-lang.org/cargo/reference/source-replacement.html#directory-sources) | `--locked` requires existing unchanged lock resolution; `--offline` prevents Cargo network access; `--frozen` combines them. Registry index describes archive SHA-256 checksum. Directory-source checksum metadata protects against accidental change, not malicious replacement. No selected toolchain image or dependency graph was executed. |
+
+## Exact exec mapping and completion limits
+
+CLI usage is `exec [machine-id] <command>` with one or two positional arguments: the command is one string. The CLI forwards it without adding a shell, splitting it into argv, or attaching stdin. This does not establish how the server interprets deprecated `cmd`; do not assume local shell quoting/redirection semantics apply there.
+
+Pinned request/response fields (U1/U2):
+
+```go
+type MachineExecRequest struct {
+    Container string // json:"container,omitempty"
+    Machine bool     // json:"machine,omitempty"
+    Cmd string       // json:"cmd,omitempty"
+    Stdin string     // json:"stdin,omitempty"
+    Timeout int      // json:"timeout,omitempty"
+}
+type MachineExecResponse struct {
+    ExitCode int32 // json:"exit_code,omitempty"
+    StdOut string  // json:"stdout,omitempty"
+    StdErr string  // json:"stderr,omitempty"
+}
+```
+
+The CLI sets `Cmd`, `Container`, `Machine` and `Timeout`; it does not set `Stdin` or expose a stdin flag in this command. `--container` and `--no-container` are mutually exclusive. `--timeout` is an integer in seconds with no specified default, so the pinned CLI obtains zero and JSON `omitempty` omits it when unset/zero. Zero/omission is not evidence of unlimited guest execution. No local maximum/range check appears in this command.
+
+`func (f *Client) Exec(ctx context.Context, appName, machineID string, in *fly.MachineExecRequest) (*fly.MachineExecResponse, error)` sends `POST https://api.machines.dev/v1/apps/{app}/machines/{machine}/exec` under the default API base. An environment API-base override exists; no current environment was inspected. The HTTP client JSON-decodes the response before the CLI renders it. No PTY, streaming reader, interactive stdin, running-operation ID or completion subscription is exposed by this path.
+
+For text output the CLI prints `Exit code: N` on nonzero, then stdout and stderr, and returns nil when the API/render path otherwise succeeds. For `--json` it serializes the struct directly. A zero `ExitCode` can therefore disappear due to `omitempty`; runtime qualification must observe the actual expected representation rather than assume an explicit zero field. The pinned response has no `exit_signal`, so an API-provided signal field is not preserved by this typed decoding/rendering.
+
+The live OpenAPI instead offers `command: string[]`, labels `cmd: string` deprecated, and includes response `exit_signal`. Its `stdin`/`timeout` fields have no stated numeric size/default/maximum or timeout kill/reap guarantee. Neither the opened spec nor CLI establishes maximum stdout/stderr/command length, truncation behavior, shell parsing, or settlement of children after timeout/disconnect. The numeric limit for the separate Machine-state wait endpoint is not an exec limit.
+
+There is also **no exactly-once execution proof**: Flaps' outer helper retries only GET, but U2 `http.go` configures shared transport retries for temporary errors and 502/503. `WithoutHTTPRetries(ctx)` controls that second layer; the inspected exec path does not set it. This identifies possible automatic retry, not an observed duplicate execution or a chosen mitigation. The client constructor has no explicit overall `http.Client.Timeout`; absence is not a server lifetime guarantee.
+
+The Lead's proposed foreground control qualification (successful command, deliberate nonzero/signal, bounded output/footer) can close actual mapping/completion observations before build. A timeout/lost reply remains incomplete until actual process custody is established; it is not permission to detach work, poll a file, retry an uncertain execution or raise a limit to call it done.
+
+## Local state and transport choices, without selecting one
+
+| Path | Source-established custody | Limits/tradeoffs |
+| --- | --- | --- |
+| `machine exec` / noninteractive config-file launch | Default HTTPS API request path has no call to `BringUpAgentOrgSlug`, agent establish or WireGuard state creation. U1/U2/U4. | Still runs the general flyctl preparation/finalization path. It is not an OS-sandboxed or side-effect-free invocation. No actual API/local-state behavior was observed. |
+| General flyctl preparation | U1 common preparers create/check local config state; auth preparers include `killOldAgent`. With a legacy PID record, that function can kill its recorded process and unlink that record. Dirty cache can be saved. | Possible source paths only; no PID/config/agent state was inspected and no kill happened in this research. No per-command skip for `killOldAgent` was established. |
+| Supported config-state isolation | `FLY_CONFIG_DIR` is honored by `helpers.GetConfigDirectory`; DetermineConfigDir installs that path into context; the legacy PID check and cache/perms destinations use that selected directory. | An independently owned fresh state directory can isolate those destinations. It does not provide authentication, prove no other effects, authorize credential copying or select the execution host. No override was set/run here. |
+| SSH console/SFTP and Machine `--shell` | U3 calls agent establish/reuse and tunnel dialing; missing agent can start a subprocess. Classic mode can create an API WireGuard peer, generate a private key and save state in selected config. | Session end is not proof of classic peer/key deletion; none was found on this call path. These are additional process/state/resource boundaries. |
+| Isolated/token agent modes | `FLY_AGENT_ISOLATED` starts a child bound to parent EOF rather than the default detached mode. Token-gateway mode uses session macaroons and an in-memory generated key/tunnel instead of registering/caching the classic peer. | These qualify the blanket G9 claim, but still involve an agent/tunnel and require actual closure evidence. They are source options, not selected/configured workarounds. Actual mode, gateway expiry and cleanup were not observed. |
+
+## Transfer and foreground build viability
+
+`func FilesFromCommand(ctx context.Context) ([]*fly.File, error)` reads each `--file-local` source entirely with `os.ReadFile`, base64-encodes it and places it in `raw_value`; parseFiles requires an absolute guest path. A pinned `File` also has a `mode` field. The create/update config path merges these files and sends JSON through the API, not through SFTP. Transfer identity still needs expected source bytes/digest and guest readback; an accepted configuration is not by itself proof of the intended installed content.
+
+No numeric per-file, aggregate config/request, file-count or output maximum was established. The CLI helper has no local size guard in the inspected function; base64 adds approximately one third before JSON/config overhead. The guide's warning prevents claiming that a large executable, source/vendor bundle or complete dependency cache will fit. The actual source and lockfile have not been authored, so their transfer size is also unknown.
+
+A digest-pinned image may already contain the exact Rust compiler/Cargo, native linker and filesystem observer/formatter tools. This avoids a necessary toolchain download; it does not prove a particular image contains those tools or has the required target architecture. Image reference resolution is distinct from local Dockerfile build, but flyctl's reference resolver still probes local/remote strategies and metadata paths. A no-local-builder/no-agent claim must cover that path too; a direct Machines API image field is a separate source-supported interface, not selected here.
+
+Cargo's documented `--locked` preserves an existing dependency resolution but still permits network access. `--frozen` requires dependencies already available and prevents Cargo network access; it does not create a missing cache. Expected archive checksums and separately hashed first-party/path-source bytes strengthen provenance. A lockfile or generated checksum metadata is not a security sandbox, compiler proof, toolchain pin or proof that arbitrary dependency build scripts cannot perform their own effects.
+
+There is no source-only reason a native Linux foreground build is impossible, and no source-only proof it fits the Machines exec lifetime or this probe's CPU/RAM/storage bounds. Required real completions remain transfer/readback, compiler/lint exit, expected executable digest/target and foreground probe settlement. Cargo `--quiet` reduces Cargo messages; it is not a hard stdout/stderr byte cap. A chosen output envelope needs an explicit overflow/incomplete outcome and preserved guest exit semantics. No build duration, toolchain image, output budget, detached builder, polling loop or fallback was selected.
+
+## Contradictions, nulls and completion
+
+- DeepWiki-first pointers were checked at the actual flyctl dependency pins. DeepWiki's claim that flyctl version is irrelevant to fly-go behavior is rejected: flyctl pins fly-go `v0.11.3`, whose structs differ from the live API.
+- Primary nulls: old `docs.machines.dev` exec/spec routes and guessed `docs.fly.io/api/machines/machines-exec.md` returned 404. The current official `docs.fly.io/api/machines/openapi.json` succeeded. The narrative Machines resource page documents `files` but supplied no exec time/output bounds. No forum number was promoted to a guarantee.
+- Guessed upstream `flaps/exec.go`, older file names and preparer/helper paths returned 404; public pinned tree metadata located the actual owner files. A fly-go tree request returned 503 once; the exact dereferenced-tag request later succeeded. These were public source-route outcomes, not authenticated service/runtime failures.
+- Source classes: current governing artifacts; DeepWiki flyctl/fly-go pointers; exact pinned source call graphs; current official Fly schema/guide; official Cargo contracts. No memory, private configuration, current agent state or cloud resource inspection was used. No independent helper was commissioned.
+- Artifact check: complete readback of this file. No product behavior, transfer, build, exec, timeout or cleanup result is claimed.
+
+Return token: `program-design-gap` — the Lead must select and qualify one bounded foreground transfer/build/control route. Unknown hosted limits and timeout custody are explicit runtime gates; SSH/CLI preparation state must be owned or avoided through an admitted interface, without copying credentials or silently modifying the owner's state.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

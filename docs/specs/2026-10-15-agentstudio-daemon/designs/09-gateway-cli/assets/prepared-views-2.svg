@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1087.295 599.7" width="1087.295" height="599.7" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 1087px; --diagram-readable-width: 870px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<g class="subgraph" data-id="ActiveGeneration" data-label="Current desired generation">
+  <rect x="213.734" y="116" width="833.561" height="146.20000000000002" rx="0" ry="0" fill="var(--_group-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="213.734" y="116" width="833.561" height="28" rx="0" ry="0" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="225.734" y="130" font-size="12" font-weight="600" fill="var(--_text-sec)" dy="4.199999999999999">Current desired generation</text>
+</g>
+<polyline class="edge" data-from="_start2" data-to="ActiveGeneration" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="630.5145,68 630.5145,116" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="ActiveGeneration" data-to="ActiveGeneration" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="new intent, source or invalidation" points="213.734,164.73333333333335 203.734,164.73333333333335 203.734,213.4666666666667 213.734,213.4666666666667" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="ActiveGeneration" data-to="Closing" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="interest released or shutdown" points="630.5145,262.20000000000005 630.5145,378.5" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Closing" data-to="_end" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="owned work joined" points="630.5145,415.4 630.5145,531.7" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="_start" data-to="WaitingForInputs" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="257.73400000000004,197.15 305.73400000000004,197.15" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="WaitingForInputs" data-to="Preparing" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="admitted capture" points="446.23699999999997,205.525 458.23699999999997,205.525 458.23699999999997,227.75 641.3820000000001,227.75" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Preparing" data-to="Offered" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="current candidate" points="744.094,227.75 910.3670000000001,227.75 910.3670000000001,207.75 946.3670000000001,207.75" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="WaitingForInputs" data-to="Offered" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="unavailable read admitted" points="446.23699999999997,193.225 458.23699999999997,193.225 458.23699999999997,171 910.3670000000001,171 910.3670000000001,195.45 946.3670000000001,195.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<g class="edge-label" data-from="ActiveGeneration" data-to="ActiveGeneration" data-label="new intent, source or invalidation">
+  <rect x="36.019999999999996" y="173.95000000000002" width="169.714" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="120.877" y="189.10000000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">new intent, source or invalidation</text>
+</g>
+<g class="edge-label" data-from="ActiveGeneration" data-to="Closing" data-label="interest released or shutdown">
+  <rect x="551.5145" y="305.20000000000005" width="157.24" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="630.1345" y="320.35" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">interest released or shutdown</text>
+</g>
+<g class="edge-label" data-from="Closing" data-to="_end" data-label="owned work joined">
+  <rect x="578.0145" y="458.4000000000001" width="104.37400000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="630.2015" y="473.55000000000007" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">owned work joined</text>
+</g>
+<g class="edge-label" data-from="WaitingForInputs" data-to="Preparing" data-label="admitted capture">
+  <rect x="490.23699999999997" y="211.75" width="94.27600000000001" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="537.375" y="226.9" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">admitted capture</text>
+</g>
+<g class="edge-label" data-from="Preparing" data-to="Offered" data-label="current candidate">
+  <rect x="800.9630000000001" y="211.75" width="101.40400000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="851.6650000000001" y="226.9" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">current candidate</text>
+</g>
+<g class="edge-label" data-from="WaitingForInputs" data-to="Offered" data-label="unavailable read admitted">
+  <rect x="624.513" y="155" width="136.45000000000002" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="692.738" y="170.15" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">unavailable read admitted</text>
+</g>
+<g class="node" data-id="_start2" data-label="" data-shape="state-start" id="source--diagram-2--_start2">
+  <circle cx="630.5145" cy="54" r="12" fill="var(--_text)" stroke="none"></circle>
+</g>
+<g class="node" data-id="Closing" data-label="Closing" data-shape="rounded" id="source--diagram-2--Closing">
+  <rect x="587.3095" y="378.5" width="86.41" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="630.5145" y="396.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Closing</text>
+</g>
+<g class="node" data-id="_end" data-label="" data-shape="state-end" id="source--diagram-2--_end">
+  <circle cx="630.5145" cy="545.7" r="12" fill="none" stroke="var(--_text)" stroke-width="1.5"></circle>
+  <circle cx="630.5145" cy="545.7" r="8" fill="var(--_text)" stroke="none"></circle>
+</g>
+<g class="node" data-id="WaitingForInputs" data-label="Waiting for inputs" data-shape="rounded" id="source--diagram-2--WaitingForInputs">
+  <rect x="305.73400000000004" y="180.925" width="140.503" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="375.9855" y="199.375" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Waiting for inputs</text>
+</g>
+<g class="node" data-id="Preparing" data-label="Preparing" data-shape="rounded" id="source--diagram-2--Preparing">
+  <rect x="641.3820000000001" y="209.3" width="102.71199999999999" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="692.738" y="227.75" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Preparing</text>
+</g>
+<g class="node" data-id="Offered" data-label="Offered" data-shape="rounded" id="source--diagram-2--Offered">
+  <rect x="946.3670000000001" y="183.15" width="84.928" height="36.900000000000006" rx="6" ry="6" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="988.8310000000001" y="201.60000000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Offered</text>
+</g>
+<g class="node" data-id="_start" data-label="" data-shape="state-start" id="source--diagram-2--_start">
+  <circle cx="243.734" cy="197.15" r="12" fill="var(--_text)" stroke="none"></circle>
+</g>
+</svg>

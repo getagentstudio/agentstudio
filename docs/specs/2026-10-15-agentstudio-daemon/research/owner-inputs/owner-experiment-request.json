@@ -1,0 +1,18 @@
+{
+  "source_session": "rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+  "note": "Later explicit experiment-mapping request, after the original seven-file source packet. Scope is proposal plus Lead validation, not execution.",
+  "messages": [
+    {
+      "source_line": 2449,
+      "source_timestamp": "2026-10-16T00:35:01.523Z",
+      "text": "Let’s figure out the what the primary experiments will be please with advisors help",
+      "sha256": "ccbc318280d697dfbdbb37729c29599d27f8b96b76ff352c518d3acf36130c74"
+    },
+    {
+      "source_line": 2455,
+      "source_timestamp": "2026-10-16T00:35:48.038Z",
+      "text": "Have him map it out for you and you validate it.",
+      "sha256": "879b1dd65e960f768030d5704eebd8dc59027bd139ce0e2eb36b446f1d76098e"
+    }
+  ]
+}

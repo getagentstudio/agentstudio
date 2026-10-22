@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · EX0 (partial): latest zmx pin, 2026-10-20 (🦉 Advisor preflight)</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="EX0-zmx-pin-findings-8c61be8b.html">AgentStudio daemon · EX0 (partial): latest zmx pin, 2026-10-20 (🦉 Advisor preflight)</a></nav></ex-nav>
+<ex-document id="content"><h1>EX0 (partial): latest zmx pin, 2026-10-20 (🦉 Advisor preflight)</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/experiments/2026-10-20-zmx-latest/EX0-zmx-pin-findings.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## EX0 (partial): latest zmx pin, 2026-10-20 (🦉 Advisor preflight)
+
+These are read-only checks. I cloned upstream into scratch at tmp/experiments/2026-10-20-zmx-latest/zmx, built nothing and ran no daemon.
+
+- **Upstream:** github.com/neurosnap/zmx `main` = `0a18bee7d3555b7822d1cb79cca2304d6ef2711b` (2026-10-16, "fix(daemon): don't drop a client's unread input on hangup"), from `git ls-remote`.
+- **The spec's candidate** `2d23c0d` (research/topology-risks.md:12, surveyed 2026-10-15) is an ancestor of main. Main is 6 commits beyond it and 16 beyond vendored `8bab1f0` (v0.8.1).
+- **Breaking wire change after the candidate:** `35b8783` "refactor(ipc): freeze ipc wire protocol and align struct layouts" (2026-10-16). Its CHANGELOG:
+  - "Standardized IPC header and payloads to 8-byte aligned extern struct layouts. Daemons and clients must be on the same version".
+  - "Dropped legacy pre-0.7.0 resize framing".
+  - "IPC messages now carry an explicity protocol_version field".
+  - "The daemon now responds with Tag.Unsupported (255) when receiving unknown IPC tags".
+  - Source: `PROTOCOL_VERSION: u8 = 1` in `Header`; frames with a mismatched version are rejected.
+- **Capture** is present at main (`src/ipc.zig:33`, `Capture = 22`; `extern struct Capture` at `:73`).
+- **Viewerless-related changes since the candidate:**
+  - `c0d157e` "replace has_had_client with clearing write_buf when is_terminal=false" (loop.zig).
+  - `3414f1a` "fix(run): only treat -d as a flag before the command". `run -d` detaches from the calling terminal (`src/main.zig:209-235,575`).
+  - X5-P1 ("run forces bash in task mode") was read at 0.8.1, so it needs re-reading at main.
+
+What this changes:
+1. Every spec statement about "latest zmx" rests on `2d23c0d`'s wire format and its old-daemon detection: "upstream sends Capture then Info to detect an old daemon that ignores the new tag" (topology-risks.md:56). That analysis is stale. At main, new daemons answer unknown tags with Unsupported, and clients and daemons must match versions.
+2. Owner decision O-C (the zmx pin, and the policy for installed 0.8.1 sessions) is now sharper. A main-version client cannot be assumed to talk to the user's live 0.8.1 daemons. Adopting latest zmx means a deliberate installed-session plan (keep an old-protocol client path, or drain and retire), not a transparent upgrade.
+3. EX1 and EX2 should pin `0a18bee`, or whatever is newer at run time, and re-check the Capture framing and the `run -d` and write_buf behaviour at that pin.
+
+## Environments (2026-10-20T14:15Z)
+
+- **Built:** zmx main 0a18bee with mise zig 0.16.0 (`minimum_zig_version` 0.16.0), ReleaseSafe, to `tmp/experiments/2026-10-20-zmx-latest/install/bin/zmx`. Dependencies were fetched with `zig build --fetch`. No daemon was started.
+- **sunclaw:** reachable over ssh (BatchMode) at `sunclaw.tailad69a0.ts.net`. It reports **Darwin arm64**: a remote Mac, not Linux. It has zig, git, and 168 GiB free. That makes it the cross-machine Host target (Host on sunclaw, client here), not the Linux parity target.
+- **Fly:** `fly auth whoami` exits 1, so the CLI is not logged in on this Mac. flyctl is v0.4.118. `fly help` mentions no Sprites command, so Sprites may need its own CLI. The Linux probe (EX4/EX6) waits on the owner's login, and possibly on installing the Sprites CLI.
+- **EX1** (viewerless create at 0a18bee) has been commissioned to a Sol researcher. Its isolated `ZMX_DIR` is `tmp/ex/z`, and its report goes to `EX1-report.md`.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

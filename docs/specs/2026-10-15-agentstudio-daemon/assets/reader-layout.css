@@ -1,0 +1,20 @@
+/* Keep comparison tables readable inside Demistify's horizontal scroll wrapper. */
+ex-markdown table {
+  min-width: 42rem;
+}
+
+ex-markdown th:first-child,
+ex-markdown td:first-child {
+  min-width: 7.5rem;
+}
+
+/* Keep the native walkthrough surface inside a narrow scrolling viewport. */
+@media (max-width: 40rem) {
+  [role="region"][aria-label="Walkthrough player"] {
+    left: 0.5rem;
+    right: 0.5rem;
+    width: auto;
+    max-width: none;
+    transform: none;
+  }
+}

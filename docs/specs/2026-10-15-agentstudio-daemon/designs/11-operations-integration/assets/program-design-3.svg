@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 966.615 702" width="966.615" height="702" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 967px; --diagram-readable-width: 773px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"></polygon>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"></polyline>
+  </marker>
+</defs>
+<g class="block" data-type="alt" data-label="Known committed transaction">
+  <rect x="191.02100000000002" y="283" width="745.594" height="354" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="191.02100000000002" y="283" width="187.26999999999995" height="18" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="197.02100000000002" y="292" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">alt [Known committed transaction]</text>
+  <line x1="191.02100000000002" y1="581" x2="936.615" y2="581" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+  <text x="199.02100000000002" y="595" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[Refused, failed or outcome unestablished]</text>
+</g>
+<line class="lifeline" data-actor="Central" x1="95.51050000000001" y1="70" x2="95.51050000000001" y2="672" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Owner" x1="280.24" y1="70" x2="280.24" y2="672" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Data" x1="466.081" y1="70" x2="466.081" y2="672" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Copy" x1="653.404" y1="70" x2="653.404" y2="672" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="View" x1="850.36" y1="70" x2="850.36" y2="672" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<g class="message" data-from="Data" data-to="Central" data-label="Renew designated authority" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="466.081" y1="90" x2="95.51050000000001" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="280.79575" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Renew designated authority</text>
+</g>
+<g class="message" data-from="Central" data-to="Data" data-label="Actual authority outcome" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="95.51050000000001" y1="130" x2="466.081" y2="130" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="280.79575" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual authority outcome</text>
+</g>
+<g class="message" data-from="Owner" data-to="Data" data-label="Admitted domain write" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="280.24" y1="185" x2="466.081" y2="185" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="373.1605" y="175" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admitted domain write</text>
+</g>
+<g class="message" data-from="Data" data-to="Data" data-label="Actual gate and guarded write attempt" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="466.081,225 496.081,225 496.081,245 466.081,245" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></polyline>
+  <text x="504.081" y="235" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual gate and guarded write attempt</text>
+</g>
+<g class="message" data-from="Data" data-to="Owner" data-label="Actual commit result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="466.081" y1="323" x2="280.24" y2="323" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="373.1605" y="313" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual commit result</text>
+</g>
+<g class="message" data-from="Data" data-to="Copy" data-label="Selected committed changes" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="466.081" y1="363" x2="653.404" y2="363" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="559.7425000000001" y="353" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Selected committed changes</text>
+</g>
+<g class="message" data-from="Copy" data-to="Copy" data-label="Commit apply and published cut" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="653.404,403 683.404,403 683.404,423 653.404,423" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></polyline>
+  <text x="691.404" y="413" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Commit apply and published cut</text>
+</g>
+<g class="message" data-from="Copy" data-to="Data" data-label="Actual copy acknowledgement" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="653.404" y1="473" x2="466.081" y2="473" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="559.7425000000001" y="463" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual copy acknowledgement</text>
+</g>
+<g class="message" data-from="View" data-to="Copy" data-label="Authorized coherent read" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="850.36" y1="513" x2="653.404" y2="513" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="751.8820000000001" y="503" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Authorized coherent read</text>
+</g>
+<g class="message" data-from="Copy" data-to="View" data-label="Value and actual cut witness" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="653.404" y1="553" x2="850.36" y2="553" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="751.8820000000001" y="543" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Value and actual cut witness</text>
+</g>
+<g class="message" data-from="Data" data-to="Owner" data-label="Actual write result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="466.081" y1="617" x2="280.24" y2="617" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="373.1605" y="607" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual write result</text>
+</g>
+<g class="note" data-position="over" data-actors="Central,Data">
+  <polygon points="185.10774999999998,138 370.48375,138 376.48375,144 376.48375,161 185.10774999999998,161" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <polygon points="370.48375,138 376.48375,144 370.48375,144" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <text x="280.79575" y="149.5" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">This control path needs no Gateway</text>
+</g>
+<g class="note" data-position="over" data-actors="Data,Copy">
+  <polygon points="451.87750000000005,625 661.6075000000001,625 667.6075000000001,631 667.6075000000001,648 451.87750000000005,648" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <polygon points="661.6075000000001,625 667.6075000000001,631 661.6075000000001,631" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <text x="559.7425000000001" y="636.5" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Unestablished does not prove noncommit</text>
+</g>
+<g class="actor" data-id="Central" data-label="Central authority" data-type="participant">
+  <rect x="30" y="30" width="131.02100000000002" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="95.51050000000001" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Central authority</text>
+</g>
+<g class="actor" data-id="Owner" data-label="Host capability owner" data-type="participant">
+  <rect x="201.02100000000002" y="30" width="158.438" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="280.24" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host capability owner</text>
+</g>
+<g class="actor" data-id="Data" data-label="Host data runtime" data-type="participant">
+  <rect x="399.459" y="30" width="133.244" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="466.081" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host data runtime</text>
+</g>
+<g class="actor" data-id="Copy" data-label="Gateway copy runtime" data-type="participant">
+  <rect x="572.703" y="30" width="161.402" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="653.404" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Gateway copy runtime</text>
+</g>
+<g class="actor" data-id="View" data-label="Gateway view owner" data-type="participant">
+  <rect x="774.105" y="30" width="152.51" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="850.36" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Gateway view owner</text>
+</g>
+</svg>

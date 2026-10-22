@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Host-local agents and context lifetime</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="host-context-lifecycle-design.html">AgentStudio daemon · Host-local agents and context lifetime</a></nav></ex-nav>
+<ex-document id="content"><h1>Host-local agents and context lifetime</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](host-context-lifecycle-design.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Host-local agents and context lifetime
+
+**The addressed Host admits agent input and owns the retained workflow. A client view consumes that work; closing the view does not retire its Host context.** Frontend commands still use socket → Mac Gateway → Host, while authorized input originating inside a Host session uses the selected Host-local entry independently of every Mac.
+
+This is a bounded structural proposal for U4/U9/U13/U15 and R5/R6/R9/R15/R16, refining [DS07's fixed K7/K8 obligations](specification.html). [Requirements](../../user-requirements.html), [entity definitions](../../domain-entities.html) and the [integrated binding table](../11-operations-integration/program-design-workbench.html#source--bind-the-specification-s-entities-before-naming-packages) remain authoritative. This is not a complete DS07 Program Design, new public method catalog, credential protocol, selected database partition or migration plan. G3/G8/G9/G12/G13 remain explicit where they affect the contracts below.
+
+## Current coupling that must be separated
+
+Current source is AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. These are source observations, not an executed daemon or evidence that the existing Swift service can run unchanged without the app.
+
+| Current edge | Source behavior | Target structural consequence |
+| --- | --- | --- |
+| Scope admission | [PaneContextService](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService.swift) requires current membership-directory presence, no pending retirement and no SQL retirement marker | Host session/context admission needs actual E1/E10/E17 scope. It cannot ask Swift whether a pane is present as its authority predicate |
+| Current writer | [Ordered writes](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift) check the Sessions binding inside the same write closure before replaying/allocating a claim or applying a payload | Preserve the effect-time binding/order fence at the Host. An earlier Gateway lookup or copied binding row cannot replace it |
+| Service opening | [ensureOpen](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService.swift) can settle existing open blocking asks with `appStopping`, drain retirements and arm deadline/presentation work on first opening | Host initialization and its recovery policy belong to Host composition. A first Gateway view/read must not become an accidental Host-incarnation transition |
+| Time-dependent maintenance | [Deadline work](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) selects ask/line/retirement/visibility deadlines, writes due transitions, then publishes; caught failures rely on later demand | Host owns activation and progress independent of UI demand. Exact failure retry/eligibility and lease-outage behavior still need the selected profile; do not inherit a UI-triggered retry as proof of autonomy |
+| View retirement | [Permanent pane retirement](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift), including Undo retirement, calls context retirement and retires local viewing/activity state | Client reference/Undo cleanup stays client-side. It cannot by itself retire a continuing Host context or terminate E1 execution |
+| App-owned service stop | [stop](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) shuts owned tasks down, attempts `appStopping` settlement and finishes waiters | Swift/Gateway shutdown is not the Host context owner's stop input. Actual Host stop/restart and waiter recovery require G3/G8; this source policy is not automatically copied across processes |
+
+Current [App composition](../../../../../Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift) connects Sessions ingestion, the context service, membership and publication. Extraction moves responsibilities, rather than translating that entire composition into one Rust actor. The [query/table map](../02-data-ownership-replication/research/query-data-dependencies.html) and [transaction analysis](../02-data-ownership-replication/research/transaction-boundaries.html) retain the actual read/write dependencies.
+
+## Bind the existing entities to Host responsibilities
+
+These refine the candidate homes already named in the integrated design. They introduce no new durable identity or service process.
+
+| Entity | Semantic owner / candidate home | Boundary shape and retained meaning |
+| --- | --- | --- |
+| E1 execution session | Host execution registry/backend adapter; `host_session_runtime` | Host-qualified execution reference and actual execution observation. View presence, provider conversation and socket lifetime remain different |
+| E9/E10 provider conversation and binding | Host provider/binding owner; `provider_conversations` / `agent_binding` | Provider-qualified opaque conversation plus admitted association generation. Recorded history alone cannot establish that a restored binding is live |
+| E11 context message | Host context workflow; `session_context` | Qualified context/message reference, sender/provenance, notice/ask variant and retained settlement. In-session target is the E1/E10 scope, with exact schema/key layout still DS01/DS02 work |
+| E17 authenticated principal / E18 authority grant | Host admission/authority owner under DS03 | Actual admitted actor and target/privilege grant remain separate from credentials, request receipts and producer claims. Exact cross-service revocation/effect-time rules remain G8/G12; no bearer is a read-model field |
+| Producer ordering for E10/E11 and R9 | Host context transactional owner | Operation-specific claim/epoch/counter and current binding are checked at their owning write boundary. An ordering claim is not an E18 grant; this mechanism introduces no additional domain entity |
+| E16 client target | Existing native hierarchy and Gateway client-input adapter | Declared presentation membership/intent for composition. It supplies no independent mutation grant or Host execution lifetime |
+| E22 scoped observation | Actual Host source; Gateway prepares only its derived view | Operation-specific source/revision/coverage witness and typed read model. RPC reply, copied state and native application remain different boundaries |
+
+Frontend adapters invoke the same Host domain operations; they do not implement a second admission/reducer. Host-local hooks/CLI use the same owner after their own real local admission. Exact local socket discovery, enrollment, credential custody and supported frontend methods remain DS01/DS03/DS09/DS11 contracts. This proposal does not treat a Unix socket, environment variable or payload-supplied session name as authorization.
+
+## Typed input, transaction and return
+
+The proposed internal flow separates decoded input, admitted scope, owner decision and observed result. Transport DTOs can be decoded; that does not construct an admitted Host-session call. Nominal execution, conversation, binding, message, claim and request-attempt types remain distinct, with provider identifiers kept opaque. The applicable Rust types/lints and unsafe prohibition apply from this boundary.
+
+| Boundary | Inputs and responsible check | Result / negative space |
+| --- | --- | --- |
+| Host ingress → domain owner | Decoded provider input or typed context operation plus real caller/session provenance. Admission resolves the actual context and permitted operation | Admitted typed call or bounded refusal/unavailable outcome under the selected profile. No Swift membership RPC or fallback to another Host |
+| Provider/binding reduction | Admitted input, current binding/source state and actual source qualification; ordered intake under declared capacity | Current source distinguishes ignored work from committed binding/evidence, including recorded-only input. A recorded observation need not update live activity; hook exit zero is not admission |
+| Context mutation | Typed notice/ask/claim/title/line/person action, current scope/binding/order predicates and relevant stored state | Operation-specific retained outcome or refusal. Same-intent replay, conflict, already-settled, not-found and stale writer remain separate; there is no generic exactly-once operation journal |
+| Host write boundary | One actual write context containing the required binding/context/order predicate and applicable intake checkpoint | Commit establishes only that write's state/result. A private checkpoint can share the transaction without being replicated. Split units must preserve the fence or return a DS02 design gap, not silently substitute distributed preflight |
+| Owner → original caller | The operation's actual result after its relevant boundary, including supported uncertainty | Committed settlement is not proof that an agent read/acted on the answer. A failed/lost reply does not undo the state or authorize blind resend |
+| Source read/copy → Gateway | Authorized selected state/read models and their actual witnesses | Read preparation performs no answer, receipt acknowledgement, notice mark-read or native action. Those remain explicit owner operations |
+
+Current [provider repository reduction](../../../../../Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift) and [post-commit status handling](../../../../../Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift) constrain that split. The [status ownership walk](research/session-status-ownership.html) explains why the full current reducer cannot simply become one shared Host status: local viewed-after-completion input needs its selected client/user scope. The Host still processes provider/binding/turn evidence independently of that display choice.
+
+A committed provider/binding mutation and its later context-ended maintenance are not asserted to be one transaction. The current [context-ended path](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) has a separate write. Awaiting a callback does not make those commits atomic or prove every follow-up succeeded. Their failure/recovery and read-validity contract must remain explicit; this proposal adds no automatic outbox or distributed transaction to hide the interval.
+
+## One committed mutation, two observation paths
+
+```mermaid
+sequenceDiagram
+    participant Agent as Host-local caller
+    participant Host as Host context owner
+    participant Store as Authoritative write/read boundary
+    participant Gateway as Mac Gateway view owner
+    participant Native as Native client
+    Agent->>Host: Session-scoped intent and caller provenance
+    Host->>Host: Admit actual caller and target scope
+    alt Admitted for mutation
+        Host->>Store: Check binding, order and state inside write
+        Store-->>Host: Committed result or write refusal
+        Host-->>Agent: Actual operation boundary result
+        Note over Agent,Store: This path needs no Mac client or Gateway
+        opt Committed state is later observed
+            Gateway->>Host: Authorized read for declared source scope
+            Host->>Store: Capture selected committed read model
+            Store-->>Host: Read result and actual witness
+            Host-->>Gateway: Qualified read outcome
+            Gateway->>Native: Prepared observation and validity
+            Note over Gateway,Native: Delivery is separate from native application
+        end
+    else Ingress refused or unavailable
+        Host-->>Agent: Bounded refusal before mutation
+    end
+```
+
+[Standalone rendered diagram](assets/host-context-1.svg)
+
+The later read is one valid observation path, not a requirement to contact Host on every display refresh. For a selected copy-backed source, the Gateway reads its published copy/cut instead. Copy apply does not execute the mutation again, confirm a receipt or prove the caller saw its reply. A delayed copy and a lost operation reply remain different cases; there is no global database position for every file/process operation.
+
+## Lifecycle inputs retain their actual meaning
+
+| Input | Responsible owner and effect boundary |
+| --- | --- |
+| A person closes a pane or app | Native/Gateway presentation lifetime changes. Detach/reference cleanup cannot synthesize Host context retirement, provider session end or `appStopping` settlement |
+| A Gateway/network connection disappears | Transport/delivery becomes interrupted under its selected profile. It is not by itself E1 termination or E10 replacement; logical-interest/waiting/resume rules remain explicit |
+| A binding is superseded or ended | Host binding/context owners apply the declared stale-writer/line/receipt transitions. Provider conversation history is not erased and E1 execution is not inferred terminated |
+| The actual waiting caller ends | The Host applies that operation's selected caller-loss contract. An unrelated viewer's disconnect cannot stand in for this event. Blocking/nonblocking and reconnect-waiting rules still need their exact G8 profile |
+| A real deadline becomes due | Host context scheduling evaluates its injected clock/policy and attempts the required authoritative transition; Gateway demand is not the sole activation source |
+| A native client marks a notice read or answers | Explicit person operation with current target/authority at Host. Rendering, receiving a copied row and ordinary detail reads do not imply this effect |
+| Host storage or write authority is unavailable | Actual write gate applies, with the selected typed operation outcome and observation validity. No Gateway grant, indefinite grace, silent acceptance or new fact spool is inferred. G13 still owns the failure policy |
+| Host service stops/restarts or execution actually ends | Host lifecycle and actual backend observations drive the selected recovery/end contract. Native lifetime, provider turn completion and recorded SQL history do not supply that evidence; G3/G6 remain required |
+
+Host composition must activate required context input/maintenance independently of Swift/Gateway presence. An implementation cannot satisfy this by leaving opening/deadline/retry activation solely in the first UI query. Startup settlement, storage/gate recovery eligibility and retained-waiter behavior remain explicit design dependencies; this document adds no retry timer, backoff constant or persistence mechanism to fill them.
+
+## Cutover and proof constraints
+
+The selected Host contexts need one authoritative mutation owner. Swift's former membership-retirement/stop path cannot remain an independent owner of those same retained Host messages. Existing pane-scoped data and credentials cannot be relabeled as Host-session identities without the selected DS02/G3/G12 mapping. This states the ownership constraint; stored-data migration/coexistence phases remain unselected, and machine/writer transfer stays excluded.
+
+Proof must observe the actual Host-local input/admission, authoritative transaction, binding/currentness outcome and original caller result with Swift and every Gateway (macOS or iOS) absent. Separately attach a view, close it and observe unchanged continuing execution/context custody; do not use a hidden native surface as the no-client fixture. Race a stale writer against binding replacement at commit, and race person answer/withdraw/deadline/caller loss against the same retained ask under the selected profile. Observe operation result and delayed copied/read view independently.
+
+Exact publication/read DTOs, public method/authority profiles, data units/keys/export/retention, failure/retry behavior, backend source qualification and Host restart remain incomplete. The [Host-autonomy experiment](experiments/host-autonomy.html), [transaction analysis](../02-data-ownership-replication/research/transaction-boundaries.html), [prepared-view design](../09-gateway-cli/prepared-view-boundaries.html) and later Verification Design own the adjacent proof. No implementation, migration, test, runtime or interoperability result is claimed here.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

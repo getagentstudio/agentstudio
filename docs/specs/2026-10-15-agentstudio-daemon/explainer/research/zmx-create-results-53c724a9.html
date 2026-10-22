@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Starting ZMX through its public create API</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="zmx-create-results-53c724a9.html">AgentStudio daemon · Starting ZMX through its public create API</a></nav></ex-nav>
+<ex-document id="content"><h1>Starting ZMX through its public create API</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+[Current work report](../progress.html) · [Markdown source](../../../../../tmp/practices-research/2026-10-21-daemon-progress/zmx-create-results.md) · [Project overview](../index.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Starting ZMX through its public create API
+
+**The public ZMX API started an interactive Bash in a private fixture without calling attach. A second create call preserved the same execution.** The probe separately observed a controlled shell-initialization milestone and actual retirement. It did not establish ordinary prompt readiness or a Rust Host startup path.
+
+This closes a narrower question left by EX1: the earlier experiment used an undocumented EOF-attach branch. Here a standalone Zig consumer called the exported `zmx.create` at the exact new pin, with interactive mode and explicit private Bash startup input. No upstream or Ghostty source changed.
+
+## API return and readiness are separate
+
+```mermaid
+sequenceDiagram
+    participant Probe as Probe runner
+    participant API as Public API consumer
+    participant ZMX as Private ZMX
+    participant Shell as Interactive Bash
+    Probe->>API: Create owned private session
+    API->>ZMX: Create daemon and shell
+    ZMX->>Shell: Start controlled initialization
+    API-->>Probe: Created true
+    Shell-->>Probe: Runner consumes held record
+    Probe->>API: Create same name with alternate command
+    API-->>Probe: Created false, existing execution retained
+    Probe->>Shell: Release initialization barrier
+    Shell->>ZMX: Marker and DA1 query
+    ZMX-->>Shell: Exact device reply after parsing
+    Shell-->>Probe: Controlled ready milestone
+```
+
+The shell was explicitly interactive: its actual flags included `i`. The runner consumed the held record after its create call returned; the shell may have written that record earlier. Its private rc waited on a FIFO until the runner released it, then emitted a marker and device query, checked the exact backend reply, and reported ready. A later plain Capture contained the marker. After reporting ready, the rc stayed held; it never reached ordinary prompt processing. This qualifies that controlled milestone only.
+
+| Observation | Actual result | Meaning |
+| --- | --- | --- |
+| First public create | `created:true`, exit 0, before the release barrier | Session creation return and application-specific initialization are distinct. |
+| Same-name create with another command | `created:false`, exit 0; alternate file absent at the checkpoint | In this valid existing-session branch, the alternate command was not launched. Source confirms that branch returns before command application. |
+| Execution continuity | Three identical daemon/Bash PID, parent, group and start-time arrays | Duplicate creation and initialization release preserved this execution. |
+| Controlled readiness | Exact DA1 reply, then a 20-byte plain Capture containing the marker | The backend had parsed the controlled output; this is not default-shell or prompt readiness. |
+| Retirement | `pending`, two kernel exit events, then actual `completed`; socket absent | Cleanup was observed beyond sending Kill. |
+
+The Boolean is not a generic operation receipt or proof that requested launch arguments match an existing session. The source also does not supply a shell-readiness acknowledgement through that Boolean: its parent-fork branch uses a fixed ten-millisecond wait. A Host integration still needs an explicit readiness and duplicate-intent contract.
+
+## What the peer observations can establish
+
+The fixture used no attach operation or native view. Both backend Info queries separately reported zero **other** clients, excluding the requesting observer according to the pinned source.
+
+The independent kernel/open-FD arm remains **inconclusive**. Both actual `lsof` records contained one UNIX descriptor at the private endpoint but no listening/connected state labels. The probe preserved that uncertainty rather than turning one descriptor into a verified zero-peer count. Backend-reported counts and independent kernel classification remain different evidence.
+
+## Build, source and independent check
+
+The isolated consumer build completed **43 of 43 steps, exit 0**, using Zig 0.16.0/ReleaseSafe and the exact `7f0ffdb` dependency. Six decisive dependency inputs matched the pinned Git blobs. The binary's hash matched on Sunclaw. This was a standalone public-package consumer build, not an AgentStudio build or Rust binding selection.
+
+Pre-run corrections are retained: the new package needed Zig's fingerprint; its compiler cache required the exact host grant; the target's Bash 3.2 supports `read -n`, not the initial draft's `-N`; and the Python driver needed import-order correction. The final sources passed Ruff, format and basedpyright with zero errors or warnings before the first target run.
+
+An inspect-only Sol Researcher independently checked the source and actual records, including the readiness limit above. The Lead checked 14 source hashes, 14 raw command receipts, the raw frames and both actual exits. The evidence archive's digest matched the export. A repeat invocation refused the existing output prefix, exit 1, with all 62 retained case-file hashes unchanged and no socket present.
+
+[Plan and limits](../../../../../tmp/experiments/2026-10-21-zmx-public-create/plan.md), [actual observations](../../../../../tmp/experiments/2026-10-21-zmx-public-create/observations.json), [build identity](../../../../../tmp/experiments/2026-10-21-zmx-public-create/build-manifest.json), [Lead readback](../../../../../tmp/experiments/2026-10-21-zmx-public-create/lead-evidence-check.json), [independent check receipt](../../../../../tmp/experiments/2026-10-21-zmx-public-create/independent-evidence-check.md), [fresh-prefix refusal](../../../../../tmp/experiments/2026-10-21-zmx-public-create/freshness-refusal-check.json).
+
+Still unqualified: default/user shell startup and prompt behavior, concurrent create races and all error cases, Linux's public-create realization, Rust/Tokio startup, provider hooks, the complete Host/Gateway route, installed-session transition and restart recovery. The case used one controlled Bash profile and a known two-process family. No production session or product vendor changed.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

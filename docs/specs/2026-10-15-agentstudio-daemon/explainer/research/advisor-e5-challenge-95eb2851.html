@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · advisor e5 challenge</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-e5-challenge-95eb2851.html">AgentStudio daemon · advisor e5 challenge</a></nav></ex-nav>
+<ex-document id="content"><h1>advisor e5 challenge</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-e5-challenge.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+🦉 Advisor E5 challenge, re 01a142b5. This is advice; nothing was run.
+
+READ IN FULL: route-performance-experiment (92 lines), e5-latency (40), e5-transport (75), e5-native (45), plus the current K10 and E5 sections. The Requirements (108 lines) are unchanged since my full read at E3 (mtime 20:25 local).
+SOURCES OPENED:
+- vendor/ghostty src/apprt/embedded.zig:1880-1912
+- src/termio/Termio.zig:672-700, plus an embedded.zig grep for a render action
+- AgentStudioIPCClientCore.swift:40-75, 355-395 and its deadline lines
+I accept your reading of the other anchors.
+
+VERDICT: the separation of layers, populations and accounting is strong. There are three material gaps. F1 answers your "do eligible observations exist?" question directly.
+
+F1. P4's parser level has no eligible client-clock observer, and the procedure's own rules forbid the only one that exists.
+- The ONLY client-side parser observation is ghostty_surface_read_text. It is pull-only, and it takes renderer_state.mutex (embedded.zig:1894), the same lock processOutput holds while parsing (Termio.zig:678). Ghostty's own doc says it "is an expensive operation so it shouldn't be called too often" (embedded.zig:1886-1888).
+- No exported parser-progress or render push signal turned up; the embedded.zig grep found only inspector.render. Timing an echo with read_text therefore means SAMPLING. That is a polling observer that also contends with the measured lane, and line 58 ("do not replace it with polling") plus "no production hook" (line 56) leave P0 nothing to qualify.
+- What does exist is the producer-side reply round trip (N5): the child echoes, then sends DSR, and receives the CPR.
+  - On a Mac-local Host it can share the key-injection clock, because macOS monotonic and mach clocks are system-wide. [gk, verify] But it is an UPPER BOUND that includes one extra input-path traversal, not parser time.
+  - On a remote Linux Host the reply lands on a different clock, so key-to-parser on the client clock has NO eligible observer.
+- Decide now, rather than leaving it for P0 to discover:
+  - either admit a declared sampling instrument (period = resolution, with a P8 perturbation arm), distinguished from completion polling;
+  - or mark P4 parser-level remote as inconclusive by construction, and Mac-local as a labelled upper bound.
+
+F2. The current-route baseline confounds client concurrency and censors its own tail.
+- AgentStudioIPCClientCore's exchange is strictly one in flight: submit, then a synchronous receive by ID (:375-377). One original deadline serves the whole scope (:48; deadline at :9 and :271).
+(a) Under scheduled offered load, current-arm work queues in the harness before submission. A pipelined or multiplexed new-route candidate would then "win" through concurrency, not the route. Hold the in-flight limit equal across arms (1, then a separately declared N), or report concurrency as its own varied axis.
+(b) With a shared scope deadline, deadline refusals CORRELATE WITH LATENCY. Excluding them biases p95/p99 over successes low, even with failures listed beside them. Either size scopes so no call is censored and record that it wasn't, or treat a refusal as a right-censored observation at its elapsed time.
+- PROOF LIMIT: I saw the deadline used at connect and in the scope doc comment; I did not open whether receiveResponse also checks it.
+
+F3. A compression configuration can quietly change cancellation and replacement semantics. [gk on streaming codecs; your P7 pin has multiple_members/reset]
+- If the codec's history or dictionary spans operations on a multiplexed stream, cancelling operation A mid-frame forces a choice: still send A's compressed bytes (so cancellation no longer frees bandwidth), or reset the context (which affects B). P6 replacement likewise has to define the reset.
+- P5 compares identical transfers off and on, and interrupts "a stream", but has no case that cancels one operation among several sharing codec state.
+- Declare the codec-state scope (per frame/member vs spanning operations). If it spans operations, add: cancel one operation mid-stream while others continue, then verify the others decode correctly and report the cancellation's bytes and latency.
+
+NOT FINDINGS: no hidden product policy. The exploratory caps are labelled, real-load P7 is separated, the hold/release controller is independent of the held producer, and the byte-boundary and percentile rules are sound.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

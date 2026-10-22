@@ -1,0 +1,1012 @@
+{
+  "schemaVersion": 1,
+  "status": "completed-source-pass",
+  "question": "Current response/error/event representation and CLI extraction for representative counter-bearing surfaces",
+  "source": {
+    "repository": "/Users/shravansunder/code/projects/agentstudio.feat-daemon",
+    "head": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+    "branch": "feat/daemon",
+    "date": "2026-10-17"
+  },
+  "scope": "Eight representative production representation paths, twelve typed field groups and eight presence/null cases. Evidence only; no full 57-method schema census, target codec/integer/null-policy selection or repairs.",
+  "governingInputRead": "docs/specs/2026-10-15-agentstudio-daemon/designs/01-service-contracts/experiments/swift-socket-compatibility.md",
+  "evidencePolicy": {
+    "source": "Current decisive declarations/call paths inspected; source behavior and test expectations, not runtime observation.",
+    "inference": "Explicitly marked static composition/risk; not measured rounding or confirmed incident.",
+    "tests": "Existing tests inspected only. No test/build/Swift probe/runtime/network/database/secret operation executed.",
+    "reuse": "Prior same-HEAD pane/CLI packets used for navigation; representation claims rechecked in this pass."
+  },
+  "sharedNumericGuard": {
+    "basis": "source",
+    "maximumExactInteger": "9_007_199_254_740_991",
+    "numericTypes": [
+      "Pane UInt64 guards constrain0...max",
+      "Pane signed Int guards constrain -max...max"
+    ],
+    "sourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/IPCSchemaProviding.swift",
+        "line": 16,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/IPCPaneNumericEncodingError.swift",
+        "line": 9,
+        "evidence": "opened-current-pass"
+      }
+    ],
+    "constraint": "These guards explicitly cover new pane-context contracts, not every existing wire declaration. A Double conversion in guarded paths is not evidence that arbitrary UInt64 values are permitted or rounded.",
+    "aboveBoundFailure": "IPCPaneNumericEncodingError maps internalError -32603; representative adapters also call requireSafe before result formation.",
+    "failureCaveat": "The direct numeric error mapper is not every encoding failure route: IPCMethodContract.encodedValue catches JSONEncoder errors and wraps them as IPCSchemaValidationError.decodingMismatch. Representative adapters guard counters before typed result formation. No uniform failure code is inferred for all untraced nested encoders.",
+    "failureCaveatSource": {
+      "path": "Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift",
+      "line": 145,
+      "evidence": "opened-current-pass"
+    },
+    "failureSource": {
+      "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCRequestError.swift",
+      "line": 76,
+      "evidence": "opened-current-pass"
+    }
+  },
+  "paths": [
+    {
+      "id": "R01",
+      "family": "ordinary typed result and CLI normalization",
+      "basis": "source",
+      "entry": "AppIPCTypedMethodRegistration ordinary connectionHandler; no cachedTransportResult",
+      "route": [
+        "typed handler Result",
+        "descriptor.encodeResult: JSONEncoder → schema normalization(IPCSchemaValue.number(Decimal)) and typed encoding comparison → Data",
+        "JSONDecoder(JSONValue) → AppIPCInvocationResult.value",
+        "connection reader sendResult → writer success(JSONValue) → JSONEncoder envelope → NDJSON Data",
+        "CLI receiveResponse decodeResponse → result JSONValue",
+        "JSONEncoder(result) → descriptor.normalizeResult → schema normalization + typed decode/re-encode comparison → IPCValidatedJSON.data"
+      ],
+      "preservesEncodedData": "Validated encoded result bytes exist before registration line199 but are decoded into JSONValue for ordinary results. CLI normalizedResult Data is newly normalized data, not original result span.",
+      "doubleBoundaries": [
+        "Server registration decodes validated Data to JSONValue.number(Double).",
+        "Client ordinary response decoder constructs JSONValue.number(Double), then re-encodes before contract normalization."
+      ],
+      "numericConstraint": "Schema normalization uses Decimal, distinct from socket JSONValue Double; it does not remove earlier generic representation boundaries.",
+      "presenceBoundary": "Schema required/optional/null validation and typed encoding checks run before/after generic boundary; not a byte-preserving pipeline.",
+      "consumer": "PaneCLICommandRunner decodes normalized Data for claim/changes/ordered result; generic CLI writes normalizedResult.data.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCTypedMethodRegistration.swift",
+          "line": 195,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCConnectionReader.swift",
+          "line": 105,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCConnectionWriter.swift",
+          "line": 56,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift",
+          "line": 247,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift",
+          "line": 283,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift",
+          "line": 104,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift",
+          "line": 133,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCSchemaValue.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "Observed source routing only. No byte/number roundtrip executed and no complete method census."
+    },
+    {
+      "id": "R02",
+      "family": "pane.writer.claimEpoch",
+      "basis": "source",
+      "entry": "Current registration uses ordinary typed route R01, without cached result",
+      "fields": [
+        {
+          "name": "IPCPaneEpochClaimResult.claimed.epoch",
+          "type": "UInt64",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneOrderedWriteContracts.swift",
+            "line": 73,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "0...9_007_199_254_740_991 by encode requireSafe, decodeUnsigned and unsignedInteger schema",
+          "route": "R01"
+        }
+      ],
+      "route": [
+        "adapter resolves writer/current service result",
+        "adapter requireSafe(epoch) → typed .claimed",
+        "ordinary registration R01",
+        "CLI exchange.call result normalized Data → JSONDecoder(IPCPaneEpochClaimResult) → acceptClaim/ordered title-line request"
+      ],
+      "preservesEncodedData": "No raw result preservation at server/ordinary CLI result boundary; typed counter is bounded before Double conversion.",
+      "doubleBoundaries": [
+        "R01 server result projection",
+        "R01 client response projection"
+      ],
+      "numericConstraint": "Safe bound in adapter plus custom Codable/schema. Above-bound invariant maps internalError, not a permitted full UInt64 result.",
+      "presenceBoundary": "kind and epoch required; custom decoder uses decode not decodeIfPresent. Null/missing required scalar rejected by typed/schema branch.",
+      "consumer": "PaneCLICommandRunner orderedWrite line185 decodes normalized result, not original response bytes.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCPaneContextMethodRegistrations.swift",
+          "line": 192,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+          "line": 157,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneOrderedWriteContracts.swift",
+          "line": 84,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneOrderedWriteContracts.swift",
+          "line": 91,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/PaneCLICommandRunner.swift",
+          "line": 180,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCRequestError.swift",
+          "line": 76,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "No evidence of successful wire values above safe bound; no measured rounding/incident."
+    },
+    {
+      "id": "R03",
+      "family": "pane.message.changes",
+      "basis": "source",
+      "entry": "Current messageChanges registration ordinary typed route R01",
+      "fields": [
+        {
+          "name": "IPCPaneMessageChangesResult.nextPosition",
+          "type": "UInt64",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneMessageChangesContracts.swift",
+            "line": 50,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "safe unsigned range; adapter and custom encode/decode guards; schema unsignedInteger",
+          "route": "R01"
+        },
+        {
+          "name": "IPCPaneMessageChangeEntry.position",
+          "type": "UInt64",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneMessageChangesContracts.swift",
+            "line": 93,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "safe unsigned range; adapter and custom encode/decode guards; schema unsignedInteger",
+          "route": "R01"
+        }
+      ],
+      "route": [
+        "service page → adapter requireSafe nextPosition and each entry.position",
+        "typed result → R01",
+        "CLI printAnswers decodes normalizedResult Data as changes result, accumulates/re-encodes combined or partial page"
+      ],
+      "preservesEncodedData": "No raw preservation in server or ordinary client; final answers output is a newly encoded aggregate typed page.",
+      "doubleBoundaries": [
+        "R01 server and client generic result trees"
+      ],
+      "numericConstraint": "Every representative position is bounded at adapter and Codable/schema. Unsigned declaration is not wire permission for UInt64.max.",
+      "presenceBoundary": "entries,nextPosition,more and entry positions required; no optional counter default.",
+      "consumer": "printAnswers reads typed nextPosition, supplies later request.after, and emits typed aggregate.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCPaneContextMethodRegistrations.swift",
+          "line": 146,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+          "line": 108,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneMessageChangesContracts.swift",
+          "line": 67,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneMessageChangesContracts.swift",
+          "line": 113,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/PaneCLICommandRunner.swift",
+          "line": 96,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "Nested answer payload variants not exhaustively surveyed; no source counter/receipt effect audit repeated."
+    },
+    {
+      "id": "R04",
+      "family": "pane.context.get",
+      "basis": "source",
+      "entry": "Current contextGet registration ordinary typed route R01; adapter reply sizing does not select encoded transport result",
+      "fields": [
+        {
+          "name": "IPCPaneContextGetResult.revision",
+          "type": "UInt64",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+            "line": 118,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "safe unsigned range via adapter mapping, custom encode/decode and schema",
+          "route": "R01"
+        },
+        {
+          "name": "IPCPaneLiveMessageCursor.position",
+          "type": "UInt64",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+            "line": 3,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "safe unsigned range in custom Codable/schema, truncation mapper guard",
+          "route": "R01"
+        },
+        {
+          "name": "IPCPaneLiveMessageCursor.rank",
+          "type": "Int",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+            "line": 3,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "signed safe range by custom Codable/schema; separate domain/rank meaning not selected",
+          "route": "R01"
+        },
+        {
+          "name": "IPCPaneContextGetResult.agentTitle/agentLine/session/truncation",
+          "type": "Optional typed fields",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+            "line": 121,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "decodeIfPresent; encodeIfPresent; .optional schema allows missing or null",
+          "route": "R01"
+        }
+      ],
+      "route": [
+        "readContext calls detail mapper and byte sizing",
+        "typed IPCPaneContextGetResult returned, with revision/truncation guards",
+        "R01",
+        "CLI pane intent writes normalized Data; generic CLI same ordinary normalized path"
+      ],
+      "preservesEncodedData": "Sizing uses encoded values to measure, but production registration still projects typed result to JSONValue. No cache supplied.",
+      "doubleBoundaries": [
+        "R01 server/client"
+      ],
+      "numericConstraint": "Representative revision/cursor values use safe guards; remainingLiveSources/openAsks/unreadNotices also guarded by detail mapping, not a full nested field census.",
+      "presenceBoundary": "Optional context fields read missing/null as nil and encode nil by omission. Schema .optional is optional presence plus oneOf(value,null). Required revision uses decodeUnsigned.",
+      "consumer": "PaneCLICommandRunner pane case forwards normalized result bytes to output, rather than retaining original wire result lexeme.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCPaneContextMethodRegistrations.swift",
+          "line": 205,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+          "line": 178,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextDetailMapping.swift",
+          "line": 18,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+          "line": 161,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+          "line": 175,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/PaneCLICommandRunner.swift",
+          "line": 86,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "Full nested numeric/date/form/result census not performed; source routing and representative fields only."
+    },
+    {
+      "id": "R05",
+      "family": "events.subscribe initial response",
+      "basis": "source",
+      "entry": "AppIPCBuiltInPresentationAndEventRegistrations → IPCEventBroker.subscribe",
+      "fields": [
+        {
+          "name": "IPCEventSubscriptionResult.subscriptionId/eventNames",
+          "type": "UUID / [IPCEventName]",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCEventContracts.swift",
+            "line": 20,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "No counter or sequence in initial subscription result; schema UUID and array",
+          "route": "R01"
+        }
+      ],
+      "route": [
+        "event broker stores subscription and returns typed ID/names",
+        "ordinary typed registration R01",
+        "CLI stream receives/normalizes initial response, emits normalizedResult.data"
+      ],
+      "preservesEncodedData": "Initial response takes generic R01, not raw event frame path.",
+      "doubleBoundaries": [
+        "R01 generic result trees; this typed initial result contains no counters"
+      ],
+      "numericConstraint": "Do not attribute nonexistent event sequence counter to this current result.",
+      "presenceBoundary": "Typed initial result fields required by schema.",
+      "consumer": "AgentStudioIPCClient.stream initialResponse; CLI writes normalized Data.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInPresentationAndEventRegistrations.swift",
+          "line": 84,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/IPCEventBroker.swift",
+          "line": 66,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/Schemas/IPCEventResultSchemas.swift",
+          "line": 8,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCEventMethodDescriptors.swift",
+          "line": 19,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift",
+          "line": 74,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCommandLineRunner.swift",
+          "line": 211,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "Subscription registration acceptance is not proof every declared event name has a current production publisher."
+    },
+    {
+      "id": "R06",
+      "family": "events.notification emission and CLI frame forwarding",
+      "basis": "source",
+      "entry": "Representative production Bridge review/file-selection helper → IPCEventBroker.publish",
+      "fields": [
+        {
+          "name": "IPCEventNotification.eventId/name/occurredAt/payload",
+          "type": "UUID / IPCEventName / Date / IPCEventPayload",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCEventContracts.swift",
+            "line": 148,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "No generic sequence/revision field in notification envelope; occurredAt uses Foundation Date encoding",
+          "route": "event-frame"
+        },
+        {
+          "name": "IPCTerminalEventPayload.exitCode/duration",
+          "type": "Int? / TimeInterval?",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCEventContracts.swift",
+            "line": 30,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "Declared optional numeric fields; schema safe signed integer/duration>=0, but broker direct encode does not run that schema",
+          "route": "event-frame-declaration-only"
+        }
+      ],
+      "route": [
+        "production bridge helper constructs notification with UUIDv7/Date/.bridge payload",
+        "broker encodeJSONValue(notification): JSONEncoder Data → JSONDecoder JSONValue(Double)",
+        "JSONRPCNotification(method:events.notification,params:JSONValue) → JSONEncoder String",
+        "socket event subscriber writer.sendFrame → NDJSON bytes",
+        "CLI stream decodeRequest(frame) generically validates notification shape/id absence",
+        "CLI callback receives original frame String and stdout forwards it unchanged"
+      ],
+      "preservesEncodedData": "Server event typed encoding becomes generic tree. CLI parses generic request for validation but forwards original received String, not JSONEncoder(parsed params); numeric lexeme is not reconstructed by this consumer.",
+      "doubleBoundaries": [
+        "Server encodeJSONValue notification conversion.",
+        "Client notification validation decodeRequest uses generic JSONValue, but that parsed value is discarded for forwarding."
+      ],
+      "numericConstraint": "No broker schema validation before event encode; do not import new pane Codable guards to all event types. Actual representative Bridge payload carries identifiers/optional strings, not terminal counters.",
+      "presenceBoundary": "Notification outer params optional; request decoder preserves missing params nil versus explicit .null, but forwarding retains input text. Synthesized event payload optional fields use ordinary Codable; all current variants not audited.",
+      "consumer": "stream callbacks are .notification(String), not a typed IPCEventNotification result normalization.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInBridgeReviewRegistrations.swift",
+          "line": 221,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/IPCEventBroker.swift",
+          "line": 108,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/IPCEventBroker.swift",
+          "line": 154,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCConnectionWriter.swift",
+          "line": 142,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 359,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift",
+          "line": 101,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCommandLineRunner.swift",
+          "line": 217,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/Schemas/IPCEventResultSchemas.swift",
+          "line": 21,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "Bounded Sources search located direct production broker publish in Bridge helper; no terminal/permission publisher proved. Declared event numeric types are not a current emitted-value or precision failure claim."
+    },
+    {
+      "id": "R07",
+      "family": "staleness success result versus JSON-RPC staleness error",
+      "basis": "source",
+      "entry": "ordered title/line result mapping or AppIPCPaneContextError mapping",
+      "fields": [
+        {
+          "name": "IPCPaneOrderedWriteResult.stale.reason.lastAccepted.writeNumber.epoch/counter",
+          "type": "UInt64 / UInt64",
+          "source": {
+            "path": "Sources/AgentStudioProgrammaticControl/IPCPaneOrderedWriteContracts.swift",
+            "line": 167,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "Nested IPCPaneWriteNumber safe encode/decode/schema plus mapper checks",
+          "route": "R01-success"
+        },
+        {
+          "name": "AppIPCPaneContextError.staleness",
+          "type": "IPCPaneWriteStaleness?",
+          "source": {
+            "path": "Sources/AgentStudioAppIPC/AppIPCPaneContextMethodRegistrations.swift",
+            "line": 22,
+            "evidence": "opened-current-pass"
+          },
+          "bounds": "Optional error detail; enum encoding retains nested write-number guards if lastAccepted supplied",
+          "route": "generic-error"
+        }
+      ],
+      "route": [
+        "title/line lastAccepted is successful typed stale result → R01 → CLI typed decode/reconciliation",
+        "current explicit staleness-error construction sites supply writerReplaced",
+        "error mapper encodeJSONValue(staleness) → details JSONValue → writer sendError/encodeResponse",
+        "CLI generic error decode → finite IPCDescriptorRemoteFailure projection"
+      ],
+      "preservesEncodedData": "No raw error.data preservation by CLI projection; remote failure type has code/documentedReason/schema/scope/agent/command corrections, no staleness payload field.",
+      "doubleBoundaries": [
+        "encodeJSONValue for optional staleness error detail",
+        "generic error JSONValue decode/encode envelope"
+      ],
+      "numericConstraint": "Do not conflate counter-bearing success stale(lastAccepted) with current error(writerReplaced). Full enum supports lastAccepted but current searched error producers carry no counters. Unsafe encode maps internalError.",
+      "presenceBoundary": "Error data optional JSONValue uses decodeIfPresent; missing/explicit-null error data collapse at envelope model. Staleness details only added when nonnil.",
+      "consumer": "CLI lastAccepted typed success influences local ordering state; JSON-RPC error projection drops unknown/raw staleness detail.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextMapping.swift",
+          "line": 191,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+          "line": 157,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCRequestError.swift",
+          "line": 109,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCConnectionReader.swift",
+          "line": 113,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCConnectionWriter.swift",
+          "line": 74,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/IPCDescriptorRemoteFailureDecoder.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/IPCDescriptorClientResponse.swift",
+          "line": 21,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/PaneCLICommandRunner.swift",
+          "line": 203,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "No exhaustive error-producer census beyond staleness: construction search; no runtime error/rounding incident claimed."
+    },
+    {
+      "id": "R08",
+      "family": "cached raw response and explicit CLI discovery counterexample",
+      "basis": "source",
+      "entry": "command.list or system.capabilities cachedTransportResult",
+      "route": [
+        "owner typed/schema encode supplies cached Data",
+        "ordinary registration gates retained, then .encoded(cache.encodedValue())",
+        "writer encodeResponseBytes appends Data directly to envelope and LF",
+        "explicit discoverCommandBytes/discoverCatalogBytes calls decodeDiscoveryResponse",
+        "header validates envelope without building result tree; byte slicer returns first top-level result span",
+        "CLI raw discovery API returns result Data; optional typed metadata consumer decodes Data separately"
+      ],
+      "preservesEncodedData": "Yes for cached result body after composition and explicit discovery result extraction; envelope ID/error/header handled separately. This is not the ordinary call(normalizeResult) path.",
+      "doubleBoundaries": [
+        "No generic result-tree decode at these raw boundaries; header error.data still JSONValue if error returned."
+      ],
+      "numericConstraint": "Raw response path does not itself select broader numeric domain; owning schema/type limits still apply. Standalone byte framing assumes validated encoded result.",
+      "presenceBoundary": "Discovery header uses contains+decodeNil; null result counts as no result, same envelope validation as generic reader. Raw slicing does not make result:null accepted.",
+      "consumer": "Explicit command/capability byte APIs preserve body; discoverCatalog typed metadata method then JSONDecodes Data. Calling ordinary call for same descriptor would use R01 client path.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCCommandMethodRegistrations.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AgentStudioIPCRegistryAuthorization.swift",
+          "line": 52,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCCachedTransportResult.swift",
+          "line": 17,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCTypedMethodRegistration.swift",
+          "line": 195,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+EncodedResult.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 42,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift",
+          "line": 125,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "limit": "Raw cache/discovery is a concrete counterexample to all-responses-generic; not proof ordinary pane responses preserve original bytes."
+    }
+  ],
+  "presenceCases": [
+    {
+      "id": "N01",
+      "basis": "source",
+      "location": "response envelope",
+      "input": "result and error both missing",
+      "currentOutcome": "Both generic decodeResponse and discovery header reject: hasResult=false and hasError=false.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 199,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 31,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "testSource": "Tests/AgentStudioIPCTransportTests/JSONRPCDiscoveryResultTests.swift:35"
+    },
+    {
+      "id": "N02",
+      "basis": "source",
+      "location": "response envelope",
+      "input": "result:null, no non-null error",
+      "currentOutcome": "Generic decodeIfPresent yields nil; discovery contains+decodeNil sets hasResult=false; both reject. Public success(.null) can be composed by encoder API, but these readers do not accept it as a sole success result. Source counterexample, not demonstrated production incident.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 177,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 199,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 47,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "testSource": "Tests/AgentStudioIPCTransportTests/JSONRPCDiscoveryResultTests.swift:41"
+    },
+    {
+      "id": "N03",
+      "basis": "source",
+      "location": "response envelope",
+      "input": "non-null result plus non-null error",
+      "currentOutcome": "Both reject by exclusive nonnil-value check. This is not strict XOR on key existence.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 206,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 35,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "testSource": "Tests/AgentStudioIPCTransportTests/JSONRPCDiscoveryResultTests.swift:42"
+    },
+    {
+      "id": "N04",
+      "basis": "source",
+      "location": "response envelope",
+      "input": "non-null result + error:null, or result:null + non-null error",
+      "currentOutcome": "Code value-presence predicate accepts the non-null side; null side becomes absent. This branch consequence was not executed or located as a dedicated fixture in the bounded test pass.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 203,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 50,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "id": "N05",
+      "basis": "source",
+      "location": "response identifier / error.data",
+      "input": "missing versus explicit null id or error.data",
+      "currentOutcome": "decodeIfPresent on response id and synthesized optional JSONRPCErrorPayload.data collapses missing/null to nil. Direct JSONRPCIdentifier.null remains representable in encoder API and notification/request parsing has separate behavior.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 132,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec.swift",
+          "line": 202,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioIPCTransport/JSONRPCCodec+DiscoveryResult.swift",
+          "line": 50,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "id": "N06",
+      "basis": "source",
+      "location": "pane.context.get optional fields",
+      "input": "agentTitle/agentLine/session/truncation missing or explicit null",
+      "currentOutcome": "Custom decodeIfPresent yields nil; encodeIfPresent omits nil. .optional schema permits omission and explicit null; schema object normalizer preserves supplied null until typed normalization stage.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+          "line": 161,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+          "line": 175,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCSchemaProviding.swift",
+          "line": 30,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCJSONSchema.swift",
+          "line": 333,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "id": "N07",
+      "basis": "inference",
+      "location": "typed result normalization",
+      "input": "explicit-null optional context field through descriptor.normalizeResult",
+      "currentOutcome": "Code path can canonicalize explicit-null optional field into omission: typed re-encode omits nil, comparison allows input-null/output-missing, then changed typed representation is normalized. This is a static composition inference, not measured byte output or selected policy.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCJSONSchema+TypedEncoding.swift",
+          "line": 41,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift",
+          "line": 112,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift",
+          "line": 155,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "id": "N08",
+      "basis": "source",
+      "location": "required pane counter fields",
+      "input": "missing/null epoch, position, nextPosition or revision",
+      "currentOutcome": "Required schema field rejects absence; nonnullable integer schema rejects null, and custom typed decodeUnsigned uses decode(UInt64) rather than decodeIfPresent. Dedicated selected-method missing-counter fixture was not located in bounded read; source is the decoder/schema.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCJSONSchema.swift",
+          "line": 333,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneNumericEncodingError.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneOrderedWriteContracts.swift",
+          "line": 84,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneMessageChangesContracts.swift",
+          "line": 67,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift",
+          "line": 161,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    }
+  ],
+  "existingTestSources": [
+    {
+      "path": "Tests/AgentStudioIPCTransportTests/JSONRPCDiscoveryResultTests.swift",
+      "lines": [
+        7,
+        35
+      ],
+      "sourceExpectation": "Discovery result slices compare semantic values against generic decoder; missing/null result and conflicting envelope fixture errors compare equal.",
+      "proofLimit": "Read only. Generic reference comparisons are not independent precision proof for above-safe numbers, and these fixtures do not test selected pane methods end to end."
+    },
+    {
+      "path": "Tests/AgentStudioIPCTransportTests/JSONRPCEncodedResultTests.swift",
+      "lines": [
+        7,
+        28
+      ],
+      "sourceExpectation": "Valid encoded result framing semantics and exact frame-bound cases.",
+      "proofLimit": "Read only. Uses generic JSONValue examples; not a proof all production results use encoded route or full integer exactness."
+    },
+    {
+      "path": "Tests/AgentStudioProgrammaticControlTests/IPCPaneContextWireContractTests.swift",
+      "lines": [
+        57,
+        74,
+        93,
+        136
+      ],
+      "sourceExpectation": "Typed safe integer0/1/max roundtrips for representative pane fields; unsafe/fractional/negative decode and above-bound encode refusal; optional nextSourcesAfter explicit null fixture.",
+      "proofLimit": "Read only. Typed/schema contract expectations; no current execution or Swift/Rust transport result claimed."
+    },
+    {
+      "path": "Tests/AgentStudioAppIPCTests/AgentStudioAppIPCPaneContextIntegrationTests.swift",
+      "lines": [
+        564
+      ],
+      "sourceExpectation": "Current title ordering fixture expects stale(lastAccepted(writeNumber)) as success result.",
+      "proofLimit": "Inspected fixture declaration only, not executed or whole suite audited."
+    },
+    {
+      "path": "Tests/AgentStudioProgrammaticControlTests/IPCJSONSchemaTests.swift",
+      "lines": [
+        86
+      ],
+      "sourceExpectation": "Non-null schema field ignored by Codable rejected as decodingMismatch.",
+      "proofLimit": "Representative field preservation check, not all optional null/missing policy."
+    },
+    {
+      "path": "Tests/AgentStudioProgrammaticControlTests/IPCCLIStoreReadThroughWireTests.swift",
+      "lines": [
+        36
+      ],
+      "sourceExpectation": "Separate current auth read-through field has a missing-required-field rejection test in decoder and schema.",
+      "proofLimit": "Auxiliary contrast only; not a pane-context optional-field rule."
+    }
+  ],
+  "counterexamplesAndRisks": [
+    {
+      "basis": "source",
+      "claim": "All responses use JSONValue is too broad: cached command.list/system.capabilities plus explicit client discovery retain encoded result Data across their respective boundaries.",
+      "pathIds": [
+        "R08"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Handler/descriptor returning encoded Data does not imply raw result end-to-end: ordinary registration decodes it to JSONValue and ordinary CLI reparses/re-encodes result before normalization.",
+      "pathIds": [
+        "R01",
+        "R02",
+        "R03",
+        "R04",
+        "R05"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "UInt64 field declarations do not imply full UInt64 wire range. Representative pane epoch/positions/revision/stale write numbers have explicit safe-bound encode/decode/schema checks.",
+      "pathIds": [
+        "R02",
+        "R03",
+        "R04",
+        "R07"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "All staleness is an error is too broad: lastAccepted is current typed success stale result. Current searched explicit staleness-error producers carry writerReplaced; generic error mapping can encode enum but CLI failure projection does not preserve arbitrary staleness payload.",
+      "pathIds": [
+        "R07"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Initial subscription result and later notification are different routes. Notification client performs generic validation but forwards original String; it does not normalize parsed event into output.",
+      "pathIds": [
+        "R05",
+        "R06"
+      ]
+    },
+    {
+      "basis": "inference",
+      "claim": "Unchecked numeric domains in other/untraced contracts would need their own range/production-route evidence before precision equivalence could be claimed. No measured rounding or confirmed current precision incident follows from these declarations.",
+      "pathIds": [
+        "R01",
+        "R06"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Envelope explicit-null result is treated as absent by both response readers; some nested optional fields accept/collapse/omit null. Current behavior is not one universal null-preservation rule.",
+      "presenceCaseIds": [
+        "N01",
+        "N02",
+        "N03",
+        "N04",
+        "N05",
+        "N06",
+        "N07",
+        "N08"
+      ]
+    }
+  ],
+  "gaps": [
+    {
+      "question": "Actual numerical/byte/null interoperability verdict",
+      "searched": "current server/client production paths, custom numeric guards/schema and named existing test sources",
+      "settledBy": "separately authorized independent expected-value real-path qualification; no execution permitted here"
+    },
+    {
+      "question": "All57method result/error/event variant domains and every consumer",
+      "searched": "only commissioned representative methods and shared decisive helpers",
+      "settledBy": "separate full method/field/caller census; not inferred from common type names"
+    },
+    {
+      "question": "Current terminal/permission event production coverage",
+      "searched": "Sources IPCEventNotification constructors, eventBroker.publish, .eventNotification use and current Bridge helper",
+      "settledBy": "exact additional production publisher/caller source; enum/schema declaration alone does not settle"
+    },
+    {
+      "question": "Complete missing/null test matrix for selected counters/context optional fields and generic error.data",
+      "searched": "codec/discovery/encoded-result tests, selected pane wire tests and schema preservation tests",
+      "settledBy": "exact existing dedicated test source or separately authorized qualification; code paths are recorded without claiming test coverage"
+    },
+    {
+      "question": "Preservation outside raw discovery/cached framing and wire normalization",
+      "searched": "ordinary registration, writer, CLI response and contract normalizer",
+      "settledBy": "specific additional producer/client raw route; not a general Data-preservation claim"
+    }
+  ],
+  "checks": {
+    "pathCount": 8,
+    "typedFieldGroups": 12,
+    "presenceCases": 8,
+    "duplicatePathIds": [],
+    "duplicatePresenceIds": [],
+    "currentHeadMatched": true,
+    "runtimeOrTestExecution": "none"
+  }
+}

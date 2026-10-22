@@ -1,0 +1,101 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1378.95 442.09999999999997" width="1378.95" height="442.09999999999997" style="--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#f1efed;--surface:#1a3236;width:100vw;max-width:100vw;height:auto;background:#171d26" data-traced="">
+<style>
+
+  text { font-family: 'Source Sans 3', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<polyline class="edge" data-from="Mac" data-to="System" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Service requests; terminal view/control" points="307.8620000000001,58.45 560.464,58.449999999999996 560.464,207.52142857142857 572.464,207.52142857142857" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Cli" data-to="System" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Operation requests and results" points="332.36749999999995,123.35 548.464,123.35 548.464,212.79285714285714 572.464,212.79285714285714" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Phone" data-to="System" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Concurrent access through a device Gateway" points="259.21250000000003,188.25 536.464,188.25 536.464,218.06428571428572 572.464,218.06428571428572" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="MCP" data-to="System" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Frontend requests through Mac Gateway" points="274.952,253.14999999999998 536.464,253.15 536.464,223.3357142857143 572.464,223.3357142857143" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Integration" data-to="System" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Host-local machine work and session input" points="274.7735,318.05 548.464,318.05 548.464,228.60714285714286 572.464,228.60714285714286" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Operator" data-to="System" data-style="solid" data-arrow-start="false" data-arrow-end="true" data-label="Supported environment and lifecycle" points="321.2525,382.95 560.464,382.95 560.464,233.87857142857143 572.464,233.87857142857143" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="System" data-to="Work" data-style="solid" data-arrow-start="false" data-arrow-end="false" points="777.4340000000001,214.55 813.434,214.55 813.434,191.97500000000002 825.434,191.97500000000002" fill="none" stroke="var(--_line)" stroke-width="1"></polyline>
+<polyline class="edge" data-from="System" data-to="Negative" data-style="dotted" data-arrow-start="false" data-arrow-end="true" data-label="No native Mac presentation obligation on Linux" points="777.4340000000001,226.85 813.4340000000001,226.85 813.4340000000001,249.425 1099.894,249.425" fill="none" stroke="var(--_line)" stroke-width="1" stroke-dasharray="4 4" marker-end="url(#arrowhead)"></polyline>
+<g class="edge-label" data-from="Mac" data-to="System" data-label="Service requests; terminal view/control">
+  <rect x="351.8620000000001" y="42.449999999999996" width="200.602" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="452.16300000000007" y="57.599999999999994" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Service requests; terminal view/control</text>
+</g>
+<g class="edge-label" data-from="Cli" data-to="System" data-label="Operation requests and results">
+  <rect x="377.284" y="107.35" width="163.18" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="458.874" y="122.5" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Operation requests and results</text>
+</g>
+<g class="edge-label" data-from="Phone" data-to="System" data-label="Concurrent access through a device Gateway">
+  <rect x="296.38" y="172.25" width="232.08400000000006" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="412.422" y="187.4" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Concurrent access through a device Gateway</text>
+</g>
+<g class="edge-label" data-from="MCP" data-to="System" data-label="Frontend requests through Mac Gateway">
+  <rect x="318.952" y="237.15" width="209.512" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="423.70799999999997" y="252.3" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Frontend requests through Mac Gateway</text>
+</g>
+<g class="edge-label" data-from="Integration" data-to="System" data-label="Host-local machine work and session input">
+  <rect x="325.6060000000001" y="302.05" width="214.85799999999998" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="433.0350000000001" y="317.2" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Host-local machine work and session input</text>
+</g>
+<g class="edge-label" data-from="Operator" data-to="System" data-label="Supported environment and lifecycle">
+  <rect x="364.336" y="366.95" width="188.128" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="458.4" y="382.09999999999997" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">Supported environment and lifecycle</text>
+</g>
+<g class="edge-label" data-from="System" data-to="Negative" data-label="No native Mac presentation obligation on Linux">
+  <rect x="821.4340000000001" y="233.425" width="234.45999999999998" height="30.3" rx="2" ry="2" fill="var(--bg)" stroke="var(--_inner-stroke)" stroke-width="1"></rect>
+  <text x="938.6640000000001" y="248.57500000000002" text-anchor="middle" font-size="11" font-weight="400" fill="var(--_text-sec)" dy="3.8499999999999996">No native Mac presentation obligation on Linux</text>
+</g>
+<g class="node" data-id="Mac" data-label="Mac user / Swift client" data-shape="rectangle" id="source--diagram-1--Mac">
+  <rect x="141.42400000000006" y="40" width="166.438" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="224.64300000000006" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Mac user / Swift client</text>
+</g>
+<g class="node" data-id="System" data-label="AgentStudio service system" data-shape="rectangle" id="source--diagram-1--System">
+  <rect x="572.464" y="202.25" width="204.96999999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="674.9490000000001" y="220.7" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">AgentStudio service system</text>
+</g>
+<g class="node" data-id="Cli" data-label="CLI / API developer" data-shape="rectangle" id="source--diagram-1--Cli">
+  <rect x="177.7855" y="104.89999999999999" width="154.582" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="255.0765" y="123.35" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">CLI / API developer</text>
+</g>
+<g class="node" data-id="Phone" data-label="Phone and other-device user" data-shape="rectangle" id="source--diagram-1--Phone">
+  <rect x="46.83250000000007" y="169.8" width="212.37999999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="153.02250000000004" y="188.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Phone and other-device user</text>
+</g>
+<g class="node" data-id="MCP" data-label="MCP frontend consumer" data-shape="rectangle" id="source--diagram-1--MCP">
+  <rect x="91.47100000000003" y="234.7" width="183.481" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="183.21150000000003" y="253.14999999999998" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">MCP frontend consumer</text>
+</g>
+<g class="node" data-id="Integration" data-label="Host-local CLI / in-session agent" data-shape="rectangle" id="source--diagram-1--Integration">
+  <rect x="46.83250000000007" y="299.6" width="227.94099999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="160.80300000000005" y="318.05" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host-local CLI / in-session agent</text>
+</g>
+<g class="node" data-id="Operator" data-label="Service operator" data-shape="rectangle" id="source--diagram-1--Operator">
+  <rect x="177.7855" y="364.5" width="143.467" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="249.519" y="382.95" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Service operator</text>
+</g>
+<g class="node" data-id="Work" data-label="Managed sessions, repositories and files" data-shape="rectangle" id="source--diagram-1--Work">
+  <rect x="825.434" y="173.525" width="282.775" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="966.8215" y="191.97500000000002" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Managed sessions, repositories and files</text>
+</g>
+<g class="node" data-id="Negative" data-label="Native client effects remain distinct" data-shape="rectangle" id="source--diagram-1--Negative">
+  <rect x="1099.894" y="230.97500000000002" width="239.05599999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1219.422" y="249.425" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Native client effects remain distinct</text>
+</g>
+</svg>

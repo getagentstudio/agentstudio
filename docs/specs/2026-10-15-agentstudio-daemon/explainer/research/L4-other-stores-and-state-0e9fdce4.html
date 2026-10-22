@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · L4: Other stores and truth-bearing state</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L4-other-stores-and-state-0e9fdce4.html">AgentStudio daemon · L4: Other stores and truth-bearing state</a></nav></ex-nav>
+<ex-document id="content"><h1>L4: Other stores and truth-bearing state</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-16-advisor-storage-placement/L4-other-stores-and-state.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+source HEAD 624300332f5e50f7bb8cbb9fc786d5e5b4a3d462
+
+# L4: Other stores and truth-bearing state
+
+Collection is source anchored. Labels below are candidates only; this inventory does not decide placement.
+
+## Index
+
+| table | db | one-line meaning | identity keys | write-pattern label | writer count |
+|---|---|---|---|---|---:|
+| cli_store_identity | cli.sqlite | Store identity and release channel for a CLI database file | store UUID, channel; machine file path | current-state | 1 migration writer |
+| cli_outbox | cli.sqlite | Immutable CLI notice entries awaiting app intake | integer sequence, message UUID, pane UUID; machine file path | queue-or-outbox, append-history | 1 |
+| cli_state | cli.sqlite | Per-kind pane/session monotonic reservation and answer position | kind, pane UUID, session reference; machine file path | cursor-or-position, current-state | 1 |
+| grdb_migrations | cli.sqlite | Applied migration identifiers | identifier; machine file path | migration-artifact | 1 migrator |
+| search_document | process-memory SQLite | Current installed search document projection | item ID, group ID; no filesystem path established | cache-replaceable | 1 SearchIndex actor-owned writer |
+| search_document_fts | process-memory SQLite FTS5 external-content index | Token/trigram index over search_document text | rowid joined to search_document; no filesystem path established | cache-replaceable | 1 SearchIndex actor-owned writer |
+
+## cli_store_identity
+
+1. Store/path/open: `cli.sqlite`, beneath `rootDirectory/ipc/`, built by `AgentStudioIPCPathResolver.paths(rootDirectory:)` at `Sources/AgentStudioAppIPC/AgentStudioIPCPaths.swift:35-47`; root is supplied at app composition (`Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift:101`). App exports path to CLI as `AGENTSTUDIO_CLI_STORE` (`PaneIPCIdentityOwner.swift:128`); readers call `CLIStore.openReader` (`PaneCLIOutboxDrain.swift:193`, `AppCLIStoreReadThroughReader.swift:48`).
+2. Final schema: `store_id TEXT PRIMARY KEY NOT NULL`, `channel TEXT NOT NULL`; no default, FK, secondary index, or CHECK in `Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:57-69`. The migration creates the row with generated UUIDv7 and channel.
+3. Meaning: one store identity/channel row; `CLIStoreIdentity`/`readIdentity` (`CLIStore.swift:418-432`).
+4. Identity: store UUID and channel; database itself selected by machine filesystem path.
+5. Writer: `CLIStoreMigrator` migration `001_cli_store_identity`, `CLIStoreMigrator.swift:57-69`, invoked during `CLIStore.open` (`CLIStore.swift:135-181`). Insert is in migration transaction with migration bookkeeping identifier; same table only otherwise.
+6. Reader: `readIdentity` queries table (`CLIStore.swift:418-432`); materialized as `CLIStoreIdentity` on CLIStore / app drain and read-through reader (`PaneCLIOutboxDrain.swift:69-71`, `AppCLIStoreReadThroughReader.swift:17-19`).
+7. Candidate: current-state.
+8. Post-commit event: not found; exact search `rg -n 'cli_store_identity|readIdentity|AsyncStream|yield\(' Sources/AgentStudioCLIStore` (identity is read for admission; no adjacent emitted event established).
+9. Cleanup: no delete path found; exact search `rg -n 'DELETE FROM cli_store_identity|DROP TABLE cli_store_identity' Sources/AgentStudioCLIStore`.
+10. Locality: machine-scoped, contains-filesystem-path (the path selects this identity file).
+
+## cli_outbox
+
+1. Store/path/open: `rootDirectory/ipc/cli.sqlite`; resolver `Sources/AgentStudioAppIPC/AgentStudioIPCPaths.swift:35-47`, app injects at `AppDelegate+IPC.swift:101`, exports at `PaneIPCIdentityOwner.swift:128`, reader open at `PaneCLIOutboxDrain.swift:193`.
+2. Final schema (`CLIStoreMigrator.swift:77-90`): `id INTEGER PRIMARY KEY AUTOINCREMENT`; `kind TEXT NOT NULL`; `pane_id TEXT NOT NULL`; `message_id TEXT NOT NULL UNIQUE`; `payload_json TEXT NOT NULL`; `created_at INTEGER NOT NULL`. No defaults, FK, CHECK, or other index found. No later table migration found in this migrator.
+3. Meaning: one immutable notice outbox entry, `CLIOutboxEntry.notice` / `appendNotice` (`CLIStore.swift:233-278`).
+4. Identity: integer cursor, message UUID, pane UUID, store UUID namespace; machine filesystem path selects DB.
+5. Writer: `CLIStore.appendNotice` insert at `CLIStore.swift:240-278`; duplicate message ID returns existing immutable record. Purge writer `CLIStore.purgeHandledOutbox` deletes at `CLIStore.swift:320-344`. Both use immediate transactions. App imports rows through `PaneCLIOutboxDrain` and commits cursor in local DB separately/through application-local transaction (source comment `PaneCLIOutboxDrain.swift:8`; exact cursor participant implementation not exhaustively enumerated here). No other cli.sqlite table is co-written by append/purge.
+6. Readers: `CLIStore.readOutbox` select at `CLIStore.swift:282-311`, materializes `CLIOutboxReadBatch`; app drain reads after local cursor (`PaneCLIOutboxDrain.swift:64-105`). CLI read-through reads `cli_outbox` through `CLIStore.openReader` (`AppCLIStoreReadThroughReader.swift:48`).
+7. Candidate: queue-or-outbox, append-history.
+8. Post-commit event: no bus event or AsyncStream yield found adjacent to append; `rg -n 'appendNotice|cli_outbox|yield\(' Sources/AgentStudioCLIStore Sources/AgentStudio/App/PaneAgents` finds drain activity and refusal probes, not a producer event claim.
+9. Retention: app deletes handled rows only when store identity matches, caller provides last handled ID, and row is older than `CLIStorePolicy.handledRetention` (`CLIStore.swift:320-344`; policy says one day at `CLIStorePolicy.swift:9`). Legacy spool import is one-time, not active transport (`PaneCLIOutboxDrain.swift:64-67`).
+10. Locality: machine-scoped, user-scoped, references-pane UUID, contains-filesystem-path; payload may encode request data, content not classified here.
+
+## cli_state
+
+1. Store/path/open: `rootDirectory/ipc/cli.sqlite`; resolver `Sources/AgentStudioAppIPC/AgentStudioIPCPaths.swift:35-47`, app injection `AppDelegate+IPC.swift:101`, export `PaneIPCIdentityOwner.swift:128`, store reader `PaneCLIOutboxDrain.swift:193`.
+2. Final schema (`CLIStoreMigrator.swift:93-104`): `id TEXT PRIMARY KEY NOT NULL`; `kind TEXT NOT NULL`; `pane_id TEXT NOT NULL`; `session_ref TEXT NOT NULL`; `epoch INTEGER NULL`; `claim_id TEXT NULL`; `value INTEGER NOT NULL`; `UNIQUE(kind, pane_id, session_ref)`. No defaults, FK, CHECK or extra indexes found.
+3. Meaning: one monotonic reservation/position record by `CLIStateKey(kind,paneID,sessionRef)`; kinds are title write number, line write number, answer position (`CLIStore+State.swift:5-17`).
+4. Identity: kind, pane UUID, session reference (terminal/session identity string), generated row UUID; machine path selects store.
+5. Writers, all in `CLIStore+State.swift`: claim update `:39-48`; accept epoch/value update `:54-70`; clear superseded epoch `:76-84`; retain accepted max counter `:87-96`; ensure row insert `:128-137`; answer position max update `:111-122`; allocate counter update `:147-159`. Owning type `CLIStore`, serialized `stateTransaction` immediate write transaction `:123-126`; each writes only cli_state.
+6. Readers: `stateRow` select `CLIStore+State.swift:140-145`; `answerPosition` read `:99-109`; owning caller receives typed reservation/position; no observable atom/view-model materialization found.
+7. Candidate: cursor-or-position, current-state.
+8. Post-commit event: no event/stream emission found in these methods; `rg -n 'reserveWrite|advanceAnswerPosition|yield\(' Sources/AgentStudioCLIStore`.
+9. Cleanup: row deletion not found; exact search `rg -n 'DELETE FROM cli_state|DROP TABLE cli_state' Sources/AgentStudioCLIStore`.
+10. Locality: machine-scoped, user-scoped, references-pane UUID, references-process-or-terminal-session, contains-filesystem-path.
+
+## grdb_migrations
+
+1. Store/path/open: `rootDirectory/ipc/cli.sqlite`; resolver `Sources/AgentStudioAppIPC/AgentStudioIPCPaths.swift:35-47`; CLIStore migration/open flow `CLIStore.swift:135-181`.
+2. Final schema: `identifier TEXT NOT NULL PRIMARY KEY` (`CLIStoreMigrator.swift:30-42`); no default, FK, index, CHECK. This is GRDB bookkeeping, not a superseded domain table.
+3. Meaning: one applied migration identifier.
+4. Identity: migration string and machine filesystem path.
+5. Writer: `CLIStoreMigrator.migrateLocked` inserts applied ID after running migration (`CLIStoreMigrator.swift:30-43`); the same locked migration transaction also performs that migration's DDL/data inserts. Sole owner: CLIStoreMigrator invoked by CLIStore open.
+6. Reader: `appliedIdentifiers` at `CLIStoreMigrator.swift:25-26`; migration admission in CLIStore open (`CLIStore.swift:144-181`); in-memory GRDB migrator.
+7. Candidate: migration-artifact.
+8. Post-commit event: none found; exact search `rg -n 'grdb_migrations|yield\(' Sources/AgentStudioCLIStore`.
+9. Cleanup: no drop/prune found; exact search `rg -n 'DELETE FROM grdb_migrations|DROP TABLE grdb_migrations' Sources/AgentStudioCLIStore`.
+10. Locality: machine-scoped, contains-filesystem-path.
+
+## search_document
+
+1. Store/path/open: process-local SQLite `DatabaseQueue`; default factory is `DatabaseQueue()` (`SearchService.swift:10-22`), index initialized lazily at `:62-70`; no file URL/path is supplied. `SQLiteDatabaseFactory` file-backed pool creates parent dirs and WAL, but SearchService does not call it (`SQLiteDatabaseFactory.swift:17-28`).
+2. Final schema (`SearchService.swift:242-250`): columns `item_id TEXT`, `kind TEXT`, `group_id TEXT`, `title TEXT`, `folded_title TEXT`, `folded_fields TEXT`, all nullable by omitted NOT NULL; implicit rowid primary key. Index `search_document_item_id(item_id)`. No FK/default/CHECK.
+3. Meaning/source: one installed `SearchDocument` projection; document set is the source used by `install` (`SearchService.swift:261-325`), in-memory `installedDocuments` is comparison cache, not durable source.
+4. Identity: item ID and group ID; no machine path established in this table.
+5. Writer: sole writer `SearchIndex` private to `SearchService` actor (`SearchService.swift:7`, `:231-325`); install deletes changed/removed rows and inserts documents. Same DB transaction writes associated FTS rows, not other relational tables.
+6. Readers: search query in `matchingRows` (`SearchService.swift:336-367`); `SearchService` actor returns indexed rows to command-bar consumer, no atom materialization identified.
+7. Candidate: cache-replaceable.
+8. Post-commit event: no storage event; service uses results/trace path, exact search `rg -n 'install\(|matchingRows|yield\(' Sources/AgentStudio/Core/Search/SearchService.swift`.
+9. Cleanup: `install` removes changed/removed IDs when replacing installed document set (`:266-291`); queue lifetime releases DB.
+10. Locality: none found.
+
+## search_document_fts
+
+1. Store/path/open: same in-memory `DatabaseQueue` as search_document (`SearchService.swift:10-22, 236-254`); no file-backed path.
+2. Final schema: FTS5 virtual table columns `folded_title`, `folded_fields`; external content `search_document`, content rowid `rowid`, tokenizer `trigram` (`SearchService.swift:251-257`). Its backing content rows are search_document; FTS internals are SQLite-managed. No declared FK/index/default/CHECK.
+3. Meaning: searchable token/trigram index for folded title and fields, derived from search_document.
+4. Identity: rowid of search_document; no filesystem path.
+5. Writer: sole `SearchIndex.install` writer: FTS delete command and content deletion for removed/changed docs (`:279-291`), then insert for changed docs (`:302-325`), same transaction as source table writes.
+6. Readers: FTS MATCH join in `matchingRows` (`:350-357`); materialized as `SearchIndexedRow` returned by SearchService.
+7. Candidate: cache-replaceable.
+8. Post-commit event: not found; query above found no direct event publication.
+9. Cleanup: content delete/FTS delete during replacement; process queue lifetime.
+10. Locality: none found.
+
+## Other SQLite and directory facts
+
+`AppDataPaths` resolves root to `~/.agentstudio` stable, `~/.agent-studio-b` beta, `~/.agentstudio-db` debug; `AGENTSTUDIO_DATA_DIR` overrides (with `~` expansion), see `Sources/AgentStudio/Infrastructure/AppDataPaths.swift:3-57, 132-151`. It names `preferences.global.json`, `core.sqlite`, `local.sqlite`, `z/`, and `surface-checkpoint.json` (`:62-112`). The factory creates parent directory for file-backed SQLite and selects WAL (`SQLiteDatabaseFactory.swift:17-28`); configuration enables FK and two-second busy timeout (`:55-61`). Byte-preserving startup reader opens readonly URI (`:30-53`). `core.sqlite` and `local.sqlite` were excluded from table inventory by unit definition.
+
+CLI store configuration is separate: writer open switches/validates WAL (`Sources/AgentStudioCLIStore/CLIStore.swift:135-180`); reader uses readonly configuration (`:208-229`). Exact CLI database path resolver and all additional directory/file creation under app roots were not fully enumerated: search used `rg -n 'createDirectory|\.appending\(path:|\.sqlite|\.json|\.jsonl' Sources/AgentStudio Sources/AgentStudioCLIStore`.
+
+## Non-SQLite persisted items (one row per item)
+
+| item | evidence / purpose | identity and candidate | retention / event / unknowns |
+|---|---|---|---|
+| Global preferences JSON | `AppDataPaths.swift:62-69` names `preferences.global.json`; preference loader/writer not exhaustively located. | User preference; root file path. | Schema, writer/readers, cleanup and event not found. Search: `rg -n 'preferences.global|GlobalPreferences|JSONEncoder' Sources/AgentStudio` |
+| Surface checkpoint JSON | `AppDataPaths.swift:100-108`; named checkpoint path. | UI-presentation-memory candidate; machine path. | Contents, writer, reader, cleanup not found. Search: `rg -n 'surfaceCheckpointURL|surface-checkpoint' Sources/AgentStudio` |
+| zmx session directories | `AppDataPaths.swift:90-97`; `ZmxBackend.swift:116,185`; session configuration references `SessionConfiguration.swift:42`. | References terminal/zmx session and filesystem path; machine-scoped. | Directory lifecycle details not exhaustively established. Search: `rg -n 'zmxDirectory|createDirectory|removeItem' Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift Sources/AgentStudio/Core/Models/SessionConfiguration.swift` |
+| JSONL trace logs | `AgentStudioTraceConfiguration.swift:187` names `agentstudio-<trace>-<pid>.jsonl`; `AgentStudioJSONLTraceWriter.swift:76` creates directory; runtime selects sink (`AgentStudioTraceRuntime.swift:325-330`). | Process ID/trace name and filesystem path; machine-scoped. | Rotation/removal policy not established. Search: `rg -n 'removeItem|rotation|jsonl|createDirectory' Sources/AgentStudio/Infrastructure/Diagnostics` |
+| Worktree annotation output | `AgentStudioBridgeDevelopmentServer/BridgeDevelopmentWorktreeAnnotationOutputEffect.swift:20,33,85`; writes JSON file through effect; coordination has exclusive create (`Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift:173`). | Worktree/filesystem path and output capture; machine-scoped. | Retention/removal not established. Search: `rg -n 'annotation-output-captures|removeItem|outputKind' Sources/AgentStudioBridgeDevelopmentServer Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift` |
+| Bridge dev tab sessionStorage | `BridgeWeb/src/app/bridge-app-dev-product-session-host.ts:339-347` reads/writes `bridgeDevelopmentTabIdentityStorageKey`. | Browser tab identity; user/browser scoped. | Development-only identity value; lifecycle is browser-managed. No other browser storage found in exact search `rg -n 'localStorage|sessionStorage|indexedDB' BridgeWeb/src/app/bridge-app-dev-product-session-host.ts`. |
+| UserDefaults: global app setting | `Sources/AgentStudio/main.swift:58`, key `NSQuitAlwaysKeepsWindows`. | User preference, user-scoped. | Read/write lifecycle beyond this set not inspected; search `rg -n 'UserDefaults.standard' Sources/AgentStudio`. |
+| UserDefaults: tab double-click action | `DraggableTabBarHostingView.swift:312` read via `doubleClickActionDefaultsKey`; key declaration/updates not captured. | User preference/UI action, user-scoped. | Search `rg -n 'doubleClickActionDefaultsKey|UserDefaults' Sources/AgentStudio/App/Panes/TabBar/DraggableTabBarHostingView.swift`. |
+| UserDefaults: URL history | `Features/Webview/URLHistoryService.swift:48` uses UserDefaults storage. | URL history, user-scoped; URLs may contain filesystem or network locations. | Key and pruning not captured; search `rg -n 'URLHistoryStorage|UserDefaults' Sources/AgentStudio/Features/Webview/URLHistoryService.swift`. |
+| UserDefaults: legacy drawer-height import | `WorkspaceLocalRepository+LegacyDrawerHeightImport.swift:122-132`; imports then removes legacy ratio/cutoff keys. | UI presentation preference; user-scoped. | One-time migration removes keys; key names not enumerated here. |
+| Keychain | no `SecItem*` match in `Sources/AgentStudio`; credentials may be delegated to framework/system APIs. | Not found. | Exact search `rg -n 'SecItem(Add|CopyMatching|Update|Delete)|kSecClass|Keychain' Sources/AgentStudio`. No secret values inspected. |
+
+## In-memory truth-bearing state (one row per item)
+
+| item | owner / identity / candidate | reads, cleanup and emissions |
+|---|---|---|
+| GrantLedger | Search `rg -n 'GrantLedger' Sources` returned no exact type. | Not found in Sources; no further claims. |
+| PermissionBroker | Search `rg -n 'PermissionBroker' Sources` returned no exact type. | Not found in Sources; no further claims. |
+| EventReplayBuffer | `Core/RuntimeEventSystem/Replay/EventReplayBuffer.swift:11`; in-memory ordered event envelopes with bounded retention; pane/session identity. Candidate cache-replaceable. | Append/read (`eventsSince`) and size/drop behavior in file; owner `PaneRuntimeEventChannel` (`Runtime/PaneRuntimeEventChannel.swift:16-34,89-90`). Cleared with runtime lifetime. |
+| EventBus replay | `Core/RuntimeEventSystem/Events/EventBus.swift:244-249,543-563`; per-source bounded replay map, event source key. Candidate cache-replaceable. | Subscription replay snapshot; removes source replay on source lifecycle (`:454`); bounded capacity truncation (`:543-555`). |
+| Terminal runtime status | `Features/Terminal/Runtime/TerminalRuntime.swift` exposes runtime control and `eventsSince` (`rg -n 'status'` returned no matches in that file); IPC adapter owns `terminal.status` query (`App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift:35`). Candidate process-local current-state. | No persistence found. Materialization/complete lifecycle not established. Search `rg -n 'status\(|terminal.status|TerminalRuntime' Sources/AgentStudio/Features/Terminal/Runtime Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift`. |
+| Undo-retained surfaces | `Features/Terminal/Ghostty/SurfaceManager.swift:431`; pendingUndo surface retention; workspace undo journal has durable counterpart in SQLite (excluded). Candidate current-state/UI-presentation-memory. | `SurfaceManager` retains until undo lifecycle releases; relevant manager cleanup search `rg -n 'pendingUndo|expireUndoEntry|undoStack' Sources/AgentStudio/Features/Terminal/Ghostty/SurfaceManager.swift`. |
+| Last refusal | `App/IPCComposition/AgentStudioIPCSessionsAdapter.swift:105-124` reads ingestion `lastRefusal(paneId:)`; in-memory refusal keyed by pane. Candidate current-state. | Owner/retention details of ingestion state not fully found; search `rg -n 'func lastRefusal|lastRefusal\(' Sources/AgentStudio`. |
+
+## Exceptions
+
+- No missing assigned source file: all explicitly named files/directories were present.
+- HEAD matched the pinned value.
+- CLI path resolver is verified at `AgentStudioIPCPaths.swift:35-47`; the concrete root argument's source is injected by app composition and follows the AppDataPaths root described above.
+- The inventory deliberately does not infer placement, migration architecture, or ownership policy. No builds, tests, app launches, network calls, or edits outside this report were performed.
+- Some broad non-SQLite items are candidate inventory only; cells explicitly mark unestablished writers, readers, retention, or emitted events and provide the exact search used.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

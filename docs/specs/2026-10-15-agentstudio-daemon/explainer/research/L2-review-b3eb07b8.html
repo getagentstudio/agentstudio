@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · L2 — Data ownership/replication and agents/context risk review</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L2-review-b3eb07b8.html">AgentStudio daemon · L2 — Data ownership/replication and agents/context risk review</a></nav></ex-nav>
+<ex-document id="content"><h1>L2 — Data ownership/replication and agents/context risk review</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-20-full-spec-review/L2-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## L2 — Data ownership/replication and agents/context risk review
+
+## 1 Basis
+
+**Source.** Commission: independent 🔎 Reviewer Sidekick, L2, no authoring history; report to the 🦉 Advisor identified in the packet. No board access or posting, other review reports, prior scratch research, design-workflow records, docs/wip, memory, product mutations, tests, builds, app launches or experiments were used. This is a bounded risk review of the two assigned lanes, not a whole-design disposition.
+
+**Source.** Manifest SHA-256: `c18425249969dd319bd63580af7556f88da65aae1b3dfb4a853120f3309d147a`, containing 116 Markdown entries. All **21 pinned lane Markdown files** were read in full. Their hashes matched the manifest at the final comparison; **zero lane files changed against the manifest**. The linked owner-selection JSON was inspected separately and is not covered by the 116-file manifest. HTML, images and the large JSON census/use-index were not independently reviewed; the 86-table/597-column totals below are spec-text claims, not a newly reproduced census.
+
+**Source.** Workspace: `/Users/shravansunder/code/projects/agentstudio.feat-daemon`, branch `feat/daemon`, HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. AgentStudio Git HEAD: `4cca397dfc869857064da4e9ec8289ea46adc479`. Vendor heads: zmx `8bab1f0173b07e79835ea372d749af3dbf0d0842`; Ghostty `2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33`. Following lane citations, I also inspected local fleet-sync HEAD `3a2153ec98de531085b4c4e618b972dffbb1f08e`. All **45 inspected product/library/vendor source files** matched their named Git objects byte-for-byte. This establishes source identity, not installed binaries, runtime behavior or repository-wide cleanliness. The allowed-command grant did not include status/diff commands.
+
+**Spec text.** Requirements and Specification have distinct homes: [U requirements](../../user-requirements.html) and [R obligations](../../2026-10-15-agentstudio-daemon.html). The lane companions explicitly call themselves incomplete structural proposals ([storage companion](../../designs/02-data-ownership-replication/storage-placement-design.html); [context companion](../../designs/07-agents-context/host-context-lifecycle-design.html)). I did not substitute their proof tables for a separate Verification Design or judge absent whole-system artifacts.
+
+**Inference.** Reconstructed model: execution/resource Hosts own admitted backend mutations; one proposed designated existing Host owns shared composition; subject Hosts own selected shared read marks; Gateways consume authorized facts/copies and prepare views; native clients own actual viewing/publication. Private admission state may co-commit with copied facts without sharing their audience. A copied database, an operation result, a provider binding and a user action are different observations.
+
+| Check | Coverage and limit |
+| --- | --- |
+| Lane contract/ownership reconstruction — complete | All sections of the 21 pinned Markdown targets, with the governing U/R/E/IP meanings needed by these lanes |
+| Current-source comparison — complete for the findings below | Decisive admission, settlement, lifecycle, reducer, private checkpoint, graph/Undo, engine key/copy/read paths opened directly; not every current feature or writer |
+| Cross-lane seams — complete for named comparisons | Shared-client realization, near-term migration dependencies, I2/I6 and topology pin; unrelated designs excluded |
+| Scope defense — complete for material lane proposals | Host ownership → U15/R9; Gateway reads/copies → R15/R16/IP1; shared composition/markers → U22/R17; transactional/private fences → K8/IP5; pure count split → U9/U13 and current fold. Optional durable delivery is an evaluated option, not selected work |
+| Whole-design and rendered-asset coverage — partial by commission | No global four-document judgment, full trace-table audit, rendered preview or independent census reconstruction |
+| Runtime proof collection — not selected | Explicit inspect/command limits; Section 4 supplies discriminating experiments rather than observations |
+
+**Inference.** Closest principle cases: “Who decided this?” for superseded recommendations; “the review finding that was wrong” for checking actual wiring; “the new process nobody asked about” for refusing to turn optional delivery into another required service; “the probe that looked in the wrong place” for separating a readable copy from an atomic application read. No new mechanism is requested merely to complete an optional proposal.
+
+<details>
+<summary>SHA-256 prefixes of all 107 files opened, including procedure/reference files (whole-file hashes; source reads may be bounded regions)</summary>
+
+Paths without a leading slash are relative to this workspace. Files outside the manifest retain only this observed hash basis.
+
+```text
+cf74d810441e2ae8  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/README.md
+3c4ab0a3a55e1507  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/specification.md
+3817bfadefa1e56b  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/storage-placement-design.md
+b8f23972b2cf3002  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/storage-placement-matrix.md
+c399f0421cc84498  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/README.md
+db916569761308a8  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/specification.md
+bf9f4d33b169591f  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/host-context-lifecycle-design.md
+70a4ca1d0c16e697  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/context-count-preparation.md
+c8871702126c65a4  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/research/count-read-engine-evidence.md
+b8e166fe8c249b8d  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/research/session-status-ownership.md
+b855a6be964b7d5d  docs/specs/2026-10-15-agentstudio-daemon/designs/07-agents-context/experiments/host-autonomy.md
+c563cb3aafa0699b  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/data-ownership-survey.md
+9d0b22e26197ae11  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/data-replication-decisions.md
+07b2fc60e2943133  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/durable-delivery-fit.md
+a0ff51e3f7809e2e  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/fleet-sync-consumer-fit.md
+2c9e07345fe51f56  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/replica-read-contract.md
+4b3e16413d0bf03d  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/schema-prerequisites.md
+7c147330d4feb947  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/query-data-dependencies.md
+6471ca98e11635e2  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/table-use-index.md
+5221ce2a81e398f5  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/transaction-boundaries.md
+7486f759029912da  docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/typed-input-processing.md
+b9e67ba514493ec6  docs/specs/2026-10-15-agentstudio-daemon/user-requirements.md
+2150050422daa619  docs/specs/2026-10-15-agentstudio-daemon/initial-profile.md
+5e194c597746d5e0  docs/specs/2026-10-15-agentstudio-daemon/domain-entities.md
+c1e936a51e966002  docs/specs/2026-10-15-agentstudio-daemon/2026-10-15-agentstudio-daemon.md
+5eafd15f59724507  docs/specs/2026-10-15-agentstudio-daemon/designs/10-swift-client/shared-client-state-design.md
+9f20b12e3781c571  docs/specs/2026-10-15-agentstudio-daemon/designs/11-operations-integration/near-term-migration.md
+1867df97aace4d2a  docs/specs/2026-10-15-agentstudio-daemon/increments/02-agents-context/specification.md
+1944c810ec32110e  docs/specs/2026-10-15-agentstudio-daemon/increments/06-replication/specification.md
+b6a293400d0f692a  docs/specs/2026-10-15-agentstudio-daemon/research/topology-risks.md
+7e7a741a0e71ebd4  docs/specs/2026-10-15-agentstudio-daemon/research/owner-inputs/worktree-cli-host-direction-2026-10-19.md
+0cb68b1f976a6324  docs/specs/2026-10-15-agentstudio-daemon/research/owner-inputs/initial-profile-decisions-2026-10-18.json
+b5988d05d36cd7cf  docs/specs/2026-10-15-agentstudio-daemon/research/owner-inputs/migration-directions-2026-10-19.md
+a7abc98daa8d9053  Sources/AgentStudio/Core/PaneContext/PaneContextService.swift
+bf335c92311b35be  Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift
+f33a7d78b4eabb68  Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift
+d4851ff11eff4165  Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift
+78abfe35e5c7d9c7  Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift
+a8ec4da9d7fc0743  Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift
+6fb96593e7cc84aa  Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift
+0b97ef678e4d9238  Sources/AgentStudio/Core/PaneContext/PaneMessageCountFold.swift
+cced30d184d137d1  Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift
+396a390a5fa60a46  Sources/AgentStudio/App/PaneAgents/PaneCLIOutboxDrain.swift
+7bc91b2bb5cd49e0  Sources/AgentStudio/App/PaneAgents/CLIOutboxCursorCommitParticipant.swift
+9be841dcaab96a6a  Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift
+61f75954d543a560  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+UndoClose.swift
+0ea40b0f7377ce2c  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository.swift
+5753dedf3ddb8d17  Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift
+0f090f0a23879dd3  Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift
+0bfab8ac8b813e2c  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift
+8c6bacec3bd67979  Sources/AgentStudio/Features/Sessions/Models/SessionsEvidenceReducer+Mutations.swift
+71af9ba4ca7dd77c  Sources/AgentStudio/Core/RuntimeEventSystem/Contracts/PaneId.swift
+c806ad95c7b570f5  Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift
+94449e1095a30cea  Sources/AgentStudio/Core/Models/WorktreeEnrichment.swift
+2e9e1daab576809f  vendor/zmx/src/ipc.zig
+7db5c93f0453bbe5  vendor/zmx/src/loop.zig
+f47e4869ae3f287d  vendor/ghostty/src/termio/stream_handler.zig
+4714a36f5aad9b2b  Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift
+6b45ac20d056b1da  Sources/AgentStudio/App/PaneAgents/PaneIPCIdentityOwner.swift
+3f68b74ac4272336  Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift
+94e7f860f34f2787  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift
+d80101bd1b5db5d2  Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift
+0eeee754b36f5d70  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/replicated_schema.rs
+a87f54303128019a  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/schema_inspection.rs
+00aeb34ab98f9a30  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-protocol/src/replicated_key.rs
+70fd71decf03061f  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-service/src/service_handle.rs
+f77e10689e872293  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-tokio-runner/src/native_object.rs
+b6d4672437f0f3ad  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/write_transaction.rs
+b10472742c41c2fb  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/capture_stream.rs
+1401e3ff226c3add  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/replication_sender.rs
+17e632228823f6e2  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-receiver/src/copy_lifecycle.rs
+9f3886852c9ff436  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-service/src/service_contract.rs
+ed0f078fa1eeac9f  /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitContracts/GitRepositoryIdentity.swift
+bf8381d5ef5697a7  /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/Runtime/GitRepositoryIdentityResolver.swift
+e9665e978265b8be  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/read_pool.rs
+44af196e16c36bca  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/replicated_database.rs
+5fd03ffa3bbfe003  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-receiver/README.md
+e271212bdea2e117  docs/architecture/README.md
+742e673e5d5d3091  docs/architecture/structure/directory_structure.md
+3fc63608b6df5480  docs/architecture/commands/command_specs.md
+47a9440cbd995a59  .codex/skills/agentstudio-mainactor-atom-boundaries/SKILL.md
+115dfcb379392898  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/role-reviewer/SKILL.md
+944b26f8a3d37e16  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/role-reviewer/references/working-with-lead.md
+4044e86b0d0b36c6  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-read-ground-truth-first/SKILL.md
+bcefa14adeb0a6f2  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-read-ground-truth-first/references/example_scenarios.md
+fd40eee5890508a4  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-verify-before-accepting/SKILL.md
+7bc37576a829faf0  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-verify-before-accepting/references/example_scenarios.md
+32182d88e8cf58a9  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-name-the-tradeoffs/SKILL.md
+a296e27e9c37b790  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-name-the-tradeoffs/references/example_scenarios.md
+fcecebecefa5a5ed  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-experiment-before-proposing/SKILL.md
+73ca491d5be20cd8  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-experiment-before-proposing/references/example_scenarios.md
+90465d3274af6230  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/principle-write-for-the-reader/SKILL.md
+e238c5b231374ae1  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/SKILL.md
+7bdd9207c4d9c5d3  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/reviewing-common-method.md
+478b5fda72fa17c0  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/coordination-and-chunking.md
+97f5120a76f89c24  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/reviewing-program-design.md
+4b9615e0de7166f0  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/finding-and-reduction-schema.md
+de7dca5924a361de  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/lanes/lane-schema.md
+cdc144b4f9c2d255  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/lanes/mode-complete-reviewer.md
+311d599e42d59904  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/lanes/architecture-boundary.md
+5d9db7e0525b0caf  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/spec-program-review/references/lanes/dispel.md
+6271dd262b738c30  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/practices-research/SKILL.md
+a8c4ea3386ff1b7c  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/practices-research/references/tool-routing.md
+763f7ecb46a22f36  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/practices-research/references/lane-packets.md
+c876c68c63d7e8d3  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/domain-rust/SKILL.md
+9cd6052b2e1fe952  /Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/shared-references/design-documents.md
+e364be57c02c9c1c  /Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/foreign_key_integrity.rs
+```
+
+</details>
+
+## 2 High-risk spaces
+
+**Inference.** Ranked qualitatively by cost if wrong multiplied by thinness of support. These are risks to resolve, including gaps the text already acknowledges; they are not eight newly discovered implementation defects. All consequences and rank assignments below are inference.
+
+### L2-R1 — Durable identity and old retirement ownership must change together
+
+- **Kind / basis: inference — stored data, ownership, irreversible step.** Wrong identity/cutover can retire continuing work or make retained state unreachable.
+- **Claim / basis: spec text.** [Context cutover](../../designs/07-agents-context/host-context-lifecycle-design.html) requires a single Host mutation owner, but pane-to-Host-context identity, credentials and coexistence remain unselected. [Mixed pane/custody holds](../../designs/02-data-ownership-replication/storage-placement-matrix.html) and [Historical identity constraint](../../designs/02-data-ownership-replication/research/schema-prerequisites.html) explicitly prohibit an unchanged whole-row move or blanket UUID rewrite.
+- **Decisive evidence / basis: source.** [scopeAdmission](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService.swift) requires graph membership and absence of retirement. [Undo retirement](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift) revokes pane credentials and retires context. [retirement purge](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) deletes pane-keyed context/order/receipt state. [PaneId](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Contracts/PaneId.swift) preserves historical UUID versions, while replicated keys (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-protocol/src/replicated_key.rs:8`; not a verified browser link) requires canonical UUIDv7. AgentStudio Git's [resource identity resolver](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Runtime/GitRepositoryIdentityResolver.swift#L16) derives worktree/repository IDs from paths, not durable Host identity.
+- **What breaks / basis: inference.** A view close can still revoke a continuing session's input or purge its asks; replacing old IDs can detach pending writer claims, answer receipts, Undo and cross-Host resource references. A correct new Rust owner does not neutralize an already admitted old cleanup.
+- **Smallest correction / basis: inference.** Bind legacy identities to execution/context/logical/native identities, stable Host versus incarnation, retained private fences, and the exact old-writer/retirement cutover. Preserve public identity and user data; do not require every existing ID to become an engine PK. Removing replication from the first slice reduces schema work but does not remove the lifetime split required by R5/R6/R9/IP5.
+- **Route:** program-design, with spec-design only for genuinely unselected survival/identity outcomes. **Confirmation:** reopen the mapping and cutover contracts; observe old close/Undo work unable to retire migrated execution/context and exact retained-state readback.
+
+### L2-R2 — Whole-unit replication can disclose more than the view is allowed to show
+
+- **Kind / basis: inference — security, stored data.**
+- **Claim / basis: spec text.** [Whole-copy access](../../designs/02-data-ownership-replication/storage-placement-design.html) offers either an eligible whole-unit copy or a scoped Host operation. Exact unit audience is still open; “paired private fleet” is not a universal readership. [Count consumer](../../designs/07-agents-context/context-count-preparation.html) needs four totals, not message/answer bodies.
+- **Decisive evidence / basis: source.** Current [request rows](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift) contain bodies, reasons, structured-answer fields and sender provenance; [source rows](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift) mix visible source facts with a private cursor. The engine schema trait (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/replicated_schema.rs:4`; not a verified browser link) selects tables and capture normalization (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/capture_stream.rs:299`; not a verified browser link) includes matching layouts; these opened paths supply no per-reader field redaction.
+- **What breaks / basis: inference.** A count-only or differently scoped device can receive confidential workflow data before its UI filters it. Revoking later cannot recall those bytes. Treating all paired actors as one reader also corrupts shared viewed state.
+- **Smallest correction / basis: inference.** Declare the exact data audience before exporting each unit and retain the already proposed scoped-read alternative where whole-copy permission is absent. No redacted replica engine or publication database is compelled by this risk. Rails: R15, R16, IP1, IP9, K11.
+- **Route:** program-design after the intended reader/subject scope is explicit. **Confirmation:** whole-unit access matrix plus actual denied-reader observations at the export/read boundary, including copy retention after permission changes.
+
+### L2-R3 — Autonomous context progress needs recovery activation, not only a moved scheduler
+
+- **Kind / basis: inference — contract, premise many pieces rest on.**
+- **Claim / basis: spec text.** [Lifecycle input table](../../designs/07-agents-context/host-context-lifecycle-design.html) separates caller loss, UI loss, real deadlines, Host stop and writer unavailability, but startup settlement and recovery activation remain unfinished. [K8 waiting contract](../../designs/07-agents-context/specification.html) leaves reconnect/deadline policy explicit.
+- **Decisive evidence / basis: source.** [ensureOpen](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService.swift) settles retained synchronous asks with appStopping on first open. [deadline refresh](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) and [deadline work](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) catch failures and rely on later demand; [stop](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift) settles and finishes waiters. [settlement policy](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift) gives deadline, caller loss and app-stop different outcomes.
+- **What breaks / basis: inference.** A temporarily failed/lease-refused deadline can remain unprocessed without a viewer; the returning first read can accidentally become a new “startup” and settle an otherwise continuing ask. Connection loss can be mistaken for the initiating caller's death. All violate the intended no-presentation boundary even if the shell survives.
+- **Smallest correction / basis: inference.** Name Host startup/stop and caller-loss contracts, exact write-gate coverage and the owner event that reactivates overdue work after recovery. IP4 already forbids hidden spool/grace and execution kill; do not reopen those choices or invent a generic retry service. Rails: U15/R9, IP4, K8.
+- **Route:** spec-design for outstanding observable waiting/failure meaning, then program-design. **Confirmation:** closed no-client recovery journey with a held failure, actual recovery notification and retained settlement observed independently of a returning query.
+
+### L2-R4 — Public/private table cuts cross real transaction and reference dependencies
+
+- **Kind / basis: inference — stored data, contract.**
+- **Claim / basis: spec text.** [Sessions placement](../../designs/02-data-ownership-replication/storage-placement-matrix.html) labels sessions_operation private while bindings/source/evidence are copy candidates. [Transaction partition warning](../../designs/02-data-ownership-replication/storage-placement-design.html) keeps cross-context settlement together; [Read copy versus writer recovery](../../designs/02-data-ownership-replication/research/data-replication-decisions.html) distinguishes read publication from writer reconstruction.
+- **Decisive evidence / basis: source.** [hook transaction](../../../../../Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift) writes operation plus reduction in one closure. [binding/source foreign keys](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift) references sessions_operation.commit_revision from both families. [notice/ask admission](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift) checks scope before duplicate lookup, commits the participant only for equal intent/new creation, and checks binding only for a new ask. [notice intake](../../../../../Sources/AgentStudio/App/PaneAgents/PaneCLIOutboxDrain.swift) separately advances refused/malformed items; [private cursor](../../../../../Sources/AgentStudio/App/PaneAgents/CLIOutboxCursorCommitParticipant.swift) writes in that effect transaction.
+- **What breaks / basis: inference.** “Private” can be mistaken for independently committed/disposable; a cursor-only success can consume an unrecorded notice. Exporting a subset unchanged can leave declared reference semantics unresolved. A visible-row backup can lose the private dedup/order history needed by the original writer. The engine's disabled receiver FK enforcement (receiver contract (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-receiver/README.md:3`; not a verified browser link)) does not settle application reference meaning.
+- **Smallest correction / basis: inference.** Design selected records, reference closure and original-writer recovery together, retaining private co-commit state at source. The current candidate labels are not an admitted schema. No distributed transaction or takeover feature is required. Rails: K8, R15, IP5.
+- **Route:** program-design; verification-design for the actual recovery/admission observation. **Confirmation:** selected-schema create/replay/conflict/refusal/restore cases with both domain rows and private positions read directly, including cross-context settlement.
+
+### L2-R5 — A value and its applied-position witness still lack a selected atomic read adapter
+
+- **Kind / basis: inference — contract, premise many pieces rest on.**
+- **Claim / basis: spec text.** [Count source boundary](../../designs/07-agents-context/context-count-preparation.html) requires one coherent value/witness boundary. [Engine read gap](../../designs/07-agents-context/research/count-read-engine-evidence.html) correctly leaves actual isolation and full-service composition unproved.
+- **Decisive evidence / basis: source.** ReadPool (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/read_pool.rs:19`; not a verified browser link) exposes guarded executor calls without public acquire; fetch_optional pins for its own call (per-call pin (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/read_pool.rs:101`; not a verified browser link)). copy_status rule (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-receiver/src/copy_lifecycle.rs:112`; not a verified browser link) can use a borrowed TransactionScope, but ConsumerHandler (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-service/src/service_contract.rs:17`; not a verified browser link) receives peer/request, not that scope. rule_transaction (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-tokio-runner/src/native_object.rs:186`; not a verified browser link) uses a connection lock and BEGIN IMMEDIATE.
+- **What breaks / basis: inference.** Counts from cut N can be labelled with status N+1, or a restored/replaced copy can be confused with the earlier source. Using an immediate transaction may serialize reads against apply, so noninterference and cost cannot be inferred from an interface named “read”.
+- **Smallest correction / basis: inference.** Select an actually supported application-query/status scope or one coherent query with the required domain witness, then qualify its isolation and refill lifetime. Do not prescribe a new engine primitive before testing existing composition. Rails: R16, E22, K11.
+- **Route:** program-design and verification-design. **Confirmation:** hold copy apply/replacement between the exact read steps; every result must correspond to one actual declared cut or return explicit unavailable/incomplete state.
+
+### L2-R6 — Shared composition, per-device Undo and execution custody no longer share one commit
+
+- **Kind / basis: inference — ownership, stored data, irreversible step.**
+- **Claim / basis: spec text.** [Undo split hold](../../designs/02-data-ownership-replication/storage-placement-design.html) acknowledges a separate local Undo append after a shared close changes the guarantee. [Per-device history proposal](../../designs/10-swift-client/shared-client-state-design.html) proposes inverse revision-checked mutations; the authority can differ from the execution Host.
+- **Decisive evidence / basis: source.** [graph transaction](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository.swift) records/restores Undo within graph replacement. [Undo write](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+UndoClose.swift) records exact snapshot/member/session ownership and later cleanup eligibility. [custody guards](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift) protects identity/retirement/deletion transitions.
+- **What breaks / basis: inference.** Close may commit without recoverable inverse history; a stale whole-snapshot Undo can overwrite another device; expiring a device's history can still be confused with execution termination. Moving authority to a different Host prevents simply carrying the same SQL guard across the boundary.
+- **Smallest correction / basis: inference.** Settle close/Undo's retained guarantee and where required inverse state co-commits, while preserving R5/R6 survival. The text already offers an authority-held device-qualified alternative; no new service is compelled. Rails: IP5, U23 parity, R17.
+- **Route:** spec-design if the retained user guarantee changes, then program-design. **Confirmation:** failure after shared close and before local append, peer edit before Undo, and expiry with continuing execution; inspect exact graph/history/backend state.
+
+### L2-R7 — Context-count additivity depends on an unresolved logical-node/context mapping
+
+- **Kind / basis: inference — contract, ownership.**
+- **Claim / basis: spec text.** [Count membership constructors](../../designs/07-agents-context/context-count-preparation.html) requires unique logical nodes and distinct resolved contexts; duplicate/unresolved mapping is G9 rather than silent deduplication or double counting. [Unknown mapping](../../designs/07-agents-context/context-count-preparation.html) refuses construction until resolved.
+- **Decisive evidence / basis: source.** The current [fold](../../../../../Sources/AgentStudio/Core/PaneContext/PaneMessageCountFold.swift) filters by sourcePaneId and contributes one category per visible input. [message namespace](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift) is pane + message ID; [binding uniqueness](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift) is one active binding per pane. These do not define two logical nodes presenting one continuing Host context.
+- **What breaks / basis: inference.** Two legitimate views of one execution can double the chip or make the whole chip unavailable; a nonterminal node can lose retained context if kind alone is treated as no-scope. The pure four-count arithmetic can be correct while consumer parity is wrong.
+- **Smallest correction / basis: inference.** Define E25 logical membership to retained E11 scope, repeated-scope behavior and nonterminal cases before implementing trusted capture. Keep established no-scope distinct from failed lookup. Rails: K8, R15/R16/R17.
+- **Route:** spec-design for observable mapping/count semantics, then program-design. **Confirmation:** explicit repeated-context and nonterminal examples against the chosen meaning, then real capture/currentness observations; source code alone cannot select the new relationship.
+
+### L2-R8 — No-view agent/activity claims still depend on unqualified backend fact acquisition
+
+- **Kind / basis: inference — premise many pieces rest on, contract.**
+- **Claim / basis: spec text.** [H-profile producer](../../designs/07-agents-context/experiments/host-autonomy.html) needs actual post-derivation facts with no frontend observer. Its recorder does not exist ([fixture gap](../../designs/07-agents-context/experiments/host-autonomy.html)); the near-term slice separately requires actual Host shell integration ([Host bootstrap](../../designs/11-operations-integration/near-term-migration.html)).
+- **Decisive evidence / basis: source.** [vendored Info](../../../../../vendor/zmx/src/ipc.zig) has bounded command/CWD fields and no title/activity field. [attachment focus input](../../../../../vendor/zmx/src/loop.zig) changes child input on terminal-client transitions. Native Ghostty [title intake](../../../../../vendor/ghostty/src/termio/stream_handler.zig) ignores titles at least 256 bytes and [OSC7 intake](../../../../../vendor/ghostty/src/termio/stream_handler.zig) validates local hostname. Current [hook credentials](../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift) can silently return zero without pane configuration; [hook result](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift) can return admitted after ignored internal input.
+- **What breaks / basis: inference.** A surviving shell, a successful hook exit or a text Capture can conceal absent title/CWD/completion/activity evidence, differently interpreted remote paths, or a workload that changed because detach injected focus-out. Sessions status can look integrated while no actual source advanced.
+- **Smallest correction / basis: inference.** Qualify the owner-selected latest-zmx Capture path property by property, keeping terminal-derived facts distinct from admitted provider reports. No second Host VT, transcript store or synthetic domain-fact injector follows automatically. Rails: U15/R9/R10, U23 parity.
+- **Route:** program-design source qualification and verification-design observation; use X5 below. **Confirmation:** real finite producer trace, actual semantic-owner closure and return reconciliation, with source/metadata/focus controls.
+
+## 3 Contradictions
+
+### L2-C1 — The status research recommends a viewing policy the selected profile rejects
+
+**Spec text.** [Status recommendation A](../../designs/07-agents-context/research/session-status-ownership.html) recommends independent per-client completion viewing and [Typed input map](../../designs/02-data-ownership-replication/research/typed-input-processing.html) still describes per-client versus shared viewing as unmade. In contrast [IP12](../../initial-profile.html) includes completed-agent viewed sharing; [Shared completion realization](../../designs/10-swift-client/shared-client-state-design.html) calls that direction settled.
+
+**Source.** The supplied owner relay is preserved at [sharing direction](../../research/owner-inputs/initial-profile-decisions-2026-10-18.json): the owner chose sharing over per-device viewing. The actual behavioral distinction is [viewed completion admission](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift) and [completion viewing status](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift); open asks retain higher precedence at line 213.
+
+**Inference.** Following the lane research as a current recommendation yields a visible second-device completion indicator that IP12 says should clear in the shared scope. Treat the old recommendation as explicitly superseded and link to the selected policy; retain the useful clock/source analysis. This is a bounded spec-text consistency correction, not an invitation to re-ask sharing. Route: spec-design. Confirmation: both older recommendations point to the current shared-completion clause without leaving A as the initial recommendation.
+
+### L2-C2 — Remote direct CLI remains “unselected” in the documents after the packet supplies a selection
+
+**Spec text.** The lane [topology diagram](../../designs/02-data-ownership-replication/research/fleet-sync-consumer-fit.html) and [selected topology](../../designs/02-data-ownership-replication/research/fleet-sync-consumer-fit.html) show only attached local worktree CLI; [IP3](../../initial-profile.html) and [recorded disposition](../../research/owner-inputs/worktree-cli-host-direction-2026-10-19.html) explicitly leave direct remote CLI open.
+
+**Source.** Commission's first-hand owner decision 7 now supplies the missing concrete case: a Mac CLI with `--host vm-1` works with that remote daemon, not a Gateway; the Mac also has a daemon. This later supplied source supersedes the recorded “open” disposition. Current Git [local path identity](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Runtime/GitRepositoryIdentityResolver.swift#L37) also shows why remote target context cannot be replaced by a local same-path default; it does not establish the new remote protocol.
+
+**Inference.** A planner following the documents can still route or exclude a selected caller class incorrectly. Carry the supplied selection into requirements/IP3 and the lane topology while keeping remote admission, target discovery and failure contracts explicit. Do not conflate a Mac's local daemon with the requested remote Host or add automatic remote provisioning. Route: spec-design, then dependent program-design. Confirmation: the `--host vm-1` case has an explicit direct-Host contract; local activation and UX Gateway routing remain distinct.
+
+**Inference.** Other old “open offline/layout policy” passages were not counted as additional contradictions: DS02 [historical-note priority](../../designs/02-data-ownership-replication/README.html) and [current-profile priority](../../designs/02-data-ownership-replication/research/data-replication-decisions.html) explicitly subordinate older comparisons. No additional doc-versus-source behavioral contradiction was established: many current-source couplings are deliberately identified as edges to replace, not claims that the target already exists.
+
+## 4 Premises that need an experiment
+
+**Inference.** These are proposed observations only. Execute after the relevant observable contracts and an experiment grant exist; no experiment ran under this review. Each oracle includes exact owner completion rather than delay/idle.
+
+### L2-X1 — Selected records preserve source transactions, privacy and original-writer recovery
+
+- **Spec-text claim:** R1/R4 above; [selected-schema obligations](../../designs/02-data-ownership-replication/research/schema-prerequisites.html).
+- **Why source cannot settle it:** target DDL, identity map and export set do not exist; existing GRDB declarations and engine guards cannot establish their combined runtime behavior. Opened source: [hook closure](../../../../../Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift), [message closure](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift), engine admission (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/schema_inspection.rs:134`; not a verified browser link).
+- **Cheapest decisive experiment / oracle:** one selected operational schema with one binding, notice and ask; co-commit private intake state, lose a reply, replay equal and conflicting intent, and inject a cursor-write failure. Copy to two independent receivers and inspect exact selected schema/rows, then restore the original writer with its declared private recovery state. The oracle is the reference transaction's exact domain/private post-state and operation-specific outcome: no consumed unrecorded notice, no new effect for equal intent, no private fields at the unauthorized copy, and no reused admitted ordering identity. This does not test a different writer takeover.
+- **Environment:** this Mac first; repeat the same driver on Fly Sprites Linux before claiming the Linux adapter.
+- **Latest-zmx Capture:** immaterial to this storage-only experiment.
+
+### L2-X2 — Deadline/recovery progress resumes with no presentation demand
+
+- **Spec-text claim:** [autonomous activation](../../designs/07-agents-context/host-context-lifecycle-design.html); K8/ IP4.
+- **Why source cannot settle it:** current scheduler catches failed reads/writes and waits for demand ([failure paths](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift)); the Host recovery/activation owner is not implemented.
+- **Cheapest decisive experiment / oracle:** create a synchronous ask and expiring line with a controlled clock, remove Swift/all Gateways while keeping the initiating caller, induce one maintenance write refusal, then deliver the actual selected storage/authority recovery event. Make no frontend query until the Host owner closes the recovery operation. Read retained states independently afterward. Deadline transitions must follow the selected policy without viewer demand; UI absence must produce neither callerGone nor appStopping. A failed admission must not advance only the notice cursor. If writer authority remains invalid, the oracle is truthful refusal/coverage state and continuing execution, not invented settlement.
+- **Environment:** this Mac Host fixture; then Fly Sprites Linux or sunclaw with the same retained-state/clock driver.
+- **Latest-zmx Capture:** immaterial to ask/line transitions; a terminal fact witness, if included, needs X5's qualification.
+
+### L2-X3 — Copy-backed value/witness reads remain coherent during apply and refill
+
+- **Spec-text claim:** [one read boundary](../../designs/07-agents-context/context-count-preparation.html) and [applied state](../../designs/02-data-ownership-replication/research/replica-read-contract.html).
+- **Why source cannot settle it:** an available TransactionScope and per-call ReadPool do not establish the selected adapter's isolation/file lifetime. Opened source: connection/transaction (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-tokio-runner/src/native_object.rs:196`; not a verified browser link), copy status (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-receiver/src/copy_lifecycle.rs:112`; not a verified browser link).
+- **Cheapest decisive experiment / oracle:** alternate two distinguishable committed message/count states with their actual cut identities; hold the application read while applying a new transaction, replacing the source incarnation and publishing a refill in separate cases. Query through the intended public adapter, not private bookkeeping SQL. Every returned value/witness pair must equal one real complete cut, or the adapter must report its selected incomplete/unavailable outcome. Confirm a denied/private source cannot be reconstructed through the copy path. Record read/apply contention rather than assuming independence.
+- **Environment:** this Mac with an isolated sender and two copy fixtures; Linux sender on Fly Sprites or sunclaw for remote integration. iOS storage/lifetime remains additional device qualification.
+- **Latest-zmx Capture:** immaterial.
+
+### L2-X4 — Shared completion viewing covers the observed completion and no newer one
+
+- **Spec-text claim:** [IP12](../../initial-profile.html) and [covered completion](../../designs/10-swift-client/shared-client-state-design.html).
+- **Why source cannot settle it:** current viewing compares process-local monotonic instants ([view admission](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift)); a retained binding can be reactivated without a new generation ([binding reactivation](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionsEvidenceReducer+Mutations.swift)). Neither is a cross-device completion token.
+- **Cheapest decisive experiment / oracle:** two Gateway clients observe completion A. Only client 1 views A; both should converge on the same shared marker after quiescence. Hold its old viewed action, admit completion B under the same retained binding where supported, then release that action. B must remain unseen until actually viewed; ask/answer state must remain unchanged. Compare declared subject/reader/coverage identity and each client's prepared status independently. Include two logical nodes referencing the same context once the G9 mapping is chosen.
+- **Environment:** this Mac for Host plus two real Gateway fixtures, then a Mac+iOS pair for device convergence; sunclaw can supply the remote Host.
+- **Latest-zmx Capture:** immaterial to provider-report/view-marker semantics; do not use quiet output as an exact completion oracle.
+
+### L2-X5 — Latest-zmx supports the required no-view semantic facts, not only captured text
+
+- **Spec-text claim:** [A1–A5/A12](../../designs/07-agents-context/experiments/host-autonomy.html) and the packet's owner decision 8 select latest-zmx with Capture changes. [candidate pin](../../research/topology-risks.html) records `2d23c0d440583736f365a55aa09cb2c82b0fe7fa` as an older inspected candidate, not an installed implementation.
+- **Why source cannot settle it:** the checked-out vendor differs. A bounded `git show 2d23c0d...:src/ipc.zig` did not yield that file; no candidate source/body or binary was verified in this review. Vendored Info, focus handling and native title/OSC7 intake were opened as listed in R8; they do not establish latest-main Capture behavior.
+- **Cheapest decisive experiment / oracle:** first confirm the exact selected upstream commit, its Capture request/response modes, parser/screen versus text coverage, relevant title/CWD/shell-completion observability, snapshot/live cut, limits, terminal-client/focus side effects and its own VT dependency. Build/run an isolated pinned backend, then use a finite child producer before any renderer and after all presentation disappears. Include 255/256/512-byte title diagnostics, two CWDs sharing a prefix, local/nonlocal OSC7 hostnames and focus-reporting enabled/disabled. Capture actual child input/output and the Host's post-derivation facts to a fixture-owned witness sealed through the semantic owner. Afterward return through Gateway and compare selected state, separately from the retained no-client witness. Text equality, process survival, hook exit zero and injected facts cannot satisfy this oracle.
+- **Environment:** this Mac and one actual Fly Sprites Linux or sunclaw profile, with source/binary/session identities recorded. No existing user backend may be replaced.
+- **Latest-zmx Capture:** **essential**. Confirm the recorded candidate is still the desired commit or identify its successor; do not call the October 15 pin “latest” from its version string. Re-run the relevant discrimination on that exact artifact.
+
+## 5 Owner-decision gaps
+
+**Inference — 0 demonstrated new owner-only decisions that prevent the declared near-term terminal slice's source/feasibility work.** The current near-term document is a remote-session spine ([slice scope](../../designs/11-operations-integration/near-term-migration.html)), not the whole shared-workspace or context rollout. It explicitly requires minimal Host-local credential/bootstrap and actual persistence/gate contracts before shell launch ([near-term closures](../../designs/11-operations-integration/near-term-migration.html); [authority/data integration](../../designs/11-operations-integration/near-term-migration.html)). Those are unfinished contracts, not evidence that the owner owes another generic confirmation.
+
+**Source / spec text.** The owner already selected shared completion viewing, latest-zmx Capture, direct remote worktree CLI and preservation of client outcomes. C1/C2 require reconciling those selections, not re-asking them. The supplied owner decision 5 and [cardinality deferral](../../research/owner-inputs/migration-directions-2026-10-19.html) deliberately leave deployment/workspace cardinality open. The designated-workspace-Host proposal explicitly labels itself an internal design choice ([proposal authority](../../designs/10-swift-client/shared-client-state-design.html)); it does not force one Host deployment per workspace.
+
+**Inference.** Before a broader shared-context cutover, exact readership/audience, completion coverage, extra marker families, retained Host-restart outcomes and any changed close/Undo guarantee must be made explicit. A real change to the owner's retained-data or survival outcome requires owner attention; choosing the schema, synchronization mechanism, task owner or finite proof driver within that outcome remains design work. These later dependencies are R1–R7 above, not additional counted near-term owner gaps.
+
+## 6 Checked and found consistent
+
+1. **Source + spec text.** The four count categories are additive for disjoint admitted contexts: [fold](../../../../../Sources/AgentStudio/Core/PaneContext/PaneMessageCountFold.swift) increments one category per eligible message; settled inputs have no attention at line 20. This supports [write-free count distinction](../../designs/07-agents-context/context-count-preparation.html), not full copied-context maintenance or a multi-Host freshness claim.
+2. **Source + spec text.** Notice/cursor co-commit, scope-before-duplicate and ask-only new-binding admission in [send](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift) agree with [notice path distinctions](../../designs/02-data-ownership-replication/storage-placement-design.html). The actual hook adapter calls submitHook without that participant ([hook ingress](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift)); no generic hook outbox is evidenced.
+3. **Source + spec text.** Provider evidence commit and later context-ended maintenance are separate: [repository write](../../../../../Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift), [later callback](../../../../../Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift), [second write](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift); [proposal](../../designs/07-agents-context/host-context-lifecycle-design.html) does not falsely combine them.
+4. **Source + spec text.** Ordinary Core save precedes Local save ([save sequence](../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift)); Undo paths return after Core at line 211. This agrees with [transaction comparison](../../designs/02-data-ownership-replication/research/transaction-boundaries.html).
+5. **Source + spec text.** Engine source separates read access, checked write admission and receiver apply/follow-up meaning: reader (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/replicated_database.rs:375`; not a verified browser link), commit checks (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-writer/src/write_transaction.rs:95`; not a verified browser link), apply/follow-up contract (original reference: `/Users/shravansunder/code/projects/agent-fleet-sync/crates/fleet-sync-receiver/README.md:13`; not a verified browser link). Lane text does not convert an apply acknowledgement into a person action, native effect or permission.
+6. **Source + spec text.** Restored activity is not current source continuity ([activity restore](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift)); saved enrichment omits live snapshot ([codec](../../../../../Sources/AgentStudio/Core/Models/WorktreeEnrichment.swift)). [copy limits](../../designs/02-data-ownership-replication/research/query-data-dependencies.html) accurately preserves those distinctions.
+
+**Inference.** Section counts: **8 high-risk spaces; 2 contradictions; 5 experiment premises; 0 demonstrated near-term owner-decision gaps; 6 consistent checks**. No engineering or delivery disposition is supplied.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

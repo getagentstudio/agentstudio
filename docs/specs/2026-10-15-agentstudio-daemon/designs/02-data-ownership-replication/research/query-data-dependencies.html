@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Which data does a client view actually need?</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="query-data-dependencies.html">AgentStudio daemon · Which data does a client view actually need?</a></nav></ex-nav>
+<ex-document id="content"><h1>Which data does a client view actually need?</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](query-data-dependencies.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Which data does a client view actually need?
+
+**A Gateway copy can supply selected stored observations. It cannot supply every live source, perform Host maintenance, or establish that a native client applied a view.** Choose the read contract first, then its copied rows and remaining live inputs. A current table name is neither a target replication unit nor a public API.
+
+This is current-source research at AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`, supporting DS02 and the [proposed processing boundary](../../09-gateway-cli/prepared-view-boundaries.html). That structural proposal remains unconfirmed. No table export list, database partition, migration, viewing policy, retention promise or target schema is selected here. Installed data, replication and Host/Gateway execution have not been exercised.
+
+## Four inputs that copying rows must not conflate
+
+| Input | What it supplies | What still has a separate owner |
+| --- | --- | --- |
+| Retained domain rows | Recorded identity, workflow state, saved content and revisions within the selected read scope | Authoritative mutation and its transaction predicates |
+| Live source observations | Current Git status, source coverage, provider/execution observation and source lifetime | Acquisition, source-specific admission and continuing collection at Host |
+| Client intent and presence | Required subjects, membership, filter/group/sort intent and actual viewing where the selected policy needs it | Actual native presence; arrangement/preference sharing remains open |
+| Prepared/native state | Derived semantic values and the real consumer's current application baseline | Gateway preparation under the proposal; native metrics, focus, layout and application at the client |
+
+These inputs have different witnesses. SQL revisions, a cache save revision, a producer sequence, a process clock and a native generation are not interchangeable. [Copy-read validity](replica-read-contract.html) owns that distinction; [transaction boundaries](transaction-boundaries.html) owns the current writes that must remain coherent.
+
+## Repository and pane sidebar reads
+
+The [sidebar read catalog](../../10-swift-client/sidebar-read-needs.html) defines the current nine input groups and sixteen prepared families. The following backing groups add their actual storage and runtime dependencies. The 56 distinct named tables include direct inputs, wider snapshot-loader dependencies, retention support and auxiliary observations. They are not 56 tables to export.
+
+| Current consumer input | Current stored backing | Additional input or read-side behavior |
+| --- | --- | --- |
+| Repository/worktree topology, pin, note and tags | `watched_path`, `repo`, `worktree`, `repo_tag`, `unavailable_repo`, `unavailable_worktree` | Topology hydration and source observation are separate. Absence timing does not restore a running watcher or its continuity |
+| Saved repository/worktree enrichment | `cache_metadata`, `cache_repo_enrichment`, `cache_worktree_enrichment` | Saved worktree enrichment excludes the live status snapshot. Forge PR/loading and update-progress maps are runtime inputs |
+| Repository qualifying activity | `local_repository_activity`, `local_repository_activity_cursor` | Restore deliberately publishes unavailable until a live checkpoint re-establishes current-session authority. The activity update and its source watermark share a writer transaction |
+| Pane activity recency | `local_pane_activity`; retain membership reads `pane`, `workspace_undo_close`, `workspace_undo_close_member` | Loading may prune non-retained records. Stored wall time/source is converted to a current process ordering instant; current publication occurs before its attempted SQL save |
+| Pane/tab/drawer graph and local cursors | Core graph/content/layout rows and Local cursor rows, expanded below | This is wider snapshot hydration, not a minimal sidebar row query. Core graph save precedes a separate Local-state write |
+| Sidebar/filter/collapse/sort memory | `local_window_state`, `local_window_sidebar_collapsed_group`, `local_repo_explorer_preferences` | Actual main-window/workspace scopes differ. Saved columns do not override the current facade's fixed Panes organization behavior |
+| Compact context lines/counts | `pane_state`, `pane_state_action`, `pane_request`, `pane_event`, `pane_retirement`, `pane_write_order` | Display capture performs expiry/hiding writes and joins membership plus Sessions state; full forms/answers are a wider read |
+| Sessions-derived status | `sessions_operation`, `sessions_conversation`, `sessions_pane_binding`, `sessions_source`, `sessions_evidence`, conditional `sessions_provider_question` and `sessions_provider_question_option` | Runtime confirmed-live bindings, local viewing, open asks and generation/publication fences are separate inputs |
+| Auxiliary interaction recency | `local_workspace_entity_recency`, `local_entity_recency` | Observation/adjacent backing; these timestamps were not established as the source of current output-activity or filesystem-coverage classifications |
+| Native/runtime materialization | No durable prepared-row table established in the inspected path | Output-line facts, clocks, native geometry, worker generations, accepted baseline, selection, viewport and actual application |
+
+### Wider graph hydration is not a minimal export
+
+The current completed-snapshot path includes `workspace`, `app_workspace_selection`, `pane`, `pane_content_terminal`, `pane_content_webview`, `pane_content_code_viewer`, `pane_content_payload`, `drawer`, `drawer_pane`, `tab_shell`, `tab_pane`, `tab_arrangement`, `arrangement_layout_pane`, `arrangement_layout_divider`, `arrangement_minimized_pane`, `arrangement_drawer_view`, `drawer_view_layout_pane`, `drawer_view_layout_divider`, `drawer_view_minimized_pane`, `local_workspace_cursor`, `local_tab_cursor`, `local_arrangement_cursor`, `local_drawer_cursor` and `local_arrangement_drawer_cursor`.
+
+That list describes the inspected loader's dependencies. It does not establish that another client should receive every pane payload, cursor or layout. Arrangement mobility and persistent home remain DS02 decisions. The selection helper and one drawer-presentation SQL helper were not freshly reopened in this bounded pass; the evidence does not claim a complete transitive loader audit.
+
+### Two concrete counterexamples to “the copy has everything”
+
+`WorktreeEnrichment` saves branch/identity fields but omits `snapshot` from its coding keys; decoding explicitly sets it to `nil`. Copying the saved enrichment therefore cannot reproduce dirty/sync/line-count chips without a new status observation. `cache_metadata.source_revision` is saved cache capture metadata, not a remote source cursor or watcher-coverage certificate. Sources: [enrichment codec](../../../../../../Sources/AgentStudio/Core/Models/WorktreeEnrichment.swift), [cache read/write](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift).
+
+`RepositoryLocalActivityStore.restoreAsync` withholds current authority even after a successful SQL load. A subsequent live commit establishes current-session authoritative keys, subject to intervening revocation. A Gateway receiving equal historical rows must not infer that coverage has resumed. Source: [activity restore/commit](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift).
+
+Pane activity adds another distinction: [hydration](../../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+PaneActivity.swift) can prune records using [live and available-Undo membership](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneActivityMembership.swift). [Restore](../../../../../../Sources/AgentStudio/App/Boot/AppDelegate+PaneActivityBoot.swift) reconstructs process-local ordering from age; [publication](../../../../../../Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift) precedes attempted persistence. SQL position is consequently not a complete description of the current runtime recency value.
+
+## Sessions and context reads
+
+The [Sessions/context/native catalog](../../10-swift-client/session-native-read-needs.html) describes the consumer values. Its eight Sessions/context families now have eighteen named source closures, separating SQL reads, runtime folds, producer writes, acknowledgements, person actions and lifecycle maintenance. The nested child-table sets below are conditional on the actual message/form variant; a simple count query does not require every child row.
+
+| Current consumer / operation | Stored input within the named closure | Remaining input or effect |
+| --- | --- | --- |
+| Session summary and status | The seven Sessions table families listed in the sidebar map; ordered applied evidence, binding/source and optional provider questions | Runtime viewing, live-confirmation, admitted process instants, open asks and monitoring line. SQL replay alone does not establish a currently live binding |
+| Open-ask hydration | `pane_request` and `pane_answer_position`; generation-qualified reason counts and the existing writer-scoped `ask_sequence` | `ensureOpen` may perform lifecycle work first. Hydration uses `advancing: false`; send/settlement advances the sequence in its write transaction |
+| Title and agent line | `pane_state` and `pane_state_action`; content, writer metadata, revisions, expiry/staleness and ordered action references | Explicit time context and native fallback title selection. Decoding an action does not execute it |
+| Compact display/counts | `pane_retirement`, `pane_state`, `pane_state_action`, `pane_request`, `pane_event` | SQL maintenance write plus membership, Sessions summary, read-time versions and current publication generation |
+| Present owner/drawer source membership | Runtime directory supplied by the current canonical graph publication; no SQL in the directory fold | Membership revision and retained affected-owner set. Native window/surface presence is a different input |
+| Full context detail/page | The five compact-read table families plus seven conditional message child tables, expanded below | Named snapshot closure is read-only; service opening is separate. Session summary, membership, explicit time, page budget and in-memory detail version remain required |
+| Popover model and page merge | Already acquired typed detail/pages; no SQL inside the consumer merge | Current pane/location, request generation, local titles and actual person actions. Page merge requires matching pane and detail revision |
+| Writer changes stream | `pane_answer_position`, `pane_event`, matching `pane_request` and conditional full-message children | Reports a writer-scoped position, confirms eligible receipts and prunes aged acknowledged events in a write. Returned next position alone is not an acknowledgement |
+
+The seven full-message child tables are `pane_request_action`, `pane_event_action`, `pane_request_choice`, `pane_request_property`, `pane_request_property_choice`, `pane_request_required` and `pane_request_answer_value`. They supply ordered actions, choice/elicitation schemas and structured answers. Together with the five parent/current-value families, they form the twelve-family possible detail-read set. [Message child selection](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift) performs bounded-parent queries with conditional form/answer branches; [full message decode](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift) constructs typed detail from them. It does not mark a notice read or acknowledge an answer.
+
+The [detail service](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift) first calls `ensureOpen`, captures membership and obtains a Sessions summary, then reads the detail snapshot and assigns an in-memory detail revision. Thus a pure snapshot function exists inside a wider service operation; moving only its rows does not reproduce that whole operation. [Startup](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService.swift) can settle previously open blocking asks, drain pending retirements and arm presentation/deadline work. Its invocation/lifecycle is part of extraction, not a Gateway read effect.
+
+The [changes transaction](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift) is different again: it advances `last_reported_position`, confirms only matching eligible receipts, selects bounded changes and may prune aged events. A copied changes page cannot perform those acknowledgements. Likewise, [open-ask hydration](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift) reads existing sequence/count state while producer/settlement paths increment that sequence. These two uses of `pane_answer_position` represent distinct facts in the same row family.
+
+## Annotation, review and output reads
+
+These five named read/decode families complement the [Bridge consumer catalog](../../08-files-review-output/client-read-needs.html). “No writes” below means no writes inside the inspected repository read closure, not that every wrapper, startup path or adjacent service operation is passive.
+
+| Current query family | Tables and meaningful dependency | Outside the SQL result |
+| --- | --- | --- |
+| Annotation session discovery | `annotation_session`: identity, repository/worktree, lifecycle/source relationship, accepted source evidence, revision and dates | Service availability/recovery admission; actual source generation and placement |
+| Coherent demanded annotation detail | `annotation_session`, `annotation_thread`, `annotation_message`, `annotation_message_draft`: sessions, ordered threads/messages, saved values and optional draft | Runtime projection/recovery revision; actual Git/file refresh and placement; query/worker/native publication authority |
+| Projection message entry | Saved message body/revisions plus draft `active_edit_token`, `body`, `draft_revision`; enclosing session/thread identities and revisions | Runtime edit-token ownership map and owner generation; descriptor/query lifetime. Local exposure does not settle distributed audience |
+| Immutable output-attempt inspection | `annotation_output_attempt`, `annotation_output_attempt_message`, `annotation_output_event`: exact bytes/snapshot, membership revisions/order, state/event, path and errors | Finite descriptor custody and one-use delivery; actual clipboard/file destination effect |
+| Bounded output history | `annotation_output_attempt` joined to membership and current `annotation_message`; excludes cancelled attempts, orders newest, applies limit | `canMarkNotHandled` depends on succeeded state and matching currently handled saved revision. Its later mutation remains a separately fenced operation |
+
+The [demanded snapshot read](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository.swift) loads the list and all demanded details in one repository read closure; every demanded session must belong to the worktree list. The [detail decoder](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Loading.swift) also loads optional drafts. This is observed source API usage, not a new proof of the database library's isolation guarantees.
+
+Current [message projection](../../../../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationProjectionContracts.swift) includes draft/edit fields for its admitted local workflow. The [runtime ownership registry](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+EditOwnership.swift) separately checks edit token and owner generation. Copying an edit token cannot reproduce that custody or grant editing permission.
+
+The complete attempt table contains exact bytes, snapshot JSON, errors and destination paths, beyond the [history summary query](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift). Exporting the table would expose that wider content. The selected audience/history policy must address it explicitly rather than treating a summary DTO as the entire table's meaning. Output preparation, external effect and finalization retain the [two-commit contract](transaction-boundaries.html#source--output-has-two-commits-with-an-effect-between-them).
+
+## Current reads that can change state
+
+| Named operation | Current behavior | Constraint on a copy-backed replacement |
+| --- | --- | --- |
+| Compact context display capture | Expires lines and hides settled messages inside a SQL write before building counts/title/line | The Gateway cannot invoke the same code against a read-only copy. Keep authoritative maintenance with the writer and define the resulting read observation |
+| Context deadline work | Existing scheduler reads the earliest ask/line/retirement/visibility deadline, commits due settlement/expiry/hiding/purge, then publishes | Preserve required Host-side behavior independently of UI interest. Existing read/write failures rely on later demand for retry; source presence alone does not prove autonomous recovery |
+| Writer changes read | Records reported position, confirms eligible answer receipts and prunes aged acknowledged changes | Keep explicit acknowledgement at the authoritative owner; a UI detail read or replica apply is not the same operation |
+| Pane activity load | Reads retain membership, may prune activity, then returns workspace records | Separate writer retention from pure presentation reads; failed membership must not turn into an empty retain set |
+| Annotation detail/history read | Named repository closures read/decode rows without performing output or handled-state mutation | Preserve coherent read scope and currentness. Read success is neither edit authority nor proof of a destination effect |
+
+Sources: [context display](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift), [capture and maintenance](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift), [deadline read/write and failure paths](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift). The deadline path is an existing mechanism, not a proposed new scheduler. Host startup, lease-gate coverage and autonomous retry still need their explicit contracts; G13 remains open.
+
+## How this narrows the target design
+
+The [table-use index](table-use-index.html) reconciles all 86 catalogued names. The three read/support maps above name 71 distinct tables; the other fifteen include execution custody, recovery acknowledgement, credentials, producer/claim bookkeeping, native preferences, retained Inbox code and in-memory search. Their absence from a view's read set does not imply unused or safe-to-export data. The index links exact current source roles and keeps target membership unselected.
+
+Two additional read-side effects matter: current CLI `answerPosition()` can create its private state row, and a search request can install/rebuild its private index before querying. Retained Inbox notification loading can delete malformed rows, but its normal ingestion/presentation is explicitly retired. These are different extraction cases from pure detail decoding. Sources and bounded caller searches are in the [CLI/admission packet](../../../explainer/research/cli-private-table-closure-b9ac671e.html) and [native/Inbox/search packet](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html).
+
+For each proposed view, the design still needs to name its authorized read scope, required stored rows and live inputs, coherent read/position witness, invalidation/removal meaning, client intent, and exact native admission/application boundary. A faithful copy can be one input to that contract. Missing currentness cannot be converted to an empty successful view, and receipt of replicated rows cannot execute a command or confirm a user's viewing.
+
+Keep three selections independent: **writer transaction domain**, **replication audience/table membership**, and **prepared view fields**. A private intake cursor may share a transaction with public state; a native cursor may be irrelevant to a shared view; an immutable output row may contain more than an authorized consumer needs. The [86-table catalog](data-catalog.json), [key prerequisites](schema-prerequisites.html), [transaction analysis](transaction-boundaries.html) and [read validity](replica-read-contract.html) supply different evidence for those selections.
+
+## Evidence coverage and remaining limits
+
+The source packets retain exact column groups, actual read/hydration/save paths, pointer lists and scoped gaps: [sidebar dependencies](../../../explainer/research/sidebar-query-table-closure-503b8163.html), [structured sidebar evidence](../../../research/evidence/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.json), [Sessions/context dependencies](../../../explainer/research/context-query-table-closure-826084bd.html), [structured Sessions/context evidence](../../../research/evidence/2026-10-17-daemon-capability-placement/context-query-table-closure.json), [annotation dependencies](../../../explainer/research/bridge-query-table-closure-b8f95acd.html), [structured annotation evidence](../../../research/evidence/2026-10-17-daemon-capability-placement/bridge-query-table-closure.json).
+
+This is a bounded map of the existing consumer families, with wider loader support labeled separately. It is not a full transitive app mutation audit, target export manifest, installed-schema inspection, migration test or demonstrated copy-to-Swift integration. Optional commit participants, every provider ingress, all cascades/triggers and every native action remain outside this pass. Required no-client behavior still needs an explicit Host lifecycle/retry contract and real observation; an existing lazily armed scheduler is source evidence, not proof of that outcome.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

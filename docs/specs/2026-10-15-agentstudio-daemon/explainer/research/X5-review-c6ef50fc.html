@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · X5 — Cross-domain premises review (cross-lineage lane)</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="X5-review-c6ef50fc.html">AgentStudio daemon · X5 — Cross-domain premises review (cross-lineage lane)</a></nav></ex-nav>
+<ex-document id="content"><h1>X5 — Cross-domain premises review (cross-lineage lane)</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-20-full-spec-review/X5-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## X5 — Cross-domain premises review (cross-lineage lane)
+
+Reviewer: X5, independent of the author; no authoring history with this spec. Read-only review. No builds, tests, network calls or repository changes were made. Verdict words are deliberately not used; the Advisor and the Lead judge.
+
+Basis labels used on every claim: **[source]** = I opened the cited code/vendor line in this session at the named revision; **[spec]** = the spec text at the cited line; **[owner]** = the inline owner decisions in packet X5 (numbered 1–9 as in the packet); **[inference]** = my reasoning from the above, not observed.
+
+---
+
+## 1. Basis
+
+- **Manifest:** `tmp/practices-research/2026-10-20-full-spec-review/spec-manifest-sha256.txt`, sha256 `c18425249969dd319bd63580af7556f88da65aae1b3dfb4a853120f3309d147a` (prefix `c18425249969dd31`, as the packet states), 116 entries.
+- **Integrity:** `shasum -a 256 -c` against the manifest reported every one of the 116 files OK. **No lane file changed on disk.** The directory also holds 297 unpinned files (HTML readers, SVG/PNG assets, `explainer/research/*`, owner-input `*.json`). I did not review them, except where a pinned Markdown link pointed to one. None of my findings depends on them.
+- **Source revisions checked:** AgentStudio HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`; agentstudio-git HEAD `4cca397dfc869857064da4e9ec8289ea46adc479`; `vendor/zmx` gitlink `8bab1f0173b07e79835ea372d749af3dbf0d0842` (commit "chore: bump v0.8.1", 2026-09-05); `vendor/ghostty` gitlink `2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33`; zmx's own Ghostty VT pin `8af6897c…` (`vendor/zmx/build.zig.zon:8`). The latest-main zmx candidate `2d23c0d` is **not** available locally, so every claim about it is [spec] only.
+- **Lane files read in full** (manifest sha256 prefix):
+  - `2026-10-15-agentstudio-daemon.md` c1e936a5 · `user-requirements.md` b9e67ba5 · `domain-entities.md` 5e194c59 · `initial-profile.md` 21500504 · `capability-contracts.md` 306904c3 · `delivery-increments.md` 90e7c51c · `index.md` 30ed01be · `README.md` a51bf844
+  - `documents.md` efa3e47e: navigation index, headings and the first 80 rows
+  - `designs/README.md` 2656d370 · DS01–DS11 `specification.md`: b719093b, 3c4ab0a3, 4d96060e, d995585a, d4efc011, eaeb43f1, db916569, 5224c3bc, b748c85f, 675b45ec, 0c85c777
+  - `designs/11-operations-integration/migration-map.md` cb46d201 · `near-term-migration.md` 9f20b12e
+  - `increments/README.md` 8f351075; I0–I7 README/specification: b622da0e/de547d5e, 792fc6ca/6f3177f6, 4b7b3494/1867df97, 945277ab/5be85143, 1033779c/22cc82da, 277ad898/89986f1b, e9f4fa04/1944c810, 0fafb70f/d1cc6a6c
+  - `experiments/primary-experiments.md` 8caea0bd · `research/extraction-survey.md` 27afcbba · `research/topology-risks.md` b6a29340
+  - `research/owner-inputs/`: README 90c76b7b, disposition 4cf3a13a, worktree-cli-host-direction-2026-10-19 7e7a741a, migration-directions-2026-10-19 b5988d05, mvp-and-integration-explainer-request 43aa49b4, fleet-sync-update-2026-10-17 447eaff3, fleet-sync-plan-input 44d5cb04, 03 memo 9090673e
+- **Lane files read in part:** owner-input memos `01-local-sockets…` 4b3fadc7 (targeted search plus sections) and `02-shared-typed-api…` c1364642 (lines 85–143).
+- **Linked out-of-lane files I followed**, because a lane claim depends on them:
+  - Read in part: `storage-placement-design.md` 3817bfad (lines 1–60), `ios-gateway-hosting-evidence.md` e34aeeed (whole, 21 lines), `designs/03-authority-control-plane/README.md` 005afb04, `session-operation-boundaries.md` d419f8d5 (lines 100–112)
+  - Targeted search only: `execution-lifecycle-design.md` 77ffc394, `shared-client-state-design.md` 5eafd15f, `fleet-sync-consumer-fit.md` a0ff51e3, `schema-prerequisites.md` 4b3e1641, `linux-feasibility.md` 110a69cf, `program-design-workbench.md` fdcc59c3
+- **Not opened, by the independence rule:** the spec cites many evidence files under `tmp/practices-research/**` (for example DS05 spec:9, DS08 spec:9/19, DS10 spec:9, I0 spec:22, primary-experiments:48/109/117/131/153/155). Those citations are recorded here as unverified by me. A governing spec whose evidence lives in scratch `tmp/` is itself fragile, but I treat that as an observation, not a finding.
+
+---
+
+## 2. High-risk spaces (ranked by cost-if-wrong × thinness of support)
+
+### HR1 — Near-term Host writes depend on a central lease authority that does not exist yet
+- **Kind:** a premise many pieces rest on, plus sequencing that is hard to reverse.
+- **Claim:**
+  - [spec] near-term-migration.md:81: "central writer validity apply to whatever this slice writes".
+  - [spec] execution-lifecycle-design.md:67: retained session state uses "the actual gated Host write port".
+  - [spec] session-operation-boundaries.md:109: "This structure does not infer an ungated registry… IP4's invalid-writer behavior… remain[s] binding".
+  - [spec] delivery-increments.md:42: "A stand-in may support bounded development, but cannot close its real integration gate".
+  - [spec] designs/README.md:25 and its table: DS04 Terminal depends on DS03 Authority.
+  - [spec] R14/U20, user-requirements.md:50 and :101: the authority server is later work.
+- **Evidence:**
+  - [owner] (6): "Fleet and bots are orthogonal… [the daemon] has its own SwiftUI and timeline".
+  - [spec] S22, user-requirements.md:81: the central control plane is the machine prepare/move/copy world.
+  - [spec] The owner-supplied engine path gates every write: fleet-sync-plan-input.md:39 "admission ─ begin_write ─► ReplicatedDatabase (the lease gate checks the writer state)".
+  - [spec] IP4, initial-profile.md:12: invalid or lapsed grant → pause/refuse; no grace, no bypass, no issuer switch.
+  - [spec] G13 spine:197 leaves "one designated authority binding per gated database" and "exact gate coverage" unselected.
+- **What breaks if wrong:**
+  - Suppose every Host session/registry write is lease-gated while no central issuer exists. Then every near-term create lands as "Known backend effect plus record gap" (session-operation-boundaries.md:104): the zmx process starts, the record is refused.
+  - I2's Host-local asks and notices (U15/R9) would also be refused.
+  - The near-term slice therefore either cannot be closed or runs on a stand-in issuer that the spec says cannot close it.
+  - That couples the daemon's timeline to the control-plane timeline the owner called orthogonal.
+- **Why the support is thin:** no document says which Host databases are gated before the server exists. The protective purpose of the lease is a second writer after a machine move or copy. Writer transfer and machine move/copy are both excluded from current scope ([spec] U20, user-requirements.md:50).
+
+### HR2 — Only the Gateway may reach a Host across machines, yet the owner wants `--host vm-1`
+- **Kind:** security, contract, and a premise many pieces rest on.
+- **Claim:**
+  - [spec] R1, spine:130: only the Gateway reaches the Host on the frontend route.
+  - [spec] V1, spine:161 requires "absence of a supported direct-Host frontend mode".
+  - [spec] DS01 K13 spec:9 makes cross-machine admission the Gateway↔Host edge.
+  - [spec] shared-client-state-design.md:57: "the Host does not gain a new Host-to-Host forwarding path".
+  - [spec] Remote worktree CLI stays "unselected/open": initial-profile.md:11, spine R12:141, DS09 spec:16 and :23, migration-map.md:98, worktree-cli-host-direction-2026-10-19.md:19.
+- **Evidence:**
+  - [owner] (7): "Remote use is a Mac CLI with --host vm-1"; "the mac would have a daemon"; "same architecture we can make it efficient"; "there's a misunderstanding in responsibility if you think it should work with gateway".
+  - [spec] IP9, initial-profile.md:17 and G8/G12 define pairing, credential and revocation only along the Gateway↔Host route (DS03 spec:13).
+- **What breaks if wrong:** either reading of the owner's direction adds a second network-admitting peer of a Host that the trust model does not contain.
+  - Mac CLI → Mac daemon → vm-1 daemon is a Host↔Host edge.
+  - Mac CLI → vm-1 daemon is a direct CLI network client.
+  - DS01 then needs a Host-side network listener that admits non-Gateway peers. DS03 needs a credential for them. DS09 needs a `--host` target-resolution contract, including "no inferred default machine" (R12). The V1 negative case must be re-scoped so the worktree CLI's legitimate direct path is not counted as a frontend circumvention.
+  - The near-term slice is building the Host's network ingress (`host_network_ingress`, program-design-workbench.md:122), so this shapes it now.
+
+### HR3 — No terminal rendering path exists for the iOS UX client
+- **Kind:** a premise many pieces rest on (R3, R7/V4, IP2's phone-viewer example, I7).
+- **Claim:**
+  - [spec] I1/near-term choose a "Gateway-backed terminal attachment through a qualified PTY-facing relay" behind the Ghostty surface (I1 spec:21; near-term-migration.md:78, :111). The reason is that the rendered-surface API has no output-injection entry (topology-risks.md:64-66).
+  - [spec] IP2, initial-profile.md:24: "A phone joins as a viewer… it can observe output".
+  - [spec] V4, spine:164 requires a Mac Gateway and an iOS Gateway attached to one Host.
+- **Evidence:**
+  - [source] `vendor/ghostty/include/ghostty.h:1176-1249`: the surface API has key/text/mouse input and `read_text`, but no output feed.
+  - [source] `vendor/ghostty/src/termio/backend.zig:14`: `pub const Kind = enum { exec };`, the only termio backend.
+  - [source] `vendor/ghostty/src/pty.zig:19-22`: `.ios => NullPty`.
+  - [source] `vendor/ghostty/src/pty.zig:55-58`: "TODO: This should be removed. This is only temporary until we have a termio that doesn't use a pty. This isn't used in any user-facing artifacts, this is just a stopgap to get compilation to work on iOS."
+  - [inference] iOS apps cannot spawn a relay subprocess, so the Mac relay pattern does not transfer.
+  - [spec] I found no spec text naming the iOS terminal renderer (searches for NullPty, iOS rendering and phone terminal returned nothing relevant).
+- **What breaks if wrong:** the owner-selected iOS Gateway (S28) has no terminal view to drive. The answer needs a new Ghostty termio backend (vendor work), a different terminal widget, or another renderer. That is a large component the spec has not named. V4's mixed-device terminal proof cannot be designed until it is chosen.
+
+### HR4 — zmx version, and starting a Host execution with no viewer
+- **Kind:** backend contract, and an irreversible step (installed-session upgrade).
+- **Claim:**
+  - [spec] S8, user-requirements.md:66: latest zmx is only "eligible for design evaluation".
+  - [spec] DS11 spec:9, I7 spec:17: "Evaluating latest ZMX does not authorize replacing live sessions".
+  - [spec] I0 spec:9 qualifies a "Pinned ZMX".
+  - [spec] The near-term closure "actual ZMX version/profile" is open (near-term-migration.md:72).
+  - [spec] The Host must "Establish execution without a viewer" (execution-lifecycle-design.md:38, :49, :66).
+- **Evidence:**
+  - [owner] (8): "we want to use latest zmx with capture changes".
+  - [source] `vendor/zmx/src/ipc.zig:6-27`: tags end at `EnvData = 21`. There is no Capture tag at 0.8.1.
+  - [source] `vendor/zmx/src/main.zig:193-226` and `daemonize.zig:30`: `zmx run` creates a session with `is_task_mode = true` and shell forced to `"bash"`. It does not start the user's interactive login shell.
+  - [source] `main.zig:1572-1640` with `loop.zig:695-735`: the only interactive create path is `attach` → `ensureSession`, after which the caller becomes a terminal client.
+  - [source] `loop.zig:965-1022` (Init): Init claims vacant leadership, resizes the inner terminal to the client's size, and only serializes restoration when `has_pty_output and has_had_client`.
+  - [source] `ipc.zig:56-76`: with no TTY the size falls back to 24×120.
+  - [spec] topology-risks.md:12: 2d23c0d still reports version 0.8.1.
+  - [source] `ipc.zig:84-94`: Info carries no version or capability field.
+- **What breaks if wrong:**
+  - A Host that creates sessions by a hidden `attach` takes leadership, sets the child PTY to an arbitrary size, and changes focus semantics (`loop.zig:248-257`).
+  - A Host that uses `run` gets bash in task mode rather than the user's shell.
+  - The E1/I0 qualification is aimed at a pin the owner has moved past.
+  - The installed user sessions still run 0.8.1 daemons that a version string cannot tell apart from the new ones.
+
+### HR5 — Persisted terminal and repository identity has no Host qualifier
+- **Kind:** stored data.
+- **Claim:**
+  - [spec] near-term-migration.md:58-59 and :66: split the execution association from the legacy pane/custody row; "The first associated remote integration must settle its namespace/import/native projection".
+  - [spec] delivery-increments.md:70: moving persisted user data needs a separately selected migration.
+- **Evidence:**
+  - [source] `Sources/AgentStudio/Core/Models/StableKey.swift:7-11`: the key is a SHA-256 of the local symlink-resolved path.
+  - [source] `WorkspaceCoreMigrations+GlobalTopology.swift:9-41`: `repo`, `worktree` and `watched_path` declare `stable_key TEXT NOT NULL UNIQUE`.
+  - [source] `WorkspaceCoreRepository+SessionOwnership.swift:173-213`: session ownership joins `pane_content_terminal.zmx_session_id`, with no Host column.
+  - [spec] Replication wants immutable UUIDv7 keys (fleet-sync-consumer-fit.md:88).
+- **What breaks if wrong:** two Hosts with an equal repository path collide on the UNIQUE key. A remote path gets symlink-resolved on the Mac. A remote session cannot be recorded without a persisted-format change. The spec lists this as a design "closure", not as an owner-visible persisted-data decision.
+
+### HR6 — Remote terminal output reaches the Mac clipboard with automatic confirmation
+- **Kind:** security; it crosses the owner's machine/VM boundary [owner] (3).
+- **Claim:**
+  - [spec] DS10 K12 spec:25: the clipboard callbacks "retain beta auto-approval for reads and writes. That is baseline behavior, not a selected remote-Host policy… No policy change or authority grant is implied by transport extraction".
+  - [spec] near-term-migration.md has no clipboard closure (searched).
+- **Evidence:**
+  - [source] `GhosttyCallbackRouter.swift:71-91`: the read callback hands the current pasteboard text to Ghostty.
+  - [source] `GhosttyCallbackRouter.swift:106-112`: confirmation is completed automatically ("The owner explicitly retained existing automatic approval for this beta").
+- **What breaks if wrong:** once the near-term relay renders remote bytes in the Mac surface, a process in the VM (for example an agent) can read and write the Mac's clipboard through OSC 52 with no prompt. "No policy change" leaves that hole open.
+
+### HR7 — Starting the iOS Gateway under the first-party unsafe ban (IP6)
+- **Kind:** a premise many pieces rest on. R3 is a direct owner decision; IP6 is a delegated initial profile.
+- **Claim:**
+  - [spec] IP6, initial-profile.md:14: first-party Rust, including generated scaffolding, forbids unsafe.
+  - [spec] R3, spine:132: the Gateway runs on iOS.
+  - [spec] E6, primary-experiments.md:137: startup must comply.
+- **Evidence:**
+  - [source] The local rustc 1.95 docs, `~/.rustup/toolchains/1.95.0-aarch64-apple-darwin/share/doc/rust/html/rustc/lints/listing/allowed-by-default.html:2339`: "The unsafe_code lint catches usage of unsafe code and other potentially unsound constructs like no_mangle, export_name, and link_section". A first-party crate under `forbid` therefore cannot export a C entry symbol for Swift.
+  - [spec] The owner-supplied memo proposes UniFFI for iOS (02 memo, around lines 86-101). UniFFI scaffolding is generated first-party code.
+  - [spec] The spec's narrowed candidate is a safe `objc2-ui-kit` `UIApplication::main`. It is unbuilt (ios-gateway-hosting-evidence.md:11-15).
+- **What breaks if wrong:** R3 and IP6 cannot both hold, and the owner must choose between them. HR3 compounds this: under the candidate, Rust owns app entry and Swift is a delegate. Even then the iOS UX still has no terminal renderer.
+
+### HR8 — The shared workspace authority sits at a designated Host while workspace/deployment cardinality is open
+- **Kind:** ownership and stored data.
+- **Claim:**
+  - [spec] shared-client-state-design.md:3, :11: "A designated existing Host owns shared workspace composition".
+  - [spec] shared-client-state-design.md:20: "It is a Lead design choice, not a storage decision attributed to the owner".
+  - [spec] storage-placement-design.md:5, :22.
+- **Evidence:**
+  - [owner] (5): Host deployment and workspace-to-Host cardinality are deliberately not decided.
+  - [spec] migration-directions-2026-10-19.md:21: "deployment is… like a workspace, or correlates to what's in the workspace".
+- **What breaks if wrong:** if the owner later binds deployments to workspaces, or puts workspace state elsewhere, shared tabs/layout already stored and replicated at a designated Host must migrate. Under the current proposal, layout edits from every device also depend on that one Host being reachable (shared-client-state-design.md:18).
+
+### HR9 — Backend sockets let same-user processes act outside Host admission
+- **Kind:** security and contract.
+- **Claim:**
+  - [spec] DS03 K14 spec:15: "mere local socket reachability grants no authority".
+  - [spec] IP2, initial-profile.md:10: at most one controller.
+  - [spec] near-term-migration.md:75: "attachment alone never steals control".
+- **Evidence:**
+  - [source] `vendor/zmx/src/loop.zig:468-499`: any connected client's `Input`, `Send`, `Resize` and `Kill` are dispatched. `.Kill => break :daemon_loop` ends the session.
+  - [source] `socket.zig:73-79` connects with no peer-credential check; searches for `getpeereid`/`SO_PEERCRED` found nothing.
+  - [source] `cfg.zig:13`: socket dir mode `0o750`.
+  - [source] `WorkspaceSurfaceCoordinator+ViewLifecycle.swift:416-420`: the pane shell receives `ZMX_DIR`.
+  - [inference] Any same-user process in the Host, including an agent in another session, can inject input, resize or kill any session without going through Host admission or the controller rule.
+- **What breaks if wrong:** IP2 and K14 are advisory inside a Host unless the backend sockets are isolated, for example under a separate user or a directory the shells do not know. The spec does not state which, and the owner's "a host or VM is a boundary" (3) may mean that inside-boundary trust is intended. Either way it must be said explicitly.
+
+### HR10 — The Mac Host process: identity, supervision and macOS privacy access
+- **Kind:** a premise R6/IP3 rest on for Mac-local work.
+- **Claim:**
+  - [spec] R2: the Host covers Mac-local work.
+  - [spec] IP3: the CLI starts the Host if absent.
+  - [spec] R6: execution survives Swift closure.
+  - [spec] DS11 K15 spec:11: "A grant to the current app alone is not proof of a future Host process's access… No signing, Full Disk Access, LaunchAgent or SMAppService mechanism is selected".
+- **Evidence:** [source] `AppDelegate+FullDiskAccessHealth.swift:19-20`: the product already probes whether shell children can reach Documents and protected data. The concern is live today.
+- **What breaks if wrong:** a Host started by the CLI from a pane, or by the app, may lose repository access in `~/Documents` once AgentStudio quits [inference]. That would break R6 for Mac-local work precisely when the app is closed. It needs an experiment (P5).
+
+### HR11 — The owner's "agent server" layer is absent from the spec's agent-input model
+- **Kind:** a premise K7/S14 rest on.
+- **Claim:**
+  - [spec] S14, user-requirements.md:73: an agent "in a Linux terminal" sends hooks Host-locally.
+  - [spec] K7, DS07 spec:13 sends agent input to the Host session.
+  - [spec] E10, domain-entities.md:64 binds a provider conversation to an E1 Host execution.
+- **Evidence:**
+  - [owner] (4): the layers are client / agent server (where agent loops run) / execution (the VM, where the AgentStudio daemon runs).
+  - [source] `ProviderHookInvocation.swift:122-126`: a hook with no pane credential "stays silent" and exits 0.
+- **What breaks if wrong:** suppose agent loops run on an agent server outside the VM and only execute tools inside it. Their provider hooks then fire outside the Host, never reach Host-local admission, and the E10 binding to a terminal session does not exist. U15's "agents keep working with no client" would cover only agents running in a VM terminal.
+
+### HR12 — Linux fork has to be qualified on the environments the owner actually uses
+- **Kind:** a premise U5/IP7 rest on.
+- **Claim:**
+  - [spec] IP7, initial-profile.md:16: one qualified Linux profile.
+  - [spec] E4, primary-experiments.md:95-105: the Fly Machines operator path, `flyctl machine exec` (linux-feasibility.md:37).
+- **Evidence:**
+  - [source] The Mac reference refuses rather than copies: `agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkEligibility.swift:24-49` requires APFS, the same device, clone support and macOS ≥ 26.
+  - [source] Clone calls are `fclonefileat` (`WorktreeForkLeafWorker.swift:55`).
+  - [owner] (9): experiments run on "this Mac, Fly Sprites (Linux), or sunclaw".
+- **What breaks if wrong:** if neither Sprites nor sunclaw offers a reflink-capable filesystem [inference, unverified], the qualified Linux profile is not where the owner works. Fork would then be "refused" on the owner's actual Linux machines. That is truthful, but it is a parity gap the owner should see early.
+
+---
+
+## 3. Contradictions
+
+**C1 — Doc vs owner decision: remote worktree CLI.**
+- Spec says remote direct CLI access "remains unselected/open":
+  - initial-profile.md:11
+  - spine:141 (R12)
+  - user-requirements.md:32 (U2) and :126 (item 9)
+  - DS09 spec:16 and :23
+  - migration-map.md:98
+  - worktree-cli-host-direction-2026-10-19.md:19
+- The S16 reading routes "frontend CLI targeting another machine… through the Gateway" (user-requirements.md:75, :132; topology-risks.md:132).
+- "The Host does not gain a new Host-to-Host forwarding path" (shared-client-state-design.md:57).
+- Owner (7) states remote use is a Mac CLI with `--host vm-1`, with a daemon on the Mac and the same architecture, and calls Gateway routing for this a misunderstanding of responsibility.
+
+**C2 — Doc vs owner decision: zmx version.**
+- Spec: "eligible for design evaluation" (user-requirements.md:66, S8).
+- "Evaluating latest ZMX does not authorize…" (DS11 spec:9; I7 spec:17).
+- "Latest upstream is an eligible candidate" (topology-risks.md:60).
+- "Pinned ZMX" (I0 spec:9).
+- Owner (8): use latest zmx with the Capture changes.
+
+**C3 — Doc vs doc: Mac-only Gateway and phone-via-Mac.**
+- Active research documents still state the superseded topology:
+  - topology-risks.md:3 ("The Rust Gateway service is macOS-based"), :132 ("Phones use a reachable Mac Gateway"), :191 ("Mac-only Gateway placement… settled")
+  - extraction-survey.md:9, :26 ("Network socket to Mac"), :35, :266 ("The selected phone role is a client of the Mac Gateway; an embedded Gateway is only a historical research alternative"), :299
+  - owner-inputs/disposition.md:9, :33 ("phones are clients of a reachable Mac Gateway")
+- Spine R3:132 and U12 (user-requirements.md:42) require an iOS Gateway with no Mac relay.
+- The owner-inputs README:57-59 marks only the frozen memos as historical. The survey, risk catalog and disposition are Lead analysis, and they are linked as current evidence: spine:5, index.md, primary-experiments.md:9.
+
+**C4 — Doc vs doc: worktree/Mac-local CLI routing called unresolved.**
+- designs/README.md:139: "Ordinary Mac-local CLI routing remains unresolved in DS01/DS09".
+- extraction-survey.md:11: "its ordinary Mac-local physical route remains open".
+- Both against IP3 (initial-profile.md:11) and S30 (user-requirements.md:91).
+
+**C5 — Doc vs doc: invalid-writer/central-outage behavior called pending.**
+- DS03 README:20: "Pending owner choice: expiry-paused application writes versus required indefinite offline writes".
+- designs/README.md:139: "The central-outage selection remains pending in DS03".
+- Both against IP4 (initial-profile.md:12) and user-requirements.md:130 #13 ("S25 resolves invalid-authority writes as pause/refusal").
+
+**C6 — Doc vs doc: S2 still cited for the CLI route.**
+- user-requirements.md:60: S2 "CLI talks to Mac client daemon", where Mac client daemon is the former name of the Gateway (S28).
+- U1 (:31) and U2 (:32) still cite S2 as basis.
+- U2 says S30 supersedes S25 for worktree work but never marks S2's CLI clause as superseded.
+
+**C7 — Doc vs doc: R13 on iOS assumes separate processes.**
+- DS01 spec:19 requires coverage "with real Swift and Rust Gateway processes over Unix sockets".
+- V6 (spine:166) says the iOS profile "does not infer a second independently running app daemon".
+- The iOS candidate hosts Rust inside the app lifecycle (ios-gateway-hosting-evidence.md:7, :13).
+
+**C8 — Doc vs owner decision: experiment environments.**
+- primary-experiments.md:187 preserves "an earlier owner restriction against AgentStudio builds/tests on Sunbook, with Sunclaw the default".
+- E4 and linux-feasibility.md:37 use Fly Machines (`flyctl machine exec`, Machine launch).
+- Owner (9) names "this Mac, Fly Sprites (Linux), or sunclaw". Which Mac "this Mac" is, and whether Sprites are operated through the Machines API/flyctl, is not settled in the spec. I did not verify Sprites' operator surface (no network).
+
+**C9 — Spec vs its own dependency order: near-term terminal slice vs DS04 ← DS03.**
+- designs/README.md:13 and the design-dependency table make DS04 consume DS03 (central authority/leases).
+- migration-map.md:30, :141 and near-term-migration.md present terminal as the first integrated route.
+- delivery-increments.md:42 says lease-dependent increments need the real authority integration, and the server is later work (U20).
+- See HR1. The documents agree on each sentence, but together they leave the first slice depending on work the owner placed later.
+
+---
+
+## 4. Premises that need an experiment
+
+Each item gives the premise, why source cannot settle it, the cheapest decisive experiment with its oracle written before running, the environment, and whether latest-zmx Capture matters.
+
+### P1 — The Host can establish an interactive user-shell execution with no viewer, without side effects on control or size (HR4)
+- **Why source does not settle it:** source shows the mechanisms (`run` forces bash/task mode; `attach` makes the caller a terminal client, claims leadership and sizes the PTY). It does not show whether a hidden `attach` followed by an immediate Detach leaves an acceptable state, or what latest zmx offers.
+- **Experiment:** in an isolated `ZMX_DIR`, a stand-in Host process runs `zmx attach S $SHELL -i -l` with stdin not a TTY, sends Detach once the session socket accepts, then later attaches a real Ghostty surface.
+- **Oracle:**
+  - (a) `ps` shows the user's login shell, not bash task mode.
+  - (b) `stty size` printed by the shell before any viewer is recorded; if it shows 24×120, the side effect is confirmed.
+  - (c) the first real viewer receives a serialized restoration of pre-attach output (`has_had_client` gate).
+  - (d) a DECSET 1004 probe program logs focus-in/out sequences around the hidden attach.
+- **Environment:** this Mac first, then Fly Sprites or sunclaw (zmx on Linux).
+- **Latest zmx:** matters. Confirm at the owner's chosen latest commit whether a detached interactive create exists, and whether Init's leader claim, resize and serialization gating changed. 2d23c0d is not checked out here.
+
+### P2 — A Capture-based snapshot-to-live cut restores correctly under continuous output (E1)
+- **Why source does not settle it:** whether a client sees overlap or a gap depends on ordering at accept, broadcast, Init and Capture time. 0.8.1 has no Capture tag ([source] ipc.zig:6-27). The spec reports that Capture carries no output cut or epoch ([spec] topology-risks.md:50).
+- **Experiment:** E1's same-connection arm only. Send Init then Capture on the connection that carries live Output, while a producer emits a corpus with split UTF-8/CSI/OSC sequences at every cut.
+- **Oracle:** element-wise equality against an uninterrupted VT parse, then a canary suffix that exposes leftover parser state.
+- **Environment:** this Mac (the protocol is platform-neutral), then repeat on Linux.
+- **Latest zmx:** decisive. Capture exists only on latest. Confirm the Capture tag value and framing at the owner's latest commit, and the Capture-then-Info capability barrier ([spec] topology-risks.md:56).
+
+### P3 — A latest-zmx client and Host interoperate with installed 0.8.1 daemons
+- **Why source does not settle it:** [source] 0.8.1 ignores unknown tags (`loop.zig:496-499`), but how a latest client behaves against an old daemon is upstream code not available locally.
+- **Experiment:** against a fixture 0.8.1 daemon, send Capture then Info, and run `attach` from the latest binary.
+- **Oracle:** Capture is ignored (warn log), Info is answered, the client classifies the daemon as without Capture, and no session is recreated or killed.
+- **Environment:** this Mac, with an isolated `ZMX_DIR`. Never touch the owner's live sessions.
+- **Latest zmx:** this premise exists only because of the owner's latest-zmx decision. Confirm the exact upstream barrier code at the chosen commit.
+
+### P4 — An iOS Gateway can start with zero first-party unsafe and serve the UX over a local socket (HR7, E6)
+- **Why source does not settle it:** the unsafe_code lint's behaviour on code expanded from an external macro, and a mixed Swift/Rust app entry, can only be decided by compiling.
+- **Experiment:** a minimal app.
+  - Rust `main` calls `objc2-ui-kit` `UIApplication::main` with a Swift delegate class name.
+  - Every first-party crate sets `#![forbid(unsafe_code)]`.
+  - A Tokio runtime starts and a Unix listener accepts a Swift client.
+- **Oracle:** it compiles under forbid; the app launches on the simulator and then a device; the delegate receives the active and background transitions; a one-line request and reply crosses the socket.
+- **Environment:** this Mac (Xcode, simulator, device).
+- **Latest zmx:** not relevant.
+
+### P5 — A Mac Host keeps repository access after AgentStudio quits (HR10)
+- **Why source does not settle it:** macOS privacy (TCC) attribution of a process that outlives the app that started it is runtime behaviour. Source shows the product already probes for it (`AppDelegate+FullDiskAccessHealth.swift:19`).
+- **Experiment:** start a stand-in daemon via the CLI from a debug-app pane (isolated identity); quit the app; have the daemon read a repository file under `~/Documents`. Repeat with the daemon started from Terminal.app and with it started by launchd.
+- **Oracle:** read succeeds versus EPERM in each case.
+- **Environment:** this Mac only, using a debug or beta identity, never the production app.
+- **Latest zmx:** marginal. Only zmx sessions spawned by the Host inherit its attribution.
+
+### P6 — An iOS terminal view can be fed by Host bytes (HR3)
+- **What source already settles:** the pinned Ghostty cannot (NullPty, exec-only backend).
+- **Experiment:** compare two prototypes on the iOS simulator:
+  - a minimal non-PTY Ghostty termio backend (vendor patch);
+  - one alternative renderer.
+- **Oracle:** both receive one fixed restoration-plus-live corpus. The prototype displays the expected cells, measured via a text read and a sampled-pixel check, and returns keyboard input as bytes.
+- **Environment:** this Mac (simulator), then a device.
+- **Latest zmx:** indirect. Restoration bytes come from Init or Capture.
+
+### P7 — The owner's Linux environments support strict clone (HR12, E4)
+- **Why source does not settle it:** filesystem and kernel capabilities belong to the instance, not to the code.
+- **Experiment:** on a Fly Sprite and on sunclaw, record the filesystem type and mount/overlay layering, then attempt `ioctl(FICLONE)` between two files on the same filesystem.
+- **Oracle:** success versus EOPNOTSUPP/EXDEV.
+- **Environment:** Fly Sprites and sunclaw.
+- **Latest zmx:** not relevant.
+
+### P8 — The required local route is affordable for Mac-local terminals (E5; IP8)
+- **Why source does not settle it:** the new path (Ghostty → relay → Gateway → Mac Host → zmx) adds two hops over today's Ghostty → `zmx attach`, and source cannot measure its cost.
+- **Experiment:** matched key-to-echo, current versus new chain, on the same machine.
+- **Oracle:** the distribution at the client clock, with a known injected-delay calibration arm.
+- **Environment:** this Mac.
+- **Latest zmx:** minor (output chunking).
+
+Not listed as experiments because source already settles them: the same-user backend-socket circumvention (HR9) and the clipboard read path (HR6). Those are decisions, in section 5.
+
+---
+
+## 5. Owner-decision gaps
+
+These are choices the spec makes without owner authority, or leaves open, that hold up the near-term slice unless noted.
+
+- **D1 — Lease gating before the central server exists (HR1, C9).** Which Host stores are lease-gated in the near-term slice? Is a non-Gateway development issuer acceptable to close it, or does Host-local state stay ungated and single-writer until the control plane exists? IP4 currently forbids a gate circumvention. The spec leaves G13 gate coverage open while its terminal designs assume a gated registry. This holds the near-term slice.
+- **D2 — Remote CLI path and admission (HR2, C1).** For `--host vm-1`, does the Mac daemon relay to vm-1's daemon, or does the CLI connect directly? Which credential admits the caller? The spec states that no Host-to-Host path exists. This shapes near-term Host network ingress; it holds I4.
+- **D3 — zmx pin and upgrade policy (HR4, C2).** Which commit is "latest"? Does the app's local terminal path also move to it? What happens to installed 0.8.1 sessions, given the spec currently forbids replacing live sessions? This holds the near-term "actual ZMX version/profile" closure.
+- **D4 — Remote clipboard (OSC 52) policy (HR6).** Should automatic confirmation extend to remote Host output? This holds the near-term slice as soon as remote bytes render on the Mac.
+- **D5 — Trust inside one Host/VM (HR9).** Are same-user processes inside a Host trusted to act on sessions outside Host admission, or must the backend sockets be isolated? This decides whether IP2 and K14 are enforceable. It holds the near-term control contract.
+- **D6 — Persisted data and new stores (HR5).** Two decisions sit here:
+  - The Host-qualified pane→execution and repository identity format change, which reshapes stored user data.
+  - Adding the Host's own store.
+  Repo rules require asking the owner before persisted-format changes and before adding a store. The spec lists these as Lead closures. This holds the near-term slice.
+- **D7 — Returning to a detached session after its last pane is closed.**
+  - The I1 journey's "Return/reconnect" (I1 spec:16) needs a way back to a session that no longer has a pane.
+  - U14 (user-requirements.md:44) leaves the detached-session view as separate UX design. V3 (spine:163) confirms "No current UI for a new detached-session experience is specified".
+  - Without a decision, closing the last pane makes the session unreachable from the app except through Undo [inference].
+  - This holds the near-term journey.
+- **D8 — Mac Host supervision and identity (HR10).** Who starts and keeps alive the Mac Host and Gateway: the app, the CLI, or launchd/SMAppService? Under which signing and privacy identity? The spec selects none. This holds a packaged near-term path on the Mac.
+- **D9 — The iOS terminal renderer (HR3).** Patch Ghostty's termio, or adopt another renderer? This does not hold the Mac near-term slice; it holds I7 and V4.
+- **D10 — Where shared workspace state lives (HR8).** The Lead's designated-Host choice intersects owner (5)'s deliberately open deployment/workspace relationship. Not near-term (I6), but it is a one-way stored-data door.
+- **D11 — The agent-server layer (HR11).** Are agent loops on the agent-server layer consumers of Host-local ingress, frontend clients, or out of scope? This holds I2, not I1.
+- **D12 — Experiment hosts (C8).** Is "this Mac" the machine the spec bars from builds? Is Fly Sprites the same operator path as Fly Machines? This holds I0 execution.
+
+---
+
+## 6. Checked and found consistent (brief)
+
+- Git SDK inventory: 33 local + 10 remote + 1 discovery = 44 ([source] `AgentStudioGitSDK.swift:3-116`). agentstudio-git declares only `.macOS(.v14)` (`Package.swift:41-42`).
+- 54 built-in IPC entries ([source] `IPCBuiltInMethodIndex.swift`, 54 `Entry.erased`), matching extraction-survey.md:86. I did not recount the 154 command identities.
+- zmx 0.8.1 facts used by the spec all match source:
+  - no Capture tag; Info has no version and a 256-byte cwd (`ipc.zig:84-94`);
+  - Init claims leadership, resizes before serializing, and restoration is sent as ordinary Output (`loop.zig:965-1022`);
+  - the PTY input queue drops new payloads above 256 KiB with no acknowledgement (`loop.zig:866-890`);
+  - user input from a non-leader promotes it (`loop.zig:894-906`);
+  - focus-out/in on terminal-client transitions (`loop.zig:248-257`);
+  - unknown tags are ignored (`loop.zig:496-499`);
+  - output fanout skips a client's chunk on append failure (`loop.zig:404-412`).
+- `createPaneSession` only creates the directory and a handle; startup is `zmx attach` built into the Ghostty command; native startup sets `ZMX_DIR` and blanks `ZMX_SESSION`/`ZMX_SESSION_PREFIX` ([source] `ZmxBackend.swift:182-215`; `…+ViewLifecycle.swift:399-420`).
+- The pane environment keys listed in near-term-migration.md:60 match `PaneIPCIdentityOwner.swift:121-128`. A hook with no credential exits 0 silently (`ProviderHookInvocation.swift:122-126`). The CLI routes worktree commands before IPC (`AgentStudioIPCClient/main.swift:6-30`).
+- The Ghostty surface API has no output-injection entry ([source] `ghostty.h:1176-1249`), consistent with topology-risks.md:64.
+- The Mac fork eligibility rules (APFS, same device, clone support, macOS 26) match the spec's description of a strict-clone reference with no silent copy fallback.
+- The owner decisions are reflected correctly in:
+  - (1) parity rule: migration-map.md:91-101
+  - (2) Gateway on iOS and macOS: spine R3, U12
+  - (3) Host/VM as a boundary: E23 "one running Host… in a declared machine/work environment", domain-entities.md:21
+  - (5) cardinality left open: migration-map.md:9, near-term-migration.md:5, :49
+  - (6) fleet and bots orthogonal: migration-map.md:9, :149
+  - (7) worktree CLI → daemon, not Gateway, for local work: IP3, R12, DS09 spec:10-16
+- The observability anchors (loopback OTLP, `observability_and_traceability.md:48-51`) and the clipboard auto-confirmation anchor (`GhosttyCallbackRouter.swift:106-112`) say what the spec cites them for.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

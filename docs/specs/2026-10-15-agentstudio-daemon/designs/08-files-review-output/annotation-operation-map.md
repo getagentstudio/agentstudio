@@ -1,0 +1,87 @@
+# Annotations: workflow state, edit custody and native output
+
+**Keep the authoritative annotation transaction separate from client editing and the destination effect.** These 22 nested operation kinds explain why one generic “send a mutation through the bus” or “replicate the table” cannot implement the workflow.
+
+The source baseline is AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. The [operation evidence map](../../research/evidence/2026-10-17-daemon-capability-placement/git-bridge-operation-source-map.json) and [reconciliation notes](../../research/evidence/2026-10-17-daemon-capability-placement/git-bridge-operation-source-map-notes.md) distinguish newly checked declarations/dispatch from reused same-HEAD effects in the [Bridge operation desk](../../research/evidence/2026-10-15-daemon-extraction-survey/e2-bridge-operation-evidence.md). These are source classifications, not new SQL, native, rendered, restart or Linux observations. **Proposed placement is the Lead's structural proposal, not selected public exposure or a completed Program Design.**
+
+Both `file.annotations.command` and `review.annotations.command` expose these kinds. Review resolves its enclosing publication/source generation before nested dispatch, including reads. The [16-call Bridge map](bridge-operation-map.md) owns that outer layer. Current `committed`/generic success does not give every nested operation the same SQL or external-effect guarantee. The rows retain the operation-specific result/currentness boundary.
+
+## Source, relationship and session reads
+
+**Proposed path.** Host annotation/source owners read the addressed files/Git and workflow SQL, validate current fingerprints and persist only admitted relationship changes. Gateway prepares authorized session/detail projections with their source validity. Native/worker placement material must retain its client/source identity when supplied to a Host operation.
+
+| Current nested operation | Current acquisition / state / effect | Receipt and currentness limit |
+| --- | --- | --- |
+| `session.discover` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:334) | Performs an availability-gated SQLite session read; the current transport adapter discards the discovered list. | committed means read returned. Projection/catalog provides sessions. Fresh repetition rereads. |
+| `source.refresh` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:676) | Validates demand generation, advancing source epoch, expected snapshot and current source material; may persist relationship/fingerprint before a later currentness refusal. | Status/session; query current state. May commit then return stale/conflict after demand/currentness changes. Same epoch rejected. |
+| `continuity.choose` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:641) | Selects the current source fingerprint or detached relationship under the expected annotation-session revision. | Status/session; query relationship/fingerprint/revision. No generic replay key or same-state suppression. |
+
+**Boundary to finish.** DS08/DS02 must bind source epochs, demand/currentness, continuity choices, selected exported history and receipt semantics. source.refresh can commit before a later stale/conflict result; it cannot become a pure cache refill. The current session.discover adapter discards its list, so a new catalog API needs its own explicit contract.
+
+## Draft creation, edit authority and saved revisions
+
+**Proposed path.** Host owns admitted workflow transactions and saved revisions. Actual edit authority includes its client/worker custody and revision/token fence; Gateway routes and prepares views without becoming another draft writer. Swift/worker owns live editor buffers until an admitted flush/save operation crosses the workflow boundary.
+
+| Current nested operation | Current acquisition / state / effect | Receipt and currentness limit |
+| --- | --- | --- |
+| `root.create` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:479) | Captures and validates source/repository/worktree fingerprint and edit custody; creates the admitted session, thread, message and draft transactionally. | Full canonical message receipt/generated IDs/revisions. Fresh execution has no request-ID dedup branch and generates IDs. Session choice can require explicit admission. |
+| `reply.create` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:513) | Checks expected thread revision, writable session, open thread and edit ownership; creates a reply draft and its revisions in SQL. | Full message receipt. Fresh old-revision repeat conflicts; no durable request-ID receipt. |
+| `draft.edit.acquire` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+EditOwnership.swift:132) | Checks exact revisions and edit custody; refuses another live owner and can reclaim a stale owner. | Full message. Same-live-token noChange exists after revision validation; not universal duplicate acceptance. |
+| `draft.edit.release` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+EditOwnership.swift:155) | Requires matching owner, token and revisions; clears the persisted edit token, advances revisions and releases runtime ownership. | Full message. Fresh old-token/old-revision repeat is not general no-op. |
+| `draft.flush` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:538) | Validates message/draft revisions and edit token; persists the draft body or removes a blank never-saved draft/message/thread. | Full message or removal tombstone. Successful changes advance revisions; old-fence repeat conflicts/not-found. |
+| `draft.revert` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:577) | Validates edit token and revisions; removes the draft or never-saved message/thread. | Full message or removal tombstone. Fresh repeat lacks original draft/token/revision. |
+| `draft.save` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:558) | Checks token, revisions and writable/editable state; persists validated saved body, advances saved revision and clears draft/handled state. | Full message; release owner after success. Fresh old request conflicts. |
+
+**Boundary to finish.** DS08/DS02/DS03 must select draft/edit scope, distributed custody, expiry/recovery and revision/token behavior. Do not assume all drafts are client-local or globally shared. Seven editing operations have canonical message/removal results, but fresh execution with an old revision/token is not universal idempotent success.
+
+## Session/thread state, viewed receipts and recovery
+
+**Proposed path.** Host owns workflow lifecycle, message-viewed revisions and durable recovery acknowledgement. Gateway prepares selected per-scope status/detail, and native clients submit actual user actions. These writes are authoritative operations, not mutations of faithful copies.
+
+| Current nested operation | Current acquisition / state / effect | Receipt and currentness limit |
+| --- | --- | --- |
+| `recovery.acknowledge` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:423) | Commits durable recovery-provenance acknowledgement, clears the recovery witness and publishes recovery state. | Status/queryable recovery state. No witness returns normally unless unavailable; SQL COALESCE preserves first acknowledgement. |
+| `message.viewed.mark` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:429) | Validates bounded unique items and expected saved revisions; records viewed state only for current agent messages in the SQL transaction. | Per-item changed/alreadyViewed/notFound/notAgent/stale; changed result has committed session revision. Mixed dispositions possible in one transaction. |
+| `session.lifecycle.set` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:462) | Validates expected session revision, open-thread count and unresolved-work confirmation before the SQL lifecycle update. | Status/session; query post-state. SQL advances revision even for same value admitted at current revision. |
+| `thread.resolution.set` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:446) | Requires expected thread revision and writable session, then transactionally changes resolution. | Status/session; projection/detail gives resolution/revisions. Same-resolution noChange after revision validation. |
+
+**Boundary to finish.** DS08/DS02 must bind audience/viewed scope, revision preconditions, mixed per-item outcomes and retained recovery meaning. Annotation message-viewed state is not the same as Sessions viewed-after-completion or the native review file-viewed set. Each needs its own selected scope.
+
+## Demand lifetime
+
+**Proposed path.** The frontend/Gateway owns desired view demand; Host owns actual source/subscription demand and its generation. Translate at the boundary rather than replicating an in-process adapter generation as durable domain truth. Acquiring view interest may read workflow details but is not automatically a retained mutation.
+
+| Current nested operation | Current acquisition / state / effect | Receipt and currentness limit |
+| --- | --- | --- |
+| `demand.acquire` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:337) | Registers a new context/surface/session demand generation, loads detail and validates the worktree; removes failed or stale registrations. | Runtime generation remains adapter/service-owned; response session/status. Reacquire creates generation; no durable write. |
+| `demand.release` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:349) | Removes runtime demand and its adapter generation; no durable workflow record is deleted by this operation. | No durable receipt; repeated removal harmless; old generation no longer authorizes source refresh. |
+
+**Boundary to finish.** DS08/DS09 must define reconnect/replacement, cancellation, stale generation refusal and cleanup independently of durable session lifetime. Losing a client releases interest under the selected profile without terminating Host execution or deleting workflow records.
+
+## Prepared output, explicit repeat and handled state
+
+**Proposed path.** Host prepares immutable attempt bytes plus exact saved-revision membership in the owning transaction. The declared destination owner performs clipboard/file or other selected effect; Host records/finalizes that qualified outcome. Gateway routes bytes/results and prepares permitted history. An output-history copy never causes the effect again.
+
+| Current nested operation | Current acquisition / state / effect | Receipt and currentness limit |
+| --- | --- | --- |
+| `output.history` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:237) | Reads a bounded newest-first durable attempt summary after checking workflow availability. | History includes attempt IDs/states/repetition lineage; excludes cancelled. Not complete receipt journal. |
+| `output.handled.clear` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:268) | Requires a succeeded attempt and expected session revision; clears only human-message handled membership still matching the saved revision. | Status/session; query handled/revisions. Explicit no-change when nothing qualifies. |
+| `output.scope.commit` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift:295) | Validates session/projection/source and eligible saved messages; durably prepares exact bytes and membership before the native destination effect, then finalizes its outcome. | Attempt ID and typed destination/success/effect/cleanup/partial outcome. Durable history corroborates state. One prepared attempt/session; fresh command not generic dedup. |
+| `output.repeat` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:275) | Accepts only an unknown source attempt; prepares a new attempt retaining its exact bytes, membership and destination, then performs/finalizes the new effect. | New attempt and repeatedFromAttemptID. New effect attempt, not replay of success. Prepared/succeeded/cancelled/finalization-failed refused. |
+
+**Boundary to finish.** DS08/DS02/DS10 must bind destination machine/client, consent, custody, immutable bytes, revision closure and effect-before-finalization failure. Repeat is a new explicit attempt of an unknown prior outcome, not blind replay or a guarantee of exactly-once external effects. History retention/copy policy remains selected separately.
+
+## Native folder choice and reveal
+
+**Proposed path.** The actual native client owns its chooser, sandbox access and Finder/reveal operation. Host supplies authorized attempt metadata/bytes for a declared destination; Gateway routes the request/result. Remote paths must not be interpreted as local Mac paths without an explicit destination contract.
+
+| Current nested operation | Current acquisition / state / effect | Receipt and currentness limit |
+| --- | --- | --- |
+| `output.preference.changeFolder` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:252) | Opens the installation/product-bound native folder chooser and updates the application-lifetime in-memory folder preference. | Selected/cancelled/failed mapping. No durable attempt; preference currently in-memory. Repetition can reopen chooser. |
+| `output.reveal` · [source](../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:770) | Validates stored attempt/worktree and succeeded JSON path, checks file existence, then requests native Finder reveal. | Status success/failure, no new durable receipt. Request is not proof user saw window. |
+
+**Boundary to finish.** DS08/DS10 must select destination/locality, preference scope and persistence, privacy permissions and unavailable-client behavior. Current folder preference is in-memory; there is no automatic replicated preference table. A reveal request is not proof the user saw a window.
+
+## What is still required before implementation
+
+All 22 exact kinds occur once. SQL transaction closure, schema keys, retained versus private data and copy eligibility are selected with DS02; actual native effect authority/receipts with DS10. Complete parameter branches, source/edit races, recovery/restart, destination effects and Mac/Linux service realization remain design/proof work. Enumeration closes the coverage set, not those contracts. I5's usable workflow must show the actual selected effect and finalization, including known external success with failed SQL finalization; a digest comparison alone cannot establish that outcome.

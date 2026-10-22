@@ -1,0 +1,501 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Formal Specification Review — AgentStudio Host/Gateway daemon</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="formal-specification-review-031e0b12.html">AgentStudio daemon · Formal Specification Review — AgentStudio Host/Gateway daemon</a></nav></ex-nav>
+<ex-document id="content"><h1>Formal Specification Review — AgentStudio Host/Gateway daemon</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/formal-specification-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Formal Specification Review — AgentStudio Host/Gateway daemon
+
+First fresh `spec-program-review` invocation, operation `review`, mode `specification-only`. This is the convergence baseline: no earlier formal review exists. The Advisor challenges and Lead dispositions in this directory are advice, not formal findings.
+
+Reviewer: persistent 🔎 Review Sidekick, Claude Opus (advertised alias `opus`), xhigh; exact generation unreported by Router runtime. The Lead's record of the Router create and readback shows `opus`/`xhigh`. Separately, this session's Claude Code harness system metadata names model ID `claude-opus-5-5`. That is host-injected metadata, not self-description, but it is not Router execution telemetry either. SessionRef `claude-local / dbc4bd86-6854-40da-9097-0a2295d4243d`. Commissioned by the 🦁 Lead `codex-local / 01a1418c-8bbd-76c0-abb9-71d9cc571ee6`.
+
+Write scope: this file only. No product, config, vendor, or Git mutation. No build, test, probe, or service launch. No provider session or transcript files were opened. This review grants no edit, design-acceptance, or implementation authority.
+
+## 1. Targets, identity and freeze
+
+| Role | File (under `docs/specs/2026-10-15-agentstudio-daemon/`) | Lines | sha256 prefix |
+| --- | --- | --- | --- |
+| Requirements | `user-requirements.md` | 112 | `13924c2fbfba` |
+| Specification spine | `2026-10-15-agentstudio-daemon.md` | 205 | `c75f32ccf55a` |
+| Specification supplement | `domain-entities.md` | 112 | `60011ecad456` |
+| Specification supplement | `capability-contracts.md` | 251 | `ddd7273509b1` |
+
+The hashes match `current-specification-snapshot.json` and were re-checked immediately before writing.
+
+- **Pins.** App `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462` (`feat/daemon`, HEAD unchanged). agentstudio-git `4cca397dfc869857064da4e9ec8289ea46adc479`. Router `691cd560347d6e570dd3db0315b9ddb3ee259f84`.
+- **Frozen originals.** Memos 01, 02 and 03, `owner-instructions-and-corrections.json`, `owner-selections.json` and `owner-detach-selection.json` hash to `4b3fadc7a860`, `c1364642b9ca`, `9090673e5ec9`, `29d5b4cc26f9`, `c8d2771b1484` and `7261cf27591a`. They are unchanged.
+- **Excluded dirty PNGs.** `git status --porcelain` shows only the four excluded `docs/images/agent-studio-*` PNGs as modified, plus the untracked spec and wip docs. Nothing was changed by this review.
+
+**Identity status** (from `shared-references/requirements-specification-program-design.md`):
+
+- **Requirements:** separately identifiable. `user-requirements.md` owns U1–U17, the S1–S13 source anchors, the goal boundary, and the open items.
+- **Specification:** separately identifiable. It is a composite: the spine (R1–R10, C1–C4, V1–V5, G1–G12) plus `domain-entities.md` (E1–E24) plus `capability-contracts.md` (K1–K15). The spine L5 declares the ownership split.
+- **Program Design:** not in mode. K11 (`capability-contracts.md` L188) and the G rows correctly defer structural How.
+
+There is no combined `Requirements/spec` defect.
+
+## 2. Governing-source coverage and read order
+
+Order matters here because Notice 7 made the earlier judgments provisional.
+
+1. **Initial read, whole.**
+   - The four targets.
+   - Owner-research memos 01 (253 lines), 02 (143) and 03 (72).
+   - `owner-instructions-and-corrections.json` (23 records; ordinals M1–M23 below are my numbering in file order).
+   - `owner-selections.json`, including q1933/a1936.
+   - The six `capability-*-evidence.md` reports and the four `*-inventory.md` files.
+   - The fork worksheet `docs/wip/2026-10-16-daemon-worktree-fork-contracts.md`.
+   - The packet `formal-specification-review-packet.md`.
+   - `research-ledger.md`: targeted reads, including L179.
+   - Repo `AGENTS.md`, which is byte-identical to `CLAUDE.md`.
+   - The `.codex/skills/agentstudio-mainactor-atom-boundaries` skill.
+   - The nine rendered `assets/*.png` diagrams, inspected visually.
+2. **Provisional judgments.** The mode-complete pass and chunks 1–4 were judged after step 1.
+3. **Completion reads after Notice 7, all whole.**
+   - `owner-detach-selection.json`. This is the exact S10 source.
+   - `owner-experiment-request.json` and `owner-experiment-environment.json`.
+   - The owner-research `README.md`, `source-manifest.json` and `disposition.md`.
+   - `docs/wip/2026-10-15-daemon-extraction-survey.md` (297 lines).
+   - A bounded check of `docs/wip/2026-10-15-daemon-primary-experiments.md`: status lines, headings, coverage boundary, and the L5/L20/L99/L145/L147 statements.
+   - In this pass I also loaded the `specification-authority` and `artifact-navigation` lane references. The focused checks in §8 were run, or re-run, after loading them. They were not judged from the lane names alone.
+4. **Revalidation.** I rechecked the following against the complete set:
+   - every Requirements S anchor against M1–M23;
+   - S10 against U14, R5, R6, C3, K5, E1, E2, V3 and G3;
+   - the experiment and Fly grants against spine L5, K4 L111 and K5 L126;
+   - the README summaries against the raw records;
+   - manifest integrity (every listed file present, and every hash matches).
+
+   Every provisional judgment held. Only F5's wording was refined, and three observations were added.
+5. **Targeted reads, recorded as partial.** For organization context only, I read part of `docs/architecture/structure/directory_structure.md` (headings and L53–165) and of `docs/architecture/commands/command_specs.md` (L1–100). No finding depends on the unread remainder.
+
+**Original-source precedence.** Wherever a summary (README, disposition, ledger, survey) differed from the raw owner records, the raw JSON was used.
+
+## 3. Accepted requirements and goal boundary
+
+The accepted requirements are U1–U17. Each row cites S1–S13, which resolve to the raw owner records. S10 and S11 were checked verbatim:
+
+- **S10** (Requirements L59) faithfully renders `owner-detach-selection.json`. The owner chose option A, then said: "we can keep all the primitives and have a view of detached that closes in 15 minutes or not. But that's ux…". Requirements L59 and spine R5 do not turn the fifteen-minute example into a default.
+- **S11** (L60) faithfully renders q1933/a1936. The displayed meaning is: "Keep sessions running, admit authorized agent inputs, and record terminal facts/activity independently of attached views."
+
+The confirmed goal boundary is in Requirements L63–L72, with research scope at L71. The open owner question is item 4 / G5. The G-labelled UI, multi-client, performance, path and safety policies remain open obligations. They are not scope reductions.
+
+## 4. Chunk plan
+
+The target set is about 680 lines across four files with heavy cross-reference, so I ran one mode-complete pass followed by four sequential chunk passes. Each chunk reopened all four complete files and overlapped the seam rows listed.
+
+| Chunk | Seam | Sections walked | Overlap |
+| --- | --- | --- | --- |
+| 1 | Entry, route, phone, multiple Gateways | Req L7–14, U1–U3, U12, U16, U17, S13, L81, L104. Spine context diagram L37–41, R1, R3, R7, C1, V1, V4, G2. Domain service diagram L9–14, E3, E4, E6, E23, E24. K2, K13. | R7/K13 ↔ chunk 2 |
+| 2 | Lifecycle, U15, G5, facts against S10 | U14, U15, S10, S11, item 4, closing L102. R5, R6, R9, R10, C3, V3, G3–G6. E1, E2, E9–E11, E16–E19. K5, K7, K8, K14. | K14 ↔ chunk 4 |
+| 3 | Parity, Git, fork, filesystem | U4–U6, U11. R2, R4, C2, V2, G1, G7. E5, E7, E8, E21, E22. K1, K3, K4. | K3 fs observation ↔ chunk 4 |
+| 4 | Client state, native, protocol, engineering, proof | U7–U10, U13. R8, C4, V5, G8–G12, cross-cutting rows. E12–E15, E20. K6, K9–K12, K15, the capability-to-proof table. | Coverage table ↔ chunk 1 |
+
+## 5. Mode-complete pass
+
+**Reconstruction.** Rebuilt from the four files, then checked against the sources.
+
+- **Who** (Requirements L7, U-row consumers): CLI and app developers, MCP, CLI, iOS and macOS-app frontends, Linux and Mac-local work users, detached-session users, agents and operators, and library maintainers.
+- **Why:**
+  - P1: entry paths diverge.
+  - P2: pane and authority lifetimes don't give detached behavior.
+  - P3: Linux needs the full worktree/Host behavior.
+  - P4: the owner mandates engineering and multi-client constraints.
+- **What must be observably true:**
+  - A Rust Host on macOS and Linux with parity (R2, R4).
+  - A macOS-only Rust Gateway (R3).
+  - Every frontend goes client → socket → Gateway → Host, with no bypass (R1, K13).
+  - Several Mac Gateways can serve one Host at once (R7, V4).
+  - Detach is distinct from terminate (R5, C3).
+  - Execution, authorized integration and facts continue without presentation (R6, R9, R10).
+  - The inherited engineering constraints hold, including Tokio, typed interfaces and no unsafe code (R8, C4).
+  - All eighteen surveyed families are dispositioned (K1–K15).
+- **Undecided** (G1–G12): request and authority protocol, attachments and control, fact history, platform profile, efficiency tolerance, safety scope, and installation.
+
+**Deletion pass.** I asked of each R, C, V, K and E element: does any confirmed U obligation fail without it?
+
+- No element is unanchored.
+- E1–E24 are each used by a K or R row (domain L112). R1–R10 each cite a U and an S.
+- The cross-cutting table adds no mechanism. It routes to the G rows.
+- Nothing is deletable without losing a confirmed obligation, so there is no over-delivery.
+
+**Divergent-implementer probe.** Two competent implementers would diverge on:
+
+- G5: Host-local vs Gateway-routed in-session agent inputs.
+- G4: controller and attachment arbitration.
+- G6: the terminal fact set and its history and retention.
+- G7: the Linux platform profile and fork counterpart.
+
+All four are named G gaps, not hidden defaults. The spine L5 and L185 state that gaps do not authorize defaults.
+
+**Program-designer probe.**
+
+- *Can start:* the Host/Gateway role split and process placement, the frontend route, detach/terminate separation, K1's typed Git results, K4's application worktree slots, and the R8 engineering gates.
+- *Blocked:* G5 (ingress owner and route), G4 (attachment state machine), G6 (fact store), G8 (request and authority protocol), and G1 (CLI scope).
+
+The probes confirm that this Specification is not planning-ready. That is consistent with its own G rows.
+
+**Mode-complete conclusion.** The Requirements and Specification agree in substance. Six minor authority, diagram and link defects (F1–F6) and one owner gap (G5) remain.
+
+## 6. Chunk passes
+
+### Chunk 1 — Entry, route, phone, multiple Gateways
+
+What held:
+
+- R1 and K13 L202 state the mandated edge: "clients → socket → Mac Gateway → Host". They add that a Linux-origin frontend CLI "goes to a Mac Gateway and back to that Host", and that "G5 … does not create a general Linux CLI bypass". This faithfully renders S13 and Requirements item 4 L92.
+- R3 limits the Gateway to macOS, matching the M "Gateway rust only on Mac" record.
+- The phone route: Requirements L104 settles that phones depend on a reachable Mac Gateway, and spine L39 draws it.
+- Multiple Gateways: R7, V4, and domain E23/E24 with the L11–12 diagram.
+
+Defects found:
+
+- **F3.** The Requirements diagram omits the consumers named in L7. The spine diagram L40 merges the MCP frontend with G5 agent ingress.
+- **F5.** Requirements L81 blends the settled route with the open G5 classification.
+- **Observation.** The domain L11/L12 edge labels are asymmetric.
+
+### Chunk 2 — Lifecycle, U15, G5, facts against S10
+
+What held:
+
+- **R5 detach against exact S10.** "close detaches/session keeps running", with termination as a separate primitive and no timer default selected. K5, C3 and V3 keep the same split.
+- **R9, G5 and K7.** Judged together, as the Lead asked:
+  - All three keep the classification open.
+  - All three state that "Refusing integration until a client returns was rejected by S11".
+  - All three state that a Gateway-routed input with every Gateway unreachable "cannot satisfy U15 as written" and needs explicit owner reconciliation (spine L135 and L174, K L144).
+  - None selects an answer, a queue, or a refusal.
+  - This faithfully renders q1933/a1936 and Requirements item 4 L92 and closing L102. The M1 delta covers its sources completely.
+- **R10 and K5.** Facts are recorded independently of attached views, which is the S11 displayed meaning. The renderer-derived alternative (q1933's second option) was not selected and does not appear as a requirement.
+
+Defects found:
+
+- **F1.** The U15 revocation clause has no owner source.
+- **F6.** The domain L52 edge binds E11 messages to an E16 view, contradicting E10/E11's G5/G9 text.
+
+### Chunk 3 — Parity, Git, fork, filesystem
+
+What held:
+
+- R2/R4 parity.
+- K1 Git operations have typed input, effect, failure and proof against the pinned agentstudio-git package.
+- K4 and G7 keep the Linux fork counterpart as an undischarged obligation, not a deferral.
+- The K3 filesystem observation keeps "continuity uncertain rather than treating dropped batches as complete". The `:66` overflow link resolves.
+- The fork experiment and Fly grant appear in K4 L111 and K5 L126 as prospective evidence only.
+
+Defects found:
+
+- **Observation.** The K3 L97 "Darwin registration" link targets `DarwinFSEventStreamClient.swift:28`, which is a blank line. The class declaration is at L30.
+
+### Chunk 4 — Client state, native, protocol, engineering, proof
+
+What held:
+
+- R8 and C4 carry U7–U10 as binding constraints without selecting a crate graph.
+- In K13, request, effect and receipt stay separate. The baseline counts match the inventories: 57 RPC names, 44/42, 154, 16/5/22, 8, no `permission.*`, NDJSON caps, and 18 families.
+- K9, K10 and E20 keep Bridge content finite and leased.
+- The no-unsafe rule holds across U10, K15, G11 and C4.
+- The capability-to-proof table claims no executed proof.
+
+Defects found:
+
+- **F2.** The owner's MainActor clause is absent from U13/S7, yet K11 L188 interprets it.
+- **F4.** The R8 link misdirects.
+- **Observation.** The domain L77 edge E20 → E12.
+
+## 7. Proof-challenge and dispel
+
+**Proof-challenge: `complete`, not selected.**
+
+- The targets cite no executed passing claim.
+- Spine L5 calls the experiment map "prospective discriminators rather than feature acceptance". The experiment map confirms this: L5 says "None has been executed", L145 says "discriminators are not feature acceptance", and L147 says "All procedures are unexecuted".
+- The capability-to-proof table names proof seams, not results.
+- So there was nothing to challenge, and no 🔧 Operator was commissioned.
+
+**Dispel: `complete`.**
+
+- **Candidates classified:**
+  - F1–F6: real.
+  - C ("U3 lacks an R"): rejected, already satisfied. The spine coverage row U3 routes to G10 as a measurable boundary not yet settled. K13 carries the latency-relevant protocol, and Requirements item 7 holds the open efficiency tolerance.
+  - The observations: no behavior effect.
+- **Over-delivery map:** every delivered element maps to a rail.
+  - R1–R10 map to U and S rows.
+  - C1–C4 and V1–V5 map to R rows.
+  - E1–E24 map to K/R use (domain L112).
+  - K1–K15 map to the eighteen surveyed families under U4.
+  - The cross-cutting rows map to G rows.
+- **Absent:** none. The domain L112 disclaimer ("No entity definition creates a generic operation journal, shared database, globally ordered bus, process-attestation service or public API") was verified against E1–E24. No element introduces one.
+
+## 8. Focused checks
+
+**Specification-authority: `complete`.** The selected risk: authority labels on U15 and U13 versus their raw sources.
+
+- **Method.** For each load-bearing claim I traced source → authority status → claim → consumer → consequence.
+- **Result.** Every load-bearing claim traces to an M record, a q/a record, or the existing foundation, with two exceptions:
+  - **F1.** U15's "Permissions remain scoped and independently revocable" is tagged `S11 | must / owner`. Its only origin is the research-ledger L179 recommendation, which says "not yet owner-confirmed". This is a recommendation shown as owner authority.
+  - **F2.** M13's MainActor clause was dropped from U13/S7, but K11 interprets it.
+- **Four-source drill:**
+  - user-chosen: S10, S11, S13, and M12/M19 phone placement;
+  - code-compelled: current pane-scoped authority, MainActor atom publication;
+  - recommendation: the revocation clause (F1);
+  - contradiction: none in the target.
+- **Routes.** F1 and F2 go to `spec-design`. G5 goes to `caller`.
+
+**Artifact-navigation: `complete`.** The selected risk: links and homes in a four-file composite.
+
+- **Entry point.** One: the spine, with Requirements as a separate linked authority.
+- **Links.** All normative links resolve, with two exceptions:
+  - **F4.** R8 lands on U3 instead of U7–U10.
+  - **Observation.** K3 `:28` lands on a blank line.
+- **Images.** The nine are project-local `assets/*.png`; full-size links resolve, and each was opened.
+- **Homes.** Each claim has one authoritative home. The G5 statement is repeated in item 4, R9, G5 and K7. The copies are consistent, and each serves its own reader, so no merge is required.
+
+**Other focused lanes: `complete`, not selected.** Reader-understanding, contract, architecture-boundary, failure-concurrency, security-trust, platform-harness, implementation-difference and proof were not selected. The chunk passes covered their candidate risks, and no named unresolved risk remained.
+
+## 9. Check statuses
+
+```text
+mode-complete          complete  (revalidated after the complete governing-source read)
+chunk 1 entry/route    complete  (revalidated)
+chunk 2 lifecycle/U15  complete  (revalidated against exact S10 and q1933/a1936)
+chunk 3 parity/Git/fs  complete  (revalidated)
+chunk 4 state/protocol complete  (revalidated)
+proof-challenge        complete  not selected: no executed passing claims in targets
+dispel                 complete  no absent elements; over-delivery map empty
+specification-authority complete (lane loaded in completion pass)
+artifact-navigation    complete  (lane loaded in completion pass)
+other focused checks   complete  not selected: covered by chunk passes, no named residual risk
+```
+
+## 10. Accepted findings
+
+All six findings are `minor`: the intended model lands, but with avoidable ambiguity. None is a blocker or important.
+
+### F1 — U15's revocation clause has no owner source
+
+- **Mode / check:** specification-only / chunk 2 + specification-authority.
+- **Severity:** minor.
+- **Anchor:** Requirements L42 (U15), tagged `S11 | must / owner`. K L218 (K14) relies on it.
+- **Governing source:** S11 (Requirements L60) and `owner-selections.json` q1933/a1936. The selected displayed meaning is "Keep sessions running, admit authorized agent inputs, and record terminal facts/activity independently of attached views." It contains no revocation wording.
+- **Claim:** U15 says "Permissions remain scoped and independently revocable".
+- **Failure:** the clause traces only to `research-ledger.md` L179: "Recommendation: … with session-scoped authority and explicit revocation. This is not yet owner-confirmed." It is shown as an owner must. K14 L218 then builds on it: "U15 preserves scoped and independently revocable permission…".
+- **Downstream ambiguity:** a planner cannot tell whether revocation is an owner requirement or an inherited constraint, or whether G8 may weaken it.
+- **Plain meaning of the requirement:** while no client is attached, the Host keeps running sessions, admits authorized agents, and records facts.
+- **Evidence checked:** U15, S11, q1933/a1936, ledger L179, K14 L218. Also the survey's account of current pane credentials, which have close, Undo and final-revocation checks.
+- **Do the obligations hold without the questioned element?** Yes. U15's owner-selected outcome stands without the clause.
+- **Smallest correction:** either cite an owner source for the clause, or relabel it as an existing-foundation constraint (current pane credential revocation) rather than an S11 owner selection. Keep the exact mechanism in G8. Then adjust K14's "U15 preserves" wording to match.
+- **Mechanism necessity:** one of several ways; the reviewer prescribes no mechanism.
+- **Deletion test:** removing the clause loses no owner-confirmed meaning. Keeping it under a false label risks a planner treating it as fixed scope.
+- **Affected concept:** Requirements (+ the Specification anchor K14).
+- **Route:** `spec-design`.
+- **Scope effect:** inside the confirmed goal boundary.
+- **Validation note:** after correction, U15's authority column traces every clause to S11 or to a named foundation, and K14 cites the same basis.
+- **Coverage to rerun:** U15, K14 and G8 anchors only.
+- **Contested evidence:** none.
+
+### F2 — The owner's "nothing on MainActor" instruction is missing from U13/S7, but K11 interprets it
+
+- **Mode / check:** specification-only / chunk 4 + specification-authority.
+- **Severity:** minor.
+- **Anchors:**
+  - Requirements L40 (U13) and L56 (S7).
+  - K L188 (K11): "“Nothing on MainActor” cannot literally include native/UI publication."
+- **Governing source:** `owner-instructions-and-corrections.json` record 13 (source_line 1002, sha `7eaab95c…`): "Making sure nothing is in main actor and we follow atoms idea is good but everything should be reevaluated pragmatically."
+- **Claim:** U13 keeps "Preserve the atom idea where useful", and S7 keeps "pragmatic Swift/Rust/atom reevaluation". Both drop the MainActor clause.
+- **Failure:** K11 interprets an owner clause that the Requirements never record. A reader of the Requirements cannot see what K11 is limiting, or that the owner qualified it as "pragmatic".
+- **Plain meaning of the requirement:** reevaluate the Swift/Rust split pragmatically, keep atoms where useful, and keep work off MainActor.
+- **Evidence checked:** record 13, U13, S7, K11, and the MainActor atom-boundaries skill (publication must stay on MainActor).
+- **Do the obligations hold without the questioned element?** Yes, but K11's interpretation would lose its source.
+- **Smallest correction:** add the MainActor clause, with its pragmatic qualifier, to U13 and S7. K11's existing limit then has a home.
+- **Mechanism necessity:** smallest change that serves the quoted clause.
+- **Deletion test:** deleting K11's sentence instead would hide the native-publication constraint. Recording the owner clause is the smaller and truer fix.
+- **Affected concept:** Requirements.
+- **Route:** `spec-design`.
+- **Scope effect:** inside the boundary.
+- **Validation note:** U13/S7 quote or faithfully render record 13's MainActor clause, and K11 cites U13 for it.
+- **Coverage to rerun:** U13, S7 and K11.
+- **Contested evidence:** none.
+
+### F3 — Context diagrams misstate who uses the system
+
+- **Mode / check:** specification-only / chunk 1 + artifact-navigation.
+- **Severity:** minor.
+- **Anchors:**
+  - Requirements Mermaid L9–14, which shows only "Developer / CLI consumer", "Swift macOS application" and "Linux work environment".
+  - Spine L40: `Integration["MCP / authorized agent consumer"] -->|"Requests; disconnected ingress G5"| System`.
+- **Governing source:** Requirements L7 ("Multiple clients, including MCP, CLI, iOS and the macOS app, connect by socket to the Gateway; only the Gateway…") and S13 (L62: "mcp/cli/ios/macoks app -> gateway -> host").
+- **Failure:**
+  - The Requirements diagram omits the MCP and iOS consumers and Mac-local work, contradicting the paragraph directly above it.
+  - Spine L40 puts the MCP frontend (an R1/S13 frontend, settled) and in-session agent ingress (G5, open) on one edge.
+  - A reader could take the MCP frontend route as part of the open G5 question.
+- **Evidence checked:** both diagrams as source, the rendered PNGs, L7, S13, R1, G5, and K13.
+- **Smallest correction:**
+  - Requirements diagram: show the S13 consumer list (MCP, CLI, iOS, macOS app) around one opaque system node. The frontend route constraint stays in the L7 prose and U rows; the graphic may carry it only as an edge label or reference. Do not draw internal Gateway → Host topology there; under spec-design's view rule (`spec-design/SKILL.md` L275, `references/artifact-and-self-review.md` L72), internal components are structural How.
+  - Spine L40: separate the MCP frontend (R1, an edge label or reference to the Gateway route) from in-session agent input (G5).
+- **Mechanism necessity:** smallest change.
+- **Deletion test:** deleting the diagrams would lose the context view the template asks for. Correcting the labels is smaller.
+- **Affected concept:** Requirements + Specification.
+- **Route:** `spec-design`.
+- **Scope effect:** inside the boundary.
+- **Validation note:** each diagram's external consumers match L7/S13, the system stays one opaque node, and G5 appears only on the in-session agent edge. Re-render both PNGs.
+- **Post-delivery amendment:** the first delivered text of this finding asked for a Gateway → Host edge in the Requirements context view, which breaks the opaque-system view rule. The Lead raised this; I verified it against the spec-design references and narrowed the correction. The finding, severity, route and result are unchanged.
+- **Coverage to rerun:** both diagrams and their assets.
+- **Contested evidence:** none.
+
+### F4 — R8's link sends readers to the wrong requirement
+
+- **Mode / check:** specification-only / chunk 4 + artifact-navigation.
+- **Severity:** minor.
+- **Anchor:** spine L134 (R8): "[U7–U10](user-requirements.md:30)".
+- **Governing source:** Requirements L34–37 (U7–U10). L30 is U3.
+- **Failure:** the reader lands on U3, the efficiency row, while reading the engineering constraints R8 binds.
+- **Smallest correction:** retarget the link to `user-requirements.md:34`.
+- **Deletion test:** not applicable; it is a link repair.
+- **Affected concept:** Specification.
+- **Route:** `spec-design`. No meaning change, so a parent-verified anchor suffices.
+- **Scope effect:** inside the boundary.
+- **Validation note:** the link resolves to the U7 row.
+- **Coverage to rerun:** none beyond the anchor.
+- **Contested evidence:** none.
+
+### F5 — Requirements L81 presupposes the G5 answer
+
+- **Mode / check:** specification-only / chunk 1 + chunk 2.
+- **Severity:** minor.
+- **Anchor:** Requirements L81: "Agent/CLI running on remote Linux: existing hooks and pane authority make this a necessary surveyed class; its route to the Mac Gateway is unresolved."
+- **Governing source:**
+  - S13 (frontend route settled).
+  - Item 4 L92 and K13 L202 (a Linux-origin frontend CLI goes to a Mac Gateway and back).
+  - G5 (whether in-session agent inputs are Host-local is open).
+  - G8 and G12 (network admission and pairing details are open).
+- **Failure:** L81 blends three statuses into one sentence.
+  - It treats the agent's route *to the Mac Gateway* as given and calls only the route "unresolved". That presupposes the Gateway-routed branch of G5.
+  - It leaves the settled frontend-CLI route sounding open.
+  - A planner reading L81 alone would assume either that the route is undecided or that agents must go through the Gateway.
+- **Evidence checked:** L81, L92, L102, L104, S13, G5, G8, G12, K7, K13, and item 9 (daemon-absent CLI).
+- **Smallest correction:** split L81 into three statements:
+  - the frontend CLI on Linux follows the settled S13 route;
+  - in-session agent and hook input classification is G5;
+  - network admission and pairing details are G8/G12.
+- **Mechanism necessity:** smallest change.
+- **Deletion test:** deleting L81 would drop the surveyed class that U4 requires. Splitting it is smaller.
+- **Affected concept:** Requirements.
+- **Route:** `spec-design`, after the owner's G5 decision. If G5 is decided, L81 states the decided branch.
+- **Scope effect:** inside the boundary.
+- **Validation note:** L81 no longer implies a G5 branch, and it matches item 4 and K13.
+- **Coverage to rerun:** L81, item 4 and K13.
+- **Contested evidence:** none.
+
+### F6 — The agent-view diagram binds context messages to a client view
+
+- **Mode / check:** specification-only / chunk 2.
+- **Severity:** minor.
+- **Anchor:** domain L52: `E11 Context message … -->|"addresses 1 declared context scope"| E16 Client view target … window/workspace/pane/tab`.
+- **Governing source:**
+  - E11 L63: "Target scope without a view remains G5/G9".
+  - E10 L62: "a view-independent target is required by U15 but its exact relationship remains G5".
+  - K7 L144.
+  - E16 L64, which lists "window, workspace, pane, tab or drawer child".
+- **Failure:** the diagram says every message addresses a view target. The text says the view-independent target is open under G5/G9. The diagram's E16 label also omits "drawer child".
+- **Downstream ambiguity:** a planner could take the diagram as deciding that detached agents need a view.
+- **Smallest correction:** label the edge as the baseline pane scope, note that the view-independent target is G5/G9, and add "drawer child" to the E16 label (or drop the kind list).
+- **Mechanism necessity:** smallest change.
+- **Deletion test:** deleting the edge would lose the baseline relationship. Relabelling it is smaller.
+- **Affected concept:** Specification.
+- **Route:** `spec-design`.
+- **Scope effect:** inside the boundary.
+- **Validation note:** the diagram matches E10, E11 and E16, and the PNG is re-rendered.
+- **Coverage to rerun:** the E10, E11 and E16 rows and the diagram.
+- **Contested evidence:** none.
+
+## 11. Observations, rejected, contested, unverified
+
+**Observations** (no proven behavior effect; not routed):
+
+- **O-a.** Domain L77 draws an E20 → E12 edge ("delivers a declared review/file product"). It is consistent with K9, but the edge direction reads as content producing the review. Harmless.
+- **O-b.** Domain L11/L12 use asymmetric edge labels ("Host-directed communication" vs "simultaneous use supported") for two equivalent Gateways.
+- **O-c.** K3 L97's "Darwin registration" link targets `:28`, a blank line. The class is at L30.
+- **O-d.** Requirements L106 still refers to the historical remote-boxes draft. It is labelled advisory, so it has no effect.
+- **O-e.** The fork worksheet (`docs/wip/2026-10-16-…`) has stale line anchors. It is a non-target.
+- **O-f.** "Keep all the primitives" (S10) may include today's Undo-retention primitive. No target clause removes it, so there is no behavior effect.
+- **O-g.** The goal boundary (L71) and the S anchors don't record the experiment-mapping request or the Fly Linux test-resource grant. No Specification meaning depends on them: spine L5, K4 L111 and K5 L126 already use them as prospective evidence only.
+- **O-h.** New in the completion pass. Non-target `disposition.md` (its memo 01 and memo 02 iOS rows) still treats phone Gateway placement as open. Requirements L104 and the M12/M19 owner records have settled it. The target does not rely on this summary, so there is no target finding. The Lead may want to refresh it so readers don't reopen the question.
+  - *Post-delivery amendment:* as first delivered, O-h also listed `primary-experiments.md` L20. That was an overstatement from my bounded read. In context, L18 and L131–L141 choose the phone → Mac Gateway route, and L133 says "a phone-local Gateway is outside the current Mac-only service boundary". L20 says only that E6 does not decide owner intent, so it reopens nothing. The Lead raised this and I verified it against the source.
+
+**Rejected:**
+
+- C, "U3 has no R": already satisfied. The spine's U3 coverage row routes to G10. K13 holds the protocol, and Requirements item 7 holds the open efficiency tolerance.
+
+**Contested:** none.
+
+**Unverified:** none. Every accepted anchor was opened and quoted in this session.
+
+## 12. What held
+
+- The Requirements and Specification identities are separate.
+- The S anchors faithfully render the raw owner records, except F1 and F2.
+- The frontend route has no bypass (R1, K13).
+- Phone placement is settled (L104).
+- Multiple Mac Gateways can serve one Host (R7, V4, E23/E24).
+- Detach ≠ terminate against the exact S10, with no timer default selected (R5, C3, V3, K5).
+- U15's no-client continuation is preserved (R6, R9, R10).
+- R9, G5 and K7 keep the classification open. They record S11's rejection of refusal and the all-Gateways-unreachable conflict without choosing a branch. The M1 delta fully covers q1933/a1936.
+- Request, effect and receipt stay separate (K13).
+- E23/E24 instance identity.
+- The K4/G7 Linux fork counterpart is an open obligation.
+- The K3 overflow keeps continuity uncertain.
+- Bridge content is finite and leased (K9, K10, E20).
+- The no-unsafe rule holds (U10, K15, G11, C4).
+- The baseline counts match the inventories.
+- The experiment and proof boundaries are prospective.
+- The nine PNGs match their Mermaid sources, and their links resolve.
+
+## 13. Coverage-Bound Result
+
+- **Mode and covered targets:** `specification-only`. The four targets are listed in §1, frozen at the hashes shown.
+- **Semantic coverage:** complete for all four targets, revalidated after the Notice 7 completion reads. No later semantic change has been recorded.
+- **Governing-source coverage:** complete as listed in §2. Two architecture docs were partial targeted reads for organization context; no finding depends on them.
+- **Accepted requirements and goal boundary:** U1–U17, S1–S13 and L63–L72 are covered. Item 4 / G5 is the single open owner question. The G1–G12 obligations remain open, not reduced.
+- **Check statuses:** §9. All are complete.
+- **Coverage gaps:** none that block the judgment.
+- **Findings:** accepted F1–F6, all minor. Rejected: C. Contested: none. Unverified: none.
+- **What held:** §12.
+- **Result:** `decision-needed`.
+  - There is no accepted blocker or important finding, so `needs-revision` does not take precedence.
+  - It is not `ready`, for two reasons. G5 is an unresolved owner choice, and the G1–G12 gaps still leave semantic invention to a planner.
+- **First required action:** the owner decides G5. Are authorized agent, provider-hook and context inputs originating inside a Host session Host-local inputs (U15/S11), or Gateway-routed frontend CLI attempts (U17/S13)? If Gateway-routed, the owner must also reconcile the all-Gateways-unreachable case with S11's rejection of refusal. Route: `caller`.
+- **Preserved correction round:** F1–F6 form one `spec-design` round after the owner's G5 decision. Each affected file is corrected at most once. This reviewer then does one parent verification of the F1–F6 anchors.
+  - F5 should state the decided G5 branch.
+  - F4 is meaning-free and could land with the round.
+- **Correction verification anchors** (to check after the round):
+  - Requirements L40, L42, L56, L81 and the L9–14 diagram;
+  - spine L40 and L134;
+  - domain L52;
+  - K L188 and L218.
+- **Planning-readiness boundary:** not planning-ready. Program Design can begin only on the role split, route, detach/terminate, K1 typed results, K4 slots and R8 gates. It is blocked at G5, G4, G6, G8 and G1. This review does not claim that any later step is ready.
+- **Owner decision on scope:** none beyond G5. No finding expands or subtracts confirmed scope.
+- **Non-edit / non-acceptance:** this review edited no artifact, accepted no design, and granted no implementation authority. Its write receipt is not acceptance.
+
+```text
+stop
+  result: decision-needed
+  reason: coverage is complete and no blocker/important finding exists; the first
+    required action is the unresolved owner classification G5 (Host-local vs
+    Gateway-routed in-session agent/hook/context input), on which F5 and the
+    G5-dependent rows R9/K7/E10/E11 depend
+  exact caller action: Lead brings the owner the G5 decision brief (Requirements item 4,
+    spine G5 L174); after the owner answers, run one spec-design round for F1–F6
+    and return the corrected anchors to this same Review Sidekick for verification
+```
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

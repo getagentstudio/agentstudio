@@ -1,0 +1,21 @@
+# Rust standards, operation and integrated design: observable contracts
+
+This is the DS11 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.md). The separate [Requirements](../../user-requirements.md) authorize its meaning; the [domain definitions](../../domain-entities.md) and shared [operation interpretation](../../capability-contracts.md#shared-interpretation-of-an-operation) apply. Its [design brief](README.md) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.md) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K15 — Installation, configuration, engineering and operational pairing
+
+**Consumer / entities / basis:** operator and library maintainer; E3/E17/E21/E22; U6–U12, R2/R3/R8. Host macOS/Linux artifacts, macOS and iOS Gateway/runtime artifacts, UX frontend, CLI artifacts supporting Host-local work on macOS/Linux, provider package and actual backend binary need an explicit supported platform/channel/version/resource pairing. With multiple Hosts, supported Gateway-version × Host-version pairs and Swift-client × Gateway pairs are separate contracts; incompatible pairs require explicit refusal without disturbing supported Host connections. This does not select a compatibility shim or live backend replacement. Evaluating latest ZMX does not authorize replacing live sessions or establish binary identity.
+
+G7/G12 retain the macOS privacy/TCC profile for selected protected-path work: required access, process identity/grant boundary and explicit denial outcomes. A grant to the current app alone is not proof of a future Host process’s access. No signing, Full Disk Access, LaunchAgent or SMAppService mechanism is selected.
+
+Configuration must distinguish absent, malformed, inaccessible and unsupported values, retain machine/channel/root provenance, and identify where credentials and provider resources act. Codex and Claude installers prevalidate then perform sequential per-file atomic writes; aggregate rollback is not established. Owned versus unrelated settings/skills, destructive uninstall scope and partial effects need exact selected contracts. Installing a marker is not provider trust or credential revocation.
+
+Rust uses Tokio under U8 with explicit operation custody and shutdown/drain boundaries. IP6 forbids first-party unsafe, including generated scaffolding, and permits pinned dependencies through safe interfaces. G11 retains concrete native/engine binding inventory and compliance evidence, not the already-selected safety interpretation. Router supplies responsibility-based modules/crates, newtypes/enums, fallible construction, boundary validation and inherited formatting/lints. Its private SQL/provider details are not automatically public errors, and its product code is not a dependency instruction.
+
+Source naming follows domain responsibility (`job_request.rs`, not a generic `types.rs`/`utils` home); conventional entrypoints remain conventional. One Tokio process runtime, bounded blocking work ownership, explicit cancellation/join and meaningful tests are binding engineering constraints; concrete crates, DAG, task placement and lint configuration belong to Program Design. Existing Router toolchain/crate versions are a pinned example, not an unverified latest-version recommendation.
+
+Existing AgentStudio observability is a producer with source-scrubbed loopback export. Collector absence/export failure is fail-open for ordinary startup. Network service payload is not telemetry export. The distributed target's export content/destination/access and privacy policy remain G8/G12; no raw paths, IDs, prompts, tool output or credentials gain export permission through this specification.
+
+**Proof:** actual build/lint/format/generated-code and dependency evidence; supported installation/upgrade/start/stop and artifact/channel/backend identity; real malformed configuration and partial filesystem effects; separate telemetry producer/fail-open/privacy evidence. A successful Linux primitive, developer debug server or tool installation is not Host packaging, service operation, telemetry delivery or feature proof.

@@ -1,0 +1,21 @@
+{
+  "source": "Direct owner messages in the Lead conversation, 2026-10-18",
+  "sessionId": "01a1418c-8bbd-76c0-abb9-71d9cc571ee6",
+  "capture": "Current conversation context, not a newly recovered provider transcript or original-log manifest entry",
+  "messages": [
+    "ok so over all I think we have a misunderstanding. One is the overall design of the system that needs to be in place. And the second is all the features that are in Agent Studio need to be converted and moved to one of the other studios or specifically set that it's gonna stay in the map, and they need to be broken down by categories and trees, like some kind of hierarchy, so it's easy to understand. Does that make sense? Let's clarify.",
+    "i also think agent studio host deamon\nagent studio client deamon right thos eare good names?  so host deamon and client deamon?\n\nthen actual IDE is swift or iphone app",
+    "I think your documents are too hard to understand. They're not broken down properly. You didn't use any walkthroughs or presentations. That's a feature in the HTML presentation system, and yeah, so I think we should do that so I can actually see that.",
+    "make ssure the html specs are well thought of for humans good dialgras, use the demstify walkthroukhng to show thor9kugh line\n• A walkthrough is a concept-led narrative across existing pages. Its stops and narration build understanding. Next/\n  Previous carry that same thread between pages."
+  ],
+  "authority": "Authorized reader/coverage outcome: separate overall architecture from a complete product-feature hierarchy with explicit proposed moves/splits/native retention and guided HTML explanations.",
+  "names": "Owner-proposed working labels: Host daemon, Client daemon, IDE app. Client daemon is the existing Mac Gateway role; no platform/protocol rename is inferred.",
+  "observationLimit": "The owner's comprehension problem is authoritative feedback. Source inspection found some existing presentation blocks, so literal absence of all presentation markup is not asserted as an independently verified fact.",
+  "notSelected": [
+    "behavior-preservation versus redesign default",
+    "new public methods or protocol",
+    "data owners chosen solely by the view",
+    "implementation",
+    "release ranking"
+  ]
+}

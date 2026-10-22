@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · I4 — Git mutations, worktree lifecycle and full Linux fork</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="specification.html">AgentStudio daemon · I4 — Git mutations, worktree lifecycle and full Linux fork</a></nav></ex-nav>
+<ex-document id="content"><h1>I4 — Git mutations, worktree lifecycle and full Linux fork</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](specification.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## I4 — Git mutations, worktree lifecycle and full Linux fork
+
+The usable outcome is selected remote machine-scoped Git/worktree commands through the app and CLI, with a complete macOS/Linux fork counterpart. Basis: U2/U4/U5/U6/U9/U11; K1/K2/K4/K14, R2/R4/R12. The forty-four SDK operations are surveyed vocabulary, not automatically forty-four RPC methods.
+
+Included contract groups to settle: ordinary create modes; lock/unlock; stale administration versus directory removal; conditional branch deletion; remote configuration/fetch/push/probe as selected; staged fetch/promotion/cleanup; full worktree fork; native/CLI create/remove/archive/prune policy.
+
+Fork covers source/destination validation and containment, registration/HEAD/index/ref adoption, eligible file/metadata/name/special-node handling, cancellation and exact residual cleanup. `FICLONE`-level byte success is not the complete capability. Supported filesystems/kernel/profile, clone-versus-copy policy and non-UTF-8/collision/metadata outcomes remain G7; no silent byte-copy fallback is selected.
+
+Current worktree CLI runs local policy before IPC, and native worktree policy differs from lower-level SDK mechanics. Target CLI/app calls the addressed Host's single selected operation implementation. Keep policy differences explicit; preview can fetch and mutate before the displayed decision. Packaging/import must respect the owning Git library rather than add app-local shell invocations as a second implementation.
+
+Every mutation has its own expected-reference, authority, cancellation/join, post-state and duplicate/reconciliation contract. Deleted refs may leave config/reflog; created directories can precede later errors; failed cleanup is residue; uncertain promotion/removal cannot be reported as untouched. Lease refusal does not undo a filesystem/remote-server effect.
+
+Prove real refs/admin/index/directories/content/metadata and supported external remote effects on both platforms, forced races/cancellation, denied or changed targets, and exact typed partial/unknown results. E4's leaf fixture is a prerequisite, not Linux integration parity. IP3 selects worktree machine CLI → attached local Host daemon with start/activation when absent. Exact activation/readiness/failure, discovery and non-session authority remain contract work; UX/frontend CLI retains Gateway access.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

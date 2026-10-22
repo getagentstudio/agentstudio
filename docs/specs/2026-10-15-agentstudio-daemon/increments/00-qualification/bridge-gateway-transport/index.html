@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Direct Bridge delivery through the Gateway</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="index.html">AgentStudio daemon · Direct Bridge delivery through the Gateway</a></nav></ex-nav>
+<ex-document id="content"><h1>Direct Bridge delivery through the Gateway</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](index.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Direct Bridge delivery through the Gateway
+
+Start with [one bootstrap and content read](program-design.html#source--one-bootstrap-and-content-read), then [what a browser may do](specification.html#source--browser-access-and-identity). This slice separates native control, browser delivery and remote Host communication. It does not migrate all Bridge workflows at once.
+
+## Four document identities
+
+| Document | Source |
+| --- | --- |
+| Requirements | Existing [U25, U3, U17 and U19](../../../user-requirements.html#source--requirement-rows), with [S32](../../../research/owner-inputs/bridge-transport-direction-2026-10-22.html) |
+| Specification | [Observable boundary](specification.html): E27 and R18–R23 |
+| Program Design | [Owners, typed interfaces and lifetimes](program-design.html) |
+| Verification Design | [Native/browser and remote qualification](verification-design.html) |
+
+## Reading paths
+
+- **Understand direct content delivery:** [need](../../../user-requirements.html#source--requirement-rows) → [R18](specification.html#source--delivery-and-native-control) → [one read](program-design.html#source--one-bootstrap-and-content-read) → [T1 proof](verification-design.html#source--t1-actual-macos-webview-to-rust).
+- **Understand browser authority:** [U25 source](../../../research/owner-inputs/bridge-transport-direction-2026-10-22.html) → [E27/R19](specification.html#source--browser-access-and-identity) → [access state and schema](program-design.html#source--browser-access-and-schema) → [negative controls](verification-design.html#source--t1-actual-macos-webview-to-rust).
+- **Understand mobile lifetime:** [U12/U17](../../../user-requirements.html#source--requirement-rows) → [R21](specification.html#source--platform-lifetime) → [mobile state transitions](program-design.html#source--mobile-lifetime) → [T2 device proof](verification-design.html#source--t2-physical-ios-lifetime).
+- **Understand the remote leg:** [U3/U25](../../../user-requirements.html#source--requirement-rows) → [R20](specification.html#source--remote-host-communication) → [Host adapter boundary](program-design.html#source--components-and-dependencies) → [T3 proof](verification-design.html#source--t3-actual-gateway-to-host-transport).
+
+The existing [Bridge operation map](../../../designs/08-files-review-output/bridge-operation-map.html), [annotation map](../../../designs/08-files-review-output/annotation-operation-map.html) and [native/client read needs](../../../designs/08-files-review-output/client-read-needs.html) remain the feature vocabulary. The larger [migration map](../../../designs/11-operations-integration/migration-map.html) owns the strangler sequence.
+
+</script></ex-markdown><ex-presentation id="bridge-transport" title="Browser, native client and remote Host" description="One bootstrap and direct read, its trust boundaries and the experiments that decide them."><ex-step to="specification.html#source--consumer-context">Start with the client outcome: direct browser content, separate native privileges and explicit remote identity.</ex-step><ex-step to="program-design.html#source--one-bootstrap-and-content-read">Follow one read. Swift bootstraps the pane; Rust carries the content between the addressed Host and browser.</ex-step><ex-step to="specification.html#source--browser-access-and-identity">A fresh scoped browser grant is not a Host identity, a writer lease or proof that an effect happened.</ex-step><ex-step to="program-design.html#source--components-and-dependencies">Keep the shared typed API in the core and transport policy at its adapters. Changing HTTP or QUIC must not create another Git or annotation engine.</ex-step><ex-step to="program-design.html#source--browser-access-and-schema">A WebSocket upgrade is not authentication. Follow the bounded first-frame exchange and the checks required before useful work.</ex-step><ex-step to="program-design.html#source--streaming-cancellation-and-currentness">Closing a response does not prove every producer stopped. Follow actual retirement and retained uncertainty across owners.</ex-step><ex-step to="program-design.html#source--mobile-lifetime">An iPhone app can stop executing while its socket remains kernel-visible. Recover current access and subscriptions without terminating remote execution.</ex-step><ex-step to="verification-design.html#source--what-each-need-will-be-shown-by">Read each proposed observation and what it leaves unverified. The figures here are proof plans, not executed results.</ex-step><ex-step to="verification-design.html#source--t1-actual-macos-webview-to-rust">Begin with the actual WebView and Rust boundary, deliberately wrong auth/cancellation controls and counted buffering.</ex-step><ex-step to="verification-design.html#source--t3-actual-gateway-to-host-transport">Then qualify remote peer identity and mixed streams. A transport fixture still does not substitute for the product operation owner.</ex-step></ex-presentation>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

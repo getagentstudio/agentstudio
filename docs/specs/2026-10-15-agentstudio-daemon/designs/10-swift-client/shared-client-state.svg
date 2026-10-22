@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 871.60925 587" width="871.60925" height="587" style="--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#f1efed;--surface:#1a3236;width:100vw;max-width:100vw;height:auto;background:#171d26" data-traced="">
+<style>
+
+  text { font-family: 'Source Sans 3', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"></polygon>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"></polyline>
+  </marker>
+</defs>
+<g class="block" data-type="alt" data-label="Commit established">
+  <rect x="79.12224999999995" y="238" width="762.487" height="284" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="79.12224999999995" y="238" width="136.45" height="18" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="85.12224999999995" y="247" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">alt [Commit established]</text>
+  <line x1="79.12224999999995" y1="394" x2="841.60925" y2="394" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+  <text x="87.12224999999995" y="408" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[Conflict, refusal or unestablished commit]</text>
+</g>
+<line class="lifeline" data-actor="Client" x1="131.29124999999993" y1="70" x2="131.29124999999993" y2="557" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Work" x1="274.5247499999999" y1="70" x2="274.5247499999999" y2="557" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Home" x1="441.4702499999999" y1="70" x2="441.4702499999999" y2="557" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Store" x1="626.94075" y1="70" x2="626.94075" y2="557" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="IDE" x1="789.0697499999999" y1="70" x2="789.0697499999999" y2="557" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<g class="message" data-from="Client" data-to="Work" data-label="Establish addressed execution" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="131.29124999999993" y1="90" x2="274.5247499999999" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="202.90799999999993" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Establish addressed execution</text>
+</g>
+<g class="message" data-from="Work" data-to="Client" data-label="Known execution reference" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="274.5247499999999" y1="130" x2="131.29124999999993" y2="130" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="202.90799999999993" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Known execution reference</text>
+</g>
+<g class="message" data-from="Client" data-to="Home" data-label="Apply layout mutation at expected revision" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="131.29124999999993" y1="170" x2="441.4702499999999" y2="170" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="286.3807499999999" y="160" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Apply layout mutation at expected revision</text>
+</g>
+<g class="message" data-from="Home" data-to="Store" data-label="Actual guarded revision check and commit" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="441.4702499999999" y1="210" x2="626.94075" y2="210" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="534.2054999999999" y="200" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual guarded revision check and commit</text>
+</g>
+<g class="message" data-from="Store" data-to="Home" data-label="Committed shared position" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="626.94075" y1="278" x2="441.4702499999999" y2="278" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="534.2054999999999" y="268" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Committed shared position</text>
+</g>
+<g class="message" data-from="Home" data-to="Client" data-label="Known layout result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="441.4702499999999" y1="318" x2="131.29124999999993" y2="318" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="286.3807499999999" y="308" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Known layout result</text>
+</g>
+<g class="message" data-from="Client" data-to="IDE" data-label="Qualified prepared projection" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="131.29124999999993" y1="358" x2="789.0697499999999" y2="358" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="460.18049999999994" y="348" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Qualified prepared projection</text>
+</g>
+<g class="message" data-from="Store" data-to="Home" data-label="Truthful distinct outcome" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="626.94075" y1="422" x2="441.4702499999999" y2="422" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="534.2054999999999" y="412" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Truthful distinct outcome</text>
+</g>
+<g class="message" data-from="Home" data-to="Client" data-label="Layout not established as successful" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="441.4702499999999" y1="462" x2="131.29124999999993" y2="462" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="286.3807499999999" y="452" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Layout not established as successful</text>
+</g>
+<g class="message" data-from="Client" data-to="IDE" data-label="Known execution plus partial or uncertain layout result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="131.29124999999993" y1="502" x2="789.0697499999999" y2="502" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="460.18049999999994" y="492" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Known execution plus partial or uncertain layout result</text>
+</g>
+<g class="note" data-position="over" data-actors="Client,Work">
+  <polygon points="30,510 369.81599999999986,510 375.81599999999986,516 375.81599999999986,533 30,533" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <polygon points="369.81599999999986,510 375.81599999999986,516 369.81599999999986,516" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <text x="202.90799999999993" y="521.5" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">No automatic execution kill or duplicate creation because layout failed</text>
+</g>
+<g class="actor" data-id="Client" data-label="Gateway" data-type="participant">
+  <rect x="89.12224999999994" y="30" width="84.338" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="131.29124999999993" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Gateway</text>
+</g>
+<g class="actor" data-id="Work" data-label="Execution Host" data-type="participant">
+  <rect x="213.46024999999992" y="30" width="122.129" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="274.5247499999999" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Execution Host</text>
+</g>
+<g class="actor" data-id="Home" data-label="Workspace Host" data-type="participant">
+  <rect x="375.5892499999999" y="30" width="131.762" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="441.4702499999999" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Workspace Host</text>
+</g>
+<g class="actor" data-id="Store" data-label="Workspace write port" data-type="participant">
+  <rect x="547.3512499999999" y="30" width="159.179" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="626.94075" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Workspace write port</text>
+</g>
+<g class="actor" data-id="IDE" data-label="UX client" data-type="participant">
+  <rect x="746.5302499999999" y="30" width="85.07900000000001" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="789.0697499999999" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">UX client</text>
+</g>
+</svg>

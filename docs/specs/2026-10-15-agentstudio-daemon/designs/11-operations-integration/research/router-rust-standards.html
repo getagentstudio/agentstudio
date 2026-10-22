@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Codex Router Rust conventions: checked source baseline</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="router-rust-standards.html">AgentStudio daemon · Codex Router Rust conventions: checked source baseline</a></nav></ex-nav>
+<ex-document id="content"><h1>Codex Router Rust conventions: checked source baseline</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](router-rust-standards.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Codex Router Rust conventions: checked source baseline
+
+The requested Rust reference provides concrete workspace, type and task-ownership conventions. It does not select AgentStudio's public protocol, dependency-safety scope or exact toolchain pins. This is source evidence for [R8/K15](../specification.html), not a build or runtime result.
+
+Inspected Router source: `691cd560347d6e570dd3db0315b9ddb3ee259f84`, branch `agent-collaboration-icon`. The checkout had an unrelated untracked work-trail folder; the inspected tracked files were unchanged. AgentStudio remains at `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`.
+
+## Workspace and lint ownership
+
+| Checked source | Observed convention | What transfers to this design |
+| --- | --- | --- |
+| [Workspace manifest](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/Cargo.toml#L1) | Resolver3; workspace package edition2024; centralized dependency declarations;27 members. | One workspace-level convention owner, inherited by each first-party member. These observations do not select a new crate per capability. |
+| [Workspace Rust/Clippy lints](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/Cargo.toml#L101) | `unsafe_code = "forbid"`; deny unwrap/expect/panic/todo/unimplemented/unreachable, indexing/string slicing, held-lock issues and the other declared lints. | First-party enforcement must include all actual members and target configurations, not just the main executable. |
+| [Host member manifest](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/codex-router-host/Cargo.toml#L1) and every declared member | All27 members explicitly opt into workspace lints. | Defining root lints alone is not the inheritance proof. The member inventory is a useful admission check. No Cargo build was run. |
+| [Toolchain](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/rust-toolchain.toml#L1), [format](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/rustfmt.toml#L1), [Clippy test allowances](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/clippy.toml#L1) | Toolchain1.98.1 with Clippy/rustfmt/rust-src; formatter edition2024; named test allowances for expect/indexing/panic/unwrap. | Reproduce the policy explicitly where appropriate. Toolchain and dependency numbers are inspected pins, not a latest-version recommendation or demonstrated Mac/Linux build pairing. Test allowances do not waive production rules. |
+| [Cargo configuration](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/.cargo/config.toml#L1) | Offline SQLx checking; an Apple Silicon debug signing runner. | Query/schema proof and process identity matter where applicable. The Router signing script and private SQL behavior are not AgentStudio mechanisms to copy. Linux has its own artifact/profile obligations. |
+
+Cargo's [official manifest reference](https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section), fetched during this check, describes package lint scope separately from dependency compilation. Thus the root unsafe prohibition is not proof that dependency internals or native FFI contain no unsafe implementation. U10/IP6 already selects the safety boundary: first-party code, including generated scaffolding, forbids unsafe; pinned dependencies may be used through safe interfaces. G11 retains the concrete binding inventory and compliance evidence, not a pending interpretation of that selected boundary.
+
+## Dependency responsibility and type examples
+
+The [core manifest](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/codex-router-core/Cargo.toml#L1) does not depend on Tokio. The [Host manifest](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/codex-router-host/Cargo.toml#L1) composes domain/service/storage/client dependencies and Tokio/tokio-util. This is a source example of keeping asynchronous process integration outside a rules crate, not proof that the whole Router DAG is ideal for AgentStudio.
+
+The shared dependency list includes `tokio`, `tokio-util`, `bytes`, `serde`/`serde_json`, `thiserror`, `tracing`, `uuid` and `chrono`. It also includes specialized HTTP/proxy/keychain/SQL/MCP libraries. Their presence does not make them all daemon dependencies. Select a library for an actual owning boundary; keep serializer/RPC/network/SQL choices under the relevant contract.
+
+Two checked type patterns matter:
+
+- [PositiveSeconds](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/collaboration-protocol/src/automation_timing_contract.rs#L1) routes deserialization through `TryFrom<u32>` and supplies matching bounded schema metadata. Successful Serde shape decoding cannot bypass this constructor's range check. Its actual limits/defaults are Router policy and are not copied into AgentStudio.
+- [Lifecycle observation](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/collaboration-protocol/src/lifecycle_observation.rs#L1) uses tagged variants and explicit subject/source/generation checks. Its `validate` method establishes rules only when an admission path calls it; deriving Deserialize alone does not prove those cross-field checks run. This evidence does not adopt its public vocabulary or string error type for AgentStudio.
+
+## Task lifetime example and its limits
+
+The [proxy connection loop](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/codex-router-proxy/src/server/runtime_config.rs#L530) interleaves accept, shutdown and guarded `JoinSet` completion. In its tracked path it joins handlers, closes/waits an affinity `TaskTracker` and separately drains credential refresh work. An unlimited/no-shutdown branch delegates handler supervision instead. These are different ownership paths; this reading does not prove every Router operation drains or that those policies suit a durable Host session.
+
+The [provider FIFO](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/crates/codex-router-host/src/provider_acp_message_fifo.rs#L1) owns bounded per-session senders, worker handles and cancellation. Its128/1024 capacities, retry timing and settlement defaults are that subsystem's policy. They do not become daemon limits or automatic terminal retries.
+
+AgentStudio must preserve the lifetime distinction its requirements already choose: delivery task loss can end an attachment; it cannot by itself become explicit execution termination. Host restart/re-adoption remains G3. Cancelling a Rust task is not an observation that an external backend effect was undone.
+
+## Existing proof paths and remaining gaps
+
+[Router CI](https://github.com/ShravanSunder/codex-router/blob/691cd560347d6e570dd3db0315b9ddb3ee259f84/.github/workflows/ci.yml#L48) invokes formatting, workspace Clippy, file-size and dependency policies, checked-query metadata and Nextest lanes. Those commands were read, not executed. Router-specific signing, feature flags, schema databases and test splits are not AgentStudio proof commands.
+
+For AgentStudio, proof still needs actual first-party member inheritance, supported platform/feature/generated-code compilation, behavioral failure/interleaving tests, real Swift/socket schemas and the declared native/backend journeys. A manifest inventory cannot replace those layers. This source check does not complete G11's binding/compliance evidence, select a new toolchain pin or establish implementation readiness.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

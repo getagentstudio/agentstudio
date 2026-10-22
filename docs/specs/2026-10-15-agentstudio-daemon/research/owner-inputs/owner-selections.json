@@ -1,0 +1,42 @@
+{
+  "source_session": "rollout-2026-10-15T17-51-33-01a1418c-8bbd-76c0-abb9-71d9cc571ee6.jsonl",
+  "authority_note": "The direct-to-Host selection is explicitly superseded by the later owner corrections: MCP/CLI/iOS/macOS -> Gateway -> Host. Preserve it as history, never active intent. Multiple client devices does not by itself choose the number of Gateway instances.",
+  "selections": [
+    {
+      "question_source_line": 1933,
+      "question_timestamp": "2026-10-15T23:27:19.656Z",
+      "question_arguments": "{\"questions\":[{\"header\":\"No-client\",\"id\":\"host_no_client_behavior\",\"question\":\"While Swift is closed or the Gateway is disconnected, what should the Host continue doing?\",\"options\":[{\"label\":\"Sessions, agents, facts (Recommended)\",\"description\":\"Keep sessions running, admit authorized agent inputs, and record terminal facts/activity independently of attached views.\"},{\"label\":\"Sessions and agents\",\"description\":\"Keep sessions running and admit authorized agent inputs; renderer-derived facts resume when a client attaches.\"},{\"label\":\"Sessions only\",\"description\":\"Keep shells running; refuse agent integration calls and suspend terminal fact derivation until a client returns.\"}]}]}",
+      "question_ids": [
+        "host_no_client_behavior"
+      ],
+      "call_id": "call_4f90daf3b5ac4f928e55ae1b357f0003",
+      "answer_source_line": 1936,
+      "answer_timestamp": "2026-10-15T23:34:06.970Z",
+      "answer_output": "{\"answers\":{\"host_no_client_behavior\":{\"answers\":[\"Sessions, agents, facts (Recommended)\"]}}}"
+    },
+    {
+      "question_source_line": 1975,
+      "question_timestamp": "2026-10-15T23:35:55.052Z",
+      "question_arguments": "{\"questions\":[{\"header\":\"Clients\",\"id\":\"simultaneous_mac_gateways\",\"question\":\"Should one Host support more than one Mac Gateway connected at the same time?\",\"options\":[{\"label\":\"Multiple Macs (Recommended)\",\"description\":\"Allow simultaneous clients with separate attachments; specify controller ownership and client-state boundaries.\"},{\"label\":\"One active Mac\",\"description\":\"Allow one Gateway at a time; another Mac must wait or explicitly take over.\"}]}]}",
+      "question_ids": [
+        "simultaneous_mac_gateways"
+      ],
+      "call_id": "call_cddf9916e5bc4d319f5c4ccbdf15e50e",
+      "answer_source_line": 1978,
+      "answer_timestamp": "2026-10-16T00:04:11.203Z",
+      "answer_output": "{\"answers\":{\"simultaneous_mac_gateways\":{\"answers\":[\"Multiple Macs (Recommended)\",\"user_note: mukltiple macs, iphones, etc etc any clients\"]}}}"
+    },
+    {
+      "question_source_line": 1986,
+      "question_timestamp": "2026-10-16T00:04:45.504Z",
+      "question_arguments": "{\"questions\":[{\"header\":\"Phone route\",\"id\":\"non_mac_client_route\",\"question\":\"Should phones and other non-Mac clients connect to a Host without requiring a Mac Gateway to be online?\",\"options\":[{\"label\":\"Direct to Host (Recommended)\",\"description\":\"Each device uses the shared client contract; the Mac app keeps its local Gateway.\"},{\"label\":\"Through Mac Gateway\",\"description\":\"Non-Mac devices use a Mac as their relay and depend on it being online.\"}]}]}",
+      "question_ids": [
+        "non_mac_client_route"
+      ],
+      "call_id": "call_134832b5ef214df19289cc02d4b29726",
+      "answer_source_line": 1989,
+      "answer_timestamp": "2026-10-16T00:05:47.454Z",
+      "answer_output": "{\"answers\":{\"non_mac_client_route\":{\"answers\":[\"Direct to Host (Recommended)\"]}}}"
+    }
+  ]
+}

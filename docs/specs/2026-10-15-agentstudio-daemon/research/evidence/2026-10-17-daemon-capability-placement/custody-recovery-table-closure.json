@@ -1,0 +1,63 @@
+{
+  "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "scope": "Two current operational tables outside the three consumer-read packets. Lead source inspection, not target placement or runtime proof.",
+  "tables": [
+    {
+      "table": "workspace_terminal_session_ownership",
+      "database": "core.sqlite",
+      "columns": ["session_id", "cleanup_state", "cleanup_requested_at", "cleanup_completed_at", "last_cleanup_error", "process_identity"],
+      "classification": "current execution custody and effect-reconciliation state",
+      "readMeaning": "Pending IDs and bounded cleanup work; missing process evidence yields observeIdentity, retained evidence yields retire. Matching pending identity is checked before the external callback.",
+      "writes": "Terminal-content insert trigger and Undo-close insertion establish ownership. Reconciliation marks unreferenced owned sessions pending. First process evidence is retained, changed evidence cannot replace it. Matching completion/error writes reconcile the observed result. Completed unreferenced custody rows are pruned with Undo history.",
+      "readSideEffectBoundary": "Named repository SELECT closures do not mutate. Datastore observe/retire methods hold persistence ordering across external callback and a later write, without keeping one SQLite transaction across await.",
+      "joinsOrDependencies": ["pane_content_terminal", "pane", "workspace_undo_close", "workspace_undo_close_member"],
+      "productionPath": "App boot starts cleanup through WorkspaceSurfaceCoordinator with actual SurfaceManager native-attachment predicate. Pass asks datastore for work, then calls ZMX identity/retirement adapter and stores actual pending/completed/error result.",
+      "cannotInfer": "The row is not external-session discovery, current process existence or authority to terminate a service-backed execution after its views disappear. Copying it does not transfer destructive custody or prove the external effect.",
+      "sources": [
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift", "line": 4},
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift", "line": 185},
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift", "line": 28},
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift", "line": 174},
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+UndoClose.swift", "line": 41},
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+UndoPruning.swift", "line": 70},
+        {"path": "Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+SessionCleanup.swift", "line": 20},
+        {"path": "Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift", "line": 464},
+        {"path": "Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift", "line": 70}
+      ],
+      "limits": "Source control flow and selected schema guards only. Actual process/permission/retirement behavior and every invocation of ownership reconciliation are not newly exercised; Linux and migration remain open. Existing DS04 lifecycle analysis owns target cutover constraints."
+    },
+    {
+      "table": "local_recovery_provenance",
+      "database": "local.sqlite",
+      "columns": ["id", "recovery_kind", "recovered_at", "quarantined_filenames_json", "reason", "acknowledged_at"],
+      "classification": "current local database replacement witness and explicit acknowledgement",
+      "readMeaning": "Load by ID or latest unacknowledged witness ordered by recovered_at/id; decode quarantine filenames/reason/time. Runtime restore changes annotation recovery state to recoveredDegraded/available or unavailable on failure.",
+      "writes": "A local-database replacement observer writes a new witness into the newly opened local database. Explicit acknowledgement uses COALESCE to preserve first acknowledgement time, then the service clears its runtime witness and publishes recovery control changes.",
+      "readSideEffectBoundary": "Repository fetch closures only read. restoreRecoveryState updates runtime admission/publication state; acknowledgeRecovery is a separate write and runtime transition.",
+      "joinsOrDependencies": [],
+      "productionPath": "App factory installs WorktreeAnnotationRecoveryWitnessWriter.write as localDatabaseReplacementObserver. After successful quarantine/fresh opening, datastore invokes observer before installing applicationLocalRepositoryBundle. App annotation boot restores recovery state. Transport acknowledgeRecovery calls service acknowledgement.",
+      "cannotInfer": "A copied witness is not that receiver's database corruption/replacement event or acknowledgement. Read availability differs from mutation gate: reads are refused only when unavailable, while ordinary mutations additionally require no unacknowledged witness. Stored filenames are provenance, not recovered database contents.",
+      "sources": [
+        {"path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift", "line": 668},
+        {"path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Recovery.swift", "line": 9},
+        {"path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Recovery.swift", "line": 43},
+        {"path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Recovery.swift", "line": 62},
+        {"path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationRecoveryWitnessWriter.swift", "line": 3},
+        {"path": "Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift", "line": 816},
+        {"path": "Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift", "line": 313},
+        {"path": "Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift", "line": 292},
+        {"path": "Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+MetadataPublication.swift", "line": 185},
+        {"path": "Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor.swift", "line": 523},
+        {"path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift", "line": 423}
+      ],
+      "limits": "No actual corruption, quarantine, file replacement, acknowledgement or boot behavior was run. The filesystem recovery and subsequent SQL witness are not asserted to form one atomic transaction. Full recovery publication and every mutation exception were not retraced."
+    }
+  ],
+  "queries": [
+    "rg -n 'workspace_terminal_session_ownership' Sources/AgentStudio/Core/State",
+    "rg -n 'recordRecoveryProvenance|restoreRecoveryState\\(|acknowledgeRecovery\\(' Sources",
+    "rg -n 'WorktreeAnnotationRecoveryWitnessWriter|recoveryProvenanceWriter|localDatabaseReplacement|replacementObserver|databaseReplacement' Sources/AgentStudio"
+  ],
+  "nulls": ["Earlier query for recoveryWitness|recordLocalDatabase|recordQuarantine|annotationRecovery in Core/State, App boot and Bridge/State returned no matches; broader exact-type/callback query found actual replacement observer wiring. No absence claim adopted."],
+  "proofLimit": "Current source evidence only. No target export or ownership allocation, installed rows, product execution or distributed proof."
+}

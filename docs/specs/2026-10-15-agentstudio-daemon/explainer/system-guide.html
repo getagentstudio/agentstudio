@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Understand the AgentStudio system</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Understand the system</a><a href="features.html">Explore AgentStudio features</a><a href="progress.html">What was built and tried</a><a href="walkthroughs.html">Follow a workflow</a><a href="delivery.html">MVP and integration phases</a><a href="requirements.html">Requirements</a><a href="architecture.html">Technical architecture</a><a href="communication.html">Communication</a><a href="data.html">Data ownership</a><a href="schema.html">Tables and fields</a><a href="sequence.html">Spec dependencies</a><a href="experiments.html">Experiments and decisions</a><a href="research.html">Research library</a><a href="../index.html">All specification documents</a><a href="system-guide.html">AgentStudio daemon · Understand the AgentStudio system</a></nav></ex-nav>
+<ex-document id="content"><h1>Understand the AgentStudio system</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](system-guide.md) · [Research library](research.html) · [MVP](delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Understand the AgentStudio system
+
+There are two things to understand: the system we are building, and where every existing AgentStudio feature belongs in that system. Start with the system here, then open the feature tree. The detailed specifications remain reference material behind these explanations.
+
+**The CLI is a client too.** Clients include the native Mac/iPhone apps, the CLI and the MCP adapter. They invoke the shared operation contracts and present results for their own users. The native UX client owns rendering and native interaction; the CLI owns argument parsing, help and output formatting. Their selected service routes are described below, rather than each frontend reimplementing Host behavior.
+
+For implementation status, read [what was built and tried](progress.html): who ran each experiment, which results passed or failed, and which systems still need building.
+
+This is an explanation of the proposed design, not a running daemon demonstration. Existing behavior, proposed placement and open decisions are kept separate. No codec, public API, retention policy or release order is selected by this guide.
+
+## The UX client
+
+The Swift Mac app and the iPhone app are the UX clients people use. They display terminals, repositories, agent state and reviews, accept input, and perform the native interactions available on their device. Windows, focus, selection, rendering and actual clipboard/editor/Finder actions belong at that native destination. Heavy source acquisition and domain processing do not belong on the UI thread.
+
+## The Gateway
+
+The Rust Gateway runs on both macOS and iOS. It is the service role previously called the Client daemon; **Gateway** is the owner's preferred name. Each device's UX client talks to its Gateway, which reaches addressed Hosts. It connects the UX client, frontend CLI and MCP to addressed Hosts, maintains connection and subscription state, receives selected read copies, and prepares portable views for clients. It does not become another writer of Host-owned Git, agent or session truth.
+
+## The Host daemon
+
+The Rust Host daemon runs on Mac or Linux, on the machine doing the work. It owns machine-local Git/worktree operations, agents and context, terminal execution management, source acquisition and the selected authoritative state. A Mac can also run a Host daemon for local work. A Host continues its authorized work when the UX client or Gateway disconnects.
+
+## Terminal backend feasibility
+
+**Current research changes the terminal design:** [20 October backend experiments](../designs/04-terminal-runtime/research/backend-observations-2026-10-20.html) found creation without a viewer feasible, but Capture plus subsequent output did not reconstruct the tested terminal state correctly. ZMX leadership also does not enforce the selected viewer/controller authority. These findings need a revised backend realization before that remote-terminal slice is ready; they do not change the three responsibility boundaries above.
+
+## Follow a request
+
+For Host work, the UX client, frontend CLI or MCP sends an addressed request to the Gateway, which routes it to the correct Host. That Host checks authority and performs the operation. Results and prepared observations return through the Gateway to the UX client. Different Hosts remain different targets even when paths or session names look the same.
+
+One Gateway can connect to several Hosts; one Host can serve several Gateways. Authorized agents, hooks and context input already executing on a Host use that Host locally, without requiring a Mac connection. Selected native automation follows Gateway to the addressed UX client and its actual native owner. Machine-scoped worktree CLI calls its attached local Host daemon and activates it if absent, independently of Gateway availability. Authorized session inputs remain local; UX/frontend CLI retains Gateway access.
+
+## Gateway on each device
+
+The same logical route runs on both device classes. Each UX client talks to its own Gateway, and that Gateway reaches the addressed Hosts. The picture shows communication ownership; it does not promise a separate always-running iOS process.
+
+```mermaid
+flowchart LR
+    MacUX["Mac UX client"] -->|"Local socket"| MacGateway["Gateway · macOS"]
+    PhoneUX["iPhone UX client"] -->|"Local socket"| PhoneGateway["Gateway · iOS"]
+    MacGateway -->|"Network"| Hosts["Host daemons<br/>macOS / Linux"]
+    PhoneGateway -->|"Network"| Hosts
+```
+
+[Open the full-size device diagram](../assets/gateway-on-each-device.svg).
+
+One Gateway can connect to several Hosts, and several Gateways can use the same Host under their actual authority. A phone's Gateway is subject to its mobile application lifecycle; Host execution is independently owned.
+
+## What crosses each connection
+
+The Mac UX client uses its local socket boundary to its Gateway. The iPhone UX client also talks to its device's Rust Gateway, which reaches Hosts over the network; no Mac relay is required. A Unix socket remains device-local. Mobile runtime startup, socket custody and suspension/reconnect still need qualification. Logical sessions and replaceable connections remain separate.
+
+The protocol carries several different products: typed commands/results, subscriptions and state observations, reliable terminal bytes, finite file/review content and selected database replication. Terminal bytes do not become one RPC per byte. Database replication does not replace command delivery. Tokio is required; S32 selects Quinn QUIC for remote Gateway–Host communication, while RPC encoding, resource policy and actual performance still need qualification. The [Bridge walkthrough](../increments/00-qualification/bridge-gateway-transport/index.html) separates direct browser HTTP/WebSocket, native control and the remote transport.
+
+## Where the data lives
+
+The Host holds authoritative machine/domain state and uses the actual filesystem, Git repository and terminal backend as their respective sources. A SQLite row describing a repository is not the repository itself.
+
+The Gateway can hold faithful read-only copies of selected Host databases. It also owns prepared, client-facing views built from qualified inputs. A faithful copy, a prepared view and an authoritative record have different meanings. The UX client retains actual native state. **Tabs/layout and read marks are shared across devices**, following the owner's relayed decision.
+
+The [proposed shared-state realization](../designs/10-swift-client/shared-client-state-design.html) puts the shared workspace composition on one explicitly designated existing Host. Other Hosts can own the executions/files it references. Read markers follow their subject's Host. Gateways copy/read/prepare; each UX client projects the result for its own screen. This avoids a new service or Gateway-to-Gateway writer path, at the cost of shared edits depending on the designated Host. Exact designation, subject/element mapping, identity, schema and sync/conflict contracts remain to finish.
+
+A separate central control plane owns writer-lease authority. Its server comes later; the Gateway is not a temporary lease issuer. The Host owns its direct authority-client and guarded-write integration. Writer transfer is outside the current scope. The fleet-sync library remains conditional on its recorded consumer-fit and integration work.
+
+The [initial profile](../initial-profile.html) also selects authorized last-known Host display marked offline, one terminal controller with other viewers, worktree machine CLI through its local Host daemon with local activation when absent, and pause/refusal of writes requiring invalid authority without a new spool. The remaining table, identity, gate and failure details are still explicit design work.
+
+## Follow incoming data to the screen
+
+1. A Host source adapter receives a filesystem/Git observation, provider hook, context input or qualified terminal fact. The input retains its source, machine and relevant ordering/currentness information.
+2. Its owning operation admits and processes that typed input. Ordered facts stay ordered. Replaceable refresh work can be coalesced under its declared policy; a debounce cannot silently discard meaningful operations.
+3. The Host updates the selected domain/observation state through its actual write and authority boundary. Files, Git state and execution still have their real owners. Publishing an observation is not evidence that a separate external effect succeeded.
+4. The Gateway receives an authorized result, subscription update or selected faithful read-copy progress. It captures qualified inputs and runs the appropriate pure view preparation, retaining source/generation witnesses so an old result cannot overwrite a newer view.
+5. The UX client receives the prepared semantic outcome and applies changed UI values at its native publication boundary. Heavy acquisition, scheduling and transforms stay away from MainActor. Actual rendering, focus and user viewing remain native observations.
+
+Commands reach their owning typed operations directly. Facts fan out to declared consumers; the design does not require every feature to pass through one global bus. Tokio owns the Rust async runtime. Closed internal types and explicit transform inputs help the compiler check composition; wire decoding, mixed versions and actual Swift/socket compatibility still require their own validation and proof.
+
+The [prepared-view design](../designs/09-gateway-cli/prepared-view-boundaries.html) carries the detailed generations, source witnesses, cancellation and offering rules. The [table/field reader](schema.html) and [ownership view](data.html) show the current database inventory and classification separately from this feature flow.
+
+## What survives a disconnect
+
+A continuing terminal execution, a provider conversation, a terminal attachment, a network connection and an RPC attempt have separate lifetimes. Closing a pane detaches its view; it does not by itself terminate execution. Returning to the same continuing execution remains required. Reconnect creates a replacement communication connection; attachment reuse or replacement and logical subscription/interest continuity follow their still-open contracts. An uncertain command must remain distinct from one known not to have happened.
+
+The UX client can disappear while Host work continues. The initial offline-display, single-controller, invalid-writer and retention directions are selected in the profile. Exact control handoff, reconnect/restoration, validity, gate coverage and retained/transient contracts still need design and proof. This explanation adds no automatic replay, hidden spool or timeout-based termination.
+
+## Read the project in two ways
+
+**System design:** roles, communication, data ownership, authority, lifetimes, failure and deployment. These are the shared rules every feature uses.
+
+**Feature migration:** a hierarchy of recognizable AgentStudio features. Each feature states what the Host does, what the Gateway does, what stays in the UX client and which choices are still open. A feature can span all three. The MVP is a proposed usable cut through this full tree; later features remain visible.
+
+Use the guided workflow presentations to follow a remote terminal, a worktree creation and an annotated review from the user's action to its actual result. Then inspect the relevant feature and specification.
+
+## How this integrates into the existing UX client
+
+The Host daemon and Gateway use Rust. The Mac Gateway runs as a separate service; the iOS Gateway is embedded within the app lifecycle. Native bootstrap/privileged control uses Mac UDS or the selected iOS binding; the Bridge communication worker receives content and updates directly over same-origin loopback HTTP/WebSocket. The [iOS binding check](../increments/00-qualification/bridge-gateway-transport/native-binding-safety.html) found that a green UniFFI lint does not satisfy the first-party generated-code ban, so that realization remains open. Git and terminal mechanics still need the concrete qualified Mac/Linux adapters described by their owning specs.
+
+Each usable integration slice joins the feature's Host work, Gateway routing/preparation and native UX client behavior. A working socket or backend method alone is not the whole feature. The [MVP and integration proposal](delivery.html) keeps terminal, autonomous agent/context, repository reads, Git/worktrees, review/output, selected copies and broader clients visible as separate proposed cuts. Existing native-only responsibilities remain explicit throughout; the proposal selects no new release ranking here.
+
+The [build/import design](../designs/11-operations-integration/program-design-workbench.html) explains the actual candidate binaries/contracts, dependency direction and composition work. The [experiment guide](experiments.html) explains what must be tested before choosing protocol/backend details. These are unfinished design/proof obligations, not implementation already performed by this reader.
+
+## Technical references and limits
+
+- [Current requirements](../user-requirements.html) and [observable system specification](../2026-10-15-agentstudio-daemon.html).
+- [Selected initial profile and remaining detail](../initial-profile.html), including shared tabs/layout/read marks, private-fleet scope, first-party safety and qualified Linux support.
+- [Program Design and import boundaries](../designs/11-operations-integration/program-design-workbench.html).
+- [Communication and payload lanes](../designs/01-service-contracts/communication-design.html).
+- [Data ownership and replication](../designs/02-data-ownership-replication/specification.html).
+- [All capability paths and source evidence](../designs/11-operations-integration/capability-placement-map.html).
+
+The initial profile and sharing direction are now recorded. Concrete public shapes, shared-state authority/sync/subject contracts, remaining operational details, mandatory performance scope and the separate Verification Design still prevent planning readiness. The earlier review belongs to its earlier inputs; this profile adoption is a new semantic change, not implementation proof.
+
+The [mobile hosting evidence](../designs/11-operations-integration/research/ios-gateway-hosting-evidence.html) records Apple's suspension constraint and the unexecuted startup/Tokio/socket/safety qualification. Gateway suspension or shutdown does not terminate continuing Host execution.
+
+## How the existing product moves to Rust
+
+Use the [migration map](../designs/11-operations-integration/migration-map.html), [hierarchical delivery checklist](../designs/11-operations-integration/migration-feature-checklist.html), [command/operation lookup](../designs/11-operations-integration/migration-operation-crosswalk.html) and [near-term remote-session slice](../designs/11-operations-integration/near-term-migration.html). The **From features to Rust** walkthrough connects them. The whole path stays at high level; the next coherent slice receives detailed contracts, integration and cutover work. Every delivery checkbox remains open until its real feature is integrated and proven.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

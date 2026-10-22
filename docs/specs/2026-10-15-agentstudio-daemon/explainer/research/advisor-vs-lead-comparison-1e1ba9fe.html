@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Advisor vs Lead: storage placement comparison</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-vs-lead-comparison-1e1ba9fe.html">AgentStudio daemon · Advisor vs Lead: storage placement comparison</a></nav></ex-nav>
+<ex-document id="content"><h1>Advisor vs Lead: storage placement comparison</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-16-advisor-storage-placement/advisor-vs-lead-comparison.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Advisor vs Lead: storage placement comparison
+
+2026-10-16. Two independent pictures, compared after both were written. Neither author had read the other's study.
+
+| Side | File | sha256 / written |
+|---|---|---|
+| Advisor | `advisor-storage-placement.md` (this folder) | `04ac17565354a96157cfc1ebbf238bb39dd7fbe5f01b04b6ad660cc4274bc563`, 14:37:33Z; written before opening the Lead's baseline |
+| Lead | `tmp/practices-research/2026-10-15-daemon-extraction-survey/data-lead-comparison-baseline.md` | `714daf0be10c7cd92bacb6b13d29b79dbe6c0318fbd60fcd989d021a0f724a61` (matches the hash the Lead sent) |
+
+**Count correction to the Advisor picture.** `core.sqlite` has **28** final tables, not 29: `unavailable_worktree` was already in L1's 28. The totals therefore agree exactly: Core 28 + Local 53 + CLI 3 + search 2 = **86**. The Advisor picture is left unedited, as hashed, and this note supersedes its "29 / 82".
+
+## Agreement
+
+The two pictures agree on the following without coordination:
+- Each Host owns its repository topology, watch and absence state, the terminal session lifecycle, provider evidence and bindings, agent context with its writer fences, and repository activity.
+- The Gateway owns no Host truth; a replica cannot authorize Host work.
+- There is no default inbox → event log → outbox. The shape is a snapshot plus typed updates with a per-Host revision, and the delivery or history contract is chosen per domain.
+- Pane-keyed agent tables must re-key to the execution session. Reusing pane UUIDs would recreate the app dependency (Lead :204; Advisor X3/X4).
+- Client Undo references a still-running Host session, and its expiry must not terminate that session (U14).
+- One owning writer per persistence boundary; no shared SQLite across machines and no replicate-everything.
+- Every cross-Host reference carries its Host context. Private IDs may stay private inside one Host store.
+
+## Real differences
+
+| # | Topic | Lead | Advisor | Resolution proposed by the Advisor |
+|---|---|---|---|---|
+| **Δ1** | Where durable client composition and UX memory live (`workspace`, tabs/panes/arrangements, cursors, `local_window_state`, recency, search) | **Gateway client model**, partitioned by client or device; Swift persistence is the alternative | **Swift client** | **Still different. Owner decision (D1), with an implicit assumption to surface.** Gateway ownership makes the Gateway a *stateful product service*, not only the router described elsewhere ("Mac Gateway routes frontend access"). Gain: one Rust implementation serves the Mac app and the phone; Swift stays thin. Cost: high-rate native memory (window frame, sidebar width, cursors) crosses a socket, and the Gateway needs per-client persistence, migration and recovery. Middle path: native window and sidebar memory (`local_window_state`, collapsed groups, `local_drawer_presentation`) stays in Swift. Workspace composition that references Host sessions follows the D1 answer |
+| **Δ2** | Annotation output attempts (`annotation_output_attempt`, `…_attempt_message`, `…_event`) | **Host annotation workflow** | **Client** (native effect journal) | **Advisor concedes to Host.** Finalization flips `annotation_message.handled` membership on Host messages, and the Lead's "exact output membership" needs that atomic. Refinement: the attempt's destination path is an opaque, client-scoped field inside a Host record. The client performs the effect, and finalization is a Host command carrying the effect result. A native effect followed by failed finalization stays the existing `partialSuccess`/unknown state, now across two machines |
+| **Δ3** | CLI producer state (`cli_state`, `cli_store_identity`, `cli_outbox`; local `pane_context_cli_outbox_cursor`) | **Keep producer-local state.** Attempted work differs from accepted work. Reevaluate the outbox | **Delete `cli.sqlite`** | **Advisor concedes on `cli_state`.** Writer epochs and counters are allocated *across separate CLI processes* (each hook or `pane title` call is a new process). A pending claim commits before the network call, so a lost reply can be retried with the same claim (agent-control N4). That needs persistent producer state; Host arrival order cannot replace it. On the **outbox**, "reevaluate" is right: one residual case is the attached Host daemon restarting while a notice is sent. The Mac-unreachability reason is gone, but the Host-restart window remains. Delete only after that outcome is selected |
+| **Δ4** | Forge/GitHub facts | **Host-derived observation** | lean **Gateway** (D4) | **Advisor concedes the default.** Remote boxes already need GitHub credentials for agents to push, which weakens the credential argument. Two G12 notes remain: two Hosts with the same remote fetch the same data, and each Host needs `gh` auth |
+| **Δ5** | Dormant Inbox tables | **Preserve data** until an explicit data-safe removal decision | **Delete** | **Converged.** Both treat them as cleanup candidates. The owner said "im open to clean kup ehre", which is openness, not a removal decision. Removal needs a yes on this specific deletion |
+
+## Advisor additions the Lead's baseline does not state explicitly
+
+| # | Item | Why it matters |
+|---|---|---|
+| A1 | The concrete collision anchor: repository ID `common:<path>` (agentstudio-git `GitRepositoryIdentityResolver.swift:38` + 3 sites) and `stableKey = SHA-256(path)` | The Lead lists "two Hosts with equal local names/IDs" as a discriminator (:215). This names the exact code that produces the collision |
+| A2 | Host instance identity: generated at install (UUIDv7), never hostname or machine-id; the Gateway refuses a duplicate live claim | Cloned VMs share machine-id. Host identity is the routing key for everything else |
+| A3 | Non-portable clock and volume fields: boot ID + uptime absence timing, Undo deadline boot/uptime, FSEvents volume cursors | They cannot be evaluated on another machine, so they must stay with their machine's owner |
+| A4 | Client action while its Host is unreachable: **refuse**, don't queue in the Gateway (Advisor D6) | A queued answer can land on an expired or already-settled ask. The Lead's journey (:202) leaves this open |
+| A5 | The owner's SQLite rules (no triggers, CHECK only on booleans, enums in code) versus today's `core.sqlite` (many workspace-guard and divider-pruning triggers, enum CHECKs; L1) | The new Host schema should follow the owner's rules from version 1. The current triggers are a client-side cleanup candidate |
+
+## Lead points the Advisor picture missed (adopted)
+
+- A PaneContext write checks the current Sessions binding **inside its SQL transaction**. A network preflight would weaken that fence, so context and sessions must stay in one Host store (Lead :59).
+- Ordinary Core save can succeed while Local save fails. Today's two files are already not atomic together, so some "single transaction" assumptions are already false (Lead :57).
+- `local_pane_activity` splits into Host execution/hook activity and client attention/recency, not Host only (Lead :148).
+- `local_recovery_provenance` belongs to the owner of the recovered store, and must not be one global flag (Lead :156). The Advisor said the same in a single line; the Lead's wording is the clearer contract.
+
+## Net
+
+Δ2, Δ3 and Δ4 converge on the Lead's placement, with the refinements above. Δ5 converges, pending the owner's yes. **Δ1 is the one real open design difference**: Gateway-owned versus Swift-owned client composition, which depends on D1 (shared versus per-device layout). It is the owner's decision.
+
+## Addendum: Sol reducer (R2) verification, 10:53 local
+
+`R2-reduced-inventory.md` re-verified all 86 application tables against source, and 92/92 linked source files byte-for-byte against HEAD. Corrections that affect this comparison:
+
+- **Advisor picture §4 L is wrong on one fact.** The Inbox tables *do* have retained SQL writers (`InboxNotificationSQLiteRepository.swift:24`); the active boot/settings path preserves them rather than running them (`WorkspaceSettingsStore.swift:120`). So they are a dormant feature, not absent code. This strengthens the Lead's Δ5 stance: deleting them is a data decision, not dead-code removal.
+- **Strengthens A1.** Application recency keys are path-derived `StableKey` values: symlinks resolved, SHA-256 of the canonical path, first 8 bytes as 16 hex characters (`StableKey.swift:4`). Different Hosts with equal paths therefore collide in recency as well as in repository IDs.
+- **X6 precision.** The final `pane.facet_repo_id` and `facet_worktree_id` are plain ID references with a paired-null CHECK, not FKs. Migrations 015/016 dropped and re-added them without FKs. So the topology association is already maintained by reconciliation rather than by the database, which suits a cross-owner reference.
+- **`local_ipc_credential` has no declared PK.** Its identity constraint is the unique index (pane_id, credential_record_id).
+- **Checked: not a product bug.** Migration 027's replacement `sessions_evidence` omits `source_occurred_at` and `permission_handling`. A grep finds them in no live writer or reader across `Sources`, only in migrations; permission handling is now in memory (`SessionStatusState`). This was a deliberate drop of unused columns.
+- **The reducer added state the collections missed:** command-bar recents in UserDefaults, IPC runtime metadata/socket and debug escrow, installed provider integration files, WebKit's shared website-data store, and the broader in-memory authority owners. None of these changes either placement picture. The integration files belong to each Host's provider configuration (K2/K15).
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

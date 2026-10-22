@@ -1,0 +1,2068 @@
+{
+  "schemaVersion": 1,
+  "task": "Current Session/context query table closure",
+  "status": "completed-source-pass",
+  "source": {
+    "repository": "/Users/shravansunder/code/projects/agentstudio.feat-daemon",
+    "branch": "feat/daemon",
+    "head": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+    "date": "2026-10-17"
+  },
+  "scope": "Current source classifications for S01-S04/P01-P04 at named query/transaction/model/publication boundaries; no future allocation, target interfaces or replication selection.",
+  "evidencePolicy": {
+    "openedCurrentPass": "Decisive query/transaction/mapper functions opened in this bounded pass; no runtime proof.",
+    "reusedPriorWorkerPassSameHead": "Prior worker's read-needs/RPC/status checks at identical HEAD, explicitly labeled per pointer.",
+    "tableSets": "readTables list explicit SELECT helper dependencies; writeTables list explicit INSERT/UPDATE/DELETE targets. Implicit database engine reads of write targets are not separately counted. Conditional branches do not imply all tables are touched each call. Named child foreign-key cascades are additional effects where called out.",
+    "columns": "Meaningful column groups used by opened queries/decoders/writers, not an exhaustive per-column transitive audit. SELECT * still reads all columns of selected rows.",
+    "pureBoundary": "Pure means repeatable query/decoding/fold given a coherent declared row set and every explicit ordered/runtime/time/policy input. This does not establish copied-data coherence, observation freshness, replay equivalence, write authority or current native/person facts."
+  },
+  "reusedEvidence": [
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/session-native-read-needs.json",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/session-native-read-needs.md",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/rpc-operation-source-map.json"
+  ],
+  "transactionBoundary": {
+    "owner": "WorkspaceSQLiteDatastoreActor application-local prepared repository",
+    "sourcePointers": [
+      {
+        "path": "Sources/AgentStudio/App/PaneContext/WorkspacePaneContextSQLiteAccess.swift",
+        "line": 6,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Sessions/WorkspaceSessionsSQLiteAccess.swift",
+        "line": 6,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+ApplicationLocalTransactions.swift",
+        "line": 18,
+        "evidence": "opened-current-pass"
+      }
+    ],
+    "constraint": "Each named read/write closure uses the same prepared application-local database API. Membership capture and awaited Session runtime summary are outside the detail/display SQL closure; no combined atomic snapshot is established."
+  },
+  "families": [
+    {
+      "id": "S01",
+      "name": "Session summary/query",
+      "closureIds": [
+        "C01",
+        "C02",
+        "C03",
+        "C14",
+        "C15"
+      ]
+    },
+    {
+      "id": "S02",
+      "name": "Status publication/UI",
+      "closureIds": [
+        "C01",
+        "C02",
+        "C15"
+      ]
+    },
+    {
+      "id": "S03",
+      "name": "Open asks",
+      "closureIds": [
+        "C03",
+        "C04",
+        "C09",
+        "C12",
+        "C18"
+      ]
+    },
+    {
+      "id": "S04",
+      "name": "Title/agent line",
+      "closureIds": [
+        "C05",
+        "C06",
+        "C14",
+        "C16"
+      ]
+    },
+    {
+      "id": "P01",
+      "name": "Compact context display/counts",
+      "closureIds": [
+        "C05",
+        "C07",
+        "C09",
+        "C14",
+        "C16",
+        "C17"
+      ]
+    },
+    {
+      "id": "P02",
+      "name": "Membership source view",
+      "closureIds": [
+        "C08"
+      ]
+    },
+    {
+      "id": "P03",
+      "name": "Context detail/pages",
+      "closureIds": [
+        "C04",
+        "C05",
+        "C09",
+        "C10",
+        "C11",
+        "C12",
+        "C13",
+        "C14",
+        "C16",
+        "C17",
+        "C18"
+      ]
+    },
+    {
+      "id": "P04",
+      "name": "Popover consumer state",
+      "closureIds": [
+        "C11",
+        "C12",
+        "C13",
+        "C17"
+      ]
+    }
+  ],
+  "tableRegistry": [
+    {
+      "name": "sessions_operation",
+      "columns": [
+        "commit_revision",
+        "operation_kind",
+        "binding_generation_id",
+        "operation_scope",
+        "semantic_fingerprint",
+        "correlation_id",
+        "outcome_kind",
+        "outcome_occurrence_id/outcome_entity_id",
+        "created_at"
+      ],
+      "meaning": "Revision log; loadContext reads global MAX(commit_revision); binding/evidence queries join operation rows for deterministic binding order and binding-start evidence distinction.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+CommitLog.swift",
+          "line": 8,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "sessions_conversation",
+      "columns": [
+        "id",
+        "provider_identifier",
+        "provider_conversation_id",
+        "created_at",
+        "last_reported_at"
+      ],
+      "meaning": "Provider conversation identity joined into binding; not current native/provider process health.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 82,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Writing.swift",
+          "line": 28,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "sessions_pane_binding",
+      "columns": [
+        "binding_generation_id",
+        "pane_id",
+        "conversation_id",
+        "source_generation_id",
+        "origin",
+        "status",
+        "transition_occurrence_id",
+        "started_at",
+        "ended_at",
+        "committed_revision",
+        "resume_hint",
+        "owner_pane_id"
+      ],
+      "meaning": "Pane binding generations/current ordering and same-transaction writer-generation authority lookup.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 82,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+StatusReads.swift",
+          "line": 7,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Codecs.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "sessions_source",
+      "columns": [
+        "id",
+        "binding_generation_id",
+        "source_identifier",
+        "source_generation_id",
+        "provider_identifier",
+        "provider_version",
+        "provider_mode",
+        "qualification",
+        "status",
+        "last_cursor",
+        "started_at",
+        "ended_at",
+        "committed_revision"
+      ],
+      "meaning": "Source identity/qualification/lifecycle loaded by current context closure even when final summary does not expose all of it.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 133,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Codecs.swift",
+          "line": 23,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "sessions_evidence",
+      "columns": [
+        "occurrence_id",
+        "conversation_id",
+        "binding_generation_id",
+        "source_id",
+        "source_generation_id",
+        "turn_id",
+        "subject_kind",
+        "subject_identifier",
+        "evidence_kind",
+        "origin",
+        "status_effect",
+        "occurred_at",
+        "committed_revision",
+        "admission_sequence",
+        "provider_event",
+        "tool_name",
+        "tool_call_id",
+        "failure_summary",
+        "elicitation_id",
+        "prompt_summary",
+        "has_questions"
+      ],
+      "meaning": "Persisted status replay inputs with commit/admission order and provider signal payload discriminants.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 148,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Codecs.swift",
+          "line": 40,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Writing.swift",
+          "line": 122,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "sessions_provider_question",
+      "columns": [
+        "occurrence_id",
+        "question_index",
+        "question",
+        "header",
+        "multi_select"
+      ],
+      "meaning": "Nested provider question payload loaded when evidence.has_questions is nonzero.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+ProviderQuestions.swift",
+          "line": 30,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "sessions_provider_question_option",
+      "columns": [
+        "occurrence_id",
+        "question_index",
+        "option_index",
+        "label",
+        "description"
+      ],
+      "meaning": "Ordered question options; required to reconstruct provider question equality/permission correlation, despite summary exposing less.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+ProviderQuestions.swift",
+          "line": 44,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_state",
+      "columns": [
+        "id",
+        "kind",
+        "pane_id",
+        "writer_kind/writer_pane_id/writer_provider/writer_session_ref/writer_binding_generation",
+        "write_epoch/write_counter",
+        "updated_at",
+        "title",
+        "summary/work_kind/work_text/step_current/step_total/detail",
+        "expires_at/stale",
+        "detail_revision"
+      ],
+      "meaning": "Current title/line, source revision anchor and maintenance target. detail_revision stored on agentTitle row; line may dynamically be stale from expires_at even before persisted stale changes.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 6,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 145,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_state_action",
+      "columns": [
+        "parent_id",
+        "ordinal",
+        "kind",
+        "path/line",
+        "host/owner/repository/number",
+        "target_pane_id"
+      ],
+      "meaning": "Agent-line refs in current detail/compact display; typed read decoder does not execute these actions.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 38,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Actions.swift",
+          "line": 31,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request",
+      "columns": [
+        "id/pane_id/message_id/position",
+        "sender_kind/sender_pane_id/sender_provider/sender_session_ref/sender_binding_generation",
+        "importance/body/why",
+        "sent_at/source_occurred_at/intent_source_occurred_at",
+        "reason/form_kind/placeholder/allows_multiple",
+        "waiting/deadline/state",
+        "answered_by/answered_at/answer_kind/answer_text/answer_position/receipt/receipt_at",
+        "settled_at/display_hidden"
+      ],
+      "meaning": "Ask intent/form/answer/receipt and retention state; compact projection selects a smaller fixed column list, full detail selects request layout.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 120,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 28,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift",
+          "line": 45,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_event",
+      "columns": [
+        "id/kind/pane_id/position/message_id/subject_id",
+        "sender_kind/sender_pane_id/sender_provider/sender_session_ref/sender_binding_generation",
+        "importance/body/why/notice_state",
+        "sent_at/source_occurred_at/intent_source_occurred_at/settled_at/display_hidden"
+      ],
+      "meaning": "Notice rows plus answer/dismissal/withdrawal change rows share this table; detail includes only kind=notice, change stream uses kind!=notice.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 28,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 151,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+          "line": 36,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request_action",
+      "columns": [
+        "parent_id",
+        "ordinal",
+        "kind",
+        "path/line",
+        "host/owner/repository/number",
+        "target_pane_id"
+      ],
+      "meaning": "Ordered ask actions.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 144,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_event_action",
+      "columns": [
+        "parent_id",
+        "ordinal",
+        "kind",
+        "path/line",
+        "host/owner/repository/number",
+        "target_pane_id"
+      ],
+      "meaning": "Ordered notice actions, queried under kind=notice parent filter.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 42,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 144,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request_choice",
+      "columns": [
+        "request_id",
+        "ordinal",
+        "choice_id",
+        "label"
+      ],
+      "meaning": "Choice form options; fetched only if a loaded request has form_kind=choice.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 48,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Forms.swift",
+          "line": 81,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request_property",
+      "columns": [
+        "request_id",
+        "ordinal",
+        "name",
+        "title",
+        "description",
+        "property_kind",
+        "minimum/maximum (stored text)",
+        "min_length/max_length/format/enum_present"
+      ],
+      "meaning": "Elicitation form property definitions and constraints.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 148,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Forms.swift",
+          "line": 94,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request_property_choice",
+      "columns": [
+        "request_id",
+        "property_ordinal",
+        "ordinal",
+        "value"
+      ],
+      "meaning": "Ordered per-property enumeration values; joined by request and property ordinal.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 64,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Forms.swift",
+          "line": 109,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request_required",
+      "columns": [
+        "request_id",
+        "ordinal",
+        "name"
+      ],
+      "meaning": "Elicitation required property names.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 70,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Forms.swift",
+          "line": 94,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_request_answer_value",
+      "columns": [
+        "request_id",
+        "ordinal",
+        "field_name",
+        "value_kind",
+        "text_value",
+        "integer_value"
+      ],
+      "meaning": "Non-text answered choices/forms; simple text stays on pane_request.answer_text.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 75,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Answers.swift",
+          "line": 51,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_answer_position",
+      "columns": [
+        "pane_id",
+        "session_ref (writerKey string, not necessarily raw provider sessionRef)",
+        "last_reported_position",
+        "ask_sequence"
+      ],
+      "meaning": "Separate reported answer cursor/acknowledgement and committed ask summary sequence. writerKey(session) excludes binding generation; open counts still filter exact sender_binding_generation.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+          "line": 20,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 122,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_write_order",
+      "columns": [
+        "pane_id",
+        "writer_key",
+        "stream",
+        "current_epoch",
+        "last_counter (text)"
+      ],
+      "meaning": "Ordered current-value writer/stream admission; setTitle/setLine update counter inside write transaction.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 172,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_epoch_claim",
+      "columns": [
+        "claim_id",
+        "pane_id",
+        "writer_key",
+        "stream",
+        "epoch",
+        "claimed_at"
+      ],
+      "meaning": "Epoch allocation/replay prerequisite, not normal title/line/detail read; explicitly deleted by retired purge.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 133,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 333,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    },
+    {
+      "name": "pane_retirement",
+      "columns": [
+        "pane_id",
+        "retired_at",
+        "purge_after"
+      ],
+      "meaning": "Durable refusal/retention/purge marker, separate from current graph membership and pending retirement mailbox.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 168,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        }
+      ]
+    }
+  ],
+  "closures": [
+    {
+      "id": "C01",
+      "families": [
+        "S01",
+        "S02"
+      ],
+      "name": "SessionsRepository.statusContext → loadContext(.pane)",
+      "basis": "source",
+      "classification": "pure-sql-context-read",
+      "sql": {
+        "transaction": "read",
+        "readTables": [
+          "sessions_operation",
+          "sessions_conversation",
+          "sessions_pane_binding",
+          "sessions_source",
+          "sessions_evidence",
+          "sessions_provider_question",
+          "sessions_provider_question_option"
+        ],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "From a coherent declared SQL context plus paneId, queries/decoders produce bindings, sources, evidence, revision and binding-start-record set without SQL mutation. This is the current persisted replay input cut, not live status itself.",
+      "nonSQLInputsAndEffects": [
+        "Only SQL/context decode in this closure; current status runtime hydration happens outside it."
+      ],
+      "currentnessAndConstraints": [
+        "Global MAX(sessions_operation.commit_revision), not a per-pane-only max, is captured.",
+        "Bindings join operation/conversation; active before ended, descending committed revision with operation-binding tie and generation ID.",
+        "Evidence joins binding+operation; decoder may load nested questions/options in same database closure.",
+        "Malformed stored IDs/enums/provider payloads throw; all columns under SELECT * are part of actual read even when decoder uses subset."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+StatusReads.swift",
+          "line": 19,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 82,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 133,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 148,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+ProviderQuestions.swift",
+          "line": 30,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Codecs.swift",
+          "line": 40,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "No claim that a copied subset is coherent, fresh, retained sufficiently or equivalent to a running provider. Broader Sessions tables not read by these opened status loaders are not silently included."
+    },
+    {
+      "id": "C02",
+      "families": [
+        "S01",
+        "S02"
+      ],
+      "name": "Sessions runtime restore → reducer → summary/status publication",
+      "basis": "source",
+      "classification": "runtime-reduction-and-publication",
+      "sql": {
+        "transaction": "none in this step; it separately awaits C01/C03",
+        "readTables": [],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "SessionStatusReducer and summary bounding are deterministic folds given complete ordered state/events/inputs; table rows alone are not all inputs. restore mutates in-memory state and summary publication mutates mailbox/atom.",
+      "nonSQLInputsAndEffects": [
+        "C01 persisted context; binding generation/current binding map; admittedAt ContinuousClock.Instant supplied at restore; pending open asks; previous lineWork; latestViewedAt; confirmed live binding set; retired/restored pane sets; current lastRefusal memory.",
+        "Query can start viewed/status ingress, load asks and publish; lastRefusal read consumes mailbox.",
+        "Production status sink applies keyed AgentSessionStatus/remove to MainActor atom; no full summary/generation in publication payload."
+      ],
+      "currentnessAndConstraints": [
+        "Only applied evidence for binding generation replayed in admission order; binding-start record can suppress turnId.",
+        "Restored bindings intentionally lack native/current-process live bound instant; restore preserves prior runtime asks/lineWork/viewed rather than deriving all from evidence.",
+        "NeedsYou reasons precede ended/turn state; done becomes ready only with a later person-view instant in same monotonic domain.",
+        "Prompt list truncation is read projection; reduction uses full prompt state."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionsStatusRuntime.swift",
+          "line": 4,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionsStatusRuntime.swift",
+          "line": 16,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 27,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 191,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift",
+          "line": 174,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionStatusPublicationMailbox.swift",
+          "line": 32,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 325,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "All reducer branches/native source generation not re-audited; exact existing runtime state is not reconstructed from SQL alone."
+    },
+    {
+      "id": "C03",
+      "families": [
+        "S03",
+        "S01"
+      ],
+      "name": "PaneContextService.openAskSummaries → openAskUpdates / openAskUpdate(advancing:false)",
+      "basis": "source",
+      "classification": "pure-sql-ask-count-read",
+      "sql": {
+        "transaction": "read",
+        "readTables": [
+          "pane_request",
+          "pane_answer_position"
+        ],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "After ensureOpen, the read closure can compute generation-qualified approval/question/blocked counts and existing ask_sequence from declared rows/sender keys; no payload bodies/form children required.",
+      "nonSQLInputsAndEffects": [
+        "ensureOpen is separate C09 and can write before the read.",
+        "App bridge maps Core count summary into Sessions input; it is not a page/UI message-count fold."
+      ],
+      "currentnessAndConstraints": [
+        "Enumerates DISTINCT pane/sender tuple from all session-sender requests, then counts state=open for exact sender binding generation.",
+        "Sequence keyed by pane+writerKey; writerKey(session) excludes binding generation.",
+        "No sequence advance in hydration read; Sessions only accepts higher sequence for generation."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 178,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 47,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 122,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 5,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "Full API is not globally side-effect-free because of C09. No provider prompt equivalence or view membership inference."
+    },
+    {
+      "id": "C04",
+      "families": [
+        "S03",
+        "P03"
+      ],
+      "name": "openAskUpdate(advancing:true) inside send/settlement transaction",
+      "basis": "source",
+      "classification": "sql-ask-sequence-mutation",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_request",
+          "pane_answer_position"
+        ],
+        "writeTables": [
+          "pane_answer_position"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "The count/reason fold is pure over rows; the current helper first inserts/increments ask_sequence in the same transaction when advancing=true.",
+      "nonSQLInputsAndEffects": [
+        "Post-commit openAskSink sends committed counts to Sessions; no native view needed."
+      ],
+      "currentnessAndConstraints": [
+        "Generation-qualified count source and writerKey sequence scope differ.",
+        "Only session senders return an update; stale sequence is dropped at Sessions receiver."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 20,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift",
+          "line": 94,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 44,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Parent send/settlement tables are listed in C18/C12; optional send commit participant can add another write set and is explicitly untraced here."
+    },
+    {
+      "id": "C05",
+      "families": [
+        "S04",
+        "P01",
+        "P03"
+      ],
+      "name": "title / line / source revision / line staleness SQL decode",
+      "basis": "source",
+      "classification": "pure-current-value-read-with-explicit-clock",
+      "sql": {
+        "transaction": "read",
+        "readTables": [
+          "pane_state",
+          "pane_state_action"
+        ],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Given coherent selected current-value rows, ordered line-action rows, paneId and explicit now, decoders derive title, AgentLineDetail/refs, source revision and dynamic stale flag without SQL mutation.",
+      "nonSQLInputsAndEffects": [
+        "now is part of lineIsExpired/staleness calculation; native fallback pane.title and UI title selection are outside SQL."
+      ],
+      "currentnessAndConstraints": [
+        "Agent title source revision lives on kind=agentTitle row; absent defaults zero.",
+        "Line selection kind=agentLine AND summary IS NOT NULL; writer fields validated; stored stale OR expiry<=now becomes stale.",
+        "Action refs decode values only, not OS effects."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 6,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 199,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Actions.swift",
+          "line": 31,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 158,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 140,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Does not run expiry persistence, title/line write admission or native action effects."
+    },
+    {
+      "id": "C06",
+      "families": [
+        "S04"
+      ],
+      "name": "PaneContextService.setTitle/setLine write closures",
+      "basis": "source",
+      "classification": "ordered-current-value-write",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_retirement",
+          "sessions_pane_binding",
+          "pane_write_order",
+          "pane_state"
+        ],
+        "writeTables": [
+          "pane_write_order",
+          "pane_state",
+          "pane_state_action"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Current-value decoding/folding can be pure; producing admitted title/line is an ordered state mutation with commit-time authority checks.",
+      "nonSQLInputsAndEffects": [
+        "Runtime membership directory and pending-retirement mailbox required by scopeAdmission.",
+        "Session sender generation checked by Sessions-owned SQL callback inside same Database closure.",
+        "Line post-commit bridge forwards only monitoring to Sessions; refreshDeadline and affected display publication occur after write."
+      ],
+      "currentnessAndConstraints": [
+        "sessions_pane_binding lookup conditional on session writer; pane_state_action replacement conditional on line variant.",
+        "admitWrite requires same epoch and strictly larger counter; it updates last_counter.",
+        "writeLine upserts work/lifetime/stale, deletes/replaces refs; title/line both bump agentTitle revision anchor."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+          "line": 24,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+          "line": 54,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 47,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 57,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 172,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+StatusReads.swift",
+          "line": 7,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 149,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+          "line": 64,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Epoch claim allocation/replay exists separately on pane_epoch_claim/pane_write_order and was reused only as prerequisite; no complete writer/credential/provenance audit."
+    },
+    {
+      "id": "C07",
+      "families": [
+        "P01"
+      ],
+      "name": "computeDisplay → capturePaneContextDisplay write closure",
+      "basis": "source",
+      "classification": "maintenance-write-followed-by-present-view-fold",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_retirement",
+          "pane_state",
+          "pane_state_action",
+          "pane_request",
+          "pane_event"
+        ],
+        "writeTables": [
+          "pane_state",
+          "pane_request",
+          "pane_event"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Message classification/count fold and time visibility decisions are pure given projected rows, ordered sources and explicit now. Actual current API persists expiry/hiding, so whole capture is not a pure query.",
+      "nonSQLInputsAndEffects": [
+        "Session summary awaited before SQL and included in in-memory detail version (not output display field).",
+        "Membership view captures owner+owned drawer sources outside SQL; after SQL capture computeDisplay checks current membership sources/revision and may recompute.",
+        "Publication changes desired mailbox and atom; failed read preserves desired state."
+      ],
+      "currentnessAndConstraints": [
+        "Reads compact request/noticeProjection layouts, not full form/answer children; agentLine refs still read pane_state_action.",
+        "expireLines selects due nonretired agentLine and writes stale=1 plus source revision.",
+        "hideSettled writes display_hidden on selected request/notice rows and bumps source revision.",
+        "Counts own vs includingDrawers follow present source order, not provider session identity."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift",
+          "line": 106,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift",
+          "line": 17,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 131,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 256,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 312,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneMessageCountFold.swift",
+          "line": 33,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "Retention policy sources/time must accompany a fold; coherent SQL alone does not supply current present-view membership or independently captured session runtime."
+    },
+    {
+      "id": "C08",
+      "families": [
+        "P02"
+      ],
+      "name": "membership directory view / graph publication",
+      "basis": "source",
+      "classification": "runtime-present-view-aggregation",
+      "sql": {
+        "transaction": "none",
+        "readTables": [],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Given explicit membership installation/changes and versioned sources, directory source selection and affected-owner fold can be repeated without SQL; current graph producer owns those inputs.",
+      "nonSQLInputsAndEffects": [
+        "Workspace canonical graph presence/placement/ownedDrawerChildIds and workspace ID, plus per-owner membership revision.",
+        "Mailbox pending affected owners and retired/removed publication state are runtime.",
+        "No current native host/window/surface availability encoded by graph membership."
+      ],
+      "currentnessAndConstraints": [
+        "Layout parent gets [self]+validated owned children; non-layout entry gets self only.",
+        "Graph commit stamps affected membership versions and retained pending invalidations; wake coalescing does not itself lose retained affected-owner set.",
+        "Present-view grouping is distinct from binding/session truth."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextMembershipDirectory.swift",
+          "line": 52,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextMembershipDirectory.swift",
+          "line": 85,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspacePaneGraphAtom.swift",
+          "line": 884,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "Canonical graph persisted-table closure is outside this bounded context-table pass; no copied core table set selected."
+    },
+    {
+      "id": "C09",
+      "families": [
+        "P01",
+        "P03",
+        "S03"
+      ],
+      "name": "ensureOpen startup settlement / pending retirement drain",
+      "basis": "source",
+      "classification": "conditional-lifecycle-write",
+      "sql": {
+        "transaction": "startup write; pending retirement drain separate write",
+        "readTables": [
+          "pane_request",
+          "pane_event",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value",
+          "pane_answer_position"
+        ],
+        "writeTables": [
+          "pane_request",
+          "pane_state",
+          "pane_answer_position",
+          "pane_retirement"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row.",
+        "doesNotWrite": [
+          "pane_event during .appStopping settlement",
+          "answer-value children for .appStopping"
+        ]
+      },
+      "pureReadOrFoldBoundary": "These are service maintenance transitions, not pure reading. The SQL read portions identify open blocking asks/retirement work; applying service incarnation/startup policy changes retained state.",
+      "nonSQLInputsAndEffects": [
+        "On first opening, all open blocking asks selected and settled using .appStopping cause; pending retirement mailbox entries insert durable marker in separate write.",
+        "Opening token/task and didOpen gate are process-local; post-commit waiter/openAsk publication and presentation/deadline start are separate runtime effects."
+      ],
+      "currentnessAndConstraints": [
+        "Startup .appStopping cause does not call currentBindingGeneration initial-answer callback; it does not append change rows because changeKind=nil.",
+        "Settlement reads full existing ask+children and nextPosition across request/event, writes terminal request state/position/settled_at and revision, advances ask_sequence for session sender.",
+        "Retirement write closure only inserts pane_retirement; it is not the same transaction as startup settlement.",
+        "First successful ensureOpen calls refreshDeadline then startPresentation; constructor starts the retirement-wake drain but does not eagerly open the service. A retirement wake can call ensureOpen even without a visible popover. Startup failure clears opening for a later demand; failed retirement commit requeues pending panes."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 93,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift",
+          "line": 55,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 159,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 78,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 299,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Union table reads conditional by existing ask form/answer; startup settlement of open asks does not need existing non-text answer children in normal open-state branch although full mapper can load them. Full service stop/recovery semantics not audited."
+    },
+    {
+      "id": "C10",
+      "families": [
+        "P03"
+      ],
+      "name": "capturePaneContextDetail read closure + nested full-message mapper",
+      "basis": "source",
+      "classification": "pure-detail-snapshot-read",
+      "sql": {
+        "transaction": "read",
+        "readTables": [
+          "pane_retirement",
+          "pane_state",
+          "pane_state_action",
+          "pane_request",
+          "pane_event",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value"
+        ],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Given one coherent table cut, explicit paneId/ordered sources/now and policies, capturePaneContextDetail and typed child decoders can read/fold without SQL writes. They filter hidden/aged/capped settled rows in memory and compute stale/read-time versions.",
+      "nonSQLInputsAndEffects": [
+        "Before closure: ensureOpen C09 and separately awaited SessionSummary C02; membership view and pending retirement supplied outside SQL.",
+        "After closure: service detailRevision mutates in-memory map; page budget/cursor assembly is pure given snapshot/request/budget."
+      ],
+      "currentnessAndConstraints": [
+        "12-table possible read set includes seven message child tables plus pane_state_action; child queries conditional on loaded rows/forms/non-text answers.",
+        "Full child query uses parent subquery with fixed pane/ID parameter and ORDER BY ordinal; no GRDB Row escapes closure.",
+        "No pane_answer_position read in ordinary detail snapshot; no receipt confirmation/mark-read.",
+        "Detail read checks source/page membership before awaits and retirement afterward; unlike computeDisplay it does not show a current-membership source/revision recheck after SQL. Session runtime and SQL snapshot are not one combined captured transaction."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+          "line": 27,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+          "line": 72,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 28,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 120,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Forms.swift",
+          "line": 81,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Answers.swift",
+          "line": 51,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Actions.swift",
+          "line": 37,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "No claim copied data has coherent cut/current membership/session; snapshot retention/revision incarnation is not established."
+    },
+    {
+      "id": "C11",
+      "families": [
+        "P03",
+        "P04"
+      ],
+      "name": "pane.message.changes reported-position / answer-receipt transaction",
+      "basis": "source",
+      "classification": "acknowledgement-and-pruning-write",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_retirement",
+          "pane_answer_position",
+          "pane_request",
+          "pane_event",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value"
+        ],
+        "writeTables": [
+          "pane_answer_position",
+          "pane_request",
+          "pane_event",
+          "pane_state"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Returned page selection can be folded from explicit rows/cursor/budget; current operation also acknowledges reported progress, confirms receipts, prunes aged changes and publishes updated display. Those effects are not reproduced by a read.",
+      "nonSQLInputsAndEffects": [
+        "Writer resolved from current Sessions/pane provenance before service changes; scopeAdmission uses runtime membership/pending retirement plus SQL marker.",
+        "After commit, publishAffectedSources if any receipt confirmed."
+      ],
+      "currentnessAndConstraints": [
+        "last_reported_position updated with MAX; confirms only matching writerKey whose answer_position<=reported position.",
+        "pane_request receipt='confirmed',receipt_at=now and agentTitle detail_revision bump; nextPosition return alone is not confirmation.",
+        "pane_event non-notice rows are filtered by writer; aged acknowledged entries deleted. Answer event reconstructs full current message via nested mapper; not pure log payload.",
+        "No statement here executes provider action after answer delivery."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+          "line": 100,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 6,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageChildren.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 145,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Optional child-table cascading for deleted event actions is schema-driven; concrete write set lists explicit statements, not an exhaustive trigger/cascade audit."
+    },
+    {
+      "id": "C12",
+      "families": [
+        "P03",
+        "P04",
+        "S03"
+      ],
+      "name": "person answer/dismiss/withdraw settlement transaction",
+      "basis": "source",
+      "classification": "person-or-caller-input-mutation",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_request",
+          "pane_event",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value",
+          "sessions_pane_binding",
+          "pane_answer_position"
+        ],
+        "writeTables": [
+          "pane_request",
+          "pane_request_answer_value",
+          "pane_event",
+          "pane_answer_position",
+          "pane_state"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Decoding existing message/form and answer validation can be pure given complete inputs; choosing .answer/.dismiss/.withdraw/.callerGone/.deadline/.appStopping is an authoritative transition, not a query.",
+      "nonSQLInputsAndEffects": [
+        "Actual person answer values/cause and now; for .answer a current Sessions binding lookup in same SQL database chooses notYetConfirmed vs unconfirmed.",
+        "After commit waiters settle, committed open-ask summary forwarded, deadlines refreshed and display republished.",
+        "Pane-location versus sidebar permission is enforced in UI controller before person port; service transaction is separate."
+      ],
+      "currentnessAndConstraints": [
+        "Open-state guard prevents replacing settled ask; answer validated against actual current form.",
+        "appendChange inserts pane_event for answer/dismissal/withdrawal; simple text stored on request, choices/forms in answer_value children.",
+        "request state/position/settled_at, answered_by/at/kind/text/answer_position/receipt updated; bump revision + ask_sequence advance.",
+        "Current binding table read conditional on .answer only; other causes do not call initialAnswerReceipt."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 68,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 87,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextAskSettlement.swift",
+          "line": 104,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 151,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Answers.swift",
+          "line": 13,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 136,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "Complete caller credential/provenance, ask-wait race and form semantic validation not re-audited; no response/presentation conflated with downstream answer use."
+    },
+    {
+      "id": "C13",
+      "families": [
+        "P03",
+        "P04"
+      ],
+      "name": "explicit notice markRead / notice dismiss state write",
+      "basis": "source",
+      "classification": "person-notice-state-mutation",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_request",
+          "pane_event",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value"
+        ],
+        "writeTables": [
+          "pane_event",
+          "pane_state"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Ordinary notice/detail reads do not mark read. markRead explicitly loads message, checks unread notice, changes notice_state/settled_at/position and revision; dismiss can additionally append a dismissal event.",
+      "nonSQLInputsAndEffects": [
+        "User/controller action is an independent input; UI then refreshes detail.",
+        "No app/native rendering receipt is implicit in stored notice state."
+      ],
+      "currentnessAndConstraints": [
+        "Full message lookup can read conditional ask children even when requested operation eventually rejects non-notice; successful notice branch only needs its event/actions plus nextPosition query across request/event.",
+        "Already read is separate from changed; markRead passes change:nil, dismiss passes change='dismissal'."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 100,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 144,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 235,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 181,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "DismissAllNotices aggregate transaction is named in UI but not expanded in this pass; full action-effect ports untraced."
+    },
+    {
+      "id": "C14",
+      "families": [
+        "S01",
+        "S04",
+        "P01",
+        "P03"
+      ],
+      "name": "sessionEnded(bindingGenerationId) line/receipt maintenance",
+      "basis": "source",
+      "classification": "binding-lifecycle-maintenance-write",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_state",
+          "pane_request"
+        ],
+        "writeTables": [
+          "pane_state",
+          "pane_request"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Reads can inspect stale/unconfirmed facts, but current session-ended maintenance changes them; it is not SQL status replay or a pure projection.",
+      "nonSQLInputsAndEffects": [
+        "Sessions applyCommittedHook calls sessionEnded for superseded/sessionEnd generation through actual App bridge; command-exit path also exists but not fully traced.",
+        "After commit sends nil monitoring line input and republishes affected display."
+      ],
+      "currentnessAndConstraints": [
+        "pane_state stale=1 for generation's agentLine rows, revisions bumped for affected panes.",
+        "pane_request receipt notYetConfirmed → unconfirmed for generation; revisions bumped. No change event appended and no answer acknowledgement generated."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 153,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 113,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+          "line": 41,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 38,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "All natural-exit/provider-lifecycle producer branches and retry/failure semantics not audited; SQL row copy alone does not announce a current generation ended."
+    },
+    {
+      "id": "C15",
+      "families": [
+        "S01",
+        "S02"
+      ],
+      "name": "provider hook transaction producing persisted replay rows",
+      "basis": "source",
+      "classification": "provider-input-transaction",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "sessions_operation",
+          "sessions_pane_binding",
+          "sessions_conversation",
+          "sessions_source"
+        ],
+        "writeTables": [
+          "sessions_operation",
+          "sessions_conversation",
+          "sessions_pane_binding",
+          "sessions_source",
+          "sessions_evidence",
+          "sessions_provider_question",
+          "sessions_provider_question_option"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Reducer can decide a candidate reduction from explicit hook/context/live-confirmation inputs; current applyHook is a SQL write transaction producing operation, conversation/binding/source/evidence/question rows.",
+      "nonSQLInputsAndEffects": [
+        "Fresh hook record ID/provider event/time/ownerPane input, source qualification and process-local confirmedLiveBindingIds.",
+        "Ingestion applies committed outcome to runtime status and publishes afterward. Ignored reduction returns without operation write."
+      ],
+      "currentnessAndConstraints": [
+        "loadContext(.bind) intentionally loads no prior evidence history; it reads bindings/current source/conversation plus revision.",
+        "write set conditional on reducer changes; writeProviderQuestions only when payload has questions.",
+        "Optional SessionsCommitParticipant may write additional tables in same transaction; not enumerated here.",
+        "endLiveBinding separately writes operation,binding,source after expected active generation check; not status-read API."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift",
+          "line": 8,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift",
+          "line": 50,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 39,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+CommitLog.swift",
+          "line": 8,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Writing.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+ProviderQuestions.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Provider qualification/reducer full semantics and arbitrary participant closure excluded. Current write set does not imply every source/evidence table is a future copied-data requirement."
+    },
+    {
+      "id": "C16",
+      "families": [
+        "P01",
+        "P03",
+        "S04"
+      ],
+      "name": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+      "basis": "source",
+      "classification": "time-and-retention-maintenance",
+      "sql": {
+        "transaction": "separate read deadline closure; write timed maintenance closure",
+        "readTables": [
+          "pane_request",
+          "pane_event",
+          "pane_state",
+          "pane_retirement",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value"
+        ],
+        "writeTables": [
+          "pane_request",
+          "pane_event",
+          "pane_state",
+          "pane_answer_position",
+          "pane_retirement",
+          "pane_write_order",
+          "pane_epoch_claim"
+        ],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row.",
+        "writeSetCaveat": "Explicit SQL statement targets; request/event/state child cascades are additional schema behavior, not an exhaustive cascade audit."
+      },
+      "pureReadOrFoldBoundary": "MIN deadline selection and hidden-set/expiry decision are pure given rows and explicit policies/now; current scheduler callback commits settlements, line expiry, hiding and purge, and publishes changed sources.",
+      "nonSQLInputsAndEffects": [
+        "Injected clock/wallNow, deadlineRefreshGeneration, owned scheduler callback and retirement policy.",
+        "Deadline selection itself reads only request,state,event,retirement in separate read closure; timed write is another transaction.",
+        "Production composition injects ContinuousClock and Date wallNow. First successful ensureOpen refreshes deadline; send, settlement, setLine, retirement drain, sessionEnded and successful timed work refresh it subsequently."
+      ],
+      "currentnessAndConstraints": [
+        "Timed settlement uses .deadline; full message/child reads conditional. It does not need current binding lookup unless answer cause, absent here.",
+        "purge deletes seven direct parent/state/order tables for due pane; child tables cascade by schema, not individually deleted in explicit loop.",
+        "Current write-union does not include all FK cascade targets; those are listed in child dependency closure.",
+        "refreshDeadline reads MIN of blocking ask deadline, live line expiry, retirement purge_after and settled request/notice visibility expiry. Its generation check suppresses stale reads; a nil deadline clears the current scheduler sleeper.",
+        "RepositoryRetentionScheduler retains one cancellable sleeper and one admitted validation task. schedule cancels/joins the prior sleeper; fire clears pending deadline before callback; successful callback's refresh may set the next deadline while validation runs.",
+        "refreshDeadline read failure is swallowed with later-demand retry; deadlineReached write failure publishes nothing and does not itself call refreshDeadline. No dedicated retry/backoff is present; a concurrent independently requested refresh may still have left pending work.",
+        "Service stop cancels membership/retirement ingress, joins scheduler shutdown, and attempts blocking-ask .appStopping settlement. Scheduler shutdown cancels/joins sleeper and awaits admitted validation.",
+        "Source classification only: once armed the scheduler can maintain rows without popover demand; this does not prove a never-opened or failed service progresses without another demand. Removing display read-side writes alone does not establish equivalent no-client behavior."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 76,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 114,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 256,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 312,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 333,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 78,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 138,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/Retention/RepositoryRetentionScheduler.swift",
+          "line": 19,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/Retention/RepositoryRetentionScheduler.swift",
+          "line": 43,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/Retention/RepositoryRetentionScheduler.swift",
+          "line": 59,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 193,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 309,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 44,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Source-only scheduler/cancellation/failed-service liveness; no runtime timer execution or never-opened-client behavior observed. Full trigger/cascade behavior beyond the named schema relationships is not audited."
+    },
+    {
+      "id": "C17",
+      "families": [
+        "P04",
+        "P03",
+        "P01"
+      ],
+      "name": "UI popover paging/shaping/observation and compact publication sink",
+      "basis": "source",
+      "classification": "client-model-fold-and-observation",
+      "sql": {
+        "transaction": "none in consumer; awaited reader/service transacts elsewhere",
+        "readTables": [],
+        "writeTables": [],
+        "tableSetScope": "Union of direct SQL and named helper branches opened for this closure; conditional tables remain conditional, not a claim every call touches every row."
+      },
+      "pureReadOrFoldBoundary": "Paging merge, budget projection and count/shape functions can fold explicit typed data; current controller also mutates local request generation/retained detail/open state and reads current local titles.",
+      "nonSQLInputsAndEffects": [
+        "UI pane/location/open state, current service adapter, request generation and titleForPane; sidebar/pane action restrictions.",
+        "Current display revision triggers refresh; person actions separate C12/C13; UI close/retire rejects stale awaited results.",
+        "Production publication mailbox/atom accepts desired latest values and removals; copying SQL is not observation of what a native view has applied."
+      ],
+      "currentnessAndConstraints": [
+        "Later pages merge only same pane+same detail revision; otherwise restart first.",
+        "After await generation/pane guard applies; sourceNotInView drops source and restarts.",
+        "No SQL in paging/controller/shaping boundaries; reader call reaches C09/C10/C02, not a page-local DB snapshot."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 95,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverPaging.swift",
+          "line": 9,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextUIReaders.swift",
+          "line": 30,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 72,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "remainingGap": "Full SwiftUI rendering, draft forms, every UI action effect and cross-client audience remain untraced."
+    },
+    {
+      "id": "C18",
+      "families": [
+        "S03",
+        "P03"
+      ],
+      "name": "message send producer / same-intent replay / form and action writes",
+      "basis": "source",
+      "classification": "producer-write-and-post-commit-publication",
+      "sql": {
+        "transaction": "write",
+        "readTables": [
+          "pane_request",
+          "pane_event",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_request_answer_value",
+          "pane_retirement",
+          "sessions_pane_binding",
+          "pane_answer_position"
+        ],
+        "writeTables": [
+          "pane_request",
+          "pane_event",
+          "pane_state",
+          "pane_request_action",
+          "pane_event_action",
+          "pane_request_choice",
+          "pane_request_property",
+          "pane_request_property_choice",
+          "pane_request_required",
+          "pane_answer_position"
+        ],
+        "tableSetScope": "Explicit service/storage statements and nested helper tables; conditional same-intent/full-mapper reads, ask versus notice and form branches remain conditional.",
+        "writeSetCaveat": "Optional PaneContextCommitParticipant runs inside this same transaction after same-intent validation or new insert; its additional tables are not included."
+      },
+      "pureReadOrFoldBoundary": "Same-intent equality, cap decision and typed message/form decoding are folds given row set, input request and policies. The current send transaction creates message/form/action rows, advances positions/revision and ask sequence; it is not a read.",
+      "nonSQLInputsAndEffects": [
+        "Validated sender/request including message ID, person-independent producer content/form/actions; current runtime membership and pending retirement admission; current binding generation SQL check for asks; now and source-future-skew policy; fresh row UUIDv7.",
+        "After commit, openAskSink updates Sessions; newly created result refreshes deadlines and publishes affected source."
+      ],
+      "currentnessAndConstraints": [
+        "Idempotent same-intent replay can invoke commit participant but does not produce new open-ask update or normal created publication.",
+        "Counts cap current open asks or unread notices. Record position is MAX across pane request/event +1, and answer position uses separate writer-scoped reporting.",
+        "Fresh record inserts request/event and conditional child form/actions. Normal fresh open ask has no answer-value rows; same-intent full mapper can read existing answer children."
+      ],
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 11,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 81,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Messages.swift",
+          "line": 122,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Forms.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+Actions.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "remainingGap": "Optional commit participant's extra write set and complete producer credential/provenance are not traced; no transport or delivery success claimed."
+    }
+  ],
+  "crossBoundaryFindings": [
+    {
+      "basis": "source",
+      "claim": "Status-context SQL reads seven table families including nested question/options and operation ordering. The runtime current status also depends on live binding confirmation, admitted monotonic instants, viewed/retired ingress, open asks, monitoring line and refusal memory; persisted evidence is a replay prerequisite, not the complete current projection.",
+      "closures": [
+        "C01",
+        "C02",
+        "C03",
+        "C15"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Compact display uses five SQL tables and persists expiry/hiding; full detail has a pure SQL read over twelve table families, including seven message child tables. Both service entry points can perform opening/retirement side effects first.",
+      "closures": [
+        "C07",
+        "C09",
+        "C10"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Changes reports and acknowledges a writer-scoped position, confirms receipts and prunes retained events. Detail rendering does not acknowledge that stream; UI markRead and answer are explicit effects.",
+      "closures": [
+        "C10",
+        "C11",
+        "C12",
+        "C13"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Generation end stales agent lines and changes pending receipts to unconfirmed. Ask open-summary sequence and answer-reported position are separate columns in the same pane_answer_position row family.",
+      "closures": [
+        "C03",
+        "C04",
+        "C11",
+        "C14"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Present-view owner/drawer grouping and local consumer generations are distinct from session binding/evidence truth and from native host/window/surface availability.",
+      "closures": [
+        "C08",
+        "C10",
+        "C17"
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Existing scheduler is lazily armed through ensureOpen/refreshDeadline and later mutations; timed commits run independently after arming, with no dedicated automatic retry loop after caught failures. Equivalent no-client behavior is not established by removing only read-side writes.",
+      "closures": [
+        "C09",
+        "C16"
+      ]
+    }
+  ],
+  "unresolvedAndUntraced": [
+    "Coherent copied-data cut, ordering across copied parent/child rows, incarnation/revision continuity and source freshness; no target copying contract selected.",
+    "Canonical workspace graph's full persisted-table/restore closure; only current membership publication/source selection reused.",
+    "Every provider qualification/liveness producer, every SessionStatusReducer branch, provider spool/socket chain and all source generation transitions.",
+    "Optional Sessions commit participant and PaneContextCommitParticipant additional table writes.",
+    "Complete schema migration/trigger/cascade audit; named message child foreign-key relationships read, not every database object.",
+    "Every UI form/action effect, native actionRunner execution and full SwiftUI view tree.",
+    "Runtime timer liveness under failure, never-opened service progression, SQL isolation under concurrent live inputs and rendering/transport/application readiness."
+  ],
+  "checks": {
+    "expectedFamilies": [
+      "S01",
+      "S02",
+      "S03",
+      "S04",
+      "P01",
+      "P02",
+      "P03",
+      "P04"
+    ],
+    "familyCount": 8,
+    "closureCount": 18,
+    "tableCount": 22,
+    "duplicateClosureIds": [],
+    "duplicateTableNames": [],
+    "unknownTableReferences": [],
+    "missingFamilyIds": [],
+    "extraFamilyIds": [],
+    "runtimeOrBuildChecks": "none; prohibited by source-only commission"
+  }
+}

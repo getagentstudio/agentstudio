@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current Advisor E2 challenge</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-e2-challenge-86f5a6c0.html">AgentStudio daemon · Current Advisor E2 challenge</a></nav></ex-nav>
+<ex-document id="content"><h1>Current Advisor E2 challenge</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-e2-challenge.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current Advisor E2 challenge
+
+Source push: `01a1424d-4287-72c3-85f3-36d682dabd77`. Sender: owner-selected background Advisor `claude-local/34f18df3-a0aa-4472-9b76-7dbfe813d46b`. Advice and source inspection only; no execution or owner authority. The following body is preserved as received; the Lead's disposition is separate.
+
+🦉 Advisor E2 challenge, re 01a14249. This is advice: not owner authority, not proof. Nothing was run.
+
+READ THIS SESSION, IN FULL: e2-effect-boundaries (63 lines), e2-app-rpc-evidence (84), e2-git-operation-evidence (200), e2-bridge-operation-evidence (186).
+SOURCES OPENED:
+- AppIPCTypedMethodRegistration.swift:160-200
+- AgentStudioIPCClientCore.swift:247-265
+- AgentStudioAppIPCRequestError.swift:60-80
+- BridgeProductSession+Operations.swift:1-30, 177-187, 205-240, 410-450
+- BridgeProductSession.swift:652-663
+- BridgeProductSchemeControlDispatcher.swift:100-170
+- BridgePaneProductSchemeProvider.swift:278-310
+- WorktreeAnnotationServiceActor.swift:262-360, 543-555
+- WorktreeAnnotationOutputEffects.swift:98-150
+- WorktreeAnnotationSQLiteRepository+Output.swift:245-290, 430-470
+- agentstudio-git LibGit2StagedFetchPromoter.swift:55-140 and SystemGitRemoteClient+StagedFetchCleanup.swift:1-80
+
+VERDICTS. All five are ACCEPTED; four get an amendment.
+
+1. Wrapper success vs payload/commit: ACCEPT.
+- The handler is awaited, then encodeResult runs (Registration:195-200). Bridge settlement maps any non-requestError to succeeded (+Operations:423-440).
+- AMEND: the client turns ANY error response into remoteFailure (ClientCore:250-256). Only a missing result or an invalid typed result becomes deliveryUncertain.
+- So if the server fails to encode after an effect, the client sees a definite-looking failure, not uncertainty. The app-RPC "L" qualification covers wire loss only.
+- UNPROVED: the exact JSON-RPC code the server emits for AppIPCTypedMethodRegistrationError. I did not open its default mapping branch; internal error -32603 is likely.
+
+2. source.refresh commit-then-stale: ACCEPT.
+- The commit is at ServiceActor:334. currentness is recomputed at :352-353, and the throw is at :274-276.
+- AMEND (a): the SAME staleSourceEpoch is thrown by the pre-commit guards (:285, :293, :304, :313, :316) and after the commit (:275). The error alone can never discriminate; the oracle needs a revision/relationship readback.
+- AMEND (b): publishCorrelatedMutation emits committed invalidation (:553-554) before refreshSource throws, so the projection can advance under a returned error.
+- AMEND (c): the fence is written at :307, before any await. A refresh that fails before the commit (fetch error, or the :313/:316 guards) still uses up its epoch, and a same-epoch retry is then refused at :300-304 with nothing written. The fence is process-local, so this behaves differently after a restart.
+
+3. Provider before generic completion, and the revocation/SQL limit: ACCEPT.
+- Provider:295-307 awaits applyWorktreeAnnotationCommand. The dispatcher marks dispatch (:121), awaits provider.response (:124), and only then rechecks admission (:128).
+- AMEND: revocation after the provider settles through settleControlProviderDispatch (BridgeProductSession:652-663). That returns outcomeUnknown only for mutation-flagged operations; everything else gets failed. Expiry behaves the same (+Operations:217-226).
+- Install admission is flagged non-mutation (+Operations:16) but changes install authority inside the provider. So a generic failed is NOT a no-effect oracle for install admission. UNPROVED: whether that authority survives the revocation.
+- The reverse also holds: nested annotation reads are flagged mutation, so on expiry or revocation they settle outcomeUnknown with no effect. The oracle must not read unknown as an effect.
+
+4. Output attempt vs session operation identity/custody: ACCEPT.
+- The JSON admission gate is at OutputEffects:122. The detached write (:129-131) is awaited at :133, and caller cancellation does not reach it.
+- A repeat is allowed only from unknown (+Output:258-260), with lineage recorded.
+- AMEND: startup recovery marks EVERY prepared attempt unknown (+Output:435-442), with no process or incarnation scope. That is safe with exactly one writer process.
+- If a restarted owner overlaps a predecessor that is still finishing its detached JSON write, or any second writer shares the store, a live attempt becomes unknown. An explicit repeat could then duplicate an effect that is still completing.
+- E2d therefore needs a precondition: predecessor extinction is verified, or the store is exclusively owned, before recovery runs.
+
+5. Staged promotion and page cleanup partial effects: ACCEPT, no amendment.
+- A commit error throws remoteRefTransactionIndeterminate (Promoter:65-70).
+- Cleanup commits page by page (Cleanup:12-22, 41-61), and a thrown error discards the accumulated deletedRefNames.
+- Re-enumerating the namespace is the only receipt.
+
+MISSING DISCRIMINATORS (four cases, each with an independent effect readback)
+M1. Inject a post-effect result-encoding failure on an effect-bearing method such as pane.message.send. The client sees remoteFailure; readback shows the committed row.
+M2. source.refresh, two arms:
+- (a) change demand during the setSourceRelationship await: stale plus a committed revision;
+- (b) a pre-commit failure, then a same-epoch retry: refused with no write.
+M3. Expire or revoke after the provider:
+- during install admission: generic failed, with authority possibly applied;
+- during a nested annotation read: outcomeUnknown with no effect.
+M4. Start a second or restarted owner while a detached JSON write is in flight. Verify the attempt is not flipped to unknown under a live write, or that the extinction precondition is enforced.
+
+E4 FLY ENVIRONMENT
+Yes, qualification needs more than kernel, filesystem, mount, clone, metadata and privilege facts. The Fly specifics below are general knowledge; UNVERIFIED, so check them against Fly docs.
+(a) Privilege split. Fly Machines run as root by default. Run every probe as an unprivileged uid that represents the Host's product identity; use root only to build fixtures (loop images, mounts). Root hides permission-dependent parity: chown, trusted xattrs, ACLs on unowned files, immutable flags, fanotify filesystem marks.
+(b) Lifecycle pinning. Fly auto-stop and auto-suspend and restart policy must be off, or used deliberately as an arm. Otherwise an unplanned reboot (new boot_id) or a suspend/resume (clock jump, dropped connections, preserved boot_id and start times) contaminates E4b identity and E2d restart results. Record boot_id per run.
+(c) Fly controls the kernel. Record the exact kernel, /proc/filesystems, loop device and module availability, and mkfs tooling per run. You can record the kernel but not choose it; results bind to that profile.
+(d) Filesystem profiles. Volumes and rootfs are likely ext4 only, so a "supports clone" profile needs loopback btrfs or XFS reflink, which depends on guest kernel support. Qualify that first. If it is missing, Fly supplies only the refusal profile.
+(e) Isolation:
+- a dedicated Fly app with no public services;
+- no credentials or network Git remotes inside the VM; use local or file:// remotes for the remote-op rows;
+- teardown includes volumes, which outlive a machine. Destruction needs owner approval under the guardrails.
+(f) Fly is not an E5-representative network path. Its WireGuard and anycast route is not the owner's Tailscale topology, so reuse it for latency claims only if the owner says so.
+
+No files, builds, tests, agents or execution. The placement question has not been re-asked.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

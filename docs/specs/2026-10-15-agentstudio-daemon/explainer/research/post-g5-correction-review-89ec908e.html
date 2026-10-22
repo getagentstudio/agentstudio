@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Post-G5 correction check — specification-only</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="post-g5-correction-review-89ec908e.html">AgentStudio daemon · Post-G5 correction check — specification-only</a></nav></ex-nav>
+<ex-document id="content"><h1>Post-G5 correction check — specification-only</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/post-g5-correction-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Post-G5 correction check — specification-only
+
+🔎 Review Sidekick (claude-local `dbc4bd86-6854-40da-9097-0a2295d4243d`), resuming the
+existing spec-program-review cycle for the 🦁 Lead. Commission: Lead push
+`01a14509-b3aa-7fb2-b81b-c429bf8c49b5`; status follow-up `01a14520-c31d`.
+
+This is the single correction check against the frozen set. It is not a new review round and
+not a confidence round. I edited no target. I ran no build, test, render or probe. This report is
+the only file I wrote.
+
+## 1. Target identity and integrity
+
+HEAD is `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. All four targets were re-hashed at hand-back
+and match `post-g5-correction-packet.md`:
+
+| File | Lines | sha256 |
+| --- | --- | --- |
+| `user-requirements.md` | 121 | `1461cb1d…aac2e7` |
+| `2026-10-15-agentstudio-daemon.md` (spine) | 212 | `7a92760a…cd73` |
+| `domain-entities.md` | 114 | `65b51806…038d` |
+| `capability-contracts.md` | 259 | `8ab1a17e…44bb` |
+
+Other integrity checks:
+
+- **Correction diff.** Earlier in this session I checked `post-g5-correction.diff` against the
+  change from baseline to current. Sorting the added and removed lines leaves only blank-line
+  layout artifacts.
+- **Original sources.** Their hash archive is unchanged.
+- **Excluded PNGs.** The four `docs/images/agent-studio-*` files are still modified by someone
+  else, as before. I did not touch them.
+
+**Read whole:** all four targets; the packet; the earlier report's F1–F6 text and closing
+section; `owner-service-corrections.json`; and Advisor board message `01a144f8-a42b`.
+
+**Viewed as pixels:** the five re-rendered assets: `requirements-context`,
+`specification-context`, `service-instance-identity`, `agent-view-identity` and
+`capability-map`.
+
+## 2. Per-check status
+
+| Check | Status | Coverage / reason |
+| --- | --- | --- |
+| mode-complete (specification-only) | complete | All four files were read whole at the frozen hashes. The S14–S18 meaning was traced through U/R/E/K/G/V and the trace rows. |
+| chunk passes | complete | Not selected: about 706 lines fit in one whole-set pass, and no seam needed separate coverage. |
+| proof-challenge | complete | Not selected. The design states proof obligations (V1–V6) and claims no executed proof. I had no runtime grant. The packet's "69 checks, zero errors" and its render exit codes are Lead claims I did not re-run (unverified). Instead I checked each PNG's pixels against its Mermaid source; all five match. |
+| dispel | complete | See §5. |
+| focused: specification authority (S16 Mac-local CLI route; S18 phrasing) | complete | Produced N1 and observation O-1. |
+| focused: contract (R1/R12/U17 frontend boundary) | complete | Merged into N1. |
+| other focused checks | complete | Not selected: no named risk remains outside N1. |
+
+## 3. F1–F6 dispositions (each anchor reopened, whole edit read)
+
+All six F findings are resolved.
+
+**F1** — U15 revocation clause.
+- U15 (Requirements L45) no longer says "independently revocable".
+- K14 (L224) now calls it a "baseline foundation, not an owner-selected independently-revocable cross-service policy".
+- No new defect.
+
+**F2** — MainActor instruction.
+- U13 (L43) quotes "nothing is in main actor".
+- S7 (L61) quotes the full owner sentence verbatim.
+- K11 (L188) has its home.
+- No new defect.
+
+**F3** — context diagrams.
+- The Requirements diagram (L9–17) lists the S13 consumers around one opaque system: CLI, the Swift app, iOS, MCP, in-session agent/hook and operator. The specification diagram (L35–45) does the same.
+- MCP is separate from Host-local input.
+- The PNGs match their sources.
+- No new defect for F3 itself. The specification diagram's actor "Host-local CLI / in-session agent" carries N1 (§4).
+
+**F4** — R8 link.
+- `user-requirements.md:37` is the U7 row.
+- Survey `:128` is the Git/worktree inventory heading (33 + 10 + 1 = the forty-four operations K1 cites).
+- Survey `:84` is the IPC/CLI inventory heading (57 RPC names, as K2 cites).
+- No new defect.
+
+**F5** — L81 presupposing G5.
+- Requirements L92, item 9 (L108) and K13 (L204) no longer assume a Linux→Mac→Linux hairpin.
+- G5 (spine L179) is marked resolved, and no stale G5 references remain in the four files.
+- The F5 repair landed. However, the S16 wording added alongside it introduced N1.
+
+**F6** — agent-view diagram.
+- The domain diagram (L49–57) now shows E11 → E1 for in-session input and E11 ⇢ E16 for "may be presented". It includes "drawer child". Its E10/E11/E16 edges match the rows (L63–66).
+- No new defect. O-2 is noted.
+
+## 4. New finding
+
+### N1 — A Mac CLI targeting the Mac's own Host is now required to bypass the Gateway, and no owner statement says so
+
+- **Mode / check:** specification-only; focused specification-authority and contract checks.
+- **Severity:** important. This is a contract-level boundary change; it is not wording.
+- **What is wrong, and where:** the correction turns S16's target-machine rule into a route rule for every machine. The current text makes a MUST that a CLI attached to its executing machine's Host "uses that Host locally". It also narrows "frontend CLI" to mean a CLI that targets another machine. On a Mac, that means non-session CLI work aimed at the Mac's own Host does not go through the Mac Gateway.
+
+  Sites that carry this reading:
+  - Requirements: U2 (L32), U17 (L47, "attached-machine Host-local CLI work … are a separate class"), S16 (L71, "refines S13's frontend wording"), closing paragraph (L113).
+  - Spine: L3; R1 (L128); R12 (L139); the specification diagram actor "Host-local CLI / in-session agent" (L41) and its PNG.
+  - Capability: K2 (L83, and L85: "The Host-local route itself is selected by S16/R12"); K13 (L204).
+
+- **Governing sources (observed):**
+  - **S13, direct owner words:** "mcp/cli/ios/macoks app -> gateway -> host"; "gateway to host only".
+  - **S2:** "CLI talks to Mac client daemon".
+  - **S14 record** (`owner-service-corrections.json`, `host_local_selection`):
+    - Option A, which the owner's answer selected, reads: "agent calls from inside a session stay on the Host; every other CLI command still goes through the Gateway".
+    - Its limits read: "this selection does not itself classify every other CLI verb".
+  - **S16, direct owner words:** "all cli commands shoukld go to the maine they are attached to". This names the target machine, not the route.
+  - **Requirements L7** (current text) still says "MCP, CLI, iOS and the macOS app, connect by socket to the Gateway". The targets therefore contradict each other: L7 against U2, R1 and R12.
+
+- **Attributed, not owner-direct:**
+  - The Advisor relayed "yes in remote host" and "scoped by machine as terminal starts in some machine including local" (root `01a144f8-a42b`). Read together with S16, these support a CLI on a Linux Host using that Host; there is no Gateway on Linux. They also scope Mac terminal work to the Mac's local Host. They do not choose a route on the Mac.
+  - The Advisor's own model in the same message routes a Mac CLI through the Gateway: "On a Mac, the CLI uses its Gateway and names the target Host, defaulting to the Mac's local Host". It also says "Inside any Host session: agent / hook / shell CLI -> that same Host". The message ends: "This is advice."
+
+- **Affected requirement and consequence:**
+  - U1, U17 and R1 say "No frontend connects directly to the Host".
+  - The current R1/R12 add a second Host entry on the Mac for machine-scoped work that is not session work. That entry has its own admission and authority surface (G8/G12, K14), alongside the Gateway.
+  - A planner would build two Mac entry paths with different authentication, and K2/K13 proof would target a route the owner never stated.
+  - Under the operating contract, an agent-authored spec is not evidence of owner intent. Where S16 sits between S13 and this reading, the reading is unauthorized.
+
+- **What still holds without the questioned clause:**
+  - The S16 target-machine MUST, in U2, R12 and the inferred-default refusal.
+  - S14/R9 Host-local in-session agent/hook/context input, on any machine.
+  - CLI on a Linux Host using that Host (S16 plus the attributed "yes in remote host").
+  - R11 multiple Hosts.
+  - None of these need the Mac-direct route clause.
+
+- **Smallest correction:** one owner decision, then one spec-design pass over the sites listed above.
+
+  The question: *on a Mac, does CLI machine work that targets the Mac's own Host enter through the
+  Mac Gateway (S13/S2, S14 option A's wording, the Advisor's B2), or directly into the local Host
+  (the current R1/R12)?* The same question covers ordinary CLI verbs typed inside a Mac Host
+  session. S14 settles only agent, hook and context inputs.
+
+  Either answer keeps the S16 target-machine MUST and S14/R9 unchanged:
+  - **Gateway:** restore S13 for Mac CLI.
+  - **Direct:** record the owner's words as the new source, and make U17/R1 name the second Mac Host entry as an owner-selected class.
+
+  If the Lead defers the decision, the authority-safe interim is to keep the target MUST, limit the Host-local CLI MUST to what the sources trace to (S14 inputs; CLI on a Host machine with no Gateway), and move the Mac-local CLI route into G1 as open. What waits on that: R1/U17 boundary wording, the K2/K13 proof target, and G8/G12 admission surfaces.
+
+- **Mechanism necessity / deletion test:** the correction deletes a clause; it adds nothing. With the clause deleted, all confirmed obligations still hold.
+
+- **Affected concept:** Requirements and Specification. There is no Program Design yet.
+
+- **Route:** `caller` (the owner decision, brought by the 🦁 Lead). After that, `spec-design` applies the answer.
+
+- **Scope effect:** inside the boundary. It neither adds nor removes confirmed scope.
+
+- **Contested evidence:** the attributed "including local" could be read as the owner wanting Mac and Linux to behave the same way, with in-session CLI going directly to the local Host. That reading is plausible but not confirmed, and it is the decision itself. It is why this is `decision-needed`, not a plain `spec-design` revert.
+
+- **Confirming evidence after correction:**
+  - L7, U2, U17, R1 and R12 state one consistent Mac route.
+  - S16 at L71 no longer claims to refine S13 beyond its target-machine meaning, unless new owner words say otherwise.
+  - The diagram actor at spine L41 and its PNG match.
+  - K2 L85 and K13 L204 cite the decided source.
+
+## 5. Dispel
+
+The candidate set (N1, O-1–O-3, plus the merged "frontend CLI" term) was classified. The design elements this correction delivered were mapped to their source:
+
+| Element | Source | Disposition |
+| --- | --- | --- |
+| R9, U15, E10/E11/E18 in-session rows, K7, item 4 resolved, G5 resolved | S14 | kept |
+| R12 target-machine MUST, inferred-default refusal | S16 | kept |
+| R1/U2/U17/R12/K2/K13 Mac-local direct-Host route clause | **absent** (S16 names the target; S13 names the route) | N1 |
+| R11, U18, E23 "OtherHost", E24 multi-Host, G2, K13 L206 | S17 ("remote hosts", wording faithful) | kept |
+| R13, U19, V6, K15 version pairs, item 12 | S18 + U9 | kept; see O-3 |
+| U13 basis, K L26 "backend responsibility" | S15 | kept |
+| K12 clipboard → G8; G12 TCC | open gaps, mechanism not selected | kept |
+| K13 UniFFI/codec note | U17 "no codec or binding mandated"; S9 advisory | kept |
+
+- No Advisor mechanism was brought in: no typeshare, per-Host budgets or duplicate-Host refusal. UUIDv7 (domain L68) is an existing repository convention.
+- No candidate proposed new persistence or other mechanism, so nothing needed rejecting as scope expansion.
+- The new SQLite/data inventory and the Advisor's storage study are outside this check, as the Lead's follow-up instructed. G9 stays open.
+
+## 6. Observations (not findings)
+
+- **O-1 — S18 is phrased as a question.** The owner's words end "does tha tmake sense?". L73 labels it "Direct request", and U19 is must/owner. Reading "we woudl ahve full test coverage" as a request is reasonable. Whether anyone confirmed it back to the owner is not visible in the target set: unverified, not a defect.
+- **O-2 — the agent-view diagram draws E10 → E1 with no condition.** The E10 row says "Baseline binds to a pane" and the in-session target binds E1. The diagram shows the target state. It is consistent with the row and needs no change.
+- **O-3 — R13 requires coverage of "incompatible-pair refusal".** That assumes refusal is the selected way to handle an incompatible version pair, while G8 still holds channel/version pairing open. It is harmless if read as "the selected incompatibility outcome". I noted it and made no finding.
+- **Carried forward:** the earlier observations O-a … O-h sit outside the changed anchors and were not re-examined. O-c, K3's Darwin `:28` link, is still present.
+
+## 7. Result
+
+```text
+result: decision-needed
+coverage: complete for the four frozen targets at the hashes above, for F1–F6 and for every S14–S18 changed anchor
+F1–F6: all resolved; none introduced a defect except the S16 wording that came with F5 (N1)
+residual: N1 — Mac-local CLI route (Gateway vs direct local Host) is a MUST without owner authority
+  and contradicts S13/S2 and Requirements L7. Route: caller (owner brief), then spec-design.
+not ready: N1 is open, and G1–G4 and G6–G12 still leave semantic choices to a planner. G9 is open by instruction.
+not claimed: Program Design readiness, planning readiness, design acceptance or implementation authority
+correction round after the decision: one spec-design pass over the N1 sites, each file corrected at most
+  once, then one verification of the N1 anchors by this same Review Sidekick
+```
+
+This result edits nothing and accepts nothing. Writing this file is not acceptance of it.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

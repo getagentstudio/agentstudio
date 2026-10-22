@@ -1,0 +1,27 @@
+{
+  "source": "Direct owner messages in the AgentStudio Lead conversation, 2026-10-16",
+  "messages_verbatim": [
+    "hmm assume a central authority that will connect for liter ocntorl flow nto gateway",
+    "there are for movign cop0yign etc machines.  gateway assuems machie is ready and ocnnected",
+    "yeah lets make  cetnral contorl plane for leasese"
+  ],
+  "authorized_decision": "The central control plane is the database lease-registry authority; the Gateway is not the lease issuer",
+  "gateway_boundary": "The Gateway assumes machines are ready and connected; machine preparation, moving and copying belong to the future control plane",
+  "supersedes": {
+    "source": "gateway-authority-scope-selection.json",
+    "meaning": "The earlier current-design assumption that the Gateway hosts lease-registry authority"
+  },
+  "retained_constraints": [
+    "Database-writer transfer remains out of current AgentStudio scope",
+    "Building the authority server remains later work",
+    "Keep authority integration separately composable through an appropriate crate or module; reuse shared lease rules",
+    "Host-local authorized inputs and terminal-fact recording do not depend on a connected Mac Gateway"
+  ],
+  "not_selected": [
+    "Exact control-plane server, deployment, transport, credentials or database topology",
+    "Exact relation between the lease registry and authoritative replication copies",
+    "Lease duration, renewal, expiry and authority-unreachable behavior",
+    "Machine provisioning, moving, copying or database-writer transfer implementation",
+    "Product implementation, provisioning or experiment execution"
+  ]
+}

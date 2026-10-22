@@ -1,0 +1,8 @@
+- **SO5 Rows by declared primary key.** A row is identified by its table's declared primary key, in any columns and of any storage class. After an update that changes a row's primary key, the copy holds the row under its new key and no row under its old key. This holds for single TEXT, composite and `INTEGER PRIMARY KEY` keys. (SU11; SE18; P4)
+- **SO6 Schema replicates as itself.**
+  - A migration the writer runs reaches each copy as that migration, and applies there exactly once, in order with the rows around it.
+  - A copy that can't support a schema step refuses it as `schemaUnsupported` and applies nothing after it.
+  - Some schemas can never replicate: a replicated table without a declared primary key, a trigger, or a virtual table. Such a schema is refused before it reaches any copy, and the consumer learns of it before deploying.
+
+  (SU2, SU10, SU11; SE18)
+- **SO7 Only declared tables travel.** Only the tables the consumer declares reach a copy. The engine's own bookkeeping and undeclared tables never appear there. (SU2, SU10; SE18)

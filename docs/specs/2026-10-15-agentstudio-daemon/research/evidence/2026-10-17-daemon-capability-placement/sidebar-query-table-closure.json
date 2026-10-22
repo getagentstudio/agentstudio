@@ -1,0 +1,2663 @@
+{
+  "scope": {
+    "question": "Current durable-table versus runtime/native backing and hydration/write closure for sidebar I01-I09 and F01-F16.",
+    "observedAt": "2026-10-17",
+    "agentStudioHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+    "gitPin": "4cca397dfc869857064da4e9ec8289ea46adc479",
+    "mode": "SourceOnly",
+    "noTargetSelection": true
+  },
+  "catalogReconciliation": {
+    "catalogPath": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/docs/specs/2026-10-15-agentstudio-daemon/designs/02-data-ownership-replication/research/data-catalog.json",
+    "catalogTableCount": 86,
+    "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+    "namedCurrentSourceTables": [
+      "app_workspace_selection",
+      "arrangement_drawer_view",
+      "arrangement_layout_divider",
+      "arrangement_layout_pane",
+      "arrangement_minimized_pane",
+      "cache_metadata",
+      "cache_repo_enrichment",
+      "cache_worktree_enrichment",
+      "drawer",
+      "drawer_pane",
+      "drawer_view_layout_divider",
+      "drawer_view_layout_pane",
+      "drawer_view_minimized_pane",
+      "local_arrangement_cursor",
+      "local_arrangement_drawer_cursor",
+      "local_drawer_cursor",
+      "local_entity_recency",
+      "local_pane_activity",
+      "local_repo_explorer_preferences",
+      "local_repository_activity",
+      "local_repository_activity_cursor",
+      "local_tab_cursor",
+      "local_window_sidebar_collapsed_group",
+      "local_window_state",
+      "local_workspace_cursor",
+      "local_workspace_entity_recency",
+      "pane",
+      "pane_content_code_viewer",
+      "pane_content_payload",
+      "pane_content_terminal",
+      "pane_content_webview",
+      "pane_event",
+      "pane_request",
+      "pane_retirement",
+      "pane_state",
+      "pane_state_action",
+      "pane_write_order",
+      "repo",
+      "repo_tag",
+      "sessions_conversation",
+      "sessions_evidence",
+      "sessions_operation",
+      "sessions_pane_binding",
+      "sessions_provider_question",
+      "sessions_provider_question_option",
+      "sessions_source",
+      "tab_arrangement",
+      "tab_pane",
+      "tab_shell",
+      "unavailable_repo",
+      "unavailable_worktree",
+      "watched_path",
+      "workspace",
+      "workspace_undo_close",
+      "workspace_undo_close_member",
+      "worktree"
+    ],
+    "namedCurrentSourceTableCount": 56,
+    "otherCatalogTablesNotInvestigatedAsSidebarBacking": [
+      "workspace_terminal_session_ownership",
+      "pane_request_action",
+      "pane_event_action",
+      "pane_request_choice",
+      "pane_request_property",
+      "pane_request_required",
+      "pane_request_property_choice",
+      "pane_request_answer_value",
+      "pane_epoch_claim",
+      "pane_answer_position",
+      "local_ipc_credential",
+      "pane_context_cli_outbox_cursor",
+      "local_drawer_presentation",
+      "local_editor_preferences",
+      "local_inbox_notification_preferences",
+      "annotation_session",
+      "annotation_thread",
+      "annotation_message",
+      "annotation_message_draft",
+      "annotation_output_attempt",
+      "annotation_output_attempt_message",
+      "annotation_output_event",
+      "local_recovery_provenance",
+      "local_notification_inbox_item",
+      "local_notification_inbox_collapsed_group",
+      "cli_store_identity",
+      "cli_outbox",
+      "cli_state",
+      "search_document",
+      "search_document_fts"
+    ],
+    "excludedHistoricalTable": "cache_pull_request_count: DROP by migration 004; not in current 86-table catalog",
+    "note": "Counts are evidence-accounting only. Catalog placement/export/unit proposals were not consumed or adopted."
+  },
+  "inputGroupClosure": [
+    {
+      "inputID": "I01",
+      "closureGroups": [
+        "C01"
+      ],
+      "status": "durable topology/intent plus runtime observation authority"
+    },
+    {
+      "inputID": "I02",
+      "closureGroups": [
+        "C02"
+      ],
+      "status": "partial durable cache; live status/Forge/progress/fences runtime"
+    },
+    {
+      "inputID": "I03",
+      "closureGroups": [
+        "C03"
+      ],
+      "status": "durable activity semantics plus withheld/re-established live coverage authority"
+    },
+    {
+      "inputID": "I04",
+      "closureGroups": [
+        "C10"
+      ],
+      "status": "runtime settled-output fact; no current SQL backing established"
+    },
+    {
+      "inputID": "I05",
+      "closureGroups": [
+        "C04"
+      ],
+      "status": "durable wall/source; monotonic clock/runtime publication distinct"
+    },
+    {
+      "inputID": "I06",
+      "closureGroups": [
+        "C05",
+        "C07",
+        "C08",
+        "C09",
+        "C10"
+      ],
+      "status": "canonical composition + local cursors + SQL-derived status/context + native/runtime joins"
+    },
+    {
+      "inputID": "I07",
+      "closureGroups": [
+        "C06"
+      ],
+      "status": "durable window/workspace presentation memory plus current facade constraints"
+    },
+    {
+      "inputID": "I08",
+      "closureGroups": [
+        "C10"
+      ],
+      "status": "clock/calendar/deadline/native invalidation runtime"
+    },
+    {
+      "inputID": "I09",
+      "closureGroups": [
+        "C10"
+      ],
+      "status": "native geometry/paint/command/application state runtime"
+    }
+  ],
+  "preparedFamilyClosure": [
+    {
+      "familyID": "F01",
+      "outputTypes": [
+        "RepoExplorerSidebarProjection",
+        "RepoExplorerSidebarContent",
+        "RepoExplorerSidebarSection"
+      ],
+      "closureGroups": [
+        "C01",
+        "C02",
+        "C05",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F02",
+      "outputTypes": [
+        "RepoPresentationGroup",
+        "RepoIdentityMetadata"
+      ],
+      "closureGroups": [
+        "C01",
+        "C02",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F03",
+      "outputTypes": [
+        "RepoExplorerProjectedWorktreeRow",
+        "RepoExplorerResolvedWorktreeContext"
+      ],
+      "closureGroups": [
+        "C01",
+        "C05",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F04",
+      "outputTypes": [
+        "GitBranchStatus"
+      ],
+      "closureGroups": [
+        "C02",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F05",
+      "outputTypes": [
+        "RepoExplorerMaterializedGroupHeaderPresentation"
+      ],
+      "closureGroups": [
+        "C01",
+        "C02",
+        "C03",
+        "C05",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F06",
+      "outputTypes": [
+        "RepoExplorerMaterializedWorktreePresentation"
+      ],
+      "closureGroups": [
+        "C01",
+        "C02",
+        "C05",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F07",
+      "outputTypes": [
+        "RepoExplorerProjectedPaneRow",
+        "RepoExplorerProjectedPaneDestination",
+        "RepoExplorerPaneDestination",
+        "RepoExplorerUnassociatedPaneDestination"
+      ],
+      "closureGroups": [
+        "C01",
+        "C02",
+        "C04",
+        "C05",
+        "C06",
+        "C07",
+        "C08",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F08",
+      "outputTypes": [
+        "RepoExplorerPaneRowVariants",
+        "RepoExplorerPaneRowVariant",
+        "RepoExplorerPaneRowLine",
+        "RepoExplorerPaneChipKind"
+      ],
+      "closureGroups": [
+        "C02",
+        "C04",
+        "C05",
+        "C07",
+        "C08",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F09",
+      "outputTypes": [
+        "RepoExplorerPaneContextLine",
+        "PaneMessageChipModel"
+      ],
+      "closureGroups": [
+        "C07",
+        "C08",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F10",
+      "outputTypes": [
+        "RepoExplorerUnassociatedPanePresentation"
+      ],
+      "closureGroups": [
+        "C05",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F11",
+      "outputTypes": [
+        "RepoExplorerMaterializedRowPresentation",
+        "RepoExplorerRowContentRevision",
+        "RepoExplorerMaterializedRow",
+        "RepoExplorerRowLayout",
+        "RepoExplorerRowLayoutMetrics"
+      ],
+      "closureGroups": [
+        "C02",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F12",
+      "outputTypes": [
+        "RepoExplorerRowIndex",
+        "RepoExplorerListEntry",
+        "RepoExplorerResolvedPaneContext",
+        "RepoExplorerNavigationIndex"
+      ],
+      "closureGroups": [
+        "C01",
+        "C05",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F13",
+      "outputTypes": [
+        "RepoExplorerMaterializationSnapshot",
+        "RepoExplorerMaterializationPresentation",
+        "RepoExplorerRowlessPresentation"
+      ],
+      "closureGroups": [
+        "C01",
+        "C05",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F14",
+      "outputTypes": [
+        "RepoExplorerProjectionResult",
+        "RepoExplorerPreparedPresentationDeadline"
+      ],
+      "closureGroups": [
+        "C01",
+        "C02",
+        "C03",
+        "C04",
+        "C05",
+        "C06",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F15",
+      "outputTypes": [
+        "RepoExplorerMaterializationCandidate",
+        "RepoExplorerMaterializationBaseline",
+        "RepoExplorerNativeUpdatePlan"
+      ],
+      "closureGroups": [
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    },
+    {
+      "familyID": "F16",
+      "outputTypes": [
+        "RepoExplorerCommandPresentationSnapshot",
+        "RepoExplorerCommandPresentationDelta",
+        "RepoExplorerVisibleWorktreeSnapshot",
+        "RepoExplorerWorktreeCommandPresentation"
+      ],
+      "closureGroups": [
+        "C05",
+        "C10"
+      ],
+      "directDurablePreparedRow": false,
+      "interpretation": "Prepared value is rebuilt from relevant durable source rows and runtime/native inputs. This mapping is source evidence, not a target table/export/unit selection.",
+      "provenance": "Prior sidebar read-needs current-source family/consumer definition reused; backing closure newly checked in this commission."
+    }
+  ],
+  "currentSourceClosureGroups": [
+    {
+      "id": "C01",
+      "name": "Canonical repository topology and repository/worktree intent",
+      "basis": "source",
+      "inputGroups": [
+        "I01"
+      ],
+      "preparedFamilies": [
+        "F01",
+        "F02",
+        "F03",
+        "F05",
+        "F06",
+        "F07",
+        "F12",
+        "F13",
+        "F14"
+      ],
+      "tables": [
+        {
+          "tableName": "watched_path",
+          "role": "direct topology restore / scan configuration",
+          "columnGroup": [
+            "id",
+            "path",
+            "stable_key",
+            "added_at"
+          ],
+          "consumerMeaning": "ID/path/stable key and intake time; not repository Git data.",
+          "catalogTableIndex": 2,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+Topology.swift:104",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/RepositoryTopologyAtom.swift:108"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "repo",
+          "role": "direct topology and intent",
+          "columnGroup": [
+            "id",
+            "name",
+            "repo_path",
+            "stable_key",
+            "created_at",
+            "is_pinned",
+            "note"
+          ],
+          "consumerMeaning": "ID/name/path/stable key/pin/note and creation order.",
+          "catalogTableIndex": 3,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SidebarPins.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+Topology.swift:104",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/CanonicalRepo.swift:3",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+RepoSidebarMetadata.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "worktree",
+          "role": "direct topology and intent",
+          "columnGroup": [
+            "id",
+            "repo_id",
+            "name",
+            "path",
+            "stable_key",
+            "is_main_worktree",
+            "note"
+          ],
+          "consumerMeaning": "ID/owning repo/name/path/stable key/main role/note.",
+          "catalogTableIndex": 4,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+Topology.swift:104",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/CanonicalWorktree.swift:3",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+RepoSidebarMetadata.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "repo_tag",
+          "role": "direct filter/intent",
+          "columnGroup": [
+            "repo_id",
+            "tag"
+          ],
+          "consumerMeaning": "Repository tags can match the sidebar query.",
+          "catalogTableIndex": 5,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+RepoSidebarMetadata.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "unavailable_repo",
+          "role": "direct membership suppression and retention timing",
+          "columnGroup": [
+            "repo_id",
+            "first_absent_at_utc",
+            "anchor_utc",
+            "anchor_boot_id",
+            "anchor_uptime_ns",
+            "elapsed_before_anchor"
+          ],
+          "consumerMeaning": "Absence record controls unavailable repository membership.",
+          "catalogTableIndex": 6,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryAbsenceStorage.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepositoryLocationAbsence.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "unavailable_worktree",
+          "role": "direct membership suppression and retention timing",
+          "columnGroup": [
+            "worktree_id",
+            "first_absent_at_utc",
+            "anchor_utc",
+            "anchor_boot_id",
+            "anchor_uptime_ns",
+            "elapsed_before_anchor"
+          ],
+          "consumerMeaning": "Absence record controls unavailable worktree membership.",
+          "catalogTableIndex": 7,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryAbsenceStorage.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepositoryLocationAbsence.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "WorkspaceCoreRepository.fetchAuthoritativeSnapshot -> readRepositoryTopology -> watched/repo/worktree/tag readers + RepositoryAbsenceStorage.read -> backend completed snapshot -> WorkspaceStore.prepareAndApplyAuthoritativeSnapshot -> prepareRepositoryTopologyOffMain -> RepositoryTopologyAtom replacement -> sidebarRepos.",
+      "writePath": "Runtime topology/metadata mutations (setRepoPinned/updateRepoNote/setRepoTags/updateWorktreeNote) update canonical atom; RepositoryTopologyStore observes/captures, prepares snapshot and serializes save tail -> saveRepositoryTopologySnapshot with capture-revision admission -> replaceRepositoryTopology SQL transaction/reconciliation and absence replacement.",
+      "currentnessNotInRows": [
+        "RepositoryTopologyAtom lifecycle/worktreePathIndex/stableIdentity revisions and observation lifetimes",
+        "Filesystem source registration/sequence/root/overlap/current scan-baseline fences",
+        "Current filesystem/Git validation; persisted paths do not establish present registration"
+      ],
+      "limits": "Pin/note/tag values are persisted intent. Absence timing rows do not reproduce an active watcher, its coverage or a same-process monotonic source position. Direct SQL metadata helper functions exist, but the normal inspected mutation path is atom + topology save tail; no claim that every helper is production-called.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository.swift",
+          "line": 133,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+Topology.swift",
+          "line": 152,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+Topology.swift",
+          "line": 258,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryAbsenceStorage.swift",
+          "line": 29,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceStore.swift",
+          "line": 357,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspacePersistenceTransformer.swift",
+          "line": 114,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryTopologyStore.swift",
+          "line": 190,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+PersistenceOrder.swift",
+          "line": 2,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TopologyMutation.swift",
+          "line": 4,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Coordination/WorkspaceMutationCoordinator+RepositoryTopology.swift",
+          "line": 129,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 606,
+          "evidence": "same-session sidebar consumer evidence reused"
+        }
+      ]
+    },
+    {
+      "id": "C02",
+      "name": "Persisted repository/worktree enrichment versus live Git/Forge status",
+      "basis": "source",
+      "inputGroups": [
+        "I02"
+      ],
+      "preparedFamilies": [
+        "F01",
+        "F02",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F11",
+        "F14"
+      ],
+      "tables": [
+        {
+          "tableName": "cache_metadata",
+          "role": "saved cache metadata",
+          "columnGroup": [
+            "singleton_id",
+            "source_revision",
+            "last_rebuilt_at"
+          ],
+          "consumerMeaning": "source_revision and last_rebuilt_at describe cache capture metadata, not watcher/remote revision.",
+          "catalogTableIndex": 65,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:516",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:302",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift:194",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/RepoCacheAtom.swift:7"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "cache_repo_enrichment",
+          "role": "saved identity enrichment",
+          "columnGroup": [
+            "repo_id",
+            "state",
+            "origin",
+            "upstream",
+            "group_key",
+            "remote_slug",
+            "organization_name",
+            "display_name",
+            "updated_at",
+            "payload_json"
+          ],
+          "consumerMeaning": "Normalized columns and payload_json; restore uses payload_json for RepoEnrichment.",
+          "catalogTableIndex": 66,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:516",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift:210",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepoEnrichment.swift:34",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift:76",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator.swift:346"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "cache_worktree_enrichment",
+          "role": "saved branch enrichment",
+          "columnGroup": [
+            "worktree_id",
+            "repo_id",
+            "branch",
+            "is_main_worktree",
+            "updated_at",
+            "payload_json"
+          ],
+          "consumerMeaning": "Branch/main-role/owner/updatedAt payload; live status snapshot is intentionally not encoded.",
+          "catalogTableIndex": 67,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:516",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift:210",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/WorktreeEnrichment.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator.swift:346",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift:76"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "RepoCacheStore.restoreAsync -> datastore.loadRepoCacheState -> WorkspaceLocalRepository.fetchCacheState -> fetchCacheRows -> payload JSON decoders -> RepoCacheAtom/RepoEnrichmentCacheAtom.hydrate. Invalid individual payload rows are compactMap-dropped; WorktreeEnrichment.init(from:) sets snapshot=nil.",
+      "writePath": "WorkspaceCacheCoordinator accepts current Git/Forge facts into keyed runtime cache (unchanged same-HEAD acquisition evidence reused). RepoCacheStore capture -> RepoCacheSavePreparer.prepareOffMain -> saveRepoCacheState -> replaceCacheState transaction -> delete/reinsert cache_metadata/cache_repo_enrichment/cache_worktree_enrichment. Save projection excludes snapshot and PR facts; transient statusUnavailable is normalized to awaitingOrigin.",
+      "currentnessNotInRows": [
+        "WorktreeEnrichment.snapshot.summary: dirty,staged/unstaged/untracked counts,ahead/behind/upstream,line statistics",
+        "PullRequestFacts branch-key maps,loading and unavailable membership",
+        "RepositoryFactUpdateProgress per-source attempt/settlement runtime map",
+        "Projector accepted baselines/exact-clean authority and Darwin continuity witness",
+        "Remote-reference accepted authority/recompute state and Forge request generation/origin/demand/backoff",
+        "Projection/native binding generations"
+      ],
+      "limits": "A copied cache row can restore branch/identity display, not fresh Git status, PR coverage or refresh authority. cache_pull_request_count is historical and migration 004 drops it. Current save/restore does not include a durable Forge result table. No assumption that updatedAt equals source currentness.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift",
+          "line": 76,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift",
+          "line": 106,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift",
+          "line": 190,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift",
+          "line": 326,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 421,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository.swift",
+          "line": 409,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 302,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift",
+          "line": 210,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/WorktreeEnrichment.swift",
+          "line": 13,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/RepoCacheAtom.swift",
+          "line": 176,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/RepoCacheAtom.swift",
+          "line": 485,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift",
+          "line": 99,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "id": "C03",
+      "name": "Repository qualifying activity, coverage and owned-promotion state",
+      "basis": "source",
+      "inputGroups": [
+        "I03"
+      ],
+      "preparedFamilies": [
+        "F05",
+        "F14"
+      ],
+      "tables": [
+        {
+          "tableName": "local_repository_activity",
+          "role": "direct classifier source after live commit",
+          "columnGroup": [
+            "repository_stable_key",
+            "last_qualifying_activity_at",
+            "continuous_coverage_started_at",
+            "updated_at",
+            "owned_promotion_attempt_id",
+            "owned_promotion_started_at",
+            "owned_promotion_unsettled"
+          ],
+          "consumerMeaning": "Stable-keyed activity/coverage timestamps and unsettled owned-promotion marker.",
+          "catalogTableIndex": 68,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:169",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+RepositoryLocalActivity.swift:12",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift:18",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+RepositoryLocalActivity.swift:98",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:549"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_repository_activity_cursor",
+          "role": "coverage checkpoint support",
+          "columnGroup": [
+            "volume_identifier",
+            "last_event_id",
+            "updated_at"
+          ],
+          "consumerMeaning": "Volume event watermark; not evidence an active observer replayed the gap.",
+          "catalogTableIndex": 69,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:169",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+RepositoryLocalActivity.swift:12",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift:18"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "RepositoryLocalActivityStore.restoreAsync -> datastore.loadRepositoryLocalActivity -> repository.fetchRepositoryLocalActivitySnapshot. Even a successful loaded snapshot deliberately publishesUnavailable; persisted FSEvent gap is not replayed in PR1.",
+      "writePath": "FilesystemActor activity/overflow observations -> RepositoryLocalActivityProjector participant-generation/barrier -> App commit sink -> RepositoryLocalActivityStore.commitAsync -> datastore retention admission -> repository.commitRepositoryLocalActivity transaction applies updates/cursor watermarks and returns snapshot -> store filters to current-session authoritative keys and publishesAuthoritative.",
+      "currentnessNotInRows": [
+        "Current-session authoritative stable-key set and authorityRevisionByStableKey",
+        "Active participants/scope generation,processed/delivered barrier evidence and coverage-loss recovery",
+        "Open-worktree/current topology membership and reference date/horizon supplied to classifier",
+        "Actual native watcher state"
+      ],
+      "limits": "SQL retains semantic history/coverage claims, but restore intentionally withholds current authority. Classifier also refuses unsettled promotions or invalid/future timing and returns unclassified, not inactive. It is distinct from Repos output-age buckets.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift",
+          "line": 18,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+RepositoryLocalState.swift",
+          "line": 19,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+RepositoryLocalActivity.swift",
+          "line": 12,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+RepositoryLocalActivity.swift",
+          "line": 127,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/RepositoryLocalActivityProjector.swift",
+          "line": 198,
+          "evidence": "same-session activity source evidence reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift",
+          "line": 549,
+          "evidence": "same-session actual wiring evidence reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepositoryActivityClassifier.swift",
+          "line": 77,
+          "evidence": "same-session classifier evidence reused"
+        }
+      ]
+    },
+    {
+      "id": "C04",
+      "name": "Panes activity wall-time persistence and retained-membership prune",
+      "basis": "source",
+      "inputGroups": [
+        "I05"
+      ],
+      "preparedFamilies": [
+        "F07",
+        "F08",
+        "F14"
+      ],
+      "tables": [
+        {
+          "tableName": "local_pane_activity",
+          "role": "direct durable activity record",
+          "columnGroup": [
+            "pane_id",
+            "activity_at",
+            "source"
+          ],
+          "consumerMeaning": "Only pane_id, wall activity_at and source(terminal/hook); no monotonic ordering instant.",
+          "catalogTableIndex": 70,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneActivity.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+PaneActivity.swift:7",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+PaneActivity.swift:7",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityClock.swift:81",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift:57",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+PaneActivityBoot.swift:5"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane",
+          "role": "retained-membership query dependency",
+          "columnGroup": [
+            "id",
+            "workspace_id"
+          ],
+          "consumerMeaning": "Live pane membership used to scope/prune activity load.",
+          "catalogTableIndex": 8,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:254",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+PaneTopologyFacets.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+PaneAssociation.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SidebarPins.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneAssociations.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "workspace_undo_close",
+          "role": "retained-membership query dependency",
+          "columnGroup": [
+            "close_id",
+            "workspace_id",
+            "state"
+          ],
+          "consumerMeaning": "Available Undo owner contributes retained pane IDs.",
+          "catalogTableIndex": 26,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:123",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+UndoClose.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceUndoCloseSnapshot.swift:3",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceUndoCloseRecord.swift:15",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift:408"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "workspace_undo_close_member",
+          "role": "retained-membership query dependency",
+          "columnGroup": [
+            "close_id",
+            "pane_id"
+          ],
+          "consumerMeaning": "Undo membership joins retain set; not direct recency display values.",
+          "catalogTableIndex": 27,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:123",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+UndoClose.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneActivityMembership.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+DrawerPresentationMembership.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "bootRestorePaneActivity -> datastore.loadPaneActivity: query app-wide retain IDs, prune local activity, query workspace retain IDs, fetch valid activity records -> applyRestoredPaneActivity -> record.restoredActivityTime(current referenceInstant,wallNow) -> PaneActivityTimeAtom.apply only if no current value.",
+      "writePath": "Terminal/hook occurrences (source ingress evidence reused) -> PaneActivityClock -> App makePaneActivitySink applies runtime atom batch first, then awaits datastore.commitPaneActivity -> repository UPSERT/DELETE local_pane_activity. Save failure is logged without rolling back published runtime time.",
+      "currentnessNotInRows": [
+        "PaneActivityTime.orderingInstant and the clock mailbox/admission/publication interval",
+        "Reference monotonic instant/wall date/calendar pair",
+        "Current live occurrence after restored data and late/retired source admission"
+      ],
+      "limits": "SQL copy carries wall/source history, not a transferable monotonic clock. Hydration reconstructs an instant using current wall age. loadPaneActivity is effectful: it may delete non-retained activity rows; membership-read failure skips prune rather than using an empty retain set.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+PaneActivityBoot.swift",
+          "line": 5,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+PaneActivity.swift",
+          "line": 7,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneActivityMembership.swift",
+          "line": 7,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+PaneActivity.swift",
+          "line": 8,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityOccurrence.swift",
+          "line": 58,
+          "evidence": "same-session durable record shape reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 57,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneActivityProjection.swift",
+          "line": 20,
+          "evidence": "same-session consumer derivation reused"
+        }
+      ]
+    },
+    {
+      "id": "C05",
+      "name": "Pane intent, content, tabs/arrangements and cursor hydration",
+      "basis": "source",
+      "inputGroups": [
+        "I06"
+      ],
+      "preparedFamilies": [
+        "F01",
+        "F03",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F10",
+        "F12",
+        "F13",
+        "F14",
+        "F16"
+      ],
+      "tables": [
+        {
+          "tableName": "workspace",
+          "role": "snapshot identity dependency",
+          "columnGroup": [
+            "id",
+            "name",
+            "created_at",
+            "updated_at"
+          ],
+          "consumerMeaning": "Selected workspace context for pane/tab graph.",
+          "catalogTableIndex": 0,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:126",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository.swift:187"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "app_workspace_selection",
+          "role": "snapshot selection dependency",
+          "columnGroup": [
+            "singleton_id",
+            "active_workspace_id",
+            "updated_at"
+          ],
+          "consumerMeaning": "Selects current authoritative workspace; declaration/source catalog reused, full selection helper not reopened.",
+          "catalogTableIndex": 1,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:126",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:196"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane",
+          "role": "direct intent/membership",
+          "columnGroup": [
+            "id",
+            "workspace_id",
+            "content_type",
+            "execution_backend",
+            "launch_directory",
+            "title",
+            "note",
+            "cwd",
+            "checkout_ref",
+            "residency_kind",
+            "pending_undo_expires_at",
+            "orphan_reason_kind",
+            "orphan_worktree_path",
+            "kind",
+            "parent_pane_id",
+            "created_at",
+            "updated_at",
+            "facet_repo_id",
+            "facet_worktree_id",
+            "is_pinned"
+          ],
+          "consumerMeaning": "Sidebar title,note,pin,CWD,content kind,residency,placement and repository facets are fields in pane graph.",
+          "catalogTableIndex": 8,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:254",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+PaneTopologyFacets.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+PaneAssociation.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SidebarPins.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneAssociations.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_content_terminal",
+          "role": "pane snapshot hydration dependency",
+          "columnGroup": [
+            "pane_id",
+            "provider",
+            "lifetime",
+            "zmx_session_id"
+          ],
+          "consumerMeaning": "Terminal provider/lifetime/backend identity; not terminal output or current process status.",
+          "catalogTableIndex": 9,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphCodecs.swift:140",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:650"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_content_webview",
+          "role": "pane snapshot hydration dependency",
+          "columnGroup": [
+            "pane_id",
+            "url",
+            "title",
+            "show_navigation"
+          ],
+          "consumerMeaning": "Content union hydration; only consumer relevant type/title/context derives later.",
+          "catalogTableIndex": 10,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:370",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphCodecs.swift:116",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:650"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_content_code_viewer",
+          "role": "pane snapshot hydration dependency",
+          "columnGroup": [
+            "pane_id",
+            "file_path",
+            "scroll_to_line"
+          ],
+          "consumerMeaning": "Content union hydration; not a sidebar file-content read.",
+          "catalogTableIndex": 11,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:370",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphCodecs.swift:116",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:650"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_content_payload",
+          "role": "pane snapshot hydration dependency",
+          "columnGroup": [
+            "pane_id",
+            "payload_kind",
+            "payload_json"
+          ],
+          "consumerMeaning": "Typed payload routing (Bridge/other pane content); no claim every payload key is consumed by sidebar.",
+          "catalogTableIndex": 12,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:370",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:535",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:650"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "drawer",
+          "role": "direct parent/child composition",
+          "columnGroup": [
+            "id",
+            "parent_pane_id"
+          ],
+          "consumerMeaning": "Drawer identity/parent.",
+          "catalogTableIndex": 13,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:370",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:650"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "drawer_pane",
+          "role": "direct parent/child composition",
+          "columnGroup": [
+            "drawer_id",
+            "pane_id",
+            "sort_index"
+          ],
+          "consumerMeaning": "Ordered child membership.",
+          "catalogTableIndex": 14,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:370",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphMutation.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphValidation.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "tab_shell",
+          "role": "direct tab naming/order context",
+          "columnGroup": [
+            "id",
+            "workspace_id",
+            "name",
+            "sort_index",
+            "color_hex"
+          ],
+          "consumerMeaning": "Tab id/name/color/order.",
+          "catalogTableIndex": 15,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:518",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryTopology.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+RepoSidebarMetadata.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "tab_pane",
+          "role": "direct active-residency membership context",
+          "columnGroup": [
+            "tab_id",
+            "pane_id",
+            "sort_index"
+          ],
+          "consumerMeaning": "All-pane membership/order across arrangements.",
+          "catalogTableIndex": 16,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:518",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "tab_arrangement",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "id",
+            "tab_id",
+            "name",
+            "is_default",
+            "sort_index"
+          ],
+          "consumerMeaning": "Arrangement identities/default/order.",
+          "catalogTableIndex": 17,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:518",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:60",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphValidation.swift:42"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "arrangement_layout_pane",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "pane_id",
+            "sort_index",
+            "ratio"
+          ],
+          "consumerMeaning": "Ordered visible layout pane IDs/ratios.",
+          "catalogTableIndex": 18,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:573",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:2"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "arrangement_layout_divider",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "divider_id",
+            "sort_index"
+          ],
+          "consumerMeaning": "Dividers complete layout hydration; not direct row text.",
+          "catalogTableIndex": 19,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:609",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:2"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "arrangement_minimized_pane",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "pane_id"
+          ],
+          "consumerMeaning": "Minimized membership.",
+          "catalogTableIndex": 20,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:609",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphValidation.swift:42"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "arrangement_drawer_view",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "drawer_id",
+            "row_split_ratio"
+          ],
+          "consumerMeaning": "Drawer view relation/split.",
+          "catalogTableIndex": 21,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:665",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStateBridge+Models.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "drawer_view_layout_pane",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "drawer_id",
+            "row_kind",
+            "pane_id",
+            "sort_index",
+            "ratio"
+          ],
+          "consumerMeaning": "Drawer row layout membership/order.",
+          "catalogTableIndex": 22,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:665",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceTabGraphAtom.swift:5"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "drawer_view_layout_divider",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "drawer_id",
+            "row_kind",
+            "divider_id",
+            "sort_index"
+          ],
+          "consumerMeaning": "Drawer row divider layout.",
+          "catalogTableIndex": 23,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:750",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:2",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphDrawerValidation.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "drawer_view_minimized_pane",
+          "role": "composition hydration dependency",
+          "columnGroup": [
+            "arrangement_id",
+            "drawer_id",
+            "pane_id"
+          ],
+          "consumerMeaning": "Drawer minimized membership.",
+          "catalogTableIndex": 24,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:750",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift:5",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStateBridge+Models.swift:4"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_workspace_cursor",
+          "role": "direct active-tab context through completed snapshot",
+          "columnGroup": [
+            "workspace_id",
+            "active_tab_id",
+            "updated_at"
+          ],
+          "consumerMeaning": "Active tab by workspace.",
+          "catalogTableIndex": 52,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:6",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:75",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:389",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceTabCursorAtom.swift:6"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_tab_cursor",
+          "role": "direct active-arrangement context through completed snapshot",
+          "columnGroup": [
+            "workspace_id",
+            "tab_id",
+            "active_arrangement_id",
+            "updated_at"
+          ],
+          "consumerMeaning": "Active arrangement by tab.",
+          "catalogTableIndex": 53,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:6",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:389",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceArrangementCursorAtom.swift:20"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_arrangement_cursor",
+          "role": "direct active-pane context through completed snapshot",
+          "columnGroup": [
+            "workspace_id",
+            "arrangement_id",
+            "active_pane_id",
+            "updated_at"
+          ],
+          "consumerMeaning": "Active pane by arrangement.",
+          "catalogTableIndex": 54,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:6",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:389",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceArrangementCursorAtom.swift:20"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_drawer_cursor",
+          "role": "direct expanded-drawer context through completed snapshot",
+          "columnGroup": [
+            "workspace_id",
+            "drawer_id",
+            "is_expanded",
+            "updated_at"
+          ],
+          "consumerMeaning": "Expanded drawer.",
+          "catalogTableIndex": 55,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:6",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository.swift:265",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceDrawerCursorAtom.swift:7"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_arrangement_drawer_cursor",
+          "role": "direct active-drawer-child context through completed snapshot",
+          "columnGroup": [
+            "workspace_id",
+            "arrangement_id",
+            "drawer_id",
+            "active_child_id",
+            "updated_at"
+          ],
+          "consumerMeaning": "Active drawer child by arrangement.",
+          "catalogTableIndex": 56,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:6",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend.swift:389",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceArrangementCursorAtom.swift:20"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "Core fetchAuthoritativeSnapshot reads workspace/topology/paneGraph/tabShells/tabGraph in one read. Pane decoding validates metadata/residency/content/drawer. Backend.loadCompletedSnapshot joins local cursor/window state into StateBridge workspace snapshot. WorkspaceStore prepares topology and composition off-main, applies composition then topology. Sidebar capture reads resulting graph/tab/location/association facts, not these SQL tables directly.",
+      "writePath": "Pane pin/note updates mutate WorkspacePaneGraphAtom metadata. WorkspaceStore autosave/flush -> WorkspaceSQLiteSaveCoordinator captures pane/tab/cursor state and prepares bundle -> datastore persistence-order admission -> backend/core replaceWorkspaceSnapshot writes pane/content/drawer/tab graph in core transaction -> later writeLocalSnapshot writes cursor/window/drawer local state. This is not one all-or-nothing cross-store commit.",
+      "currentnessNotInRows": [
+        "Accepted composition/topology capture revision maps and graph source/membership revisions",
+        "Current native residency/materialization,view availability,Bridge attendance/ordinal",
+        "Actual responder/window attention and current selected row",
+        "Runtime title normalization memo and provider/native state behind stored content identity"
+      ],
+      "limits": "This is the actual snapshot-loader closure, wider than minimal sidebar row columns. It is not a proposed exported-table closure. Local drawer presentation preference helper is reached by completed snapshot, but its own SQL read/write was not reopened; not added as a proven direct row requirement. Selection-helper and every graph validation/body branch remain bounded gaps.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository.swift",
+          "line": 133,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraph.swift",
+          "line": 118,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphCodecs.swift",
+          "line": 4,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphCodecs.swift",
+          "line": 62,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift",
+          "line": 85,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift",
+          "line": 175,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraph.swift",
+          "line": 319,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteStoreBackend+Datastore.swift",
+          "line": 25,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceStore.swift",
+          "line": 357,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteSaveCoordinator.swift",
+          "line": 152,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceSQLiteSaveCoordinator.swift",
+          "line": 314,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphMutation.swift",
+          "line": 4,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift",
+          "line": 4,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 6,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 149,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 215,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspacePaneGraphAtom.swift",
+          "line": 492,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "id": "C06",
+      "name": "Window sidebar memory, collapse and workspace sort preferences",
+      "basis": "source",
+      "inputGroups": [
+        "I07"
+      ],
+      "preparedFamilies": [
+        "F01",
+        "F03",
+        "F05",
+        "F07",
+        "F11",
+        "F12",
+        "F13",
+        "F14"
+      ],
+      "tables": [
+        {
+          "tableName": "local_window_state",
+          "role": "direct presentation memory",
+          "columnGroup": [
+            "window_id",
+            "window_role",
+            "filter_text",
+            "is_filter_visible",
+            "sidebar_collapsed",
+            "sidebar_surface",
+            "repos_grouping_mode",
+            "panes_grouping_mode",
+            "repos_subgroup_mode",
+            "panes_subgroup_mode",
+            "repos_shows_pinned",
+            "panes_shows_pinned",
+            "panes_shows_drawers",
+            "updated_at"
+          ],
+          "consumerMeaning": "Main-window filter/surface/group/pin/drawer visibility memory; width/frame are additional native snapshot input, not row semantics.",
+          "catalogTableIndex": 58,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:366",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PanesDrawerVisibility.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:120",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:153",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceWindowMemoryAtom.swift:6",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceSidebarState.swift:35",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/UIStateStore.swift:66"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_window_sidebar_collapsed_group",
+          "role": "direct collapse memory",
+          "columnGroup": [
+            "window_id",
+            "group_key"
+          ],
+          "consumerMeaning": "Main-window group keys.",
+          "catalogTableIndex": 59,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:36",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:210",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/SidebarCacheStore.swift:66"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_repo_explorer_preferences",
+          "role": "direct workspace sort preferences",
+          "columnGroup": [
+            "workspace_id",
+            "updated_at",
+            "repos_sort_field",
+            "panes_sort_field",
+            "repos_sort_direction",
+            "panes_sort_direction"
+          ],
+          "consumerMeaning": "Saved Repos/Panes sort columns; current facade fixes Panes values and hydration applies Repos sort only.",
+          "catalogTableIndex": 61,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:401",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceSettingsStore.swift:170",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift:6"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "UIStateStore.restoreAsync -> loadUIState -> repository SidebarStateRecord -> fetchSidebarStateRows/codecs SELECT window_role=main -> WorkspaceSidebarState.hydrate. SidebarCacheStore -> loadSidebarState -> fetchCollapsedGroupRows JOIN main window -> collapsed keys. WorkspaceSettingsStore -> loadWorkspaceSettings -> fetchRepoExplorerPreferencesRows -> validated enum record -> hydrate only repoSortField/repoSortDirection.",
+      "writePath": "Filter/preferences/collapse interactions mutate UI atoms. Their independent stores observe, debounce and save: replaceSidebarStateRows UPDATE main window; replaceCollapsedGroupRows deletes/reinserts keys for ensured main window; WorkspaceSettingsStore saves preferences -> upsert per-workspace sort rows. SQL methods ignore their workspace parameter for main-window state/collapse; scope is actual main-window row.",
+      "currentnessNotInRows": [
+        "Projection visibility/demand epoch and filtered force-expansion",
+        "Runtime focus/filter responder/selected row; grouping facade may override saved values",
+        "Current system calendar/timezone"
+      ],
+      "limits": "Saved panes_grouping/subgroup/sort columns do not prove selectable production behavior. Current Panes route forces Activity/no subgroup/descending; current documentation differs. Presence of rows is not native window/display application.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/UIStateStore.swift",
+          "line": 69,
+          "evidence": "same-session store hydration reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/UIStateStore.swift",
+          "line": 188,
+          "evidence": "same-session save capture reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/SidebarCacheStore.swift",
+          "line": 66,
+          "evidence": "same-session restore reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/SidebarCacheStore.swift",
+          "line": 131,
+          "evidence": "same-session save reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 478,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 153,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 210,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift",
+          "line": 51,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 401,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceSettingsStore.swift",
+          "line": 120,
+          "evidence": "same-session save reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceSettingsStore.swift",
+          "line": 170,
+          "evidence": "same-session hydration reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift",
+          "line": 45,
+          "evidence": "same-session current facade reused"
+        }
+      ]
+    },
+    {
+      "id": "C07",
+      "name": "PaneContext current display/count projection and read-time maintenance",
+      "basis": "source",
+      "inputGroups": [
+        "I06"
+      ],
+      "preparedFamilies": [
+        "F07",
+        "F08",
+        "F09"
+      ],
+      "tables": [
+        {
+          "tableName": "pane_state",
+          "role": "direct display/title/line/revision source",
+          "columnGroup": [
+            "id",
+            "kind",
+            "pane_id",
+            "title",
+            "summary",
+            "work_kind",
+            "work_text",
+            "step_current",
+            "step_total",
+            "detail",
+            "expires_at",
+            "stale",
+            "detail_revision",
+            "updated_at",
+            "writer_kind",
+            "writer_pane_id",
+            "writer_provider",
+            "writer_session_ref",
+            "writer_binding_generation"
+          ],
+          "consumerMeaning": "Agent title/line content,writer metadata,expiry/stale and source revisions.",
+          "catalogTableIndex": 35,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:27"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_state_action",
+          "role": "line decoding dependency",
+          "columnGroup": [
+            "parent_id",
+            "ordinal",
+            "kind",
+            "path",
+            "line",
+            "host",
+            "owner",
+            "repository",
+            "number",
+            "target_pane_id"
+          ],
+          "consumerMeaning": "Full AgentLineDetail decodes refs even though row line later uses summary/tone.",
+          "catalogTableIndex": 36,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:175"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_request",
+          "role": "direct message-count projection source",
+          "columnGroup": [
+            "id",
+            "pane_id",
+            "message_id",
+            "position",
+            "sent_at",
+            "settled_at",
+            "display_hidden",
+            "importance",
+            "sender_kind",
+            "sender_pane_id",
+            "sender_provider",
+            "sender_session_ref",
+            "sender_binding_generation",
+            "waiting",
+            "deadline",
+            "state",
+            "reason",
+            "form_kind",
+            "answered_by",
+            "answer_kind",
+            "receipt",
+            "receipt_at"
+          ],
+          "consumerMeaning": "Projection fields classify outstanding blocking/nonblocking requests and read-time visibility; body/form child tables are not read by this compact projection.",
+          "catalogTableIndex": 37,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:45"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_event",
+          "role": "direct message-count projection source",
+          "columnGroup": [
+            "id",
+            "kind",
+            "pane_id",
+            "message_id",
+            "position",
+            "sent_at",
+            "settled_at",
+            "display_hidden",
+            "importance",
+            "sender_kind",
+            "sender_pane_id",
+            "sender_provider",
+            "sender_session_ref",
+            "sender_binding_generation",
+            "notice_state"
+          ],
+          "consumerMeaning": "Unread notice attention; projected count fields exclude body/action payload.",
+          "catalogTableIndex": 38,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:64"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_retirement",
+          "role": "read exclusion / write admission support",
+          "columnGroup": [
+            "pane_id",
+            "retired_at",
+            "purge_after"
+          ],
+          "consumerMeaning": "Retired panes excluded from capture.",
+          "catalogTableIndex": 49,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:168"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "pane_write_order",
+          "role": "write admission support, not compact display read",
+          "columnGroup": [
+            "pane_id",
+            "writer_key",
+            "stream",
+            "current_epoch",
+            "last_counter"
+          ],
+          "consumerMeaning": "Epoch/counter checked by title/line write; not an extra displayed field.",
+          "catalogTableIndex": 46,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:138"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "App SessionsPaneContextComposition wires prepared application-local SQL access and membership directory. PaneContextService starts/reconciles presentation or publishes affected sources; computeDisplay captures membership/source list, asks Sessions summary, runs sqliteAccess.write(capturePaneContextDisplay), validates membership/source revisions, folds own/includingDrawers counts and offers PaneContextDisplay -> publication lane -> PaneContextPresentationAtom -> App injected sidebar reader.",
+      "writePath": "setTitle/setLine use scope/current-binding/write-order admission -> writeTitle/writeLine upsert pane_state and actions, bump revision -> publishAffectedSources. Message send records request/notice SQL -> count/revision/publication. Full message/form/action/answer mutation closure is wider and is not enumerated here.",
+      "currentnessNotInRows": [
+        "Current membership directory/owner-source revision and displayed projection version",
+        "Process detailVersions/mailbox desired values and publication sequencing",
+        "Sessions summary/live binding state,openAsk/runtime work inputs",
+        "Current wall time for line expiry and settled visibility"
+      ],
+      "limits": "Display read is not read-only: capturePaneContextDisplay expires lines and hides settled messages, mutating pane_state stale/detail_revision and pane_request/pane_event display_hidden/revision. Compact count projection does not fetch all form/answer/action children; line path does decode pane_state_action.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 34,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/PaneContext/WorkspacePaneContextSQLiteAccess.swift",
+          "line": 5,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift",
+          "line": 103,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift",
+          "line": 17,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 131,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 6,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 47,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+          "line": 17,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+          "line": 19,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 256,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 312,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift",
+          "line": 158,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "id": "C08",
+      "name": "Sessions durable evidence to runtime sidebar status",
+      "basis": "source",
+      "inputGroups": [
+        "I06"
+      ],
+      "preparedFamilies": [
+        "F07",
+        "F08",
+        "F09"
+      ],
+      "tables": [
+        {
+          "tableName": "sessions_operation",
+          "role": "status-load revision/join and admitted write log",
+          "columnGroup": [
+            "commit_revision",
+            "operation_kind",
+            "binding_generation_id"
+          ],
+          "consumerMeaning": "loadContext uses MAX revision and joins operation for binding order/evidence admission kind; not copied status enum.",
+          "catalogTableIndex": 29,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:69"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "sessions_conversation",
+          "role": "binding decoding dependency",
+          "columnGroup": [
+            "id",
+            "provider_identifier",
+            "provider_conversation_id",
+            "created_at",
+            "last_reported_at"
+          ],
+          "consumerMeaning": "Conversation/provider identity joins binding.",
+          "catalogTableIndex": 28,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:55"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "sessions_pane_binding",
+          "role": "direct binding/context source",
+          "columnGroup": [
+            "binding_generation_id",
+            "pane_id",
+            "conversation_id",
+            "source_generation_id",
+            "origin",
+            "status",
+            "transition_occurrence_id",
+            "started_at",
+            "ended_at",
+            "committed_revision",
+            "resume_hint",
+            "owner_pane_id"
+          ],
+          "consumerMeaning": "Current/history binding generation,status,owner/provider conversation identity.",
+          "catalogTableIndex": 30,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:99"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "sessions_source",
+          "role": "status-context source record hydration",
+          "columnGroup": [
+            "id",
+            "binding_generation_id",
+            "source_identifier",
+            "source_generation_id",
+            "provider_identifier",
+            "provider_version",
+            "provider_mode",
+            "qualification",
+            "status",
+            "last_cursor",
+            "started_at",
+            "ended_at",
+            "committed_revision"
+          ],
+          "consumerMeaning": "Per-binding source generation/qualification/cursor/status.",
+          "catalogTableIndex": 31,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:128"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "sessions_evidence",
+          "role": "direct reducer history",
+          "columnGroup": [
+            "occurrence_id",
+            "conversation_id",
+            "binding_generation_id",
+            "source_id",
+            "source_generation_id",
+            "turn_id",
+            "subject_kind",
+            "subject_identifier",
+            "evidence_kind",
+            "origin",
+            "status_effect",
+            "occurred_at",
+            "committed_revision",
+            "admission_sequence",
+            "provider_event",
+            "tool_name",
+            "tool_call_id",
+            "failure_summary",
+            "elicitation_id",
+            "prompt_summary",
+            "has_questions"
+          ],
+          "consumerMeaning": "Provider/lifecycle facts,admission ordering/status effect and signal payload drive runtime reduction.",
+          "catalogTableIndex": 32,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:52"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "sessions_provider_question",
+          "role": "conditional signal decoding dependency",
+          "columnGroup": [
+            "occurrence_id",
+            "question_index",
+            "question",
+            "header",
+            "multi_select"
+          ],
+          "consumerMeaning": "Read only when has_questions; supports full provider signal reconstruction.",
+          "catalogTableIndex": 33,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:26"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "sessions_provider_question_option",
+          "role": "conditional signal decoding dependency",
+          "columnGroup": [
+            "occurrence_id",
+            "question_index",
+            "option_index",
+            "label",
+            "description"
+          ],
+          "consumerMeaning": "Ordered question option text/description.",
+          "catalogTableIndex": 34,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:36"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "SessionsIngestion.restoreStatusIfNeeded -> open-ask summary source + repository.statusContext(.pane) -> loadContext joins binding/conversation/operation/source/evidence and conditionally questions -> SessionsStatusRuntime.restore reduces applied evidence at current admittedAt -> status publication mailbox/lane -> App statusSink -> SessionStatusAtom -> injected sidebar reader.",
+      "writePath": "SessionsRepository.applyHook -> read pane-local binding context -> reducer -> insertHookOperation + apply reduction writes conversation/binding/source/evidence/questions in same transaction -> applyCommittedHook updates runtime status and publishes. Command-finished endLiveBinding similarly commits binding/source end before status publication. Same-HEAD provider-ingress admission evidence reused; not every ingress/retirement path reopened.",
+      "currentnessNotInRows": [
+        "confirmedLiveBindingIds and liveBindingBoundAt monotonic instants",
+        "latestViewedAt/paneViewed mailbox and restored/retired pane sets",
+        "pending open-ask summary and agent line work join",
+        "Current generation/publication fences and status reducer state"
+      ],
+      "limits": "SQL history can reconstruct part of status, not proof that a restored binding is live now. SessionsStatusRuntime deliberately gives restored bindings no live instant and no confirmed-live identity. Other sessions_* names are not automatically in this status read closure.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+StatusReads.swift",
+          "line": 18,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 33,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 82,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Loading.swift",
+          "line": 133,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+ProviderQuestions.swift",
+          "line": 30,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/Models/SessionsStatusRuntime.swift",
+          "line": 6,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 43,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository.swift",
+          "line": 8,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+Writing.swift",
+          "line": 5,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 301,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/PaneContext/PaneContextUIReaders.swift",
+          "line": 15,
+          "evidence": "same-session sidebar injection reused"
+        }
+      ]
+    },
+    {
+      "id": "C09",
+      "name": "Auxiliary entity-recency observation, not current row activity source",
+      "basis": "source",
+      "inputGroups": [
+        "I06"
+      ],
+      "preparedFamilies": [],
+      "tables": [
+        {
+          "tableName": "local_workspace_entity_recency",
+          "role": "observed support / not consumed by current captured activity fields",
+          "columnGroup": [
+            "workspace_id",
+            "entity_kind",
+            "entity_key",
+            "interaction_kind",
+            "last_interacted_at"
+          ],
+          "consumerMeaning": "Pane interaction recency can be observed by RepoExplorer input token on non-Panes route; current capturePaneFact for Repos uses settled-output time instead.",
+          "catalogTableIndex": 64,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:36",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:248",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/EntityRecencyAtoms.swift:147",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/EntityRecencyStore.swift:72"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        },
+        {
+          "tableName": "local_entity_recency",
+          "role": "adjacent recency store, not established direct sidebar read requirement",
+          "columnGroup": [
+            "entity_kind",
+            "entity_key",
+            "interaction_kind",
+            "last_interacted_at"
+          ],
+          "consumerMeaning": "Application repository/worktree interaction history; not substitute for filesystem coverage or output activity.",
+          "catalogTableIndex": 63,
+          "catalogSourceAnchors": [
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:36",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift:248",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift:102",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/EntityRecencyAtoms.swift:7",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/EntityRecencyStore.swift:72",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/StableKey.swift:4",
+            "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/EntityRecency.swift:7"
+          ],
+          "evidenceLimit": "Catalog names/column groups matched; actual read/write use established by this closure group anchors, not inferred from column names. No target membership, ownership or physical-unit selection."
+        }
+      ],
+      "hydrationPath": "EntityRecencyStore.restoreWorkspaceAsync/loadWorkspaceEntityRecency -> SQL decoded rows -> workspace recency atom; restoreApplicationAsync similarly loads application history. RepoExplorer.observe token .pane outside Panes reads workspaceEntityRecency, but capturePaneFact non-Panes returns latestPaneMessageSnapshot.observedAt rather than this value.",
+      "writePath": "EntityRecencyStore observes its atoms and flushes application/workspace lanes -> datastore save methods -> replace application/workspace recency rows and insert exact kind/key/interaction/time. Source write origins for every interaction not retraced.",
+      "currentnessNotInRows": [
+        "Current activity-source semantics and UI observation registration",
+        "Actual focus is native state, not inferred from saved interaction time"
+      ],
+      "limits": "Included explicitly as observed/adjacent backing, not as required source for current F05 activity coverage or current Panes clock. Does not expand closure by similarly named timestamps.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/EntityRecencyStore.swift",
+          "line": 72,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/EntityRecencyStore.swift",
+          "line": 115,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+RepositoryLocalState.swift",
+          "line": 4,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 606,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift",
+          "line": 102,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift",
+          "line": 134,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture+Observation.swift",
+          "line": 94,
+          "evidence": "same-session keyed observation reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 759,
+          "evidence": "same-session decisive capture reused"
+        }
+      ]
+    },
+    {
+      "id": "C10",
+      "name": "Runtime/native-only source and materialization closure",
+      "basis": "source",
+      "inputGroups": [
+        "I04",
+        "I08",
+        "I09"
+      ],
+      "preparedFamilies": [
+        "F01",
+        "F02",
+        "F03",
+        "F04",
+        "F05",
+        "F06",
+        "F07",
+        "F08",
+        "F09",
+        "F10",
+        "F11",
+        "F12",
+        "F13",
+        "F14",
+        "F15",
+        "F16"
+      ],
+      "tables": [],
+      "hydrationPath": "No durable sidebar prepared-row restore path exists in the inspected production path. Source owners publish runtime facts; view captures reference clocks/native context; worker builds derived rows; native host acknowledges exact current candidate.",
+      "writePath": "Runtime PaneActivityStatusAtom equal-line suppression/latest-value gate; Bridge attendance/native attention; generic projection intent/cancellation; prepared deadline task; row caches/index/native table revisions/selection/viewport/command target are all current in-memory state/effects.",
+      "currentnessNotInRows": [
+        "PaneActivityStatusFact(lastOutputLine,observedAt); live repeated-line timestamp is equality-suppressed",
+        "Clock/calendar/referenceInstant/deadline and source continuity witness",
+        "Keyed observation slots,capture/title memo,projection generation/semantic baseline",
+        "Host lifetime,demandEpoch,visibleRevision,native-plan acknowledgement,selection/geometry/viewport",
+        "Bridge attendance/current active pane/responder chain",
+        "Command capabilities and actual external editor/native effect"
+      ],
+      "limits": "A SQL copy alone cannot reproduce current watcher coverage, source incarnation, process clock, native view/selection, worker acceptance or rendered pixels. Current source-side effects/read maintenance remain real even where prepared row transform is pure.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/PaneActivityStatusAtom.swift",
+          "line": 5,
+          "evidence": "same-session runtime type/publication reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 713,
+          "evidence": "same-session native candidate capture reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 759,
+          "evidence": "same-session clock/capture reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+PresentationDeadline.swift",
+          "line": 5,
+          "evidence": "same-session deadline owner reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 77,
+          "evidence": "same-session preflight/acknowledgement reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializationHost.swift",
+          "line": 123,
+          "evidence": "same-session native acceptance reused"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 459,
+          "evidence": "same-session command target reuse"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventStreamClient.swift",
+          "line": 46,
+          "evidence": "unchanged prior acquisition evidence reused"
+        }
+      ]
+    }
+  ],
+  "currentSourceFindings": [
+    {
+      "basis": "source",
+      "claim": "cache_worktree_enrichment persists branch/identity fields, but WorktreeEnrichment CodingKeys excludes snapshot, decoder explicitly sets snapshot=nil, and RepoCache save equality/projection omits the live snapshot. Dirty/sync/line counts therefore do not recover from copied cache rows.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/WorktreeEnrichment.swift",
+          "line": 13,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepoCacheStore.swift",
+          "line": 56,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Codecs.swift",
+          "line": 237,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Forge PR count/loading/unavailable facts and repository update attempt progress are runtime maps. Historical cache_pull_request_count is removed by migration 004; cache restore state contains only repo/worktree enrichment and metadata.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift",
+          "line": 99,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository.swift",
+          "line": 44,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/RepoCacheAtom.swift",
+          "line": 23,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/RepoCacheAtom.swift",
+          "line": 485,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Successful loading of local_repository_activity does not hydrate current authority. RepositoryLocalActivityStore publishes unavailable until a live checkpoint; current-session key/revision authority is maintained in memory.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift",
+          "line": 18,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift",
+          "line": 35,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "local_pane_activity stores wall-time/source, not ContinuousClock.Instant. App reconstructs ordering instant at restore and publishes current runtime time before attempting a save.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+PaneActivity.swift",
+          "line": 8,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+PaneActivityBoot.swift",
+          "line": 5,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 57,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Read-side maintenance exists: loadPaneActivity prunes rows using live+available Undo retain membership; compact PaneContext display capture expires lines and hides settled rows inside a SQL write.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+PaneActivity.swift",
+          "line": 7,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneActivityMembership.swift",
+          "line": 7,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift",
+          "line": 17,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 256,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 312,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "State naming does not select scope: sidebar state/collapse SQL uses the main-window row and ignores the workspace parameter; sort prefs are per-workspace, while current Panes facade overrides saved organization/sort to fixed behavior.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 153,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 210,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift",
+          "line": 401,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift",
+          "line": 45,
+          "evidence": "same-session current facade reused"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Workspace composition save commits canonical pane/tab rows before later local cursor/window write; failure after core commit is not an untouched cross-store outcome.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 149,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+          "line": 215,
+          "evidence": "new current source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Compact message-count read closure differs from full detail: requests/notices select projection columns without body/forms/answer children, while AgentLineDetail line decoding does load pane_state_action. Full Sessions signal decoding conditionally loads provider questions/options.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+ReadRows.swift",
+          "line": 131,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+          "line": 14,
+          "evidence": "new current source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Sessions/State/SQLite/SessionsRepository+ProviderQuestions.swift",
+          "line": 30,
+          "evidence": "new current source read"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    "Bounded closure of the nine supplied sidebar input groups and sixteen grouped prepared families; not an exhaustive app SQL dependency graph or whole-UI census.",
+    "C05 is wider snapshot hydration support, not minimal row-data closure. Active workspace selection helper and completed-snapshot drawer-presentation SQL helper were not freshly reopened; C05 calls them out instead of adding inferred direct row requirements.",
+    "Full message/form/action/answer/write-order/epoch/retirement mutation admission and every Sessions ingress/cleanup transaction were not recursively traced; compact current display/status read closures and representative committed writes were checked.",
+    "Every table name/column group is reconciled to the 86-table catalog; source functions establish actual usage. Installed database contents, migration execution, row validity, runtime restore, crash recovery, and cross-process equivalence are unobserved.",
+    "Upstream Git/remote/Forge source effects, native materialization/command geometry and prior family consumer shapes reuse same-HEAD evidence explicitly. No fresh product runtime/tests/builds/probes/network/credential work was run.",
+    "No future exported-table list, ownership/service allocation, schema, physical database/unit membership or Gateway/Host contract is selected."
+  ],
+  "evidenceReuse": {
+    "sidebarReadNeeds": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-read-needs.json",
+    "priorEffectNote": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/tmp/practices-research/2026-10-17-daemon-capability-placement/git-file-acquisition.md",
+    "sameHeadEffectScope": "Prior P04 topology/P05-P07 Git/remote/Forge and sidebar native/clock materialization shapes retained with exact same product HEAD. Current SQL/read/save/restore closures newly inspected unless pointer says reused.",
+    "priorEvidenceSha256": {
+      "sidebar-read-needs.json": "8c76412cd8cdfd1509a9ac1cc2a9e5d1ec7e65ab14586e2dcf444e7c165c7611",
+      "sidebar-read-needs.md": "33d94077cc8efbec34ba9fb5d5955c5d58bce9f3dbb4e6b37acff59785a73646",
+      "git-file-acquisition.md": "781793cd8b51f846063d433bea75b163f41afe954c738475bda5bfd46622accb",
+      "git-bridge-operation-source-map.json": "4456246bae27c341f39fd4faf04dae4036c4dff797588f38a88440fff92df22b",
+      "git-bridge-operation-source-map-notes.md": "787a4711ea5357bc1a386aa56f2a2f129b88cb0024a16fc47cd689e67c9ae6e6"
+    }
+  },
+  "sourceCoverage": {
+    "newReads": [
+      "86-table catalog names/columns/source metadata only; ignored target proposal fields",
+      "RepositoryTopologyStore/WorkspaceStore/transformer/core topology SQL/absence read-write",
+      "RepoCache save preparation/JSON codecs/cache SQL/runtime PR/progress state",
+      "RepositoryLocalActivity SQL/store/datastore authority",
+      "PaneActivity SQL load/prune/membership/boot restoration/save sink",
+      "Pane/tab/drawer snapshot SQL readers/writers,local cursor SQL,completed snapshot bridge",
+      "UI/collapse/preference SQL and hydrators",
+      "PaneContext compact display projection/current values/read maintenance/representative writes/App SQL access",
+      "Sessions context/evidence/questions SQL/status restore/runtime reduction/hook writes/App composition",
+      "EntityRecency store and exact SQL codecs (explicitly auxiliary)"
+    ],
+    "unobserved": [
+      "Tests",
+      "Builds",
+      "Product probes/runtime",
+      "Native UI/pixels",
+      "Network/credentials",
+      "Installed database/migration/row evidence",
+      "Crash/restart execution",
+      "Cross-process/replication behavior"
+    ]
+  },
+  "sourceQueries": [
+    "rg source table CREATE and cache/repository/pane activity names in Core state owners",
+    "rg exact load/save/commit/hydrate functions in RepoCache, topology, local activity and PaneActivity paths",
+    "rg cache_pull_request_count/snapshot in cache save/restore/codecs and migrations",
+    "rg current status/presentation read and production App composition, then direct function reads",
+    "rg fetchAuthoritativeSnapshot/readPaneGraph/readTabGraph and exact local cursor/window SQL",
+    "git rev-parse HEAD; source-scoped git status --short"
+  ]
+}

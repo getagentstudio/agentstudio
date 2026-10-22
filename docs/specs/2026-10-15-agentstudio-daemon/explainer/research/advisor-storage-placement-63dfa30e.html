@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · 🦉 Advisor: where AgentStudio&#x27;s data should live (independent picture)</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-storage-placement-63dfa30e.html">AgentStudio daemon · 🦉 Advisor: where AgentStudio&#x27;s data should live (independent picture)</a></nav></ex-nav>
+<ex-document id="content"><h1>🦉 Advisor: where AgentStudio&#x27;s data should live (independent picture)</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-16-advisor-storage-placement/advisor-storage-placement.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## 🦉 Advisor: where AgentStudio's data should live (independent picture)
+
+2026-10-16 · source HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462` · 🦉 Advisor Sidekick (claude-local `34f18df3`)
+
+The owner commissioned this in the Advisor session to be written independently of the Lead's study and compared afterwards. Owner inputs, verbatim:
+- "do the remote hsot deamons need a sqlite database?"
+- "how will thsi work or will the gate way rpocessor do this?"
+- "do we make it into events that hav einbox outouts and then al the informaiton is in the remote gateway?"
+- "whats the topolog"
+- "what about all teh slite tablse we ahve we nee dinventory and ... correlate the current SQLite database and data structures and what Agent Studio needs and how it works in the distributed system"
+- "wher eit shoud live and why thi sneeds mroe thought"
+- "im open to clean kup ehre"
+
+This is advice, not owner authority. It selects no implementation. The Lead's matrix (`docs/wip/2026-10-16-daemon-data-ownership-survey.md`) was **not read** before this was written.
+
+**Evidence.** Four Luna collections (`L1`–`L4`) and the prior-art report (`R1`), all in this folder. I re-checked every decisive claim against source myself; the anchors below are mine. The Sol reducer (`R2-reduced-inventory.md`) was still running when this was written, so counts are the collections' counts. They match the Lead's independent 53-table count for `local.sqlite`.
+
+---
+
+## 1. The premise everything follows from
+
+The owner stated this on 10-02, recorded in the agentd brainstorm (B:81–84, classified OWNER-STATED in R1):
+
+> The daemon is the host and source of truth, one per machine. The Mac app is one client. The IDE owns seeing and steering. agentd owns **whatever must stay true with the IDE closed or elsewhere.**
+
+This gives one sorting rule for every row of data:
+
+| Question about a piece of data | If yes → |
+|---|---|
+| Must it stay true, or keep changing, when no client is connected? (U15: sessions, agent input, terminal facts) | the **Host** of the machine it describes |
+| Is it about one machine's filesystem, processes or clock? (paths, zmx sessions, boot IDs, FSEvents volume cursors) | that machine's **Host** |
+| Is it how one device shows or arranges things? (windows, tabs, cursors, sizes, recency) | that **client** |
+| Is it about the routing fabric itself? (which Hosts are attached, pairing, trust) | the **Gateway** |
+| Can it be rebuilt from something else? | a **cache** beside whoever reads it, never a source of truth |
+
+---
+
+## 2. Short answers to the owner's questions
+
+**Do remote Host daemons need a SQLite database? Yes.**
+- Under U15, a Host keeps sessions, admits agent input and records facts with no client connected. That state has to survive a Host restart (the owner's own motivation, B:12: "afraid to restart my Mac").
+- Several writes are atomic across many tables today:
+  - a pane-context ask writes `pane_request` plus 5 child tables plus action rows in one transaction;
+  - a provider hook writes `sessions_operation`, binding, source and evidence in one transaction (`SessionsRepository+Writing.swift:6-24`).
+- Plain files (herdr's choice, R1:H1) can't give those transactions. An embedded single-writer SQLite on each Host can: SQLx under Tokio, per the Rust rules.
+
+**Should the Gateway hold the data instead? No, not as the source of truth.**
+1. *Many Gateways per Host.* If each Mac's Gateway held Host truth, two Macs would hold two diverging copies. That needs multi-master sync, which is the hardest problem in this space, to solve something that doesn't need solving.
+2. *A Host works with no Gateway* (U15). Facts produced while every Mac sleeps have to be written somewhere, and that is the Host. So the Host needs storage regardless, and a Gateway copy can only ever be a replica.
+3. *Many Hosts per Gateway.* The Gateway aggregates several Hosts. It is the natural place to merge views, not to own any one Host's data.
+
+What the Gateway does own (small, Mac-only): the attached-Host registry (Host identity, addresses, pairing keys), client pairings (phones), per-client attachment and connection state, and optionally a **replaceable** snapshot cache for fast startup. Every item in that cache is labeled with its Host and revision, and the cache is dropped on any doubt.
+
+**Events with an inbox/outbox, and all the information in the Gateway?** Use the shape without making the Gateway the database:
+
+```
+   Host DB (truth) ──commit──► Host change log
+     (rows + revision)          (per-Host monotonic revision, bounded retention)
+                                     │
+                     subscribe(sinceRevision = N)
+                                     ▼
+   Gateway: per-Host cursor (last revision seen)
+            replaceable materialized cache
+                                     │
+                       fan-out to its clients
+                                     ▼
+   Client: atoms (MainActor publication) + its own UI database
+```
+
+- The Host's change log is the **outbox**, and each Gateway's per-Host cursor is the **inbox position**.
+- On reconnect a Gateway asks for "changes since revision N". The Host replays them if still retained; otherwise it answers **gap → resnapshot**.
+- This is how the app already works internally. `workspace_data_architecture.md:887-922` says facts are latest-value notifications, each source has its own sequence, a gap means "full refresh", and the event bus is "NOT CQRS". herdr does the same (R1:H4–H5: `events_lost` → resubscribe → authoritative read).
+- Full event sourcing to the Gateway would reverse that design. It would add a second copy of every Host on every Mac, and require retaining the outbox until **every** Gateway has consumed it. A Mac that's been off for a week would pin unbounded history.
+
+Where a durable queue **is** still needed:
+- **Commands whose reply was lost.** Give each command an operation ID and keep a receipt on the Host, so a client asks "what happened to operation X?" instead of replaying it. That's the existing `sessions_operation` idea (UNIQUE(operation_scope, correlation_id)), generalized.
+- **User actions while a Host is unreachable**, such as answering an ask from the phone while the Linux box is offline. I recommend refusing with "Host unreachable" rather than queuing in the Gateway. A queued answer can land on an ask that has since expired or been answered elsewhere (§7, D6).
+
+---
+
+## 3. Topology with storage
+
+```
+ iPhone ─┐                                  ┌──────────── Linux box ────────────┐
+         │        ┌──────── Mac A ─────────┐│  Host (Linux)                     │
+ Mac A   │        │ App (Swift)            ││   host.sqlite  ← machine truth    │
+ app/CLI ┼──sock──┤  client.sqlite (UI)    ││   zmx sessions                    │
+ MCP     │        │ Gateway A (Rust)       ├┼──►  in-session agents/CLI ──► this Host
+         │        │  gateway.sqlite        ││                                   │
+         │        │  (Hosts, pairing,      │└───────────────────────────────────┘
+         │        │   replaceable cache)   │
+         │        │ Host (Mac A, local)    │◄── Mac A's own terminals live here
+         │        │  host.sqlite           │
+         │        └────────────────────────┘
+ Mac B app ─sock─► Gateway B ───────────────► Linux Host (shared) + Mac B local Host
+```
+
+One Mac therefore runs **three stores with three owners**:
+- the app's client DB (today's UI tables);
+- the Gateway's DB;
+- the local Host's DB.
+
+They share a machine but not an owner, so no table is shared between them and no transaction spans them.
+
+---
+
+## 4. Inventory → placement, by truth family
+
+The collections found 82 live tables: `core.sqlite` 29 and `local.sqlite` 53. On top of those, `cli.sqlite` has 3 domain tables plus GRDB bookkeeping, and search has 2 tables, in memory only. The rest are files and in-memory state (L4).
+
+| # | Truth family | Tables today | Keyed by | Advisor placement | Cleanup |
+|---|---|---|---|---|---|
+| A | **Repository topology** | core `watched_path`, `repo`, `worktree`, `unavailable_repo`, `unavailable_worktree`; local `local_repository_activity`, `local_repository_activity_cursor` | machine paths, SHA of path, **boot ID + uptime** (absence timing), FSEvents **volume** cursor | **Host** (each machine's own) | IDs become Host-qualified (§5) |
+| A′ | Repo curation | `repo.is_pinned`, `repo.note`, `worktree.note`, `repo_tag` | repo/worktree UUID | **open: D2** (Host attribute vs per-client) | – |
+| B | **Git/forge enrichment cache** | local `cache_metadata`, `cache_repo_enrichment`, `cache_worktree_enrichment`; PR facts in memory | repo/worktree UUID | **Host** computes and caches git facts (replaceable); clients project in memory. Forge/GitHub: **open: D4** | drop the client-side persisted copy |
+| C | **Terminal session lifecycle** | core `workspace_terminal_session_ownership`; `zmx/` dirs; runtime status, replay buffers (memory) | zmx session ID, process identity | **Host** session registry | the cleanup-state machine encodes "pane close → retire after Undo", which U14 replaced with detach. Rebuild as running/detached/terminating/ended |
+| D | **Agent sessions** | local `sessions_conversation`, `sessions_operation`, `sessions_pane_binding`, `sessions_source`, `sessions_evidence`, `sessions_provider_question`, `…_option`; last-refusal (memory) | **pane UUID**, provider conversation | **Host** | **re-key pane → (Host, session)**; binding is to the execution session, not a view |
+| E | **Agent context and messaging** | local `pane_state`, `pane_request` + 5 form/answer children, `pane_event`, 3 `*_action` tables, `pane_write_order`, `pane_epoch_claim`, `pane_answer_position`, `pane_retirement` | **pane UUID** | **Host** | **re-key pane → session**; `pane_retirement` becomes ended-session retention |
+| F | **Terminal activity** | local `local_pane_activity` | pane UUID | **Host** activity facts derived from the PTY (R10), not the renderer | re-key; source changes |
+| G | **Credentials and authority** | local `local_ipc_credential`; `GrantLedger` (`AgentStudioIPCRegistryAuthorization.swift:192`), `PermissionBroker` (`AgentStudioIPCPermissionBroker.swift:79`), both in memory | **pane + workspace** | **Host** issues session-scoped credentials (S14 Host-local input). The **Gateway** keeps client and Host-pairing credentials | re-key; F1's unconfirmed "independently revocable" stays a gap |
+| H | **CLI store** | `cli.sqlite`: `cli_outbox`, `cli_state`, `cli_store_identity`; local `pane_context_cli_outbox_cursor` | pane UUID, store UUID | **Delete.** The outbox exists only because the *app* can be unreachable from a pane's CLI. The CLI now talks to its co-located Host. `cli_state` write-number reservations move into the Host's ordering. Remote-targeting Mac CLI calls use operation IDs | **app-ownership artifact** |
+| I | **Workspace composition** | core `workspace`, `app_workspace_selection`, `pane`, `pane_content_{terminal,webview,code_viewer,payload}`, `drawer`, `drawer_pane`, `tab_shell`, `tab_pane`, `tab_arrangement`, `arrangement_{layout_pane,layout_divider,minimized_pane,drawer_view}`, `drawer_view_{layout_pane,layout_divider,minimized_pane}`, `workspace_undo_close`, `…_member` | workspace/tab/pane UUID | **Client** (the Mac app). **Open: D1** (is layout shared across devices?) | split execution facts off `pane` (§6) |
+| J | **Client UX memory** | local `local_{workspace,tab,arrangement,drawer,arrangement_drawer}_cursor`, `local_window_state`, `local_window_sidebar_collapsed_group`, `local_drawer_presentation`, `local_entity_recency`, `local_workspace_entity_recency`, `local_editor_preferences`, `local_repo_explorer_preferences`; `surface-checkpoint.json`, `preferences.global.json`, UserDefaults, URL history; search index (in memory) | window/workspace/entity | **Client** | recency entity keys become Host-qualified |
+| K | **Annotations (review)** | local `annotation_session`, `annotation_thread`, `annotation_message` | repo/worktree UUID | **Host** (about Host files; same comments from any device; survives client loss) | – |
+| K′ | Annotation drafts and edit lease | local `annotation_message_draft` | message | **open: D3** | – |
+| K″ | Annotation output attempts | local `annotation_output_attempt`, `…_attempt_message`, `…_event` | attempt, plus a **destination path on the Mac** | **Client** (it journals a native Mac effect: clipboard or file) | FK RESTRICT to Host messages becomes a (Host, message, revision) reference |
+| L | **Dormant Inbox** | local `local_notification_inbox_item`, `…_collapsed_group`, `local_inbox_notification_preferences` | workspace | **Delete.** No writers or readers found (L3:107-111); architecture doc:24-29 calls it dormant | **dormant feature** |
+| M | Store recovery witness | local `local_recovery_provenance` | recovery ID | each store keeps its own | – |
+| N | Migration artifacts | about 25 dropped or renamed incarnations (L1–L3) | – | **not carried.** The new Host schema starts at version 1 (hard cutover) | – |
+
+**Rough split:** about 25 tables become Host truth (A, B, C, D, E, F, G, K). About 40 stay client (I, J, K″, M). 7 are deleted (H, L), and about 25 migration incarnations are dropped. The Gateway gets new tables of its own and takes over **none** of today's.
+
+---
+
+## 5. Identity: the change everything else depends on
+
+The repository ID is literally `common:<path>`. It appears in agentstudio-git at `GitRepositoryIdentityResolver.swift:38`, `LibGit2WorktreeLookup.swift:12`, `…DiscoveryReadClient.swift:83` and `…LocalClient.swift:375`. The app adds `stableKey = SHA-256(path)` (architecture doc:119). Two Linux boxes with `/home/u/repo` produce the same key.
+
+Recommendation:
+- Every ID that crosses the Gateway becomes `(HostInstanceId, localId)`, as a distinct type.
+- The Gateway and clients never key by a bare ID or path.
+- `HostInstanceId` is generated at Host install (UUIDv7), never derived from hostname or `/etc/machine-id`, which repeat on cloned VMs. The Gateway refuses a second live connection claiming an ID that is already connected.
+
+Today's clock-relative fields stay on their machine, because they cannot be evaluated anywhere else:
+- **boot ID + uptime**: `unavailable_repo`/`unavailable_worktree` absence timing, and `workspace_undo_close.deadline_boot_id`/`deadline_uptime_ns`;
+- **FSEvents volume cursors**: `local_repository_activity_cursor`.
+
+---
+
+## 6. Atomic joins that cross future owners
+
+These are the places where one SQLite transaction or FK holds two future owners together today. Each must become a reference plus a reconciliation rule.
+
+| # | Today (one transaction or FK) | Becomes | Rule needed |
+|---|---|---|---|
+| X1 | `pane_content_terminal.zmx_session_id` → `workspace_terminal_session_ownership(session_id)` **ON DELETE RESTRICT**, same commit (`WorkspaceCoreMigrations+SessionOwnership.swift:24-28`) | client pane → (Host, session) | The session is created on the Host first, then the pane references it. A dangling reference (Host gone or unreachable) shows as unreachable and is never deleted. A session with no pane is normal under U14: it's detached |
+| X2 | `workspace_undo_close_member.session_id` → ownership **RESTRICT** (`:109-113`) | Undo keeps (Host, session) | Undo restore = reattach. Undo expiry no longer terminates (U14) |
+| X3 | `sessions_pane_binding.pane_id`, every `pane_*` table keyed by pane | Host rows keyed by session | The client maps pane → session. The Host never stores client pane IDs |
+| X4 | `local_ipc_credential(pane_id, workspace_id)` | Host credential keyed by session | Workspace IDs don't exist on the Host |
+| X5 | `annotation_output_attempt` and `…_attempt_message` → session/message **RESTRICT** | client attempt → (Host, message, saved revision) | The attempt keeps its exact bytes, so it stays valid if the Host is gone |
+| X6 | `pane.facet_repo_id`/`facet_worktree_id`, `cwd`, launch `source` | Host session facts (cwd, repo/worktree association, launch provenance); the client keeps `note`/`pin` | Association is a Host fact the client displays |
+| X7 | `pane_content_code_viewer.file_path` | (Host, path) | A Host path is not a local file URL (K12) |
+| X8 | `pane_context_cli_outbox_cursor` committed with the admitted notice (`CLIOutboxCursorCommitParticipant.swift:14`) | removed with H | – |
+
+---
+
+## 7. What needs more thought (decisions D1–D7)
+
+| ID | Question | Options | Advisor lean and why |
+|---|---|---|---|
+| **D1** | Are tabs and layouts shared across your devices? | (a) per client, and every client sees every session through the Host session catalog; (b) synced across clients; (c) owned by one "home" Host | **(a)** A layout can hold panes from three Hosts, so no single Host can own it. Sync is a large mechanism with no requirement asking for it yet |
+| **D2** | Repo pins, notes and tags: per device or shared? | Host attribute (same everywhere) vs client | **Host**: it is about the repo, and phone and Mac would agree |
+| **D3** | Unsaved annotation drafts and edit ownership | Host with an edit lease (multi-client safe) vs client-local (like Zed's unsaved edits, R1) | **Host with a lease**. Today's design already has edit tokens; two devices editing one thread need a single arbiter |
+| **D4** | Who talks to GitHub? | each Host (needs `gh` auth on every remote box) vs the Gateway (uses the Mac's credentials; forge facts are keyed by remote, not by machine) | **Gateway**. It keeps GitHub tokens off remote boxes, and nothing on a Host needs PR status with no client connected. *Check that against U15 before deciding* |
+| **D5** | How long does a Host keep its change log for absent Gateways? | bounded by time or size, then resnapshot | Bounded. Resnapshot is always correct; history is an optimization (G3/G6) |
+| **D6** | A client acts while its Host is unreachable | refuse vs queue in the Gateway | **Refuse**. A queued answer can hit an expired or already-answered ask |
+| **D7** | Host schema rules | the owner's SQLite rules apply: no triggers, CHECK only on booleans, enums parsed in code, SQLx `query!`, `migrations/*.sql` | Follow them in the new Host schema. Today's `core.sqlite` uses many triggers and enum CHECKs (L1: workspace guards, divider pruning); that's a client-side cleanup candidate, not something to copy |
+
+---
+
+## 8. Things I'd compare with the Lead first
+
+1. Does the Lead put any Host truth in the Gateway? I'd challenge that on the many-Gateways argument (§2).
+2. Is `pane` re-keyed to the Host session, or does pane identity leak onto the Host (X3, X4)?
+3. Are the CLI store and Inbox kept or deleted (H, L)?
+4. How do X1 and X2 handle the RESTRICT FKs under U14 detach semantics?
+5. Where are annotations placed (K, K′, K″)? The split is easy to miss because output attempts look like annotation data but journal a Mac-native effect.
+6. Identity: is `common:<path>` called out as a collision (§5)?
+
+Gaps:
+- The reducer's verified table wasn't available when this was written.
+- `pane_content_payload` locality is unknown (L1).
+- Writer/reader completeness for `local_notification_inbox_*` and `local_recovery_provenance` readers is marked not-found in L3.
+- No runtime or test evidence; this is source-only.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

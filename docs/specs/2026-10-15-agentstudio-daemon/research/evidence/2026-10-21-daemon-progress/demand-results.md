@@ -1,0 +1,80 @@
+# First-demand views: catching lost invalidations
+
+**Both Rust delivery candidates preserved all required rows at the first fresh demand in this finite profile.** Four normal runs matched the literal reference, and eight deliberately broken controls were rejected. All 12 processes exited 0. This adds a partial-invalidation check to the earlier [complete-state comparison](coordination-results.md).
+
+The distinction is practical: a view may show an older retained presentation while it refreshes, but it must not label that old data as the completed result of a fresh demand. A latest revision number is also insufficient if a merged view still contains stale rows.
+
+This is an in-memory owner/channel instrument, not AgentStudio native UI, a filesystem/Git query or a Gateway integration. It tests one retained-dirty implementation. Current Repo Explorer can instead resnapshot on reentry; the required outcome does not force every feature to use the same mechanism. Heap, latency, demand/read races, replaced lifetimes, deletion/tombstones, deadline behavior and cross-producer prerequisites remain unqualified.
+
+## Follow the first fresh demand
+
+Two source owners hold eight keyed targets. Three view owners first prepare a baseline, then become undemanded while retaining that baseline. Only one target changes. Real partial invalidation facts traverse either the scoped direct queues or the extra typed hub; the source read port returns only the selected entries unless a full read was requested.
+
+```mermaid
+sequenceDiagram
+    participant C as Workload
+    participant S as Source owner
+    participant D as Delivery
+    participant V as Selected view
+    participant E as Evidence
+    Note over C,V: Baseline prepared, then view hidden
+    C->>S: Change left, right, then left again
+    S->>S: Apply each change and revision
+    S->>D: Publish three scope invalidations
+    D->>V: Admit actual invalidation facts
+    C->>V: Settle hidden intake prefix
+    V->>V: Retain union of left and right scopes
+    Note over V,E: No fresh fulfillment while hidden
+    C->>V: Admit new demand
+    V->>S: Read selected dirty entries
+    S-->>V: Current left and right rows
+    V->>V: Merge, preserving untouched rows
+    V->>E: Record first fulfilled complete view
+    V-->>C: Demand operation completed
+```
+
+The sequence shows one of the three views. The evidence output is the instrument's observation boundary; no native client or socket receives these rows in this probe. The source's separate full diagnostic readback is never supplied to the view implementation.
+
+## Two normal profiles actually ran
+
+| Profile | Changes while hidden | Required first fulfilled view | Result |
+| --- | --- | --- | --- |
+| Disjoint scopes | Left becomes `L1`, right becomes `R1`, then left becomes `L2` | Both `L2` and `R1`, unchanged entries and all eight targets; source revision 4 | Matched in both arms and all three views |
+| Full followed by narrow | A full invalidation covers left `LF` plus new supplement `N1`; a later narrow invalidation changes right to `R2` | Full obligation survives: `LF`, `R2`, `N1`, unchanged entries and other targets; revision 3 | Matched in both arms and all three views |
+
+The first profile retained 24 entries; the second discovered the additional entry and retained 25. Source revision, view lifetime, demand epoch, request and view owner remain distinct. Each view used lifetime 1, then demand epoch/request 1 followed by 2; the view identity prevents those reused counters from mixing consumers.
+
+These two profiles each ran once per topology. A has six per-Host/view invalidation queues of 16; B adds an actual hub with three combined view queues of 32. Both have 96 leaf slots. There is no complete-bank watch in this experiment. The bounded workload does not measure overflow, contention or fairness.
+
+## Why a green revision counter is not enough
+
+The controls deliberately changed view 1 while views 2 and 3 stayed healthy. Each fault happened at its owning stage, before observation; no report was edited afterwards.
+
+| Wrong implementation | Actual observation | Why it fails |
+| --- | --- | --- |
+| Keep only the latest dirty scope | Revision 4 with current left `L2`, but right still at its baseline | A new revision can accompany an incomplete merged view |
+| Replace pending full refresh with the later narrow scope | Revision 3 with current right `R2`, stale left and no supplement | Narrow work cannot discharge a broader pending obligation |
+| Fulfill first, refresh afterwards | The first request-2 result is baseline revision 1; final diagnostic is correctly revision 4 | Eventual convergence cannot repair the first fresh result |
+| Acknowledge an empty hidden prefix, then process on demand | First and final values are correct, but hidden intake claimed zero work before the new demand | Correct values cannot excuse a false processing checkpoint |
+
+All four were rejected in both arms. The last control produced only the intended hidden-prefix finding; its values remained correct. Calibration additionally required every shared invariant and both healthy views to pass. An unrelated source, queue or healthy-view defect would fail the row rather than count as successful fault detection.
+
+The last two controls expose different failures: one falsely completes a fresh result; the other falsely closes an intermediate processing boundary. Both can have a correct final snapshot.
+
+## Independent checking changed the instrument before execution
+
+The independent source/oracle challenge found that reused demand counters needed a view identity, and that revision-only checking could miss stale merged rows. It also found that the initial calibration rule could overlook unhealthy controls, and that an empty hidden prefix could pass vacuously. The Lead strengthened those checks and added the fourth control before the first CLI run. The prospective matrix increased from 10 to 12; normal obligations were unchanged.
+
+The runtime uses Rust 1.98.1/Tokio 1.48.0 with the existing Router lint table and first-party unsafe forbidden. The Worker’s final formatting, offline check and all-target Clippy receipts each report exit 0 with zero warnings; the Lead checked their matching source hashes and built the final binary, exit 0. Lead Ruff, formatting and basedpyright passed with zero errors/warnings.
+
+An independent Sol Researcher checked source, all actual reports/hashes, healthy controls, read contents, fulfillment order and joins. It confirmed the finite outcomes. After the run it found one narrower assertion omission: the checker did not require the skipped-intake control's final diagnostic, although both actual maps were correct. The Lead added that requirement and checked the same retained reports again; all outcomes remained unchanged. No runtime was repeated and no old report was rewritten. The original checker remains in the frozen snapshot; only the current checker intentionally differs. [Independent account](../../../../../../tmp/experiments/2026-10-21-coordination-demand/independent-evidence-check.md) and [stronger retained-data check](../../../../../../tmp/experiments/2026-10-21-coordination-demand/post-run-oracle-check.json) preserve that chronology.
+
+All 12 raw hashes matched their receipts. The source/binary stayed unchanged during execution; 28 source/config/oracle files were preserved in the frozen snapshot. The raw total was 683,126 bytes, largest report 57,769 bytes; the corpus including frozen source was 849,967 bytes at this check. All 78 declared task joins across the 12 runs were completed, and counted queues drained. These are scoped observations, not whole-process heap or performance bounds.
+
+Open the [frozen plan](../../../../../../tmp/experiments/2026-10-21-coordination-demand/plan.md), [literal row reference](../../../../../../tmp/experiments/2026-10-21-coordination-demand/expected-results.json), [actual run summary](../../../../../../tmp/experiments/2026-10-21-coordination-demand/run-001/summary.json), [manifest](../../../../../../tmp/experiments/2026-10-21-coordination-demand/run-001/manifest.json), [Lead evidence check](../../../../../../tmp/experiments/2026-10-21-coordination-demand/lead-evidence-check.json) and [source handback](../../../../../../tmp/experiments/2026-10-21-coordination-demand/source-readiness.md) for detail.
+
+## What this establishes for the migration
+
+Rust owners can preserve a complete prepared view while refreshing only the dirty scope, and can keep a full refresh obligation from being narrowed away. This gives the Gateway-view design a concrete semantic probe beyond complete snapshots.
+
+It does not establish the future placement of every reducer or the real Swift/native fulfillment boundary. The source rows/read ports stand in for the eventual Host capability API; no Git, SQL, replication or client schema compatibility is delivered here. A/B topology choice still needs the actual consumer mix and measured costs. A separate [C4 scheduled eligibility profile](eligibility-results.md) now covers finite timer/currentness cases; remaining C4 branches, C13 causal prerequisites and the remaining recovery/native profiles remain separate work.

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Lead checks for the Advisor&#x27;s primary experiment map</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="experiment-validation-notes-3372c519.html">AgentStudio daemon · Lead checks for the Advisor&#x27;s primary experiment map</a></nav></ex-nav>
+<ex-document id="content"><h1>Lead checks for the Advisor&#x27;s primary experiment map</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/experiment-validation-notes.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Lead checks for the Advisor's primary experiment map
+
+The owner explicitly asked Claude to map the primary experiments and the Lead to validate them. The Advisor proposal is pending. These are validation criteria grounded in current evidence, not a competing experiment plan, execution authorization or a final spec.
+
+## What makes an experiment primary
+
+- A result changes a load-bearing architecture, backend, ownership or protocol choice; it is more than a generic unit-test list.
+- The baseline/comparator prove equivalent intended behavior. A bypassed Gateway may be an attribution control only, never the proposed deployment path.
+- A concrete observable oracle can fail for the failure under study. Source review, in-memory mocks, transport acceptance and a readable-looking terminal do not substitute for real effect/render/continuity proof.
+- Correctness and lifecycle gates precede speed ranking. Thresholds are either justified discriminators or explicitly provisional; no invented product SLA.
+- Pass, fail and inconclusive have distinct design consequences; owner value choices remain decisions rather than disguised experiments.
+- Pins, supported platform/profile, workload, cancellation/cleanup custody and proof limits are named. Proposed future execution stays separate from this design-only work.
+
+## False positives to exclude
+
+| Area | A false pass would look like | Source-grounded check |
+| --- | --- | --- |
+| Terminal restoration | Screenshot/cells look right while the next split escape/UTF8 suffix changes modes or parser state | ZMX's vt_stream and serialized Terminal differ; Init/live ordering and newer Capture do not establish a complete continuation checkpoint. Include actual native rendered path and distinguish required equivalence from stricter unsupported state |
+| Native relay | A Rust parser receives bytes, but Ghostty never renders them correctly | Current [attach command](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) is a relay behind Ghostty's PTY; text/key APIs inject input. A protocol microtest does not prove this client entry |
+| Controller/resize | A second viewer appears correct after silently changing the first viewer's geometry | [Init](../../../../../vendor/zmx/src/loop.zig) can claim leader and resize; [input](../../../../../vendor/zmx/src/loop.zig) can transfer leader. Temporary snapshot attachment is not passive |
+| Cleanup/lost replies | EOF or successful Kill submission is reported as process extinction; reconnect creates a same-name replacement and calls it survival | [Retire](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift) returns pending after send and protects boot/process identity; [ensureSession](../../../../../vendor/zmx/src/loop.zig) can create a new daemon |
+| Cancellation | Aborting an RPC future is reported as undoing a filesystem/SQLite/process effect | Tarpc cancels top-level handler, not spawned work or committed effects. Inject at exact owner admission/commit/settlement boundaries; explicit server rejection differs from unknown delivery |
+| No-client work | A shell survives, while pane-based credentials reject its hooks and last-line/activity stops with renderer absence | U14/U15 and current pane-principal invalidation differ. Keep U15/U17 ingress conflict explicit until owner scope is settled; never silently add a direct Host client |
+| Bus/recovery | Broadcast/watch/mpsc compared on different loss semantics; a bounded item queue hides unbounded waiting tasks/allocations | Current traffic classes and consumer policies differ. Test equivalent ordered transitions/latest-state semantics, gap/incarnation recovery and complete retained memory |
+| Timing | Fresh CLI process cost is called socket RTT, or cross-machine timestamps are subtracted as one clock | [CLI clock](../../../../../scripts/benchmark-cli-latency.pl) includes fork→waitpid; use warm/cold separation, client end-to-end duration and correlated per-owner monotonic stages |
+| Compression/congestion | MessagePack is called compression, or isolated throughput wins while key-to-visible-echo degrades under bulk | Same workload/result/queue policy; report bytes, CPU, allocations, interactive tails and saturation. Multiple QUIC streams still share congestion/windows |
+| Linux fork | Data is cloned but metadata, containment, index/admin state, races or rollback differ; fallback byte copying is hidden | F01–F13 and full Git receipts remain the baseline. Safe FICLONE is one primitive. Test actual filesystem capability and external Git lock/CAS interactions; no unsafe/fallback waiver |
+| iOS/network | Simulator/source support is called physical-device/App Group proof; socket support is called always-on execution; initial DERP output is called steady route | [Mobile/network evidence](mobile-network-evidence-f7c1efa0.html) separates platform capability, suspension, route observations and real app/device proof. Profile depends on pending Gateway placement |
+
+## What the map must not settle by measurement
+
+Phone Gateway placement, permitted controller transfer, per-client versus shared layout, acceptable missed-history retention, transcript purpose and the meaning of authorized agent ingress are owner outcomes. An experiment can price or falsify a proposed realization; it cannot manufacture authorization or select those meanings from silence.
+
+The future returned experiment map will be checked against this list, decisive source anchors and the actual original research. No code, experiments, tests/builds, runtime or device actions have occurred.
+
+## Existing test-source limits checked while the Advisor maps
+
+The existing [backend recreation E2E source](../../../../../Tests/AgentStudioTests/Integration/ZmxE2ETests.swift) starts a sleeping process, creates another Swift backend instance, observes health, sends Kill and waits for socket disappearance. It does not reconstruct a fresh native Ghostty renderer, compare parser continuation, prove Host-process restart/reboot survival or by itself prove process-family extinction. The candidate map must not cite it as those stronger baselines. The identity-protected retirement path has different evidence. None of these tests was run.
+
+The Git fixture inventory has separate integration suites for cancellation, rollback, eligibility, metadata flags, tracked state, private administration, topology and ref/index locks. Those are candidate scenario sources, not already-passing Linux coverage. A guessed aggregate WorktreeFork test filename was absent; `rg --files` located the actual suites and no absence-of-feature claim was made.
+
+## Disposition of the actual Advisor map
+
+Actual proposal received as push `01a1422d-b1bd-7c71-b87d-06b796f3385e`, concise root message `01a1422e-1619-7e30-bbec-4d3c61c1952d`/activity6754. The raw347-line map is preserved separately. Lead retains E1–E6 experiment families and primary rationale, with the following corrections embodied in `docs/wip/2026-10-15-daemon-primary-experiments.md`.
+
+| Map element | Lead disposition / decisive evidence |
+| --- | --- |
+| Terminal fidelity/native path as first discriminator; Linux probe parallel | Accepted. Dependencies narrowed per claim: E1 gates terminal resync/echo, not every control-RPC observation; Linux parity does not block all network data |
+| Every restored element equal, including synchronized-output mode | Qualified: existing serializer intentionally excludes that transient mode. The oracle needs an explicit restoration/normalization profile and known expected states, not an overstrict equality test |
+| Full-transcript Host reference | Qualified: bounded synthetic harness reference only, not a production Host transcript/durability requirement |
+| Accept between PTY parse and broadcast | Rejected as an assumed interleaving inside the current single-threaded section. Actual accept-before-broadcast-before-Init races remain valid cases |
+| OSC133 rewrite/no carry and bounded Info CWD | Source prior confirmed by direct reads of util.zig314 and loop.zig1121. Runtime consequences remain predictions; compare raw/backend and forwarded client semantics rather than hiding the transform in both oracles |
+| Native text getter means glyph-present timestamp | Rejected: header1238 exposes text, not a display-presentation receipt. Controlled queries must be emitted on terminal output, not via an API that writes input into the child. Visible timing needs an independently validated observation seam |
+| Closed app baseline is authority refusal; copied bearer must fail | Rejected as universal conclusions: absent listener is transport unavailability; bearer authentication is scoped but not automatically nontransferable process attestation. Use wrong-resource targeting as an actual scoped-authority negative case |
+| Every lost reply yields unknown forever; all operation classes exclusive | Qualified: stronger correlated evidence may reconcile the effect; explicit rejection differs. Classify post-state/dedup/retry/retention as axes, and inject faults on both Gateway and Host receipt boundaries |
+| Host restart must re-adopt / durable registry follows from no-client U15 | Conditional on a selected restart promise. Client absence does not alone authorize all crash/reboot durability or automatic workload resume |
+| N-attach must fail as a meter negative control; flow window equals retained bytes | Rejected: baseline outcome must be observed, meters independently calibrated, and logical credit/queue sizes separated from allocations/footprint. Bounded stress is not a proof of a universal memory bound |
+| FICLONE or copy_file_range as strict-CoW fork probe | Rejected equivalence. Primary copy_file_range manual permits acceleration, not guaranteed cloning. No silent byte-copy fallback or unsafe waiver |
+| Filesystem name fixes support; no residue after all failures | Qualified: pinned capability/profile, not a universal label. Existing contracts admit truthful partial/residue outcomes. Experiment failures cannot silently reduce owner-required Linux parity |
+| Watcher parity newly absent | Not accepted as a new omission: survey/K09 already record Darwin-specific observation coverage. Concrete inotify/fanotify probes are useful; Lead checked the actual manuals for nonrecursive/overflow/privilege conditions |
+| iOS suspension universally closes connection | Rejected: primary Apple source establishes suspension, not universal closure. Test retained connection, timeout/closure and process loss separately |
+|104-byte socket path constant | Not accepted without target-derived proof. Apple source expresses SOCK_MAXADDRLEN with sun_len/sun_family; actual platform/container paths must be tested |
+| All builds/tests on a named other machine | Not an established owner constraint for this task. Future execution environment requires scoped authority and isolation; no machine selected here |
+| Defer all codec work until a CPU bottleneck | Qualified: broad speed bake-offs can wait, but cheap typed-wire/Quinn-adapter/generated-lint feasibility belongs early. No compile or real adapter result exists |
+
+Direct new primary reads: copy_file_range(2), inotify(7), fanotify_mark(2), Apple App Group DocC inline address constraint; all links are in the validated proposal/evidence. Source-only correction is not runtime proof. The proposed experiments still need later execution authority and concrete supported profiles/workloads/observation seams.
+
+## Current background Advisor countercheck
+
+New Advisor `claude-local/34f18df3` returned direct receipt `01a14237-863c-7d02-95dd-09fdc934425e` and root message `01a14238-3248-7980-9d67-98dee0d58bd4`/activity6757. It independently read the integrated proposal/raw map/validation notes/mobile evidence, but did not claim a fresh read of original memos or Apple/man7 sources. Verdict: priorities stand, ready with amendments; this is advice, not formal design acceptance.
+
+Accepted amendments: per-live-connection Capture arms; separate silent-gap outcome; renderer-free facts as an E1 co-gate; early export-attribute/lint feasibility; a calibrated OS frame-capture candidate. Lead independently opened Rust's official unsafe_code lint documentation and Apple's SCStreamFrameInfo.displayTime DocC. The former documents export-attribute coverage, not a proved failure of every generated bridge; the latter describes WindowServer display time without proving clock alignment/units/frame availability for this harness. No blanket U10 waiver or specific capture permissions assumed.
+
+One A1 statement was rejected after checking handleInput: a client without Init is not inherently viewer-only, because qualifying user input can promote it. Advisor acknowledged the correction in direct reply `01a1423b-2485-7b62-8a14-b58ea7fda032` and root message `01a1423b-2493-74c2-aa44-21afb9bb82b5`/activity6759. Such a promoted no-Init client may coexist with automatic DA responses; explicit no-input observer behavior and query-reply observations are now in E1.
+
+Execution-host restriction is held conservatively as reported: Advisor cites an earlier owner no-Sunbook-build/test instruction in its own memory, unavailable in this packet. A bounded search of the Lead's memory registry did not confirm that exact instruction. Do not schedule builds/tests on Sunbook pending primary confirmation; this proposal authorizes none anywhere. Screen Recording/Accessibility are conditional on the actual chosen capture/input mechanisms, not universal gates on every native proof.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

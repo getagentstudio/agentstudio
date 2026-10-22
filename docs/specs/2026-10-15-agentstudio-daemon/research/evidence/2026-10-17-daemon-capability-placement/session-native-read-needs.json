@@ -1,0 +1,1403 @@
+{
+  "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "scope": "Bounded CURRENT read-model/publication/consumer evidence for Sessions/pane-context and native workspace/pane/window/terminal clients. These are existing types/fields, not future prepared-view interfaces or ownership choices.",
+  "evidencePolicy": "Current source facts are based on opened declarations plus writer/composition/consumer code. Prior same-HEAD RPC/status/native walks are explicitly labeled. nativeOnlyFacts and selectionLimit fields are evidence-bounded implications/limits, not executed Host/native proof or new owner decisions.",
+  "coverage": {
+    "familyCount": 14,
+    "currentTypeFieldGroups": 36,
+    "families": [
+      "S01-session-summary-and-query",
+      "S02-session-status-publication-and-ui",
+      "S03-committed-open-ask-input-to-session-status",
+      "S04-agent-title-and-agent-line",
+      "P01-pane-context-compact-display-and-counts",
+      "P02-pane-membership-view-source-boundary",
+      "P03-pane-context-detail-and-paged-content",
+      "P04-native-context-popover-consumer-state",
+      "N01-workspace-pane-query-projections",
+      "N02-focused-pane-and-command-context",
+      "N03-native-window-lifecycle-and-current-window",
+      "N04-terminal-runtime-status-snapshot",
+      "N05-pane-activity-time-and-recency",
+      "N06-pane-latest-output-fragment"
+    ],
+    "notExhaustive": [
+      "all nested value contracts",
+      "every UI/command consumer",
+      "all terminal screen/grid/scrollback/IME/accessibility models",
+      "all transitive SQL/runtime/native effects"
+    ]
+  },
+  "productionComposition": [
+    {
+      "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+      "line": 186,
+      "meaning": "Actual IPC startup awaits Sessions/pane-context preparation and passes the result into makeAppIPCServer before server.start."
+    },
+    {
+      "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+      "line": 299,
+      "meaning": "Composition built with app IPC owner; status sink applies SessionStatusAtom, graph directory/datastore/UI publication roots injected."
+    },
+    {
+      "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+      "line": 34,
+      "meaning": "Actual repository/service/bridge/status/open-ask/agent-line joins; presentation lane applies compact display atom."
+    },
+    {
+      "path": "Sources/AgentStudio/App/Boot/AppDelegate+MainWindowCreation.swift",
+      "line": 104,
+      "meaning": "Native UI readers use these actual keyed atoms plus current service adapter."
+    },
+    {
+      "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+      "line": 350,
+      "meaning": "Surface coordinator and UI adapter receive actual composition; teardown clears references then shuts it down."
+    }
+  ],
+  "effectfulReadDistinctions": [
+    {
+      "name": "compact PaneContextService.readDisplay/computeDisplay",
+      "basis": "source",
+      "effect": "write transaction expires lines, hides settled records and bumps source revisions before display fold",
+      "pointers": [
+        "Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift:106",
+        "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift:17",
+        "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift:256",
+        "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift:312"
+      ]
+    },
+    {
+      "name": "pane.context.get / readDetail",
+      "basis": "source",
+      "effect": "conditional ensureOpen startup settlement/retirement drain, then ordinary SQL read and in-memory detail revision bookkeeping; no mark-read",
+      "pointers": [
+        "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift:93",
+        "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift:27"
+      ]
+    },
+    {
+      "name": "session.query / Sessions summary",
+      "basis": "source",
+      "effect": "can hydrate runtime, load asks, consume viewed/retired input and publish status; actual ask-source bridge may reach service opening",
+      "pointers": [
+        "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift:33",
+        "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift:24"
+      ]
+    },
+    {
+      "name": "pane.message.changes",
+      "basis": "source",
+      "effect": "separate durable reported-position/receipt confirmation and acknowledged event pruning; not the detail read or UI rendering",
+      "pointers": [
+        "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift:11"
+      ],
+      "evidence": "reused-prior-worker-pass-same-head"
+    },
+    {
+      "name": "UI markRead / answer / message action",
+      "basis": "source",
+      "effect": "explicit person mutations then refresh; location restrictions differ by action",
+      "pointers": [
+        "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift:136",
+        "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift:181"
+      ]
+    },
+    {
+      "name": "workspace/window/terminal snapshots",
+      "basis": "source",
+      "effect": "immediate current atom/runtime reads; terminal timestamp sampled with Date(); not mutation receipt, native pixels, terminal output or durable event cut",
+      "pointers": [
+        "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:39",
+        "Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift:93"
+      ]
+    }
+  ],
+  "families": [
+    {
+      "family": "S01-session-summary-and-query",
+      "currentTypes": [
+        {
+          "name": "SessionSummary",
+          "fields": [
+            "id (binding conversation UUID)",
+            "provider",
+            "sessionRef (provider conversation reference)",
+            "bindingGeneration",
+            "status",
+            "providerPrompts[reason,observedAt,summary?]",
+            "omittedPromptCount"
+          ]
+        },
+        {
+          "name": "AgentSessionStatus",
+          "fields": [
+            "needsYou(approval|question|blocked)",
+            "failed(category)",
+            "working(active|monitoring)",
+            "idle(done|ready|interrupted|ended)",
+            "unknown"
+          ]
+        },
+        {
+          "name": "SessionsStatusReadResult / IPCSessionQueryResult",
+          "fields": [
+            "unbound | live(summary) | ended(summary)",
+            "wire: paneId, sourceHealth, session?, lastRefusal?"
+          ]
+        }
+      ],
+      "authoritativeSources": "SessionsIngestion owns mutable SessionsStatusRuntime; SessionsRepository.statusContext supplies binding/evidence rows for lazy restore. Current binding generation selects one binding/state; summary is not the provider process itself.",
+      "reductionAndJoins": "Runtime replays only applied status evidence in admission order per binding, overlays independent ask/line/viewed inputs, and derives status. Approval/question/blocked takes precedence, then ended binding, then turn status. Only monitoring line work refines an already-working turn.",
+      "projectionOrContraction": "SessionSummaryProjection sorts prompts newest first, caps listed prompts and summary/failure text; omittedPromptCount preserves omitted count. Reduction uses full state rather than truncated prompt list.",
+      "generationsAndCurrentness": [
+        "bindingGeneration selects current pane binding",
+        "admission sequence/turn IDs guard evidence and closed turns",
+        "restored bindings lack live process-local bound instant/confirmation",
+        "sourceHealth is same actor current-generation read, not native runtime lifecycle"
+      ],
+      "actualConsumers": [
+        "AgentStudioIPCSessionsAdapter.readSessionState → session.query",
+        "PaneContextService sessionSummary bridge → PaneContextDetail and display revision inputs"
+      ],
+      "effectfulRead": "readSessionStatus may restore runtime state, load open asks, consume viewed/retired mailbox inputs and publish status. lastRefusal read also consumes viewed inputs. Open-ask hydration can reach PaneContextService.ensureOpen through actual bridge.",
+      "nativeOnlyFacts": "No direct NSWindow/NSView read in summary owner. Person-viewed is an input supplied by native interaction; current summary is not a substitute for actual renderer/process observation.",
+      "selectionLimit": "Current source does not decide cross-client audience, retention/replay or whether one client's viewed input changes another client's displayed done/ready state.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/SessionSummary.swift",
+          "line": 3,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionsStatusRuntime.swift",
+          "line": 16,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionsStatusRuntime.swift",
+          "line": 74,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift",
+          "line": 211,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Models/SessionSummaryProjection.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 33,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift",
+          "line": 99,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextDetailMapping.swift",
+          "line": 220,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Fresh types/reduction/summary projection; prior RPC/status walk reused for complete wire/lazy-query path. No provider/runtime/restart run; not every evidence reducer branch re-audited.",
+      "basis": "source"
+    },
+    {
+      "family": "S02-session-status-publication-and-ui",
+      "currentTypes": [
+        {
+          "name": "SessionStatusPublication",
+          "fields": [
+            "set(AgentSessionStatus)",
+            "remove",
+            "batch key: PaneId"
+          ]
+        },
+        {
+          "name": "SessionStatusAtom",
+          "fields": [
+            "keyed optional AgentSessionStatus",
+            "AtomFamily revision/equality suppression"
+          ]
+        }
+      ],
+      "authoritativeSources": "SessionsIngestion.publishStatus reads current generation's runtime state and offers status to its mailbox. Production AppDelegate creates composition and supplies a sink applying batches to atomStore.sessionStatus.",
+      "reductionAndJoins": "Publication omits full SessionSummary, provider identity/prompts and binding generation from payload. App composes keyed status and pane-context readers; RepoExplorer captures them independently.",
+      "projectionOrContraction": "Mailbox compares last desired status including in-flight values, coalesces latest keyed values, preserves remove, and rejects retired panes. One lane drains through awaited MainActor sink; atom equal-suppresses again.",
+      "generationsAndCurrentness": [
+        "runtime binding generation guarded before offer",
+        "publication payload has PaneId/status only, no explicit binding/revision/incarnation",
+        "retired set prevents later offer; keyed remove crosses sink",
+        "mutable state stays in ingestion rather than publication atom"
+      ],
+      "actualConsumers": [
+        "PaneContextUIReaders.sessionStatusForPane",
+        "SidebarSurfaceHost injected reader → RepoExplorerProjectionInputCapture",
+        "RepoExplorerPaneRowVariants renders status line when present"
+      ],
+      "effectfulRead": "Atom keyed read is observation; publication is fed by reducer/lifecycle work. Querying Sessions can independently cause hydration/publication (S01).",
+      "nativeOnlyFacts": "MainActor atom is app UI publication, not authoritative SQL/runtime state. Consumer has local selected/compact row presentation and observation state.",
+      "selectionLimit": "A current per-pane latest-value publication does not select future distributed ordering, subscriber cut, reconnect incarnation or shared versus per-client presentation.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 299,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 325,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 219,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionStatusPublicationMailbox.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionStatusPublicationMailbox.swift",
+          "line": 32,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionStatusPublicationMailbox.swift",
+          "line": 108,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/State/MainActor/Atoms/SessionStatusAtom.swift",
+          "line": 7,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextUIReaders.swift",
+          "line": 14,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 785,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneRowVariants.swift",
+          "line": 54,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Actual production status sink/reader/UI model consumption opened. No SwiftUI rendering/runtime observation and no exhaustive sidebar audit.",
+      "basis": "source"
+    },
+    {
+      "family": "S03-committed-open-ask-input-to-session-status",
+      "currentTypes": [
+        {
+          "name": "PaneContextOpenAskUpdate",
+          "fields": [
+            "bindingGenerationId",
+            "sequence:Int64",
+            "approval:Int",
+            "question:Int",
+            "blocked:Int"
+          ]
+        },
+        {
+          "name": "SessionsOpenAskUpdate / OpenAskSummary",
+          "fields": [
+            "bindingGenerationId",
+            "summary(sequence,approval,question,blocked)"
+          ]
+        }
+      ],
+      "authoritativeSources": "PaneContextService/SQLite counts open pane_request rows by sender binding generation and reason. When advancing, ask_sequence increments in pane_answer_position; hydration reads existing sequence without advancing.",
+      "reductionAndJoins": "App's PaneContextSessionsBridge translates Core summary into Sessions-owned port. Sessions retains latest independent ask summary per binding generation; drops non-increasing sequence; status reducer combines counts with provider prompt reasons.",
+      "projectionOrContraction": "Counts are independently sequenced facts, not copies of provider prompts or UI message-chip counts. Payload has no bodies, forms, answers or receipt detail.",
+      "generationsAndCurrentness": [
+        "binding generation qualifies session sender",
+        "strictly increasing ask summary sequence",
+        "pending summary can precede restored runtime state",
+        "Core and Sessions types are distinct mapped ports"
+      ],
+      "actualConsumers": [
+        "SessionsIngestion.receiveOpenAskSummary → SessionStatusReducer",
+        "SessionSummary/status publication derived needsYou priority"
+      ],
+      "effectfulRead": "openAskSummaries invokes ensureOpen, which can settle startup asks/drain retirements; read of existing summary itself uses advancing:false. Ask mutation/settlement produces advancing summary separately.",
+      "nativeOnlyFacts": "No view required to compute committed counts; user answer is separate person action and not implied by count read.",
+      "selectionLimit": "Current source does not select distributed ask ownership, client-specific acknowledgement, shared audience or cross-service replay semantics.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/PaneContextOpenAskUpdate.swift",
+          "line": 4,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+OpenAsks.swift",
+          "line": 47,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+          "line": 56,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionOpenAskInput.swift",
+          "line": 3,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 38,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Fresh committed-count and bridge/currentness boundary. Complete ask write/settlement transactions reused from prior RPC walk rather than re-expanded.",
+      "basis": "source"
+    },
+    {
+      "family": "S04-agent-title-and-agent-line",
+      "currentTypes": [
+        {
+          "name": "AgentLineDetail",
+          "fields": [
+            "summary",
+            "work:working(indeterminate|step(current,total)) | monitoring(text) | blockedOnYou(action) | done | failed(summary)",
+            "detail?",
+            "refs:[MessageAction]",
+            "writer:AgentMessageSender",
+            "updatedAt",
+            "lifetime:untilReplaced|expires(at)",
+            "stale"
+          ]
+        },
+        {
+          "name": "agentTitle",
+          "fields": [
+            "optional current title string"
+          ]
+        }
+      ],
+      "authoritativeSources": "PaneContextService ordered write owner writes pane_state under current pane/binding and writer-stream epoch/counter admission. Title/line details are decoded from SQL; line expiry/staleness is time-dependent.",
+      "reductionAndJoins": "Line write for session sender forwards work+binding generation to App bridge; only Core monitoring maps to Sessions monitoring. Working/done/blocked/failed line states do not override Sessions turn outcome. Display title reader chooses agentTitle before fallback pane.title.",
+      "projectionOrContraction": "Compact PaneContextDisplay carries full current AgentLineDetail but no line history. Ordered current-value writes differ from publication equality/coalescing.",
+      "generationsAndCurrentness": [
+        "writer includes pane or session(provider,sessionRef,bindingGeneration)",
+        "write stream epoch and increasing counter",
+        "binding generation checked inside transaction",
+        "expiry Date and stale bit/read-time version can change display/detail revision"
+      ],
+      "actualConsumers": [
+        "PaneContextDisplay → RepoExplorer agent-line row and context popover",
+        "PaneDisplayTitleDerived.title override → PaneContextUIReaders.titleForPane",
+        "SessionStatusReducer monitoring refinement through bridge"
+      ],
+      "effectfulRead": "Compact display capture can expire line in SQL and bump revision. Detail read computes staleness/read-time version and calls ensureOpen; receipt acknowledgement is separate.",
+      "nativeOnlyFacts": "Fallback pane title/CWD may be current native terminal metadata; line's semantic work is not renderer state. OS file/pane/PR actions in refs have separate native/effect owners.",
+      "selectionLimit": "Source does not select cross-client title/line audience or where expiry time is evaluated in distributed execution.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/AgentLineDetail.swift",
+          "line": 3,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/AgentMessageDetail.swift",
+          "line": 53,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+          "line": 24,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+          "line": 54,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+          "line": 64,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/PaneDisplayTitleDerived.swift",
+          "line": 9,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 256,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 298,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Current write admission, mapping and consumer boundary opened. All reference action effects and every line storage decoder not expanded.",
+      "basis": "source"
+    },
+    {
+      "family": "P01-pane-context-compact-display-and-counts",
+      "currentTypes": [
+        {
+          "name": "PaneContextDisplay",
+          "fields": [
+            "revision:PaneContextRevision",
+            "agentTitle?",
+            "agentLine?",
+            "own:PaneMessageCounts",
+            "includingDrawers:PaneMessageCounts",
+            "pullRequests:PullRequestSummaryDetail"
+          ]
+        },
+        {
+          "name": "PaneMessageCounts",
+          "fields": [
+            "needsApprovalCount",
+            "needsReplyCount",
+            "attentionCount",
+            "informationalCount",
+            "newestOpenBlockingAskId?"
+          ]
+        },
+        {
+          "name": "PaneContextPublication",
+          "fields": [
+            "set(display)|remove",
+            "batch key:PaneId"
+          ]
+        }
+      ],
+      "authoritativeSources": "PaneContextService joins canonical membership sources, Sessions summary and SQL current title/line/message projections. Actual production composition publishes through PaneContextPublicationLane to PaneContextPresentationAtom.",
+      "reductionAndJoins": "Own fold uses first source; includingDrawers folds owner+validated owned drawer children. Classification includes only open asks/unread notices that are not hidden. Newest approval uses sentAt then source order then position. Current producer sets pullRequests:notApplicable.",
+      "projectionOrContraction": "Mailbox compares desired display even in-flight, coalesces keyed pending state, suppresses equality, preserves remove and filters absent/retired panes; MainActor atom suppresses equal values again.",
+      "generationsAndCurrentness": [
+        "membership view sources+per-owner revision rechecked after SQL await",
+        "source SQL revisions, session summary and read-time versions produce in-memory detailRevision",
+        "stale older source revision completion can reuse newer desired display",
+        "publication set contains revision but no separately typed service incarnation"
+      ],
+      "actualConsumers": [
+        "PaneContextUIReaders.contextDisplayForPane",
+        "PaneContextToolbarControls keyed task shapes count chip; drawer uses own counts, parent can include drawers",
+        "RepoExplorer captures contextDisplay and constructs row/count chip",
+        "PopoverHost observes display revision to refresh detail"
+      ],
+      "effectfulRead": "computeDisplay uses sqliteAccess.write. capturePaneContextDisplay expires agent lines, marks retention-selected settled rows display_hidden and bumps revisions before count fold. Failed read preserves desired publication rather than deciding removal.",
+      "nativeOnlyFacts": "Consumer location/drawer visibility/selected row and visible popover are app presentation state; counts themselves are SQL/domain folds.",
+      "selectionLimit": "Current own-versus-owned-drawers aggregation is not selection of cross-client pane membership, retention, publication scope or history.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextDisplay.swift",
+          "line": 1,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/PaneMessageCounts.swift",
+          "line": 1,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift",
+          "line": 106,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift",
+          "line": 17,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneMessageCountFold.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Lifecycle.swift",
+          "line": 312,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextPublicationMailbox.swift",
+          "line": 14,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/PaneContextPresentationAtom.swift",
+          "line": 15,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+          "line": 72,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextToolbarControls.swift",
+          "line": 18,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Fresh compact read/maintenance/publication/consumer path. Full retention policy proof and every atom observer not audited.",
+      "basis": "source"
+    },
+    {
+      "family": "P02-pane-membership-view-source-boundary",
+      "currentTypes": [
+        {
+          "name": "PaneContextMembershipEntry",
+          "fields": [
+            "paneId",
+            "placement",
+            "ownedDrawerChildIds"
+          ]
+        },
+        {
+          "name": "PaneContextMembershipInstallation",
+          "fields": [
+            "workspaceId",
+            "membershipRevision",
+            "entries"
+          ]
+        },
+        {
+          "name": "PaneContextMembershipView",
+          "fields": [
+            "workspaceId",
+            "membershipRevision",
+            "sources:[PaneId]"
+          ]
+        }
+      ],
+      "authoritativeSources": "Workspace canonical graph supplies compact presence/placement/owned child IDs. Prepared composition installs the directory; graph commits changed/removed entries into it.",
+      "reductionAndJoins": "Layout owner sources are owner first plus children whose parent/owned-child relationship agrees. Non-layout entry sources are self only. Affected owner set includes previous/new parent/children so display reconciliation sees relationship changes.",
+      "projectionOrContraction": "Mutex-backed directory carries keyed entries/versions and coalesced affected owners; wakes are bufferingNewest(1), backed by retained pending invalidation state.",
+      "generationsAndCurrentness": [
+        "workspace ID qualifies installation",
+        "global revision advances on semantic commit",
+        "per-owner version stamped for affected entries",
+        "display reconciliation compares current captured owner revisions before full reconcile"
+      ],
+      "actualConsumers": [
+        "PaneContextService.captureMembershipView/readDetail/computeDisplay",
+        "publication mailbox presence check",
+        "App own-pane/service source joins through same directory"
+      ],
+      "effectfulRead": "Taking affected owners consumes pending invalidations; view lookup itself is read. Reconciliation drives display reads and their maintenance (P01).",
+      "nativeOnlyFacts": "Presence/placement is graph truth, not proof a native host/window/surface exists.",
+      "selectionLimit": "Whether layout/drawer membership is shared, per client or per attachment is not selected by this source map.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextMembershipDirectory.swift",
+          "line": 4,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextMembershipDirectory.swift",
+          "line": 52,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextMembershipDirectory.swift",
+          "line": 85,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextMembershipDirectory.swift",
+          "line": 96,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspacePaneGraphAtom.swift",
+          "line": 884,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspacePreparedCompositionApplier.swift",
+          "line": 92,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift",
+          "line": 71,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Directory, prepared installation call and graph commit/current source scope read. Full prepared-state builder/application beyond these calls not expanded; no native presence inferred.",
+      "basis": "source"
+    },
+    {
+      "family": "P03-pane-context-detail-and-paged-content",
+      "currentTypes": [
+        {
+          "name": "PaneContextDetail",
+          "fields": [
+            "paneId",
+            "revision",
+            "agentTitle?",
+            "agentLine?",
+            "session?",
+            "messages:[AgentMessageDetail]",
+            "drawerMessages[sourcePaneId,messages]",
+            "links",
+            "pullRequests",
+            "truncation?"
+          ]
+        },
+        {
+          "name": "AgentMessageDetail",
+          "fields": [
+            "id",
+            "sourcePaneId",
+            "sender(pane|session with binding generation)",
+            "sentAt",
+            "sourceOccurredAt?",
+            "importance(info|attention|done|failure)",
+            "body",
+            "why?",
+            "actions(openFile|openPullRequest|goToPane)",
+            "shape:notice(state)|ask(reason,form,waiting,state)"
+          ]
+        },
+        {
+          "name": "AskState / AnswerReceipt",
+          "fields": [
+            "open|answered(by,value,receipt)|handedBack|dismissed|expired|withdrawn|stale",
+            "receipt:notYetConfirmed|confirmed(at)|unconfirmed"
+          ]
+        },
+        {
+          "name": "PaneContextReadPage / LiveMessageCursor / DetailTruncation",
+          "fields": [
+            "first|more(source,after(rank,position))|moreSources(after source)",
+            "omitted[source,openAsks,unreadNotices,next cursor]",
+            "remainingLiveSources",
+            "nextSourcesAfter"
+          ]
+        }
+      ],
+      "authoritativeSources": "PaneContextService reads membership, Sessions summary and SQL snapshot, with retirement/source-page checks. IPC mapping makes equivalent wire fields; UI adapter delegates to same service rather than owning another query.",
+      "reductionAndJoins": "Page assembly ranks live open asks before unread notices, newest position within rank; source-scoped cursors select continuation; metadata/header/message budgets preserve omitted-source continuation. Current assembly emits links:unknown and pullRequests:notApplicable.",
+      "projectionOrContraction": "UI read bounded by domain budget; IPC adapter additionally fits encoded reply including envelope by repeat bounded detail reads. Session prompt summary is independently bounded (S01).",
+      "generationsAndCurrentness": [
+        "detailRevision version includes sources, membershipRevision, SQL source revisions, session, line stale and visible-settled identities",
+        "detailRevision is maintained in service memory, not a durable global snapshot ID",
+        "page source must remain in current view",
+        "wire safe-integer and reply budget checks do not retain a snapshot"
+      ],
+      "actualConsumers": [
+        "PaneContextPopoverController → PaneContextUIAdapter.readDetail",
+        "pane.context.get → AgentStudioIPCPaneContextAdapter/read mapping",
+        "popover shaping uses current local source titles"
+      ],
+      "effectfulRead": "ensureOpen can perform startup blocking-ask settlement and drain retirements. Ordinary detail snapshot uses sqliteAccess.read and updates in-memory detail versions; it does not mark notices read. pane.message.changes separately confirms receipts/positions and may prune.",
+      "nativeOnlyFacts": "Detail contains pane/SQL/domain state, not current NSView/frame/terminal bytes. Message actions require separate actual native/platform effect path.",
+      "selectionLimit": "Cross-client page snapshot lifetime, source ordering, retention and receipt ownership are not selected by current local cursor/version fields.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/PaneContextDetailReading.swift",
+          "line": 3,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/PaneContextDetailReading.swift",
+          "line": 64,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/Contracts/AgentMessageDetail.swift",
+          "line": 3,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+          "line": 27,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+          "line": 126,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+          "line": 245,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+          "line": 179,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextDetailMapping.swift",
+          "line": 18,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+          "line": 93,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+          "line": 11,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "evidenceLimit": "Types/page selection/output fresh; prior RPC read/receipt/startup walk reused. Not every form/answer decoder or transitive storage transaction audited.",
+      "basis": "source"
+    },
+    {
+      "family": "P04-native-context-popover-consumer-state",
+      "currentTypes": [
+        {
+          "name": "PaneContextPopoverController",
+          "fields": [
+            "paneId?",
+            "state:PaneContextPopoverShape?",
+            "unavailableNote?",
+            "actionFeedback?",
+            "location",
+            "includingDrawers",
+            "private request generation",
+            "retained detail?"
+          ]
+        },
+        {
+          "name": "PaneContextPopoverPageUpdate",
+          "fields": [
+            "restartFirst",
+            "detail(PaneContextDetail)"
+          ]
+        }
+      ],
+      "authoritativeSources": "App UI controller owns open/popover location, request generation and retained paged detail. It reads current service through PaneContextUIReaders.serviceProvider; production boot injects the actual PaneContextService UI adapter.",
+      "reductionAndJoins": "After each await, controller checks request generation/pane. Paging merges only same pane+revision, replaces messages by ID and drawer groups by source; changed revision restarts first page; sourceNotInView drops source and rereads first. Shaping uses current title reader for owner/drawers.",
+      "projectionOrContraction": "Displayed compact counts and full popover shape are distinct consumer projections; .task keyed to display revision refreshes only while presented.",
+      "generationsAndCurrentness": [
+        "refresh/more/close/service loss increment UI generation",
+        "stale async result is rejected",
+        "revision equality required for multi-page merge",
+        "popover close clears retained state"
+      ],
+      "actualConsumers": [
+        "PaneContextPopoverHost pane/sidebar locations",
+        "answer/dismiss/markRead/runAction/dismissAll via person port",
+        "answer and runAction restricted to pane location; markRead explicit then refresh"
+      ],
+      "effectfulRead": "Opening/refresh itself invokes readDetail; person mutations are separate calls followed by refresh. No automatic receipt confirmation inferred from rendering a page.",
+      "nativeOnlyFacts": "Presented/open state, location, local titles, in-flight generation and selected controls belong to this UI instance; backend summary alone does not observe them.",
+      "selectionLimit": "No future remote-client drafts, popover state sharing or command location authority is chosen here.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+MainWindowCreation.swift",
+          "line": 104,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift",
+          "line": 350,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextUIReaders.swift",
+          "line": 30,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 37,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 95,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 136,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverController.swift",
+          "line": 181,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverPaging.swift",
+          "line": 9,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextPopoverHost.swift",
+          "line": 28,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/PaneContext/PaneContextUIAdapter.swift",
+          "line": 17,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Immediate UI model and action calls read; complete visual widget/form implementation and native presentation not audited/run.",
+      "basis": "source"
+    },
+    {
+      "family": "N01-workspace-pane-query-projections",
+      "currentTypes": [
+        {
+          "name": "ProgrammaticControlWorkspaceSnapshot",
+          "fields": [
+            "id",
+            "name",
+            "tabs[id,name,paneIds,activePaneId,isActive]",
+            "panes[id,title,contentKind,residency,tabId?,repoId?,worktreeId?,isActive,isDrawerChild]",
+            "repositories[id,name,path,worktrees[id,repoId,name,path,isMainWorktree]]",
+            "activeTabId?"
+          ]
+        },
+        {
+          "name": "IPCWorkspaceSummary / IPCTabSummary / IPCPaneSummary / IPCPaneSnapshotResult",
+          "fields": [
+            "workspace:id,ordinal,name,tabCount,paneCount,repositories,isCurrent",
+            "tab:id,ordinal,name,paneIds,activePaneId?,isActive",
+            "pane:id,ordinal,contentKind,residency,tabId?,repoId?,worktreeId?,isActive,isDrawerChild,activity?",
+            "snapshot:pane,tab?,workspace"
+          ]
+        }
+      ],
+      "authoritativeSources": "WorkspaceStore.programmaticControlSnapshot captures identity/tab layout/pane graph/repository topology atoms on MainActor. Query adapter adds window currentness and activity. This is a projection of app-composed state, not per-read SQL/Git acquisition.",
+      "reductionAndJoins": "Pane ordering visits tabs' activePaneIds then remaining panes sorted by UUID. Source URLs become path strings. IPC tabSummary currently writes name:\"\" despite internal snapshot retaining tab.name; IPCPaneSummary omits internal title.",
+      "projectionOrContraction": "pane.list/current/snapshot principal-filter activity; own-pane snapshot rechecks existence/membership in same MainActor read. Current pane is activeTab.activePaneId, not normalized drawer/native first-responder focus.",
+      "generationsAndCurrentness": [
+        "no explicit capture revision/service incarnation in these DTOs",
+        "ordinals depend on current presentation order",
+        "currentWorkspace/currentPane/snapshotPane require currentWindow; list methods do not add that guard",
+        "server composition itself requires accepting main window"
+      ],
+      "actualConsumers": [
+        "window/workspace/pane IPC queries",
+        "command target resolution/authorization reads same snapshot",
+        "typed layout resolves canonical IDs and current tab/pane relations"
+      ],
+      "effectfulRead": "Snapshot/projection path reads current atoms; no per-request persistence or source refresh. Current state is not an operation receipt.",
+      "nativeOnlyFacts": "Graph existence/residency does not prove native host/surface; active/main pane differs from normalized focused drawer and actual first responder.",
+      "selectionLimit": "Current app graph/projection does not select future shared versus client arrangement, active tab, pane membership or remote path meaning.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceStore+ProgrammaticControlSnapshot.swift",
+          "line": 18,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceStore+ProgrammaticControlSnapshot.swift",
+          "line": 68,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCQueryContracts.swift",
+          "line": 87,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCQueryContracts.swift",
+          "line": 194,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+          "line": 39,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+          "line": 187,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations+Activity.swift",
+          "line": 6,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "evidenceLimit": "Type fields and tab-name distinction refreshed; full query/authority paths reused from previous walks. Not complete workspace/UI schema inventory.",
+      "basis": "source"
+    },
+    {
+      "family": "N02-focused-pane-and-command-context",
+      "currentTypes": [
+        {
+          "name": "WorkspaceFocusedPane",
+          "fields": [
+            "owner:mainPane|emptyDrawer|drawerPane",
+            "activeMainPaneId",
+            "paneId",
+            "repoId?",
+            "worktreeId?",
+            "contentType"
+          ]
+        },
+        {
+          "name": "CommandContext",
+          "fields": [
+            "activeTabId?",
+            "focusedPaneId?",
+            "focusedRepoId?",
+            "focusedWorktreeId?",
+            "focusedContentType?",
+            "satisfiedRequirements"
+          ]
+        },
+        {
+          "name": "KeyboardOwner",
+          "fields": [
+            "otherWindow",
+            "managementLayer",
+            "sidebar(surface)",
+            "mainWindowChain"
+          ]
+        }
+      ],
+      "authoritativeSources": "WorkspaceFocusedPaneResolver combines active tab/arrangement, active residency, requested WorkspaceFocusOwner and drawer cursor/expansion/minimization. CommandContextDerived adds current layout/zoom capability facts. KeyboardOwner derives native window key ownership plus management/sidebar focus state.",
+      "reductionAndJoins": "Focus owner is normalized against current graph; empty drawer maps focused content to main pane. Requirements include multiple tabs/panes, arrangements, drawer/expanded child focus and terminal zoom.",
+      "projectionOrContraction": "Pure current projections, not manually persisted focused-pane DTO; native first-responder application is a separate effect owner.",
+      "generationsAndCurrentness": [
+        "re-evaluated from current graph/focus/presentation inputs",
+        "no distributed observation generation in value",
+        "typed explicit command targets are separate from interactive contextual enablement"
+      ],
+      "actualConsumers": [
+        "AppDelegate main-menu shouldPresent/canDispatch context",
+        "CommandBarDataSource item construction",
+        "RepoExplorer focused row uses KeyboardRoutingContext and attendedPane"
+      ],
+      "effectfulRead": "Projection itself reads; command dispatch/native focus changes are separate.",
+      "nativeOnlyFacts": "Current key-window/keyboard interpretation, sidebar focus and local management/transient UI attendance cannot be established from backend session/graph bytes alone.",
+      "selectionLimit": "This pass does not choose cross-client focus/controller/keyboard ownership or whether any current focus value is shared.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceFocusedPane.swift",
+          "line": 4,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspaceFocusedPaneResolver.swift",
+          "line": 7,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/CommandContextDerived.swift",
+          "line": 7,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/Models/KeyboardOwner.swift",
+          "line": 19,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate.swift",
+          "line": 482,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/CommandBar/CommandBarDataSource.swift",
+          "line": 69,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 803,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/CommandContext.swift",
+          "line": 23,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Immediate current command/UI consumers inspected; all dispatch validators, focus geometry and keyboard shortcuts not re-audited.",
+      "basis": "source"
+    },
+    {
+      "family": "N03-native-window-lifecycle-and-current-window",
+      "currentTypes": [
+        {
+          "name": "WindowLifecycleAtom / WindowPresentationFacts",
+          "fields": [
+            "registeredWindowIds",
+            "keyWindowId?",
+            "focusedWindowId?",
+            "presentation per window:isVisible,isMiniaturized,isOccluded",
+            "terminalContainerBounds",
+            "isLaunchLayoutSettled",
+            "didPublishFirstInteractiveFrame",
+            "firstInteractiveFrameSource:presented|occludedFallback"
+          ]
+        },
+        {
+          "name": "WorkspaceWindowLifecycleSnapshot / IPCWindowSummary",
+          "fields": [
+            "registered/key/focused/preferred window IDs",
+            "wire:id,ordinal,isKey,isFocused,isCurrent,workspaceId"
+          ]
+        }
+      ],
+      "authoritativeSources": "NSApplication/NSWindow delegate and App-owned ApplicationLifecycleMonitor publish native facts. MainWindowController samples actual window presentation; first-frame proxy uses CATransaction/main-runloop sources, not Ghostty renderer-present.",
+      "reductionAndJoins": "Preferred window chooses focused then key then sole registered ID; visibility is separate and not used by this selector. Query projects registry into stable IDs and relative ordinals.",
+      "projectionOrContraction": "Presentation equality suppression and one-time usable-frame publication; local waiters/observers have teardown. Window RPC omits full visibility/bounds/launch facts used elsewhere.",
+      "generationsAndCurrentness": [
+        "transient window/launch facts explicitly never persisted",
+        "native registration required before presentation write",
+        "no durable execution/session incarnation implied",
+        "time/timezone notifications are local background invalidations"
+      ],
+      "actualConsumers": [
+        "window.list/current; current workspace/pane gate",
+        "KeyboardOwner and command-bar parent/scope",
+        "WorkspaceSurfaceCoordinator repository-demand presentation (visible/minimized/occluded)",
+        "launch restore/readiness consumers"
+      ],
+      "effectfulRead": "Native monitor ingresses mutate atoms; query snapshot reads them. First-frame waiting/observer lifecycle is separate from the snapshot read.",
+      "nativeOnlyFacts": "Actual Mac window key/focus/visibility/occlusion, geometry, runloop/display progress and system clock/timezone ingress require the native client source; copying Host session state cannot observe them.",
+      "selectionLimit": "Future per-client window identity, shared layouts and focus audience are not selected by this current single-app policy.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WindowLifecycleAtom.swift",
+          "line": 9,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WindowLifecycleAtom.swift",
+          "line": 34,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/WindowLifecycleAtom.swift",
+          "line": 69,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Lifecycle/ApplicationLifecycleMonitor.swift",
+          "line": 74,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Windows/MainWindowController.swift",
+          "line": 169,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Windows/WorkspaceWindowLifecycleReader.swift",
+          "line": 23,
+          "evidence": "reused-prior-worker-pass-same-head"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+RepositoryFactDemand.swift",
+          "line": 116,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Native source chain reused plus type/selector/demand consumer fresh. No real native event/display/launch proof.",
+      "basis": "source"
+    },
+    {
+      "family": "N04-terminal-runtime-status-snapshot",
+      "currentTypes": [
+        {
+          "name": "PaneRuntimeSnapshot",
+          "fields": [
+            "paneId",
+            "metadata:PaneMetadata",
+            "lifecycle:created|ready|draining|terminated",
+            "capabilities:Set<PaneCapability>",
+            "lastSeq",
+            "timestamp"
+          ]
+        },
+        {
+          "name": "TerminalRuntimeSnapshotFacts",
+          "fields": [
+            "rendererHealthy?",
+            "readOnly?",
+            "secureInput?"
+          ]
+        },
+        {
+          "name": "IPCTerminalStatusResult / IPCTerminalSnapshotResult",
+          "fields": [
+            "status:paneId,lifecycle,isReady,backend,capabilities",
+            "snapshot:paneId,lifecycle,backend,capabilities,lastSequence,timestamp,rendererHealthy?,readOnly?,secureInput?"
+          ]
+        }
+      ],
+      "authoritativeSources": "RuntimeRegistry selects current app terminal runtime; TerminalRuntime snapshots event channel state and its native-fact properties. Ghostty translation produces renderer-health/secure-input events handled by runtime. timestamp is Date() at capture.",
+      "reductionAndJoins": "Runtime adapter resolves current terminal pane/type and own-pane scope, maps metadata backend/capability names and optional native fact provider. Snapshot contains no terminal output bytes, grid or screen.",
+      "projectionOrContraction": "Native read-only/renderer changes equal-suppress before replayable event emission; runtime-local sequence/replay/subscription are separate from product/socket event catalog.",
+      "generationsAndCurrentness": [
+        "lastSeq is current runtime event-channel sequence, not durable execution incarnation",
+        "timestamp is snapshot capture time, not last event time",
+        "lifecycle ready differs from actual backend/process independent health",
+        "optional native provider means fact fields can be absent"
+      ],
+      "actualConsumers": [
+        "terminal.status/snapshot IPC",
+        "terminal.wait uses runtime subscription/replay and condition matcher",
+        "runtime commands use current registered owner separately from read DTO"
+      ],
+      "effectfulRead": "Snapshot reads current runtime properties/Date; wait allocates temporary subscription/wait lifecycle. No read result is a PTY consumption/process-completion receipt.",
+      "nativeOnlyFacts": "Mac Ghostty renderer health, local read-only/secure-input and actual surface/first-responder state are native-client observations; process persistence/backend facts do not prove these.",
+      "selectionLimit": "No future terminal controller, process incarnation, restore/live ordering, remote renderer fact policy or retained screen/history is selected.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/Contracts/PaneRuntimeTypes.swift",
+          "line": 52,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift",
+          "line": 93,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Terminal/Runtime/TerminalRuntime.swift",
+          "line": 129,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Terminal/Runtime/TerminalRuntime.swift",
+          "line": 312,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Terminal/Runtime/TerminalRuntimeSnapshotFacts.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyActionTranslation+ObservedActions.swift",
+          "line": 278,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCQueryContracts.swift",
+          "line": 453,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+          "line": 30,
+          "evidence": "reused-prior-worker-pass-same-head"
+        }
+      ],
+      "evidenceLimit": "Snapshot/types/native event setters refreshed; full C/source admission and backend health path not audited. Prior runtime RPC/wait walk reused; no running terminal observed.",
+      "basis": "source"
+    },
+    {
+      "family": "N05-pane-activity-time-and-recency",
+      "currentTypes": [
+        {
+          "name": "PaneActivityOccurrence / PaneActivityTime",
+          "fields": [
+            "paneId on occurrence",
+            "source:hook|terminal",
+            "orderingInstant:ContinuousClock.Instant",
+            "wallTime:Date"
+          ]
+        },
+        {
+          "name": "PaneActivityRecord",
+          "fields": [
+            "paneId",
+            "wallTime",
+            "source (durable; orderingInstant never stored)"
+          ]
+        },
+        {
+          "name": "IPCPaneActivity",
+          "fields": [
+            "at (wall time)",
+            "source"
+          ]
+        },
+        {
+          "name": "RepoExplorerPaneActivityProjection",
+          "fields": [
+            "age?",
+            "activityDate?",
+            "clockText",
+            "recencyTier",
+            "isActive",
+            "unpinned/pinned bucket",
+            "nextPresentationChangeDate?"
+          ]
+        }
+      ],
+      "authoritativeSources": "PaneActivityClock admits/coalesces occurrences from hook adapter and native TerminalActivityRouter. App sink applies keyed time mutations then attempts datastore commit; restore reconstructs representable monotonic age from stored wall time.",
+      "reductionAndJoins": "Mailbox retains newest occurrence per pane by monotonic ordering. RepoExplorer derives age from local referenceInstant and wallNow/calendar; IPC exposes only wall time/source and principal filters visibility.",
+      "projectionOrContraction": "Runtime atom comparator suppresses equal activity values. Clock cadence, pending/deadline/retirement state contracts input before MainActor publication. Recency text/buckets have local future change dates.",
+      "generationsAndCurrentness": [
+        "ContinuousClock.Instant is process-local and reconstructed on restore",
+        "per-pane ordering/retirement/deadline generation is not wire event ordering",
+        "IPC field at is not a mutation receipt or provider liveness",
+        "local calendar/timezone affects recency presentation"
+      ],
+      "actualConsumers": [
+        "RepoExplorer current pane row facts and recency grouping/text",
+        "pane.list/current/snapshot activity field",
+        "terminal/hook activity producers feed same clock"
+      ],
+      "effectfulRead": "Reads themselves are projections; sink separately applies atom then attempts persistence (failure logged).",
+      "nativeOnlyFacts": "Terminal-source activity/viewport observation and client calendar/reference clock are native/local inputs; copied wall-time data does not preserve process-local instants or current local recency rendering.",
+      "selectionLimit": "Cross-client attendance/time policy, no-client activity, shared recency and retention are not selected by current local projection.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityOccurrence.swift",
+          "line": 8,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityOccurrence.swift",
+          "line": 56,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityClock.swift",
+          "line": 81,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 6,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 57,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+PaneActivityBoot.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/PaneActivityTimeAtom.swift",
+          "line": 5,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneActivityProjection.swift",
+          "line": 31,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCPaneActivity.swift",
+          "line": 8,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Read/production sink/restore/current coalescing boundaries inspected. Full clock cadence/drain and every terminal activity policy not expanded.",
+      "basis": "source"
+    },
+    {
+      "family": "N06-pane-latest-output-fragment",
+      "currentTypes": [
+        {
+          "name": "PaneActivityStatusFact",
+          "fields": [
+            "lastOutputLine:String",
+            "observedAt:Date"
+          ]
+        }
+      ],
+      "authoritativeSources": "Production TerminalActivityRouter receives surfaceID lookup and SurfaceManager.readViewportTrailingText callback; settled activity callback records PaneActivityStatusAtom. This is current renderer viewport trailing text, not a stored terminal transcript.",
+      "reductionAndJoins": "Atom ignores nil/empty text, equal-suppresses lastOutputLine independent of observedAt, retains/replaces one pending value per pane within minimum publish interval and publishes at eligibility deadline.",
+      "projectionOrContraction": "Runtime-only latest fragment and clear mutation; not arbitrary history/terminal byte plane. Old Inbox-related comments do not establish active Inbox capability.",
+      "generationsAndCurrentness": [
+        "surfaceID lookup/read can report surfaceStale",
+        "per-pane pending eligibility and scheduledDeadline fence publication",
+        "observedAt is recording time and equal lines do not refresh publication"
+      ],
+      "actualConsumers": [
+        "SidebarSurfaceHost.latestPaneMessageSnapshot",
+        "RepoExplorerProjectionInputCapture.latestMessageText from activityFact.lastOutputLine"
+      ],
+      "effectfulRead": "Atom status read itself is observation. Native trailing-text acquisition is a separate source callback; publication changes runtime state.",
+      "nativeOnlyFacts": "Actual current native surface viewport text cannot be inferred from a Host process-lifetime/status copy alone.",
+      "selectionLimit": "No future transcript/scrollback retention or detached/no-renderer latest-output source is selected.",
+      "decisiveSourcePointers": [
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 17,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 33,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/PaneActivityStatusAtom.swift",
+          "line": 10,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/PaneActivityStatusAtom.swift",
+          "line": 76,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Core/State/MainActor/Atoms/PaneActivityStatusAtom.swift",
+          "line": 91,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/App/Windows/SidebarSurfaceHost.swift",
+          "line": 156,
+          "evidence": "opened-current-pass"
+        },
+        {
+          "path": "Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 785,
+          "evidence": "opened-current-pass"
+        }
+      ],
+      "evidenceLimit": "Actual composition/callback and publication/consumer boundary read. TerminalActivityRouter settle algorithm and full surface-read internals unexpanded; no native capture run.",
+      "basis": "source"
+    }
+  ],
+  "proofLimit": "Source-only. No tests/builds/probes/runtime/native UI/network/credentials. No claim of Host autonomy, prepared-view implementation, cross-client consistency, durable publication/replay or readiness."
+}

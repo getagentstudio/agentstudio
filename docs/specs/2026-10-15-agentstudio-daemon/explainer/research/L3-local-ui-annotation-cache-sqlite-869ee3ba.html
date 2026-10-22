@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · local.sqlite UI, annotation and cache inventory</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L3-local-ui-annotation-cache-sqlite-869ee3ba.html">AgentStudio daemon · local.sqlite UI, annotation and cache inventory</a></nav></ex-nav>
+<ex-document id="content"><h1>local.sqlite UI, annotation and cache inventory</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-16-advisor-storage-placement/L3-local-ui-annotation-cache-sqlite.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+source HEAD 624300332f5e50f7bb8cbb9fc786d5e5b4a3d462
+
+# local.sqlite UI, annotation and cache inventory
+
+Candidate collection only; no placement verdicts. Source reviewed at pinned HEAD.
+
+| table | db | one-line meaning | identity keys | write-pattern label | writer count |
+|---|---|---|---|---|---:|
+| local_workspace_cursor | local.sqlite | active tab per workspace | workspace, tab | cursor-or-position | 1 owner |
+| local_tab_cursor | local.sqlite | active arrangement per workspace tab | workspace, tab, arrangement | cursor-or-position | 1 owner |
+| local_arrangement_cursor | local.sqlite | active pane per arrangement | workspace, arrangement, pane | cursor-or-position | 1 owner |
+| local_drawer_cursor | local.sqlite | expanded drawer per workspace | workspace, drawer | cursor-or-position + ui-presentation-memory | 1 owner |
+| local_arrangement_drawer_cursor | local.sqlite | selected child in arrangement drawer | workspace, arrangement, drawer, pane | cursor-or-position | 1 owner |
+| local_window_state | local.sqlite | main-window/sidebar presentation state | window, screen/view | ui-presentation-memory | 1 owner |
+| local_window_sidebar_collapsed_group | local.sqlite | collapsed sidebar group keys | window, screen/view | ui-presentation-memory | 1 owner |
+| local_entity_recency | local.sqlite | latest interaction per entity | entity kind/key | user-preference | 1 owner |
+| local_workspace_entity_recency | local.sqlite | latest interaction per workspace/entity | workspace, entity kind/key | user-preference | 1 owner |
+| local_notification_inbox_collapsed_group | local.sqlite | collapsed notification group keys | workspace | ui-presentation-memory | 1 owner |
+| local_notification_inbox_item | local.sqlite | persisted inbox notification row | workspace, item, pane/tab/repo/worktree | append-history | 1 owner |
+| local_editor_preferences | local.sqlite | bookmarked editor choice | workspace | user-preference | 1 owner |
+| local_repo_explorer_preferences | local.sqlite | repo explorer sort/visibility | workspace | user-preference | 1 owner |
+| local_inbox_notification_preferences | local.sqlite | inbox grouping/filter/display choices | workspace | user-preference | 1 owner |
+| local_ipc_credential | local.sqlite | pane-scoped opaque credential verifier record | pane, workspace, credential record | credential-or-secret | IPC credential repository |
+| cache_metadata | local.sqlite | rebuild revision/timestamp | singleton store identity | cache-replaceable | 1 owner |
+| cache_repo_enrichment | local.sqlite | derived repository enrichment | repo ID | cache-replaceable | 1 owner |
+| cache_worktree_enrichment | local.sqlite | derived worktree enrichment | worktree ID, repo ID | cache-replaceable | 1 owner |
+| local_repository_activity | local.sqlite | per-repository activity coverage/promotion state | repository stable key | current-state | 1 owner |
+| local_repository_activity_cursor | local.sqlite | last consumed activity event per volume | volume identifier | cursor-or-position | 1 owner |
+| local_drawer_presentation | local.sqlite | per owner-pane drawer height/zoom presentation | workspace, pane | ui-presentation-memory | 1 owner |
+| annotation_session | local.sqlite | annotation session for repository/worktree source | session, repo ID, worktree ID | current-state | repository |
+| annotation_thread | local.sqlite | discussion thread in a session | thread, session | current-state | repository |
+| annotation_message | local.sqlite | ordered saved annotation message | message, thread | current-state | repository |
+| annotation_message_draft | local.sqlite | editable draft for a message | message | current-state | repository |
+| annotation_output_attempt | local.sqlite | durable output attempt and exact bytes | attempt, session, repeated attempt, destination path | queue-or-outbox | repository |
+| annotation_output_attempt_message | local.sqlite | messages/ordering locked to an output attempt | attempt, message | queue-or-outbox | repository |
+| annotation_output_event | local.sqlite | terminal output event per attempt | event, attempt | append-history | repository |
+| local_recovery_provenance | local.sqlite | local database recovery/quarantine witness | recovery, filenames | append-history | repository |
+
+The index above lists final-schema tables only. Tables whose names do not exist in the final schema are separated below; a rename target is a final-schema table, while the former name is an artifact.
+
+### Migration artifacts (not in final schema)
+
+| artifact table name | db | disposition / migration evidence |
+|---|---|---|
+| local_recent_workspace_target | local.sqlite | dropped by `002_replace_recent_targets_with_entity_recency`; replaced by `local_entity_recency` and `local_workspace_entity_recency` (`WorkspaceLocalMigrations.swift:36-78`) |
+| local_window_sidebar_expanded_group | local.sqlite | dropped by `003_invert_sidebar_group_memory`; replaced by `local_window_sidebar_collapsed_group` (`WorkspaceLocalMigrations.swift:83-100`) |
+| cache_pull_request_count | local.sqlite | dropped by `004_remove_persisted_pull_request_counts` (`WorkspaceLocalMigrations.swift:99-101`) |
+| sessions_message | local.sqlite | dropped by `027_sessions_hook_admission_cleanup` (`WorkspaceLocalMigrations+SessionsCleanup.swift:7-12`) |
+| sessions_result | local.sqlite | dropped by `027_sessions_hook_admission_cleanup` (`WorkspaceLocalMigrations+SessionsCleanup.swift:7-12`) |
+| sessions_loss | local.sqlite | dropped by `027_sessions_hook_admission_cleanup` (`WorkspaceLocalMigrations+SessionsCleanup.swift:7-12`) |
+| sessions_attention | local.sqlite | dropped by `027_sessions_hook_admission_cleanup` (`WorkspaceLocalMigrations+SessionsCleanup.swift:7-12`) |
+| sessions_evidence_retained | local.sqlite | rebuild temporary table dropped/renamed to final `sessions_evidence` in migration 027 (`WorkspaceLocalMigrations+SessionsCleanup.swift:52-92`) |
+| local_ipc_credential_012 | local.sqlite | temporary credential rebuild table dropped in migration 013 (`WorkspaceLocalMigrations+IPCCredentials.swift:48-96`) |
+| local_ipc_credential_013 | local.sqlite | temporary credential rebuild table dropped in migration 014 (`WorkspaceLocalMigrations+IPCCredentials.swift:119-142`) |
+| unavailable_repo_retention | core.sqlite | temporary table renamed to final `unavailable_repo` in migration 018 (`WorkspaceCoreMigrations+RepositoryAbsence.swift:13-14`) |
+| pane_content_terminal_with_ownership | core.sqlite | temporary table renamed to final `pane_content_terminal` in migration 017 (`WorkspaceCoreMigrations+SessionOwnership.swift:24-36`) |
+| watched_path_global_new | core.sqlite | temporary replacement table renamed to final `watched_path` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:9-15,91`) |
+| repo_global_new | core.sqlite | temporary replacement table renamed to final `repo` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:17-27,92`) |
+| worktree_global_new | core.sqlite | temporary replacement table renamed to final `worktree` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:29-40,93`) |
+| repo_tag_global_new | core.sqlite | temporary replacement table renamed to final `repo_tag` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:42-50,94`) |
+| unavailable_repo_global_new | core.sqlite | temporary replacement table renamed to final `unavailable_repo` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:52-55,95`) |
+| worktree_tag | core.sqlite | dropped by migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:7`) |
+| repo_tag (workspace-scoped form) | core.sqlite | earlier table created in migration 010, dropped/rebuilt as global `repo_tag` by migration 013 (`WorkspaceCoreMigrations+RepositoryTopology.swift:4-22`; `+GlobalTopology.swift:86-95`) |
+| unavailable_repo (pre-global form) | core.sqlite | dropped/rebuilt and replaced by renamed `unavailable_repo_global_new` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:52-55,86-95`) |
+| worktree (pre-global form) | core.sqlite | dropped/rebuilt and replaced by renamed `worktree_global_new` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:29-40,86-95`) |
+| watched_path (pre-global form) | core.sqlite | dropped/rebuilt and replaced by renamed `watched_path_global_new` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:9-15,86-95`) |
+| repo (pre-global form) | core.sqlite | dropped/rebuilt and replaced by renamed `repo_global_new` in migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:17-27,86-95`) |
+| workspace_sqlite_snapshot_status | core.sqlite | staged/rebuilt by migration 007, then dropped in migration 013 (`WorkspaceCoreMigrations.swift:225-250`; `WorkspaceCoreMigrations+GlobalTopology.swift:98-99`) |
+| workspace_sqlite_snapshot_status_old | core.sqlite | temporary status table dropped during migration 007 rebuild (`WorkspaceCoreMigrations.swift:235-250`) |
+| legacy_workspace_import_status | core.sqlite | dropped by migration 013 (`WorkspaceCoreMigrations+GlobalTopology.swift:98-99`) |
+| pane_tag | core.sqlite | dropped by migration 010 (`WorkspaceCoreMigrations+RepositoryTopology.swift:4-5`) |
+
+Other confirmed column-only changes (not table artifacts): `pane.source_repo_id` and `pane.source_worktree_id` renamed to `facet_repo_id` and `facet_worktree_id`, and `pane.source_kind` dropped in core migration 009 (`WorkspaceCoreMigrations.swift:80-86`). `repo.is_favorite` is renamed to `is_pinned` by core migration 017 (`WorkspaceCoreMigrations+SidebarPins.swift:4`).
+
+### Migration replay order checked
+
+- Core migrator registration is 001–018 in `WorkspaceCoreMigrations.swift:15-35`; migration 013 globalizes topology, migration 017 rebuilds terminal ownership, and 018 rebuilds repository absence. The listed core migration files were inspected in this order.
+- Local `bootRequiredMigrator` registers initial schema and numbered migrations, then per-screen sidebar, panes drawer visibility, drawer presentation, and pane activity (`WorkspaceLocalMigrations.swift:4-29`, plus the corresponding `register*` methods). The optional full migrator appends sessions 011/020/026, pane context 021–025, credentials 012–014, CLI outbox 019, and sessions cleanup 027. Registration methods are in `WorkspaceLocalMigrations+Sessions.swift:5-52`, `+PaneContext.swift:5-25`, `+IPCCredentials.swift:5-120`, `+CLIOutbox.swift:5-10`, and `+SessionsCleanup.swift:5-12`.
+
+## Common database/opening evidence
+
+- `AppDataPaths.localSQLiteURL()` appends `local.sqlite`: `Sources/AgentStudio/Infrastructure/AppDataPaths.swift:86`. Factory default and datastore opening are `Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreFactory.swift:11` and `Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift:772-823`. Path root, environment override and channel derivation were not fully established: search `rg -n "local\\.sqlite|localDatabaseURL|localDatabasePath|localStoreURL|WorkspaceLocalRepository\\(" Sources/AgentStudio`.
+- Migrations are registered by `WorkspaceLocalMigrations.bootRequiredMigrator` and `.migrator`: `Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4-29`. Base local/UI/cache DDL is lines 310-558; annotation DDL lines 560-690. Subsequent additions/changes: `WorkspaceLocalMigrations+PerScreenSidebar.swift:5-114`, `WorkspaceLocalMigrations+PanesDrawerVisibility.swift:5-15`, `WorkspaceLocalMigrations+DrawerPresentation.swift:5-25`; repository activity DDL and migration are `WorkspaceLocalMigrations.swift:163-191`.
+- UI row reads/writes commonly materialize into `WorkspaceLocalRepository` records, then `WorkspaceSQLiteStoreBackend`/`UIStateStore`; code anchors: `WorkspaceLocalRepository.swift:200-500`, `WorkspaceLocalRepository+Storage.swift:1-680`, `WorkspaceSQLiteStoreBackend.swift:220-256`, `UIStateStore.swift:188`. Annotation records materialize in `WorktreeAnnotationSQLiteRepository` APIs and Bridge state; catalog queries are `Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+CatalogLoading.swift:1-230`.
+- UI write transactions are repository methods using `databaseWriter.write`; representative cursor/window/sidebar/cache/preferences methods are `WorkspaceLocalRepository+Storage.swift:9-603`, recency/cache codecs `WorkspaceLocalRepository+Codecs.swift:100-300`, activity `WorkspaceLocalRepository+RepositoryLocalActivity.swift:90-220`, and drawer presentation `WorkspaceLocalRepository+DrawerPresentation.swift:60-110`. Annotation mutations are split across `WorktreeAnnotationSQLiteRepository*.swift`; see the per-family anchors below. A complete exhaustive writer/read/event audit per SQL statement was not established in this collection pass.
+- Dropped/renamed table names are listed separately in “Migration artifacts (not in final schema)” above. `local_window_state.repo_grouping_mode` is transformed, then dropped as `legacy_grouping_mode`, in PerScreenSidebar (`WorkspaceLocalMigrations+PerScreenSidebar.swift:13-68, 117`).
+
+## Table sections and schema anchors
+
+Schema shorthand below: column declarations are exactly those in the cited `CREATE TABLE` statements; unannotated text columns are `TEXT`, timestamps/counters are `REAL`/`INTEGER` as shown; absent defaults are none. FK and index statements are included where present in the anchor. Read/write/query material not specifically identified is explicitly called out as not found; labels remain candidates.
+
+### UI and cache tables
+
+For each row below: store is the common `local.sqlite` path/open above; writer owner is `WorkspaceLocalRepository` (activity: its activity extension; drawer presentation: its extension), reader materialization is `WorkspaceLocalRepository` records then store backend/UI state, transaction companions were not found in the targeted SQL search. No post-commit event was found at the SQL call sites searched; retention is listed where source establishes a path. Locality is user-scoped unless the key is window/screen-local. No filesystem path was verified in the final table key columns.
+
+| table | final schema, key constraints, indexes | meaning / keys / candidate | write/read anchors; facts, cleanup, locality |
+|---|---|---|---|
+| local_workspace_cursor | `workspace_id TEXT PK`, `active_tab_id TEXT NULL`, `updated_at REAL NOT NULL`; no FK/index | selected tab; workspace/tab; cursor-or-position | writer/read `WorkspaceLocalRepository+Storage.swift:25,78`; in-memory `CursorStateRecord`; delete path `WorkspaceLocalRepository+Storage.swift:603`; no event found; user-scoped |
+| local_tab_cursor | workspace/tab TEXT NOT NULL composite PK, active arrangement nullable, updated REAL NOT NULL; workspace index | selected arrangement; workspace/tab/arrangement; cursor-or-position | `+Storage.swift:33,78`; cursor record; cleanup `:603`; no event found; user-scoped |
+| local_arrangement_cursor | workspace/arrangement composite PK, active pane nullable, updated required; workspace index | selected pane; workspace/arrangement/pane; cursor-or-position | `+Storage.swift:42,78`; cursor record; cleanup `:603`; user-scoped |
+| local_drawer_cursor | workspace/drawer composite PK, is_expanded required CHECK 0/1; partial unique workspace index for expanded=1 plus workspace index | expanded drawer selection; workspace/drawer; cursor-or-position + presentation | `WorkspaceLocalRepository.swift:274-289`, `+Storage.swift:51,78`; cleanup `+Storage.swift:603`; no event found; user-scoped |
+| local_arrangement_drawer_cursor | workspace/arrangement/drawer composite PK, active child nullable, updated required; workspace index | selected drawer child; workspace/arrangement/drawer/pane; cursor-or-position | `+Storage.swift:60,78`; cursor record; cleanup `:603`; no event found; user-scoped |
+| local_window_state | `window_id TEXT PK`, `window_role TEXT NOT NULL UNIQUE CHECK main`, sidebar width REAL required, frame JSON nullable, filter text required, booleans required CHECK 0/1, surface TEXT required, grouping/subgroup TEXT defaults (`repo`,`none`,`activity`), show-pinned/show-drawers INTEGER defaults 1 CHECK 0/1, updated REAL required; later migrations at cited files | main window/sidebar state; window/screen/view | `+Storage.swift:123-177,538-570`, fetch codecs `+Codecs.swift:30-100`; `WindowStateRecord`/`UIStateStore`; no event found; no table cleanup found; window/screen/view |
+| local_window_sidebar_collapsed_group | window/group composite PK, window FK ON DELETE CASCADE; no other index | collapsed sidebar group; window/group | `+Storage.swift:218-246`; sidebar record; migration transforms keys `+PerScreenSidebar.swift:75-114`; no event found; window/screen/view |
+| local_entity_recency | entity kind/key composite PK, interaction kind and timestamp required; kind/time/key index | latest application-level entity interaction; entity kind/key; user-preference | migration `WorkspaceLocalMigrations.swift:29-59`; `+Storage.swift:252-264`, codecs `+Codecs.swift:100-139`; workspace store record; explicit delete-all `+Storage.swift:252`; user-scoped |
+| local_workspace_entity_recency | workspace/kind/key composite PK; workspace/kind/time/key index | latest workspace entity interaction; workspace/entity kind/key; user-preference | migration `WorkspaceLocalMigrations.swift:61-78`; `+Storage.swift:274-285`, codecs `+Codecs.swift:140-190`; delete workspace `WorkspaceLocalRepository.swift:402`; user-scoped |
+| local_notification_inbox_collapsed_group | workspace/group composite PK | collapsed notification group; workspace/group; ui-presentation-memory | schema `WorkspaceLocalMigrations.swift:405-410`; writer/reader exact SQL not found: `rg -n "local_notification_inbox_collapsed_group" Sources/AgentStudio`; no cleanup/event found; user-scoped |
+| local_notification_inbox_item | workspace/id composite PK; time/kind/title/source/is_read/dismissed required, body and pane/tab/repo/worktree/activity/claim metadata nullable; 7 named indexes including partial claim indexes | materialized inbox notification with context and claim metadata; workspace/item and pane/tab/repo/worktree; append-history | schema/indexes `WorkspaceLocalMigrations.swift:412-486`; writer/reader exact SQL not found: `rg -n "local_notification_inbox_item" Sources/AgentStudio`; no cleanup/event found; user-scoped |
+| local_editor_preferences | workspace TEXT PK, bookmarked editor nullable, updated required | editor selection; workspace; user-preference | `+Storage.swift:375-400`; `EditorPreferencesRecord`, `WorkspaceSettingsStore.swift:133-155`; no event/cleanup found; user-scoped |
+| local_repo_explorer_preferences | workspace PK; sort/visibility required; updated required; grouping column removed by migration 005 | explorer preferences; workspace; user-preference | `+Storage.swift:409-459`; `RepoExplorerPreferencesRecord`, `WorkspaceSettingsStore.swift:138-172`; no event/cleanup found; user-scoped |
+| local_inbox_notification_preferences | workspace PK; grouping/sort/content/filter text fields required, bell INTEGER required CHECK 0/1, updated required | inbox choices; workspace; user-preference | `+Storage.swift:466-520`; `InboxNotificationPreferencesRecord`; no event/cleanup found; user-scoped |
+| cache_metadata | singleton INTEGER PK CHECK=1, source revision INTEGER required DEFAULT 0 CHECK >=0, rebuild time nullable | cache generation metadata; store singleton; cache-replaceable | schema `WorkspaceLocalMigrations.swift:516-521`; writer/read `+Storage.swift:305-340`; cache state; rebuild path; machine-scoped |
+| cache_repo_enrichment | repo ID PK; state required, enrichment fields nullable, updated required, JSON payload nullable | rebuildable repo enrichment; repo ID; cache-replaceable | schema `WorkspaceLocalMigrations.swift:523-534`; codecs `+Codecs.swift:217-259`; `CacheStateRecord`; cache replacement `+Storage.swift:305-348`; machine-scoped |
+| cache_worktree_enrichment | worktree ID PK, repo ID required, branch nullable, main flag required CHECK 0/1, updated required, JSON nullable; repo index | rebuildable worktree enrichment; worktree/repo ID; cache-replaceable | schema `WorkspaceLocalMigrations.swift:537-546`; codecs `+Codecs.swift:240-300`; cache replace `+Storage.swift:305-348`; machine-scoped |
+| local_repository_activity | repository stable key PK; activity timestamp nullable; coverage/update times required; promotion id/time nullable, unsettled INTEGER required CHECK 0/1 | activity coverage and owned promotion status; repository stable key; current-state | migration DDL `WorkspaceLocalMigrations.swift:163-183`; writes `+RepositoryLocalActivity.swift:198-220`, reads `:137-180`; repository activity value; pruning `+RepositoryRetention.swift:28-54`; machine-scoped |
+| local_repository_activity_cursor | volume identifier PK, last event INTEGER/update REAL required | consumed event cursor per volume; volume identifier; cursor-or-position | migration DDL `WorkspaceLocalMigrations.swift:186-191`; write/read `+RepositoryLocalActivity.swift:113-185`; cursor type; no cleanup found; machine-scoped |
+| local_drawer_presentation | workspace/owner pane composite PK; ratio REAL, zoom side TEXT, updated REAL required | owner-pane drawer sizing/zoom memory; workspace/pane; ui-presentation-memory | migration `WorkspaceLocalMigrations+DrawerPresentation.swift:12-23`; reads/writes `+DrawerPresentation.swift:41-102`; presentation record; delete+replace scoped to owner pane; window/view scoped |
+
+### Annotation tables
+
+Annotation writer owner is `WorktreeAnnotationSQLiteRepository` and its extensions in `Features/Bridge/State/SQLite/WorktreeAnnotations/`; reads feed Bridge annotation/catalog APIs. The listed source anchors identify observed mutations and reads. Transactions may span related annotation tables as noted; no non-annotation table writes were identified at those sites. Candidate locality: repository/worktree user data, with possible destination filesystem path in output attempt.
+
+| table | final schema / constraints / indexes | meaning / keys / candidate | writer, reader, event/cleanup, locality |
+|---|---|---|---|
+| annotation_session | id PK; repository/worktree/lifecycle/relationship/fingerprint required; semantic revision INTEGER default 0 CHECK>=0; created/updated required, completed nullable, reviewed subject JSON nullable; worktree/lifecycle/relationship and repo/lifecycle/relationship indexes; originating workspace dropped migration 010 | annotation session; session/repo/worktree; current-state | writes `WorktreeAnnotationSQLiteRepository+Loading.swift:123,246,291`, lifecycle `+Lifecycle.swift:28-107`; reads `Repository.swift:159-201`, catalog loading; related mutations may accompany thread/message inserts; no prune found; repository/worktree scoped |
+| annotation_thread | id PK; session FK CASCADE; scope/resolution/origin required; ordinal required CHECK>=0; revision default 0 CHECK>=0; timestamps required, resolved nullable; UNIQUE session/ordinal and session index | ordered discussion thread; thread/session; current-state | writes `WorktreeAnnotationSQLiteRepository.swift:228,530,567`; reads catalog loading `+CatalogLoading.swift:61-83,137-159,200-219`; delete with message/thread in `Repository.swift:307-318`; repository/worktree |
+| annotation_message | id PK; thread FK CASCADE; ordinal required CHECK>=0; author required; saved body nullable; byte count nullable CHECK 1..16384; saved revision nullable CHECK>=1; status required; revision default 0 CHECK>=0; timestamps required; handled default 0 CHECK 0/1; viewed revision nullable CHECK>=1; UNIQUE thread/ordinal and thread index | ordered saved message; message/thread; current-state | writes `+Loading.swift:155,315`, edits/viewed `+Viewed.swift:81`; reads catalog loading and `Repository.swift`; delete paths `Repository.swift:307,450`; semantic/atom effects not fully traced; repository/worktree |
+| annotation_message_draft | message PK FK CASCADE; token nullable, body required, bytes required CHECK 0..16384, draft revision required CHECK>=0, updated required | editable message draft; message; current-state | writes `Repository.swift:335-342`, edits `+Editing.swift:49,94`; reads `+Loading.swift:170`; deletes `Repository.swift:409,468`; commit behavior in repository; repository/worktree |
+| annotation_output_attempt | id PK; session FK RESTRICT; output kind/state/content type/snapshot/exact BLOB required; format version required CHECK>=1; destination nullable; repeated attempt self-FK RESTRICT; error fields nullable; timestamps required; session/time index | durable output preparation/effect attempt; attempt/session/destination filesystem path; queue-or-outbox | writes `+Output.swift:212,279,347,411,440,491`; reads same file; related attempt-message rows written in same operation (`:235,302`); retention/delete not found; repository-scoped and filesystem-path-bearing |
+| annotation_output_attempt_message | attempt/message composite PK; attempt FK CASCADE, message FK RESTRICT; saved revision required CHECK>=1; batch ordinal required CHECK>=0; UNIQUE attempt/ordinal; message/attempt index | output-lock membership and order; attempt/message; queue-or-outbox | writes `+Output.swift:235,302`; reads/locks `+Output.swift:586,777`; delete via attempt cascade; repository-scoped |
+| annotation_output_event | id PK; attempt required UNIQUE FK RESTRICT; event kind/time required; created index | terminal event for output attempt; event/attempt; append-history | write `+Output.swift:399`; read exact search not found: `rg -n "annotation_output_event" Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations`; cleanup not found; repository-scoped |
+| local_recovery_provenance | id PK; recovery kind/time/filenames JSON/reason required; acknowledged time nullable; acknowledgement/time index | recovery/quarantine witness; recovery id and filename strings; append-history | DDL `WorkspaceLocalMigrations.swift:668-681`; writer `WorktreeAnnotationRecoveryWitnessWriter.swift:1-`; reader exact SQL not found: `rg -n "local_recovery_provenance" Sources/AgentStudio`; acknowledgement/prune exact paths not found; filenames may encode local filesystem paths |
+
+## Exceptions / not found ledger
+
+- The collection established the full base schema DDL and the specified later migration files, but not every row's expanded SQL type/nullability/default via live `pragma_table_info`; schema column shorthand uses declared DDL. For uncommon tables with no live SQL writer search result, exact search is recorded inline.
+- Exhaustive writer counts, every reader callsite, transaction companion table sets, and post-commit events for all listed tables were not fully established. The writer/reader anchors are candidate pointers only; table-specific gaps are explicitly marked above. Event-negative search used `rg -n "<table>" Sources/AgentStudio` where indicated; nearby writer reads were inspected, not a repository-wide semantic event audit.
+- `local_notification_inbox_*` tables are in the unit list and DDL but their actual repository source was not found with exact table-name searches; left as exceptions rather than guessing.
+- The unit list also includes `local_arrangement_cursor`, `local_arrangement_drawer_cursor`, and all annotation tables; no additional tables created or altered by `PerScreenSidebar`/`PanesDrawerVisibility` were found beyond the `local_window_state` alterations and collapsed-group key migration. DrawerPresentation creates `local_drawer_presentation`.
+- Source scans used: `rg -n "CREATE TABLE|ALTER TABLE|CREATE INDEX|DROP TABLE|INSERT INTO|UPDATE |DELETE FROM|ON CONFLICT|local.sqlite|AppDataPaths" Sources/AgentStudio/Core/State/MainActor/Persistence Sources/AgentStudio/Features/Bridge`; `rg -n "localDatabase|local.sqlite|localDatabaseURL|localDatabasePath|localStoreURL|WorkspaceLocalRepository\(" Sources/AgentStudio`; focused exact table-name searches noted inline. No builds, tests, launches, network access, or source edits were performed.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

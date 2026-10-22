@@ -1,0 +1,109 @@
+# Turso replication as an AgentStudio storage option
+
+2026-10-16. Design/research only. No product changes, database opens, tests, migrations or probes. The owner closed the Advisor and explicitly asked not to message it; no Advisor message was sent.
+
+Work home: service `0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89`, project `01a09c8d-bfa1-7eb2-8432-595da973724f`, board `01a09c8f-fdef-79e2-9add-1942d7c0f0de`, topic `01a1418c-8b61-7992-ae22-85e8f6351a24`, root `01a1418c-c98b-7592-bdfe-bc3ea9168464`.
+
+## Question and authority
+
+Owner asks whether AgentStudio can follow the Codex Router Turso state-replication design. Direct clarification: “this is form codex-rotuer project but im thinkign we can follow same system”. The supplied conversation selects option B **in Router**: transport-independent sessions plus a store port decoupled from board storage. It is an AgentStudio research input, not selection of Router's leases, Cloudflare topology, migration execution, four-hour expiry or write takeover here.
+
+Bounded questions:
+
+1. Which Router mechanisms are relevant and actually reusable today?
+2. Does Host metadata replication preserve AgentStudio's single owner/no-client outcomes?
+3. What does choosing transferable writer authority add beyond read-only replication?
+4. What schema/transport/performance proof would make this option eligible?
+
+Destination: checked option analysis and one owner-controlled outcome (read-only copies versus transferable SQL writer). No new canonical Requirements, Specification, Program Design or crate graph is adopted. Existing arrangement scope and ordinary Mac-local CLI route questions remain open.
+
+## Observed sources
+
+### Local current design and code
+
+- AgentStudio data catalog: `docs/wip/2026-10-16-daemon-data-catalog.json`, 86 tables/597 columns/35 expanded containers. Its source/proposal distinction remains intact.
+- Router design checkout: `/Users/shravansunder/code/projects/codex-router.collab-improvements`, HEAD `aa9901a8bff585be5970620defa2fd06607c0ad2`, branch `design/board-orchestration`. Read current working documents, not asserted committed contents:
+  - `docs/architecture/adr/0001-replication-by-turso-cdc-to-central-copies.md`, read whole. It selects custom CDC replication and explicitly owns piece decoding/protocol/retention; its past Sync experiment results are reported historical evidence, not rerun here.
+  - `docs/specs/2026-10-04-board-orchestration-design/program-design-2-project-storage.md:18–27,44–88,90–107`: connection capture, declared-PK extraction, transaction pieces, maintenance bookkeeping, planned client crate and current coupling to message-board storage.
+  - `requirements.md:80–85,119–123`: separate logical session; separately authorized four-hour lease and explicit takeover; U77 transport independence. These are Router requirements, not automatically AgentStudio requirements.
+- Router implementation checkout: `/Users/shravansunder/code/projects/codex-router.feat-replication-protocol`, HEAD observed `9cc19dd281edcc51e5b395e5f5239601f9f15a2b`. Working source inspected:
+  - `crates/collaboration-replication-protocol/src/lib.rs` exports board/project/fleet/lease/session/replication vocabulary; not a generic standalone replication package merely by renaming it.
+  - `src/replication_piece.rs:167–177`: RowChange key is `Vec<SqlValue>`, not one UUID field.
+  - `src/session_frame.rs:505–557`: MachineFrame/CentralFrame include session and board-specific forwarding. A reusable envelope/payload separation is still work.
+  - Exact Cargo name query found collaboration-replication-protocol, not project-replication, central-session or session-transport-websocket under this checkout's crates. This is bounded absence in the inspected checkout; it does not claim no other branch has new work.
+
+### Current external primary sources
+
+DeepWiki was used for Turso pointers first, then primary material was fetched and inspected:
+
+- [Turso CDC documentation](https://docs.turso.tech/tursodb/cdc), saved `turso-cdc-doc.md`, read whole: per-connection capture, row images, transaction groups/COMMIT records, DDL capture.
+- [Upstream manual](https://github.com/tursodatabase/turso/blob/main/docs/manual.md#cdc-early-preview), saved `turso-manual.md`, CDC section 1047–1132 and schema-decoding note1175 read: disk amplification, rowid capture identity, full images, transaction markers, and historical-schema decoding caveat. Manual still labels CDC Early Preview. The higher-level docs are less qualified; no production maturity verdict inferred.
+- [Official Rust quickstart](https://docs.turso.tech/sdk/rust/quickstart), saved `turso-rust-quickstart.md`, sync sections inspected: Turso's push/pull synchronization is a distinct API. Enabling CDC does not select that API or reproduce Router's custom receiver/fencing protocol.
+
+Fetched upstream `main`/current documentation on 2026-10-16, not a pinned AgentStudio dependency. DeepWiki/Perplexity are discovery, not the basis of a behavioral proof. No exact Turso/driver version has been selected for AgentStudio.
+
+## Checked conclusions
+
+| Claim | Classification / result | Support and limit |
+| --- | --- | --- |
+| Reuse the pattern: one authoritative writer, atomic replica apply, explicit cursor, resnapshot on an unrecoverable delivery gap | **Inference / supported option** | Fits no-client Host work and multiple reading Gateways. It is a candidate, not an adopted target or working implementation |
+| Copy the entire current database to every client/Gateway | **Refuted as an automatic consequence** | Inventory mixes authority verifiers, private producer state, native preferences, workflow records and caches. Need an explicit authorized replication schema/unit and retained-state contract |
+| A SQL replica takes over a terminal/process/worktree | **Refuted** | Those resources have machine/process custody outside SQLite. Replicating their metadata does not transfer that custody or establish current liveness |
+| Replication needs Router's four-hour lease | **Refuted as a general requirement** | Router U37–39 separately select transferable writer authority/expiry. A permanently Host-owned writer with read-only recipients has no competing writer to elect. Still needs local writer admission, source/store incarnation, authorization and duplicate/gap contracts |
+| Gateways may disconnect without ending Host work | **Authorized outcome** | AgentStudio U15 and Host-local integration. A replica-ack or Mac-availability deadline must not be silently turned into a Host write gate. A separate central availability/write-gate policy would need an owner choice |
+| Connection, logical protocol session, terminal execution session and replication cursor are distinct | **Supported domain separation** | Socket lifetime does not own the terminal session or store identity. Replica progress belongs to store/source incarnation and recipient, not terminal attachment or transient connection |
+| Generic replication can use a Rust trait port | **Inference / feasible structure** | A store adapter can supply committed changes, schema identity and cursor/bookkeeping; a transport adapter supplies authenticated framed I/O. Board/AgentStudio operation rules stay outside. Static generics versus dyn is downstream structural choice, not an owner product decision |
+| Every replicated row must have a UUIDv7 PK | **Refuted as an existing-schema fact or generic engine requirement** | Current repo_tag/request children have composite PKs; Sessions operation has integer commit_revision; credentials use a unique index with no PK; search has implicit rowid. Select stable supported row identity per replicated table. Application-generated UUIDv7 convention does not turn every relational key into a UUID |
+| CDC gives semantic domain events | **Refuted** | CDC describes storage changes. It may drive typed invalidation/projection after a whole committed transaction. A row change is not an ask-settlement API, authorized command, terminal byte stream or exactly-once external effect |
+| Custom replication is free because Turso captures changes | **Refuted** | Receiver atomicity, cursor persistence, schema history, resend/duplicate handling, retention/refill and authority remain application contracts. Full images have real disk/bandwidth cost; no measurement here |
+| Turso can open/replay the existing AgentStudio schema unchanged | **Unresolved / not a safe assumption** | Upstream manual limitations list no triggers (`turso-manual.md:97–110`); current terminal ownership/type guards use triggers (`WorkspaceCoreMigrations+SessionOwnership.swift:41–79`). New Host schema need not keep old trigger mechanisms, but must preserve selected predicates/effects atomically. Exact pinned-engine compatibility remains an eligibility gate, not proven absence across all future versions |
+
+Turso documentation's “only recorded when committed” summary and manual's “visible even before commit” note do not justify exporting arbitrary rows as committed. The consumer must use committed transaction boundaries and the selected reader/isolation path; the exact pinned driver/engine must be tested. Schema helpers return current columns, so old CDC rows cannot be decoded blindly against the latest schema.
+
+## Candidate topology and tradeoff
+
+**Recommended starting option — Host writer, read-only Gateway replicas:**
+
+```text
+Host domain operations -> Host state + committed capture
+                              |                 |
+                              v                 v
+                       Gateway A copy     Gateway B copy
+                              |                 |
+                       prepared views     prepared views
+
+Commands still return to the addressed Host for admission/effects.
+```
+
+Gain: current/last-known metadata queries and reconnect catch-up can be served near the UI; each Host keeps its authoritative transaction checks and execution custody. Cost: on-disk capture, receiver storage, schema/version coupling, cursor/refill logic and stale-read presentation, paid by Host/Gateway developers and operators. This can replace some persistent snapshot machinery, but does not eliminate typed operations or UI subscriptions.
+
+For replaceable copies, prefer evaluating bounded delivery retention plus authoritative resnapshot over retaining a log forever for the slowest absent Mac. Domain history retention remains separate. A multi-Gateway ack policy is not inherited from Router's one-central-copy ack. No exact retention policy is selected here.
+
+**Alternative — transferable SQL writer:** a registry fences old authority before granting new authority, tracks explicit handoff/tail outcomes and seeds the next writer. Gain: selected portable data can become writable elsewhere. Cost: another availability/authority dependency, stale-writer/tail handling and a defined limit on what is movable. Host machine/process facts cannot be promoted into truth on another machine merely by transferring a SQL lease. This needs owner meaning before design.
+
+The owner-facing question asks read-only replicas versus explicit writer transfer. No answer inferred. “Duplicate into a new system” could mean reusing Router code rather than duplicating data; reuse should target a genuinely generic lower layer, not copy board/fleet central or claim the planned client is already available.
+
+## Future discriminating probes — all unexecuted
+
+1. **Real metadata transaction round trip:** bind a session and admit context/ask state under the real atomic predicate; capture/apply as one transaction, preserve composite/integer keys, exact i64/blob/null and deletion identity. Compare canonical source/copy state at the acknowledged cut.
+2. **Lost reply/reconnect:** disconnect before apply, after apply before ack, and during schema change; resume from durable position and prove no half transaction, invented success or duplicate external effect. Replace the socket without replacing logical session/store identity.
+3. **Two Gateways:** stall A while B advances; restore A after the delivery retention gap; prove one laggard neither stalls Host work nor makes B stale. Record explicit stale/caught-up/current meanings rather than assuming ack equals live source coverage.
+4. **Schema/export boundary:** replay retained changes across add/rebuild migration with old-row decode; prove private verifier/producer/native data is absent from the selected public replica schema. Show how a source restore/new incarnation invalidates old cursors.
+5. **Cost and native path:** real Host metadata rates and representative annotation payloads; measure source commit cost, capture backlog bytes, replica apply/query cost and Swift publication under concurrent terminal traffic. CDC carries metadata, not every VT chunk.
+
+Existing E2/E3/E5/E6 families own these future proof subjects. No new probe was run or implementation permission inferred.
+
+Before the transaction round trip, the pinned engine/driver must accept the selected target DDL and actually preserve its integrity behavior. The source mismatch around triggers makes a plain file/DDL copy an invalid shortcut; removing a trigger without retaining its selected rule is not a compatibility fix. This does not choose a target schema or require replaying every legacy migration into a new store.
+
+## Search routes, nulls and limits
+
+- Current AgentStudio inventory and sibling Router sources first; memory was discovery only. The memory registry pointed at older 0.8.1 work, whose performance/results were not reused as current evidence.
+- DeepWiki exact repository question: tursodatabase/turso, CDC full/transactions/schema/keys versus Sync, and application ack/fence responsibilities. Followed primary docs as above.
+- Perplexity exact primary-source query covered capture_data_changes_conn, commit markers, key images, preview/version and custom versus embedded Sync. Only returned primary URLs accepted, after direct reads.
+- Standard `web__run` fallback returned HTTP404 from the tool route; no page absence inferred. Perplexity + direct official URL retrieval succeeded. No saved Reader/UI/runtime class needed: no named saved document and no behavior claim being tested.
+- `rg --files .../Documents/dev/open-source | rg '/turso[^/]*/(docs/manual\\.md|core/(cdc|connection)\\.rs)$'` found no matching source path; no claim that no Turso checkout exists. Official primary source used instead.
+- An initial crate path filter matched “replication” in the checkout root and over-selected files; discarded that coverage and narrowed to exact crate-relative path patterns and Cargo names.
+- Exact Cargo query: `rg -n 'name = "(project-replication|central-session|session-transport-websocket|collaboration-replication-protocol)"' <Router-M3>/crates --glob Cargo.toml` returned only collaboration-replication-protocol. No absence inferred across other worktrees/branches.
+- Broad initial memory/rg output was truncated; bounded subsequent reads own the accepted claims. No provider transcripts read, no Advisor/Reviewer commissioned or messaged. Countercheck not selected: owner explicitly closed Advisor to save tokens; this is a provisional option with primary-source limits, not acceptance of a load-bearing production design.
+
+Result: **credible candidate, not adopted**. Strong fit for one-way Host-owned metadata replication; transferable leases, shared client layout and exact replicated schema still need separate meaning. No Program Design, implementation, portability, durability or performance readiness claimed.

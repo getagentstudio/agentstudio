@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1113.679 333.90000000000003" width="1113.679" height="333.90000000000003" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 1114px; --diagram-readable-width: 891px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;max-width:100%;height:auto;background:#171d26" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<polyline class="edge" data-from="HostWriter" data-to="Ports" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="624.4870000000003,58.45 658.3465000000001,58.45 658.3465000000001,123.35000000000001 671.4580000000001,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="HostNetwork" data-to="HostAdmission" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="209.33000000000007,123.35000000000001 232.9955000000001,123.35000000000001 232.9955000000001,123.35000000000001 256.6610000000002,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="HostLocal" data-to="HostAdmission" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="191.54600000000002,210.55 224.1035000000001,210.55 224.1035000000001,123.35000000000001 256.6610000000002,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="HostAdmission" data-to="HostCore" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="386.7900000000002,123.35000000000001 471.3870000000002,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="HostCore" data-to="Ports" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="645.2350000000002,123.35000000000001 658.3465000000001,123.35000000000001 658.3465000000001,123.35000000000001 671.4580000000001,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Backend" data-to="Ports" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="622.2640000000002,188.25 658.3465000000001,188.25 658.3465000000001,123.35000000000001 671.4580000000001,123.35000000000001" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="HostNetwork" data-to="Wire" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="209.33000000000007,123.35000000000001 232.9955000000001,123.35000000000001 232.9955000000001,216.70000000000005 256.6610000000002,216.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="HostLocal" data-to="Wire" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="191.54600000000002,210.55 224.1035000000001,210.55 224.1035000000001,216.70000000000005 256.6610000000002,216.70000000000005" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="NativeCalls" data-to="Wire" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="221.186,275.45000000000005 230.43800000000005,275.45000000000005 230.43800000000005,225.92500000000004 256.6610000000002,225.92500000000004" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Wire" data-to="Domain" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="439.4010000000002,216.70000000000005 874.7915,216.70000000000005 874.7915,188.25 886.4930000000002,188.25" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Ports" data-to="Domain" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="863.09,123.35000000000001 874.7915,123.35000000000001 874.7915,188.25 886.4930000000002,188.25" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="PureViews" data-to="Domain" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="837.8960000000002,188.25 874.7915,188.25 874.7915,188.25 886.4930000000002,188.25" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<g class="node" data-id="HostWriter" data-label="Host writer adapter" data-shape="rectangle" id="source--diagram-1--HostWriter">
+  <rect x="471.3870000000002" y="40" width="153.10000000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="547.9370000000002" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host writer adapter</text>
+</g>
+<g class="node" data-id="Ports" data-label="Owned dependency ports" data-shape="rectangle" id="source--diagram-1--Ports">
+  <rect x="671.4580000000001" y="104.9" width="191.63199999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="767.2740000000001" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Owned dependency ports</text>
+</g>
+<g class="node" data-id="HostNetwork" data-label="Host network ingress" data-shape="rectangle" id="source--diagram-1--HostNetwork">
+  <rect x="42.892000000000024" y="104.9" width="166.43800000000005" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="126.11100000000005" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host network ingress</text>
+</g>
+<g class="node" data-id="HostAdmission" data-label="Host admission" data-shape="rectangle" id="source--diagram-1--HostAdmission">
+  <rect x="256.6610000000002" y="104.9" width="130.12900000000002" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="321.7255000000002" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host admission</text>
+</g>
+<g class="node" data-id="HostLocal" data-label="Host-local ingress" data-shape="rectangle" id="source--diagram-1--HostLocal">
+  <rect x="42.892000000000024" y="192.10000000000002" width="148.654" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="117.21900000000002" y="210.55" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host-local ingress</text>
+</g>
+<g class="node" data-id="HostCore" data-label="Host capability owners" data-shape="rectangle" id="source--diagram-1--HostCore">
+  <rect x="471.3870000000002" y="104.9" width="173.84799999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="558.3110000000003" y="123.35000000000001" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host capability owners</text>
+</g>
+<g class="node" data-id="Backend" data-label="Backend adapters" data-shape="rectangle" id="source--diagram-1--Backend">
+  <rect x="471.3870000000002" y="169.8" width="150.877" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="546.8255000000003" y="188.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Backend adapters</text>
+</g>
+<g class="node" data-id="Wire" data-label="Application wire schema" data-shape="rectangle" id="source--diagram-1--Wire">
+  <rect x="256.6610000000002" y="198.25000000000003" width="182.74" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="348.0310000000002" y="216.70000000000005" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Application wire schema</text>
+</g>
+<g class="node" data-id="NativeCalls" data-label="Gateway client dispatch" data-shape="rectangle" id="source--diagram-1--NativeCalls">
+  <rect x="42.892000000000024" y="257" width="178.29399999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="132.03900000000002" y="275.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Gateway client dispatch</text>
+</g>
+<g class="node" data-id="Domain" data-label="Domain contract modules" data-shape="rectangle" id="source--diagram-1--Domain">
+  <rect x="886.4930000000002" y="169.8" width="187.18599999999998" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="980.0860000000001" y="188.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Domain contract modules</text>
+</g>
+<g class="node" data-id="PureViews" data-label="Pure view transforms" data-shape="rectangle" id="source--diagram-1--PureViews">
+  <rect x="671.4580000000001" y="169.8" width="166.43800000000005" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="754.6770000000001" y="188.25" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Pure view transforms</text>
+</g>
+</svg>

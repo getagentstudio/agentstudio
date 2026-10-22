@@ -1,0 +1,115 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 748.495 695" width="748.495" height="695" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 748px; --diagram-readable-width: 599px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"></polygon>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"></polyline>
+  </marker>
+</defs>
+<line class="lifeline" data-actor="Client" x1="82.17250000000001" y1="70" x2="82.17250000000001" y2="665" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Gateway" x1="230.59300000000002" y1="70" x2="230.59300000000002" y2="665" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Host" x1="384.20050000000003" y1="70" x2="384.20050000000003" y2="665" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Store" x1="526.3225" y1="70" x2="526.3225" y2="665" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Destination" x1="666.3225" y1="70" x2="666.3225" y2="665" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<g class="message" data-from="Client" data-to="Gateway" data-label="Output intent and destination" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="82.17250000000001" y1="90" x2="230.59300000000002" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="156.38275000000002" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Output intent and destination</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Host" data-label="Addressed caller context" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="230.59300000000002" y1="130" x2="384.20050000000003" y2="130" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="307.39675" y="120" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Addressed caller context</text>
+</g>
+<g class="message" data-from="Host" data-to="Store" data-label="Validate and prepare" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="384.20050000000003" y1="170" x2="526.3225" y2="170" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="455.2615" y="160" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Validate and prepare</text>
+</g>
+<g class="message" data-from="Store" data-to="Host" data-label="Exact attempt committed" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="526.3225" y1="210" x2="384.20050000000003" y2="210" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="455.2615" y="200" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Exact attempt committed</text>
+</g>
+<g class="message" data-from="Host" data-to="Gateway" data-label="Descriptor and exact content" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="384.20050000000003" y1="250" x2="230.59300000000002" y2="250" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="307.39675" y="240" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Descriptor and exact content</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Client" data-label="Complete attempt bytes" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="230.59300000000002" y1="290" x2="82.17250000000001" y2="290" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="156.38275000000002" y="280" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Complete attempt bytes</text>
+</g>
+<g class="message" data-from="Client" data-to="Destination" data-label="Recheck admission, perform" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="82.17250000000001" y1="330" x2="666.3225" y2="330" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="374.2475" y="320" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Recheck admission, perform</text>
+</g>
+<g class="message" data-from="Destination" data-to="Client" data-label="Known success" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="666.3225" y1="370" x2="82.17250000000001" y2="370" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="374.2475" y="360" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Known success</text>
+</g>
+<g class="message" data-from="Client" data-to="Gateway" data-label="Attempt outcome report" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="82.17250000000001" y1="410" x2="230.59300000000002" y2="410" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="156.38275000000002" y="400" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Attempt outcome report</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Host" data-label="Authenticated report" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="230.59300000000002" y1="450" x2="384.20050000000003" y2="450" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="307.39675" y="440" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Authenticated report</text>
+</g>
+<g class="message" data-from="Host" data-to="Store" data-label="Admit report, finalize" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="384.20050000000003" y1="490" x2="526.3225" y2="490" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="455.2615" y="480" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admit report, finalize</text>
+</g>
+<g class="message" data-from="Store" data-to="Host" data-label="Commit or write failure" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="526.3225" y1="530" x2="384.20050000000003" y2="530" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="455.2615" y="520" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Commit or write failure</text>
+</g>
+<g class="message" data-from="Host" data-to="Gateway" data-label="Recording result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="384.20050000000003" y1="570" x2="230.59300000000002" y2="570" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="307.39675" y="560" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Recording result</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Client" data-label="Recording result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="230.59300000000002" y1="610" x2="82.17250000000001" y2="610" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="156.38275000000002" y="600" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Recording result</text>
+</g>
+<g class="note" data-position="over" data-actors="Host,Destination">
+  <polygon points="435.2165000000001,618 609.3065000000001,618 615.3065000000001,624 615.3065000000001,641 435.2165000000001,641" fill="var(--bg)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <polygon points="609.3065000000001,618 615.3065000000001,624 609.3065000000001,624" fill="var(--_inner-stroke)" stroke="var(--_node-stroke)" stroke-width="0.75"></polygon>
+  <text x="525.2615000000001" y="629.5" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Effect and SQL commit separately</text>
+</g>
+<g class="actor" data-id="Client" data-label="Native client" data-type="participant">
+  <rect x="30.000000000000007" y="30" width="104.34500000000001" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="82.17250000000001" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Native client</text>
+</g>
+<g class="actor" data-id="Gateway" data-label="Mac Gateway" data-type="participant">
+  <rect x="174.34500000000003" y="30" width="112.49599999999998" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="230.59300000000002" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Mac Gateway</text>
+</g>
+<g class="actor" data-id="Host" data-label="Host workflow" data-type="participant">
+  <rect x="326.841" y="30" width="114.719" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="384.20050000000003" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host workflow</text>
+</g>
+<g class="actor" data-id="Store" data-label="Host SQL" data-type="participant">
+  <rect x="481.56" y="30" width="89.525" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="526.3225" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Host SQL</text>
+</g>
+<g class="actor" data-id="Destination" data-label="Native effect" data-type="participant">
+  <rect x="614.15" y="30" width="104.34500000000001" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="666.3225" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Native effect</text>
+</g>
+</svg>

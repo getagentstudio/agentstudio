@@ -1,0 +1,51 @@
+{
+  "scope": "Later owner corrections supplement; original source files remain unchanged",
+  "lead_session": {
+    "endpoint": {
+      "serviceId": "0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89",
+      "endpointId": "codex-local"
+    },
+    "sessionId": "01a1418c-8bbd-76c0-abb9-71d9cc571ee6"
+  },
+  "host_local_selection": {
+    "source_kind": "Verbatim owner answer attributed to Advisor Router relay; provider transcript not inspected",
+    "advisor_session_id": "34f18df3-a0aa-4472-9b76-7dbfe813d46b",
+    "relay": "router://0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89/push/01a144ee-2918-7b60-a2a3-e22d431c3856",
+    "relay_timestamp": "2026-10-16T13:37:01.208282Z",
+    "question": "Claude or Codex is running in a terminal on your Linux box. A hook fires, or the agent sends a notice or sets its pane title. Where does that call go?",
+    "options": {
+      "A": "Host-local (Lead recommends): agent calls from inside a session stay on the Host; every other CLI command still goes through the Gateway.",
+      "B": "Through a Mac Gateway: Linux to Mac to Linux; fails or must queue when no Mac is awake."
+    },
+    "answer_verbatim": "obviosuly it ahs to go tot deamon host thast the point of itneraciton",
+    "selected_meaning": "Authorized agent/hook/context inputs originating inside a Host session interact with that Host locally, independently of Mac reachability",
+    "limits": "Exact method mapping and credential mechanics remain open; this selection does not itself classify every other CLI verb"
+  },
+  "direct_owner_messages_in_lead_session": [
+    {
+      "source_anchor": "S15",
+      "text": "mabye we misudersthant the remote deamon is itnarcti with git and agent and everything you udnetandand?"
+    },
+    {
+      "source_anchor": "S18",
+      "text": "we woudl ahve full test coverage for compatability between a socker and swift to unix to check schemas does tha tmake sense?"
+    },
+    {
+      "source_anchor": "S16",
+      "text": "all cli commands shoukld go to the maine they are attached to"
+    },
+    {
+      "source_anchor": "S17",
+      "text": "also we hsoud be able to attach mutipel remote hosts to our gateway"
+    }
+  ],
+  "proof_boundary": "Authoritative design inputs, not product implementation or experiment execution results",
+  "additional_owner_words_attributed_to_advisor": {
+    "source_root_message": "01a144f8-a42b-7b43-9298-6e9fddcb0bd0",
+    "source_kind": "Advisor relay, provider transcript not inspected",
+    "messages": [
+      "yes in remote host",
+      "scoped by machine as terminal starts in some machine including local"
+    ]
+  }
+}

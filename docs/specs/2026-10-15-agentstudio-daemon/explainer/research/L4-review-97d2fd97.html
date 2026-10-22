@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · L4 — Git, worktree fork, files/review/output, migration risk review</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L4-review-97d2fd97.html">AgentStudio daemon · L4 — Git, worktree fork, files/review/output, migration risk review</a></nav></ex-nav>
+<ex-document id="content"><h1>L4 — Git, worktree fork, files/review/output, migration risk review</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-20-full-spec-review/L4-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## L4 — Git, worktree fork, files/review/output, migration risk review
+
+## 1 Basis
+
+**Basis: source.** Review date 2026-10-20. Workspace A = `/Users/shravansunder/code/projects/agentstudio.feat-daemon`, branch `feat/daemon`, HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. Git package G = `/Users/shravansunder/code/projects/agentstudio-git`, HEAD `4cca397dfc869857064da4e9ec8289ea46adc479`. Vendored zmx = `8bab1f0173b07e79835ea372d749af3dbf0d0842`; rendered Ghostty = `2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33`. D = `/Users/shravansunder/code/projects/agentstudio.feat-daemon/docs/specs/2026-10-15-agentstudio-daemon`.
+
+**Basis: source.** Pinned manifest: `tmp/practices-research/2026-10-20-full-spec-review/spec-manifest-sha256.txt`, SHA-256 `c18425249969dd319bd63580af7556f88da65aae1b3dfb4a853120f3309d147a`, 116 entries. All 26 lane Markdown files were read completely; all 26 match the manifest. No changed lane file was encountered. The other opened manifest members also match. Hash inventory below includes partial source/routing reads; it does not imply every line of each source file was inspected.
+
+**Basis: spec text.** Authority is the commission's first-hand owner-decision record, then the inspected Requirements/Specification and their stated limits. In particular, the commission now explicitly supplies remote Mac worktree CLI `--host vm-1`, both Gateway platforms, latest-zmx Capture intent, and Mac / Fly Sprites Linux / sunclaw experiment environments. Older interpretation in a document does not override that record.
+
+**Basis: source.** No product command, test, build, app launch, remote experiment, dependency update, Git mutation or board operation was performed. AgentStudio already had four modified image files: `docs/images/agent-studio-{file-diff-review,pane-drawers,parallel-agent-terminals,repository-command-bar}.png`; they were untouched. The Git package has no modified tracked files. The sole authorized write is this report. No other reviewer report, excluded tmp research, design-workflow material or docs/wip was opened. A preliminary memory-registry keyword lookup was discarded as review evidence; no prior conclusion supplies a finding here.
+
+**Basis: inference.** This is a lane risk examination, not a whole-set four-document assessment. Markdown contracts, embedded text diagrams, source declarations and the decisive paths cited below were examined. Generated HTML/SVG/PNG readers were outside the manifest and were not visually inspected. The spec's external-source assertions about Rustix, flyctl, Apple, objc2, winit and Router are attributed spec evidence unless independently supported by an opened source below; those upstream implementations were not reopened. Candidate zmx `2d23c0d` was not inspected as local source. No runtime conclusion follows from this report.
+
+**Basis: inference.** Reconstructed model: machine Git/filesystem and continuing execution belong to the addressed Host; Gateway routes frontend use and prepares qualified views; native clients own actual rendering/input and destination effects. The strangler changes one capability owner at a time while preserving client contracts, transaction predicates and task custody. The largest risk lies where “one owner per capability” must also protect a shared physical resource or an already-running effect.
+
+**Basis: inference.** Coverage/rail map: DS05 repository acquisition and custody → U4/U6/U11, R4/R15/R16; DS06 complete fork → U5/U6/U11, R2/R4; DS08 source/revision/output → U4/U9/U13, R4/R15/R16; DS11 integrated migration → U7–U10/U23, R5–R14 as applicable. Host/Gateway/native separation, finite content, independent renewal, shared-state references and task ownership have corresponding rails. No additional service, transcript store, retry ledger or universal recovery mechanism is recommended. Risk closure below means specifying or observing an existing obligation, rather than completing an unrequested mechanism.
+
+### SHA-256 prefixes of opened target, source and routing files
+
+**Basis: source.** Prefixes are the first 16 hexadecimal characters; A/D/G expand as above. Source reads were bounded to relevant declarations/operations. All lane files appear in this inventory.
+
+```text
+efa3e47ea63d2490  D/documents.md
+a51bf8444ecfd956  D/README.md
+e271212bdea2e117  A/docs/architecture/README.md
+b9e67ba514493ec6  D/user-requirements.md
+742e673e5d5d3091  A/docs/architecture/structure/directory_structure.md
+3fc63608b6df5480  A/docs/architecture/commands/command_specs.md
+259dd0148310a57d  D/designs/05-git-discovery/README.md
+d4efc0114347b42f  D/designs/05-git-discovery/specification.md
+95ed42c1b51b3e30  D/designs/05-git-discovery/git-operation-map.md
+0b93bf7a64cf3661  D/designs/06-worktree-fork/README.md
+eaeb43f1e686b78e  D/designs/06-worktree-fork/specification.md
+3acacc9358f7b024  D/designs/06-worktree-fork/research/worktree-fork-contracts.md
+110a69cff3cfefa1  D/designs/06-worktree-fork/experiments/linux-feasibility.md
+f624ce0b2b6027ae  D/designs/08-files-review-output/README.md
+5224c3bc54161f24  D/designs/08-files-review-output/specification.md
+2fff95b8329e9dad  D/designs/08-files-review-output/annotation-operation-map.md
+078d57d68b3e8390  D/designs/08-files-review-output/annotation-output-lifecycle-design.md
+6edb7ae2aaa400ef  D/designs/08-files-review-output/bridge-operation-map.md
+ad35199422569b7e  D/designs/08-files-review-output/client-read-needs.md
+5d47ebdbf2ddf41c  D/designs/11-operations-integration/README.md
+0c85c777eb120843  D/designs/11-operations-integration/specification.md
+9f20b12e3781c571  D/designs/11-operations-integration/near-term-migration.md
+cb46d2011186e8dd  D/designs/11-operations-integration/migration-map.md
+1f87ca19ff6d51b1  D/designs/11-operations-integration/migration-feature-checklist.md
+6a11474ae00b6bb5  D/designs/11-operations-integration/migration-detail-branches.md
+1d453306f5229ff1  D/designs/11-operations-integration/capability-placement-map.md
+fdcc59c3b3382f54  D/designs/11-operations-integration/program-design-workbench.md
+3225dc0420c118ad  D/designs/11-operations-integration/migration-operation-crosswalk.md
+0adebb17543cec79  D/designs/11-operations-integration/rust-engineering-design.md
+f2152c9df7c4f8c0  D/designs/11-operations-integration/research/router-rust-standards.md
+e34aeeed3f405fea  D/designs/11-operations-integration/research/ios-gateway-hosting-evidence.md
+fe392f1bdf7577c8  D/designs/11-operations-integration/experiments/route-performance.md
+c1e936a51e966002  D/2026-10-15-agentstudio-daemon.md
+5e194c597746d5e0  D/domain-entities.md
+28048ae31be2f7d0  A/docs/architecture/state/agentstudio_git.md
+1cc811778f4b4919  G/Sources/AgentStudioGitContracts/AgentStudioGitSDK.swift
+45d34a836a299422  G/Sources/AgentStudioGitContracts/GitDiscoveryReadContracts.swift
+3ff8f3cb19c897b4  G/Sources/AgentStudioGitLocal/LibGit2AgentStudioGitLocalClient.swift
+caf8c7bb678c0f7e  G/Sources/AgentStudioGitLocal/Runtime/GitRepositoryWriterRegistry.swift
+92364222ad65b82c  A/Sources/AgentStudioIPCClient/main.swift
+1f37ca4c804fb2d7  A/Package.swift
+b570787e70ee0ab2  G/Sources/AgentStudioGitLocal/Discovery/LibGit2AgentStudioGitDiscoveryReadClient.swift
+dc60f5cc209e125e  A/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift
+34bdba0a78d93ada  A/Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift
+93288f5a9599c47b  A/Sources/AgentStudio/Core/Models/StableKey.swift
+a60b1716b456811f  A/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift
+d2dd843e1ef4efac  A/Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift
+ed1bf17c23b57836  A/Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift
+7735f0132e5f8692  A/Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift
+29d8278fc5d254f1  A/Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift
+043e59c19c699140  A/Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift
+76f8bf9e90247daf  G/Sources/AgentStudioGitLocal/WorktreeFork/LibGit2WorktreeForkWriter.swift
+5519593858dc3529  G/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift
+72b748a1e4c96877  G/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkEligibility.swift
+d8605b0491088890  G/Package.swift
+2150050422daa619  D/initial-profile.md
+b6a293400d0f692a  D/research/topology-risks.md
+b5988d05d36cd7cf  D/research/owner-inputs/migration-directions-2026-10-19.md
+7e7a741a0e71ebd4  D/research/owner-inputs/worktree-cli-host-direction-2026-10-19.md
+39a33c3d643cc23a  G/Sources/AgentStudioGitRemote/LibGit2StagedFetchPromoter.swift
+69ec53660e638564  A/Sources/AgentStudioWorktreeOperations/WorktreeRemovalRunner.swift
+80bca436f89d9999  A/Sources/AgentStudioWorktreeOperations/WorktreeRemovalRunner+WorktreeMutation.swift
+2dd42ff637bd1adf  A/Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator+ScopedTopology.swift
+010302d169b8ef81  A/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressBuffer.swift
+306904c355f72530  D/capability-contracts.md
+6e83bf95ab861255  D/designs/04-terminal-runtime/experiments/terminal-restoration.md
+2e9e1daab576809f  A/vendor/zmx/src/ipc.zig
+7db5c93f0453bbe5  A/vendor/zmx/src/loop.zig
+34520fef99a1dc5c  A/vendor/zmx/src/util.zig
+1b3bf400a8410231  A/vendor/zmx/src/main.zig
+78232aec570e266b  A/vendor/ghostty/include/ghostty.h
+acb1b9ea6dc55af3  A/Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift
+77ffc39442baf149  D/designs/04-terminal-runtime/execution-lifecycle-design.md
+30ca510e8c4e7344  A/vendor/ghostty/src/Surface.zig
+4d27dede0b4f1c3e  A/Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileContentSource.swift
+26cfb359d718dc98  G/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkSourceWalker.swift
+6b45ac20d056b1da  A/Sources/AgentStudio/App/PaneAgents/PaneIPCIdentityOwner.swift
+3f68b74ac4272336  A/Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift
+a149e4df831e12ce  A/Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyActionDisposition.swift
+1a0378ff1be2b66f  A/Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift
+49ec6853281dd0e3  A/Sources/AgentStudio/App/Coordination/WorktreeCreationPorts.swift
+```
+
+### Review-method files
+
+**Basis: source.** Active skill root is `/Users/shravansunder/.codex/plugins/cache/sunstack/sunstack-dev/2.92.0/skills/`. These files were read for method, separately from product evidence:
+
+```text
+115dfcb379392898  role-reviewer/SKILL.md
+944b26f8a3d37e16  role-reviewer/references/working-with-lead.md
+4044e86b0d0b36c6  principle-read-ground-truth-first/SKILL.md
+bcefa14adeb0a6f2  principle-read-ground-truth-first/references/example_scenarios.md
+fd40eee5890508a4  principle-verify-before-accepting/SKILL.md
+7bc37576a829faf0  principle-verify-before-accepting/references/example_scenarios.md
+32182d88e8cf58a9  principle-name-the-tradeoffs/SKILL.md
+a296e27e9c37b790  principle-name-the-tradeoffs/references/example_scenarios.md
+fcecebecefa5a5ed  principle-experiment-before-proposing/SKILL.md
+73ca491d5be20cd8  principle-experiment-before-proposing/references/example_scenarios.md
+e238c5b231374ae1  spec-program-review/SKILL.md
+c876c68c63d7e8d3  domain-rust/SKILL.md
+90465d3274af6230  principle-write-for-the-reader/SKILL.md
+7bdd9207c4d9c5d3  spec-program-review/references/reviewing-common-method.md
+5d9db7e0525b0caf  spec-program-review/references/lanes/dispel.md
+4b9615e0de7166f0  spec-program-review/references/finding-and-reduction-schema.md
+```
+
+**Basis: inference.** Applied examples: “Who decided this?” for owner authority; “the review finding that was wrong” for reopening decisive anchors; “the workaround that became permanent” for cutover custody; “the probe that looked in the wrong place” for leaf versus full-route evidence. The commission's six-section, no-verdict form governs this handback.
+
+## 2 High-risk spaces
+
+**Basis: inference.** Nine spaces, ordered qualitatively by cost if wrong × thinness of target support. These include explicitly acknowledged gaps; inclusion does not assert that the spec promised an implementation already exists.
+
+### H1 — Old cleanup can destroy an execution after its owner changes
+
+- **Kind:** ownership; stored data; irreversible step.
+- **Basis: spec text — claim/obligation.** [designs/11-operations-integration/near-term-migration.md:86](../../designs/11-operations-integration/near-term-migration.html) requires joining old cleanup and preserving installed-session handling; [designs/11-operations-integration/migration-map.md:131](../../designs/11-operations-integration/migration-map.html) permits per-capability replacement while unmigrated owners remain. R5/R6 require presentation loss to leave execution alive.
+- **Basis: source — decisive evidence.** [Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift:174](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift) durably marks cleanup pending once pane/available-Undo references disappear. [Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift:103](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift) then invokes verified retirement. [Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift:80](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift) sends Kill and returns pending; cancellation cannot retract that sent effect.
+- **Basis: inference — consequence/support.** A correct new detach path is insufficient if a queued old row/callback still acts on the same execution. The cost is destruction of live user work; the cutover mechanism and installed-state observation are not supplied by the checklist.
+- **Closure:** bind selected old resources, stop their former destructive admission, join/reconcile admitted work, and observe the real installed-state handoff before exposing migrated references. Keep history cleanup distinct from termination. This is Program Design plus Verification Design work under existing R5/R6, not a request for a new recovery service.
+
+### H2 — Host qualification must survive the first persisted repository association
+
+- **Kind:** stored data; ownership; security.
+- **Basis: spec text — claim/obligation.** [designs/11-operations-integration/near-term-migration.md:66](../../designs/11-operations-integration/near-term-migration.html) explicitly requires Host-qualified associations before the first associated remote integration. [designs/05-git-discovery/git-operation-map.md:24](../../designs/05-git-discovery/git-operation-map.html) and [domain-entities.md:39](../../domain-entities.html) leave replacement/restart identity incomplete.
+- **Basis: source — decisive evidence.** [Sources/AgentStudio/Core/Models/StableKey.swift:7](../../../../../Sources/AgentStudio/Core/Models/StableKey.swift) hashes a locally canonicalized path alone. [Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:9](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift) declares global unique stable keys for watched paths, repositories and worktrees. [agentstudio-git/Sources/AgentStudioGitLocal/Discovery/LibGit2AgentStudioGitDiscoveryReadClient.swift:82](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Discovery/LibGit2AgentStudioGitDiscoveryReadClient.swift#L82) constructs repository identity as `common:<canonical path>`.
+- **Basis: inference — consequence/support.** Two addressed Hosts can legitimately expose equal paths. Importing today's keys or resolving a remote URL on this Mac can merge associations, reject legitimate data, or select the wrong mutation target. Adding a Host label to a view after persistence does not repair those keys. Host restart/replacement also cannot be settled by hostname or pathname alone.
+- **Closure:** select the reference/import/projection contract at the actual boundary used by the first slice; include duplicate paths and replaced roots in its evidence. This does not require deciding workspace-to-Host cardinality or globally re-keying every existing table.
+
+### H3 — Capture/restoration and the native relay are load-bearing, unobserved boundaries
+
+- **Kind:** premise many pieces rest on; contract.
+- **Basis: spec text — claim/obligation.** [designs/11-operations-integration/near-term-migration.md:72](../../designs/11-operations-integration/near-term-migration.html) needs an ordered snapshot/live cut, and [designs/11-operations-integration/program-design-workbench.md:188](../../designs/11-operations-integration/program-design-workbench.html) proposes Ghostty's PTY-facing relay. [designs/04-terminal-runtime/experiments/terminal-restoration.md:9](../../designs/04-terminal-runtime/experiments/terminal-restoration.html) separates vendored V from candidate C.
+- **Basis: source — decisive evidence.** [vendor/zmx/src/ipc.zig:6](../../../../../vendor/zmx/src/ipc.zig) has no Capture tag. [vendor/zmx/src/loop.zig:980](../../../../../vendor/zmx/src/loop.zig) conditionally appends restoration as ordinary Output, and [vendor/zmx/src/loop.zig:399](../../../../../vendor/zmx/src/loop.zig) appends live Output to client buffers. [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:403](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift) creates a command-backed surface. [vendor/ghostty/src/Surface.zig:3382](../../../../../vendor/ghostty/src/Surface.zig) treats text injection as clipboard paste.
+- **Basis: inference — consequence/support.** Capture text is not evidence of complete parser continuation or a supported native producer-output path. An incorrect cut can duplicate history or lose partial escape/UTF-8 state while a screen looks plausible. Using a paste API would send input toward the child. Terminal return, slow-viewer recovery and much of performance comparison depend on this boundary.
+- **Closure:** X1 must qualify the selected Capture-capable build, actual running backend, restoration profile and native relay separately, then compose them. The recorded candidate is research evidence, not confirmed current upstream or a qualified implementation. No extra Host emulator is inferred.
+
+### H4 — Output recovery cannot be decided by Host SQL state alone
+
+- **Kind:** ownership; security; irreversible step.
+- **Basis: spec text — claim/obligation.** [designs/08-files-review-output/annotation-output-lifecycle-design.md:33](../../designs/08-files-review-output/annotation-output-lifecycle-design.html) proposes native sequencing of Host preparation, local effect and qualified reporting. [designs/08-files-review-output/annotation-output-lifecycle-design.md:97](../../designs/08-files-review-output/annotation-output-lifecycle-design.html) retains interrupted writer/recovery cases. [designs/08-files-review-output/specification.md:21](../../designs/08-files-review-output/specification.html) requires exact bytes, lineage and truthful partial outcomes.
+- **Basis: source — decisive evidence.** [Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift:121](../../../../../Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift) admits an application-owned detached file task and awaits it. [Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift:426](../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift) reports known effect with failed finalization separately. [Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift:431](../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift) changes prepared rows to unknown; it has no remote-writer observation. [Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift:359](../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift) repeats using the recorded path, and [Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift:155](../../../../../Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift) can atomically replace that file.
+- **Basis: inference — consequence/support.** After Host/client separation, Host recovery can consider an attempt unknown while its original native writer still runs. A late report, another device using the same path string, or an explicit repeat can then finalize or overwrite the wrong destination unless the declared client/destination and reporting principal remain bound. This is a risk in the proposed boundary, not evidence of an existing remote vulnerability.
+- **Closure:** finish report admission, destination identity/locality, late-report/concurrent-recovery transitions and old-attempt adoption. Preserve known effect independently from finalization. A new durable registry is not implied; X5 determines the smallest necessary custody contract.
+
+### H5 — A surviving shell can still have no functioning Host-local integration
+
+- **Kind:** premise many pieces rest on; security; contract.
+- **Basis: spec text — claim/obligation.** [designs/11-operations-integration/near-term-migration.md:60](../../designs/11-operations-integration/near-term-migration.html) makes minimum credential/CLI bootstrap part of the session slice. [designs/11-operations-integration/near-term-migration.md:62](../../designs/11-operations-integration/near-term-migration.html) requires renderer-free fact sources. [designs/11-operations-integration/program-design-workbench.md:320](../../designs/11-operations-integration/program-design-workbench.html) carries R9/R10 independently of survival.
+- **Basis: source — decisive evidence.** [Sources/AgentStudio/App/PaneAgents/PaneIPCIdentityOwner.swift:118](../../../../../Sources/AgentStudio/App/PaneAgents/PaneIPCIdentityOwner.swift) constructs pane/workspace credential, socket, CLI-store and helper environment at the Mac owner. [Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift:127](../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift) silently returns zero without that credential configuration. [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyActionDisposition.swift:51](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyActionDisposition.swift) classifies native title samples, while line 69 includes native CWD/completion/progress facts.
+- **Basis: inference — consequence/support.** Moving only launch/bytes can leave hooks apparently successful but unadmitted, use Mac-local paths remotely, or make the last renderer the sole fact producer. A live process and zero hook exit conceal these failures. Replacing pane identity with execution identity also changes the actual authority subject.
+- **Closure:** bind installed Host-local artifacts, environment, execution/context authority and exact required fact sources before launch; independently observe admitted domain effects with all Gateways and Swift absent. Existing notice-outbox preservation is a distinct narrow path, not permission for a general spool.
+
+### H6 — Per-capability strangling must preserve repository-wide mutation custody
+
+- **Kind:** ownership; contract; irreversible step.
+- **Basis: spec text — claim/obligation.** [designs/11-operations-integration/migration-map.md:129](../../designs/11-operations-integration/migration-map.html) replaces one capability at a time and leaves unmigrated owners in place. [designs/05-git-discovery/git-operation-map.md:136](../../designs/05-git-discovery/git-operation-map.html) explicitly retains writer/task custody and promotion uncertainty.
+- **Basis: source — decisive evidence.** [agentstudio-git/Sources/AgentStudioGitLocal/Runtime/GitRepositoryWriterRegistry.swift:4](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Runtime/GitRepositoryWriterRegistry.swift#L4) supplies an in-process shared registry; [agentstudio-git/Sources/AgentStudioGitLocal/Runtime/GitRepositoryWriterRegistry.swift:25](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Runtime/GitRepositoryWriterRegistry.swift#L25) gives complete mutations one serial queue per canonical repository. [agentstudio-git/Sources/AgentStudioGitLocal/LibGit2AgentStudioGitLocalClient.swift:77](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/LibGit2AgentStudioGitLocalClient.swift#L77) forwards fork cancellation and awaits the lane result. [agentstudio-git/Sources/AgentStudioGitRemote/LibGit2StagedFetchPromoter.swift:65](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/LibGit2StagedFetchPromoter.swift#L65) explicitly reports indeterminate ref-transaction failure.
+- **Basis: inference — consequence/support.** Separate Swift and Rust owners of different capabilities can still touch one physical common directory. Two process-local lanes do not supply the former shared sequencing boundary; a database-writer lease also does not establish Git-ref/filesystem custody. A dropped request future can release apparent admission while fork rollback or promotion is still active.
+- **Closure:** state the precise shared-resource exclusion and foreign-writer guarantees during overlap, plus retained task accounting and operation-specific reconciliation. Do not presume a distributed lock, generic journal or universal rollback. This is a target contract question; the source also already permits external Git writers, so universal cross-process serializability is not attributed to today's SDK.
+
+### H7 — Linux fork requires a complete safe counterpart, not a clone wrapper
+
+- **Kind:** contract; stored data; irreversible step.
+- **Basis: spec text — claim/obligation.** [designs/06-worktree-fork/specification.md:11](../../designs/06-worktree-fork/specification.html) requires source/destination, Git/index/ref, metadata, cleanup and joined-cancellation coverage. [designs/06-worktree-fork/research/worktree-fork-contracts.md:78](../../designs/06-worktree-fork/research/worktree-fork-contracts.html) lists W1–W11. The leaf procedure explicitly limits its claim at [designs/06-worktree-fork/experiments/linux-feasibility.md:3](../../designs/06-worktree-fork/experiments/linux-feasibility.html).
+- **Basis: source — decisive evidence.** [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/LibGit2WorktreeForkWriter.swift:96](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/LibGit2WorktreeForkWriter.swift#L96) composes linked creation, materialization, hardlinks, rehoming, index building, validation and attachment. [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkEligibility.swift:23](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkEligibility.swift#L23) is explicitly Mac/APFS-specific. [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkSourceWalker.swift:179](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkSourceWalker.swift#L179) rejects undecodable names and permits ENOENT disappearance. [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift:24](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift#L24) has no persisted crash journal.
+- **Basis: inference — consequence/support.** Silent byte copying, lossy Linux names, omitted metadata, or cleanup against replaced paths can destroy parity and user data despite correct file hashes. Safe dependency API existence does not establish compilation, ordinary-user authority, or composed metadata semantics. Full fork also depends on the chosen Git mechanics realization; the current XCFramework package is not a Linux implementation.
+- **Closure:** select one complete supported Linux profile and preserved client options, distinguish admitted differences from failures, and obtain leaf then whole-operation observations. The current leaf procedure's Fly Machine control path needs adaptation/qualification for the commission's Fly Sprites choice; its mount and guest-control assumptions cannot be transferred by renaming the environment.
+
+### H8 — Watch continuity and content validity must cross the same addressed-source boundary
+
+- **Kind:** contract; premise many pieces rest on.
+- **Basis: spec text — claim/obligation.** [designs/05-git-discovery/specification.md:33](../../designs/05-git-discovery/specification.html) separates scan, membership and persistence; line 37 requires continuity/loss semantics. [designs/08-files-review-output/specification.md:13](../../designs/08-files-review-output/specification.html) and [designs/08-files-review-output/client-read-needs.md:105](../../designs/08-files-review-output/client-read-needs.html) leave content/source/lease contracts to close.
+- **Basis: source — decisive evidence.** [Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator+ScopedTopology.swift:7](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator+ScopedTopology.swift) rechecks source/sequence/root/membership, applies graph/effects and only later attempts persistence (line 92). [Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressBuffer.swift:54](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressBuffer.swift) retains dropped-batch recovery. [Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileContentSource.swift:95](../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileContentSource.swift) reopens a contained file against descriptor length; lines 131–180 separately scan and build its digest-bound descriptor.
+- **Basis: inference — consequence/support.** A copied inventory or matching descriptor value can remain unchanged through an observation gap, root replacement, or same-length content change. Without source lifetime/coverage and transfer/application fences, users can see stale review material asserted as current, or lose membership after a failed scan. Cancellation of delivery must also close its actual source reader.
+- **Closure:** specify the Linux observation counterpart, root/name domain, no-client coverage policy, descriptor/revalidation lifetime and bounded transfer refusal. Observe X6 at real membership, byte and native-application boundaries rather than treating one successful array or digest as all three.
+
+### H9 — Required iOS Gateway realization has exceptionally thin integration evidence
+
+- **Kind:** premise many pieces rest on; contract.
+- **Basis: spec text — claim/obligation.** [designs/11-operations-integration/research/ios-gateway-hosting-evidence.md:7](../../designs/11-operations-integration/research/ios-gateway-hosting-evidence.html) leaves startup, Tokio, socket, suspension and safe linkage unqualified; lines 11–21 supply an explicitly unbuilt candidate and callback limitations. [designs/11-operations-integration/specification.md:9](../../designs/11-operations-integration/specification.html) requires both platforms and explicit pairing.
+- **Basis: source — decisive evidence.** [Package.swift:5](../../../../../Package.swift) declares the present macOS package platform, and [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:395](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift) configures the current Mac native platform. These establish the predecessor boundary only. The linked objc2/winit upstream code was not independently reopened in this lane.
+- **Basis: inference — consequence/support.** A source-supported safe startup call cannot establish that mixed-language app/scene linkage, runtime ownership, local IPC and real mobile lifecycle compose under the first-party unsafe prohibition. Discovering a fundamental bootstrap problem late would reshape the Gateway artifact and application boundary; treating Mac evidence as mobile evidence would hide it.
+- **Closure:** perform X8 before freezing the mobile artifact/lifecycle binding. Keep required iOS role separate from the candidate hosting mechanism and from optional performance workload selection. No new business FFI or always-on mobile process is inferred.
+
+## 3 Contradictions
+
+### C1 — Direct remote worktree CLI is explicitly selected in the commission but left unselected in the spec
+
+- **Basis: spec text — both anchors.** [designs/11-operations-integration/migration-map.md:83](../../designs/11-operations-integration/migration-map.html) restricts machine worktree CLI to the executing machine's local Host; line 98 says direct remote access remains open. [designs/11-operations-integration/capability-placement-map.md:70](../../designs/11-operations-integration/capability-placement-map.html), [initial-profile.md:11](../../initial-profile.html), [user-requirements.md:32](../../user-requirements.html) and R12 at [2026-10-15-agentstudio-daemon.md:141](../../2026-10-15-agentstudio-daemon.html) repeat that boundary. Even the owner-input interpretation at [research/owner-inputs/worktree-cli-host-direction-2026-10-19.md:19](../../research/owner-inputs/worktree-cli-host-direction-2026-10-19.html) leaves it open.
+- **Basis: spec text — governing correction.** Commission OWNER DECISIONS item 7 explicitly says remote use is a Mac CLI with `--host vm-1`, and says worktree CLI works with the daemon rather than Gateway. This supplies the missing authority; it is not another choice to return to the owner.
+- **Basis: source — predecessor boundary.** [Sources/AgentStudioIPCClient/main.swift:13](../../../../../Sources/AgentStudioIPCClient/main.swift) routes worktree dispatch before ordinary IPC configuration. It supports the existing independence being migrated, not the spec's narrower future remote restriction.
+- **Basis: inference — consequence/correction.** Implementers following the pinned contracts could require a Gateway or remote login for the explicitly requested Mac-originated machine operation. Reconcile U2/R12/IP3, DS05/06 entry classification and DS09/11 routing to the supplied owner correction; preserve explicit target, admission and uncertain-effect handling. Check an actual Mac CLI request reaches only the named remote Host without a Gateway. Route: spec-design → program-design → verification-design.
+
+### C2 — E5 still treats the Gateway as Mac-only and phone placement as undecided
+
+- **Basis: spec text — both anchors.** [designs/11-operations-integration/experiments/route-performance.md:5](../../designs/11-operations-integration/experiments/route-performance.html) states “the Gateway service is macOS” and makes phone deployment conditional on an owner choice; line 104 also lists phone Gateway placement among undecided choices. R3 at [2026-10-15-agentstudio-daemon.md:132](../../2026-10-15-agentstudio-daemon.html), U12 at [user-requirements.md:42](../../user-requirements.html), and [designs/11-operations-integration/program-design-workbench.md:3](../../designs/11-operations-integration/program-design-workbench.html) require Gateway on macOS and iOS. Commission OWNER DECISIONS item 2 independently confirms it. The linked topology research also carries stale Mac-only/phone-via-Mac wording at [research/topology-risks.md:3](../../research/topology-risks.html) and line 132.
+- **Basis: inference — consequence/correction.** An experiment may deliberately start with desktop/remote workload under IP8, but cannot frame the required mobile topology as an unmade product decision. Correct the qualification/coverage wording without inventing mobile latency thresholds or claiming an iOS run. Route: verification-design; reconcile referenced Specification/research wording through its author.
+- **Basis: inference — scope limit.** No independent doc-versus-source behavioral contradiction was established among the decisive source paths opened here. The nine risks above identify unresolved target contracts, experimental premises and cutover hazards rather than silently treating current implementation as the target.
+
+## 4 Premises that need an experiment
+
+**Basis: source.** No experiment below was run. These are nine proposed discriminators, not observations. Each references a ranked space; its source anchors remain part of that premise.
+
+### X1 — Capture and real native relay preserve continuation (H3)
+
+**Basis: spec text.** Claim: [designs/11-operations-integration/near-term-migration.md:72](../../designs/11-operations-integration/near-term-migration.html) and [designs/04-terminal-runtime/experiments/terminal-restoration.md:23](../../designs/04-terminal-runtime/experiments/terminal-restoration.html).
+
+**Basis: inference.** Source cannot settle actual composed parser, PTY, query and native rendering behavior across the two VT pins. Cheapest discriminator: use bounded split UTF-8/CSI/OSC corpora with known expected cells/styles/history and a suffix that exposes omitted continuation; obtain Capture and subsequent live bytes on the same connection; then feed the declared restore/live sequence through the real command-backed native relay. Record the pre-Capture frames and keep the two restore bases separate. Oracle: independent expected state plus uninterrupted reference, history order and actual native query-return provenance, with omitted-continuation and duplicated-segment controls. Environment: this Mac first, then selected Linux Host on Fly Sprites or sunclaw for the same required profile. **Latest-zmx Capture matters: yes.** Confirm exact target source/build, tag/payload/ordering/coverage and the actually running daemon's capability; recheck whether recorded candidate `2d23c0d440583736f365a55aa09cb2c82b0fe7fa` is still the intended current pin. No Capture behavior is inferred from vendored v0.8.1 or a displayed version string.
+
+### X2 — Installed-session handoff excludes old retirement (H1/H2)
+
+**Basis: spec text.** Claim: [designs/11-operations-integration/near-term-migration.md:86](../../designs/11-operations-integration/near-term-migration.html) and [designs/04-terminal-runtime/execution-lifecycle-design.md:133](../../designs/04-terminal-runtime/execution-lifecycle-design.html).
+
+**Basis: inference.** Source shows the destructive path, not whether the future cutover excludes it. Cheapest discriminator: a disposable current-schema store and independently identified continuing backend; hold old cleanup before retirement admission, initiate the selected handoff, close all migrated references and exhaust relevant Undo retention, then release the held work. Separately characterize an already-sent retirement as unrecoverable rather than declaring cancellation protection. Oracle: correlated cleanup settlement plus independent original-process/workload identity; a same-name replacement remains untouched and distinguishable. Environment: this Mac; repeat the resulting counterpart on the selected Linux Host. **Latest Capture matters: no** for ownership exclusion, although backend control/identity behavior must be requalified at the selected zmx pin.
+
+### X3 — Git overlap and cancelled delivery retain actual repository custody (H6)
+
+**Basis: spec text.** Claim: [designs/11-operations-integration/migration-map.md:129](../../designs/11-operations-integration/migration-map.html) and [designs/05-git-discovery/git-operation-map.md:38](../../designs/05-git-discovery/git-operation-map.html).
+
+**Basis: inference.** The present process-local lane cannot settle a future Swift/Rust overlap guarantee. Cheapest discriminator: one synthetic repository, two independently owned callers representing migrated/unmigrated entries, a held fork after a real mutation and a competing selected mutation. Cancel delivery while retaining operation custody; then release and inspect refs, worktree administration, content and residue. Oracle: the declared admission order or explicit conservative conflict, no unaccounted overlapping cleanup, and settlement before custody is released. Lost result remains uncertain even when later state is visible. Environment: this Mac, then Fly Sprites Linux for the chosen backend. **Latest Capture matters: no.** This does not require implementing a universal lock service.
+
+### X4 — Safe Linux primitives compose on the selected actual filesystem (H7)
+
+**Basis: spec text.** Claim: [designs/06-worktree-fork/experiments/linux-feasibility.md:9](../../designs/06-worktree-fork/experiments/linux-feasibility.html) and W5–W8 at [designs/06-worktree-fork/research/worktree-fork-contracts.md:82](../../designs/06-worktree-fork/research/worktree-fork-contracts.html).
+
+**Basis: inference.** Mac/APFS code cannot settle guest mount permissions, safe API compilation, clone eligibility, ACL semantics, filename domain or cleanup races. Cheapest discriminator: first inventory the actual Fly Sprites paths/UID/mounts and control/exit behavior; exercise the procedure's bounded regular-file clone and metadata/custody arms only where the environment supplies them. Oracle: actual selected clone call, independent byte/write separation, independently observed attributes and permission effects, plus foreign-replacement and cleanup settlement controls. If no admitted positive profile exists, report that environment gap; do not silently mount or provision another product. A later full synthetic Git fork must verify registration/HEAD/index/ref/content and the declared differences; the leaf cannot establish it. Environment: Fly Sprites Linux; sunclaw is an owner-listed alternative requiring its own exact profile and separately authorized fixture scope. **Latest Capture matters: no.** The old `flyctl machine exec`, loop-mount and Machine-retirement recipe is not a Sprites control recipe.
+
+### X5 — Interrupted output distinguishes the old writer, new attempt and Host record (H4)
+
+**Basis: spec text.** Claim: [designs/08-files-review-output/annotation-output-lifecycle-design.md:94](../../designs/08-files-review-output/annotation-output-lifecycle-design.html).
+
+**Basis: inference.** In-process sequencing does not settle distributed report/recovery ordering. Cheapest discriminator: prepare exact revision membership, hold an admitted native file writer, lose the client/report path, exercise selected Host recovery, then release the original writer and separately issue explicit repeat under its declared policy. Include a second client with the same path string and no destination grant. Oracle: exact destination bytes/owner, no effect from history inspection/copy application, separate known effect and recording result, correct late-report handling, and no handled mark on a later saved revision. Also fail finalization after independently known clipboard/file success. Environment: this Mac for native effects, Host fixture on sunclaw or Fly Sprites. **Latest Capture matters: no.**
+
+### X6 — Linux observation loss and live file replacement stay qualified (H2/H8)
+
+**Basis: spec text.** Claim: [designs/05-git-discovery/specification.md:37](../../designs/05-git-discovery/specification.html) and [designs/08-files-review-output/client-read-needs.md:111](../../designs/08-files-review-output/client-read-needs.html).
+
+**Basis: inference.** A Darwin source read cannot establish Linux watcher coverage or the composed transfer/application boundary. Cheapest discriminator: fixed synthetic tree; rename root, replace a same-name directory, add a directory during discovery, interrupt the actual observation source, and trigger its admitted overflow/loss path. Hold a file transfer and replace it with different same-length bytes. Include equal paths on two Hosts. Oracle: independent filesystem manifest and content digest, correct Host attribution, no successful empty inventory for unavailable scope, no complete-current claim across an unestablished gap, and stale content never installed as the new source. Environment: this Mac and Fly Sprites Linux. **Latest Capture matters: no.**
+
+### X7 — Bootstrap, authorized input and terminal facts continue without clients (H5)
+
+**Basis: spec text.** Claim: [designs/11-operations-integration/near-term-migration.md:60](../../designs/11-operations-integration/near-term-migration.html) and [designs/04-terminal-runtime/execution-lifecycle-design.md:73](../../designs/04-terminal-runtime/execution-lifecycle-design.html).
+
+**Basis: inference.** Existing Mac environment construction and zero hook exit cannot establish a renderer-free Host path. Cheapest discriminator: Host-launched synthetic shell with declared Host-local CLI/resources and test authority; close Swift and all Gateways; submit one eligible hook/input and change each selected terminal fact through its real producer. Oracle: authoritative admitted workflow/readback and independently correlated source facts, with missing/wrong-machine credential controls; zero hook exit, a surviving PID or an unbound byte stream cannot establish the outcome. Exercise invalid writer authority separately from presentation absence. Environment: this Mac plus Fly Sprites Linux or sunclaw. **Latest Capture matters: conditionally.** Confirm the selected backend's actual no-view metadata/fact coverage; Capture cannot be assumed to replace shell/provider/process sources.
+
+### X8 — Safe iOS startup, socket ownership and scene lifetime compose (H9)
+
+**Basis: spec text.** Claim: [designs/11-operations-integration/research/ios-gateway-hosting-evidence.md:9](../../designs/11-operations-integration/research/ios-gateway-hosting-evidence.html) and [designs/11-operations-integration/program-design-workbench.md:294](../../designs/11-operations-integration/program-design-workbench.html).
+
+**Basis: inference.** A safe call declaration cannot settle linked Swift delegate/scene behavior, target features, generated first-party safety compliance, Tokio shutdown or endpoint custody. Cheapest discriminator: an owned minimal mobile build using the selected startup candidate, actual Rust runtime, typed socket exchange and explicit app/scene transitions. Oracle: independently observed client↔Gateway exchange, real lifecycle/endpoint/task ownership, and continued remote workload while the mobile side disappears. Environment: this Mac can supply build and simulator evidence; physical-device background/suspension evidence is not supplied by the listed remote hosts and remains an explicit environment gap. **Latest Capture matters: no** for bootstrap/socket lifetime; terminal restoration is X1.
+
+### X9 — Full-route efficiency and resource isolation have equivalent observations
+
+**Basis: spec text.** Claim: [designs/11-operations-integration/experiments/route-performance.md:7](../../designs/11-operations-integration/experiments/route-performance.html); its observation exclusions at lines 24–28 and cases at lines 71–80 remain material.
+
+**Basis: inference.** Source cannot rank routing, bulk placement, compression or scheduler behavior for the owner's workload. Cheapest discriminator: one equivalent real domain read through current and proposed paths, then a declared small-control call during bounded bulk transfer with one stalled consumer. Oracle: correct addressed result, bulk progress, all offered/refused/missing outcomes, queue age and retained resources; control latency cannot be priced by a transport enqueue or unmatched native timer. Retain the current lack of an equivalent terminal-parser/presentation observer rather than relabelling byte echo. Environment: this Mac with Mac-local Host, then sunclaw or Fly Sprites Linux. **Latest Capture matters: only** for reattachment/restoration arms that use it; ordinary control and compression results do not establish Capture correctness or native presentation latency.
+
+## 5 Owner-decision gaps
+
+**Basis: inference.** Two near-term product choices remain unmade in the inspected governing text and are not settled by the commission. Technical bindings, repository/package layout, ordinary sequencing and the already-explicit remote CLI correction are not added owner questions.
+
+### O1 — What does a retained session reference mean after natural exit or Host failure?
+
+**Basis: spec text.** [designs/11-operations-integration/near-term-migration.md:57](../../designs/11-operations-integration/near-term-migration.html) leaves natural exit and selected restart/retained-record promise open; G3 at [2026-10-15-agentstudio-daemon.md:187](../../2026-10-15-agentstudio-daemon.html) names failure, reboot, re-adoption and ended-session retention. [designs/04-terminal-runtime/execution-lifecycle-design.md:155](../../designs/04-terminal-runtime/execution-lifecycle-design.html) forbids silently presenting a new execution as the continuing original.
+
+**Basis: source.** [Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift:182](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) explicitly relies on attach auto-creation, while the target retains an execution identity distinct from a view.
+
+**Basis: inference.** The owner must settle the user-visible promise when the original execution has ended or cannot be identified: what is shown/retained, whether a fresh execution requires an explicit action, and what restart continuity is actually promised. Engineering can qualify identity and implement that promise, but cannot derive it from a UUID or socket name. This limits the near-term create/list/reconnect and installed-session journey. It does not reopen survival across mere presentation loss. Route: caller → spec-design, then dependent Program/Verification Design.
+
+### O2 — What are control and viewport outcomes when a controller disappears or another device requests control?
+
+**Basis: spec text.** IP2 at [initial-profile.md:10](../../initial-profile.html) fixes one controller and other viewers; [designs/11-operations-integration/near-term-migration.md:75](../../designs/11-operations-integration/near-term-migration.html) leaves no-controller, handoff/revocation, viewport and child-visible focus semantics open.
+
+**Basis: source.** [vendor/zmx/src/loop.zig:894](../../../../../vendor/zmx/src/loop.zig) can promote a nonleader on detected user input; [vendor/zmx/src/loop.zig:962](../../../../../vendor/zmx/src/loop.zig) lets Init claim vacant leadership and resize the canonical terminal before restoration. These are predecessor mechanisms, not the selected multi-device product policy.
+
+**Basis: inference.** Automatic versus explicit transfer, authority after disconnect, canonical viewport while no controller exists, and child-visible focus/resize have observable effects. Source inspection cannot choose those tolerances. The near-term attach/control/resize journey needs one stated outcome before adapters can freeze transitions. Latest Capture may affect implementation feasibility but does not choose who controls. Route: caller → spec-design → program-design → verification-design.
+
+**Basis: spec text.** Host deployment/workspace cardinality remains deliberately open under commission item 5 and [research/owner-inputs/migration-directions-2026-10-19.md:23](../../research/owner-inputs/migration-directions-2026-10-19.html). The lane does not require settling it merely to qualify an explicitly addressed session. Mandatory performance workload/tolerances and extra shared-marker families remain later named product questions; they are not prerequisites for the bounded exploratory probes above.
+
+## 6 Checked and found consistent
+
+1. **Basis: source + spec text.** The SDK declaration count is 33 local + 10 remote + 1 exact-discovery requirement = 44; fork/eligibility account for two, leaving 42 non-fork requirements as stated at [designs/05-git-discovery/README.md:27](../../designs/05-git-discovery/README.html). Opened declarations: [agentstudio-git/Sources/AgentStudioGitContracts/AgentStudioGitSDK.swift:3](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/AgentStudioGitSDK.swift#L3) and [agentstudio-git/Sources/AgentStudioGitContracts/GitDiscoveryReadContracts.swift:24](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitContracts/GitDiscoveryReadContracts.swift#L24). This confirms that count, not complete 293-declaration behavioral coverage.
+2. **Basis: source + spec text.** Exact discovery does use NO_SEARCH and distinguishes validated, reasoned negative and failed outcomes: [agentstudio-git/Sources/AgentStudioGitLocal/Discovery/LibGit2AgentStudioGitDiscoveryReadClient.swift:27](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/Discovery/LibGit2AgentStudioGitDiscoveryReadClient.swift#L27) agrees with [designs/05-git-discovery/git-operation-map.md:22](../../designs/05-git-discovery/git-operation-map.html). A path-derived ID remains explicitly qualified rather than being claimed as incarnation proof.
+3. **Basis: source + spec text.** Fork cancellation is forwarded and awaited before returning, rollback can return ordered residue, and its journal is call-local: [agentstudio-git/Sources/AgentStudioGitLocal/LibGit2AgentStudioGitLocalClient.swift:77](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/LibGit2AgentStudioGitLocalClient.swift#L77), [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/LibGit2WorktreeForkWriter.swift:79](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/LibGit2WorktreeForkWriter.swift#L79), [agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift:24](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift#L24) agree with [designs/06-worktree-fork/research/worktree-fork-contracts.md:32](../../designs/06-worktree-fork/research/worktree-fork-contracts.html). Neither source nor text turns this into crash recovery.
+4. **Basis: source + spec text.** Output preparation validates exact snapshot/message revisions and bytes, while finalization records event/attempt plus matching-revision handled state in its own write: [Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift:76](../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift), line 362 and line 770 agree with [designs/08-files-review-output/annotation-output-lifecycle-design.md:14](../../designs/08-files-review-output/annotation-output-lifecycle-design.html). Known destination success with failed finalization is separately represented at coordinator line 426.
+5. **Basis: source + spec text.** Native effects are not guaranteed unchanged on error: clipboard is cleared before setData, and exclusive new-file write failure can leave cleanup uncertainty; [Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift:104](../../../../../Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift) and line 173 agree with [designs/08-files-review-output/specification.md:25](../../designs/08-files-review-output/specification.html). The spec does not treat history inspection, copied rows or finite-content delivery as effect execution.
+6. **Basis: source + spec text.** The two named creation defaults already have injected query seams: [Sources/AgentStudio/App/Coordination/WorktreeCreationPorts.swift:58](../../../../../Sources/AgentStudio/App/Coordination/WorktreeCreationPorts.swift) and line 123 agree with [designs/11-operations-integration/capability-placement-map.md:104](../../designs/11-operations-integration/capability-placement-map.html). The migration correctly identifies their local default construction as a remote-composition hazard without falsely claiming dependency injection is absent.
+
+**Basis: inference.** Section counts: Basis 0 findings; High-risk spaces 9; Contradictions 2; Experimental premises 9; Owner-decision gaps 2; Consistency checks 6. Cross-references reuse the same root concerns rather than representing independent defects. The commissioner receives risk/evidence and makes the subsequent judgment.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

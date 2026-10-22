@@ -1,0 +1,115 @@
+# E4 safe Linux primitives — first discriminator evidence
+
+Date: 2026-10-15. Scope: source evidence for strict regular-file cloning, descriptor-relative resolution, truthful refusal, CoW divergence and metadata boundaries. Lead authors and validates the exact probe. This report selects no crate/backend, kernel floor, fallback, metadata normalization policy or product ownership.
+
+## Ground truth and source budget
+
+Governing inputs: [E4][e4] and [F01–F13][cases]. Mac reference: `agentstudio-git` HEAD `4cca397dfc869857064da4e9ec8289ea46adc479`, especially the existing fork contract, descriptor/leaf/metadata owners and joined rollback. Host macOS/Linux parity remains required; Gateway remains macOS-only. No Linux feature was dropped.
+
+Exactly **six decisive external evidence units** were selected: one pinned Rust crate artifact and five primary manual/kernel documents. The owner-named local ground truth is listed separately. DeepWiki was used first for pointers; its summaries were not accepted as API/guarantee proof.
+
+| Unit | Source and cutoff | Evidence boundary |
+| --- | --- | --- |
+| D1 | `rustix 1.1.5` released crate archive; embedded VCS commit `287214b889865d8e1406a0ee71cc409b6f6191c8`. Crates.io reported `1.1.5` as current stable at lookup. [Pinned crate][crate] | Public API bodies, feature/cfg gates, flags, metadata types and bounded absence searches. Source support, not a successful target build. |
+| D2 | [Linux `ioctl_ficlone` manual][ficlone-man], retrieved 2026-10-15 | Clone/CoW data contract and non-exhaustive error descriptions. Not a verdict about a particular mounted filesystem. |
+| D3 | [Linux `openat2` manual][openat2-man], retrieved 2026-10-15 | Per-open path-resolution constraints and errors. Not a perpetual namespace lock. |
+| D4 | [Linux `statx` manual][statx-man], retrieved 2026-10-15 | Descriptor-directed observation, returned masks and identity-field limitations. |
+| D5 | [Linux v6.12 FIEMAP documentation][fiemap-doc] | Optional mapping evidence and unknown/encoded/delayed-allocation limitations. This reference kernel is not a selected execution profile. |
+| D6 | [Linux v6.12 `fs/remap_range.c`][remap-source] | Concrete VFS clone/refusal path, including superblock check and filesystem-specific dispatch. Not a proof that every target kernel/backend behaves identically. |
+
+No tests, builds, prototypes, Fly commands, provisioning, credentials, device/runtime actions, product/config/vendor edits, board posts or new agents were performed. Only this authorized evidence file was written. Source retrieval used read-only HTTPS; no checkout or dependency installation was made.
+
+## Verified safe Rust API surface
+
+All listed APIs are safe public functions returning `io::Result`; internal dependency implementation uses `unsafe`. Their presence does not require a first-party raw-syscall shim, and does not establish a successful compilation under a future target configuration. Rustix's `fs` feature exposes the filesystem module; default `std` also enables allocation. The pinned manifest declares MSRV `1.65`. [Feature manifest][rustix-features]
+
+| Need | Exact public signature / features | Supported fact and limit |
+| --- | --- | --- |
+| Whole-file strict clone | `ioctl_ficlone<Fd: AsFd, SrcFd: AsFd>(fd: Fd, src_fd: SrcFd) -> io::Result<()>` [D1][rustix-ficlone] | **Destination first, source second.** One FICLONE ioctl; no byte-copy fallback in this wrapper. Gated to `linux_kernel`, excluding SPARC/SPARC64. Caller supplies already-open files; creation/exclusive ownership of a destination is separate. |
+| Resolution constraints | `openat2<Fd: AsFd, P: path::Arg>(dirfd: Fd, path: P, oflags: OFlags, mode: Mode, resolve: ResolveFlags) -> io::Result<OwnedFd>` [D1][rustix-openat2] | Public export is gated on **`linux_raw_dep`**, not every possible Linux/libc backend. No weaker-open fallback in the inspected syscall path. `BENEATH`, `IN_ROOT`, `NO_SYMLINKS`, `NO_MAGICLINKS`, `NO_XDEV` are present. [Cfg][rustix-fs-cfg], [flags][rustix-resolve] |
+| Descriptor identity | `fstat<Fd: AsFd>(fd: Fd) -> io::Result<Stat>`; `statx<P: path::Arg, Fd: AsFd>(dirfd: Fd, path: P, flags: AtFlags, mask: StatxFlags) -> io::Result<Statx>` [D1 signature][rustix-statx-call] | Safe `fstat` and `statx` exist. Empty path plus `AtFlags::EMPTY_PATH` queries the referenced file, including a non-directory. Request `INO`/`BASIC_STATS` and optionally named `MNT_ID`; inspect the returned `stx_mask`. No named `MNT_ID_UNIQUE` constant was found in this pinned [StatxFlags definition][rustix-statx]; do not assign that stronger meaning to `MNT_ID`. |
+| Link text / creation | `readlinkat<P: path::Arg, Fd: AsFd, B: Into<Vec<u8>>>(dirfd: Fd, path: P, reuse: B) -> io::Result<CString>`; `symlinkat<P: path::Arg, Q: path::Arg, Fd: AsFd>(old_path: P, new_dirfd: Fd, new_path: Q) -> io::Result<()>` [D1][rustix-links] | `readlinkat` requires allocation support. These expose link text and parent-relative creation, not an automatic metadata-preserving symlink clone or a permanent parent-ancestry guarantee. |
+| Mode / owner / times | `fchmod(fd, Mode)`; `fchown(fd, Option<Uid>, Option<Gid>)`; `futimens(fd, &Timestamps)` [D1][rustix-fd-metadata] | Safe descriptor operations exist; `Timestamps` contains last access and last modification. Permissions/capabilities and representability still govern success. This is not birthtime/ctime restoration, ACL copying, or proof that the same descriptor strategy works for Linux symlinks. |
+| Extended attributes | `fgetxattr(fd, name, buffer)`; `flistxattr(fd, buffer)`; `fsetxattr(fd, name, &[u8], XattrFlags)` [D1][rustix-xattr] | Safe FD byte-level attribute operations exist. They do not define which namespaces/ACL/security attributes can or must be reproduced, copy ordering, privileges, or normalization policy. |
+
+The exact backend/target cfg must therefore be part of later qualification. “Rustix runs on Linux” does not prove that this particular `openat2` surface is exported for every target/backend. `statx` has a feature-dependent availability cache; its compatibility code can return `NOSYS`, and is not a replacement with weaker identity evidence. [Compatibility path][rustix-statx-compat]
+
+## Kernel fact / limit table
+
+| Question | Supported fact | What must not be inferred |
+| --- | --- | --- |
+| What does successful FICLONE mean? | D2 defines whole-file data sharing within the same filesystem, with future writes remaining private to the written file. It also describes a clone as consistent with concurrent writes. | A directory-tree snapshot, copied inode metadata, crash durability, successful Git adoption, or independent physical-block measurement. Consistency is per clone operation, not atomic enumeration of a mutable tree. |
+| Can byte divergence prove physical sharing? | Different file identities, initial equal content and later independent writes can establish non-aliasing and functional divergence when actually observed. | Ordinary byte copies also diverge. `st_blocks`, `du`, elapsed time and filesystem names cannot independently distinguish those implementations. Record successful FICLONE as **kernel-contract evidence**, separately from any physical-sharing observation. |
+| Is FIEMAP stronger evidence available automatically? | D5 describes logical/physical extent mappings and flags such as unknown location, delayed allocation and encoded storage. It is a possible filesystem-specific corroboration seam. | Complete/stable mappings, universal support, or permission to access mounted storage through raw block devices. No safe FIEMAP wrapper was found in D1; no physical-sharing test or exhaustive shared-extent interpretation was established here. |
+| What should cross-filesystem refusal look like? | D6's v6.12 VFS path returns `EXDEV` for different inode superblocks, then performs access/area checks and calls the filesystem's remap operation. D2 also lists unsupported/invalid/special-file/permission errors. | One universal error code from any arbitrary cross-device fixture. Earlier FD/path/permission failures can win; filesystem dispatch can refuse differently. `EXDEV` from `openat2` may instead mean path escape or forbidden mount crossing. Preserve syscall/stage + raw errno + actual FD identities, not errno alone. |
+| Unsupported clone versus invalid setup | D2 lists `EBADF`, `EINVAL`, `EISDIR`, `EOPNOTSUPP`, `EPERM`, `ETXTBSY` and `EXDEV` as non-exhaustive possibilities. | Collapsing every failure into “filesystem lacks CoW,” or treating a filesystem type/name as a capability result. A failed ioctl is not evidence that a previously created destination artifact never existed or needs no owned cleanup. |
+| `BENEATH` versus `IN_ROOT` | D3: `BENEATH` rejects resolution outside dirfd descendants, including absolute paths/absolute symlink escapes. `IN_ROOT` instead interprets absolute paths and links relative to dirfd for that open. | They are not interchangeable behavior, a process-wide chroot, or a freeze of the directory namespace. No policy choice between them is selected. |
+| Symlink and mount treatment | D3: `NO_SYMLINKS` applies to all components and implies no magic links; ordinary `O_NOFOLLOW` concerns the final component. `NO_XDEV` rejects mount-point traversal, including bind mounts. | A bind mount necessarily denotes a different clone-capable filesystem, or all legitimate mounts should be refused. Same superblock, same device number and same mount identity are different observations. |
+| Race and availability errors | D3 names `EAGAIN` when the kernel cannot ensure escape safety during resolution, `ELOOP` for prohibited link resolution, and `EXDEV` for detected escape/mount crossing. The syscall appeared in Linux 5.6; D1 forwards syscall failure without a weaker open. | A retry policy, an approved older-kernel fallback, or a successful target-kernel capability result. Runtime `ENOSYS`/refusal remains possible and has not been exercised. |
+| Identity evidence | D4: `statx(fd, "", EMPTY_PATH, mask)` addresses the open object. It exposes inode/device/mount fields, but only returned-mask fields are available; fields can reflect different moments. Ordinary mount IDs differ from newer unique-mount-ID semantics. | Inode number alone as a cross-mount/restart identity, a whole-operation content snapshot, or `statx` as a namespace lock. Actual descriptor identities and current parent/path relationships need separate observations. |
+| Metadata scope | FICLONE is the data-clone operation; D1 exposes separate mode/owner/time/xattr setters. D6's [preparation][remap-preparation] can call `file_modified` on the destination, and clone dispatch is filesystem-specific. | Source mode/UID/GID/ACL/xattrs/timestamps automatically matching the destination because clone succeeded. Neither timestamp equality nor setter availability establishes the full Mac metadata contract. |
+
+## Post-open ancestor movement: the important boundary
+
+**Resolution-time containment does not establish all-time pathname containment.** An open directory descriptor continues to identify that directory object; retaining it does not freeze where another process may rename that directory in the surrounding namespace. A later write through that descriptor is not a new `BENEATH` resolution from the original pathname root. This is the limit of D3's per-open guarantee, not a Linux implementation failure observed here.
+
+The existing Mac fork adds concrete evidence/custody, rather than only a path flag:
+
+- Root-relative directory opens use `O_NOFOLLOW_ANY` plus `O_RESOLVE_BENEATH`. Source and destination directory descriptors are retained through each batch; leaf opens avoid following a replacement link. [Descriptors][mac-descriptors], [leaf batch][mac-leaf]
+- Planned leaf kind and `(device,inode)` must match the opened source descriptor. Regular-file clone observations compare planned/pre/post stat before treating clone content as clean-adoption evidence. This detects selected replacement/change races; it is not an atomic tree capture. [Leaf verification][mac-leaf-verify]
+- Destination parent is canonicalized and checked during preflight; overlap and volume facts are checked. That is not a retained parent-ancestry lock. [Planner][mac-planner]
+- A successful exclusive linked-worktree creation records destination/admin identities. Opening the destination root compares its descriptor identity against that recorded ownership. [Root ownership][mac-root]
+- Directory metadata finalization checks source directory identity; child creation and hard-link recreation operate through opened parent descriptors. [Materializer][mac-materializer]
+- Rollback removes only confirmed transaction-owned paths still matching identity, protects foreign paths/locks, and joins cleanup before returning or names residue. It deliberately provides no persisted crash recovery. [Journal][mac-journal]
+
+No continuous post-open parent-ancestry fence was found in those inspected materializer paths. Do not upgrade their comments about descriptor containment into a proven guarantee that a later ancestor rename can never move writes outside a pathname root. A future discriminator must distinguish symlink substitution **during resolution** from a directory moved **after it was opened**, and correlate actual FD/inode identities with a genuinely independent outside sentinel. A check made only before the write has a race window; observing the right inode alone does not establish its current pathname ancestry. Lead retains the required authority/containment interpretation and exact probe design.
+
+## Safe-wrapper and parity gaps left explicit
+
+| Gap | Bounded finding |
+| --- | --- |
+| Physical-sharing introspection | D1 whole-`src` case-insensitive search for `fiemap` returned no matches. A safe, qualified observation path was not established; no raw unsafe shim is authorized. This does not invalidate the separately stated FICLONE kernel contract. |
+| Semantic ACL copying | Searches for `acl_get`, `acl_set`, `copy_acl` in D1 `src` returned no matches. FD xattrs are byte-level mechanisms, not a verified ACL preservation/translation rule. No additional ACL crate was researched within the six-source bound. |
+| Linux symlink metadata | Link creation/read APIs exist, but this evidence does not establish a complete safe counterpart to Darwin `O_SYMLINK` plus descriptor metadata/ACL operations. Do not assume metadata setters accept every descriptor kind. |
+| Metadata domain | Current Mac code copies/checks ACLs, xattrs, selected flags, mode and atime/mtime, and reports ownership normalization. Linux privilege, namespace, timestamp and flag counterparts remain qualification work; no normalization or omission is selected. [Mac metadata][mac-metadata] |
+| Transactional tree/fork behavior | A file clone and safe opens do not provide recursive planning, native Git index/administration closure, branch CAS, joined cancellation/rollback, or truthful residue. Existing F03–F13 obligations remain open; this first discriminator does not silently claim them. |
+| Resource and race custody | The syscall wrappers do not own scheduling, accepted-work lifetime, parent-rename exclusion or cleanup. Source support cannot close those integration obligations. |
+
+## Disposition and proof limits
+
+Supported by primary source: safe API feasibility for the stated cfg; strict clone rather than implicit copy; resolution-time flags; descriptor identity observations; separate metadata operations; truthful limits on physical evidence. Unresolved: actual compile/lint eligibility, target kernel/seccomp/filesystem/mount capability, correct refusal outcome, post-open movement behavior under the chosen authority contract, metadata reproduction, physical extent corroboration and owned cleanup on the real profile.
+
+No probe or source test was run. No filesystem/device/mount characteristic of Fly or another machine was assumed. One profile cannot establish Linux-wide parity. DeepWiki's private `openat2` backend signature and description of `IN_ROOT` were corrected against D1/D3; its missing xattr/link pointers were filled from D1, not treated as absent APIs. No independent agent was commissioned under the no-agent assignment.
+
+Return token: `program-design-gap` — Lead validates this evidence and authors the exact E4 discriminator. Trace remains Lead-owned root `01a1418c-c98b-7592-bdfe-bc3ea9168464`; this is an evidence artifact, not a second trace.
+
+## Exact anchors
+
+[e4]: ../../../experiments/primary-experiments.md:81
+[cases]: edge-cases.md:37
+[crate]: https://crates.io/api/v1/crates/rustix/1.1.5/download
+[ficlone-man]: https://man7.org/linux/man-pages/man2/ioctl_ficlone.2.html#DESCRIPTION
+[openat2-man]: https://man7.org/linux/man-pages/man2/openat2.2.html#DESCRIPTION
+[statx-man]: https://man7.org/linux/man-pages/man2/statx.2.html#DESCRIPTION
+[fiemap-doc]: https://github.com/torvalds/linux/blob/v6.12/Documentation/filesystems/fiemap.rst#L83-L159
+[remap-source]: https://github.com/torvalds/linux/blob/v6.12/fs/remap_range.c#L376-L411
+[remap-preparation]: https://github.com/torvalds/linux/blob/v6.12/fs/remap_range.c#L356-L364
+[rustix-features]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/Cargo.toml#L110-L126
+[rustix-ficlone]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/ioctl.rs#L45-L57
+[rustix-openat2]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/openat2.rs#L14-L23
+[rustix-fs-cfg]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/mod.rs#L47-L59
+[rustix-resolve]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/backend/linux_raw/fs/types.rs#L273-L299
+[rustix-statx]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/statx.rs#L14-L123
+[rustix-statx-call]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/statx.rs#L203-L211
+[rustix-links]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/at.rs#L105-L113
+[rustix-fd-metadata]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/fd.rs#L114-L157
+[rustix-xattr]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/xattr.rs#L145-L160
+[rustix-statx-compat]: https://github.com/bytecodealliance/rustix/blob/287214b889865d8e1406a0ee71cc409b6f6191c8/src/fs/statx.rs#L214-L275
+[mac-descriptors]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkDescriptors.swift:53
+[mac-leaf]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkLeafWorker.swift:15
+[mac-leaf-verify]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkLeafWorker.swift:35
+[mac-planner]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkPlanner.swift:249
+[mac-root]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/LibGit2WorktreeForkWriter.swift:412
+[mac-materializer]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/APFSStrictCloneMaterializer.swift:208
+[mac-journal]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkRollbackJournal.swift:204
+[mac-metadata]: /Users/shravansunder/code/projects/agentstudio-git/Sources/AgentStudioGitLocal/WorktreeFork/WorktreeForkEntryMetadata.swift:13

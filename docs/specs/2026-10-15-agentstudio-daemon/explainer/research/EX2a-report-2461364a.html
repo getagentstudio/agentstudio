@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · EX2a — Capture-to-live protocol cut at zmx 0a18bee</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="EX2a-report-2461364a.html">AgentStudio daemon · EX2a — Capture-to-live protocol cut at zmx 0a18bee</a></nav></ex-nav>
+<ex-document id="content"><h1>EX2a — Capture-to-live protocol cut at zmx 0a18bee</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../research/evidence/2026-10-20-zmx-latest/EX2a-report.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## EX2a — Capture-to-live protocol cut at zmx 0a18bee
+
+## Answer
+
+**source:** **No, for the requested combination of no gap, no overlap and no parser residue.** Both arms had a clean **raw byte suffix boundary** at the tagged Capture reply: all **110 Capture cuts** matched an exact suffix of the known producer stream, with no missing or repeated byte range. But **0/110 Capture reconstructions** matched the uninterrupted oracle's final lines, and **0/55 Init reconstructions** did. Mid-UTF-8 cuts produced replacement characters; mid-CSI/OSC cuts exposed escape continuation text; even ground-state cuts could overwrite a numbered line at the restored cursor. Active alternate-screen cuts lost saved primary history. Capture omits the title replay that Init includes. See [results.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/results.json), [representative-diffs.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/representative-diffs.txt), and [source-anchors.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/source-anchors.txt).
+
+**source:** Capture carries **no output sequence, epoch, offset or parser checkpoint**. At this exact source revision its reply does have an implicit same-connection ordering boundary: one daemon loop updates VT state, appends live Output, then handles Capture and appends its tagged reply to the same FIFO write buffer; later Output follows that reply. This ordering is visible in source and supported by the observed suffixes. It is not a complete VT checkpoint or a cross-connection boundary.
+
+## Target, method and controls
+
+**source:** Same supplied binary as EX1, SHA-256 `9e4bb4b3d29c790c24b56eddaab8b6087e759999ae2d0cfe5f584a0d8886f5da`; source HEAD `0a18bee7d3555b7822d1cb79cca2304d6ef2711b`. Decisive working sources were byte-compared to pinned Git blobs. Host byte order is little-endian. [provenance.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/provenance.json). No rebuild was performed; build provenance remains supplied by EX0.
+
+All CLI commands explicitly used:
+
+```sh
+ZMX_DIR=/Users/shravansunder/code/projects/agentstudio.feat-daemon/tmp/ex/z
+```
+
+The pre-run acceptance criteria and separation of suites are in [protocol.md](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/protocol.md). Scripts:
+
+- [corpus.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/corpus.py): deterministic bytes and intended boundary offsets.
+- [pty_producer.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/pty_producer.py): real foreground PTY producer, raw output mode, repeated `os.write` calls, no sleeps between chunks.
+- [capture_cut_probe.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/capture_cut_probe.py): minimal IPC client, both arms, oracle and fresh replay daemons.
+- [supplemental_probe.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/supplemental_probe.py): active-alternate cuts and line-drop/duplicate controls.
+- [analyze_results.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/analyze_results.py): retained-data assertions, tables and provenance.
+
+Executed from the repository root:
+
+```sh
+python3 tmp/experiments/2026-10-20-zmx-latest/ex2/capture_cut_probe.py
+python3 tmp/experiments/2026-10-20-zmx-latest/ex2/supplemental_probe.py
+python3 tmp/experiments/2026-10-20-zmx-latest/ex2/analyze_results.py
+```
+
+**source:** All three complete commands exited **0**. This means the experiment completed and checked its instruments; it does **not** mean reconstruction passed. A one-position pilot was retained separately under `ex2/pilot/`. Exact zmx argv, exits and output are in [run.log](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/run.log). These are single-run scripts; labels/FIFOs and evidence files require a fresh run namespace before repetition. No product changes or network calls were made.
+
+### Corpus and independent oracle
+
+**source:** Corpus size **418,746 bytes**, SHA-256 `c87c672f77f0147926c3c5a5bf5742ad2c79bd2a594196bb2ba6803fc0f8e8a9`. It contains 40 prelude lines and 1,600 numbered blocks with split UTF-8 (`e2` then `82 ac`), wide `界`, combining `e` + U+0301, split CSI (`ESC[3` then `1m`), OSC 2 title changes, OSC 7 cwd, SGR red text, 140-character wrapping, and three alternate-screen enter/exit pairs. Every emitted textual line is numbered. The uninterrupted primary result has **8,042 physical lines / 6,442 numbered records**, below the 10,000-row Capture request and default scrollback limit. Alternate-only numbers intentionally disappear from that oracle.
+
+The corpus ends with `999998|CORPUS_END\r\n` followed by an incomplete **`ESC[`**. A separately released, identical suffix completes it:
+
+```text
+32m999999|CANARY_SUFFIX ESC[0m CR LF
+```
+
+**source:** The oracle was a second session running the same PTY generator without any client during corpus emission. A fixture client set **80 columns × 12 rows** before generation, then disconnected; it did not interrupt output. After the suffix was emitted, final state was serialized through the real daemon. Reconstructions were fed through IPC Output into **fresh daemon VTs**, with the same size and an otherwise silent PTY child, then serialized through the same paths. This uses the actual parser and serializer, not a handwritten VT emulator.
+
+**source:** Control `raw corpus + suffix` exactly matched the independent oracle for lines, title, cwd, exposed cursor, final alternate mode, canonical VT bytes and full Init serialization. A dropped `000010` line was reported as exactly that missing number; duplicating it was reported as exactly that extra number. [control-score.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/control-score.json), [sensitivity-controls.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/sensitivity-controls.json). These controls validate the byte-feeding and scoring paths; they do not establish native Ghostty behavior.
+
+### Arms and actual cut identification
+
+- **L:** joins after production has started; sends **Init + Info** in one request write, then Capture on that same live socket. Info identifies the end of Init handling. The retained frame audit permits raw Output before Init, followed by `Resize, Output(snapshot), Info`. The Init reconstruction discards pre-Init Output and uses that snapshot plus every subsequent raw Output, excluding the Capture reply.
+- **O:** joins mid-stream; sends **only Info and Capture**, no Init, Resize, Input or Send. An outgoing-frame audit checked this. Fixture size setup belonged to a separate connection before production.
+- **Capture reconstruction, both arms:** discard all Output before the **tagged Capture reply**, feed its VT payload, then every subsequent Output through the end of the corpus and canary. Byte offsets were calculated **afterward** from the exact retained suffix, not assumed from requested timing.
+
+**source:** In all 26 continuous L runs, raw Output arrived **before** Init's snapshot (6–29 frames). Treating the first Output as the Init snapshot would be wrong. The probe's batched Info fence and raw suffix audit disambiguated this fixture. Init has no dedicated snapshot reply tag or request identifier.
+
+There are two explicitly separate suites:
+
+1. **Continuous:** 26 runs per arm. The producer writes the corpus in a loop without sleeps or an interior barrier. The client connects after prelude progress and requests Capture at varied read thresholds. Actual cuts include UTF-8, CSI and OSC in **both** arms. The suffix barrier is after the bounded corpus, after Capture has already been received.
+2. **Forced boundary:** 29 exact positions per arm, including eight each inside UTF-8, CSI and OSC; two end/canary positions; and three with the alternate screen active. A FIFO barrier holds the producer at the selected byte offset. These guarantee parser-boundary coverage but are **not** continuous-output timing proof. All actual offsets matched their requested offsets. The supplemental split of alternate enter/exit writes preserved identical corpus bytes/hash.
+
+## Element scores
+
+Counts below are **matches to the uninterrupted oracle**, not generic test passes. `lines` means byte-exact plain history, including Unicode and wrapping. `cursor` is the final CUP row/column exposed by full Init serialization. `final alt` means the final active mode after the pair exits; it does not imply the saved primary buffer survived an active-alt cut. `numbered-gap runs` counts runs with at least one missing record. Exact identities and all differences are retained.
+
+| Suite / arm / snapshot | n | lines | title | cwd | cursor | final alt | numbered-gap runs | duplicate runs |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| gated / L / capture | 29 | 0 | 26 | 29 | 29 | 29 | 5 | 0 |
+| gated / L / init | 29 | 0 | 28 | 29 | 29 | 29 | 29 | 0 |
+| gated / O / capture | 29 | 0 | 26 | 29 | 29 | 29 | 5 | 0 |
+| continuous / L / capture | 26 | 0 | 26 | 26 | 26 | 26 | 12 | 0 |
+| continuous / L / init | 26 | 0 | 26 | 26 | 26 | 26 | 26 | 0 |
+| continuous / O / capture | 26 | 0 | 26 | 26 | 26 | 26 | 10 | 0 |
+
+## Forced cuts (L and O actual Capture offsets equal requested offsets)
+
+| ID | Corpus byte offset | State at Capture | Capture missing IDs (each arm) | L Init missing IDs |
+|---|---:|---|---:|---:|
+| 00 | 1265 | utf8 | 0 | 12 |
+| 01 | 1296 | csi | 0 | 12 |
+| 02 | 1341 | osc | 0 | 12 |
+| 03 | 21898 | utf8 | 0 | 10 |
+| 04 | 21929 | csi | 0 | 9 |
+| 05 | 21974 | osc | 0 | 9 |
+| 06 | 63636 | utf8 | 0 | 10 |
+| 07 | 63667 | csi | 0 | 9 |
+| 08 | 63712 | osc | 0 | 9 |
+| 09 | 126220 | utf8 | 0 | 10 |
+| 10 | 126251 | csi | 0 | 9 |
+| 11 | 126296 | osc | 0 | 9 |
+| 12 | 209630 | utf8 | 0 | 10 |
+| 13 | 209661 | csi | 0 | 9 |
+| 14 | 209706 | osc | 0 | 9 |
+| 15 | 293168 | utf8 | 0 | 10 |
+| 16 | 293199 | csi | 0 | 9 |
+| 17 | 293244 | osc | 0 | 9 |
+| 18 | 376918 | utf8 | 0 | 10 |
+| 19 | 376949 | csi | 0 | 9 |
+| 20 | 376994 | osc | 0 | 9 |
+| 21 | 418478 | utf8 | 0 | 10 |
+| 22 | 418509 | csi | 0 | 9 |
+| 23 | 418554 | osc | 0 | 9 |
+| 24 | 418744 | ground_end | 1 | 9 |
+| 25 | 418746 | csi_canary | 1 | 9 |
+| 26 | 2572 | alt_active | 64 | 64 |
+| 27 | 15608 | alt_active | 264 | 264 |
+| 28 | 33877 | alt_active | 544 | 544 |
+
+## Continuous cuts
+
+| ID | L Capture offset/state | L Capture missing IDs | L Init offset / missing IDs | O Capture offset/state | O Capture missing IDs |
+|---|---|---:|---|---|---:|
+| 00 | 3401 / csi | 0 | 1832 / 11 | 2073 / csi | 0 |
+| 01 | 17459 / ground | 1 | 1875 / 11 | 17214 / csi | 0 |
+| 02 | 33105 / ground | 1 | 2042 / 11 | 33075 / ground | 0 |
+| 03 | 48508 / utf8 | 0 | 1783 / 12 | 48816 / ground | 1 |
+| 04 | 63944 / ground | 1 | 1859 / 11 | 65739 / csi | 0 |
+| 05 | 80059 / utf8 | 0 | 2301 / 10 | 81644 / csi | 0 |
+| 06 | 95279 / ground | 1 | 2059 / 10 | 95736 / csi | 0 |
+| 07 | 111702 / ground | 1 | 2134 / 10 | 112892 / ground | 0 |
+| 08 | 126296 / osc | 0 | 1859 / 11 | 126528 / ground | 1 |
+| 09 | 141630 / osc | 0 | 1832 / 11 | 141585 / csi | 0 |
+| 10 | 157767 / ground | 1 | 2593 / 10 | 157810 / ground | 1 |
+| 11 | 173381 / ground | 1 | 2318 / 9 | 172877 / csi | 0 |
+| 12 | 188751 / utf8 | 0 | 2393 / 10 | 188325 / ground | 1 |
+| 13 | 204397 / utf8 | 0 | 2393 / 10 | 203896 / ground | 1 |
+| 14 | 218840 / ground | 1 | 1573 / 12 | 220869 / ground | 1 |
+| 15 | 235506 / osc | 0 | 2029 / 11 | 235479 / ground | 1 |
+| 16 | 250856 / ground | 1 | 2091 / 10 | 251054 / csi | 0 |
+| 17 | 269114 / csi | 0 | 1770 / 12 | 267499 / csi | 0 |
+| 18 | 281605 / ground | 0 | 1341 / 12 | 287442 / ground | 1 |
+| 19 | 307020 / ground | 1 | 2134 / 10 | 297144 / osc | 0 |
+| 20 | 317489 / csi | 0 | 2042 / 11 | 325313 / utf8 | 0 |
+| 21 | 330048 / utf8 | 0 | 3666 / 9 | 337674 / csi | 0 |
+| 22 | 351235 / ground | 1 | 2301 / 10 | 359090 / ground | 1 |
+| 23 | 364117 / ground | 1 | 1783 / 12 | 359104 / csi | 0 |
+| 24 | 403374 / csi | 0 | 3617 / 10 | 387162 / ground | 1 |
+| 25 | 390740 / ground | 0 | 2332 / 9 | 389973 / utf8 | 0 |
+
+**source:** All 110 Capture raw suffixes and all 55 Init raw suffixes were exact. There were **zero duplicate-number runs** in either reconstruction method. Capture had missing numbers in 17/55 L runs and 15/55 O runs; Init had missing numbers in 55/55. Other failed lines retained their number but had corrupted text. Thus the absence of a missing number does not establish a correct cut.
+
+**source:** Canonical VT byte equality was 0 for every scored reconstruction; this includes content/position differences and must not be called an independent SGR-only score. A separate foreground-color scan of the canonical serializer checked all 1,600 `RED` occurrences and the green canary: [sgr-scores.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/sgr-scores.json).
+
+| Suite / arm / snapshot | Correct RED style list | Correct canary color |
+|---|---:|---:|
+| forced / L / Capture | 18/29 | 28/29 |
+| forced / O / Capture | 18/29 | 28/29 |
+| continuous / L / Capture | 19/26 | 26/26 |
+| continuous / O / Capture | 9/26 | 26/26 |
+| forced / L / Init | 2/29 | 28/29 |
+| continuous / L / Init | 2/26 | 26/26 |
+
+The RED list comparison includes cardinality: missing numbered history can also remove RED occurrences. It is a deliberately narrow SGR-color check, not a full cell-attribute model.
+
+### Concrete failures
+
+All fragments below come from the same oracle versus retained fresh-daemon replays; see [representative-diffs.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/representative-diffs.txt).
+
+| Exact forced cut | Oracle text | Reconstructed text / loss |
+|---|---|---|
+| 1265, after first byte of `€` | `001004\|UTF8:€ wide:界 é` | `001004\|UTF8:�� wide:界 é` — two replacement characters |
+| 1296, after `ESC[3` | `001005\|SGR:RED normal` | `001005\|SGR:1mRED normal` — continuation became visible; RED lost red style |
+| 1341, in OSC 2 payload | `001006\|OSC:TITLE_DONE` | `001006\|OSC:001TITLE_DONE` — title payload suffix leaked into text |
+| 418554, last OSC payload | title `EX2_PARTIAL_1599` | Capture replay title empty; Init replay retained the previous title rather than finishing the pending OSC |
+| 418744, ground state before final split CSI | both numbered ending lines | Capture replay overwrote `999998\|CORPUS_END` with the canary |
+| 418746, after final `ESC[` | `999999\|CANARY_SUFFIX`, green | `32m999999\|CANARY_SUFFIX`, default color; preceding numbered line also lost in Capture replay |
+| active alternate at offsets 2572 / 15608 / 33877 | saved primary history returns after exit | 64 / 264 / 544 primary numbered records missing, both snapshot methods |
+
+**source:** The late Capture payload ends with:
+
+```text
+...999998|CORPUS_END ESC[12;1H ESC[0m OSC7(cwd)
+```
+
+It omits the trailing blank-row advance present in the real stream. Replaying it and then the correct live suffix overwrites that line. This is a snapshot/layout failure even at a ground-state byte boundary, separate from the incomplete-parser failures.
+
+**source:** Init is not an escape from the problem. In addition to incomplete parser state, every Init replay lost scrollback records. At the earliest cut the snapshot bytes contain prelude records `000022` through `000033`, but replay into a fresh 80×12 VT loses those 12 records. The snapshot emits scrollback, then `ESC[2J ESC[H` and visible rows. **inference:** the clear removes scrollback rows that were still occupying the fresh viewport rather than having all been scrolled out. The exact lost range varies with the cut; the observed loss and byte representation are stronger evidence here than the serializer's intention comments.
+
+**source:** Final title scores often pass because later live OSC updates overwrite the missing title snapshot. They do not prove Capture preserved the title at the cut. Likewise all final cursor and final-alt scores passing does not repair earlier content or saved-buffer loss.
+
+## Framing assumptions and anchors at 0a18bee
+
+Every assumption used by the Python client is listed here. Numbered source excerpts: [source-anchors.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/source-anchors.txt).
+
+| Assumption used | Decisive source anchor |
+|---|---|
+| Protocol version is 1; Input=0, Output=1, Resize=2, Info=6, Init=7, Capture=22 | `zmx/src/ipc.zig:6–35` |
+| Header is tag u8, version u8, reserved u16, length u32; 8 bytes | `src/ipc.zig:46–51`; frozen-size test `:342–348` |
+| Init payload is the 8-byte Resize: rows, cols, xpixel, ypixel, all u16 | `src/ipc.zig:53–58`; `src/loop.zig:977`, `:989` interprets it |
+| Capture request is format u8, three reserved zero bytes, rows u32; 8 bytes | `src/ipc.zig:69–77`; `src/loop.zig:1176–1180` validates size and enum |
+| Format plain=0, VT=1, HTML=2 | `src/util.zig:919–923` |
+| Payload immediately follows Header; next Header immediately follows payload; no 8-byte message padding | `src/ipc.zig:121–154`; incremental parser `:221–240` |
+| Integer bytes are native struct bytes; Python used little-endian **for this verified little-endian host**, rather than asserting a portable network byte order | `src/ipc.zig:126–130`, `:151–154`; [provenance.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/provenance.json) |
+| Info reply is 552 bytes: clients u64, pid i32, cmd_len/cwd_len u16, cmd/cwd 256 bytes each, two u64 timestamps, exit/version u8, six reserved bytes | `src/ipc.zig:101–119`; frozen-size test `:342–348` |
+| Info is a separate reply tag, suitable here as a processing fence after batched requests | `src/loop.zig:496`, `:1096–1146`; fields contain no byte cut |
+| Incoming Output payload is opaque bytes; Capture reply payload is serialized terminal bytes, with no response envelope | `src/loop.zig:415`, `:1183` |
+| Frame parser may receive partial headers/bodies, validates version and payload bound 64 MiB | `src/ipc.zig:101`, `:221–240` |
+
+**source:** A second parser audited **558 retained wire files / 779,902 complete frames** independently of the driver's incremental receiver. It found **zero invalid headers, partial headers or partial bodies**. [framing-audit.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/framing-audit.json). Init suffix identification and observer's outgoing-request audit are in [additional-audit.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/additional-audit.json). This rules out IPC framing residue in these runs; the visible residue is terminal-parser reconstruction loss.
+
+## Ordering, metadata and serializer limits
+
+**source:** At this revision, the same-connection Capture boundary is defined by actual daemon execution order:
+
+1. `src/loop.zig:344–365`: read one PTY chunk, immediately feed `vt_stream.nextSlice`, update cwd/state.
+2. `:410–423`: append that chunk as Output to each client's `write_buf`.
+3. `:443–507`: sequentially process client frames in this same loop; Capture calls `handleCapture`.
+4. `:1176–1184`: synchronously serialize the current Terminal and append a **Capture-tagged reply** to that client's buffer.
+5. `:519–535`: flush the common buffer in order, retaining an unwritten suffix. Future PTY reads append later Output behind it.
+
+The single-loop source therefore supports discarding all Output **before** the Capture reply and consuming all Output **after** it, on that same connection. Already-queued Output represents bytes included in the snapshot. Merely sending the request is not the cut. A separate snapshot socket plus a live socket has no common delimiter from this evidence.
+
+**source:** Neither `Header`, `Capture`, `Info` nor `handleCapture` supplies a sequence/epoch/offset or correlating request ID. The reply is just the serialized byte array (`src/loop.zig:1183`). `protocol_version` is a compatibility field, not an output epoch. No new wire contract was inferred.
+
+**source:** Capture is `serializeTerminalRange` (`src/loop.zig:1181`), which selects rows from the **active screen's pages** (`src/util.zig:952–965`), asks the formatter for visible terminal extras (`:966–976`), and appends cwd (`:983`). It does **not** append title. Init calls `serializeTerminalState` (`src/loop.zig:1005`), whose two-phase history/view serializer appends both cwd and title (`src/util.zig:795–900`).
+
+**source:** The daemon's live parser stream is maintained separately from the Terminal object (`src/loop.zig:248–252`). Both serialization entry points receive the Terminal, not that parser stream. The observed pending UTF-8/CSI/OSC continuations do not survive replay of either snapshot. Active-screen selection also did not reconstruct saved primary history for later alternate-screen exit. These are observed limits of these serialized artifacts, not claims that native Ghostty shares all of them.
+
+## What this means for the relay design
+
+**inference:** The current premise must separate **transport ordering** from **a resumable terminal checkpoint**. Current Capture provides an implicit FIFO delimiter on one connection, but these snapshots do not let an arbitrary fresh parser continue the stream without corruption. Adding a sequence number alone would not fix incomplete parser state, title omission, saved alternate/primary buffers or the observed history/cursor serialization losses. A relay relying on “Capture, then append Output” cannot promise the requested no-gap/no-overlap/no-residue outcome on this evidence. The design needs a proven complete reconstruction contract or a bounded alternative; this experiment does not choose or implement that architecture. EX2b native Ghostty relay remains with the Lead.
+
+## Limits, artifacts and cleanup
+
+- **gaps:** This is one local macOS build at one size. No Linux, SSH, native Ghostty, transport reconnect, concurrent application clients, malformed traffic or backpressure stress proof. Those require separate target-specific runs.
+- **gaps:** Replays use the same daemon VT engine as the oracle, as requested. The exact raw-stream control matches, but shared parser bugs could remain invisible. EX2b must independently observe the intended native renderer.
+- **gaps:** Current ordering was read in source and observed, not established as an upstream compatibility guarantee. A documented upstream contract would settle whether a future relay may rely on it across revisions.
+- **gaps:** Forced-boundary tests use a FIFO barrier and are not continuous-output tests. Continuous tests independently reached all three requested incomplete parser classes; no requested byte offset was substituted for an actual observed cut.
+- **gaps:** Cursor scoring covers only the exposed final CUP, and final-alt scoring only the final mode. Intermediate cursor behavior, complete saved screens, every SGR attribute and all possible terminal modes remain outside those passing scores.
+- **source:** Raw input corpus, source Capture/Init/live bytes, reconstructed byte streams, full wire receipts, frame ledgers, oracle and replay plain/VT/full serializations, diffs and exact missing-ID lists are under `ex2/` (about 757 MB retained for review). Pilot evidence is separately labeled.
+- **source:** Every experiment session was killed through the explicitly isolated root. Both full-run and supplemental final `ps` checks found **no recorded PID survivors and no process with the exact experiment binary argv prefix**. Final zmx lists were empty. [cleanup.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/cleanup.txt), [supplemental-cleanup.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex2/supplemental-cleanup.txt).
+- **source:** No board posts. The prior `no-home`/trace-destination gap persists: no supplied thread or authorized session-logs destination; these assigned artifacts return evidence to the commissioner's trace.
+
+Checkpoint: EX2a completed as a negative reconstruction result with a positive same-connection raw-boundary result. No product code or EX2b work performed; no experiment daemon remains. The relay's reconstruction premise needs to be revised or independently proven before acceptance.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

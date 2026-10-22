@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Gateway and CLI</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="index.html">AgentStudio daemon · Gateway and CLI</a></nav></ex-nav>
+<ex-document id="content"><h1>Gateway and CLI</h1>
+<ex-markdown id="domain-outcome"><script type="text/markdown">
+**Usable outcome:** Thin clients route to attached-machine operations without implementing a second Git/session backend or guessing a default Host.
+
+**Proposed delivery placement:** I1 entry/routing; I2 local agent CLI; I4 Git CLI; I7 broader adapters. Read this domain together with its inputs; a whole capability is more than an SDK call or a parser success.
+
+[MVP/increments](../../explainer/delivery.html) · [Technical integration](../../explainer/architecture.html) · [All features](../../explainer/features.html)
+</script></ex-markdown><h2 id="contract">Complete capability contract</h2><ex-markdown id="domain-contract"><script type="text/markdown">
+## Gateway, multi-host routing and CLI adapters: observable contracts
+
+This is the DS09 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.html). The separate [Requirements](../../user-requirements.html) authorize its meaning; the [domain definitions](../../domain-entities.html) and shared [operation interpretation](../../capability-contracts.html#source--shared-interpretation-of-an-operation) apply. Its [design brief](README.html) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.html) supplies the selected IP1–IP12 directions, including the corrected worktree-CLI class under S30. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+## Which service does the caller use?
+
+```mermaid
+flowchart LR
+    Worktree["Worktree CLI"] -->|"Local; start if absent"| Host["Host daemon"]
+    Frontend["UX / frontend CLI / MCP"] -->|"Frontend"| Gateway["Device Gateway"]
+    Gateway -->|"Addressed call"| Host
+    Agent["Session agent / hook"] -->|"Local input"| Host
+```
+
+The worktree machine path does not pass through the Gateway. A Linux CLI can therefore use its Host while every user's device is disconnected. Frontend-only actions still use the Gateway and actual native owner. The Mac CLI remote worktree use case is required. Its direct connection versus local Host relay, credential and complete verb classification remain open.
+
+
+## K2 — CLI entry and local installation branch
+
+**Consumer / entities / basis:** CLI operator; E4/E7/E8/E21; U2/U4/U17, R1/R4. Existing verbs are worktree `new/list/remove/prune`, provider package `install/uninstall`, provider hooks, pane verbs, help/discovery and dot-separated RPC calls. Exact methods are the [fifty-seven-name inventory](../../research/extraction-survey.html).
+
+When targeting its executing machine, worktree CLI acts on that machine's attached Host daemon under R12/IP3 on macOS/Linux, independently of Gateway availability. It starts or activates that local Host when absent. Authorized session work remains Host-local; UX/frontend CLI retains R1's Gateway route. Exact startup/readiness/failure, non-session discovery/authority and verb classification remain G1/G8/G12. The relayed Mac CLI `--host vm-1` use case is required; direct remote connection versus local Host relay and its credential remain open. Missing attachment cannot authorize an inferred target; failed activation cannot masquerade as successful submission. Formatting/help stay frontend observations; today's pre-IPC Git/package branches are baseline, not selected alternate backends. A remote path cannot silently become Mac-local, and exposure does not prove a supported effect.
+
+For selected install operations, malformed preflight inputs are distinguishable from later partial writes. Reinstall convergence, owned-group removal and preservation of unrelated configuration must be stated per provider. Provider trust is separate from installing files. K15 covers installation/pairing; K7 covers hooks. Today’s local execution selects no standalone service-absent fallback. The Host-local route itself is selected by S16/R12.
+
+**Proof:** real CLI invocation through the selected entry plus exact filesystem/provider-config effects at the named machine. For worktree machine work, exercise an absent local Host, its activation/readiness and the intended effect with every Gateway unavailable; activation failure must not report successful submission. A parser test, daemon-start receipt or exit code alone cannot prove prune or hook admission. Exact startup/admission and other CLI branch scope remain open; worktree local activation itself is selected.
+
+</script></ex-markdown><h2 id="folder-documents">All documents in this spec folder</h2><ex-markdown id="folder-document-links"><script type="text/markdown">
+- [DS09 — Gateway, multi-host routing and CLI adapters: Markdown](README.md) · [HTML](README.html)
+- [Gateway prepared views: the concrete processing boundary: Markdown](prepared-view-boundaries.md) · [HTML](prepared-view-boundaries.html)
+- [Current CLI entry surface and parser boundaries: Markdown](research/cli-entry-surface.md) · [HTML](research/cli-entry-surface.html)
+- [Gateway, multi-host routing and CLI adapters: observable contracts: Markdown](specification.md) · [HTML](specification.html)
+</script></ex-markdown><h2 id="design-inputs">Inputs, open decisions and proof boundary</h2><ex-markdown id="domain-brief"><script type="text/markdown">
+## DS09 — Gateway, multi-host routing and CLI adapters
+
+S28 requires the Gateway engine on macOS and iOS. Machine-scoped worktree CLI uses its attached macOS/Linux Host daemon and activates it locally if absent; UX/frontend CLI retains the Gateway route; mobile hosting does not additionally require standalone CLI/MCP processes on iOS. The UX client accesses its device Gateway, and mobile startup/socket/lifecycle proof remains open.
+## Read this folder
+
+- [Folder HTML reader](index.html).
+- [Specification: Markdown](specification.md) · [HTML](specification.html).
+- [Gateway prepared-view boundaries: inputs, typed preparation and native application](prepared-view-boundaries.html).
+- [Shared Requirements](../../user-requirements.html) · [overall Specification](../../2026-10-15-agentstudio-daemon.html).
+
+Gateway connection/subscription ownership, multiple Hosts and multiple Gateways, machine-scoped CLI/MCP adapters, explicit target resolution and provider-install entry.
+
+## Contract and inputs
+
+- Requirements: [shared authoritative source](../../user-requirements.html), scoped to U1/U2/U4/U12/U16/U17/U18.
+- Specification: [this design's capability contracts](specification.html), owning K2; apply R1/R3/R7/R11/R12 and the shared [observable spine](../../2026-10-15-agentstudio-daemon.html).
+- Domain definitions: [global identity appendix](../../domain-entities.html) and E1–E6 in the spine. This folder creates no new identity merely by being separate.
+- Required contract inputs: [DS04](../04-terminal-runtime/README.html), [DS06](../06-worktree-fork/README.html), [DS07](../07-agents-context/README.html), [DS08](../08-files-review-output/README.html)
+
+## What this design must settle
+
+- Apply the selected worktree CLI → attached local Host route and absent-local-Host activation. Finish explicit local admission/readiness/failure and frontend-verb classification; Mac CLI remote worktree use is required; direct connection versus local Host relay and its credential remain open.
+- Define Host selection, ambiguous/missing targets, cross-Host partial results, per-host failure containment and method exposure.
+- Specify CLI package/help/formatting versus backend effects and a deliberate MCP subset; no direct mode or duplicated backend is inferred.
+
+## Result consumed by later designs
+
+Thin frontend adapters over the same operations, with independent Host availability, unambiguous attached-machine execution and declared standalone service-absent outcomes.
+
+## Evidence to reopen
+
+- [Current CLI entry surface and parser boundaries](research/cli-entry-surface.html): 39 source grammar/helper groups, early dispatch, accepted options, submission/output endings and retained helper limits.
+
+- [2026-10-15-daemon-extraction-survey.md](../../research/extraction-survey.html)
+- [2026-10-15-daemon-route-performance-experiment.md](../11-operations-integration/experiments/route-performance.html)
+- [advisor-many-host-implications.md](../../explainer/research/advisor-many-host-implications-8059ac1e.html)
+
+## Proof boundary
+
+Real CLI and client operations through supported entries, two Gateways/one Host and one Gateway/multiple Hosts, target misrouting refusal, one failed Host and independent traffic. E5/E6 plus domain effect witnesses.
+
+## Design cycle
+
+Use the [common cycle and completion rule](../README.html#source--each-design-cycle). The scoped Specification here contains carried-forward draft contracts, not a completed Program Design. Author its structural realization after the affected meaning is settled, then complete Verification Design and independent four-document review. Bring only actual unresolved owner decisions to Sun; there is no generic structural-confirmation gate. There is no empty `program-design.md` standing in for unfinished work. Required missing meaning remains explicit, and unrelated source research can proceed.
+
+</script></ex-markdown><h2 id="technical-evidence">Detailed technical evidence</h2><ex-markdown id="evidence-links"><script type="text/markdown">
+- [Current command surface inventory](../../explainer/research/command-surface-inventory-4cc8ee5d.html)
+- [Current capability evidence: authority, pane context, Sessions and provider packages](../../explainer/research/capability-agent-control-evidence-b9f5142c.html)
+- [E2 app-RPC source evidence](../../explainer/research/e2-app-rpc-evidence-b92eff3c.html)
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

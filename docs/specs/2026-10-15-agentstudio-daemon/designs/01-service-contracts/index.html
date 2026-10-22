@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Service contracts</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="index.html">AgentStudio daemon · Service contracts</a></nav></ex-nav>
+<ex-document id="content"><h1>Service contracts</h1>
+<ex-markdown id="domain-outcome"><script type="text/markdown">
+**Usable outcome:** A caller can identify the intended Host/resource and receive a truthful typed result through the supported socket/network contract.
+
+**Proposed delivery placement:** I0/I1 and every later public surface. Read this domain together with its inputs; a whole capability is more than an SDK call or a parser success.
+
+[MVP/increments](../../explainer/delivery.html) · [Technical integration](../../explainer/architecture.html) · [All features](../../explainer/features.html)
+</script></ex-markdown><h2 id="contract">Complete capability contract</h2><ex-markdown id="domain-contract"><script type="text/markdown">
+## Service contracts and protocol: observable contracts
+
+This is the DS01 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.html). The separate [Requirements](../../user-requirements.html) authorize its meaning; the [domain definitions](../../domain-entities.html) and shared [operation interpretation](../../capability-contracts.html#source--shared-interpretation-of-an-operation) apply. Its [design brief](README.html) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.html) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K13 — Protocol, streams and resource admission
+
+**Consumer / entities / basis:** frontend and service integrator; E3/E4/E19/E20/E23/E24; U1–U3/U9/U17/U18/U19, R1/R3/R7/R11–R13. Frontend access is UX clients → declared local Gateway entry → macOS/iOS Gateway → attached Host. S32 assigns browser content to loopback HTTP/WebSocket and selected native bootstrap/control to macOS UDS or embedded iOS FFI. Eligible Host-local CLI and authorized session inputs use R9/R12 locally. IP3 sends machine-scoped worktree CLI to its attached local Host daemon and selects local activation when absent; UX/frontend CLI remains on the Gateway route. Non-session attachment discovery and authority remain G1/G8/G12; process location alone cannot select a target or fallback. Same-machine IPC and cross-machine network admission differ.
+
+One Host supports multiple Mac Gateways; one Gateway supports multiple remote Hosts. Every request, subscription, result and terminal view preserves its target Host context. One unreachable Host does not make another’s valid operation unavailable. Host identity and authority cannot be inferred from equal paths, session labels or socket counts. Numeric limits, attach/detach trust, selection UX and any cross-Host aggregate partial-result contract remain G2/G8/G9/G12.
+
+Control request/reply, ordered domain facts, replaceable state, terminal VT bytes and finite content have different semantics. A multiplexed transport must not turn loss/overflow into silent arbitrary VT-byte loss, block required Host fact collection behind a slow viewer, or confuse subscription lifetime with execution lifetime. Bounded resource and slow-consumer behavior must be explicit; resnapshot versus detach/gap refusal remains G6/G8. Reliable transport alone does not establish ordered snapshot/live restoration or input replay safety.
+
+Current app protocol is NDJSON/JSON-RPC with no batches, distinct request/response/frame/write limits and channel/catalog gates. Current request 1 MiB, response/notification 16 MiB and writer queue 4 MiB bounds are baseline observations, not adopted target constants; a frame-valid result can still fail writer admission. Enqueued/delivered does not mean peer processed. Exact new size/queue/stream/deadline/version/capability profiles remain G8/G10/G12.
+
+S32 selects upstream Quinn QUIC for the remote Gateway/Host leg; it is not a measured performance winner. Browser content uses same-origin loopback HTTP/WebSocket and native macOS control uses UDS. S32 selects an embedded iOS Gateway with native bootstrap/control through FFI; the exact binding must satisfy U10 and qualify on the physical device. RPC semantics, codec/compression, schema generation and supported versions remain separate decisions. Earlier quic-rpc/iroh-quinn and Tonic comparisons are research history, not selected dependencies. MCP remains an intentional external subset adapter, not the internal protocol or an automatic exposure of every privileged operation. The [bounded transport design](../../increments/00-qualification/bridge-gateway-transport/index.html) owns the S32 refinement.
+
+R13 requires one authoritative schema contract with derived or validated cross-language shapes. Cover every selected method, response/event/error/frame variant and semantic rejection with real Swift and Rust Gateway processes over Unix sockets, plus fragmented/coalesced frames, declared limits, supported version pairs, incompatible-pair refusal and interrupted traffic. Rust Gateway↔Host network compatibility is separate. This chooses no generator, codec or supported version matrix.
+
+**Proof:** real whole-route allowed/refused input, malformed/oversized and post-submit unknown cases, independent concurrent terminal/control/content traffic, bounded slow subscriber behavior, reconnect/version mismatch and actual supported devices. Same-process codec roundtrip does not prove these. K5/K9 define terminal/content correctness; performance observations must distinguish local IPC RTT, remote RPC RTT, key-to-visible echo, throughput, memory and reconnect-to-render. Workloads/acceptance bounds are G10; current source suggests no measured regression or universal sub-millisecond claim.
+
+</script></ex-markdown><h2 id="folder-documents">All documents in this spec folder</h2><ex-markdown id="folder-document-links"><script type="text/markdown">
+- [DS01 — Service contracts and protocol: Markdown](README.md) · [HTML](README.html)
+- [Communication: what crosses each boundary: Markdown](communication-design.md) · [HTML](communication-design.html)
+- [Swift and Rust socket compatibility qualification: Markdown](experiments/swift-socket-compatibility.md) · [HTML](experiments/swift-socket-compatibility.html)
+- [Where the 57 existing app RPC methods lead: Markdown](rpc-operation-map.md) · [HTML](rpc-operation-map.html)
+- [Service contracts and protocol: observable contracts: Markdown](specification.md) · [HTML](specification.html)
+</script></ex-markdown><h2 id="design-inputs">Inputs, open decisions and proof boundary</h2><ex-markdown id="domain-brief"><script type="text/markdown">
+## DS01 — Service contracts and protocol
+
+## Read this folder
+
+- [Folder HTML reader](index.html).
+- [Specification: Markdown](specification.md) · [HTML](specification.html).
+- [All 57 app RPC methods: sources, effects and proposed placement](rpc-operation-map.html).
+- [Shared Requirements](../../user-requirements.html) · [overall Specification](../../2026-10-15-agentstudio-daemon.html).
+
+Host-qualified identities, operation outcomes, frontend versus Host-local entry, protocol lanes, schema ownership and supported pairing. Support the macOS/iOS Gateway under S28 and independent session/connection lifetimes; qualify mobile runtime hosting separately.
+
+## Contract and inputs
+
+- Requirements: [shared authoritative source](../../user-requirements.html), scoped to U1/U2/U3/U6/U9/U12/U16/U17/U18/U19.
+- Specification: [this design's capability contracts](specification.html), owning K13; apply R1/R3/R7/R11/R12/R13 and the shared [observable spine](../../2026-10-15-agentstudio-daemon.html).
+- Domain definitions: [global identity appendix](../../domain-entities.html) and E1–E6 in the spine. This folder creates no new identity merely by being separate.
+- Required contract inputs: Existing global requirements and domain definitions; no preceding design cycle.
+
+## What this design must settle
+
+- Exact method exposure, bounds, incompatible-pair refusal and request/result semantics.
+- Ordinary Mac CLI routing remains unresolved; attached-machine targeting does not settle its physical route.
+- Which workloads and observations can discriminate socket, codec and remote transport choices without confusing echo with visible terminal response?
+
+## Result consumed by later designs
+
+A shared contract vocabulary and operation-envelope/schema boundaries that the domain designs can consume. S32 selects Quinn for the remote transport and the browser/native entry split. Codec and RPC semantics remain separate candidates; no speed winner is inferred. The [bounded transport design](../../increments/00-qualification/bridge-gateway-transport/index.html) carries this refinement.
+
+## Evidence to reopen
+
+- [2026-10-15-daemon-extraction-survey.md](../../research/extraction-survey.html)
+- [2026-10-15-daemon-route-performance-experiment.md](../11-operations-integration/experiments/route-performance.html)
+- [Swift/socket compatibility qualification](experiments/swift-socket-compatibility.html): the concrete E2/A13 and I0 producer/consumer, framing, semantic-admission and supported-pair procedure; unexecuted.
+- [command-surface-inventory.md](../../explainer/research/command-surface-inventory-4cc8ee5d.html)
+- [Current CLI/socket targeting trace](../../explainer/research/research-ledger-0ea9b32c.html): endpoint discovery, friendly selectors, durable target validation, caller authority and submission/custody distinctions; source evidence only.
+
+## Proof boundary
+
+Real Swift/Rust Unix-socket interoperability and supported mixed Host/Gateway pairs; independent control/terminal/content traffic, malformed input, interruption and bounded slow consumers. E5/E6 inform the design; no results are claimed.
+
+## Design cycle
+
+Use the [common cycle and completion rule](../README.html#source--each-design-cycle). The scoped Specification here contains carried-forward draft contracts, not a completed Program Design. Author its structural realization after the affected meaning is settled, then complete Verification Design and independent four-document review. Bring only actual unresolved owner decisions to Sun; there is no generic structural-confirmation gate. There is no empty `program-design.md` standing in for unfinished work. Required missing meaning remains explicit, and unrelated source research can proceed.
+
+</script></ex-markdown><h2 id="technical-evidence">Detailed technical evidence</h2><ex-markdown id="evidence-links"><script type="text/markdown">
+- [Current command surface inventory](../../explainer/research/command-surface-inventory-4cc8ee5d.html)
+- [Capability transport/API and Rust engineering evidence](../../explainer/research/capability-transport-engineering-evidence-670b1a28.html)
+- [Typed API and independent lifetimes: research addition](../../explainer/research/typed-api-lifetimes-addendum-8481654c.html)
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

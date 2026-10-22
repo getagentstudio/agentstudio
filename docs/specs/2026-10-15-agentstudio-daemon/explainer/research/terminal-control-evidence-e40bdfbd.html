@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Terminal MVP: source constraints and the shared-control decision</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="terminal-control-evidence-e40bdfbd.html">AgentStudio daemon · Terminal MVP: source constraints and the shared-control decision</a></nav></ex-nav>
+<ex-document id="content"><h1>Terminal MVP: source constraints and the shared-control decision</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-16-daemon-delivery-book/terminal-control-evidence.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Terminal MVP: source constraints and the shared-control decision
+
+2026-10-16. Lead source reduction for the next DS04 discussion. Source-only; no runtime, implementation, product policy selection or review acceptance.
+
+Product HEAD: `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. Checked-out ZMX: `8bab1f0173b07e79835ea372d749af3dbf0d0842`. These are current inspected source identities, not installed binary identities or latest upstream claims.
+
+## What current source settles
+
+| Inspected source | Observed behavior | Design consequence / limit |
+| --- | --- | --- |
+| [ZMX leadership and input](../../../../../vendor/zmx/src/loop.zig) | `setLeader` records the local client FD and asks that client to send dimensions. Input from a nonleader calls the user-input classifier; recognized user input can promote that client. | Passing each remote attachment directly through to independent ZMX clients would inherit input-driven control changes. That is a candidate behavior, not selected AgentStudio policy. Socket FD is not cross-Gateway authority. |
+| [Input classifier](../../../../../vendor/zmx/src/util.zig) | Printable characters and selected key encodings/control characters can count as user input; mouse/focus reports are specifically excluded in inspected branches. | “Last packet wins” or “any input takes control” would overstate the source. This classifier is not a product permission check. |
+| [Init and resize](../../../../../vendor/zmx/src/loop.zig) | Initial terminal-client registration can establish leadership if no leader exists. Leader Init resizes the canonical VT before serialization; leader resize updates the PTY/terminal. | A newly attached view can affect more than its local presentation. Phone viewport versus desktop viewport is an observable policy choice. A source operation or ioctl call is not proof of the child redraw. |
+| [Client close](../../../../../vendor/zmx/src/loop.zig) | Closing the leader clears the leader reference. Shutdown additionally depends on a separate flag and remaining-client count. | View loss, control release and process termination must remain distinct. No automatic controller successor policy follows from clearing the FD. |
+| [Input buffering](../../../../../vendor/zmx/src/loop.zig) | PTY input buffer cap is256KiB. Payload exceeding the cap or failed allocation is logged and dropped; queueing returns no per-payload accepted-byte result. `handleSend` uses the same queue without changing leadership. | RPC/network receipt cannot establish child consumption or lossless backend input. Using Send to avoid leadership is insufficient to solve input acknowledgement/backpressure. This needs a real adapter/PTY discriminator and honest result semantics; no new delivery guarantee is selected. |
+| [Focus synthesis](../../../../../vendor/zmx/src/loop.zig) | With terminal focus reporting enabled, transitions between zero and nonzero initialized terminal clients enqueue focus-out/in. | A hidden initialized Host attachment changes the condition independently of visible frontend focus. Controller selection does not settle child-visible focus or justify a hidden always-focused terminal. |
+| [Session creation](../../../../../vendor/zmx/src/main.zig) and [ensureSession](../../../../../vendor/zmx/src/loop.zig) | Attach first ensures a daemon; missing or a positively connection-refused existing socket may enter creation. Existing reachable session can ignore a supplied command. Native terminal setup occurs afterward. | A frontend reconnect cannot use a name-only create-or-attach result as proof of the same execution. Host-owned creation and reattachment need separate identity/readiness observations. No current source establishes target restart/re-adoption semantics. |
+| [Run dispatch](../../../../../vendor/zmx/src/main.zig) and [run body](../../../../../vendor/zmx/src/main.zig) | Run selects task mode and may detach; it shares ensureSession, then handles task command input. | Detached task execution is not automatically the same creation contract as an ordinary interactive shell. Do not choose `run -d` solely because it avoids a visible frontend. Actual supported Host startup remains a feasibility/design question. |
+
+## Settled versus still open
+
+U14/R5 already require final-view detach without terminating continuing execution. U16/R7 already require multiple Gateways/devices and separate attachments. No new owner decision is needed to preserve either outcome. U19/R13 requires real Swift/socket interoperability; this does not require embedded Rust–Swift bindings. These constraints apply to every control option.
+
+DS04 K5 and spine G4 explicitly leave viewer/controller/input/resize/focus semantics open. The owner's supplied single-controller recommendation is research input S7/S9, not an accepted policy. Source inspection cannot decide whether the owner prefers an explicit takeover action or typing-driven takeover.
+
+The next bounded choice is **interactive control of one terminal when Mac and phone are both attached**:
+
+- Proposed: one active controller; other viewers explicitly take control before their keyboard input and dimensions can affect that terminal.
+- Credible alternative: recognized typing automatically transfers control and viewport authority, similar to the inspected backend mechanism.
+- Credible alternative: concurrent authorized typing with one separately designated resize owner; this preserves collaboration but permits interleaved input and needs separate geometry semantics.
+
+Countercase: a160-column desktop is running a full-screen program; a40-column phone opens the same session and the user types one character. The choice determines whether that action changes controller/geometry, requires takeover, or joins concurrent input. No benchmark can select the owner's preferred interaction.
+
+Recommendation is explicit takeover because it makes accidental input/geometry changes harder. The user pays an extra action when switching devices; implementation pays a real shared-control state/authority contract across Gateways. Automatic takeover saves that action but the user pays for surprise control/resize changes. Concurrent typing serves pair operation but both users bear the input-interleaving risk. Revisit the recommendation if the intended primary job is frictionless frequent handoff or live pair typing.
+
+This choice does not decide first-controller assignment, consent/priority, disconnect/timeout/reconnect behavior, focus reporting, local viewport rendering, or database writer leases. Those remain distinct follow-up clauses. If deferred, freeze neither the shared input/resize public contract nor its Program Design; source/schema/native-restoration research continues. Existing G13 remains pending separately and is not re-asked here.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

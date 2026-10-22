@@ -1,0 +1,334 @@
+{
+  "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "scope": "Seven bounded current read/data families, including all five finite content kind tags; not a complete Bridge UI/source audit.",
+  "rows": [
+    {
+      "family": "file_metadata_rows",
+      "currentTypes": [
+        "BridgeProductFileTreeRow"
+      ],
+      "fields": [
+        "changeStatus",
+        "depth",
+        "fileId",
+        "fileClass",
+        "isDirectory",
+        "lineCount",
+        "name",
+        "parentPath",
+        "path",
+        "rowId",
+        "sizeBytes"
+      ],
+      "acquisition": "Installed File subscription emits accepted source, acquires shared construction, prepares optional Git status and enumerates initial tree. Product row encoding maps the current native tree row and chunks by encoded-byte/member bounds.",
+      "currentness": "Subscription/product-source/admission and construction lifetime are distinct from a displayed row. This pass did not retrace every incremental/deferred file update.",
+      "readEffect": "Opening source metadata installs context and acquires construction custody; not a pure durable-row query.",
+      "persistence": "Current live source/manifest/projection data; not proof that file bytes or row catalog are retained in SQL.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductFileMetadataValueContracts.swift",
+          "line": 14
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileMetadataEncoding.swift",
+          "line": 29
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileMetadataSource+InitialEnumeration.swift",
+          "line": 8
+        }
+      ]
+    },
+    {
+      "family": "review_package_metadata",
+      "currentTypes": [
+        "IPCBridgeReviewPackageResult"
+      ],
+      "fields": [
+        "paneId",
+        "status",
+        "error",
+        "selectedItemId",
+        "packageId",
+        "reviewGeneration",
+        "revision",
+        "summary",
+        "comparisonOrigin",
+        "reviewedSubjectLabel",
+        "items"
+      ],
+      "acquisition": "Current IPC controller projects paneState.diff.packageMetadata/status/error, native selection and item summaries; validates response budget.",
+      "currentness": "Current native publication/package/generation/selection, not source file bytes, DOM or new Git capture.",
+      "readEffect": "This inspected projection reads current state; surrounding mounted-controller admission remains required.",
+      "persistence": "Live native product projection; no retained exported table is established by this DTO.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudioProgrammaticControl/IPCBridgeContracts.swift",
+          "line": 112
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+          "line": 74
+        }
+      ]
+    },
+    {
+      "family": "file_content",
+      "contentKind": "file.content",
+      "currentTypes": [
+        "BridgeProductFileContentDescriptor",
+        "BridgeProductFileContentWindow"
+      ],
+      "fields": [
+        "declaredByteLength",
+        "descriptorId",
+        "expectedSha256",
+        "fileId",
+        "maximumBytes",
+        "source",
+        "window(maximumBytes,maximumLines;prefix startByte0)"
+      ],
+      "acquisition": "Descriptor must match an issued manifest read plan under matching product/source admission. Factory opens a validated contained regular file; streaming closes the reader on completion/cancellation/error and checks observed byte count/hash before terminal end.",
+      "currentness": "Issued source/descriptor, current work admission and actual file bytes; opening/descriptor acceptance is separate from complete content. Current validation requires declaredByteLength == maximumBytes == window.maximumBytes; this is not a general arbitrary-range file API.",
+      "readEffect": "Runtime issued-descriptor/read-plan lookup and content lease/reader lifecycle; no file write selected.",
+      "persistence": "Finite filesystem content; does not become replicated SQL by being transferred.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductContentContracts.swift",
+          "line": 210
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductContentContracts.swift",
+          "line": 135
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileMetadataSource+ContentReadPlan.swift",
+          "line": 22
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileContentSource.swift",
+          "line": 90
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift",
+          "line": 807
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductContentContracts.swift",
+          "line": 278
+        }
+      ]
+    },
+    {
+      "family": "review_content",
+      "contentKind": "review.content",
+      "currentTypes": [
+        "BridgeProductReviewContentSourceDescriptor",
+        "BridgeProductReviewContentDescriptor",
+        "BridgeProductReviewContentWindow"
+      ],
+      "fields": [
+        "contentDigest",
+        "descriptorId",
+        "encoding",
+        "endpointId",
+        "handleId",
+        "isBinary",
+        "itemId",
+        "language",
+        "mimeType",
+        "packageId",
+        "reviewGeneration",
+        "role",
+        "sourceIdentity",
+        "wholeByteLength",
+        "declaredByteLength",
+        "expectedSha256",
+        "maximumBytes",
+        "window(startByte,maximumBytes)"
+      ],
+      "acquisition": "Acquire matching content authority lease; load observed range from current loader cache; compare handle and any declared range/hash/whole-length witnesses; settle content lease. Provider sends qualified buffered range with end-of-source disposition.",
+      "currentness": "Package/item/handle/source/generation and range identity; metadata-only getContent does not supply these bytes or prove rendered application.",
+      "readEffect": "Content authority leases and loader/cache lifecycle; not durable effect execution.",
+      "persistence": "Current backing content/ranges behind retained product authority; actual storage lifetime is source-specific, not generic SQL replication.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductReviewContentContracts.swift",
+          "line": 90
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductReviewContentContracts.swift",
+          "line": 240
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductReviewContentContracts.swift",
+          "line": 293
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductReviewContentSource.swift",
+          "line": 91
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift",
+          "line": 745
+        }
+      ]
+    },
+    {
+      "family": "annotation_projection_page",
+      "contentKind": "annotation.projection",
+      "currentTypes": [
+        "BridgeProductAnnotationProjectionContentDescriptor",
+        "BridgeProductAnnotationProjectionPageContract"
+      ],
+      "fields": [
+        "descriptorID",
+        "maximumBytes",
+        "page",
+        "surface"
+      ],
+      "acquisition": "Prior same-HEAD query walk supplies SQL/source analysis and query reservation. The freshly inspected claim consumes a matching descriptor/authority reservation and permits continuation for a nonfinal page; producer streams the reserved page and emits terminal byte-count/hash facts.",
+      "currentness": "Query snapshot, source/publication generation, worker/session/derivation and page lifetime; descriptor alone is not current rendered comments.",
+      "readEffect": "Query/page reservation and one-use claim; no automatic output effect.",
+      "persistence": "SQL workflow/source-derived finite projection; runtime reservations are not retained workflow rows.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationProjectionQueryContracts.swift",
+          "line": 333
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationProjectionSource.swift",
+          "line": 236
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationProjectionSource.swift",
+          "line": 260
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductSchemeProvider+AnnotationProjection.swift",
+          "line": 79
+        },
+        {
+          "path": "BridgeWeb/src/core/comm-worker/bridge-comm-worker-annotation-projection-query-controller.ts",
+          "line": 90
+        }
+      ]
+    },
+    {
+      "family": "annotation_output_bytes",
+      "contentKind": "annotation.output",
+      "currentTypes": [
+        "BridgeProductAnnotationOutputContentDescriptor"
+      ],
+      "fields": [
+        "attemptID",
+        "contentType",
+        "declaredByteLength",
+        "descriptorID",
+        "expectedSHA256",
+        "formatVersion",
+        "maximumBytes",
+        "outputKind",
+        "surface"
+      ],
+      "acquisition": "Descriptor and body each inspect the immutable SQL attempt. Body consumes a matching issued descriptor, rereads the attempt, reconstructs/compares descriptor and returns exact prepared bytes/hash; producer transfers buffered content.",
+      "currentness": "Attempt identity and immutable bytes/metadata, separately from destination effect and SQL finalization outcome.",
+      "readEffect": "Bounded issued-descriptor registration/one-use removal; inspecting/transferring bytes does not execute clipboard/file output.",
+      "persistence": "Exact attempt bytes are current workflow SQL state; export/history selection still belongs to the target contract.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationOutputContentContracts.swift",
+          "line": 36
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationOutputSource.swift",
+          "line": 28
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationOutputSource.swift",
+          "line": 45
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift",
+          "line": 782
+        }
+      ]
+    },
+    {
+      "family": "review_comparison_target_catalog",
+      "contentKind": "review.comparisonTargets",
+      "currentTypes": [
+        "BridgeProductReviewComparisonTargetsContentDescriptor",
+        "BridgeReviewComparisonTargetProducedCatalog"
+      ],
+      "fields": [
+        "descriptorId",
+        "maximumBytes",
+        "body",
+        "sha256",
+        "rowCount",
+        "isTruncated"
+      ],
+      "acquisition": "Current authorized query reservation is claimed once; producer captures comparison targets through real reviewSourceProvider with capture/cutoff/max-row inputs, encodes bounded catalog and transfers it with qualified delivery disposition.",
+      "currentness": "Request/reservation and current target/source observations with explicit truncation; catalog is not an atomic immutable refs snapshot or native selection application.",
+      "readEffect": "Consumes runtime reservation and performs real source acquisition; no Git mutation selected by this catalog read.",
+      "persistence": "Finite generated catalog, not proof of a retained target table.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductContentContracts.swift",
+          "line": 13
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider+ComparisonTargetContent.swift",
+          "line": 26
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgeReviewComparisonTargetCatalogProducer.swift",
+          "line": 6
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgeReviewComparisonTargetCatalogProducer.swift",
+          "line": 45
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider+ComparisonTargetProducer.swift",
+          "line": 10
+        }
+      ]
+    }
+  ],
+  "sharedContentAdmissionFields": [
+    "contentKind",
+    "contentRequestId",
+    "declaredByteLength",
+    "expectedSha256",
+    "identity",
+    "leaseId",
+    "operationCorrelationID",
+    "maximumBytes",
+    "paneSessionId",
+    "wireVersion",
+    "workerDerivationEpoch",
+    "workerInstanceId"
+  ],
+  "sharedSources": [
+    {
+      "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductContentContracts.swift",
+      "line": 4
+    },
+    {
+      "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductContentContracts.swift",
+      "line": 533
+    },
+    {
+      "path": "Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift",
+      "line": 680
+    },
+    {
+      "path": "BridgeWeb/src/core/comm-worker/bridge-product-content-application-registry.ts",
+      "line": 19
+    }
+  ],
+  "proofLimit": "Declarations and deciding production functions read. Prior projection SQL/source query trace explicitly reused at same HEAD. No runtime, whole UI, render, service extraction, schema/interop, effect or performance proof. No future ownership or export choice is selected.",
+  "fieldListLimit": "Meaningful current Swift stored fields; encoders add literal tags/keys and nested shapes. Not an exhaustive replacement wire schema."
+}

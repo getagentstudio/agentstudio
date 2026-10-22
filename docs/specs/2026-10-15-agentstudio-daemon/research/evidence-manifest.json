@@ -1,0 +1,664 @@
+{
+  "purpose": "Retained source/observation evidence, not adopted requirements or new verification",
+  "inventoryCutoff": "2026-10-22T12:25:33.668317+00:00",
+  "originalsPreserved": true,
+  "excluded": "Mixed owner/advice/review records deliberately remain in scratch as historical provenance; current Bridge owner quotations are preserved in their attributed input record. Large raw payloads, drivers and transitive evidence are not bundled.",
+  "files": [
+    {
+      "origin": "tmp/experiments/2026-10-20-zmx-latest/EX1-report.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-20-zmx-latest/EX1-report.md",
+      "role": "experiment-observation",
+      "originalSha256": "185f079afe9174d9dddd0107eba36b8be13fbab955755581307881424c2f6652",
+      "retainedSha256": "790f4d68e435945425db7e18640736cb786a058f70bc24370c9ccdf6c925870c",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/experiments/2026-10-20-zmx-latest/EX2a-report.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-20-zmx-latest/EX2a-report.md",
+      "role": "experiment-observation",
+      "originalSha256": "5a947a03a90d79dcbe2d511e51b47d70ebeb3a6b7a31db6b2ff66b533b370fcb",
+      "retainedSha256": "ad30aced530d9a655bfe26c59deaff33da2bae35695f40c9e17b9090babc7799",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/experiments/2026-10-20-zmx-latest/EX2c-snapshot-component/report.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-20-zmx-latest/EX2c-snapshot-component/report.md",
+      "role": "experiment-observation",
+      "originalSha256": "224a68cace4fc4c7f4b629d86c25aa19dac1c09673fd59d8dc948edb03690b56",
+      "retainedSha256": "2ecd5016510bf276cd6ce6364a0fdd6e69f1c132781d7f824f39bafec9fd2867",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/experiments/2026-10-20-zmx-latest/EX5-report.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-20-zmx-latest/EX5-report.md",
+      "role": "experiment-observation",
+      "originalSha256": "992f9034fbc5a8feb61041c69c4d47d382e8a3cb1af840420448c3622cce6382",
+      "retainedSha256": "2e5261a8a6fd0951650f8304f2ca52d516b95f57b6ff3fbb74d01ad2f39a3f16",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/bridge-surface-inventory.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/bridge-surface-inventory.md",
+      "role": "source-survey",
+      "originalSha256": "68ca685627e7997699e7bd52f588092950b0166faadde6ea1034cf628fc1c0f5",
+      "retainedSha256": "219f607eb0e802d174e2f2072a2c22248c45cf92e238d57bdd13dda1cb669a50",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/capability-bridge-output-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/capability-bridge-output-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "ab877ba009d60dca3041ad09e7f3554d096083d30698d043ee2a3913aecfb85d",
+      "retainedSha256": "075ec47ee4f2d36a045b08df015e11d87326f1a6748be3e0acd93696713049f9",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/capability-git-contract-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/capability-git-contract-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "39c5e963d60326474f8647c8dfa9c5398f5c6c44d7ebf163c3bf76bbcf7edcd7",
+      "retainedSha256": "232b7f47de3bb301c08deb29e14a8aff7565a026c19fb4c7bf7a24bd883650e0",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/capability-transport-engineering-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/capability-transport-engineering-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "c95166f8c12eab3e461f553fb14b71ba60f737215fdb777d7c36dba41f1c2ccb",
+      "retainedSha256": "36af495eccb799dbe54067f74df9b49d699d90ad5b217676f55d12eb5480a14a",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/command-surface-inventory.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/command-surface-inventory.md",
+      "role": "source-survey",
+      "originalSha256": "0c0ef3b6d29c5f5f076b2bfe68fa1e64cc4ee2e30181e0fa07b9ed441bfee62a",
+      "retainedSha256": "0c0ef3b6d29c5f5f076b2bfe68fa1e64cc4ee2e30181e0fa07b9ed441bfee62a",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/data-agent-context-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/data-agent-context-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "6d025316bd1b7cdae16745e9709e7e81487cb4990828899ab778f6f078865253",
+      "retainedSha256": "eb7f506a87116afb6dd68bb9cbad7e8133a4cfbf8b83830028b876892ffc3016",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/data-client-review-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/data-client-review-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "3e8b1eef0f76f89711eb97f1d71d8daba797e366c7b3f6ffee5b01dbb5549220",
+      "retainedSha256": "f18e42d6585610ad6331cde09cbdc5574b29e1b75dd1c53836cab9715501a3ee",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e1-backend-cut-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e1-backend-cut-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "141fb4c1902d48b04f864d22c0959f4921227add5d5b5f7fbc072360c38cd061",
+      "retainedSha256": "daba17adb0ba399fd827dea20407ee88f48b5a7be91ea924f0783a9017baeb01",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e1-oracle-observation-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e1-oracle-observation-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "f47b794195babc085e4af9a358bf59460668b856f195f128f7f50a861f13fd16",
+      "retainedSha256": "4aae0e25d7bbb2acc2e345e00eb1a6f838400e9d74a7ed7a9d8b894be391ef7d",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-agent-admission-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e2-agent-admission-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "197635da609fa128a836eb4a3e9fb71a0f4883fd3cddc52088f858285f791787",
+      "retainedSha256": "f0aec5b530691ae98e5f7b8a1ce182d8ff48a34a757a15e1ab7b56b9d09605d2",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-bridge-operation-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e2-bridge-operation-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "acb9cba8e49a35f1a0145be22a507d1257fdb7094620e7d5dc9b277056e16a36",
+      "retainedSha256": "2bdb93a4d5f0499e78e8d56cad102e7183f7d4792c154481873bbf9430ce4d3e",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-effect-boundaries.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e2-effect-boundaries.md",
+      "role": "source-survey",
+      "originalSha256": "2205c201332ccd675995712511be2f4ecc8dc4e97fce06b5d97cca16595ef1ab",
+      "retainedSha256": "086623522abe3d9307d8b76e533c79f07335287e9665ebf9f9ab9354d660825d",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-git-operation-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e2-git-operation-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "730b13cadf53a1c3f59262623770445ae416b5e9670d56caaf933c79dd62d86a",
+      "retainedSha256": "c2d6a4a0b4460258cde736cff6d63826e648690face702405f75a7309d8ebeda",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-renderer-free-fact-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e2-renderer-free-fact-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "377b276232dd6b00c30817eff7bf305e8a8d12f957e9d0bac1b331c611de88b2",
+      "retainedSha256": "f6f73035d0fe8402b00a2fb2d3443b29a5eae60eb09ab4872b0d350448a82176",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e3-runtime-flow-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e3-runtime-flow-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "e3d0a0e24b26e4dc104b009287525dbfa50544eec527cae77265ffd35d92a1fb",
+      "retainedSha256": "0596ace18dd4fe53fc65e9fd6f77fd0a3d31d944a128c4ffafba553b3ae2a3e5",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e3-swift-publication-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e3-swift-publication-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "258a4febb6a3d3a3c745308cdc6ed823801594a096be35795de949ff80e30073",
+      "retainedSha256": "066efca5b84925369b3dd54257d7017461c35b80ebd645078403a590aa3727c4",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e4-fly-authentication-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e4-fly-authentication-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "5a8e96d1ba43c7733aa7f303d30c4f45fa4698836e2a688d7f9749d0b15fb69e",
+      "retainedSha256": "5a8e96d1ba43c7733aa7f303d30c4f45fa4698836e2a688d7f9749d0b15fb69e",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e4-fly-environment-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e4-fly-environment-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "223120fe0934998d63c1de446906569ebda290ee66471abb4ca81e71e011e67e",
+      "retainedSha256": "1b0239d47d9a01d0074dc4cd93ac29dcb07e87a67dda2ace745afbbfd7df7e01",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e4-fly-execution-path-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e4-fly-execution-path-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "c9e7d95dc7dd9e5d3601cad10ca91628ce87e519df8dc510d6c59b75e9135522",
+      "retainedSha256": "84ab4245c775c0d8e99b60cb38c764abd7dae764d663d6f643cbe1bf8d1bb12e",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e4-identity-metadata-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e4-identity-metadata-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "97bc8c3bdd9d28102d02377e495218ff602709ec199814c4c86b4298a4f5019e",
+      "retainedSha256": "90233833a0b6ecab2a43df86200087d88c93863301ba4c62ddf02f971e4683f9",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e4-safe-linux-primitives-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e4-safe-linux-primitives-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "1857f950cedaadadbf1c16b9b743bba60f462ecd5713e24fc877c6de97d3a10b",
+      "retainedSha256": "580ba56c07e8c798a8b26799d5cee20606a9f460e358d4a889ee5396030d5e9c",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e5-latency-observation-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e5-latency-observation-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "81765f972f8a483e03220794bef2f672b35c95c2ee7a1577b3806c7d060eab40",
+      "retainedSha256": "94594231b2be285be69f2c3c97a41f71e2fcd1f4da3f3dedc8019e0538b3af61",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e5-native-observation-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e5-native-observation-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "f7ee140196460618e3c3986ff69d3cbdcbacfac5caffa23523fd960e213f8ac1",
+      "retainedSha256": "1132f45e95aede51b3e3c9d129803feafe47d8f1ae1fda098185b571b925fd5f",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e5-transport-observation-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/e5-transport-observation-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "2c23cc32b9740d72684900de40e2ab6072de01f7fb5aeaf46d542f76a6a5265e",
+      "retainedSha256": "155d18a8cc3b8a6a097d12eac549af1e62db408de63f1d3c19549ca57a8ef5a6",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/edge-cases.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/edge-cases.md",
+      "role": "source-survey",
+      "originalSha256": "6716cffb19e5382df3141b9f168b61d80b910cf368fc2f1a5dcbc4c08b49e6bb",
+      "retainedSha256": "df0a2fb1e07fb1dbe4ddbd69fd5eed932b031bc0b185662dbfdb4555ded5358b",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/fork-app-policy-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/fork-app-policy-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "644143985c5ba7b350694d779309c92f0738e473753756f5acaedbcfe3884eee",
+      "retainedSha256": "6a3c7e6730a170a295a13c252cd5624ed12809d4a8041b59bf984e5ce0d7aebf",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/fork-package-contract-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/fork-package-contract-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "184ba6a1e853e4e2849ce3917536187460ee6d80b10cf8c284fe992ab0c20cc1",
+      "retainedSha256": "d15916f8b5b3d137887394d965bb4501dd646ea3422ef79da3a4acc5df0102c9",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/git-experiment-coverage-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/git-experiment-coverage-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "780df36123206f1cc86edccfe6fd975763506dfb3dfd039bf65b1377958a9cd7",
+      "retainedSha256": "8ea417b3c9d7ccee1f62ee98cb9776c06fee370fdfc267d4e0cb0bd591f82ff5",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/mobile-network-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/mobile-network-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "542d0bc7f7b326924d73d0b7b4c6fbb3c802a68a2f7c2ac434a662923831f718",
+      "retainedSha256": "542d0bc7f7b326924d73d0b7b4c6fbb3c802a68a2f7c2ac434a662923831f718",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/second-pass-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/second-pass-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "45f8a610e23cb4d3668f9c16c1a1601376602157b69cd7ee5bee82f18634943f",
+      "retainedSha256": "df921543b196a59d002303fad24f5d177c20e7255a091a34f6d236ac6750f8d6",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-15-daemon-extraction-survey/surface-experiment-coverage-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-15-daemon-extraction-survey/surface-experiment-coverage-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "f46a7d96e0137aaa26c719224ca8ea359d9740eb251a335a7d64ae7d41d12a42",
+      "retainedSha256": "7841e530352d87e61b82b2560fecc7bbed12f240a0d686cebb87404c01a27945",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-advisor-storage-placement/R2-reduced-inventory.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-advisor-storage-placement/R2-reduced-inventory.md",
+      "role": "source-survey",
+      "originalSha256": "65001a0550b62366b28881acb14ba28a7f8fcbeb289d77863305e43cad9062f4",
+      "retainedSha256": "b12181cfcfeff82cbe3c5660892568842eb41658655ec4a942f9519193371991",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-daemon-schema-admission/context-key-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-daemon-schema-admission/context-key-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "73f7b60f172123a7338761dba099c39c34c38921179af9b3ceaf820ec5065d0c",
+      "retainedSha256": "b16131cf221dd7fb596aff4e1104f30e08a4c3a64302840acdb8561910e82bc9",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-daemon-schema-admission/core-key-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-daemon-schema-admission/core-key-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "1a55179a91249281843f75b6b8f978959e2995ae9f2e4922bbfd5f54ff9f233c",
+      "retainedSha256": "008abb57c8baf6a96b8547999779e2218d6bedd2dd34182ceabc9cd0b1572479",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-daemon-schema-admission/lead-summary.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-daemon-schema-admission/lead-summary.json",
+      "role": "source-survey",
+      "originalSha256": "516a754af808ee2cd5b63ae46daaf8d64ea290b4ec8d5e025f5fcfd1b27d5762",
+      "retainedSha256": "516a754af808ee2cd5b63ae46daaf8d64ea290b4ec8d5e025f5fcfd1b27d5762",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-daemon-schema-admission/review-cli-key-evidence.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-daemon-schema-admission/review-cli-key-evidence.md",
+      "role": "source-survey",
+      "originalSha256": "f0e5c1c31c3be92b00e92ef38a74b4d59792dc0368b0f4fb9d9794f9f7c6ce79",
+      "retainedSha256": "59e54e85ffb8baac24aa798ca8e506eb5f412fdd8666e7811489efaaf422c7e4",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-daemon-schema-admission/shared-schema-profile.txt",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-daemon-schema-admission/shared-schema-profile.txt",
+      "role": "source-survey",
+      "originalSha256": "a1341987af7794258c619c52056b1d4f8d02128449946a12c56cc28787e5bb82",
+      "retainedSha256": "a1341987af7794258c619c52056b1d4f8d02128449946a12c56cc28787e5bb82",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-daemon-targeting/research-ledger.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-daemon-targeting/research-ledger.md",
+      "role": "source-survey",
+      "originalSha256": "86a577bd0707cd301b02e94a64c7a4d1806642939791fb4b4c9260e7f37f4c3e",
+      "retainedSha256": "1bd6a4e5d5986a8f58bb7c4d9e1b1d72a335ca771ee9649331b2f876e2dd88cf",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-16-turso-replication-option/research-ledger.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-16-turso-replication-option/research-ledger.md",
+      "role": "source-survey",
+      "originalSha256": "2baa61af25efb91269cc8fc16502e114458eaf27a5710d21c6edff31b04d56d9",
+      "retainedSha256": "2baa61af25efb91269cc8fc16502e114458eaf27a5710d21c6edff31b04d56d9",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/bridge-query-table-closure.json",
+      "role": "source-survey",
+      "originalSha256": "24bb504e842c33f2d966b5d944d5b0fd114caebbf73d895a8ce8d8e79c6386f4",
+      "retainedSha256": "24bb504e842c33f2d966b5d944d5b0fd114caebbf73d895a8ce8d8e79c6386f4",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+      "role": "source-survey",
+      "originalSha256": "ee09d3d4e088d322c71ae0c0631120b4f4ea379f3724474a09f8d6e8c8f38fbc",
+      "retainedSha256": "a96505996ea15175ca6e8cb304ad4fe2a5e179ca93c804f3979e72d3bd1ba048",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-read-needs.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/bridge-read-needs.json",
+      "role": "source-survey",
+      "originalSha256": "437c8820d20a223af9e2089e27370eab9970013e51ed38a295e3a222df063d24",
+      "retainedSha256": "437c8820d20a223af9e2089e27370eab9970013e51ed38a295e3a222df063d24",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+      "role": "source-survey",
+      "originalSha256": "f7c77e6ad30ca95cd4d109c61b4e29ce3b3e00d71fbdfe0b4112c631e582656a",
+      "retainedSha256": "8f5dd9a2b5ee8a0f20e30920e0b3116e05a54cdc4bffa06e87a51a1f978fb936",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/command-execution-source-map-notes.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/command-execution-source-map-notes.md",
+      "role": "source-survey",
+      "originalSha256": "4a94e414893e3a6ee1be75c150701e14e758f434a24262717f02ddf3acaca05b",
+      "retainedSha256": "8911bfdf1340bb177be046b17d69829e53ea78c0ea9580e4d83b288858d1b5d3",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/command-execution-source-map.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/command-execution-source-map.json",
+      "role": "source-survey",
+      "originalSha256": "7572d0bad7061251183b5da41a3e84e8f7adbf9ae4e8306202b319a894193c71",
+      "retainedSha256": "7572d0bad7061251183b5da41a3e84e8f7adbf9ae4e8306202b319a894193c71",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/context-query-table-closure.json",
+      "role": "source-survey",
+      "originalSha256": "e85b866c78e1b892620b1c7631fdbb18012c76958d4dcf4f9388100336f90c0e",
+      "retainedSha256": "e85b866c78e1b892620b1c7631fdbb18012c76958d4dcf4f9388100336f90c0e",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+      "role": "source-survey",
+      "originalSha256": "9f3f4fd204ffd622dd23a758ab03e6a85dafbd05cbf12368677eaca3e0fa472e",
+      "retainedSha256": "6e00578aff8c2ade8cc23945589fd4d9b68272af9b2aa8f815c282ff1bd8889c",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json",
+      "role": "source-survey",
+      "originalSha256": "5e2a91c9d742782eb27fc7be126d579e668921aff6d1edea906a433b8743538e",
+      "retainedSha256": "5e2a91c9d742782eb27fc7be126d579e668921aff6d1edea906a433b8743538e",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/git-bridge-operation-source-map-notes.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/git-bridge-operation-source-map-notes.md",
+      "role": "source-survey",
+      "originalSha256": "787a4711ea5357bc1a386aa56f2a2f129b88cb0024a16fc47cd689e67c9ae6e6",
+      "retainedSha256": "714dc9b425ff00c2ef7b7cd8104443444f2665b2b9ee8f57d4ca23d2a400e1a7",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/git-bridge-operation-source-map.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/git-bridge-operation-source-map.json",
+      "role": "source-survey",
+      "originalSha256": "4456246bae27c341f39fd4faf04dae4036c4dff797588f38a88440fff92df22b",
+      "retainedSha256": "4456246bae27c341f39fd4faf04dae4036c4dff797588f38a88440fff92df22b",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/rpc-operation-source-map-notes.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/rpc-operation-source-map-notes.md",
+      "role": "source-survey",
+      "originalSha256": "a42e2526c1bb2ea0fdc34bb4d88b4aefe1f8d6e001a43a16152476ed91c8acd5",
+      "retainedSha256": "47f6e847cc2ce09b1238281fd2306279bf9aee62acae7bf0fbb0b4e878bbb75f",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/rpc-operation-source-map.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/rpc-operation-source-map.json",
+      "role": "source-survey",
+      "originalSha256": "be137909bcaa80fa9276f2ea163390e86dcfa98b853926d99819a09be8741cd2",
+      "retainedSha256": "be137909bcaa80fa9276f2ea163390e86dcfa98b853926d99819a09be8741cd2",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/session-native-read-needs.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/session-native-read-needs.json",
+      "role": "source-survey",
+      "originalSha256": "dd34d43945356599d45e0934543dc446f2cf6df9fd0f2d19e3f66d04218b6b3f",
+      "retainedSha256": "dd34d43945356599d45e0934543dc446f2cf6df9fd0f2d19e3f66d04218b6b3f",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/session-native-read-needs.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/session-native-read-needs.md",
+      "role": "source-survey",
+      "originalSha256": "694e7d5d38a90f55746a822209cbcd1c0e5c8c09225e10b5ed55729d96744557",
+      "retainedSha256": "b5afe9542b24901ec78bf7adca48835a6eeb98b32a6ed44e342c84f71ae3af24",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.json",
+      "role": "source-survey",
+      "originalSha256": "65e8da260f60dcc6bf3b8cea16dda8ee1d1ae922aa0bea59440c0855d67d9ad8",
+      "retainedSha256": "65e8da260f60dcc6bf3b8cea16dda8ee1d1ae922aa0bea59440c0855d67d9ad8",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+      "role": "source-survey",
+      "originalSha256": "f70d5bb783d10ac3ff57416d523c65d1fdc7435ab7fb144f914b25231b3752c5",
+      "retainedSha256": "95b212c408289e122036bac7049712d08485876a0e38d84cdd8a97dadb938dd2",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-read-needs.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/sidebar-read-needs.json",
+      "role": "source-survey",
+      "originalSha256": "8c76412cd8cdfd1509a9ac1cc2a9e5d1ec7e65ab14586e2dcf444e7c165c7611",
+      "retainedSha256": "8c76412cd8cdfd1509a9ac1cc2a9e5d1ec7e65ab14586e2dcf444e7c165c7611",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-read-needs.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/sidebar-read-needs.md",
+      "role": "source-survey",
+      "originalSha256": "33d94077cc8efbec34ba9fb5d5955c5d58bce9f3dbb4e6b37acff59785a73646",
+      "retainedSha256": "0db9db49002cea4543ca1ffa53bc557ca6bf0ce593d04618b6c1c73109c876a0",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+      "role": "source-survey",
+      "originalSha256": "51b03c251e64ab87df6d7bfc123e07764a882673fc30ec31ba1686e826efb215",
+      "retainedSha256": "8d8c57fce47b6541b23fbcc7536b00b2b7e543034034022af74fc04aaee2842f",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/wire-request-representation.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/wire-request-representation.json",
+      "role": "source-survey",
+      "originalSha256": "162db4e2b1cfe5b7c7f82f839af0a7813afb6d165a7dee5b21fb6fde3a0f5867",
+      "retainedSha256": "162db4e2b1cfe5b7c7f82f839af0a7813afb6d165a7dee5b21fb6fde3a0f5867",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/wire-response-representation.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/wire-response-representation.json",
+      "role": "source-survey",
+      "originalSha256": "64023bd8ecfe2259ea9468fd81b5d5f7cb9262e90b81cd928d6cb65009521d41",
+      "retainedSha256": "64023bd8ecfe2259ea9468fd81b5d5f7cb9262e90b81cd928d6cb65009521d41",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-daemon-capability-placement/wire-response-representation.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-daemon-capability-placement/wire-response-representation.md",
+      "role": "source-survey",
+      "originalSha256": "b285824c4974009257854052cd40cce77754a37e332b1bf65df345563ed397bf",
+      "retainedSha256": "fb4e1594b562ce20fb3b7c9b14aa02fa36b94b546b97866738b4d2f4dfc00732",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-fleet-sync-key-semantics/lead-key-summary.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-fleet-sync-key-semantics/lead-key-summary.json",
+      "role": "source-survey",
+      "originalSha256": "c2718904d13796e8ddad479d9a5ced65db9d1341424c037be64620a42e6cf4a7",
+      "retainedSha256": "c2718904d13796e8ddad479d9a5ced65db9d1341424c037be64620a42e6cf4a7",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-fleet-sync-key-semantics/research-ledger.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-fleet-sync-key-semantics/research-ledger.md",
+      "role": "source-survey",
+      "originalSha256": "d0a507e5102b8b3317fe79e0d2ff8e7893b6e24c2e7ed5dcac403fdce8722c82",
+      "retainedSha256": "d0a507e5102b8b3317fe79e0d2ff8e7893b6e24c2e7ed5dcac403fdce8722c82",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-fleet-sync-schema-forms/lead-form-summary.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-fleet-sync-schema-forms/lead-form-summary.json",
+      "role": "source-survey",
+      "originalSha256": "2aa4afbf3e4d3e52c27df8be18cfca30a35005cfeacda3d0347123935a228ab5",
+      "retainedSha256": "2aa4afbf3e4d3e52c27df8be18cfca30a35005cfeacda3d0347123935a228ab5",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-17-fleet-sync-schema-forms/research-ledger.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-17-fleet-sync-schema-forms/research-ledger.md",
+      "role": "source-survey",
+      "originalSha256": "43d7372940cfdbdeaaff383d529b8ee8704bf836e4634fcd575825550eb7afae",
+      "retainedSha256": "43d7372940cfdbdeaaff383d529b8ee8704bf836e4634fcd575825550eb7afae",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-18-daemon-storage-units/context-transactions.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-18-daemon-storage-units/context-transactions.md",
+      "role": "source-survey",
+      "originalSha256": "94bc3854eee8fd8abbc964952f9f9ef4c98c8a08612160f3340902e4ea32fdc5",
+      "retainedSha256": "daf7652518ef737e0eb50e8b12e179680ae8ae75ec0f9a7e0f577a4d104da014",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-18-daemon-storage-units/normalized-group-table-index.json",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-18-daemon-storage-units/normalized-group-table-index.json",
+      "role": "source-survey",
+      "originalSha256": "2f9f1ccff0cb415b8be2cb5f831025e0b180721208b8ae516bb915548b631686",
+      "retainedSha256": "2f9f1ccff0cb415b8be2cb5f831025e0b180721208b8ae516bb915548b631686",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-18-daemon-storage-units/repository-native-transactions.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-18-daemon-storage-units/repository-native-transactions.md",
+      "role": "source-survey",
+      "originalSha256": "c384675cd6530d87fe5f28f736f2a5bb2d31a99a466c5a95a7d58e0358ec8007",
+      "retainedSha256": "42e263ab63618630d13f1278e9b422a9e1aa5ccfbf7d2a0611f8de90f3f31f9a",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-18-daemon-storage-units/workspace-annotation-transactions.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-18-daemon-storage-units/workspace-annotation-transactions.md",
+      "role": "source-survey",
+      "originalSha256": "8a45f80b22b368a6cc8eaa70b6b106eded68b0eda28a22a6133d07b2e118010e",
+      "retainedSha256": "8ea292bedbfd7dd3543bd2815c56d6c4a4bdf8f6c1c4e5dd4f00379738167669",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/causality-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/causality-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "5f9978b137b29c82e005502c0b3794683755d5f4fc28139f0d86bb6958984481",
+      "retainedSha256": "09132c10075af952cd39fd0854270fa99f4ec34fc641db37e8961e026c1315d4",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/coordination-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/coordination-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "64d9e65a7c89168493c43cdd248a388278384ff441fb1eecb4f8c9902350faa5",
+      "retainedSha256": "15b7c16d65cae4d82f72b28c1fb1b5c8da944287455103409829379c94e28270",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/demand-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/demand-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "c9998b73e8253b27a3d547cbb663fb5b9795685c4dfae45395bc4fbbf3ced537",
+      "retainedSha256": "e62191437ce0401f405d71bb315e08eb9573fbefa73b19dcd18c37af2d71cf70",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/eligibility-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/eligibility-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "7e573a6910dd74f4e741f61db67dbd56c6662c91af3f411251af89528e723f07",
+      "retainedSha256": "d351ce137c4d92fb9232e752effc36290b4a2d734269a286acd85e50cf79e65b",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/eventbus-live-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/eventbus-live-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "5db2fbeab808818bfa2337af8c0ff2df4f061b548425e04f89e0d2ed59424849",
+      "retainedSha256": "d85a981a1abe77f4cbcc8d83313b5cceb5ff43ec284134659d49a547a56f4deb",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/replay-handoff-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/replay-handoff-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "c7e6362a6497f2792729a63636fa030755522ad10f8365a47db861657d6438db",
+      "retainedSha256": "42b5434315dd790029106128ae2342e967219dcc3ead464e6319b81c674abb54",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/capture-stress-results.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/capture-stress-results.md",
+      "role": "experiment-observation",
+      "originalSha256": "e0182ff3d31ef873c1503f3f0d9bce76aafd92c18006f5f688964da97b66d06d",
+      "retainedSha256": "d87aae29317ca8b44ba1690e5eb4b53ade97dfda9cb2ab6310503f92659eccfa",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    },
+    {
+      "origin": "tmp/practices-research/2026-10-21-daemon-progress/remaining-experiments.md",
+      "retained": "docs/specs/2026-10-15-agentstudio-daemon/research/evidence/2026-10-21-daemon-progress/remaining-experiments.md",
+      "role": "source-survey",
+      "originalSha256": "5f993b7c756f011595c90c4c54bd778ebbc181e607e0babbb6dd08f5126491b7",
+      "retainedSha256": "70d7a3a6ea15c25b908ea1f57bae574caeb54870aba9067c5804e0679d9b4fff",
+      "adaptation": "Markdown link destinations only; other bytes unchanged"
+    }
+  ]
+}

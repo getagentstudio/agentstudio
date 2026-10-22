@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Rust engineering realization for the Host and Gateway</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="rust-engineering-design.html">AgentStudio daemon · Rust engineering realization for the Host and Gateway</a></nav></ex-nav>
+<ex-document id="content"><h1>Rust engineering realization for the Host and Gateway</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](rust-engineering-design.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Rust engineering realization for the Host and Gateway
+
+Use the Router workspace conventions to make the selected ownership enforceable: shared lints, validated domain types, dependency direction and explicit Tokio task custody. Keep protocol, storage and platform adapters at their actual boundaries. This is a bounded structural proposal for [R8/K15](specification.html), grounded in the [checked Router baseline](research/router-rust-standards.html); it is not the complete system Program Design or an implementation plan.
+
+The [entity binding table](program-design-workbench.html#source--bind-the-specification-s-entities-before-naming-packages) covers E1–E26, including the [shared-state companion](../10-swift-client/shared-client-state-design.html). This document introduces no new domain identity or retained history. The initial profile applies; exact shapes and bindings remain with DS01 and their actual owners.
+
+## Workspace policy has one owner
+
+The Rust workspace root owns dependency declarations, edition/formatter policy and inherited Rust/Clippy rules. Each first-party member explicitly inherits them, including binaries, libraries and first-party generated bindings. Membership/feature/target coverage is checked rather than inferred from a passing default executable build.
+
+Carry the inspected `unsafe_code = "forbid"` and production unwrap/expect/panic/todo/unimplemented/held-lock restrictions. IP6 permits pinned dependencies through safe interfaces; that is not proof of their internals or actual selected bindings. G11 retains the concrete inventory/compliance work. Test-only allowances cannot become production escape hatches, and first-party adapters/scaffolding cannot be relabelled to evade the ban.
+
+The exact compiler/dependency pins must be paired with Mac/Linux/backend/Swift build support before adoption. Router's observed versions are inputs to that check. Its release scripts, account stores, proxy transports and SQL migration policy are not copied into this product.
+
+## Dependency direction, before crate multiplication
+
+| Owner | Permitted dependencies | Dependency to keep out |
+| --- | --- | --- |
+| Domain | Validated IDs, semantic enums and domain errors; narrowly needed libraries | Sockets, Swift/AppKit, SQL rows, Ghostty/libgit2 handles |
+| Contract | Selected schema and domain translation | A second operation implementation or independent Swift schema authority |
+| Host | Domain values and consumer-owned backend/storage/clock ports | Concrete QUIC/SQL/native adapter implementation |
+| Gateway | Validated contract, Host-qualified desired interest and prepared-view inputs | A second Git/session/context mutation owner |
+| Host/Gateway data integration | Their owned ports and the selected shared engine's writer/lease/receiver APIs | Replication/SQL implementation types in pure domain transforms |
+| Adapters | Their owning ports, selected wire shapes and external libraries | Direct mutation around another capability's owner |
+| Roots | Concrete adapter construction, runtime and shutdown wiring | New product policy hidden in entrypoints |
+
+Use crate boundaries when dependency, platform, reuse or lifecycle differences justify separate compilation. Keep small cohesive responsibilities as modules otherwise. Conventional `main.rs`, `lib.rs`, `mod.rs` and crate-root `error.rs` remain conventional; other important files name the responsibility, such as `terminal_attachment` or `repository_observation`. No catch-all `types`, `utils` or global bus crate is selected.
+
+The [workbench dependency map](program-design-workbench.html#source--proposed-composition-and-dependency-direction) supplies the broader composition. These rows refine its permitted imports; they do not prescribe an exact package count or task/file order.
+
+Contract modules are the [E1–E24 type homes](program-design-workbench.html#source--bind-the-specification-s-entities-before-naming-packages). E22's source-specific witness union is Gateway integration data in `prepared_view_inputs`: its copy variant reaches shared-engine types through `replication_read_adapter`. `view_preparation` transforms family values without that dependency; the owner wraps its pure result with the captured witness. Public observation meaning and serialized projections stay in `observation_contracts` / `protocol_contracts`, without SQL rows or duplicate engine-position definitions.
+
+## Library disposition
+
+| Job | Structural direction | What remains open |
+| --- | --- | --- |
+| Runtime | Tokio, owned by the executable composition root | Supported runtime/build/platform profiles |
+| Tasks | Tokio handles/`JoinSet` and `tokio-util` ownership utilities where their behavior fits | Exact shutdown/drain and incomplete-operation outcomes per capability |
+| Buffers | `bytes` for declared binary lanes | Size/copy/queue budgets and native relay realization |
+| Types | Serde at selected boundaries; `thiserror` for crate-owned errors | Wire codec/version policy; semantic error vocabulary per operation |
+| IDs/time | Distinct validated IDs; UUIDv7 for newly generated application IDs; Router's `chrono` convention for required wall-clock values | Imported IDs retain their meaning; public timestamp/duration schemas remain contract-owned |
+| Tracing | `tracing` at owned operation/task boundaries | Export profile, privacy and eligible performance observations |
+| Schema | One schema authority with generated or validated consumers | Generator/codec selection and real Swift/Rust producer-consumer proof |
+| Adapters | Separate network/RPC, SQL and native adapters behind the owning contract | Quinn/tarpc/MessagePack alternatives, fleet-sync integration and native/dependency safety are not selected by this table |
+
+Do not add every Router dependency to a shared prelude. A package depends only on the libraries its job needs. Storage adapters translate their private errors and rows; frontends receive domain/operation results rather than SQL or network implementation errors.
+
+## Task custody follows the resource lifetime
+
+```mermaid
+flowchart TB
+    subgraph HostRuntime["Host service: owned Tokio work"]
+        Root["Process composition"] -->|"owns task scope"| Frontend["Gateway connection delivery"]
+        Root -->|"owns task scope"| Local["Host-local authorized inputs"]
+        Root -->|"owns capability work"| Sessions["Session capability owner"]
+        Root -->|"owns per-unit work"| Data["Authority and writer runtime"]
+        Data -->|"owns renewal work"| Authority["Host authority client"]
+        Data -->|"owns independent sending"| Replication["Capture and copy delivery"]
+        Frontend -->|"admitted request"| Sessions
+        Local -->|"admitted request"| Sessions
+        Sessions -->|"guarded storage port"| Data
+    end
+    Authority -->|"direct control call"| Central["Central authority; later server"]
+    Sessions -->|"explicit lifecycle operation"| Backend["ZMX execution; external process"]
+```
+
+[Standalone rendered diagram](assets/rust-engineering-1.svg)
+
+Edges name task custody or calls, not a promise that dropping a task terminates the external process. Losing a Gateway connection ends its delivery scope; it does not own E1's lifetime. Host restart/re-adoption is still G3. The Gateway similarly isolates each Host connection's work so one failed Host cannot cancel another Host's availability under R11.
+
+| Work | Custodian | Completion/cancellation meaning |
+| --- | --- | --- |
+| Delivery | Matching connection/attachment integration for readers/writers and terminal subscribers | Close and join owned tasks; preserve actual attachment/effect outcome. Do not replay uncertain input or report execution termination |
+| Local input | Host capability owner for agent/context work | Swift/Gateway loss cannot cancel admitted local integration solely because presentation disappeared |
+| Authority and writer validity | Host `host_data_runtime`; per-unit `host_authority_client` and `replicated_writer_adapter` | Direct central renewal is not a child of a Gateway connection. Actual gate/transaction outcome controls writes; G13 supplies outage/refusal policy |
+| Capture and copy sending | Host `host_replication_runtime` under the data runtime | Per-copy delivery ends independently; a slow or absent copy is not authority over Host execution or domain commit |
+| Copy receiving and reads | Mac Gateway `gateway_copy_runtime` plus `replication_read_adapter` | Commit apply/cut before acknowledging that boundary; read/cut qualification precedes prepared-view admission. It never owns Host write authority |
+| Execution facts | Host `host_terminal_facts` under the E1 session runtime | Own source/admission/write work independently of viewer connections; source loss retains its coverage meaning and does not create a fake fact |
+| Effect | Git/file/backend capability owner, using the adapter's actual completion evidence | Cancellation request, worker completion and external-effect observation remain distinct; residue/unknown state cannot become rollback by convention |
+| Query | Replaceable query or projection owner | Carry subject/Host/source generation and validity; late completion cannot overwrite a newer subject/view |
+| Telemetry | Named process-level owner for telemetry/maintenance | Track and drain where required; normal startup preserves the existing fail-open exporter behavior |
+
+One Tokio runtime per process; libraries receive async dependencies rather than starting nested runtimes. Blocking work uses the smallest justified blocking unit. Do not hold a synchronous lock across an await. Prefer one owner of a keyed mutable resource before adding shared locking; unrelated Hosts/resources keep independent progress.
+
+Separate operation completion from optional telemetry. Transactional domain writes and authority/admission cannot be pushed into an unacknowledged background task merely to make a request look fast. Ordered facts, replaceable observations and terminal bytes keep their distinct delivery contracts; a bounded broadcast channel is not a universal correctness policy. G2/G6/G8/G10 still own exact capacities, gap handling and accepted workloads.
+
+## Types and proof that constrain the implementation
+
+Fallible constructors establish semantic validity after wire/row decoding. Use enums with required variant payloads for operation outcomes; keep malformed input, authority refusal, backend failure and uncertain effect distinguishable where the operation contract requires them. Transport receipt is not effect success. The exact variant names and serialized schemas remain with their public contract owner.
+
+Use permanent behavioral coverage that can expose a broken invariant:
+
+- Detect a first-party workspace member that does not inherit the declared lints; compile the actual supported target/feature/generated-code paths.
+- Hold an admitted operation at an explicit boundary, end a view/connection, then observe whether only its permitted delivery work ends. Separately observe the external execution or effect boundary.
+- Deliberately reverse two query completions and verify Host/subject/generation checks preserve the current view.
+- Block a side effect that is genuinely optional and prove the required data path still progresses; separately require transactional writes before reporting the promised domain boundary.
+- Exercise actual Swift/Rust socket producers and consumers, plus the separate Gateway/Host/native/backend paths. Same-codec roundtrips and declarations do not close those obligations.
+
+Runner-owned hang bounds, correlated completion facts and controlled clocks replace wall-clock polling in tests. These are proof seams and cases, not authored tests or exact execution commands. No build, linter, test, dependency audit or daemon experiment has run for an AgentStudio Rust implementation. Named policy/profile gaps remain contract inputs rather than task-local defaults.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Experiments and decisions</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script>
+<link rel="stylesheet" href="../assets/reader-layout.css"></head>
+<body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Understand the system</a><a href="features.html">Explore AgentStudio features</a><a href="progress.html">What was built and tried</a><a href="walkthroughs.html">Follow a workflow</a><a href="delivery.html">MVP and integration phases</a><a href="requirements.html">Requirements</a><a href="architecture.html">Technical architecture</a><a href="communication.html">Communication</a><a href="data.html">Data ownership</a><a href="schema.html">Tables and fields</a><a href="sequence.html">Spec dependencies</a><a href="experiments.html">Experiments and decisions</a><a href="research.html">Research library</a><a href="../index.html">All specification documents</a></nav></ex-nav>
+<ex-document id="content">
+<h1>What the experiments must decide</h1>
+<ex-markdown id="experiment-opening"><script type="text/markdown">
+**Prove the relevant behavior before choosing its mechanism or measuring its cost.** Six experiment families discriminate the architecture. They are proposed procedures, not executed results, and passing them would not cover every capability.
+
+Begin terminal correctness and renderer-free Host behavior as co-gates. A narrow Linux capability probe can proceed independently. Measure each full route only after that route has credible correctness and observation gates. Early control-RPC measurements need not wait for every terminal/platform question.
+</script></ex-markdown>
+<ex-callout tone="risk" title="No performance or compatibility result yet">
+There is no demonstrated QUIC/codec winner, Rust-speed improvement, native echo percentile or complete Linux fork parity. The exact protocol, workload tolerances and supported platform profiles remain design work.
+</ex-callout>
+
+<h2 id="experiments">The six discriminators</h2>
+<ex-board id="experiment-board" cols="2">
+<ex-region id="terminal-experiment" title="E1 · Terminal restoration" icon="terminal" tone="planned">
+Can a fresh real terminal restore at a declared cut and remain correct when following bytes arrive?
+<ex-markdown detail id="terminal-experiment-detail"><script type="text/markdown">
+Compare pinned current/newer ZMX restoration against uninterrupted parsing of a bounded known corpus. Score cells/styles, cursor/wrap, screens, modes and metadata separately; feed a canary suffix to expose parser residue.
+
+**Decision informed:** backend adapter/extension versus additional Host terminal-state work. A restoration frame is not automatically a complete parser checkpoint. Native rendering and presented pixels are distinct proof layers.
+
+[Restoration procedure](../designs/04-terminal-runtime/experiments/terminal-restoration.html).
+</script></ex-markdown>
+</ex-region>
+<ex-region id="autonomy-experiment" title="E2 · Host autonomy and receipts" icon="robot" tone="planned">
+Can sessions, authorized input and selected facts continue without views, while uncertain effects stay honest?
+<ex-markdown detail id="autonomy-experiment-detail"><script type="text/markdown">
+Remove Swift and every Mac Gateway; observe the actual Host-local path. Lose replies before/after admission and effects; compare real effect state with the caller's typed result. Never replay uncertain terminal input automatically.
+
+Include real Swift↔Rust Unix-socket interoperability and separate Gateway↔Host network pairing. Data arms must preserve binding/context/intake atomicity and selected lease semantics.
+
+**Decision informed:** fact/admission owners and operation-specific reconciliation/duplicate policies. Restart arms need a selected recovery promise.
+
+[Autonomy/effect procedure](../designs/07-agents-context/experiments/host-autonomy.html).
+</script></ex-markdown>
+</ex-region>
+<ex-region id="fanout-experiment" title="E3 · Fanout and slow consumers" icon="users" tone="planned">
+Can one stalled viewer recover without corrupting others or retaining unbounded output?
+<ex-markdown detail id="fanout-experiment-detail"><script type="text/markdown">
+Compare scoped owner subscriptions and a shared typed fact-hub candidate using the same semantic trace. For terminal traffic, evaluate multiple backend attachments versus shared Host/Gateway fanout under declared controller policy.
+
+Observe active-viewer progress, actual terminal size/focus, bounded allocations and E1-correct resynchronization. Flow-control credit is not allocated memory; arbitrary dropped VT bytes are not a recovery policy.
+
+**Decision informed:** fanout placement, traffic semantics and resource/recovery contracts.
+
+[Coordination procedure](../designs/10-swift-client/experiments/coordination.html).
+</script></ex-markdown>
+</ex-region>
+<ex-region id="linux-experiment" title="E4 · Safe Linux parity" icon="git-branch" tone="planned">
+Can safe Linux realizations preserve the complete Mac capability contract, including refusals and residue?
+<ex-markdown detail id="linux-experiment-detail"><script type="text/markdown">
+Begin with isolated clone/containment/metadata primitives, supported/refused and cross-device profiles. Then account for Git registration/index/refs, names, special files, cancellation and owned cleanup.
+
+**Decision informed:** eligible backend/platform profiles and remaining parity gaps. File-data cloning alone is not worktree fork parity. Fly is an available candidate environment; no VM or probe has been run by this effort.
+
+[Linux feasibility procedure](../designs/06-worktree-fork/experiments/linux-feasibility.html), [complete fork contract worksheet](../designs/06-worktree-fork/research/worktree-fork-contracts.html).
+</script></ex-markdown>
+</ex-region>
+<ex-region id="route-experiment" title="E5 · Route cost and compression" icon="chart-line" tone="planned">
+What does the mandated route cost under competing terminal, control and finite-content traffic?
+<ex-markdown detail id="route-experiment-detail"><script type="text/markdown">
+Separate fresh CLI-process time, persistent socket/RPC RTT, parser state, visible pixels and actual presentation. Compare compression off/on for identical data and validate probes with known delays/negative controls.
+
+**Decision informed:** stream/connection layout, compression and state-retention tradeoffs. MessagePack is encoding, not compression. Byte echo is not a native typing-latency measurement; current-versus-new terminal cost needs matched observers.
+
+[Route-performance procedure](../designs/11-operations-integration/experiments/route-performance.html).
+</script></ex-markdown>
+</ex-region>
+<ex-region id="phone-experiment" title="E6 · Phone lifecycle" icon="globe" tone="planned">
+Can the iOS Gateway start safely, serve its UX socket and reconcile actual mobile lifecycle changes?
+<ex-markdown detail id="phone-experiment-detail"><script type="text/markdown">
+Distinguish suspension with surviving connection, timeout/closure, and process termination/new connection. Observe actual device behavior, attachment/currentness and restoration; foreground callbacks alone do not prove suspension.
+
+**Decision informed:** safe Rust startup/lifecycle, UX socket custody and supported current-state/terminal resume. S28 selects the iOS Gateway; hosting and IP6 compliance remain to qualify. No always-on mobile daemon, business FFI API, unsafe exception or push server is selected.
+
+[E6 in the primary experiment map](../experiments/primary-experiments.html#source--e6-phone-socket-and-app-lifecycle).
+</script></ex-markdown>
+</ex-region>
+</ex-board>
+
+<h2 id="capture">What “Capture” means here</h2>
+<ex-markdown id="capture-explanation"><script type="text/markdown">
+**Terminal Capture** is the candidate ZMX protocol operation for obtaining terminal-state/restoration output. It is not screen recording, the SQL change-capture feed, or a guarantee that every parser state is preserved.
+
+The experiment uses Capture on the **same connection** that carries following live output, then tests the handoff and a canary suffix. Running a standalone capture command and making a new attachment later does not establish one ordered snapshot/live cut. Leader/viewer behavior and automatic terminal-query replies also need observation.
+
+**Database change capture** is different: selected committed row/schema changes feeding the replication sender. Neither capture operation automatically supplies a canonical terminal transcript, a domain event history or safe input replay.
+
+Source: [E1 procedure and scope](../designs/04-terminal-runtime/experiments/terminal-restoration.html), [data decision map](../designs/02-data-ownership-replication/research/data-replication-decisions.html).
+</script></ex-markdown>
+
+<h2 id="owner-decisions">Selected directions and the remaining contract work</h2>
+<ex-markdown id="decision-ledger"><script type="text/markdown">
+| Topic | Selected direction | Remaining detail |
+| --- | --- | --- |
+| Invalid writer authority | Gated work pauses/refuses; no new spool or execution kill | Exact gate/coverage/partial outcomes and renewal; DS03/G13 |
+| Ordinary Mac frontend CLI | Through Client daemon, even for local Host | Discovery/authority/bootstrap; DS01/DS09 |
+| Tabs/layout and read marks | Shared across devices | Portable elements, marker subjects, authority/sync/conflict/Undo; DS02/DS10/G9 |
+| Additional marker families | Completed-agent viewed sharing settled | Annotation/review-file/notice scope clarification via Sun |
+| Terminal control | One controller, other attachments view | Handoff, no-controller, focus, resize and restoration; DS04/G4 |
+| Retention/facts/restart | Current product meaning; no new full audit | Source coverage, exact lifetime and restart outcomes; DS02/DS04/DS07 |
+| Trust/native automation | Paired private fleet; retain selected native controls | Actual grants, consent/revocation and exposed subset; DS01/DS03/G8/G12 |
+| Performance | Desktop/remote exploratory work first | Mandatory product workload still with owner; measurements/tolerances G10 |
+| Linux/safety | One qualified Linux profile; first-party unsafe ban, pinned safe-interface deps allowed | Actual platform/binding and compliance proof; DS05/DS06/DS11 |
+
+The [initial profile](../initial-profile.html) and its qualified source record distinguish Sun's initial directions and the owner's sharing selection from the remaining detail. An experiment cannot choose unmade product scope or turn a partial primitive into whole-feature proof. Central authority, service platforms, many-to-many access, detach and Host-local input remain fixed.
+</script></ex-markdown>
+
+<h2 id="proof-boundaries">Keep the proof levels separate</h2>
+<ex-markdown id="proof-table"><script type="text/markdown">
+| Evidence in hand | What it establishes | What it does not establish |
+| --- | --- | --- |
+| Current-source survey | Existing paths, contracts, schemas and risks at the named revisions | Running daemon behavior or deployment |
+| SQL declaration audit | Keys/constraints/forms for 86 logical tables | Target schema admission, row validity or a migration |
+| Bounded independent DS02 review | Data/validity obligations express the checked owner scope | Complete DS02 or system design readiness |
+| Proposed E1–E6 procedures | Candidate discriminators, oracles and known prerequisites | Results, compatibility, capacity or performance |
+| This presentation | A navigable explanation of the current model | New policy authority or product implementation |
+
+Full feature acceptance needs selected per-operation behavior and real Mac/Linux/client effects. The six experiment families cannot replace coverage for every Git, agent, content, native and operational capability.
+
+[Primary experiment map](../experiments/primary-experiments.html) · [Topology risks](../research/topology-risks.html) · [System](index.html) · [Data](data.html) · [Design sequence](sequence.html)
+
+Library binding: Demistify `v1`, recorded `1.2.2` / `69d403c91e39a4cd768012d748d985586d4b43c9`.
+</script></ex-markdown>
+<ex-presentation id="proof-walk" title="Choose the next proof" description="Six architecture questions, the meaning of Capture and the remaining policy boundaries.">
+<ex-step to="experiment-board">Start with the discriminating question for each family.</ex-step>
+<ex-step to="capture-explanation">Keep terminal Capture separate from database change capture.</ex-step>
+<ex-step to="decision-ledger">Separate measurable facts from owner policy.</ex-step>
+<ex-step to="proof-table">Match every readiness claim to its evidence.</ex-step>
+</ex-presentation>
+</ex-document>
+</body>
+</html>

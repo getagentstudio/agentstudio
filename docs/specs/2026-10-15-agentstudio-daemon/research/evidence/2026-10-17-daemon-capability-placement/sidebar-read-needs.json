@@ -1,0 +1,1481 @@
+{
+  "scope": {
+    "question": "Current RepoExplorer/sidebar client read requirements and prepared row/detail shapes",
+    "observedAt": "2026-10-17",
+    "agentStudioHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+    "gitPin": "4cca397dfc869857064da4e9ec8289ea46adc479",
+    "mode": "source-only",
+    "futurePlacement": "Not selected; Root authors all proposed Gateway views/interfaces.",
+    "coverage": "Current production Repos and fixed Activity Panes preparation plus declared native row/materialization unions; no whole-UI completeness claim."
+  },
+  "namedPreparedFamilies": [
+    {
+      "id": "F01",
+      "outputTypes": [
+        "RepoExplorerSidebarProjection",
+        "RepoExplorerSidebarContent",
+        "RepoExplorerSidebarSection"
+      ],
+      "consumer": "RepoExplorerProjectionResult -> RepoExplorerRowIndex and materialization builder",
+      "meaningfulFields": [
+        "ready(content) / degraded(topologyFault)",
+        "sections(kind,resolvedGroups,loadingRepos,unassociatedPaneDestinations)",
+        "worktreeRowsByGroupId",
+        "paneRowsByGroupId",
+        "paneDestinationsByWorktreeId / ByRepoId",
+        "resolvedGroups / loadingRepos",
+        "emptyState"
+      ],
+      "transform": "Separate resolved origin identities from awaitingOrigin/statusUnavailable; filter, group and organize membership; preserve explicit loading/degraded/empty states.",
+      "productionStatus": "Traced current production builder and worker consumption.",
+      "state": "Runtime immutable projection; not a persisted canonical model.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerSidebarProjection.swift",
+          "line": 257,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerSidebarProjection.swift",
+          "line": 116,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift",
+          "line": 24,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F02",
+      "outputTypes": [
+        "RepoPresentationGroup",
+        "RepoIdentityMetadata"
+      ],
+      "consumer": "Repository group header and worktree color/identity grouping",
+      "meaningfulFields": [
+        "group id, repoTitle, organizationName, repos",
+        "metadata groupKey, repoName, organizationName, lastPathComponent",
+        "checkoutCount"
+      ],
+      "transform": "Resolved remote/local identity gives group key/display text; groups deduplicate checkout CWD, choose owner by checkout count/path/main/tie-breaker, sort display names and assign palette color.",
+      "productionStatus": "Traced through current Repos organization.",
+      "state": "Prepared display grouping over canonical membership and cached identity; NSColor/AppStyles participate in color generation.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepoPresentation.swift",
+          "line": 5,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepoPresentation.swift",
+          "line": 99,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepoPresentation.swift",
+          "line": 228,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift",
+          "line": 247,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F03",
+      "outputTypes": [
+        "RepoExplorerProjectedWorktreeRow",
+        "RepoExplorerResolvedWorktreeContext"
+      ],
+      "consumer": "Row index resolution -> RepoExplorerMaterializedWorktreePresentation",
+      "meaningfulFields": [
+        "groupId, repo, worktree, rowId",
+        "checkoutColorHex",
+        "placementContext(paneId,tabId,tabIndex,paneIndexInTab,isActiveInTab)",
+        "optional activitySubgroup"
+      ],
+      "transform": "Groups become checkout rows; Repos leaf sorting uses worktree name or latest eligible settled-output timestamp; row identity includes group/repo/worktree.",
+      "productionStatus": "Traced current Repos path.",
+      "state": "Runtime semantic rows and exact identity resolution; full Repo/Worktree values retained for action context.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerSidebarProjection.swift",
+          "line": 184,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection+Organization.swift",
+          "line": 122,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerRowIndex.swift",
+          "line": 190,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F04",
+      "outputTypes": [
+        "GitBranchStatus"
+      ],
+      "consumer": "Checkout status chips and associated Pane row branch/chip context",
+      "meaningfulFields": [
+        "isDirty",
+        "syncState(synced,ahead,behind,diverged,noUpstream,unknown)",
+        "prCount:Int?",
+        "pullRequestIsLoading",
+        "pullRequestDataUnavailable",
+        "linesAdded,linesDeleted,untrackedFileCount"
+      ],
+      "transform": "Join WorktreeEnrichment by worktree ID with PullRequestFacts by normalized RepoBranchKey; derive dirty/sync; detached HEAD makes PR data unavailable; missing enrichment receives unknown branch/sync semantics.",
+      "productionStatus": "Traced merge/status and worker use; row consumes PR count/loading/unavailable rather than a list of PR titles/bodies.",
+      "state": "Pure prepared combination of cache facts; no Git/Forge fetch occurs in this calculation.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/GitBranchStatus.swift",
+          "line": 3,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 536,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 574,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F05",
+      "outputTypes": [
+        "RepoExplorerMaterializedGroupHeaderPresentation"
+      ],
+      "consumer": "RepoExplorerMaterializedRowView -> SidebarRepoGroupHeader",
+      "meaningfulFields": [
+        "groupID,icon,title,organizationName,colorHex,isExpanded",
+        "repoIDs,semanticRepoPath,paneDestinations",
+        "presentsRepositoryActivity",
+        "repositoryActivityDisposition(unclassified,warm,locallyInactive)",
+        "repositoryFactUpdateProgress"
+      ],
+      "transform": "Join group/expansion with repository activity coverage classification and update progress. Activity control applies only when a semantic single-repository Repo group exists; header branch differs from activity-group headings.",
+      "productionStatus": "Traced builder and native/SwiftUI consumer.",
+      "state": "Runtime prepared row plus native command/action context; not persisted row state.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 12,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 621,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializedRowView.swift",
+          "line": 64,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F06",
+      "outputTypes": [
+        "RepoExplorerMaterializedWorktreePresentation"
+      ],
+      "consumer": "RepoExplorerMaterializedRowView -> RepoExplorerWorktreeRow / RepoExplorerWorktreeRowContent",
+      "meaningfulFields": [
+        "rowID,groupID,repo,worktree",
+        "checkoutTitle,isMainCheckout,checkoutColorHex,placementText",
+        "branchStatus,branchName",
+        "bridgeCommandResolution",
+        "paneDestinations",
+        "showsRepositoryFactStatus"
+      ],
+      "transform": "Resolve row against index; derive title from directory leaf; main checkout from explicit flag/path agreement; combine prepared branch/Bridge/destination facts. Equality compares consumed identities/path/status/display fields rather than all dormant metadata.",
+      "productionStatus": "Traced builder and view consumer. Inspected builder supplies showsRepositoryFactStatus:true; scoped search found no current false assignment in Sources/AgentStudio.",
+      "state": "Runtime prepared display/actions; full source models are retained but narrower equality controls repaint.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 27,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 566,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializedRowView.swift",
+          "line": 93,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerWorktreeRow.swift",
+          "line": 21,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F07",
+      "outputTypes": [
+        "RepoExplorerProjectedPaneRow",
+        "RepoExplorerProjectedPaneDestination",
+        "RepoExplorerPaneDestination",
+        "RepoExplorerUnassociatedPaneDestination"
+      ],
+      "consumer": "Panes rows; repository/worktree destination/navigation actions",
+      "meaningfulFields": [
+        "associated or unassociated pane destination; pane/repo/worktree/tab IDs and display/order indexes",
+        "primaryText,secondaryLine,branchContextText,branchStatus",
+        "recencyText,recencyTier,isActive,isDrawerPane",
+        "messageChip,isPinned,variants,drawerRail,displayVariant,drawerOwnerPaneID"
+      ],
+      "transform": "Current Panes route deduplicates pane IDs, splits pinned/ordinary membership, uses fixed activity buckets and monotonic newest-first ordering, attaches drawers to owner rails, joins associated repo/branch only as context.",
+      "productionStatus": "Traced current organizedPanesByActivity route. Unassociated panes on this route use the pane union with unassociated destination.",
+      "state": "Runtime prepared pane rows; requires client arrangement/residency/selection context and process-local activity time.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectedPaneRow.swift",
+          "line": 86,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 20,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 245,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerSidebarProjection.swift",
+          "line": 194,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F08",
+      "outputTypes": [
+        "RepoExplorerPaneRowVariants",
+        "RepoExplorerPaneRowVariant",
+        "RepoExplorerPaneRowLine",
+        "RepoExplorerPaneChipKind"
+      ],
+      "consumer": "Compact/expanded native Pane row variants selected using local row selection",
+      "meaningfulFields": [
+        "compact / expanded",
+        "ordered lines(title,worktreeBranch,note,agentLine,sessionStatus)",
+        "ordered chips(drawer,gitPR,changes,sync,messages,clock,active)",
+        "fallbackLineCount,showsChipLine"
+      ],
+      "transform": "Line visibility policy chooses prepared compact/selected rows; derives PR/change/sync/message/clock/active chips; materialized row can switch variant using local selection and alternate layout.",
+      "productionStatus": "Traced current pane row builder and variant preparation; native line/pixel measurements not observed.",
+      "state": "Runtime presentation choices; icons/tooltips/tone come from command/local-action display contracts.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneRowVariants.swift",
+          "line": 4,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 290,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 337,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F09",
+      "outputTypes": [
+        "RepoExplorerPaneContextLine",
+        "PaneMessageChipModel"
+      ],
+      "consumer": "Pane row variants and pane-context control",
+      "meaningfulFields": [
+        "context line text,CommandIcon,ControlTooltipRenderValue,tone,stale",
+        "message count,tone,countIncludingInformational,toneIncludingInformational"
+      ],
+      "transform": "Agent work/status maps to catalog display and tone; message counts choose own versus includingDrawers and sum needsApproval+needsReply+attention with informational alternative.",
+      "productionStatus": "Traced current pane row preparation. Full popover detail/repository queries were not traced.",
+      "state": "Prepared presentation from injected Sessions/PaneContext facts; no new session or context persistence is introduced by the row transform.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneContextLine.swift",
+          "line": 5,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneMessageCountProjection.swift",
+          "line": 6,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/PaneContext/PaneContextUIReaders.swift",
+          "line": 6,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F10",
+      "outputTypes": [
+        "RepoExplorerUnassociatedPanePresentation"
+      ],
+      "consumer": "RepoExplorerMaterializedRowPresentation.unassociatedPane -> RepoExplorerUnassociatedPaneRow",
+      "meaningfulFields": [
+        "destination,primaryText,secondaryLine",
+        "recencyText,recencyTier,isActive,isDrawerPane"
+      ],
+      "transform": "Fallback materialization of a section-level unassociated destination.",
+      "productionStatus": "Declared/handled builder and renderer inspected; emission through current fixed Panes activity organization was not established (that path builds F07 pane rows).",
+      "state": "Runtime supported variant, not evidence of an additional active product family.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 67,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 603,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializedRowView.swift",
+          "line": 141,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F11",
+      "outputTypes": [
+        "RepoExplorerMaterializedRowPresentation",
+        "RepoExplorerRowContentRevision",
+        "RepoExplorerMaterializedRow",
+        "RepoExplorerRowLayout",
+        "RepoExplorerRowLayoutMetrics"
+      ],
+      "consumer": "RepoExplorerTableMaterializer / hosted SwiftUI cell",
+      "meaningfulFields": [
+        "10 presentation cases: activitySubgroup,sectionHeader,loadingSectionHeader,loadingRepository,groupHeader,worktree,pane,unassociatedPane,topologyFault,unresolved",
+        "row id,contentRevision,layout,representedRepoID,representedWorktreeID,expandedPaneLayout",
+        "rowClass,metrics,requiresVisibleWidthMeasurement"
+      ],
+      "transform": "List-entry resolution builds typed display union and layout estimate; loading/scanning/statusUnavailable remain distinct; duplicate topology yields fault; invalid resolution yields unresolved fallback.",
+      "productionStatus": "Full declared presentation union and materialization switch inspected. Declared cases do not imply every case is emitted by every current production surface.",
+      "state": "Runtime prepared content/layout. AppStyles CGFloat/color/icon/native sizing are rendering inputs, separate from repository facts.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 77,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 130,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 309,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 495,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 528,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F12",
+      "outputTypes": [
+        "RepoExplorerRowIndex",
+        "RepoExplorerListEntry",
+        "RepoExplorerResolvedPaneContext",
+        "RepoExplorerNavigationIndex"
+      ],
+      "consumer": "Materialization builder, exact row lookup, keyboard/navigation and native update planning",
+      "meaningfulFields": [
+        "ordered entries,ready/degraded state,worktreeIds,collapsedGroupIds,isFiltering",
+        "group/row identity indexes",
+        "resolved row/group/repo/worktree/destination context",
+        "navigation indexes/fingerprint"
+      ],
+      "transform": "Sections flatten to headers/groups/rows; filtering forces groups expanded without clearing persisted collapse; IDs resolve exact current context; topology fault bypasses normal rows.",
+      "productionStatus": "RowIndex construction/resolution and native navigation use inspected; every keyboard path not audited.",
+      "state": "Runtime derived membership/index; collapse input is persisted UI memory, index itself is not canonical.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerRowIndex.swift",
+          "line": 95,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerRowIndex.swift",
+          "line": 226,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerRowIndex.swift",
+          "line": 311,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerListEntry.swift",
+          "line": 12,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 383,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F13",
+      "outputTypes": [
+        "RepoExplorerMaterializationSnapshot",
+        "RepoExplorerMaterializationPresentation",
+        "RepoExplorerRowlessPresentation"
+      ],
+      "consumer": "RepoExplorerMaterializationHost -> content child/native table or rowless host",
+      "meaningfulFields": [
+        "rows,navigationIndex,fallbackContentHeight",
+        "rowIndexByID,rowIDsByWorktreeID/PaneID/RepoID",
+        "performanceProofPresentationSummary",
+        "content(snapshot,fingerprint) / rowless(noRepositories,noPanes,noTabs,searchNoResults)"
+      ],
+      "transform": "Aggregate prepared rows and navigation; fingerprint ordered membership only; row content/layout compared separately; empty states install rowless child.",
+      "productionStatus": "Traced builder, host/table consumption and rowless declarations; visible native UI not executed.",
+      "state": "Runtime materialization, no SQL row persistence.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 383,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationHostModels.swift",
+          "line": 28,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationHostModels.swift",
+          "line": 74,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializationHost.swift",
+          "line": 331,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F14",
+      "outputTypes": [
+        "RepoExplorerProjectionResult",
+        "RepoExplorerPreparedPresentationDeadline"
+      ],
+      "consumer": "MainActor projection adapter and deadline worker",
+      "meaningfulFields": [
+        "generation,snapshot,collapsedGroupIds,isFiltering,trigger",
+        "projection,rowIndex,materializationSnapshot",
+        "branchStatus/name maps,Bridge resolution,pane/tab facts",
+        "repositoryActivityDisposition/transition maps,sidebar transition map",
+        "prepared deadline(date,paneIDs,repositoryIDs,referenceInstant/referenceDate)",
+        "semanticBaselineSequence; performance durations"
+      ],
+      "transform": "Worker bundles semantic and native-prepared output plus next presentation-only transition; scoped worktree/activity deltas may reuse prior projection/index when structural baseline matches.",
+      "productionStatus": "Traced full and scoped result production, current-generation binding and deadline scheduling.",
+      "state": "Process-local generations/baselines and clock references; not a source freshness revision or remote/durable receipt.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 188,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 240,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 421,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 584,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+PresentationDeadline.swift",
+          "line": 5,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F15",
+      "outputTypes": [
+        "RepoExplorerMaterializationCandidate",
+        "RepoExplorerMaterializationBaseline",
+        "RepoExplorerNativeUpdatePlan"
+      ],
+      "consumer": "Native host application and feedback -> projection settlement",
+      "meaningfulFields": [
+        "host lifetime,demandEpoch,requestGeneration,visibleGeneration",
+        "expectedRevision,proposedRevision,presentation,nativeUpdatePlan",
+        "accepted baseline(revision,presentation/fingerprint)"
+      ],
+      "transform": "Prepared native plan is checked against exact acknowledged host baseline and generation; changed candidate is applied by host/table, accepted feedback settles projection; rejection restores previous publishedResult.",
+      "productionStatus": "Traced adapter/host/table acknowledgement path from source, no runtime acceptance claim.",
+      "state": "Runtime native application custody; distinct from prepared data, SQLite commit and pixels.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 28,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 77,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 147,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializationHost.swift",
+          "line": 123,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 269,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "F16",
+      "outputTypes": [
+        "RepoExplorerCommandPresentationSnapshot",
+        "RepoExplorerCommandPresentationDelta",
+        "RepoExplorerVisibleWorktreeSnapshot",
+        "RepoExplorerWorktreeCommandPresentation"
+      ],
+      "consumer": "Toolbar/row controls, native represented-cell command binding and visible-target callback",
+      "meaningfulFields": [
+        "commandGeneration,request->enabled results,pinnedStateByRepositoryID",
+        "target(hostLifetimeID,materializationGeneration,visibleRevision)",
+        "visible worktree/repository/pane ID sets and settledUpdateAttemptByRepositoryID",
+        "affected row/request identity sets"
+      ],
+      "transform": "Separate current native command-capability result joins prepared rows; stale/older visible-target deltas rejected; current viewport publishes runtime visible IDs and command target/update acknowledgements.",
+      "productionStatus": "Types, App wiring, render consumption and target checks traced. Full command-capability batch implementation not independently audited.",
+      "state": "Runtime current-client authority/display data; not Git or Forge source acquisition.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerCommandPresentation.swift",
+          "line": 31,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerCommandPresentation.swift",
+          "line": 59,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 459,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView+VisibleRows.swift",
+          "line": 12,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Windows/SidebarSurfaceHost.swift",
+          "line": 123,
+          "evidence": "new decisive source read"
+        }
+      ]
+    }
+  ],
+  "sourceInputs": [
+    {
+      "id": "I01",
+      "currentOwner": "RepositoryTopologyAtom via WorkspaceStore",
+      "fields": [
+        "repositoryIdsInOrder,availability,stable identity revision",
+        "Repo id/name/path/isPinned/note/tags",
+        "Worktree id/name/path/isMainWorktree and stable keys"
+      ],
+      "acquisition": "Watched-folder filesystem/discovery observations -> guarded topology admission -> canonical mutation/persistence; unchanged prior seven-family P04 is reused.",
+      "capture": "sidebarRepos excludes unavailable repositories/worktrees and creates immutable RepoPresentationItem.",
+      "persistence": "Canonical topology independent of prepared rows.",
+      "nativeOrClientContext": "Canonical local URL/path identities are current machine context; no cross-machine identity contract inferred.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 606,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator+ScopedTopology.swift",
+          "line": 7,
+          "evidence": "same-session source/evidence reused; not reopened in this commission"
+        }
+      ]
+    },
+    {
+      "id": "I02",
+      "currentOwner": "RepoCacheAtom; GitWorkingDirectoryProjector/ForgeActor -> WorkspaceCacheCoordinator",
+      "fields": [
+        "RepoEnrichment resolvedLocal/resolvedRemote identity versus awaitingOrigin/statusUnavailable",
+        "WorktreeEnrichment branch and GitWorkingTreeSnapshot.summary",
+        "PullRequestFacts keyed by RepoBranchKey; repository loading/unavailable/update progress"
+      ],
+      "acquisition": "Local SDK status, staged remote refresh and branch-scoped gh GraphQL -> separate observation/currentness loops; prior P05-P07 evidence explicitly reused.",
+      "capture": "Keyed read per represented repository/worktree; current branch key selects PR facts; worker derives F04.",
+      "persistence": "RepoCacheStore saves repository/worktree enrichment; PR loading/facts and progress are runtime keyed observations unless separately shown. Prepared row is not source truth.",
+      "nativeOrClientContext": "Refresh demand comes from separate owning-window attention/activity policy; projection visibility is not that policy.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 73,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture+Observation.swift",
+          "line": 76,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/GitBranchStatus.swift",
+          "line": 60,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator+Enrichment.swift",
+          "line": 7,
+          "evidence": "same-session source/evidence reused"
+        }
+      ]
+    },
+    {
+      "id": "I03",
+      "currentOwner": "RepositoryLocalActivityProjector -> RepositoryLocalActivityStore -> RepositoryLocalActivityAtom",
+      "fields": [
+        "hydration pending/authoritative/unavailable",
+        "lastQualifyingActivityAt,continuousCoverageStartedAt,updatedAt",
+        "ownedPromotionAttemptID/start/unsettled",
+        "repository stable key and volume event cursor"
+      ],
+      "acquisition": "Filesystem shared activity/coverage-loss observations -> participant/generation barrier -> SQL commit -> current-session authoritative atom.",
+      "capture": "Repos surface captures stable-keyed activity; classifier treats open worktree warm, insufficient coverage/unsettled promotion/future timestamps unknown, sufficient quiet interval locallyInactive.",
+      "persistence": "Activity/cursors persist, but restore deliberately publishes unavailable until live coverage checkpoint; saved state alone is not current authority.",
+      "nativeOrClientContext": "Current Darwin watcher coverage and process session authority are part of meaning, not absence of a recent row update.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+RepositoryLocalActivity.swift",
+          "line": 98,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/RepositoryLocalActivityProjector.swift",
+          "line": 198,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift",
+          "line": 549,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift",
+          "line": 18,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepositoryActivityClassifier.swift",
+          "line": 70,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+Activity.swift",
+          "line": 6,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "I04",
+      "currentOwner": "PaneActivityStatusAtom from TerminalActivityRouter; App injects status(for:)",
+      "fields": [
+        "PaneActivityStatusFact lastOutputLine,observedAt"
+      ],
+      "acquisition": "Settled terminal outcomes -> unconditional status callback before inbox suppression; value publication suppresses repeated equal line and can defer latest value to deadline.",
+      "capture": "Repos Activity grouping/sorting captures observedAt only; no fallback to focus time. Panes capture also carries lastOutputLine as latestMessageText.",
+      "persistence": "Runtime-only fact; equal repeated line can leave old observedAt unchanged. Missing evidence is no activity, not proof of idle.",
+      "nativeOrClientContext": "Terminal surface-backed settled-output source and coverage limits; not filesystem local-activity classification.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 17,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/Terminal/Routing/TerminalActivityRouter.swift",
+          "line": 290,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Atoms/PaneActivityStatusAtom.swift",
+          "line": 10,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 759,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "I05",
+      "currentOwner": "PaneActivityClock/PaneActivityTimeAtom; Sessions and terminal occurrence producers",
+      "fields": [
+        "PaneActivityTime orderingInstant,wallTime,source(terminal/hook)"
+      ],
+      "acquisition": "Clock orders/conflates occurrences before thin MainActor sink; terminal boot submits occurrences. Prior hook-ingress full path not freshly retraced here.",
+      "capture": "Current Panes uses monotonic ordering plus captured ContinuousClock/date/calendar pair to derive age, clock text, pinned/unpinned buckets, active flag and deadlines.",
+      "persistence": "PaneActivityRecord explicitly stores wall time/source only; monotonic instant is process-local and restored from valid wall record. Exact production persistence sink not re-traced in this pass.",
+      "nativeOrClientContext": "ContinuousClock.Instant is current-process context; wall/calendar interpretation and selected native row variant are client-sensitive inputs.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityOccurrence.swift",
+          "line": 35,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/PaneActivity/PaneActivityClock.swift",
+          "line": 81,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift",
+          "line": 45,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneActivityProjection.swift",
+          "line": 20,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 116,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "I06",
+      "currentOwner": "Workspace pane graph/tab shell/arrangement and injected App readers",
+      "fields": [
+        "active-residency allPaneIds,association,drawer owner,metadata title/CWD/note/pin",
+        "tab order/active pane and location indexes",
+        "SessionStatusAtom / PaneContextPresentationAtom",
+        "Bridge attendance,active current pane/keyboard routing"
+      ],
+      "acquisition": "Canonical graph and app-native/runtime facts are injected through SidebarSurfaceHost and PaneContextUIReaders; Sessions/PaneContext acquisition reused from wider source work, not fully retraced.",
+      "capture": "Associated pane locations join topology; active unassociated panes remain members; title memo normalizes live title/CWD/shell. Optional context produces counts/agent/status lines. Bridge candidates include residency,active pane,attendance and tab/pane order.",
+      "persistence": "Graph/metadata and durable context differ from runtime attendance/status/publication. Row transforms do not write canonical context.",
+      "nativeOrClientContext": "Window/responder chain,selection,arrangement,tab/pane coordinates,Bridge attendance and external-editor target are client/native context.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Windows/SidebarSurfaceHost.swift",
+          "line": 146,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/PaneContext/PaneContextUIReaders.swift",
+          "line": 6,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 625,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 679,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 713,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 759,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "I07",
+      "currentOwner": "WorkspaceSidebarState, SidebarCacheState, RepoExplorerSidebarPrefsAtom and their stores",
+      "fields": [
+        "filter query,surface,sidebarCollapsed",
+        "Repo grouping Repo/Activity",
+        "showPinnedRepos/showPinnedPanes/showDrawerPanes",
+        "collapsedGroup IDs",
+        "Repo sort Name/Activity and direction; Panes fixed Activity descending/no subgroup"
+      ],
+      "acquisition": "UI commands/filter edits mutate preference owners; UIStateStore/SidebarCacheStore/WorkspaceSettingsStore restore/autosave independently of projection.",
+      "capture": "Current preference facade projects allowed values; query trimmed for matching; filtering forces group expansion without clearing collapse memory.",
+      "persistence": "UI state fields and collapse are workspace-context local records; Repo sort is workspace settings; Panes fixed sort constants are serialized in record shape but hydration only changes Repo fields.",
+      "nativeOrClientContext": "Presentation preferences are current-client/workspace context. Doc describes older Panes configuration and defaults.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift",
+          "line": 6,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/UIStateStore.swift",
+          "line": 69,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/SidebarCacheStore.swift",
+          "line": 66,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceSettingsStore.swift",
+          "line": 120,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Coordination/WorkspaceSettingsStore.swift",
+          "line": 170,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "I08",
+      "currentOwner": "Projection capture/deadline worker and ApplicationLifecycleMonitor injection",
+      "fields": [
+        "referenceDate,ContinuousClock referenceInstant,Calendar.current",
+        "prepared next deadline,pane/repository IDs",
+        "system-time invalidation callback"
+      ],
+      "acquisition": "Capture snapshots clocks/calendar; worker computes transition deadlines; one demanded deadline task later recaptures/reprojects; native lifecycle installs/removes time invalidation callback.",
+      "capture": "Aging rows can change with no new Git/Forge/terminal acquisition; missing activity and invalid/future dates have explicit handling.",
+      "persistence": "Presentation deadlines and generations are runtime only.",
+      "nativeOrClientContext": "Clock/calendar/timezone and native lifecycle notification delivery are separate from source observation timestamps.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 91,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+Activity.swift",
+          "line": 117,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+PresentationDeadline.swift",
+          "line": 5,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 360,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Windows/SidebarSurfaceHost.swift",
+          "line": 163,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "I09",
+      "currentOwner": "AppStyles/command specs, native materialization host/table, command presentation batch",
+      "fields": [
+        "paint palette/icons/text/tooltip/tone",
+        "font/line metrics,CGFloat dimensions,visible width",
+        "selected row,compact/expanded variant,viewport,scroll anchor,responder hints",
+        "command current enabled/pinned state and visible-target generation"
+      ],
+      "acquisition": "Prepared layout uses established styles; native host measures/applies represented rows and reports visible snapshot; separate command capability snapshot binds to exact native target.",
+      "capture": "Semantic row data is not the complete final cell. Local selection/layout and command authority join during native application/rendering.",
+      "persistence": "Native table/selection/command targets are runtime; no SQL row materialization.",
+      "nativeOrClientContext": "AppKit NSTableView/NSView/NSColor,SwiftUI,focus,geometry and OS effects remain explicit current native context.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 130,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializationHost.swift",
+          "line": 123,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 269,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 459,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializedRowView.swift",
+          "line": 93,
+          "evidence": "new decisive source read"
+        }
+      ]
+    }
+  ],
+  "entryToPublicationPaths": [
+    {
+      "id": "P01",
+      "name": "Visible sidebar full capture -> prepared rows -> native acknowledgement",
+      "entry": "SidebarSurfaceHost instantiates RepoExplorerView with production atoms/readers and !sidebarCollapsed demand; NSViewRepresentable creates/registers the native host.",
+      "flow": [
+        "View task/updateDemand -> captureFullProjection -> immutable RepoExplorerProjectionRequest",
+        "adapter admits intent against current request generation and acknowledged host baseline",
+        "EagerDerivedAtom executes project(work) in Task.detached",
+        "worker merges branch/Forge, classifies activity, organizes/filter/sorts projection, builds RowIndex and MaterializationSnapshot",
+        "candidate classified against request/semantic baseline/host demand epoch/native-plan preflight",
+        "publishedResult assigned provisionally; host/table applies; accepted feedback settles projection and commits semantic baseline; reject restores previous result",
+        "native row view consumes prepared union plus separate command/keyboard state"
+      ],
+      "resultBoundary": "Prepared result, accepted native application and rendered pixels are separate. Source establishes control flow only; no runtime was executed.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/App/Windows/SidebarSurfaceHost.swift",
+          "line": 123,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView.swift",
+          "line": 107,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView.swift",
+          "line": 182,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 57,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 260,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerPresentationHostView.swift",
+          "line": 113,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter.swift",
+          "line": 168,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Infrastructure/AtomLib/EagerDerivedAtom.swift",
+          "line": 260,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 421,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 147,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 269,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 270,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "P02",
+      "name": "Keyed Git/Forge/cache change -> scoped or full replacement",
+      "entry": "Observation tokens read represented repository/worktree enrichment, branch-key PR facts and repository loading/unavailable/progress.",
+      "flow": [
+        "onChange rearms current token then coalesces invalidation IDs",
+        "captureScoped refreshes affected keyed values or requests full structural capture",
+        "worktree delta can reuse existing projection/rowIndex and rebuild branch/Bridge/materialization maps; unsupported/changed structural baseline falls back to full projection",
+        "same native preflight/acknowledgement as P01"
+      ],
+      "resultBoundary": "No fetch is started by branch-status merge. Upstream cache observation lifetime/currentness is separate from projection generation.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture+Observation.swift",
+          "line": 76,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 127,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 180,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 327,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 584,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 77,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "P03",
+      "name": "Repos filter/group/sort and activity sections",
+      "entry": "Query/preference changes or relevant pane settled-output observation trigger presentation/full recapture.",
+      "flow": [
+        "trim query; match repo name/tags includes all its worktrees, else worktree-name subset; unresolved loading repo query matches name only",
+        "exclude unavailable canonical membership; resolved origin state controls loading versus resolved groups",
+        "split pinned/open/available or pinned/fixed activity sections; identity group uses newest eligible settled-output time across represented worktrees",
+        "sort group headers ascending display identity; sort leaves Name/Activity with direction and UUID tie-breaker; invalid/missing/future activity is absent",
+        "RowIndex expands matching groups during filter while retaining collapse preference"
+      ],
+      "resultBoundary": "Current filter is a local substring transform, not source discovery or fresh branch/Forge lookup.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerFilter.swift",
+          "line": 8,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift",
+          "line": 24,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection+Organization.swift",
+          "line": 122,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerLeafOrdering.swift",
+          "line": 11,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerRowIndex.swift",
+          "line": 226,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "P04",
+      "name": "Coverage/currentness and presentation-only deadline update",
+      "entry": "RepositoryLocalActivity checkpoint or a prepared presentation deadline/system-time invalidation.",
+      "flow": [
+        "live filesystem participant/generation barrier commits SQL and publishes current-session authoritative activity",
+        "classifier combines open-worktree membership,coverage,ownership fence and horizon into warm/unclassified/locallyInactive",
+        "worker stores earliest repository/pane transition in prepared deadline",
+        "demanded deadline callback refreshes relevant input/projection; system-time invalidation forces full capture",
+        "repository activity scoped update can replace header disposition while retaining row membership/index"
+      ],
+      "resultBoundary": "Locally inactive is an admitted coverage conclusion. It is not inferred from missing output and is distinct from Repos activity-age buckets and Panes monotonic occurrence time.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+RepositoryLocalActivity.swift",
+          "line": 198,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/RepositoryLocalActivityStore.swift",
+          "line": 18,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Models/RepositoryActivityClassifier.swift",
+          "line": 70,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+Activity.swift",
+          "line": 47,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+PresentationDeadline.swift",
+          "line": 5,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 364,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "id": "P05",
+      "name": "Current Panes prepared row/variant and viewport publication",
+      "entry": "Current fixed Activity Panes route reads canonical active-residency pane membership plus PaneActivityTime and context facts.",
+      "flow": [
+        "deduplicate associated/unassociated panes; split pinned/ordinary membership without deleting pin flags",
+        "fixed activity ordering uses monotonic occurrence time; drawer can borrow owner grouping and render adjacent rail",
+        "prepare title/note/branch/context/status/count compact and expanded variants",
+        "native selection changes displayed variant/layout; table applies row plan and schedules viewport publication",
+        "viewport publishes SidebarVisibleWorktreesRuntimeAtom and current visible command/update target; separate command delta rejects stale/older target"
+      ],
+      "resultBoundary": "Viewport publication/runtime demand and command availability are side effects of native presentation lifecycle; they are not canonical repository/Git mutation.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 20,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 245,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPaneRowVariants.swift",
+          "line": 32,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerMaterializationSnapshot.swift",
+          "line": 337,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 269,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView+VisibleRows.swift",
+          "line": 12,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerTableMaterializer.swift",
+          "line": 459,
+          "evidence": "new decisive source read"
+        }
+      ]
+    }
+  ],
+  "effectOnReadAndLifecycleExceptions": [
+    {
+      "basis": "source",
+      "claim": "The core filter/group/status/row transforms shown here do not imperatively acquire Git, Forge or SQL. Capture and render lifecycle still have process-local effects.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerFilter.swift",
+          "line": 8,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 421,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 57,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "AtomFamily.value(for:) can allocate an observation slot on first read and records read telemetry; reading RepoCache/PaneActivity keyed values is not literally allocation-free or side-effect-free.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Infrastructure/AtomLib/AtomFamily.swift",
+          "line": 50,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Infrastructure/AtomLib/AtomFamily.swift",
+          "line": 221,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Capture increments counters and resolves/prunes a per-view title memo when live title/CWD/shell inputs change. These are runtime capture/cache effects, not domain persistence or fetch.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 73,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 759,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerPaneDisplayTitleCache.swift",
+          "line": 37,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Subscription/demand lifecycle can schedule projection/deadline work; native application changes table/selection/visible-target state and publishes visible IDs. A passive row transform and its active presentation lifecycle are different boundaries.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+InputLifecycle.swift",
+          "line": 57,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializationHost.swift",
+          "line": 123,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView+VisibleRows.swift",
+          "line": 12,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "UI interactions persist filter/collapse/preference changes, and explicit editor/open/update commands have effects. They are not reads performed by F04 branch-status calculation.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView.swift",
+          "line": 199,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView.swift",
+          "line": 256,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/UIStateStore.swift",
+          "line": 188,
+          "evidence": "new decisive source read"
+        }
+      ]
+    }
+  ],
+  "currentSourceFindings": [
+    {
+      "basis": "source",
+      "claim": "Architecture Sidebar Data Flow describes configurable Panes Repo/Tab grouping and Name defaults, while current production preferences force Panes Activity grouping, no subgroup, Activity descending and route all Panes through organizedPanesByActivity. Repos still supports Repo/Activity and user-selected Name/Activity order.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/docs/architecture/state/workspace_data_architecture.md",
+          "line": 684,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift",
+          "line": 45,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift",
+          "line": 82,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 18,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Branch fallback differs by evidence: no WorktreeEnrichment produces empty branch display; existing enrichment with empty/whitespace branch produces detached HEAD. Missing data must not be flattened to detached.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift",
+          "line": 574,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/docs/architecture/state/workspace_data_architecture.md",
+          "line": 731,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Three activity meanings are consumed: filesystem coverage-based repository warm/inactive; settled-output observedAt for Repos Activity grouping/sorting; monotonic terminal/hook occurrence time for current Panes organization/recency. They are not interchangeable.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+Activity.swift",
+          "line": 6,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 759,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 103,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Pane latestMessageText is captured and copied, but scoped search found no read into the current prepared Pane row variants. Current production row builder uses note,branch,agent/session status and message counts. This does not authorize deleting the field.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionInputCapture.swift",
+          "line": 793,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker+Activity.swift",
+          "line": 141,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPanesActivityOrganization.swift",
+          "line": 245,
+          "evidence": "new decisive source read"
+        }
+      ]
+    },
+    {
+      "basis": "source",
+      "claim": "Projection request generation/semantic baseline and native lifetime/demand epoch/revision prevent stale binding; they do not assert that all underlying source facts share one fresh repository revision.",
+      "pointers": [
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 28,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift",
+          "line": 77,
+          "evidence": "new decisive source read"
+        },
+        {
+          "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Features/RepoExplorer/RepoExplorerMaterializationHost.swift",
+          "line": 123,
+          "evidence": "new decisive source read"
+        }
+      ]
+    }
+  ],
+  "gaps": [
+    "This is a bounded current RepoExplorer/sidebar consumer walk, not an exhaustive whole-UI or all-popover census. Sixteen grouped prepared families are named; declared fallback/legacy variants are identified separately from traced production emission.",
+    "Full command-capability batch internals, every native update-plan algorithm, all keyboard/context-menu journeys, actual window/timezone notifications and full PaneContext popover detail loading were not independently traced.",
+    "Upstream Git/remote/Forge acquisition and topology persistence reuse the unchanged prior seven-family evidence and same-session decisive sources. No new full SDK/Forge pipeline audit was performed.",
+    "PaneActivityClock declaration/terminal submission and durable record shape were inspected; the full hook producer and production wall-time persistence sink were not retraced in this pass.",
+    "No runtime, tests/builds/probes, native table/pixel proof, performance measurement, network/credentials, cross-process replication or future Gateway/Host behavior was observed or selected."
+  ],
+  "evidenceReuse": {
+    "priorNote": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/tmp/practices-research/2026-10-17-daemon-capability-placement/git-file-acquisition.md",
+    "reusedScope": "P04 topology; P05-P07 local Git/remote/Forge; same unchanged product HEAD/pin. New source reads focused on exact consumer capture, transforms, output types and publication.",
+    "namedArchitectureStart": {
+      "path": "/Users/shravansunder/code/projects/agentstudio.feat-daemon/docs/architecture/state/workspace_data_architecture.md",
+      "line": 656,
+      "evidence": "new decisive source read"
+    }
+  },
+  "sourceSearches": [
+    "rg -n headings/Sidebar Data Flow/RepoExplorer/Projection in workspace_data_architecture.md",
+    "rg --files Sources/AgentStudio/Features/RepoExplorer",
+    "rg -n RepoExplorerProjection/SidebarSnapshot/RepoExplorerRow/Prepared sidebar types in App,Core,RepoExplorer",
+    "rg -n latestMessageText in RepoExplorer/Models and RepoExplorerProjectionInputCapture.swift: matches capture/type/copy only in inspected scope",
+    "rg -n showsRepositoryFactStatus false assignments in Sources/AgentStudio: no false assignment found; current materializer supplies true",
+    "rg -n recordSettledActivity,makeRepositoryLocalActivityProjector,ingest,commitBarrier for activity production wiring",
+    "rg -n RepoExplorerSidebarPrefsAtom and workspace settings hydration/save paths"
+  ],
+  "commandsAndProof": "Read-only source discovery/numbered reads and git rev-parse HEAD; static JSON/anchor validation only. No product execution."
+}

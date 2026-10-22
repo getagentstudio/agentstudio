@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · advisor e2 autonomy challenge</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-e2-autonomy-challenge-386d47cf.html">AgentStudio daemon · advisor e2 autonomy challenge</a></nav></ex-nav>
+<ex-document id="content"><h1>advisor e2 autonomy challenge</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-e2-autonomy-challenge.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+🦉 Advisor E2 autonomy challenge, re 01a142e2. This is advice; nothing was run.
+
+READ IN FULL THIS TURN: host-autonomy-experiment (91 lines), e2-agent-admission-evidence (47), e2-renderer-free-fact-evidence (58), e2-effect-boundaries (68). The Requirements (108) are unchanged since my full read.
+SOURCES OPENED:
+- IPCSessionMethodDescriptors.swift:20-30
+- ProviderHookInvocation.swift: grep at 8, 38-51, 76 and 188-192
+- vendored zmx loop.zig:244-262 and 1079-1095
+I checked one candidate and DROPPED it: zmx Info already excludes the requesting client (clients_len = items.len - 1, :1086), so an Info-based absence check is not self-polluted.
+
+VERDICT: the separation of observations and the A0-A14 boundaries are strong. Three material gaps remain, and all are on your question 1 (isolating U15).
+
+F1. In H, provider and agent hook facts ARE the disconnected agent-CLI ingress, so A3 must exclude them explicitly.
+- Hooks deliver by calling session.event as an authenticated socket client, using the pane's socket path and token from the environment (ProviderHookInvocation:38-51, 188-192).
+- That makes them frontend requests under U17, yet line 5 frames "Host-internal process/fact production" as distinct from frontend input. A hook process runs inside the Host session, so a fixture could classify its delivery as "Host-internal" and use a Host-local path. That passes U15 by inventing exactly the ingress the owner has not decided.
+- In H, mark "Provider reports/status" (property table line 57) and all hook-derived activity as owner-gated: not run, and not delivered by any Host-local path.
+- Also define A3's "Host-internal producer segment" as the session child's TERMINAL OUTPUT. Typed facts injected at the semantic owner would bypass the very derivation U15 needs; the renderer-free evidence F8 shows no current Host producer exists for title, activity or command-finished.
+
+F2. The H observation channel is unspecified, and the obvious one breaks H.
+- A3 says "observe canonical facts independently" but names no channel. Any socket client that connects to the Host to read facts while the Gateway is disconnected is itself a frontend-to-Host bypass (U17), and it changes the profile.
+- Specify an out-of-band read: the post-closure fixture witness or store, or an in-process seam that is not a client. Otherwise defer delivery checks to A12's Gateway reconnection.
+
+F3. Detach is not neutral for the workload, which confounds P against R and H. [src: vendored loop.zig:248-257; the same logic is at candidate C]
+- When the last Init (terminal) client leaves and the child has DECSET 1004 enabled, zmx writes focus-out ESC[O into the child's PTY input. It writes focus-in ESC[I when a client returns.
+- In today's app the renderer IS the terminal client, so P has focus-in while R and H both get focus-out.
+- A focus-aware workload, which includes many TUIs, may throttle or alter its output after focus-out. Fewer facts in R or H would then be misattributed to Host collection, while a non-1004 synthetic producer passes where real agents would differ.
+- Add a 1004-enabled producer arm, and record the backend-generated focus bytes as a declared stimulus difference between profiles. Note also that A12's reattach injects focus-in as input, which is deterministic and not a replay, but should be recorded.
+
+NOT FINDINGS: the metadata boundaries (255/256/512 titles, a CWD sharing its first 256 bytes, OSC7 host cases), the clock scoping in A5, the A4 authority versus transport distinction, and the A6/A8/A9 loss and stale discriminators all hold. No hidden owner policy.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

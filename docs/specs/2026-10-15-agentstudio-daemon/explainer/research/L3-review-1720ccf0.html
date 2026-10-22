@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · L3 risk review — terminal runtime, Swift client and experiments</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="L3-review-1720ccf0.html">AgentStudio daemon · L3 risk review — terminal runtime, Swift client and experiments</a></nav></ex-nav>
+<ex-document id="content"><h1>L3 risk review — terminal runtime, Swift client and experiments</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-20-full-spec-review/L3-review.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## L3 risk review — terminal runtime, Swift client and experiments
+
+## 1 Basis
+
+**Basis: source.** Reviewed on 2026-10-20 in `/Users/shravansunder/code/projects/agentstudio.feat-daemon`, branch `feat/daemon`, AgentStudio HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`; agentstudio-git HEAD `4cca397dfc869857064da4e9ec8289ea46adc479`; ZMX HEAD `8bab1f0173b07e79835ea372d749af3dbf0d0842`; Ghostty HEAD `2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33`. Source behavior below was read through `git show` at those revisions, rather than inferred from the untracked specification.
+
+**Basis: source.** The supplied 116-file manifest hashes to `c18425249969dd319bd63580af7556f88da65aae1b3dfb4a853120f3309d147a`. All **16 lane Markdown files** were read completely, including the 154-command map, the 16-family sidebar catalog, the 14-family session/native catalog, and the complete primary experiment program. All 25 opened specification/dependency Markdown files match their manifest entries. **Lane files changed against manifest: 0.** No other review, prior research scratchpad, or docs/wip artifact was opened; links to those locations were treated as unavailable supporting evidence, not followed. Only the explicitly supplied manifest was read in the restricted scratch tree.
+
+**Basis: source / spec text.** `git -C vendor/zmx show 2d23c0d:src/ipc.zig` returned exit 128, “invalid object name”. Candidate `2d23c0d440583736f365a55aa09cb2c82b0fe7fa` therefore has **no independently opened source in this review**. Its Capture details and its VT dependency pin are specification claims, chiefly [topology research:12](../../research/topology-risks.html) and [E1 pins:9](../../designs/04-terminal-runtime/experiments/terminal-restoration.html). No claim here calls it today's latest upstream revision or a running backend. The owner's supplied instruction to use latest ZMX with Capture is a selected direction; the exact qualifying revision and installed-session compatibility still need evidence.
+
+**Basis: source.** No builds, tests, processes, network probes, vendor updates or repository mutations were run. The candidate-object lookup failed as stated; source-locator misses were resolved before relying on the final paths, and the output-file check showed no existing report. A source-only review cannot establish runtime, performance, native rendering, Linux process evidence or iOS lifecycle outcomes. `git ls-files --modified` showed four existing docs/images PNG changes in AgentStudio and no modified tracked files in agentstudio-git; none was touched. The only authorized write is this report.
+
+**Basis: inference.** This is the commission's independent L3 risk lane, not a whole-design disposition or a repeat of the other four lanes. The report ranks consequential premises and records contradictions; acknowledged open contracts are not automatically defects. Source checks follow the decisive entry/effect and observation boundaries. The complete Git-operation/platform audit, every handler's transitive effects, generated HTML/SVG/pixel inspection and external primary-platform documentation are outside this lane's demonstrated coverage. The manifest pins Markdown; unmanifested rendered mirrors are excluded from semantic coverage.
+
+**Procedure applied.** Reviewer charter and the four required principles were loaded in full. The closest principle scenarios were “the plugin that was never wired” (actual renderer-free producers), “a second harness” (component versus full-route evidence), “the new process nobody asked about” (native relay/bootstrap costs), and “the probe that looked in the wrong place” (terminal text/transport receipts versus renderer and effect observations). The packet's six-section, no-board, risk-only return overrides broader workflow/report defaults.
+
+### Specification files read — SHA256 prefixes
+
+Paths are relative to the specification root. All rows below match the manifest.
+
+| Complete lane document | SHA256 prefix |
+| --- | --- |
+| [designs/04-terminal-runtime/README.md](../../designs/04-terminal-runtime/README.html) | `1c0493ecd648061a` |
+| [designs/04-terminal-runtime/specification.md](../../designs/04-terminal-runtime/specification.html) | `d995585aaf729ee4` |
+| [designs/04-terminal-runtime/execution-lifecycle-design.md](../../designs/04-terminal-runtime/execution-lifecycle-design.html) | `77ffc39442baf149` |
+| [designs/04-terminal-runtime/session-operation-boundaries.md](../../designs/04-terminal-runtime/session-operation-boundaries.html) | `d419f8d578b7dac1` |
+| [designs/04-terminal-runtime/terminal-api-ownership.md](../../designs/04-terminal-runtime/terminal-api-ownership.html) | `251e65de844499be` |
+| [designs/04-terminal-runtime/research/remote-shell-environment.md](../../designs/04-terminal-runtime/research/remote-shell-environment.html) | `c2810bd98cb1caef` |
+| [designs/04-terminal-runtime/experiments/terminal-restoration.md](../../designs/04-terminal-runtime/experiments/terminal-restoration.html) | `6e83bf95ab861255` |
+| [designs/10-swift-client/README.md](../../designs/10-swift-client/README.html) | `bc40f160eb60cf1d` |
+| [designs/10-swift-client/specification.md](../../designs/10-swift-client/specification.html) | `675b45ecfd8c282d` |
+| [designs/10-swift-client/shared-client-state-design.md](../../designs/10-swift-client/shared-client-state-design.html) | `5eafd15f59724507` |
+| [designs/10-swift-client/experiments/coordination.md](../../designs/10-swift-client/experiments/coordination.html) | `5ebed0b7c092aa7a` |
+| [experiments/primary-experiments.md](../../experiments/primary-experiments.html) | `8caea0bd3c9b872d` |
+| [designs/10-swift-client/sidebar-read-needs.md](../../designs/10-swift-client/sidebar-read-needs.html) | `96e519183956d10e` |
+| [designs/10-swift-client/session-native-read-needs.md](../../designs/10-swift-client/session-native-read-needs.html) | `0cb10eb6210806fd` |
+| [designs/10-swift-client/command-operation-map.md](../../designs/10-swift-client/command-operation-map.html) | `b9a983cece770863` |
+| [designs/10-swift-client/command-execution-map.md](../../designs/10-swift-client/command-execution-map.html) | `ef1c9f1163e6748b` |
+
+| Governing or linked dependency opened | SHA256 prefix |
+| --- | --- |
+| [user-requirements.md](../../user-requirements.html) | `b9e67ba514493ec6` |
+| [initial-profile.md](../../initial-profile.html) | `2150050422daa619` |
+| [2026-10-15-agentstudio-daemon.md](../../2026-10-15-agentstudio-daemon.html) | `c1e936a51e966002` |
+| [domain-entities.md](../../domain-entities.html) | `5e194c597746d5e0` |
+| [capability-contracts.md](../../capability-contracts.html) | `306904c355f72530` |
+| [designs/11-operations-integration/near-term-migration.md](../../designs/11-operations-integration/near-term-migration.html) | `9f20b12e3781c571` |
+| [research/topology-risks.md](../../research/topology-risks.html) | `b6a293400d0f692a` |
+| [research/owner-inputs/worktree-cli-host-direction-2026-10-19.md](../../research/owner-inputs/worktree-cli-host-direction-2026-10-19.html) | `7e7a741a0e71ebd4` |
+| [research/owner-inputs/migration-directions-2026-10-19.md](../../research/owner-inputs/migration-directions-2026-10-19.html) | `b5988d05d36cd7cf` |
+
+Requirements, initial profile, observable spine, domain appendix, capability appendix, near-term migration and both owner-direction Markdown records were read completely. Topology research was inspected at its pin/restoration/control/identity/phone and open-decision sections; no unseen external source claim from it is promoted to source evidence.
+
+### Opened source evidence — committed-blob SHA256 prefixes
+
+These hashes identify the whole committed files; behavioral coverage is the opened ranges cited in the findings, not an assertion of whole-file audits.
+
+| Source file | SHA256 prefix |
+| --- | --- |
+| [Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) | `d2dd843e1ef4efac` |
+| [Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift) | `ed1bf17c23b57836` |
+| [Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift) | `dc60f5cc209e125e` |
+| [Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift) | `34bdba0a78d93ada` |
+| [Sources/AgentStudio/Features/Terminal/Restore/TerminalRestoreRuntime.swift](../../../../../Sources/AgentStudio/Features/Terminal/Restore/TerminalRestoreRuntime.swift) | `925962251902e602` |
+| [vendor/zmx/README.md](../../../../../vendor/zmx/README.md) | `d17027dba68b8601` |
+| [vendor/zmx/src/loop.zig](../../../../../vendor/zmx/src/loop.zig) | `7db5c93f0453bbe5` |
+| [vendor/zmx/src/main.zig](../../../../../vendor/zmx/src/main.zig) | `1b3bf400a8410231` |
+| [vendor/zmx/src/daemonize.zig](../../../../../vendor/zmx/src/daemonize.zig) | `ff7878661be3361d` |
+| [vendor/zmx/src/ipc.zig](../../../../../vendor/zmx/src/ipc.zig) | `2e9e1daab576809f` |
+| [vendor/zmx/src/util.zig](../../../../../vendor/zmx/src/util.zig) | `34520fef99a1dc5c` |
+| [vendor/zmx/src/cfg.zig](../../../../../vendor/zmx/src/cfg.zig) | `22f4e763a7f00078` |
+| [Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) | `7d341fb290d9d285` |
+| [vendor/ghostty/include/ghostty.h](../../../../../vendor/ghostty/include/ghostty.h) | `78232aec570e266b` |
+| [vendor/ghostty/src/termio/Exec.zig](../../../../../vendor/ghostty/src/termio/Exec.zig) | `8e6a135bb4b592eb` |
+| [vendor/ghostty/src/termio/shell_integration.zig](../../../../../vendor/ghostty/src/termio/shell_integration.zig) | `c44673b9c1514494` |
+| [vendor/ghostty/src/Surface.zig](../../../../../vendor/ghostty/src/Surface.zig) | `30ca510e8c4e7344` |
+| [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift) | `acb1b9ea6dc55af3` |
+| [Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift) | `d92f6fdf5b8ae9a1` |
+| [Sources/AgentStudio/Features/Terminal/Routing/TerminalLastOutputLineContract.swift](../../../../../Sources/AgentStudio/Features/Terminal/Routing/TerminalLastOutputLineContract.swift) | `d05893b40550d9d1` |
+| [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift) | `c8437fa6f5306d5f` |
+| [Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift) | `dee76133af93c863` |
+| [Sources/AgentStudio/Core/RuntimeEventSystem/Events/EventBus.swift](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Events/EventBus.swift) | `79aa5d7edb42828f` |
+| [Sources/AgentStudio/Core/Actions/Commands/AppCommand.swift](../../../../../Sources/AgentStudio/Core/Actions/Commands/AppCommand.swift) | `5faafcd3b45b9069` |
+| [Sources/AgentStudio/App/Commands/AppCommand+IPCProjection.swift](../../../../../Sources/AgentStudio/App/Commands/AppCommand+IPCProjection.swift) | `2c9d0c160819cd73` |
+| [Sources/AgentStudio/App/Commands/AppCommandDispatcher.swift](../../../../../Sources/AgentStudio/App/Commands/AppCommandDispatcher.swift) | `894aab76b21bff71` |
+| [Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift) | `dda18dd5fc33ad5f` |
+| [Sources/AgentStudioIPCClient/main.swift](../../../../../Sources/AgentStudioIPCClient/main.swift) | `92364222ad65b82c` |
+| [agentstudio-git/Package.swift](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Package.swift#L1) | `d8605b0491088890` |
+| [Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift) | `a8ec4da9d7fc0743` |
+| [Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift](../../../../../Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift) | `6fb96593e7cc84aa` |
+| [Sources/AgentStudio/Core/RuntimeEventSystem/Replay/EventReplayBuffer.swift](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Replay/EventReplayBuffer.swift) | `b03dad3592e8dc13` |
+| [Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift](../../../../../Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift) | `b67b275c399370ed` |
+| [Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift) | `6493a217ef9d59fe` |
+| [Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift) | `7494ac4417d23852` |
+| [docs/architecture/structure/directory_structure.md](../../../../architecture/structure/directory_structure.md) | `742e673e5d5d3091` |
+| [docs/architecture/commands/command_specs.md](../../../../architecture/commands/command_specs.md) | `3fc63608b6df5480` |
+| [Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+FilesystemSource.swift](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+FilesystemSource.swift) | `60807f682f695cee` |
+| [Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift) | `b4d6b196af4ce779` |
+| [Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+SessionCleanup.swift](../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+SessionCleanup.swift) | `6e3f8544e4e1b546` |
+| [Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift) | `0f090f0a23879dd3` |
+| [Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift) | `effcf2c5c4ffc0b8` |
+| [Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift](../../../../../Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift) | `b04a4220e853cebc` |
+| [Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift](../../../../../Sources/AgentStudio/Features/RepoExplorer/State/MainActor/Atoms/RepoExplorerSidebarState.swift) | `505da393385985dc` |
+| [Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift](../../../../../Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift) | `0744a82b81a49052` |
+| [scripts/benchmark-cli-latency.pl](../../../../../scripts/benchmark-cli-latency.pl) | `a3366dd5f0c8f301` |
+| [Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift) | `16d15a2409ec1508` |
+| [Package.swift](../../../../../Package.swift) | `1f37ca4c804fb2d7` |
+| [Sources/AgentStudio/Features/Terminal/Ghostty/Ghostty.swift](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/Ghostty.swift) | `830a5a36d2defe70` |
+| [Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyAppHandle.swift](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyAppHandle.swift) | `57239dd5b2e28c36` |
+| [vendor/ghostty/src/termio/stream_handler.zig](../../../../../vendor/ghostty/src/termio/stream_handler.zig) | `f47e4869ae3f287d` |
+
+### Procedure files read — SHA256 prefixes
+
+| Procedure file | SHA256 prefix |
+| --- | --- |
+| `sunstack-dev/2.92.0/skills/role-reviewer/SKILL.md` | `115dfcb379392898` |
+| `sunstack-dev/2.92.0/skills/role-reviewer/references/working-with-lead.md` | `944b26f8a3d37e16` |
+| `sunstack-dev/2.92.0/skills/principle-read-ground-truth-first/SKILL.md` | `4044e86b0d0b36c6` |
+| `sunstack-dev/2.92.0/skills/principle-read-ground-truth-first/references/example_scenarios.md` | `bcefa14adeb0a6f2` |
+| `sunstack-dev/2.92.0/skills/principle-verify-before-accepting/SKILL.md` | `fd40eee5890508a4` |
+| `sunstack-dev/2.92.0/skills/principle-verify-before-accepting/references/example_scenarios.md` | `7bc37576a829faf0` |
+| `sunstack-dev/2.92.0/skills/principle-name-the-tradeoffs/SKILL.md` | `32182d88e8cf58a9` |
+| `sunstack-dev/2.92.0/skills/principle-name-the-tradeoffs/references/example_scenarios.md` | `a296e27e9c37b790` |
+| `sunstack-dev/2.92.0/skills/principle-experiment-before-proposing/SKILL.md` | `fcecebecefa5a5ed` |
+| `sunstack-dev/2.92.0/skills/principle-experiment-before-proposing/references/example_scenarios.md` | `73ca491d5be20cd8` |
+| `sunstack-dev/2.92.0/skills/spec-program-review/SKILL.md` | `e238c5b231374ae1` |
+| `sunstack-dev/2.92.0/skills/principle-write-for-the-reader/SKILL.md` | `90465d3274af6230` |
+| `.codex/skills/agentstudio-mainactor-atom-boundaries/SKILL.md` | `47a9440cbd995a59` |
+
+## 2 High-risk spaces
+
+Rank is qualitative **cost if wrong × thinness of independent support**, not a severity verdict. The first three can invalidate the proposed terminal spine even if its sockets function.
+
+### H1 — Installed-session cutover can leave the old destructive owner alive
+
+**Kind:** irreversible step; stored data; ownership. **Basis:** spec text + source; consequence is inference.
+
+**Claim and obligation.** [DS04 cutover:133–144](../../designs/04-terminal-runtime/execution-lifecycle-design.html) requires old pane/Undo retirement admission to stop and admitted work to be joined before exposing the service-backed path; R5/R6 require continuing execution after the last view disappears. The excerpt deliberately leaves identity adoption and persistent transformation unresolved.
+
+**Decisive evidence.** [unowned-session eligibility:174–200](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+SessionOwnership.swift) marks a session for cleanup when terminal and available Undo references disappear. [cleanup effect:103–113](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift) can then call verified retirement. [boot admission:464–467](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift) supplies only this app's native-attachment predicate. [ordered retirement:46–68](../../../../../Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor+SessionCleanup.swift) holds persistence ordering around the async effect; it is not a portable cross-owner fence. [original-family control:46–83](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift) protects replacement identity and reports a sent Kill as pending. [shutdown join:325–334](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator.swift) supplies a real existing join boundary.
+
+**What breaks if wrong.** A session shown as Host-owned can still be killed by queued Swift cleanup; cancelling a task after its Kill does not recover the workload. A fresh development database misses the failure entirely. Names/paths/PIDs without incarnation evidence can also cause incorrect adoption or namesake termination.
+
+**Smallest next evidence / cost.** Specify the interrupted ownership-transfer states and exercise a held old cleanup operation over disposable persisted state before moving any installed session. The cost is migration/adoption work; the alternative fresh-session-only qualification must remain explicitly narrower. No new journal or automatic replacement is implied. **Route:** program-design + verification-design, with owner meaning only for the recovery promises in O2.
+
+### H2 — Capture's ordered reply is not yet evidence of a complete resumable terminal
+
+**Kind:** premise many pieces rest on; contract. **Basis:** spec text + source; candidate behavior is unverified spec text.
+
+**Claim and obligation.** [DS04 attachment contract:14](../../designs/04-terminal-runtime/specification.html) and [E1 restoration bases:23–52](../../designs/04-terminal-runtime/experiments/terminal-restoration.html) require a correctly ordered restore plus continuation, including latent state rather than only matching text. The owner selected latest ZMX with Capture; vendored Init is a baseline.
+
+**Decisive evidence.** [accept before later broadcast:305](../../../../../vendor/zmx/src/loop.zig) and [broadcast before client dispatch:399–413](../../../../../vendor/zmx/src/loop.zig) permit pre-Init Output. [Init:950–1022](../../../../../vendor/zmx/src/loop.zig) emits ordinary Output for restoration, conditional on prior output/client history, and changes VT dimensions before PTY geometry. [serializer:769–884](../../../../../vendor/zmx/src/util.zig) receives Terminal, emits active-page history/content/extras, explicitly disables tabstop replay, and does not take the live VT stream as an argument. [stream lifetime:239–240](../../../../../vendor/zmx/src/loop.zig) owns that parser stream separately. Those facts establish the risk, not a universal observed continuation failure. The opened V [tag set:6–33](../../../../../vendor/zmx/src/ipc.zig) has no Capture.
+
+**What breaks if wrong.** Reconnect and slow-viewer recovery can display plausible cells while duplicating history, losing latent modes/parser residue, or interpreting subsequent bytes incorrectly. This undermines fanout and performance comparisons that assume state recovery. Adding a second parser or a protocol extension before observing the exact discrepancy would create a large unpriced boundary.
+
+**Smallest next evidence / cost.** X1 starts with the already bounded E1 corpus and independent expectations, then advances to real PTY/native/full-route levels only for observable properties. Confirm C's actual Capture handler/format, capability detection, ordering and dependency identities from its source. Formatter output, binary snapshot capability and full embedded renderer state remain different products. **Route:** verification-design, then program-design only for an observed missing realization.
+
+### H3 — Host-independent facts require a producer and launch environment, not just backend custody
+
+**Kind:** ownership; premise many pieces rest on. **Basis:** spec text + source; outcome risk is inference.
+
+**Claim and obligation.** [Host fact owner:73–99](../../designs/04-terminal-runtime/execution-lifecycle-design.html) requires sources and guarded observation writes to continue with Swift and every Gateway absent; [shell producer qualification:32–46](../../designs/04-terminal-runtime/research/remote-shell-environment.html) explicitly withholds a general integration guarantee.
+
+**Decisive evidence.** [current activity producer:17–46](../../../../../Sources/AgentStudio/App/Boot/AppDelegate+TerminalActivityBoot.swift) wires output-line acquisition to a native surface viewport. [literal viewport-line meaning:9–17](../../../../../Sources/AgentStudio/Features/Terminal/Routing/TerminalLastOutputLineContract.swift) does not identify shell prompts versus command output. [integration setup:758–801](../../../../../vendor/ghostty/src/termio/Exec.zig) and [shell detection:137–166](../../../../../vendor/ghostty/src/termio/shell_integration.zig) show conditional shell integration; an executable named zmx is not one of the detected shells. [child environment:45–75](../../../../../vendor/zmx/src/daemonize.zig) sets session/TERM values and execs inherited environment; it does not independently inject the inner shell's integration. [Info fields:78–94](../../../../../vendor/zmx/src/ipc.zig) has a 256-byte CWD and no title/activity fields; [actual CWD truncation:1122–1125](../../../../../vendor/zmx/src/loop.zig) uses that bound.
+
+**What breaks if wrong.** Detached agents can keep running while titles, completion waits, activity or CWD silently stop updating, acquire local-relay provenance, or appear empty/current. A shell drawing a TUI or a successful Info request cannot distinguish those failures.
+
+**Smallest next evidence / cost.** Freeze the required fact classes and their exact source/coverage, then exercise real Host launch, local hooks and observation writes with no native surface/Gateway. Treat a missing producer as a concrete qualification result before choosing an extra emulator or integration extension. Host-local packaging, terminfo and shell-resource maintenance are real costs paid by the Host implementation. **Route:** spec-design for the exact fact meaning, program-design + verification-design for the producer.
+
+### H4 — One product controller does not follow from ZMX's leader heuristic
+
+**Kind:** contract; security. **Basis:** spec text + source; consequences are inference.
+
+**Claim and obligation.** [DS04 control:16](../../designs/04-terminal-runtime/specification.html) and [effect-time control check:111–117](../../designs/04-terminal-runtime/session-operation-boundaries.html) require one input/resize controller, current authority at the effect boundary and explicit handoff ordering. [fanout and focus experiment:77–87](../../experiments/primary-experiments.html) recognizes that attachment topology changes child-visible behavior.
+
+**Decisive evidence.** [input leadership:894–913](../../../../../vendor/zmx/src/loop.zig) lets detected user input promote a different client; Send enters the PTY queue without that leadership transition. [Init leadership and geometry:962–975](../../../../../vendor/zmx/src/loop.zig) and [Resize leadership:1034–1044](../../../../../vendor/zmx/src/loop.zig) can claim vacant leadership. [presence-driven focus:248–258](../../../../../vendor/zmx/src/loop.zig) derives focus transitions from Init-client presence. [automatic DA response:358–367](../../../../../vendor/zmx/src/loop.zig) answers some queries with no Init client. [input capacity/drop:866–891](../../../../../vendor/zmx/src/loop.zig) can drop new queued input without a per-input result.
+
+**What breaks if wrong.** A viewer/query reply, stale controller, or retained Host attachment can seize geometry, alter focus-visible workload behavior, lose typed input, or falsely report child delivery. A Host-side single-controller flag checked only before an await is insufficient.
+
+**Smallest next evidence / cost.** Select takeover/no-controller/focus and queued-input ordering first; then qualify one Host attachment versus multiple backend attachments against that same contract. Preserving a viewer's output is different from authorizing its return bytes. Buffering and drain ownership must be counted at every layer. **Route:** spec-design for O1; program-design + verification-design for the effect fence and X3.
+
+### H5 — Remote terminal bytes reach native clipboard authority outside an ordinary command RPC
+
+**Kind:** security; contract. **Basis:** spec text + source; disclosure/corruption consequence is inference, not a reproduced exploit.
+
+**Claim and obligation.** [native effect contract:19–27](../../designs/10-swift-client/specification.html) says Host administration is not native effect authority and explicitly leaves remote-origin clipboard consent unsettled. [native relay leg:68–109](../../designs/04-terminal-runtime/experiments/terminal-restoration.html) sends producer bytes through the existing command-backed native parser.
+
+**Decisive evidence.** [clipboard read:71–92](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift) reads the native pasteboard and completes the request. [confirmation callback:95–113](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift) retains beta automatic confirmation, and [clipboard write:116–135](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift) writes native clipboard content. [surface construction:393–424](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift) preserves the real renderer path. The callback table is actually constructed in [Ghostty startup:38–45](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/Ghostty.swift) and passed to [ghostty_app_new:124–125](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyAppHandle.swift). The parser's [clipboard escape handler:997–1024](../../../../../vendor/ghostty/src/termio/stream_handler.zig) reaches the surface request; [upstream deny policy:1069–1075](../../../../../vendor/ghostty/src/Surface.zig) can refuse a read, while [OSC52 completion:6355–6397](../../../../../vendor/ghostty/src/Surface.zig) emits the reply after applicable confirmation. Thus the risk is conditional on the actual native configuration, not a claim that every remote stream can read the clipboard. The current callbacks contain no addressed remote Host/principal decision in the opened path.
+
+**What breaks if wrong.** A correctly routed remote stream could cause native clipboard reads/writes under a historical beta policy intended for the current app. Viewer status or a paired machine is not by itself the selected authority for that effect. Enforcing policy only on explicit RPC verbs misses terminal-escape effects.
+
+**Smallest next evidence / cost.** Resolve O3 and exercise synthetic clipboard/query controls at the actual callback and return path, with a dummy pasteboard value. This requires a source-aware native policy boundary or an explicitly chosen inherited policy; the report selects neither. Avoid stripping arbitrary escapes and claiming equivalent terminal behavior. **Route:** spec-design -> program-design -> verification-design.
+
+### H6 — Shared logical layout cannot inherit the current local cursor and Undo storage wholesale
+
+**Kind:** stored data; ownership. **Basis:** spec text + source; distributed consequences are inference.
+
+**Claim and obligation.** [proposed state owners:9–20](../../designs/10-swift-client/shared-client-state-design.html) proposes a designated existing Host for E25 and subject-Host read markers; [selection/Undo meaning:47–53](../../designs/10-swift-client/shared-client-state-design.html) keeps active selection and logical/native mapping explicit. Its create-then-place sequence has two effects, not one atomic operation.
+
+**Decisive evidence.** [canonical tab/arrangement tables:518–578](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift) stores workspace membership and layout separately from [local cursors:308–332](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift). [viewed input:191–214](../../../../../Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift) and [viewed-after-completion:178–183](../../../../../Sources/AgentStudio/Features/Sessions/Models/SessionStatusState.swift) use current pane/generation and process-local instants. The proposed Host authority, revision-conflict rules and cross-device marker versions have no realization in those sources.
+
+**What breaks if wrong.** Moving entire rows can synchronize physical focus or overwrite another device's logical changes; serializing local monotonic time cannot prove another completion was viewed. Conversely, leaving logical composition per-device loses the selected sharing outcome. Execution can remain alive after placement fails, and treating placement failure as rollback risks a second creation or unintended termination.
+
+**Smallest next evidence / cost.** Bind logical elements and selection semantics before any row transformation; test two-device conflict and stale-viewed input using source-generation coverage. The designated-Host proposal openly pays Host availability/writer validity for shared edits; it does not by itself decide Host deployment/workspace cardinality. It is explicitly labelled a Lead proposal, not falsely attributed to the owner. **Route:** spec-design for O5; program-design + verification-design for binding/migration.
+
+### H7 — Current command receipts and terminal DTOs are weaker than the effects a remote caller may infer
+
+**Kind:** contract. **Basis:** spec text + source; consumer failure is inference.
+
+**Claim and obligation.** [current receipt limitations:9–17](../../designs/10-swift-client/command-execution-map.html) inventories weak wrappers, while [remaining per-command contracts:50–54](../../designs/10-swift-client/command-operation-map.html) leaves the actual future mapping unbound. [terminal source split:28–80](../../designs/04-terminal-runtime/terminal-api-ownership.html) distinguishes native status from Host execution.
+
+**Decisive evidence.** [drawer log-only branches:388–395](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift) does not perform the named focus effect. [typed dispatch:161–206](../../../../../Sources/AgentStudio/App/Commands/AppCommandDispatcher.swift) validates catalog/mode/current ownership but does not observe eventual pixels or external effects. [terminal status/snapshot:30–66](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) projects runtime lifecycle and metadata, not terminal cells; [six-condition event matcher:328–365](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) has source-specific outcomes. [create helper:182–191](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) only returns a handle/directory.
+
+**What breaks if wrong.** Copying labels such as applied, attached or created into the new protocol can claim focus, execution, restoration or completion that never happened. Making no-view calls depend on a hidden renderer would violate the selected Host autonomy outcome. Conversely, rewriting public contracts indiscriminately to stronger meanings would exceed a parity migration.
+
+**Smallest next evidence / cost.** For the first moved method subset, bind exact old public outcome, new Host/native target, refusal/uncertainty and independent effect witness. Preserve current weaker receipt meaning where it is the retained contract; separately disposition source anomalies instead of silently repairing them during extraction. No need to invent 154 new RPC methods. **Route:** spec-design -> program-design -> verification-design.
+
+### H8 — Subscription continuity and resource accounting can be lost before the measured consumer
+
+**Kind:** contract; premise many pieces rest on. **Basis:** spec text + source; distributed consequences are inference.
+
+**Claim and obligation.** [traffic-class obligations:40–60](../../designs/10-swift-client/experiments/coordination.html) and its C5/C6/C12–C14 cases require correct owner effects, qualified replay/live continuity, causal dependencies and total retained-work accounting. Neither coordination topology is selected.
+
+**Decisive evidence.** [outbound handoff:40–55](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift) uses newest-128 buffering before the shared bus; [upstream drop reporting:197–213](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift) can record loss there. [downstream policies:28–34](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Events/EventBus.swift) cannot undo it. [runtime sequence owner:159–170](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift) and [filesystem sequence owner:847–868](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+FilesystemSource.swift) independently issue pane-labelled sequence values. [oversize admission:67–79](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Replay/EventReplayBuffer.swift) can admit one estimated-oversize entry after eviction empties the ring. ZMX [output append failure:405–412](../../../../../vendor/zmx/src/loop.zig) can omit an output chunk for one client.
+
+**What breaks if wrong.** A downstream healthy recorder can certify only delivered facts while an earlier queue dropped the required transition; equal labels/counters can create false continuity. Small payload/item limits can hide unbounded backing storage, blocked producers or source-cardinality growth. Comparing channel speed under different loss contracts chooses the wrong design.
+
+**Smallest next evidence / cost.** Preserve E3's independent producer/owner oracles and negative controls, including source collisions, premature close and non-idempotent handoff canaries. Inspect allocation/admission rules in addition to finite load results. Do not port existing queue capacities as product limits. **Route:** program-design + verification-design; numeric product tolerances remain an owner input only for acceptance claims.
+
+### H9 — Required iOS Gateway realization is not supplied by a desktop socket experiment
+
+**Kind:** premise many pieces rest on; contract. **Basis:** spec text + source; platform feasibility is unverified.
+
+**Claim and obligation.** [E6 startup/socket/physical lifecycle:133–147](../../experiments/primary-experiments.html) requires a safe Rust startup path, real UX/socket interaction and actual mobile lifecycle observations. This is required Gateway placement, not an optional phone-via-Mac arm.
+
+**Decisive evidence.** Current [AgentStudio platform/products:4–25](../../../../../Package.swift) declares a macOS application/CLI surface. The inspected [native surface shape:508–521](../../../../../vendor/ghostty/include/ghostty.h) and [native Mac integration:393–424](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift) do not instantiate a Rust iOS Gateway bootstrap. This is an absence of supplied realization evidence, not evidence that a compliant bootstrap is impossible.
+
+**What breaks if wrong.** A desktop Rust process, a schema self-roundtrip or a simulator socket result can be reported as the mobile contract while startup/suspension/relaunch remains unobserved. The supplied execution environments name this Mac, Fly Sprites Linux and sunclaw; none independently supplies the physical-device observation E6 itself requires.
+
+**Smallest next evidence / cost.** X8 separates startup compliance, local socket semantics and physical lifecycle, with concrete runtime/device identities. Do not infer an unsafe exception or a second always-running mobile process. Acquiring the actual device target is an execution-environment gap; choosing ordinary bootstrap modules remains engineering work. **Route:** program-design + verification-design.
+
+## 3 Contradictions
+
+### C1 — Direct remote worktree CLI is still called unselected despite the supplied owner direction
+
+**Kind:** doc versus owner decision. **Basis:** spec text + first-hand owner decisions supplied in this commission; impact is inference.
+
+[U2:32](../../user-requirements.html), [IP3:11](../../initial-profile.html) and [recorded consequence:19](../../research/owner-inputs/worktree-cli-host-direction-2026-10-19.html) explicitly leave a CLI on another machine directly addressing a remote Host unselected. The same source record quotes “it shoud work with remote deamon” at line 15, then narrows it to executing-machine-local use.
+
+The commission's **owner decision (7)** supplies the missing direct clarification: remote use is a **Mac CLI with `--host vm-1`**, working with the daemon rather than the Gateway. That is current governing input for this review; its wording was supplied by the commissioner, not independently retrieved from a conversation transcript. Current [worktree entry:6–33](../../../../../Sources/AgentStudioIPCClient/main.swift) only establishes today's pre-IPC local dispatch and cannot narrow the requested target.
+
+**Consequence / smallest correction.** Remote CLI target, admission, transport and compatibility contracts are wrongly left as a future product selection. Carry the supplied direct-Host remote mode into the authoritative requirement/profile and retain its unresolved mechanics; do not infer remote provisioning or absent-remote-Host activation from local activation. This is a bounded correction, not a request to decide the route again. **Route:** spec-design, then program-design.
+
+### C2 — The linked topology source still requires a Mac Gateway relay for phones
+
+**Kind:** doc versus doc; doc versus owner decision. **Basis:** spec text; impact is inference.
+
+[topology phone path:132](../../research/topology-risks.html) says phones use a reachable Mac Gateway; [topology settled choices:191](../../research/topology-risks.html) calls Mac-only Gateway placement settled. [U12:42](../../user-requirements.html), [R3:132](../../2026-10-15-agentstudio-daemon.html) and [E6 required iOS role:135](../../experiments/primary-experiments.html) require Gateway on iOS without a Mac relay. Commission owner decision (2) independently confirms that requirement.
+
+**Consequence / smallest correction.** E1/E3 readers following the topology research can inherit an obsolete mobile placement premise. Mark those statements historical/superseded and point to the current platform contract. A current macOS-only [source platform:6–8](../../../../../Package.swift) is a baseline, not authority for future placement. **Route:** spec-design/docs-maintain.
+
+No additional material **doc-versus-source** contradiction was established in the decisive opened L3 paths. The target already identifies weak current wrappers, native-only facts and queue behavior as source limitations; H1–H9 must not be read as nine newly introduced implementation defects.
+
+## 4 Premises that need an experiment
+
+All entries below are **inference: proposed discriminators**, grounded in the named **spec text** and **source**. None was executed. Each uses isolated fixture identities/data; no live user session, real clipboard secret, vendor update or product change is authorized by this review.
+
+### X1 — Does the selected Capture/Init basis restore state and continue at the same cut?
+
+- **Claim / anchors:** [E1 bases/corpus:23–66](../../designs/04-terminal-runtime/experiments/terminal-restoration.html); source [Init:950](../../../../../vendor/zmx/src/loop.zig) and [serializer:769](../../../../../vendor/zmx/src/util.zig).
+- **Why source cannot settle it:** C source is absent locally; V's serializer and parser stream are distinct, and legal stream chunking/native parser differences require observation.
+- **Cheapest decisive experiment / oracle:** Start L0 with one known split escape, one split UTF-8 scalar, nondefault tabstop, alternate-screen latent state and populated numbered scrollback; hand-declare expected cells/styles/cursor/history and a revealing suffix. Include deliberately omitted continuation and duplicated visible-effect segment. Then use E1's silent L1 bracket to separate pre-Init/live/restore; only claim L2/L3/L4 when their actual cut and observer exist. A mismatch in one required element falsifies that profile; unobservable state remains inconclusive.
+- **Environment:** this Mac first; repeat the selected real-PTY profile on Fly Sprites Linux or sunclaw, recording actual backend/process identities.
+- **Latest-ZMX Capture:** **yes, central.** Open the exact latest-with-Capture source, verify its tag/payload/framing, same-connection output ordering, Info barrier, viewport/rows semantics, serializer omissions, failure result and VT pin; bind running daemon identity independently of a version string. The recorded C pin is a candidate, not proof of today's latest or of full-state capture.
+
+### X2 — Can a session launch and produce the selected facts with no renderer or Gateway?
+
+- **Claim / anchors:** [renderer-free establishment:36–99](../../designs/04-terminal-runtime/execution-lifecycle-design.html); [Host profile:38–46](../../designs/04-terminal-runtime/research/remote-shell-environment.html); source [prepare-only helper:182](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) and [child exec:45](../../../../../vendor/zmx/src/daemonize.zig).
+- **Why source cannot settle it:** No selected Host launch adapter/resource image or closed fact set exists. Configuration presence and inherited environment do not show inner-shell emission.
+- **Cheapest decisive experiment / oracle:** Launch one fixture-owned shell through the candidate Host establishment port before any view, with explicit cwd/TERM/resources/authority. Emit finite title/CWD/completion/activity stimuli; close their operation using independently witnessed producer/process facts. Remove Swift and every Gateway; inspect the Host's qualified observations and selected writes directly. Include CWD above 256 bytes and missing-integration/invalid-writer controls. The oracle distinguishes actual execution, source coverage, committed observation and caller receipt.
+- **Environment:** Fly Sprites Linux first for the remote packaging premise; this Mac or sunclaw for the supported counterpart.
+- **Latest-ZMX Capture:** **yes for available metadata/restoration sources; insufficient alone.** Confirm which facts Capture/Info actually expose and whether they survive no-client use. Neither can stand in for a completion producer or writer-gate integration.
+
+### X3 — Can competing clients obey IP2 through handoff, queries, resize and slow delivery?
+
+- **Claim / anchors:** [control ordering:115](../../designs/04-terminal-runtime/session-operation-boundaries.html); [fanout/focus:77–87](../../experiments/primary-experiments.html); source [leader input:894](../../../../../vendor/zmx/src/loop.zig), [focus:248](../../../../../vendor/zmx/src/loop.zig) and [drop boundary:866](../../../../../vendor/zmx/src/loop.zig).
+- **Why source cannot settle it:** Product takeover/no-controller/focus and admitted-input cut are unchosen; the future Host effect fence does not exist.
+- **Cheapest decisive experiment / oracle:** After O1 is settled, use two bounded clients with unequal viewports, one independent PTY reader, a held old-controller input and a known query responder. Transfer control, release old work, disconnect the controller, then stall a viewer at declared capacity. Read actual PTY input bytes, ioctl/SIGWINCH geometry and focus-sensitive producer output. Count lost/refused/uncertain input independently of socket receipt; recover the stalled renderer against X1's state oracle.
+- **Environment:** this Mac component fixture; Fly Sprites Linux/sunclaw for the selected remote Host and multi-Gateway route.
+- **Latest-ZMX Capture:** **yes.** Reconfirm C's leader/Init/Send/focus/query behavior and whether Capture recovery changes geometry or returns bytes capable of influencing control. Do not assume V's heuristics remain identical.
+
+### X4 — Is the real native relay equivalent at output, input, metadata and native-effect boundaries?
+
+- **Claim / anchors:** [native leg:68–109](../../designs/04-terminal-runtime/experiments/terminal-restoration.html); [remote native policy:25](../../designs/10-swift-client/specification.html); source [paste input API:3387](../../../../../vendor/ghostty/src/Surface.zig), [stdout/stderr PTY wiring:1016–1032](../../../../../vendor/ghostty/src/termio/Exec.zig) and [clipboard callbacks:71–135](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift).
+- **Why source cannot settle it:** No candidate relay exists; its terminal-mode settings, diagnostics, query source and remote/native metadata can change the observed behavior.
+- **Cheapest decisive experiment / oracle:** Compare command-backed local zmx attach with a finite-output relay, using identical terminal modes/dimensions. Observe independent parser/text state plus separate native key versus paste and query-return bytes. Send diagnostic output as a deliberate negative control. Under O3's chosen policy use only a dummy pasteboard value to inspect native read/write/refusal and the actual return destination; observe outer-PTY mode versus inner-child mode separately. No renderer-state or OS-secure-input claim from a Boolean alone.
+- **Environment:** this Mac with a declared debug/native fixture and any necessary UI grants; sunclaw may be the remote producer, never a substitute for local native observation.
+- **Latest-ZMX Capture:** **yes for the composed stream and reply provenance**, secondary to the command-backed native API. Confirm C cannot make a backend reply masquerade as native parser progress.
+
+### X5 — Does cutover protect the same execution and a namesake across interrupted cleanup?
+
+- **Claim / anchors:** [cutover:133–155](../../designs/04-terminal-runtime/execution-lifecycle-design.html); source [old cleanup effect:103–113](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+SessionCleanup.swift) and [identity protection:46–102](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift).
+- **Why source cannot settle it:** The installed-state mapping and ownership-transfer recovery are not implemented; Linux needs its own process/boot/peer evidence.
+- **Cheapest decisive experiment / oracle:** Seed disposable persisted ownership/Undo rows, hold an old cleanup before dispatch, perform the proposed transfer, and release it. Independently witness the original fixture process family and a replacement endpoint. Repeat interruption after an already submitted Kill and denied inspection; inspect persisted state and exact family outcome rather than task cancellation or endpoint disappearance. Add create-effect-then-record-failure as a separate unknown/partial-result case.
+- **Environment:** this Mac for the existing Darwin reference; Fly Sprites Linux or sunclaw for the selected Linux evidence adapter.
+- **Latest-ZMX Capture:** **compatibility matters, Capture completeness does not decide this case.** Verify exact running backend protocol/identity and preserve old live sessions without a silent upgrade/recreation. Do not infer backend identity from installed executable text.
+
+### X6 — Do coordination and shared-state candidates preserve owner outcomes through late work and replay?
+
+- **Claim / anchors:** [C0–C14:64–106](../../designs/10-swift-client/experiments/coordination.html); [shared-state failure seams:96–110](../../designs/10-swift-client/shared-client-state-design.html); source [sequence:159](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/PaneRuntimeEventChannel.swift), [second sequence owner:847](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+FilesystemSource.swift) and [native generation gates:77–172](../../../../../Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift).
+- **Why source cannot settle it:** A/B topology, typed source positions, selected copy cuts and cross-device marker bindings are proposals; an in-process simulation cannot observe native application.
+- **Cheapest decisive experiment / oracle:** Begin with E3's hand-enumerated mixed trace and its stale-key, omitted-effect, premature-close and non-idempotent replay/live negative controls. Include independent same-label producers, hot/quiet keys, held old failure/completion and resource cardinality. Then connect two real producers/consumers and native generation observers. For sharing, mutate one revision concurrently from two clients and deliver an old viewed marker after a newer completion; inspect authoritative state and both qualified reads. A fixture effect log, actual storage read and native acceptance are separate oracles.
+- **Environment:** this Mac for semantic/Swift publication qualification; Fly Sprites Linux or sunclaw for actual Host writes and real multi-process/multi-Host routing.
+- **Latest-ZMX Capture:** **no for ordinary typed state/command semantics.** Terminal byte/fanout arms stay in X1/X3, where the selected Capture profile is required.
+
+### X7 — What does the full route cost without conflating receipt, parser state and presentation?
+
+- **Claim / anchors:** [E5:111–129](../../experiments/primary-experiments.html); source [existing benchmark boundary:63–89](../../../../../scripts/benchmark-cli-latency.pl) and [text read API:1238–1241](../../../../../vendor/ghostty/include/ghostty.h).
+- **Why source cannot settle it:** Current benchmark timing covers parent-before-fork through process exit. A text query is not a presentation timestamp, and no matched current/new terminal observer is instantiated.
+- **Cheapest decisive experiment / oracle:** First calibrate one declared parser/text or pixel observer with a known finite output and an injected delay plus output-disabled control. Compare equivalent local and full-route workloads in alternating order at the same observation level. Only add actual presentation latency when its native clock/frame association is independently calibrated. Keep CLI process lifetime, persistent RPC, parser state, pixels and presentation in separate rows; include actual resource/queue and wrong/missing echo counts.
+- **Environment:** this Mac native endpoint plus sunclaw or Fly Sprites Linux remote producer; record actual route/environment rather than assume it.
+- **Latest-ZMX Capture:** **yes for reconnect and snapshot cost**, not a remedy for missing native latency observers. Fix the backend pin/profile for each compared arm and account for restore/parse work.
+
+### X8 — Can the iOS Gateway actually start within the safety profile and resume its real socket path?
+
+- **Claim / anchors:** [E6:133–147](../../experiments/primary-experiments.html); source [current Mac target:6–8](../../../../../Package.swift).
+- **Why source cannot settle it:** The current artifact is macOS-only; no selected compliant mobile startup/generated boundary, installed socket path or physical lifecycle target is supplied.
+- **Cheapest decisive experiment / oracle:** On this Mac, build the smallest actual iOS application/runtime bootstrap under the unchanged first-party safety policy and exchange a finite opposite-language socket corpus. Then observe the specified suspension/termination/relaunch cases on a named physical device with an independently observed continuing Host workload. Record actual lifecycle state, runtime/socket identity, handshake authority and current-state recovery; a callback or elapsed delay is not the state oracle.
+- **Environment:** this Mac for build/simulator qualification; Fly Sprites Linux/sunclaw for the independent Host witness. **The physical-device portion cannot be instantiated from the supplied three-environment list alone; a device target and execution grant are missing.** That is an experiment prerequisite, not evidence for changing the required Gateway placement.
+- **Latest-ZMX Capture:** **not for startup/safety/local schema feasibility; yes later for terminal resume/restoration.** Reuse only an X1-qualified Capture profile; do not use desktop terminal evidence as mobile lifecycle evidence.
+
+## 5 Owner-decision gaps
+
+These are **spec-text acknowledged open choices**, with consequences inferred from opened source. They are not allegations that the owner never decided anything outside the supplied packet. The reviewer cannot settle their value tradeoffs. Each names the near-term dependency; no owner answer is needed merely to continue this source review.
+
+### O1 — How does control change, and whose focus does the child see?
+
+[control gap:16](../../designs/04-terminal-runtime/specification.html) and [handoff ordering:115](../../designs/04-terminal-runtime/session-operation-boundaries.html) leave explicit versus automatic takeover, no-controller behavior, revocation and queued input/resize/focus ordering open. The underlying [input promotion:894–913](../../../../../vendor/zmx/src/loop.zig) and [presence focus:248–258](../../../../../vendor/zmx/src/loop.zig) cannot choose the user's policy.
+
+The fixed outcome is one controller/other viewers. The remaining choice trades immediate takeover convenience against preserving an existing user's in-flight interaction. The exact UX/effect cut must be settled before the near-term control operation and X3 can have a product oracle. **Route:** spec-design via the Lead's owner brief; implementation ordering stays engineering work.
+
+### O2 — What continuity survives Host failure or migration, and what remains after natural exit?
+
+[Host owner/incarnation gap:13–24](../../designs/04-terminal-runtime/session-operation-boundaries.html) and [adoption/cutover:139–155](../../designs/04-terminal-runtime/execution-lifecycle-design.html) defer restart/adoption and ended-record promises. Existing [exact durable identity restore:27–42](../../../../../Sources/AgentStudio/Features/Terminal/Restore/TerminalRestoreRuntime.swift) reuses a stored backend identity, while [process-family evidence:46–83](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxSessionControl.swift) protects a particular observed family.
+
+View absence continuity is already selected; crash survival, re-adoption and optional cleanup are separate. Define which interruption cases preserve access to the same resource, which return unavailable/ended/unknown, and the retained user-visible record. More recovery state buys continuity at the cost of persistence and reconciliation obligations. Installed-session cutover and retained references cannot be finalized without that promise. **Route:** spec-design, then program-design/verification-design.
+
+### O3 — Which remote-origin native effects inherit consent?
+
+[native-origin policy gap:25](../../designs/10-swift-client/specification.html) withholds the policy for clipboard/link/editor/Finder effects. The current [beta clipboard behavior:95–135](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift) provides historical automatic confirmation, not an independently selected remote-Host scope.
+
+Retained native automation is selected; exact effect audience, origin disclosure and refusal/consent are not. The choice trades friction against native-data disclosure and unintended local changes. The terminal stream path must be covered, not only command RPCs. The native relay's product effect behavior and X4 require this policy. **Route:** spec-design -> program-design -> verification-design.
+
+### O4 — What exact restoration/fact coverage is promised when support is partial?
+
+[restore/fact gaps:14–18](../../designs/04-terminal-runtime/specification.html) and [G6:190](../../2026-10-15-agentstudio-daemon.html) leave screen/history/latent-state, fact set, viewport dependence and missing-history meaning open. Existing [formatter omissions:852–860](../../../../../vendor/zmx/src/util.zig) and [bounded metadata:78–94](../../../../../vendor/zmx/src/ipc.zig) show concrete limits; they do not authorize shortening a selected client-facing outcome.
+
+The experiments can reveal what a backend supplies, but cannot choose to normalize away a required state or equate byte activity with completion. Define the required consumer-visible profile and honest partial/unavailable results before promoting an observed subset into the near-term terminal contract. A fixed short experiment corpus is a feasibility discriminator, not the supported product domain. **Route:** spec-design; qualification then informs program-design.
+
+### O5 — Which logical selections and close actions propagate across shared devices?
+
+[portable selection and Undo:47–53](../../designs/10-swift-client/shared-client-state-design.html) explicitly leaves active-tab/named-arrangement classification open, while [IP11:19](../../initial-profile.html) fixes shared portable tabs/layout. Current [local selection storage:308–332](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift) and [logical arrangements:557–578](../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift) do not decide that boundary.
+
+A native focus/navigation change, choosing the shared active arrangement and removing a logical tab/pane have different effects on another device. Decide the intended cross-device experience before binding the first create/place/close/Undo workflow to shared state. Keep detach versus explicit execution termination fixed regardless of that choice. **Route:** spec-design, then program-design/verification-design.
+
+**Not additional owner gaps:** the supplied direct-Host remote CLI direction in C1 and latest-ZMX-with-Capture direction are already given; private deployment/workspace cardinality is deliberately deferred and need not be selected for this slice. Exact crate/PR grouping, normal test sequencing and experiment tooling are engineering decisions. The designated-workspace-Host allocation in DS10 is candidly a proposal, not evidence of an unauthorized owner claim. Extra annotation/review/notice marker-family scope remains elsewhere and is not silently made a prerequisite for a terminal-only qualification.
+
+## 6 Checked and found consistent
+
+Six bounded consistency observations; these do not establish runtime outcomes.
+
+1. **Basis: spec text + source.** DS04's prepare/establish distinction matches [the handle-only helper:182–191](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift); detach is distinct from termination in [the detach handler:1048–1059](../../../../../vendor/zmx/src/loop.zig). The target correctly refuses to infer the new full journey from either fact: [lifecycle source/target boundary:34–38](../../designs/04-terminal-runtime/execution-lifecycle-design.html).
+2. **Basis: spec text + source.** [status/snapshot ownership:28–80](../../designs/04-terminal-runtime/terminal-api-ownership.html) accurately separates native runtime metadata and optional renderer facts from execution/cells, matching [adapter fields:30–66](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) and its [event-specific wait mapping:345–365](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift).
+3. **Basis: spec text + source.** [sidebar source corrections:11–13](../../designs/10-swift-client/sidebar-read-needs.html) matches [fixed Panes organization:82–85](../../../../../Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection.swift) and [missing versus detached branch display:574–581](../../../../../Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjectionWorker.swift). It does not manufacture detached HEAD from missing enrichment.
+4. **Basis: spec text + source.** [read-side mutation warning:9–13](../../designs/10-swift-client/session-native-read-needs.html) matches [display write:106–119](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Presentation.swift) and [expiry/visibility maintenance:17–43](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+MessageProjection.swift). A copied-row projection is correctly denied authority to reproduce those effects.
+5. **Basis: spec text + source.** [native application fences:282–290](../../designs/10-swift-client/sidebar-read-needs.html) preserves the current request/semantic baseline, local host lifetime, demand epoch and native revision distinctions in [candidate classification/application:77–172](../../../../../Sources/AgentStudio/Features/RepoExplorer/RepoExplorerProjectionAdapter+MaterializationBroker.swift). Prepared publication, native acceptance and pixels remain separate.
+6. **Basis: spec text + source.** The command enum mechanically counts **154 identities**, consistent with [the command catalog boundary:5–7](../../designs/10-swift-client/command-operation-map.html) and [the current enum:7–142](../../../../../Sources/AgentStudio/Core/Actions/Commands/AppCommand.swift); that count is not behavior evidence. E1's [five observation levels:13–21](../../designs/04-terminal-runtime/experiments/terminal-restoration.html) and E3's [owner closure rule:58–60](../../designs/10-swift-client/experiments/coordination.html) correctly prevent codec/receipt/component observations from being promoted to full-route, native or domain-effect claims.
+
+**Handback counts:** Basis: 0 findings (16 lane files, 0 hash changes; named coverage limits above). High-risk spaces: **9**. Contradictions: **2**. Experiment premises: **8**. Owner-decision gaps: **5**. Checked and found consistent: **6 observations, 0 findings**. Cross-references describe overlapping risks; these are section counts, not 24 independent defects.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

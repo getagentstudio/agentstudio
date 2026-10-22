@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Cross-boundary and non-SQL data evidence</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="data-lead-cross-boundary-evidence-61645823.html">AgentStudio daemon · Cross-boundary and non-SQL data evidence</a></nav></ex-nav>
+<ex-document id="content"><h1>Cross-boundary and non-SQL data evidence</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/data-lead-cross-boundary-evidence.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Cross-boundary and non-SQL data evidence
+
+Source-only observations at AgentStudio 624300332f5e50f7bb8cbb9fc786d5e5b4a3d462. No live databases, user content, runtime, tests or migrations inspected/executed. Placement proposals belong to the Lead synthesis, not this evidence record.
+
+## Database transactions and publication
+
+1. `WorkspaceSQLiteDatastoreActor.performWorkspaceSnapshotBundleSave` commits `replaceWorkspaceSnapshot` to core, records success, then writes the local snapshot in a separate step. A local failure throws after the core write. When `undoChange` is present, the method returns after the core/journal work and skips that local write. This is not one atomic core+local save. Source: `Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift:147–272`.
+2. App's `WorkspacePaneContextSQLiteAccess` and `WorkspaceSessionsSQLiteAccess` both delegate read/write to the datastore's application-local port. This shares an available transaction boundary, but does not make every service callback one transaction. Sources: `Sources/AgentStudio/App/PaneContext/WorkspacePaneContextSQLiteAccess.swift:1`; `Sources/AgentStudio/App/Sessions/WorkspaceSessionsSQLiteAccess.swift:1`.
+3. `PaneContextSessionsBridge.currentBindingGeneration` calls the Sessions repository synchronously with the caller's GRDB `Database`. `PaneContextService.setTitle/setLine/claimEpoch` invoke that callback inside `sqliteAccess.write` alongside scope/order checks and the context write. Moving the binding read to a network preflight would change this fence. Sources: `Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift:51`; `Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift:6–83`.
+4. `PaneContextService.send` writes retained message state and its optional commit participant in the same database closure; only afterward does it call `openAskSink`, schedule deadlines and publish affected presentation sources. Existing-message same-intent admission also runs the participant; changed intent refuses. Sources: `Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift:11–65`.
+5. `SessionsPaneContextComposition` wires asynchronous bridges for session-ended, ask-summary and agent-line updates. Their existence is not proof of a multi-owner atomic write. The precise second-transaction paths are covered by the agent/context Worker. Source: `Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift:44–65`; `PaneContextSessionsBridge.swift:29–45`.
+
+## Data outside the workspace SQL schemas
+
+| Current data | Current owner/materialization and validity | Source |
+| --- | --- | --- |
+| Application roots, `core.sqlite`, `local.sqlite`, ZMX directory and surface checkpoint location | Code computes channel/environment-qualified filesystem roots. A pathname is a location, not database or execution identity. No actual user files read. | `Sources/AgentStudio/Infrastructure/AppDataPaths.swift:40–112` |
+| `preferences.global.json` | Current payload contains schema version and observability settings only (`enabled`, trace tags/backend/flush and OTLP endpoint). Unknown payload keys are rejected. This file is not a general workspace model or event log. | `Sources/AgentStudio/App/Boot/GlobalPreferencesPayload.swift:3–64` |
+| Web URL history/favorites | `URLHistoryService` holds arrays and JSON-encodes them into two UserDefaults keys. History has URL-based dedup, pruning and a cap; favorites have separate state. It is client webview memory, not current Host repository truth. No stored URLs read. | `Sources/AgentStudio/Features/Webview/URLHistoryService.swift:13–54`, `:176–226` |
+| Runtime replay | `EventReplayBuffer` is an in-memory per-runtime ring, bounded by count/estimated bytes/TTL. Replay compares sequence within retained entries and reports a gap when requested position precedes the oldest retained sequence. It is not a durable event store. | `Sources/AgentStudio/Core/RuntimeEventSystem/Replay/EventReplayBuffer.swift:6–116` |
+| Review content cache | Actor retains immutable validated content and in-flight loads under handle, generation, item/role, endpoint, hash/algorithm and binary kind. Its comments and admission path explicitly deny package/generation/descriptor lookup authority. A cache hit still checks admission/currentness. Cache bytes are not authoritative review identity. | `Sources/AgentStudio/Features/Bridge/Runtime/ReviewFoundation/BridgeReviewContentLoaderCache.swift:4–111` |
+| Browser session storage | Bounded source query found only the Bridge development tab-identity path using browser sessionStorage; no localStorage/indexedDB occurrence in `BridgeWeb/src` at this source state. This is a query result, not proof that third-party browser internals have no storage. | `BridgeWeb/src/app/bridge-app-dev-product-session-host.ts:339–347` |
+
+The architecture's Three Persistence Tiers are useful current guidance but do not classify every table in `local.sqlite` as rebuildable. Current local migrations also declare retained annotation, context, Sessions and credential state. Source: `docs/architecture/state/workspace_data_architecture.md:11–81`; `Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4–27` and its schema slices.
+
+## Census boundary
+
+`data-ddl-source-census.json` lists 179 CREATE/DROP/ALTER source candidates in 21 first-party files under Sources/Tools, including historical migrations. SearchService is the only matched production DDL file outside the migration/CLI families. This number is not a table count. Dynamic names, ordered renames/rebuilds, conditional schema profiles and retired tables must be reconciled against the Workers' final-schema evidence. Engine-generated migration/sequence/FTS internals need a separate disposition from application-owned tables.
+
+## Questions the evidence does not choose
+
+- Which client view/layout/recency state is shared across Macs versus personal/device-local.
+- Which retained history survives which restart, for how long, and under what corruption/recovery policy.
+- Whether a Gateway persists a replaceable replica or only holds live state.
+- Whether any delivery guarantee needs a durable inbox/outbox or retained ordered history; current local replay and purpose-specific SQL history do not choose a universal mechanism.
+- How existing transactions are preserved when domain operations move to Hosts; no distributed transaction or shared SQLite file is selected.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

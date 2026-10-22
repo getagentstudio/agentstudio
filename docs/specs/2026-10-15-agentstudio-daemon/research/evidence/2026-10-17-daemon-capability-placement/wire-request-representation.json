@@ -1,0 +1,73 @@
+{
+  "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "scope": "Bounded current request/normalization and representative pane numeric contracts; source only, not a full57-method schema census, bug reproduction or target codec/profile selection.",
+  "routes": [
+    {
+      "name": "Compiled CLI request",
+      "steps": ["Invocation owns schema/typed-validated parameter Data", "AgentStudioIPCClient.requestFrame checks matching schema identity", "Parameter Data decodes to transport JSONValue with Double numbers", "JSONRPCClientRequest reencodes to request frame"],
+      "basis": "source",
+      "sources": [
+        {"path":"Sources/AgentStudioIPCClientCore/IPCDescriptorInvocation.swift","line":4},
+        {"path":"Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift","line":23},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift","line":59},
+        {"path":"Sources/AgentStudioIPCTransport/JSONRPCCodec.swift","line":3}
+      ],
+      "limit": "Does not claim arbitrary lexical JSON survives normalization, nor that every external producer uses this client."
+    },
+    {
+      "name": "Server socket request",
+      "steps": ["Connection reader applies actual NDJSON/request limits", "JSONRPCCodec decodes whole request into transport JSONValue(Double), then checks envelope/ID/object params", "Server locates actual method and admission context", "Erased registration encodes params back to Data", "Method contract performs schema normalization and typed decoding/canonicalization before preparing/handling"],
+      "basis": "source",
+      "sources": [
+        {"path":"Sources/AgentStudioAppIPC/AgentStudioAppIPCConnectionReader.swift","line":20},
+        {"path":"Sources/AgentStudioIPCTransport/JSONRPCCodec.swift","line":265},
+        {"path":"Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift","line":379},
+        {"path":"Sources/AgentStudioAppIPC/AppIPCTypedMethodRegistration.swift","line":205},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift","line":59}
+      ],
+      "limit": "Original numeric spelling is not what the later schema validator necessarily receives. No runtime conversion result observed. Authentication/authority can reject before the schema case is reached."
+    },
+    {
+      "name": "Method schema validation",
+      "steps": ["IPCSchemaValue uses Decimal numbers independently of socket module", "Integer normalization requires whole value and declared min/max", "Object normalization rejects unknown keys and checks required/optional/default presence", "Typed-encoding validation prevents dropping a declared non-null field; a null optional field may be omitted", "Changed typed representation is normalized again"],
+      "basis": "source",
+      "sources": [
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCSchemaValue.swift","line":5},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCJSONSchema+PreparedNormalization.swift","line":23},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCJSONSchema.swift","line":298},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCJSONSchema.swift","line":318},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCJSONSchema+TypedEncoding.swift","line":34},
+        {"path":"Sources/AgentStudioProgrammaticControl/IPCMethodContract.swift","line":154}
+      ],
+      "limit": "This walk validates its input representation; it cannot restore original bytes changed by an earlier representation. Scalar canonicalization is allowed; this is not universal byte equality."
+    }
+  ],
+  "numericContracts": [
+    {"family":"Pane writer epoch/counter, claim result", "fields":["IPCPaneWriteNumber.epoch","IPCPaneWriteNumber.counter","IPCPaneEpochClaimResult.claimed.epoch"], "swiftType":"UInt64", "declaredWireRange":"0...9007199254740991", "guards":"Custom decodeUnsigned and requireSafe plus schema unsignedInteger", "source":"Sources/AgentStudioProgrammaticControl/IPCPaneOrderedWriteContracts.swift", "line":3},
+    {"family":"Changes request/result/entry", "fields":["IPCPaneMessageChangesParams.after","IPCPaneMessageChangesResult.nextPosition","IPCPaneMessageChangeEntry.position"], "swiftType":"UInt64", "declaredWireRange":"0...9007199254740991", "guards":"Custom decodeUnsigned and requireSafe plus schema unsignedInteger", "source":"Sources/AgentStudioProgrammaticControl/IPCPaneMessageChangesContracts.swift", "line":3},
+    {"family":"Context detail revision", "fields":["IPCPaneContextGetResult.revision"], "swiftType":"UInt64", "declaredWireRange":"0...9007199254740991", "guards":"Custom decodeUnsigned and requireSafe plus schema unsignedInteger", "source":"Sources/AgentStudioProgrammaticControl/IPCPaneContextReadContracts.swift", "line":120},
+    {"family":"Terminal wait cursor", "fields":["IPCTerminalWaitParams.afterSequence"], "swiftType":"UInt64?", "declaredWireRange":"optional unsignedInteger schema bounded to9007199254740991", "guards":"Schema bound; do not infer every older DTO has the pane-specific custom encoder guard", "source":"Sources/AgentStudioProgrammaticControl/IPCSharedWireContracts.swift", "line":60}
+  ],
+  "guardSources": [
+    {"path":"Sources/AgentStudioProgrammaticControl/IPCSchemaProviding.swift","line":16},
+    {"path":"Sources/AgentStudioProgrammaticControl/IPCPaneNumericEncodingError.swift","line":10}
+  ],
+  "findings": [
+    {"basis":"source","claim":"Current pane-context UInt64 wire contracts deliberately restrict values to the exact-integer range; UInt64 declaration does not authorize its full binary range on this JSON route."},
+    {"basis":"source","claim":"Method schema Decimal representation and socket Double representation have separate owners and occur at different points in the actual path."},
+    {"basis":"inference","claim":"To test original-byte integer validation, include independent raw numeric tokens with fractional values near the precision boundary. A producer that validates first, or constructs them as Double first, may reject or alter the intended negative stimulus before the receiver sees it. This is a discriminator to run, not a reproduced acceptance/rounding defect."},
+    {"basis":"source","claim":"Optional field helper permits absence and explicit null; typed encoding can omit null. This does not settle top-level result-null or every operation's no-op/clear semantics."},
+    {"basis":"source","claim":"Current schemas reject unknown object fields and require exactly one union alternative. Plain Codable shape equivalence alone does not preserve this whole contract."}
+  ],
+  "existingTestSource": [
+    {"path":"Tests/AgentStudioProgrammaticControlTests/IPCPaneContextWireContractTests.swift","line":74,"coverage":"Guarded fields at0/1/max safe; direct typed decode refuses above-safe,1.5 and negative; encoding above-safe refuses. Bodies read, no execution claimed."},
+    {"path":"Tests/AgentStudioAppIPCTests/AgentStudioAppIPCPaneContextAdmissionTests.swift","line":277,"coverage":"Actual Swift server/socket fixture sends Double(max)+1,1.5,-1 and checks typed invalidField. Existing producer constructs Double, so this source is not proof of an original fractional token beyond exact representability."},
+    {"path":"Tests/AgentStudioProgrammaticControlTests/IPCMethodCatalogDecoderTests.swift","line":20,"coverage":"Unknown original-wire catalog fields are rejected rather than discarded; source body only, no current pass."}
+  ],
+  "nullsAndCorrections": [
+    "Initial shell glob Sources/AgentStudioIPCClient/AgentStudioIPCClient*.swift had no match and aborted that rg invocation; rg --files found the actual client implementation in AgentStudioIPCClientCore.",
+    "Sources/AgentStudioIPCProtocol and guessed Schemas/IPCEventSchemas.swift/IPCPaneContextSchemas.swift do not exist; valid ProgrammaticControl source paths were located before claims.",
+    "Guessed AppIPCInvocationResult.swift was absent; declaration located at AppIPCTypedMethodRegistration.swift:380."
+  ],
+  "unverified": ["Actual Foundation numeric parse/reencode result for chosen raw boundary tokens","Every method/variant and older numeric DTO","Complete wire schema and target accepted range/presence/version profile","Real Swift/Rust processes and full production target path","Independent actual domain effects/refusals and fixture closure"]
+}

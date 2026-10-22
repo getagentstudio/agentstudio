@@ -1,0 +1,186 @@
+# E2 Bridge operation and receipt evidence
+
+Source-only at AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462` on 2026-10-15. This persists the completed desk classification for [primary experiment E2](../../../experiments/primary-experiments.md#e2--host-autonomy-authority-and-effect-receipts). Existing code and test bodies were read; no experiments, builds, tests, prototypes, runtime, credentials, private databases, network, or board work ran.
+
+Coverage: **16 semantic calls, 22 nested annotation operations, 7 control variants, and 5 finite content kinds**. These are separate vocabulary layers, not additive capability counts. No future placement, retry, idempotency, retention, storage, ownership, transport, controller, or UX policy is selected.
+
+The required frontend route remains client → socket → Gateway → Host. Phone Gateway placement and disconnected-agent CLI outcomes remain open.
+
+## Completion boundaries and source keys
+
+Neither `callCompleted`, generic operation `succeeded`, nor session cancellation establishes durable or native-effect success.
+
+All 16 calls share capability, bounded strict decoding, pane-session/worker identity, exact request-sequence replay, capacity, and surface-epoch admission in [session ingress](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession.swift:460) and [surface admission](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession.swift:779).
+
+The [dispatcher](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeControlDispatcher.swift:105) returns operation admission before execution finishes. It subsequently obtains the provider result, completes the session transition, applies committed effects, and settles the operation.
+
+**Provider-before-generic-completion ordering:** annotation commands await their annotation handler during provider response construction, so repository effects can precede generic `completeControl`. Several other methods construct marker responses and perform their effects later through committed-effect application. Display-install admission also changes runtime authority during provider response construction. Provider response construction is neither universally a no-op nor universally a durable completion.
+
+Source keys identify current files; suffixes in the tables are exact line numbers within the named file.
+
+| Key | Source |
+| --- | --- |
+| `P` | [Provider dispatch](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift:278) |
+| `C` | [Committed effects](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider+CommittedEffects.swift:142) |
+| `A` | [Annotation transport adapter](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter.swift:184) |
+| `S` | [Annotation service](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor.swift:179) |
+| `E` | [Edit ownership](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+EditOwnership.swift:17) |
+| `R` | [Annotation SQLite mutations](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository.swift:209) |
+| `O` | [Output SQLite mutations](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift:76) |
+| `X` | [Output coordinator](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorActor.swift:295) |
+| `N` | [Native output effects](../../../../../../Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift:74) |
+
+## Semantic calls — 16 of 16
+
+| # | Semantic call | Actual effect/result boundary | Reconciliation evidence and limits |
+| --- | --- | --- | --- |
+| 1 | `file.annotations.command` | `P294` awaits annotation adapter during provider response construction. Nested operation determines read, SQLite mutation, demand, or native output. | Seven editing operations return canonical message/removal receipts; viewed/output/history operations have distinct payloads; others return bounded status/session. Not a uniform durable mutation. |
+| 2 | `review.annotations.command` | `P356` follows nested dispatcher, with `A191` first resolving the supplied Review publication's source generation. | Same operation-specific receipts plus Review publication currentness. Even a historical nested read can fail first because its Review context is unavailable. |
+| 3 | `file.annotations.output.inspect` | `P445` rereads immutable SQLite output attempt and issues content descriptor. | Exact bytes/hash/length and surface; not a report that clipboard/file output succeeded. Attempt/history state is separate. |
+| 4 | `review.annotations.output.inspect` | Same inspection implementation with Review surface in descriptor. | Same immutable-byte evidence; no additional Review source-generation check in this arm. |
+| 5 | `file.annotations.projection.query` | `P284` captures coherent service snapshot, evaluates source placement, reserves paged content. | Content descriptor or typed `sourceStale(currentSourceGeneration)`; worker/session/derivation/query-lifetime bound. Not mutation/render receipt. |
+| 6 | `review.annotations.projection.query` | Same machinery with Review publication identity/source resolution. | Same snapshot/page evidence plus retained Review publication authority. |
+| 7 | `file.source.current` | `P315` validates worktree root and returns source authority spec. | Source availability/spec or typed root-access error. No refreshed catalog, durable commit, or render completion implied. |
+| 8 | `file.refresh.retry` | `P317` constructs marker response; `C160` later invokes controller and metadata retry. May decline when stream/subscription/foreground admission is absent. | Later source/publication outcomes; payload has no completed-refresh result and proves neither start nor render. |
+| 9 | `file.activeViewerMode.update` | `C163` validates session/sequence/source, records accepted mode/signal, optionally settles native-selection receipt, and can fence hidden Review work. | Current accepted signal and optional correlated selection receipt. Stale sequence/source can be ignored while generic call completes. No persistence/render receipt. |
+| 10 | `review.activeViewerMode.update` | Same owner selects Review; accepted transition can schedule initial/retained/catch-up work. | Accepted signal is separate from eventual build/publication/render. |
+| 11 | `review.comparison.update` | `C169` applies current Review-intent gate, synchronously changes canonical pane source via injected target commit, advances generations, schedules publication/build. | Current target/attempt/publication corroborate state. Callback disposition is discarded; call is not an awaited SQLite durability or completed-build receipt. |
+| 12 | `review.comparisonTargets.query` | `P373` acquires foreground authorization, captures current target, reserves descriptor under current worker. | Request-scoped reservation and finite catalog content. Reservation consumed once; descriptor is not successful delivery. |
+| 13 | `review.intake.ready` | `C179` rejects wrong stream or chooses initial load, product resync, or replay current publication. Some work scheduled. | Stream/package/publication outcomes; no completed-build receipt. Can deliberately cause no new build. |
+| 14 | `review.markFileViewed` | `C177` inserts item ID into native `ReviewState.viewedFiles` under admission. | In-memory mutation; no storage or saved-revision receipt. Targeted search found writer/declarations but no further native-set reader in Bridge Swift/BridgeWeb. Wired mutation exists; broader downstream effect unestablished. |
+| 15 | `review.publication.install.admit` | `P336` changes display-install authority during provider response construction after predecessor/candidate/worker/admission checks; returns admitted/rejected. | Typed admission and retained coordinator state. Not application, DOM, or durability. Generic operation flag says non-mutation despite runtime-authority change. |
+| 16 | `review.publication.applied` | `C181` records exact worker/publication application; coordinator returns advanced/duplicate/rejected and retires older content admission. Provider discards disposition. | Displayed-publication state corroborates result. Marker does not distinguish those dispositions or independently verify DOM/pixels. |
+
+Additional decisive owners:
+
+- [Projection capture/reservation](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationProjectionSource.swift:107), [typed stale result](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductSchemeProvider+AnnotationProjection.swift:24).
+- [Output descriptor/body reread](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationOutputSource.swift:29).
+- [File root validation](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductFileMetadataSource+SharedConstruction.swift:5), [metadata retry admission](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductMetadataCoordinator+SubscriptionProducers.swift:253).
+- [Viewer-mode acceptance](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+ActiveViewerMode.swift:10).
+- [Comparison effect](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+ReviewContribution.swift:11), [live pane-target writer](../../../../../../Sources/AgentStudio/Core/State/MainActor/Atoms/WorkspacePaneGraphAtom.swift:662), [App injection](../../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+BridgeViewLifecycle.swift:39).
+- [Comparison-target authorization](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductComparisonTargetQuerySource.swift:69), [reservation consumption](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider+ComparisonTargetContent.swift:29).
+- [Intake handling](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+Bootstrap.swift:158).
+- [Native viewed-state writer](../../../../../../Sources/AgentStudio/Features/Bridge/State/BridgeDomainState.swift:96), [live callback](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+Bootstrap.swift:589).
+- [Display install/application owner](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/ReviewFoundation/BridgeReviewPublicationCoordinator.swift:561).
+
+## Nested annotation operations — 22 of 22
+
+For repository mutations, `S536–574` awaits the transaction before classified invalidation/publication. [Changed publication](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+MetadataPublication.swift:260) advances process-local `projectionRevision`, distinct from persisted session/thread/message/draft/saved revisions.
+
+| # | Operation | Current admission and effect | Receipt/post-state; observed duplicate behavior |
+| --- | --- | --- | --- |
+| 1 | `session.discover` | `A334 → S87`: availability-gated SQLite read; adapter discards discovered list. | `committed` means read returned. Projection/catalog provides sessions. Fresh repetition rereads. |
+| 2 | `demand.acquire` | `A337 → S115`: new context/surface/session demand generation; load detail, validate worktree, roll back failed/stale registration. | Runtime generation remains adapter/service-owned; response session/status. Reacquire creates generation; no durable write. |
+| 3 | `demand.release` | `A349 → S157`: remove runtime demand and adapter generation. | No durable receipt; repeated removal harmless; old generation no longer authorizes source refresh. |
+| 4 | `root.create` | `A479 → E62 → R209`: capture/validate source and repo/worktree fingerprint, session admission, worker edit token; transactionally create draft/session/thread/message. | Full canonical message receipt/generated IDs/revisions. Fresh execution has no request-ID dedup branch and generates IDs. Session choice can require explicit admission. |
+| 5 | `reply.create` | `A513 → E76 → R488`: expected thread revision, writable session, open thread, edit ownership; new draft/revision transaction. | Full message receipt. Fresh old-revision repeat conflicts; no durable request-ID receipt. |
+| 6 | `draft.flush` | `A538 → E89 → R259`: message/draft revisions/token; register owner for new draft, require thereafter; persist body or delete blank never-saved draft/message/thread. | Full message or removal tombstone. Successful changes advance revisions; old-fence repeat conflicts/not-found. |
+| 7 | `draft.edit.acquire` | [Adapter](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter+EditOwnership.swift:4) → `E132` → [SQL](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Editing.swift:5): exact revisions; live other owner refused, stale owner reclaimable. | Full message. Same-live-token `noChange` exists after revision validation; not universal duplicate acceptance. |
+| 8 | `draft.edit.release` | [Adapter](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter+EditOwnership.swift:23) → `E155` → [SQL](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Editing.swift:73): require owner/token/revisions, clear persisted token, advance revisions, release runtime ownership. | Full message. Fresh old-token/old-revision repeat is not general no-op. |
+| 9 | `draft.save` | `A558 → E112 → R374`: token/revisions, writable/editable; persist validated saved body, advance saved revision, clear draft/handled. | Full message; release owner after success. Fresh old request conflicts. |
+| 10 | `draft.revert` | `A577 → E122 → R423`: token/revisions; remove draft or never-saved message/thread. | Full message or removal tombstone. Fresh repeat lacks original draft/token/revision. |
+| 11 | `thread.resolution.set` | `A446 → S225 → R539`: expected thread revision and writable session; resolution transaction. | Status/session; projection/detail gives resolution/revisions. Same-resolution `noChange` after revision validation. |
+| 12 | `session.lifecycle.set` | `A462 → S232` → [SQL](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Lifecycle.swift:5): expected session revision/open-thread count, unresolved-work confirmation. | Status/session; query post-state. SQL advances revision even for same value admitted at current revision. |
+| 13 | `continuity.choose` | `A641 → S239` → [SQL](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Lifecycle.swift:49): accept current fingerprint or detached; expected session revision. | Status/session; query relationship/fingerprint/revision. No generic replay key or same-state suppression. |
+| 14 | `source.refresh` | `A676 → S266`: demand generation, strictly advancing source epoch, expected snapshot, source fingerprint/material; possibly persist relationship/fingerprint. | Status/session; query current state. May commit then return stale/conflict after demand/currentness changes (`S328–356` then `S274`). Same epoch rejected. |
+| 15 | `output.scope.commit` | [Selection](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/WorktreeAnnotationTransportAdapter+Output.swift:4): expected session/projection/source, refreshed placement, eligible saved messages. `X295 → O76` prepares exact durable bytes/membership before native effect, then finalizes. | Attempt ID and typed destination/success/effect/cleanup/partial outcome. Durable history corroborates state. One prepared attempt/session; fresh command not generic dedup. |
+| 16 | `output.preference.changeFolder` | `A252 → X285 → N82`: installation/product-bound chooser updates application-lifetime folder preference. | Selected/cancelled/failed mapping. No durable attempt; preference currently in-memory. Repetition can reopen chooser. |
+| 17 | `output.reveal` | `A770` validates attempt/detail matching repo/worktree, succeeded JSON/path; `N74` checks file exists and requests Finder reveal. | Status success/failure, no new durable receipt. Request is not proof user saw window. |
+| 18 | `output.handled.clear` | `A268 → S498 → O556`: succeeded attempt, expected session revision; only human membership still matching saved revision cleared. | Status/session; query handled/revisions. Explicit no-change when nothing qualifies. |
+| 19 | `output.history` | `A237 → S486 → O511`: availability-gated bounded newest-first durable summary read. | History includes attempt IDs/states/repetition lineage; excludes cancelled. Not complete receipt journal. |
+| 20 | `output.repeat` | `A275 → X359 → O250`: only unknown source attempt; new attempt preserves exact stored bytes/membership/destination, then effect/finalization. | New attempt and `repeatedFromAttemptID`. New effect attempt, not replay of success. Prepared/succeeded/cancelled/finalization-failed refused. |
+| 21 | `message.viewed.mark` | `A429 → S256` → [SQL](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Viewed.swift:23): bounded unique items/expected saved revisions; current agent messages only. | Per-item changed/alreadyViewed/notFound/notAgent/stale; changed result has committed session revision. Mixed dispositions possible in one transaction. |
+| 22 | `recovery.acknowledge` | `A423` → [service](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+MetadataPublication.swift:211) → [SQL](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Recovery.swift:62): durable provenance acknowledgement, clear witness, publish recovery state. | Status/queryable recovery state. No witness returns normally unless unavailable; SQL `COALESCE` preserves first acknowledgement. |
+
+Most semantic mutation entry points require available storage and no unacknowledged recovery witness (`S529`). `source.refresh` instead uses read-availability and its source/demand fences; not all 22 have an identical recovery/admission path.
+
+The seven editing operations returning canonical message/removal receipts are `root.create`, `reply.create`, `draft.flush`, `draft.edit.acquire`, `draft.edit.release`, `draft.save`, and `draft.revert`. [Receipt contracts](../../../../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationMessageReceiptContracts.swift:69) distinguish complete current messages from exact removal tombstones, separately from projected placement and transport operation IDs.
+
+## Output uncertainty and recovery
+
+Current output distinctions (`X395–478`, `O329–508`):
+
+- Destination cancellation before preparation: no attempt.
+- Prepared attempt → known native failure → cancellation persistence.
+- Known native success → finalization success.
+- Known native success → finalization failure: `partialSuccess`, optionally recorded `finalization_failed`.
+- Known failure → cancellation persistence failure: `effectAndCleanupFailed`; in-memory proof allows cleanup-only retry.
+- Startup recovery: prepared becomes `unknown`, exact membership locked; no automatic effect replay.
+
+[App boot](../../../../../../Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:268) actually invokes prepared-attempt recovery.
+
+Clipboard admission/write is synchronous under its gate. JSON admission is gated, but once admitted, application-owned writing continues despite later operation cancellation or installation close (`N104–145`). Session cancellation is not a zero-effect oracle.
+
+## Generic operation receipt lifetime
+
+[Admission](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift:52) generates a session-owned operation ID and caches exact admission-response bytes. Ordinary operations have a settlement deadline; human operations do not use that ordinary deadline.
+
+[Expiration](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift:217) produces `outcomeUnknown` only for a dispatched operation classified as mutation; otherwise failed. All annotation commands are conservatively flagged mutation, including nested reads/demand. That flag is not a storage-effect taxonomy.
+
+[Settlement](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift:423) maps any non-`requestError` response to generic `succeeded`. Annotation `failed(...)`, output `partialSuccess`, or install-admission `rejected` can be inside generic `succeeded`; consumers must inspect the typed payload.
+
+Unknown revision-one acknowledgement retains a mutation watch for late revision-two evidence. [Session end](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductOperationTable.swift:248) cancels unsettled results and forgets retained results/watches. These are not restart-persistent receipts.
+
+## Control variants — 7 of 7
+
+| # | Control variant | Current receipt boundary |
+| --- | --- | --- |
+| 1 | `workerSession.open` | Protocol session state; not durable terminal session. |
+| 2 | `product.call` | The 16-call table; initial operation admission separate from later settlement. |
+| 3 | `subscription.open` | Requires metadata stream; completion changes subscription state and starts producer effects; not render completion. |
+| 4 | `subscription.cancel` | Slot-free escape; commits cancellation with separately tracked asynchronous cleanup. |
+| 5 | `subscription.setScope` | Scope/currentness validation; may cancel superseded scope operation; not new-row render proof. |
+| 6 | `subscription.resnapshot` | Current view snapshot request; not durable replay or application/render proof. |
+| 7 | `workerSession.resync` | Provider placeholder `reconciliation: []` is replaced by authoritative subscription reconciliation/stream barrier; not arbitrary historical-effect reconciliation. |
+
+Sources: [provider switch](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift:190), [session transitions](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSessionControlTransition.swift:85), [escape execution](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeControlDispatcher.swift:78), [authoritative resync](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Resync.swift:31).
+
+## Finite content kinds — 5 of 5
+
+| # | Content kind | Current authority/data boundary |
+| --- | --- | --- |
+| 1 | `annotation.output` | Issued exact descriptor consumed once; SQLite attempt reread; exact bytes/hash checked. Reading causes no native output effect. |
+| 2 | `annotation.projection` | Worker/session/derivation/query-lifetime-bound coherent paged projection; source generation revalidated. |
+| 3 | `file.content` | Current metadata-derived plan exactly matches descriptor; stale/superseded terminals; foreground admission checked around reads. |
+| 4 | `review.content` | Publication/content lease and admitted continuation; finite range with hash/end-of-source meaning. |
+| 5 | `review.comparisonTargets` | Matching request-scoped reservation consumed once; finite catalog production/delivery with distinct failure/cancellation. |
+
+Sources: [producer dispatch](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift:695), [Review/output/File producers](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift:745), [content admission selection](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider+CommittedEffects.swift:224), [comparison production](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider+ComparisonTargetProducer.swift:10).
+
+Metadata receipt credit, operation settlement, content completion, publication application, and DOM fulfillment are distinct. [Receipt acknowledger](../../../../../../BridgeWeb/src/core/comm-worker/bridge-product-view-receipt-acknowledger.ts:15) returns credit on receipt; [post-render fulfillment](../../../../../../BridgeWeb/src/core/comm-worker/bridge-main-render-fulfillment-coordinator.ts:453) observes exact-item rendering separately.
+
+## Admission atomicity and corrected proof claim
+
+**Atomicity limit:** no universal atomic revocation-plus-SQL boundary was established. Session admission is checked around provider dispatch/completion; many annotation SQL calls receive revisions but no product-admission handle. Edit ownership is checked before awaited repository work; source-backed operations have additional source/demand checks. This is a proof limit, not a selected repair.
+
+**Commit-then-stale:** `source.refresh` can commit relationship/fingerprint in `S328–356` and return `remainsCurrent == false`; `S274–277` then throws `staleSourceEpoch`. Failed/conflict therefore is not universally no-effect evidence.
+
+**Corrected test-name claim:** [completion-effects test line 57](../../../../../../Tests/AgentStudioTests/Features/Bridge/BridgeProductSchemeControlCompletionEffectsTests.swift:57) calls `provider.response` without product admission, so provider returns unavailable before the injected annotation handler. The test supports missing-admission refusal plus once-across-exact-replay in that recorder fixture. Its title does not prove annotation SQL waits for generic session completion: production `P294–306` awaits the handler before [dispatcher completion](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeControlDispatcher.swift:159).
+
+## Test-body evidence inspected
+
+These are source observations, not executed results.
+
+| Evidence | Body exercises | Limit |
+| --- | --- | --- |
+| [Canonical receipts](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationCanonicalReceiptTests.swift:64) | Real SQLite edits return complete message state; removal cases return tombstones without projection reads. | Not cross-process delivery/restart proof. |
+| [Generation reclaim](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationStoreTests.swift:117) | Real repository reclaim rejects delayed old writer. | Actor/repository, not atomic remote-authority transaction. |
+| [Stale output scope](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationTransportAdapterTests.swift:604) | Conflict yields no effect request/history mutation. | This pre-effect conflict, not every failure. |
+| [Output repetition refusal](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationOutputRepositoryTests.swift:273) | Real SQLite refuses repeating known outcomes. | No clipboard/file effect. |
+| [Unknown/finalization membership](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationOutputRepositoryTests.swift:386) | Real SQLite records unknown/finalization-failed, locks exact membership, fabricates no event/handled state. | Repository state, not external-effect recovery. |
+| [Installation effects](../../../../../../Tests/AgentStudioTests/App/Coordination/WorktreeAnnotationOutputEffectsInstallationTests.swift:17) | Real admission fences with injected writers/panels prove pre-admission refusal and post-admission continuation. | Not actual Finder/clipboard/file behavior. |
+| [Output partial/unknown](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationOutputCoordinatorTests.swift:138) | Injected owners cover cleanup-only retry, partial success, recovery unknown, exact-byte repetition. | Coordinator contract, not real persistence/native effects. |
+| [Late operation evidence](../../../../../../Tests/AgentStudioTests/Features/Bridge/BridgeProductOperationTableTests.swift:130) | Unknown acknowledgement retains late result evidence. | Table/session only, not restart retention. |
+| [Recovery acknowledgement](../../../../../../Tests/AgentStudioTests/Features/Bridge/WorktreeAnnotations/WorktreeAnnotationStoreTests.swift:280) | Injected witness blocks mutation until acknowledgement and publishes control change. | Injected access owner; SQL inspected separately. |
+
+## Availability, coverage, and disposition
+
+Availability is conditional: missing store/repo/worktree installs a [typed unavailable handler](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+Bootstrap.swift:725); missing output coordinator refuses output operations. Service APIs such as association acceptance are not additional operations in the [22-case wire union](../../../../../../Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationOperationContracts.swift:3).
+
+The native `review.markFileViewed` callback is live. Query `viewedFiles|markFileViewed\\(` over `Sources/AgentStudio/Features/Bridge` and `BridgeWeb/src` found native writer/declarations and the web selection controller; no additional native-set reader was found in that scope. This is not a claim the whole command is dormant.
+
+Source classes: current local proposal/inventory, implementation dispatch/effect owners, repositories, native effects, web receipt/render owners, and actual test bodies. No external research/runtime source class or independent helper was used. Earlier no-file restriction was lifted only for this evidence file.
+
+This supplies E2's current effect, currentness, post-state, receipt, duplicate, cancellation, and recovery axes. It establishes no future retry/idempotency/retention policy, placement, transport, disconnected-agent outcome, or cross-process completion proof.
+
+Return token: `specification-gap` — distinguish session operation receipts, canonical annotation receipts, output attempt history, runtime publication state, native effect evidence, and render evidence when defining each E2 loss-point oracle.

@@ -1,0 +1,499 @@
+{
+  "CX-G1": {
+    "packet": "context-transactions.json",
+    "packet_sha256": "fe1ef69112553937caf4f862335e355ce5c4443313cb4ce943558723ed054c42",
+    "read_tables": [
+      "sessions_conversation",
+      "sessions_operation",
+      "sessions_pane_binding",
+      "sessions_source"
+    ],
+    "write_tables": [
+      "sessions_conversation",
+      "sessions_evidence",
+      "sessions_operation",
+      "sessions_pane_binding",
+      "sessions_provider_question",
+      "sessions_provider_question_option",
+      "sessions_source"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "CX-G2": {
+    "packet": "context-transactions.json",
+    "packet_sha256": "fe1ef69112553937caf4f862335e355ce5c4443313cb4ce943558723ed054c42",
+    "read_tables": [
+      "pane_epoch_claim",
+      "pane_retirement",
+      "pane_state",
+      "pane_write_order",
+      "sessions_pane_binding"
+    ],
+    "write_tables": [
+      "pane_epoch_claim",
+      "pane_state",
+      "pane_state_action",
+      "pane_write_order"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "CX-G3": {
+    "packet": "context-transactions.json",
+    "packet_sha256": "fe1ef69112553937caf4f862335e355ce5c4443313cb4ce943558723ed054c42",
+    "read_tables": [
+      "pane_answer_position",
+      "pane_event",
+      "pane_event_action",
+      "pane_request",
+      "pane_request_action",
+      "pane_request_answer_value",
+      "pane_request_choice",
+      "pane_request_property",
+      "pane_request_property_choice",
+      "pane_request_required",
+      "pane_retirement",
+      "sessions_pane_binding"
+    ],
+    "write_tables": [
+      "pane_answer_position",
+      "pane_context_cli_outbox_cursor",
+      "pane_event",
+      "pane_event_action",
+      "pane_request",
+      "pane_request_action",
+      "pane_request_choice",
+      "pane_request_property",
+      "pane_request_property_choice",
+      "pane_request_required",
+      "pane_state"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [
+      "cli_outbox",
+      "cli_store_identity"
+    ],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "CX-G4": {
+    "packet": "context-transactions.json",
+    "packet_sha256": "fe1ef69112553937caf4f862335e355ce5c4443313cb4ce943558723ed054c42",
+    "read_tables": [
+      "pane_answer_position",
+      "pane_event",
+      "pane_event_action",
+      "pane_request",
+      "pane_request_action",
+      "pane_request_answer_value",
+      "pane_request_choice",
+      "pane_request_property",
+      "pane_request_property_choice",
+      "pane_request_required",
+      "pane_retirement",
+      "sessions_pane_binding"
+    ],
+    "write_tables": [
+      "pane_answer_position",
+      "pane_event",
+      "pane_request",
+      "pane_request_answer_value",
+      "pane_state"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "CX-G5": {
+    "packet": "context-transactions.json",
+    "packet_sha256": "fe1ef69112553937caf4f862335e355ce5c4443313cb4ce943558723ed054c42",
+    "read_tables": [
+      "pane_event",
+      "pane_event_action",
+      "pane_request",
+      "pane_request_action",
+      "pane_request_answer_value",
+      "pane_request_choice",
+      "pane_request_property",
+      "pane_request_property_choice",
+      "pane_request_required",
+      "pane_retirement",
+      "pane_state",
+      "pane_state_action"
+    ],
+    "write_tables": [
+      "pane_answer_position",
+      "pane_epoch_claim",
+      "pane_event",
+      "pane_request",
+      "pane_retirement",
+      "pane_state",
+      "pane_write_order"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "CX-G6": {
+    "packet": "context-transactions.json",
+    "packet_sha256": "fe1ef69112553937caf4f862335e355ce5c4443313cb4ce943558723ed054c42",
+    "read_tables": [
+      "local_ipc_credential"
+    ],
+    "write_tables": [
+      "local_ipc_credential"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G1": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [
+      "drawer",
+      "drawer_pane",
+      "pane",
+      "pane_content_terminal",
+      "tab_arrangement",
+      "tab_shell",
+      "unavailable_repo",
+      "unavailable_worktree",
+      "workspace",
+      "workspace_terminal_session_ownership",
+      "workspace_undo_close",
+      "workspace_undo_close_member",
+      "worktree"
+    ],
+    "write_tables": [
+      "app_workspace_selection",
+      "arrangement_drawer_view",
+      "arrangement_layout_divider",
+      "arrangement_layout_pane",
+      "arrangement_minimized_pane",
+      "drawer",
+      "drawer_pane",
+      "drawer_view_layout_divider",
+      "drawer_view_layout_pane",
+      "drawer_view_minimized_pane",
+      "pane",
+      "pane_content_code_viewer",
+      "pane_content_payload",
+      "pane_content_terminal",
+      "pane_content_webview",
+      "tab_arrangement",
+      "tab_pane",
+      "tab_shell",
+      "workspace",
+      "workspace_terminal_session_ownership",
+      "workspace_undo_close",
+      "workspace_undo_close_member"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G2": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [
+      "app_workspace_selection",
+      "pane",
+      "pane_content_terminal",
+      "workspace",
+      "workspace_terminal_session_ownership",
+      "workspace_undo_close",
+      "workspace_undo_close_member"
+    ],
+    "write_tables": [
+      "app_workspace_selection",
+      "arrangement_drawer_view",
+      "arrangement_layout_divider",
+      "arrangement_layout_pane",
+      "arrangement_minimized_pane",
+      "drawer",
+      "drawer_pane",
+      "drawer_view_layout_divider",
+      "drawer_view_layout_pane",
+      "drawer_view_minimized_pane",
+      "pane",
+      "pane_content_code_viewer",
+      "pane_content_payload",
+      "pane_content_terminal",
+      "pane_content_webview",
+      "tab_arrangement",
+      "tab_pane",
+      "tab_shell",
+      "workspace",
+      "workspace_terminal_session_ownership",
+      "workspace_undo_close",
+      "workspace_undo_close_member"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G3": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [
+      "local_drawer_presentation",
+      "local_window_state"
+    ],
+    "write_tables": [
+      "local_arrangement_cursor",
+      "local_arrangement_drawer_cursor",
+      "local_drawer_cursor",
+      "local_drawer_presentation",
+      "local_tab_cursor",
+      "local_window_state",
+      "local_workspace_cursor"
+    ],
+    "prior_read_tables": [
+      "workspace_undo_close",
+      "workspace_undo_close_member"
+    ],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G4": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [],
+    "write_tables": [
+      "pane_answer_position",
+      "pane_epoch_claim",
+      "pane_event",
+      "pane_request",
+      "pane_retirement",
+      "pane_state",
+      "pane_write_order"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G5": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [
+      "annotation_message",
+      "annotation_message_draft",
+      "annotation_output_attempt",
+      "annotation_output_attempt_message",
+      "annotation_session",
+      "annotation_thread"
+    ],
+    "write_tables": [
+      "annotation_message",
+      "annotation_message_draft",
+      "annotation_session",
+      "annotation_thread"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G6": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [
+      "annotation_message",
+      "annotation_message_draft",
+      "annotation_output_attempt",
+      "annotation_output_attempt_message",
+      "annotation_output_event",
+      "annotation_session",
+      "annotation_thread"
+    ],
+    "write_tables": [
+      "annotation_output_attempt",
+      "annotation_output_attempt_message",
+      "annotation_session"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "WA-G7": {
+    "packet": "workspace-annotation-transactions.json",
+    "packet_sha256": "47e636aae0c95e53632992bdeb602b405447860e19bb1baee3e15a3697206ce2",
+    "read_tables": [
+      "annotation_message",
+      "annotation_output_attempt",
+      "annotation_output_attempt_message",
+      "annotation_output_event",
+      "annotation_session"
+    ],
+    "write_tables": [
+      "annotation_message",
+      "annotation_output_attempt",
+      "annotation_output_event",
+      "annotation_session"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN01": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "local_repository_activity",
+      "pane",
+      "repo",
+      "repo_tag",
+      "unavailable_repo",
+      "unavailable_worktree",
+      "watched_path",
+      "worktree"
+    ],
+    "write_tables": [
+      "pane",
+      "repo",
+      "repo_tag",
+      "unavailable_repo",
+      "unavailable_worktree",
+      "watched_path",
+      "worktree"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN02": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "local_repository_activity",
+      "local_repository_activity_cursor"
+    ],
+    "write_tables": [
+      "local_repository_activity",
+      "local_repository_activity_cursor"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN03": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "cache_metadata",
+      "cache_repo_enrichment",
+      "cache_worktree_enrichment",
+      "local_entity_recency",
+      "local_repository_activity",
+      "repo",
+      "worktree"
+    ],
+    "write_tables": [
+      "cache_metadata",
+      "cache_repo_enrichment",
+      "cache_worktree_enrichment",
+      "local_entity_recency",
+      "local_repository_activity"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN04": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "local_arrangement_cursor",
+      "local_arrangement_drawer_cursor",
+      "local_drawer_cursor",
+      "local_drawer_presentation",
+      "local_editor_preferences",
+      "local_repo_explorer_preferences",
+      "local_tab_cursor",
+      "local_window_sidebar_collapsed_group",
+      "local_window_state",
+      "local_workspace_cursor",
+      "pane",
+      "workspace_undo_close",
+      "workspace_undo_close_member"
+    ],
+    "write_tables": [
+      "local_arrangement_cursor",
+      "local_arrangement_drawer_cursor",
+      "local_drawer_cursor",
+      "local_drawer_presentation",
+      "local_editor_preferences",
+      "local_repo_explorer_preferences",
+      "local_tab_cursor",
+      "local_window_sidebar_collapsed_group",
+      "local_window_state",
+      "local_workspace_cursor"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN05": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "local_entity_recency",
+      "local_pane_activity",
+      "local_workspace_entity_recency",
+      "pane",
+      "workspace_undo_close",
+      "workspace_undo_close_member"
+    ],
+    "write_tables": [
+      "local_entity_recency",
+      "local_pane_activity",
+      "local_workspace_entity_recency"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN06": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "search_document",
+      "search_document_fts"
+    ],
+    "write_tables": [
+      "search_document",
+      "search_document_fts"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN07": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [
+      "local_inbox_notification_preferences",
+      "local_notification_inbox_collapsed_group",
+      "local_notification_inbox_item"
+    ],
+    "write_tables": [
+      "local_inbox_notification_preferences",
+      "local_notification_inbox_collapsed_group",
+      "local_notification_inbox_item"
+    ],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  },
+  "RN08": {
+    "packet": "repository-native-transactions.json",
+    "packet_sha256": "00fe902acb65c7758861c474852463901ce7a59798d3c8a0b9fd74edad717757",
+    "read_tables": [],
+    "write_tables": [],
+    "prior_read_tables": [],
+    "external_read_tables": [],
+    "meaning": "Union across named operation-family variants. Prior and external-file reads are explicitly not claimed atomic with the later write. Listed membership is bounded to packet tables, not a transitive trigger/caller census."
+  }
+}

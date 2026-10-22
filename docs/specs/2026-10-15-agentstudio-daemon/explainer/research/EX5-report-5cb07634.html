@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · EX5 — zmx leadership versus IP2 at main 0a18bee</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="EX5-report-5cb07634.html">AgentStudio daemon · EX5 — zmx leadership versus IP2 at main 0a18bee</a></nav></ex-nav>
+<ex-document id="content"><h1>EX5 — zmx leadership versus IP2 at main 0a18bee</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../research/evidence/2026-10-20-zmx-latest/EX5-report.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## EX5 — zmx leadership versus IP2 at main 0a18bee
+
+## Answer
+
+**source:** zmx has one **leader socket**, but it is an opportunistic terminal arbitration mechanism, not IP2's authorized controller/viewer policy. First Init claims a vacant slot; a later Init cannot steal an occupied slot. Recognized user Input from **any socket, even one that never sent Init**, takes leadership and reaches the child. Nonleader Resize is ignored while a leader exists, but **any Resize claims an empty slot**. Disconnect itself clears leadership without selecting a successor or changing size; later Input, Resize or Init can acquire it without a Host grant. `Send` bypasses leadership entirely. Evidence: [states.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/states.json), [daemon-current.log](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/daemon-current.log).
+
+**source:** Query routing and focus follow different conditions. Whole terminal replies from nonleaders are normally dropped; the leader's replies reach the child. With no Init clients, the daemon answers DA1 itself, but not DSR. This creates both a no-answer case (Init viewer remains, no leader) and a duplicate-DA case (no Init clients, but a non-Init leader also replies). Focus follows the zero/nonzero **Init-client population**, even when the leader is unchanged. A split passive DA response also demonstrated unintended takeover because classification restarts for each Input payload.
+
+**inference:** Host must own controller admission, handoff/revocation, no-controller behavior, permitted input/resize paths, and terminal-response/focus policy. A zmx socket being a nonleader or lacking Init is not a read-only viewer guarantee.
+
+## Target and proof method
+
+**source:** Executed the same supplied binary as EX1/EX2a, SHA-256 `9e4bb4b3d29c790c24b56eddaab8b6087e759999ae2d0cfe5f584a0d8886f5da`, against source `0a18bee7d3555b7822d1cb79cca2304d6ef2711b`. Decisive source files were compared to their pinned Git blobs. [provenance.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/provenance.json). Build provenance remains supplied by EX0; no rebuild was performed.
+
+**source:** One session `s1` was used per run, always with the explicit isolated root:
+
+```sh
+ZMX_DIR=/Users/shravansunder/code/projects/agentstudio.feat-daemon/tmp/ex/z \
+  /Users/shravansunder/code/projects/agentstudio.feat-daemon/tmp/experiments/2026-10-20-zmx-latest/install/bin/zmx \
+  attach s1 /bin/zsh -f -i -l
+```
+
+An EOF input pipe created the shell without a persistent CLI viewer. A no-Init administrative IPC connection M used `Send` to start [pty_recorder.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/pty_recorder.py) as an ordinary foreground job **inside that interactive zsh**. The recorder put its real PTY into raw mode, recorded stdin bytes, called real `stty size`, counted handled SIGWINCH, and emitted queries/focus-mode controls from an out-of-band FIFO. This separated observation from C1/C2/C3's input authority. The measured effects are foreground-child effects, not native UI proof.
+
+Final-run processes were daemon **11136**, zsh **11137**, and foreground recorder **11138** / PGID **11138**. Exact PID/PPID/PGID and tty receipts are [processes.ps](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/processes.ps) and [child-identity.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/child-identity.json).
+
+The IPC client in [leadership_probe.py](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/leadership_probe.py) reuses EX2a's Header/Info parsing:
+
+- Header `<BBHI`: tag, version=1, reserved=0, payload length; 8 bytes. `src/ipc.zig:46–51`.
+- Init/Resize `<HHHH`: rows, columns, pixel dimensions; 8 bytes. `src/ipc.zig:53–58`.
+- Input=0, Output=1, Resize=2, Info=6, Init=7, Send=18, EnvGet=19, EnvSet=20, EnvData=21. `src/ipc.zig:8–33`.
+- Info is 552 bytes; exact layout `src/ipc.zig:107–119`. Host is little-endian; no portable network-endian assumption was added.
+
+**source:** Each client set `EX5_CLIENT=<identity>` through EnvSet. M's EnvGet read the **leader's** environment fingerprint (`src/loop.zig:1333–1336`), corroborated by daemon leader logs and the actual child effects. C1/C2 and later Init clients imitated zmx CLI feedback: when the daemon requested size with an empty Resize message, they sent their current dimensions. C3 never sent Init and deliberately did not auto-answer Resize, making leadership movement and actual size changes separately observable.
+
+**source:** An Input/Resize operation was closed by a same-client Info processing fence. M then sent a unique NUL-delimited sentinel through Send; the recorder closed its stdin observation window only when that sentinel arrived. Client replies were fenced before the sentinel. Disconnect processing was witnessed by Info counts, with a current log-tail witness for the true zero-socket case. **No timeout or wait-for-idle was used to infer absent input, query replies or focus.** Acquisition time limits were hang bounds only. [protocol.md](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/protocol.md).
+
+Executed from repository root:
+
+```sh
+python3 tmp/experiments/2026-10-20-zmx-latest/ex5/leadership_probe.py
+python3 tmp/experiments/2026-10-20-zmx-latest/ex5/verify_observations.py
+```
+
+Both exited **0**. The final run retained **32 correlated observations**, **24/24 receipt checks**, and **400 complete independently audited IPC frames**, with no framing residue. [checks.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/checks.json). A small first run is separately retained under `ex5/first-run/`; the final run added an explicit Send bypass and truly zero Unix-socket clients during query emission. Use fresh artifact names/FIFOs for repetition.
+
+## Observations
+
+Sizes below are `stty`'s **rows columns**. SIGWINCH is cumulative **handler deliveries**, not a count of kernel sends: ordinary signals can coalesce. In particular, first Init can both change geometry and explicitly signal the foreground group, while this recorder observed one delivery. D1/D2 are freshly connected C1/C2 replacements used to reproduce the disconnect case.
+
+| Observation | Leader | stty rows cols | cumulative WINCH deliveries | child input in window |
+|---|---|---|---:|---|
+| 00-no-Init-baseline-focus-enabled | NONE | 24 120 | 0 | `b''` |
+| 01-C1-Init-120x40 | C1 | 40 120 | 1 | `b'\x1b[I'` |
+| 02-C2-Init-100x30 | C1 | 40 120 | 1 | `b''` |
+| 03-C2-Resize-while-C1-leader | C1 | 40 120 | 1 | `b''` |
+| 04-C2-Input-and-CLI-resize-feedback | C2 | 30 100 | 2 | `b'C2_TYPED;'` |
+| 05-C1-Input-while-C2-leader | C1 | 40 120 | 3 | `b'C1_TYPED;'` |
+| 06-C3-no-Init-Resize-while-C1-leader | C1 | 40 120 | 3 | `b''` |
+| 07-C3-no-Init-Input-no-resize-feedback | C3 | 40 120 | 3 | `b'C3_TYPED;'` |
+| 08-C3-no-Init-Resize-while-C3-leader | C3 | 25 90 | 4 | `b''` |
+| 09-C1-reclaim-before-query-tests | C1 | 40 120 | 5 | `b'C1_RECLAIM;'` |
+| 09b-M-Send-bypasses-leader-without-promoting | C1 | 40 120 | 5 | `b'M_ADMIN_SEND;'` |
+| 10-C2-disconnect-C1-remains-Init | C1 | 40 120 | 5 | `b''` |
+| 11-last-Init-C1-abrupt-disconnect | NONE | 40 120 | 5 | `b'\x1b[O'` |
+| 12-C1-replacement-first-Init | D1 | 40 120 | 6 | `b'\x1b[I'` |
+| 13-C2-replacement-second-Init | D1 | 40 120 | 6 | `b''` |
+| 14-leader-abrupt-disconnect-with-an-Init-viewer | NONE | 40 120 | 6 | `b''` |
+| 15-C3-Resize-claims-vacant-leadership-without-Init | C3 | 20 80 | 7 | `b''` |
+| 16-last-Init-disappears-but-C3-still-leader | C3 | 20 80 | 7 | `b'\x1b[O'` |
+| 17-C4-Init-does-not-steal-C3-leadership | C3 | 20 80 | 7 | `b'\x1b[I'` |
+| 18-C3-leader-disconnect-C4-viewer-remains | NONE | 20 80 | 7 | `b''` |
+| 19-new-Init-C5-automatically-claims-vacancy | C5 | 22 77 | 8 | `b''` |
+| 20-viewer-split-DA-reply-fragment-promotes | C4 | 20 70 | 9 | `b'?64;401c'` |
+| 21-focus-disabled-last-Init-disconnect | NONE | 20 70 | 9 | `b''` |
+| 22-focus-disabled-first-Init | C6 | 18 66 | 10 | `b''` |
+| 23-focus-disabled-last-Init-again | NONE | 18 66 | 10 | `b''` |
+| 24-true-zero-sockets-query-closed-after-reconnect | NONE | 18 66 | 10 | `b'\x1b[?62;22c'` |
+
+| Query case | Init clients | total socket clients | leader | child DA1 replies | child DSR replies | exact child bytes |
+|---|---:|---:|---|---:|---:|---|
+| query-two-Init-C1-leader | 2 | 4 | C1 | 1 | 1 | `b'\x1b[?61;101c\x1b[11;21R'` |
+| query-one-Init-C1-leader | 1 | 3 | C1 | 1 | 1 | `b'\x1b[?61;101c\x1b[11;21R'` |
+| query-zero-Init-no-leader | 0 | 2 | NONE | 1 | 0 | `b'\x1b[?62;22c'` |
+| query-one-Init-but-no-leader | 1 | 3 | NONE | 0 | 0 | `b''` |
+| query-one-Init-non-Init-C3-leader | 1 | 3 | C3 | 1 | 1 | `b'\x1b[?63;301c\x1b[13;23R'` |
+| query-zero-Init-non-Init-C3-leader | 0 | 2 | C3 | 2 | 1 | `b'\x1b[?62;22c\x1b[?63;301c\x1b[13;23R'` |
+
+### Leadership, size and child input
+
+**source:** C1 Init established 120×40 and observed one SIGWINCH. C2 Init at 100×30 changed neither leadership, size nor signal count. C2's subsequent Resize also did nothing while C1 led. C2's printable input then reached the child, took leadership, and normal feedback resized to 100×30. C1's input was not rejected: it reached the child, retook leadership, and restored 120×40.
+
+**source:** C3's no-Init Resize was ignored while C1 led. C3's printable Input nevertheless took leadership and reached the child. Size initially remained 120×40 because C3 did not answer the daemon's request; a subsequent C3 Resize changed it to 90×25. Leadership assignment and geometry application are distinct steps. M's separate `Send(b'M_ADMIN_SEND;')` reached the child while C1 remained leader.
+
+**source:** Abruptly closing C1's socket while another Init client remained produced **leader NONE, unchanged 120×40, no extra SIGWINCH and no focus-out**. zmx did not immediately elect C2 or C3. Later C3 Resize, still without Init, acquired the vacancy and changed size to 80×20. A later newly attaching C5 acquired a vacant slot through Init alone and resized to 77×22, even though C4 was already an Init viewer.
+
+### Terminal queries and reply provenance
+
+Each case emitted **DA1 `ESC[c` and cursor-position DSR `ESC[6n`** from the real foreground child. Every live connection observed the query-bearing Output. The probe then sent distinct, syntactically terminal-shaped replies through each named responding client's Input, e.g. C1 `ESC[?61;101c` and `ESC[11;21R`; C3 `ESC[?63;301c` and `ESC[13;23R`. These intentionally identify provenance, rather than assert a particular terminal's real advertised capabilities/cursor. The exact synthetic payloads are recorded per case in `states.json`.
+
+**source:** With one or two Init clients and C1 leader, only C1's whole replies arrived. C2/C3 replies were filtered; no duplicate DA or DSR was observed. M was an administrative no-Init connection and did not synthesize query replies. The table therefore distinguishes Init clients from total socket clients.
+
+**source:** With zero Init clients and no leader, the child got only daemon DA1 **`ESC[?62;22c`**, no DSR. This also held with **truly zero socket clients**: after all clients closed and the daemon logged `remaining=0`, the child emitted the queries and positively observed that DA reply **before M reconnected**. The closed observation after reconnect contained exactly that reply and no DSR. [zero-socket-query.json](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/zero-socket-query.json).
+
+**source:** With one Init viewer but no leader after C1 loss, neither reply arrived. The daemon did not supply DA, because an Init client still existed; that client's passive replies were dropped because there was no leader. This is an observable no-answer state, not an assumption that disconnect elects the remaining viewer.
+
+**source:** When C3 was leader without Init and an Init viewer existed, C3's replies were accepted and the viewer's were dropped. After the last Init viewer left, C3 remained leader: DA1 then reached the child **twice**, once from the daemon and once from C3. DSR reached it once, from C3. There is no per-query deduplication here; daemon fallback and accepted leader Input coexist.
+
+**source:** A whole viewer reply was filtered, but splitting it across two Input frames—`ESC[` then `?64;401c`—promoted viewer C4 and delivered **`?64;401c`** as ordinary child input. The first incomplete fragment was dropped; the second fragment was classified as printable user input, taking leadership and triggering C4's size feedback. This is a bounded demonstrated framing-sensitive case, not a claim about every possible reply segmentation.
+
+### Focus and SIGWINCH
+
+**source:** With DECSET1004 enabled by the child:
+
+- First Init caused exactly one child focus-in `ESC[I` in the closed window.
+- Adding/removing another Init while at least one remained caused no focus transition.
+- Last Init disappearance caused focus-out `ESC[O`, including when **C3 remained leader without Init**.
+- First Init appearance caused focus-in even when **C3 stayed leader and geometry stayed unchanged**.
+- Input-driven leadership changes alone did not generate focus transitions.
+
+After the child emitted `ESC[?1004l`, last/first/last Init transitions produced no focus bytes. Child signal count still increased when a new first Init changed size; focus and WINCH are separate effects. The table records all ten cumulative handled WINCH deliveries in this final run, with per-delivery timestamps in the recorder's event receipts.
+
+## Explanation from pinned source
+
+All anchors below refer to `tmp/experiments/2026-10-20-zmx-latest/zmx/` at **0a18bee**; numbered excerpts are retained in [source-anchors.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/source-anchors.txt).
+
+| Observation | Source explanation |
+|---|---|
+| First Init wins; later Init does not steal | `src/loop.zig:977–989`: mark `is_terminal=true`; call `setLeader` only if leader is null; compute whether this client is leader. |
+| Only leader Init resizes and explicitly signals the foreground group | `src/loop.zig:997–998`, `:1024–1040`: resize VT, apply `TIOCSWINSZ`, and send WINCH to the foreground process group when output exists. A nonleader Init gets a snapshot without that resize/signal branch. |
+| Printable Input steals, including from a no-Init socket | `src/loop.zig:916–928`: leader Input is queued wholesale; otherwise `isUserInput` triggers `setLeader` and queues the payload. There is no `is_terminal` or controller-grant check. |
+| Takeover asks for the new client's dimensions | `src/loop.zig:868–874`: assign the leader pointer and append an empty Resize request. Real CLI replies with its size at `src/loop.zig:164–174`. Input itself does not apply dimensions. |
+| Resize cannot steal an occupied leader, but claims a vacancy | `src/loop.zig:1053–1063`: claim if leader null, reject if this client is not leader, otherwise resize PTY and VT. No Init requirement. |
+| Nonleader Send still reaches the child without promotion | `src/loop.zig:931–934`: unconditional `queuePtyInput`; dispatch at `:479`. This is distinct from the Input classifier. |
+| Abrupt disconnect clears without election | `src/loop.zig:684–700`: null the leader pointer, remove client; no successor choice or size operation. EOF/hangup closure uses this path at `:469–473`, `:539–548`. |
+| All sockets see queries in Output | `src/loop.zig:410–423`: broadcast PTY bytes to all connected clients, not just the leader or Init clients. |
+| Whole passive replies do not take control | `src/util.zig:692–705`, `:708–755`: private CSI replies and ordinary cursor-position reports do not classify as user typing; `src/loop.zig:916–928` then discards those nonleader Input payloads. The leader bypasses classification and forwards its whole payload. |
+| Split response can become typing | `src/util.zig:709`: a **new parser is initialized for each payload**. `:727–728` accepts a printable action. A continuation without its earlier ESC therefore classified as typing in the demonstrated case. |
+| Daemon DA fallback depends on Init population, not leader | `src/loop.zig:674–680` defines a terminal client by `is_terminal`; `:372–377` calls the fallback only when none exists. `src/util.zig:257–296` recognizes DA1/DA2 and queues fixed replies; it has no DSR response path. |
+| Focus follows Init population separately from leadership | `src/loop.zig:260–268`: compare previous/current `hasTerminalClient()`, gate by `focus_event`, and queue `ESC[I` / `ESC[O`. A no-Init leader does not count as a terminal client. |
+| Leader fingerprint readback | `src/loop.zig:876–880`, `:1333–1346`: locate leader socket; EnvGet returns that client's stored EnvSet payload. |
+
+**source:** The protocol exposes one backend leader pointer and a separate per-client Init/terminal bit. The handlers exercised here contain no viewer-role or explicit controller-grant field. The daemon also does not inspect whether a socket belongs to a human or an agent. This result describes authority within an already reachable session socket; it does not audit filesystem/socket access security.
+
+## Exact comparison with IP2
+
+The current [initial profile](../../initial-profile.html) states IP2 at **line 10**, with the phone-viewer example at **line 24**: at most one terminal input/resize controller, other attachments viewing, and viewing alone cannot take control or resize. [DS04 specification](../../designs/04-terminal-runtime/specification.html) **line 16** additionally separates native focus from backend leadership and says a viewer or hidden Host attachment cannot silently choose control or child-visible focus. Exact handoff/no-controller/focus contracts remain G4. The commission also explicitly requires that disconnect never silently grant control to an agent; that supplied constraint is applied without pretending G4 is otherwise closed.
+
+| IP2 / supplied constraint | zmx observation | Difference the Host must own |
+|---|---|---|
+| At most one input/resize controller; other attachments are viewers | One leader pointer exists, but any recognized user Input can replace it and is accepted; no-Init C3 can do this. Send bypasses the pointer. | The pointer is not an exclusive input-authority grant. Host must admit/refuse frontend input and all exposed bypass operations according to the selected controller. |
+| Attachment alone never steals control | Second Init leaves an existing leader and dimensions intact. This **matches** the occupied-slot case. First/new Init claims an empty slot and can resize, regardless of intended viewer role. | Host must distinguish viewer attachment from authorized control acquisition, including the no-controller case. |
+| Viewer viewport cannot select execution size | Nonleader Resize is ignored while a leader exists, but a queued/new observer Resize can claim the vacancy after disconnect. | Host must gate resize by its current grant, not by who reaches a vacant backend slot first. |
+| Disconnect never silently grants control to an agent | Disconnect itself **does not** grant control or change size. However later Input/Resize/Init acquires the slot without distinguishing agent/human or authorized viewer/controller. | Keep a deliberate no-controller state and authorized acquisition policy. Do not describe mere disconnect as immediate automatic election; the demonstrated hazard is subsequent implicit acquisition. |
+| Passive viewers remain passive | Whole replies are normally filtered, but a reply continuation split across Input frames promoted C4. | Do not use zmx's payload-local typing heuristic as the authority check. Terminal-response forwarding also needs a defined owner/path. |
+| Native focus and control are distinct; viewer presence cannot silently choose child focus | First/last Init changes focus even with the same C3 controller, and a non-Init controller does not keep focus-in alive. | Host must define and prove which attachment/control events may affect child focus; backend Init population is not automatically the selected product meaning. |
+| Queries must continue under the declared control/no-controller policy | Remaining Init viewer/no leader yields no DA/DSR; no Init/non-Init leader yields two DA replies. | Host must own terminal-query response routing and fallback/deduplication semantics rather than infer them from frontend viewer counts. |
+
+**inference:** zmx supplies useful mechanics—leader-sensitive Resize, passive whole-reply filtering, client snapshots and survival without clients—but it cannot independently enforce IP2. Keeping backend arbitration facts separate from the Host's authorized controller facts is required by these observations. This report does not choose the final transport topology, handoff UI or focus policy.
+
+## Limits and cleanup
+
+- **source:** Input reached a real foreground Python recorder inside interactive zsh; geometry was read with real `stty`. This does not prove native Ghostty keys, UI focus, pixels, shell line editing or application-specific query handling.
+- **gaps:** One local macOS binary, one sequentially driven multi-client session per run, no simultaneous-input race or resource/backpressure stress. Other platforms and ordering races require separate runs.
+- **gaps:** SIGWINCH counts are observed Python-handler deliveries. Coalescing means they cannot establish an exact number of kernel-generated/manual sends. Source identifies those mechanisms; no timing assertion or inflated timeout was used.
+- **gaps:** DA1/DSR queries were emitted together in one write; synthetic clients returned distinct complete replies except the explicitly fragmented case. Arbitrary split query recognition, all terminal query families and full native terminal behavior were not tested.
+- **source:** Final cleanup killed only `s1` through the exact isolated binary/root. `ps` found **no recorded PID survivors and no process whose argv begins with the exact experiment binary**; final zmx list was empty. [cleanup.txt](../../../../../tmp/experiments/2026-10-20-zmx-latest/ex5/cleanup.txt). The first run also independently completed cleanup.
+- **source:** All scripts, logs and raw wire/input receipts are under `ex5/`; retained artifacts were approximately **0.36 MB before this report**, well below 50 MB. No product edits, network calls or board posts.
+- **source:** Prior trace-home gap remains: no supplied work thread or authorized session-logs destination. These assigned artifacts return scoped evidence for the commissioner's trace.
+
+Checkpoint: EX5 answered the requested leadership/control/query/focus question. All experiment daemons are gone. The remaining work is the commissioner's controller/no-controller/query/focus contract, not further execution by this researcher.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

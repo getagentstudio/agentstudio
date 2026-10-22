@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · E2: what each receipt actually establishes</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="e2-effect-boundaries-150b2de8.html">AgentStudio daemon · E2: what each receipt actually establishes</a></nav></ex-nav>
+<ex-document id="content"><h1>E2: what each receipt actually establishes</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../research/evidence/2026-10-15-daemon-extraction-survey/e2-effect-boundaries.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## E2: what each receipt actually establishes
+
+The current catalogs do not share one completion boundary. E2 must observe each operation's real effect independently of its RPC response. A successful transport, an admitted operation, a committed database change, a native effect and a displayed result are different observations.
+
+This is source-grounded experiment preparation at AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462` and its exact agentstudio-git pin `4cca397dfc869857064da4e9ec8289ea46adc479`. Tests were read, not run. No Host/Gateway implementation or experiment result is established.
+
+## Coverage and reading order
+
+| Evidence matrix | Coverage | What its count means |
+| --- | --- | --- |
+| [App RPC](e2-app-rpc-evidence-b92eff3c.html) | 57 names: 54 built-ins plus 3 composition methods | Declared method coverage; does not imply every method succeeds on a live surface |
+| [Git operations](e2-git-operation-evidence-3fd041ba.html) | 44 operations: 33 local, 10 remote, 1 discovery | Package contract coverage; 36 have current app production call sites and 8 are SDK-only |
+| [Bridge operations](e2-bridge-operation-evidence-c4f86c9e.html) | 16 semantic calls, 22 nested annotation operations; notes on 7 controls and 5 content kinds | Several layers of one protocol family; these counts must not be added as independent features |
+
+The 154 AppCommand identities beneath `command.execute` retain their [separate inventory](command-surface-inventory-4cc8ee5d.html). This desk pass does not exhaustively classify every command owner's internal effect. File coverage and source reading establish a survey, not runtime parity.
+
+## Decisive observations checked by the Lead
+
+| Finding | Decisive current source | E2 consequence |
+| --- | --- | --- |
+| Generic app RPC validates the returned schema after awaiting its handler. No general correlation/request-result deduplication was found in this registration/server path. | [Handler then result encoding](../../../../../Sources/AgentStudioAppIPC/AppIPCTypedMethodRegistration.swift), [client error response](../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift) | A post-effect encoding error can reach the client as `remoteFailure`; wire loss or invalid typed results instead produce delivery uncertainty. Neither proves zero effects. Preserve operation-specific keys rather than treating a correlation ID as a replay key. |
+| `auth.login` changes the connection and queues credential persistence. | [Login and persistence queue](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift) | Login success, current connection authority and persistence completion need distinct observations. |
+| `pane.message.changes` also advances receipt confirmation and can prune acknowledged changes. | [Changes transaction](../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift) | Method names and query-shaped results cannot define the read/write classification. Observe the transaction's bookkeeping. |
+| `session.event` creates a fresh record ID and returns `admitted` even when reduction does not apply a change. | [Ingestion adapter](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift) | Count retained evidence and reducer disposition separately. Reused correlation is not deduplication. |
+| `terminal.send` acknowledges runtime handoff; it does not establish PTY consumption or shell execution. | [Input handoff](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) | Use a controlled terminal producer for effects. Never replay arbitrary uncertain input as an automatic recovery step. |
+| Terminal-pane creation commits placement before native materialization; browser creation has a different graph/native/autosave path. | [Terminal insertion](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+PaneInsertion.swift), [browser insertion](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+PaneInsertion.swift) | Durable topology and native readiness need different counters. A fresh invocation can allocate another resource. |
+| Event subscriptions are connection-owned and removed on backpressure; the broker has no replay cursor. | [Broker](../../../../../Sources/AgentStudioAppIPC/IPCEventBroker.swift) | A delivery count cannot establish durable catch-up or consumer application. |
+| `bridge.fileView.showMarkdownPreview` is declared but both examined page handlers reject it. | [Review handler](../../../../../BridgeWeb/src/app/use-bridge-review-control-event-listeners.ts), [Files handler](../../../../../BridgeWeb/src/file-viewer/use-bridge-file-viewer-control-event-listeners.ts) | Catalog declaration or an injected test port cannot stand in for successful current feature behavior. |
+| Annotation dispatch and publication-install admission can already change state while the provider builds its response, before generic `completeControl`. | [Provider](../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift), [dispatcher](../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSchemeControlDispatcher.swift) | Generic session completion cannot be used as the SQL-effect commit boundary. Check each effect owner's admission fence. |
+| Generic Bridge `succeeded` means the outer response is not `requestError`. It can contain a failed/partial/rejected typed payload. | [Settlement](../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift) | Decode the nested outcome; counting outer success manufactures false effect success. |
+| All annotation commands are conservatively marked mutation, including nested discovery/history/demand operations. Publication-install admission is marked non-mutation despite changing runtime authority. | [Operation flag](../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeProductSession+Operations.swift) | The flag governs session uncertainty handling, not a storage-effect taxonomy. |
+| `source.refresh` can commit a source relationship, then report stale when demand/currentness changes across its awaited repository work. | [Refresh](../../../../../Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor.swift) | A stale/refused final observation is not universally a no-write receipt. Inspect revisions and canonical relationship. |
+| JSON export continues under application custody after admitted writing, even if the operation is later cancelled. | [Native output owner](../../../../../Sources/AgentStudio/App/Coordination/WorktreeAnnotationOutputEffects.swift) | Cancellation is not a zero-effect oracle. Match the effect and cleanup/finalization evidence. |
+| Unknown output can be explicitly repeated only as a new attempt reusing exact stored bytes. Startup converts prepared attempts to unknown. | [Repeat](../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift), [recovery](../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift) | Distinguish session operation ID, durable attempt ID and explicit repeat lineage. Do not auto-repeat an unknown effect. |
+| Staged-fetch promotion locks and verifies refs, but a commit error explicitly permits indeterminate partial ref changes. Cleanup commits bounded pages before later pages. | [Promotion](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/LibGit2StagedFetchPromoter.swift#L65), [cleanup](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitRemote/SystemGitRemoteClient+StagedFetchCleanup.swift#L12) | Read authoritative refs after uncertainty. A thrown error does not imply no changes; compare expected values and owned namespaces. |
+| Fork cancellation is forwarded into its transaction and joined before writer custody releases. Ordinary local operations do not inherit that specific contract. | [Fork owner](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Sources/AgentStudioGitLocal/LibGit2AgentStudioGitLocalClient.swift#L76) | Score cancellation/rollback per operation; one strong fork contract cannot justify a universal claim. |
+
+## Small set of discriminating future cases
+
+These are proposed cases, not executed proof or new retry policy. Use isolated fixtures, correlated owner barriers and the mandatory client → socket → Gateway → Host route. Keep a transport-loss outcome distinct from an explicit owner refusal.
+
+| Case | Independent effect observation | Failure/loss point and discriminating result |
+| --- | --- | --- |
+| Resource creation | Exact fixture graph/core rows and created resource identity; native readiness separately | Lose reply after creation. A second fresh invocation may create another resource; counting replies cannot decide the first effect. |
+| Existing retained-message duplicate contract | Stored source-pane/message identity, exact payload and revision | Lose reply after commit; retry the same admitted intent and a conflicting payload separately. Existing duplicate semantics must survive the route. |
+| Hook admission versus reduction | Hook evidence identity, reducer disposition, binding revision and activity outcome | Reuse a correlation and inject an ignored valid reduction. Observe the contract rather than assuming one response equals one state change. |
+| Terminal input uncertainty | Controlled producer's independently correlated observable state | Lose reply after input handoff; distinguish uncertainty from proven non-delivery. No arbitrary keyboard replay. |
+| Source refresh currentness | Canonical relationship/fingerprint and revision, captured with the request's demand/source fences | Compare demand change during the write against failure before the write and same-epoch retry. Both can return stale; the pre-await fence consumes the epoch, while a completed write can also publish invalidation before the stale result. |
+| Annotation output custody | Durable attempt/history and exact output bytes plus actual clipboard/file fixture state | Lose session result after admitted native write, then fail finalization. Known effect, partial success, unknown and cleanup-only retry must remain distinguishable. |
+| Git promotion/cleanup | Locked expected refs, exact post-state and staging namespace identity | Fail during promotion or after one cleanup page. Detect partial/unknown changes without claiming zero effects from the error. |
+| Authority crossing | Target scope/current authority revision at the actual effect boundary; effect counter independent of wrapper settlement | Revoke or change context before admission, during awaited work and after admitted effect. Report each operation's real fence; a shared outer check does not establish universal atomic revocation with SQL. |
+| Post-effect error response | Exact retained message row/payload/revision independent of caller error | Inject result-validation failure after commit. A `remoteFailure`, including an invalid-params-shaped error, must not be interpreted as pre-effect rejection. |
+| Generic mutation-flag mismatch | Runtime install-admission state for a flagged read; no mutation for a nested annotation read | Expire/revoke after provider dispatch. A non-mutation-flagged authority change can settle failed, while a flagged nested read can settle unknown without changing storage. Check actual effect rather than the flag/outcome alone. |
+| Output recovery overlap, conditional on restart scope | Predecessor effect-task custody/extinction and exclusive recovery ownership, plus attempt and file state | Prevent a new recovery owner from marking a still-active predecessor's prepared write unknown. Database writer serialization alone is insufficient if it does not exclude the external effect and recovery overlap. This is a candidate extraction/restart case, not a demonstrated current multi-process bug. |
+
+Calibrate the fixture counter with a deliberately duplicated observable effect and a deliberately wrong post-state. Matching current state alone cannot attribute an effect to one request amid concurrent writers. Reconciliation is strongest when the owner retains an identity, revision, exact bytes or expected-value evidence that correlates it.
+
+## Proof limits and owner gates
+
+The annotation test named “mutate only after committed completion” calls the provider without product admission for its before-check. The provider refuses before invoking that test handler; its title does not establish that production SQL waits for generic session completion. [Test body](../../../../../Tests/AgentStudioTests/Features/Bridge/BridgeProductSchemeControlCompletionEffectsTests.swift), [production provider](../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgePaneProductSchemeProvider.swift).
+
+No universal atomic product-revocation-plus-annotation-SQL boundary was established. Generic session checks, edit ownership/revision checks, source fencing and native output admission have different scopes. This is a source-proof limit to test at the effect boundary, not an inferred exploit or a chosen replacement mechanism.
+
+The current [Advisor challenge](advisor-e2-challenge-86f5a6c0.html) accepted the five central findings and added the discriminators above. Lead checked its primary anchors. The suggested blanket internal-error code was unproved and is not adopted: registration-error defaults and schema validation map to invalid params (`-32602`), while other error kinds can map differently. [Error mapping](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCRequestError.swift). No claim that a production encoding fault was executed follows from this source path. For output recovery, exclusive ownership must cover admitted external work and recovery, not merely serialize SQLite transactions. Current cleanup namespace readback establishes present refs, not unique historical effect attribution.
+
+Phone Gateway placement remains the existing owner question. Disconnected authorized agent ingress versus Gateway-only frontend routing is a separate unsettled outcome. Restart persistence, receipt retention, controller/layout policy and performance/resource tolerances are also not selected here. None of these is resolved by a convenient fixture, current implementation behavior or Advisor agreement.
+
+Next owner: `specification-gap` for precise operation outcomes and E2 oracles; `requirements-gap` for the already-recorded placement/disconnected-ingress meanings. The [primary experiment proposal](../../experiments/primary-experiments.html) remains a proposal, not execution authority.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Git and repository discovery</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="index.html">AgentStudio daemon · Git and repository discovery</a></nav></ex-nav>
+<ex-document id="content"><h1>Git and repository discovery</h1>
+<ex-markdown id="domain-outcome"><script type="text/markdown">
+**Usable outcome:** The sidebar/review/CLI asks the addressed Host for repository facts and Git operations, preserving scope/currentness and operation-specific effects.
+
+**Proposed delivery placement:** I3 read/discovery, I4 mutations; platform evidence starts I0. Read this domain together with its inputs; a whole capability is more than an SDK call or a parser success.
+
+[MVP/increments](../../explainer/delivery.html) · [Technical integration](../../explainer/architecture.html) · [All features](../../explainer/features.html)
+</script></ex-markdown><h2 id="contract">Complete capability contract</h2><ex-markdown id="domain-contract"><script type="text/markdown">
+## Git operations, discovery and observations: observable contracts
+
+This is the DS05 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.html). The separate [Requirements](../../user-requirements.html) authorize its meaning; the [domain definitions](../../domain-entities.html) and shared [operation interpretation](../../capability-contracts.html#source--shared-interpretation-of-an-operation) apply. Its [design brief](README.html) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.html) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K1 — Git operations other than fork
+
+**Consumer / entities / basis:** worktree, review and CLI users; E7/E8/E22; U4–U6/U9/U11, R2/R4. Current behavior is the pinned [Git operation desk](../../explainer/research/e2-git-operation-evidence-3fd041ba.html) and [non-fork contract evidence](../../explainer/research/capability-git-contract-evidence-f9adc359.html). These enumerate all forty-two non-fork SDK operations in the forty-four-operation survey; they are not forty-two selected RPC methods.
+
+| Operation family | Input and normal observation to account for | Boundary/failure example and required distinction | Proof boundary / exact target gap |
+| --- | --- | --- | --- |
+| Repository identity, worktree enumeration/validation | Repository/worktree location → identity, snapshots or validation result. No implicit fetch/repair. | Invalid registration, inaccessible read and exact non-repository are different; list/validate does not reserve the directory against replacement. | Real registration and filesystem; cross-Host/replacement identity and supported name domain G7. |
+| Ordinary worktree creation | Destination plus new/existing/detached mode, pinned start/expected tip and optional upstream → resulting registration/HEAD and large-file detail. | Ref attachment or LFS follow-up can differ from directory creation. Error after mutation and failed rollback cannot mean untouched. Ordinary cancellation does not inherit fork's cancellation behavior. | Actual refs/admin/directory/index/upstream/content, including failure residue; complete selected create modes/policy G1/G7. |
+| Lock/unlock/stale administrative prune | Exact worktree target and lock reason/prune request → changed marker or stale administration result. | Lock succeeds, then snapshot reread fails. Live/locked prune refusal is different from deleting a working directory. | Native marker/administration before and after fault; concurrent lock custody policy G7/G8. |
+| Worktree removal | Target plus explicit directory-removal and force-discard intent → separately observed administration and directory dispositions. | Removed/retained/partial/unknown/not-requested cannot become one success flag. A returned failure can coexist with effects. | Actual registration, directory and lock residue; path incarnation/race and target force policy G7/G8. |
+| Status plan/facts/exact line detail/aggregate | Declared worktree and scope/options → status coverage, native facts and separate line detail. | Aggregate reads are sequential. Empty scoped facts do not prove clean full worktree; `[]` pathspec and absent pathspec have different clean-baseline meaning. | Actual index/worktree/config plus continuity witness; coherent-currentness promise G9. |
+| Tracked paths/ignore | Index scope or relative names → stage-zero entries/kinds or ignore decisions. | Filtered versus raw entry count; error is not false/absent. Mutable index/config reads do not reserve future state. | Real staged/conflicted/submodule/ignored fixtures; byte-name policy G7. |
+| Branch names/use/graph/integration | Repository, mutable names or pinned commits and bounded search → branch/use/ahead-behind/integration evidence. | Unreadable use is not free; bounded search without proof is not safe integration. A named branch can move after assessment. | Native graph and checkout administration with races; selected history profiles G7. |
+| Conditional branch deletion | Name plus expected commit → deleted, retained reason or uncertain result, with metadata/lock residue. | Deleted ref may leave config/reflog; moved/recreated branch differs from not-found. Expected OID is a condition, not a deduplication key. | Real ref/config/reflog/lock observations and controlled races; post-submit reconciliation G8. |
+| Review target/revision/tree | Declared repository, time/row bounds, revision and subtree → resolved objects/rows/tree, with truncation. | Mutable ref label is not resolved OID. Truncated capture is not complete history. Opaque comparison seed is a local calculation aid, not a wire/restart token. | Native objects/ref moves/tree, selected target/window semantics G1/G7. |
+| Diff/content/review construction | Declared base/head/path, scope and content budgets → typed comparison and content results. | Binary, missing, truncated, too large, cancelled and failed content do not become empty text or a clean diff. Detail/currentness fences remain operation-specific. | Actual object/worktree bytes and comparison semantics; exact supported limits/profile G7/G9. |
+| Remote configuration/read/fetch operations | Explicit repository/remote/URL and operation options → configuration, fetch/push/probe outcome as declared in the desk. | Local configuration change, remote-server effect, process exit and caller result differ. Credentials and invoking machine must be explicit. | Real config/ref/remote-process effects under admitted test remote; credential/pairing and cancellation G8/G12. |
+| Staged fetch/promotion/cleanup | Repository/common directory, private stage identity, exact staged/canonical ref plan and expected OIDs → stage/promotion/cleanup dispositions. | Stage can write before guard/result failure. Promotion commit can be indeterminate. Cleanup pages can partly commit; retained stage IDs do not protect omitted IDs. | Actual private/canonical refs/guards and bounded-page failures; no automatic replay on uncertain promotion, exact target receipt policy G8. |
+| Exact discovery candidate | Exact candidate → validated evidence, not-repository reason or failed observation. | Ancestor search must not turn an exact non-repository into a different repository. Inaccessibility is not absence. | Real exact-root/linked/bare/invalid/inaccessible cases; discovery eligibility G7/K3. |
+
+The exact forty-four-operation list, including `forkWorktree` and `forkWorktreeEligibility`, remains the [survey inventory](../../research/extraction-survey.html). K4 covers those two. Renaming public operations or exposing SDK-only operations is not selected. Native Git mechanics and application archive/prune/create policy have separate success boundaries.
+
+## K3 — Discovery, inventory and refresh
+
+**Consumer / entities / basis:** repository sidebar and operator; E7/E8/E22; U4/U6/U11/U13. Intake, scanning, canonical membership and a displayed projection are different observable facts. Exact-candidate discovery does not search ancestors; invalid/unreadable evidence is not successful empty inventory.
+
+The current topology path rechecks source/sequence/root/baseline before applying membership. A scan result alone is not an authorized mutation. Persistence failure after graph/effect application cannot be reported as an atomic untouched operation. Inventory root/config/ignore and currentness belong in the selected contract; exact cross-client membership and restart meaning remain G3/G9.
+
+Git, remote and Forge attention/demand currently differ. A complete empty Forge result for no demanded branches says nothing about all repository PRs. Failed, rate-limited, truncated, no-demand and complete-empty observations must remain distinguishable for a selected feature. The Host supplies repository facts independently of a Swift view; client attention can inform refresh coverage but does not become another repository owner. Full-host frequency, cross-client demand and retained no-client coverage remain G9 and are not established by today’s focused-window policy.
+
+Filesystem change observation is a separate cross-platform boundary within this family. The current [Darwin registration](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventStreamClient.swift) carries registration generation, root, status-observation identity/scopes and continuity witnesses. Its [ingress overflow](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressBuffer.swift) retains recovery and marks continuity uncertain rather than treating dropped batches as complete. A selected observation contract must name watched coverage, source lifetime/position, canonical path/alias provenance, registration failure, overflow/lost coverage and what a later refresh can reestablish. Silent loss cannot count as fresh complete coverage. G7/G9 retain the Linux counterpart's supported limits/continuity profile; this does not select a Linux watcher API or a new public watch method.
+
+**Proof:** real candidate filesystem and membership transitions with stale/raced observations; ground-truth file changes including rename, new directory, alias and admitted overflow/loss cases on both platforms; actual local/remote/Forge source boundary for whichever features are selected. Cached values or an empty array cannot prove full fresh coverage. K11 covers publication; G7/G9 retain exact observation, inventory and demand profiles.
+
+</script></ex-markdown><h2 id="folder-documents">All documents in this spec folder</h2><ex-markdown id="folder-document-links"><script type="text/markdown">
+- [DS05 — Git operations, discovery and observations: Markdown](README.md) · [HTML](README.html)
+- [How the 44 Git SDK operations fit the Host: Markdown](git-operation-map.md) · [HTML](git-operation-map.html)
+- [Git parity reference: app policy plus pinned SDK: Markdown](research/parity-reference-2026-10-22.md) · [HTML](research/parity-reference-2026-10-22.html)
+- [Git operations, discovery and observations: observable contracts: Markdown](specification.md) · [HTML](specification.html)
+</script></ex-markdown><h2 id="design-inputs">Inputs, open decisions and proof boundary</h2><ex-markdown id="domain-brief"><script type="text/markdown">
+## DS05 — Git operations, discovery and observations
+
+## Read this folder
+
+- [Folder HTML reader](index.html).
+- [Specification: Markdown](specification.md) · [HTML](specification.html).
+- [All 44 Git SDK operations: acquisition, effects and Host integration](git-operation-map.html).
+- [Shared Requirements](../../user-requirements.html) · [overall Specification](../../2026-10-15-agentstudio-daemon.html).
+
+Non-fork AgentStudio Git behavior, repository/worktree identity, refs/index/status/diff/remotes, discovery, membership, watchers and refresh/currentness on macOS and Linux.
+
+## Contract and inputs
+
+- Requirements: [shared authoritative source](../../user-requirements.html), scoped to U4/U6/U9/U11/U13.
+- Specification: [this design's capability contracts](specification.html), owning K1, K3; apply R2/R4 and the shared [observable spine](../../2026-10-15-agentstudio-daemon.html).
+- Domain definitions: [global identity appendix](../../domain-entities.html) and E1–E6 in the spine. This folder creates no new identity merely by being separate.
+- Required contract inputs: [DS01](../01-service-contracts/README.html), [DS02](../02-data-ownership-replication/README.html), [DS03](../03-authority-control-plane/README.html)
+
+## What this design must settle
+
+- Select the public subset and supported byte-name/path/filesystem/remote/credential profiles.
+- Preserve partial effects, indeterminate ref changes, exact-candidate discovery and source/coverage failures.
+- Define watcher continuity and demand/currentness without making a Swift view another repository owner.
+
+## Result consumed by later designs
+
+Operation-specific Git/platform contracts and source-qualified repository observations. The 42 surveyed non-fork SDK operations are classified without becoming 42 automatic public RPC methods.
+
+## Evidence to reopen
+
+- [2026-10-15-daemon-extraction-survey.md](../../research/extraction-survey.html)
+- [capability-git-contract-evidence.md](../../explainer/research/capability-git-contract-evidence-f9adc359.html)
+- [e2-git-operation-evidence.md](../../explainer/research/e2-git-operation-evidence-3fd041ba.html)
+
+## Proof boundary
+
+Real repository/ref/index/filesystem/remote interactions with raced mutations, cancellation, watcher loss and explicit residue on both platforms. E2/E4; leaf feasibility is not complete parity.
+
+## Design cycle
+
+Use the [common cycle and completion rule](../README.html#source--each-design-cycle). The scoped Specification here contains carried-forward draft contracts, not a completed Program Design. Author its structural realization after the affected meaning is settled, then complete Verification Design and independent four-document review. Bring only actual unresolved owner decisions to Sun; there is no generic structural-confirmation gate. There is no empty `program-design.md` standing in for unfinished work. Required missing meaning remains explicit, and unrelated source research can proceed.
+
+</script></ex-markdown><h2 id="technical-evidence">Detailed technical evidence</h2><ex-markdown id="evidence-links"><script type="text/markdown">
+- [Non-fork Git capability facts — current source](../../explainer/research/capability-git-contract-evidence-f9adc359.html)
+- [E2 Git operation effects and receipts — desk evidence](../../explainer/research/e2-git-operation-evidence-3fd041ba.html)
+- [Git experiment coverage — bounded source evidence](../../explainer/research/git-experiment-coverage-evidence-8df62670.html)
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

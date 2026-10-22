@@ -1,0 +1,269 @@
+{
+  "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "scope": "Five bounded annotation query/decoder closures and their extra-SQL dependencies. Root source evidence; not whole Bridge or transitive database audit.",
+  "rows": [
+    {
+      "family": "annotation session discovery",
+      "consumer": "Session catalog and demanded annotation workflow",
+      "readTables": {
+        "annotation_session": [
+          "id",
+          "repository_id",
+          "worktree_id",
+          "lifecycle",
+          "source_relationship",
+          "accepted_source_fingerprint_json",
+          "accepted_reviewed_subject_json",
+          "semantic_revision",
+          "created_at",
+          "updated_at",
+          "completed_at"
+        ]
+      },
+      "currentClosure": "WorktreeAnnotationSQLiteRepository.discoverSessions \u2192 databaseWriter.read \u2192 loadSessions; ordered by created_at/id. Foreign-living candidates separately restrict repository/worktree/lifecycle/source relationship.",
+      "outsideSql": "Service availability/recovery admission; current source generation and native placement are not established by this list.",
+      "writesInNamedReadClosure": [],
+      "copyLimit": "A pure row/decode read inside the named repository closure. Actual service/datastore opening/availability is separate; no exported schema/audience or target query API is selected.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository.swift",
+          "line": 145
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository.swift",
+          "line": 194
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor.swift",
+          "line": 87
+        }
+      ]
+    },
+    {
+      "family": "coherent demanded annotation detail",
+      "consumer": "File/Review annotation projection SQL input and source requirements",
+      "readTables": {
+        "annotation_session": [
+          "identity/source/lifecycle/revision fields"
+        ],
+        "annotation_thread": [
+          "identity/session/scope/resolution/origin/ordinal/revision fields"
+        ],
+        "annotation_message": [
+          "identity/thread/author/saved_body/saved_revision/status/handled/viewed_saved_revision/revisions"
+        ],
+        "annotation_message_draft": [
+          "message_id",
+          "active_edit_token",
+          "body",
+          "draft_revision",
+          "updated_at"
+        ]
+      },
+      "currentClosure": "fetchProjectionSnapshot performs loadSessions and all demanded loadSessionDetail calls inside one databaseWriter.read closure. Demanded session IDs must be in that worktree list. Detail loads session/threads/messages, and decodeMessage reads each draft.",
+      "outsideSql": "Service projectionRevision/recoveryState captured before await and checked afterward. Descriptor query additionally resolves source generation, captures actual source refresh/placement requirements, revalidates generation, and reserves query/page/worker authority.",
+      "writesInNamedReadClosure": [],
+      "copyLimit": "Copied rows could supply selected coherent workflow read input only if all required rows/values and permissions are supplied under a target read contract. SQL alone cannot rebuild current runtime projection/recovery token, actual Git/file placement or native worker/publication authority. This is not permission to export all draft fields.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository.swift",
+          "line": 169
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Loading.swift",
+          "line": 439
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Loading.swift",
+          "line": 522
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor.swift",
+          "line": 92
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationProjectionSource.swift",
+          "line": 107
+        }
+      ]
+    },
+    {
+      "family": "annotation projection message output",
+      "consumer": "Current Bridge finite projection record",
+      "readTables": {
+        "annotation_message": [
+          "saved_body",
+          "saved_revision",
+          "semantic_revision",
+          "handled",
+          "author_kind",
+          "status",
+          "created_at",
+          "ordinal"
+        ],
+        "annotation_message_draft": [
+          "active_edit_token",
+          "body",
+          "draft_revision"
+        ],
+        "annotation_session": [
+          "id",
+          "semantic_revision"
+        ],
+        "annotation_thread": [
+          "id",
+          "semantic_revision"
+        ]
+      },
+      "currentClosure": "BridgeProductWorktreeAnnotationMessageEntry derives attention from current domain message, includes draft(activeEditToken,body,revision), saved body/revision and message/session/thread revision/identity fields.",
+      "outsideSql": "Thread placement/context, sourceGeneration, page snapshot/recovery header, descriptor/query lifetime and native consumer currentness.",
+      "writesInNamedReadClosure": [],
+      "copyLimit": "Current product projection already includes draft/edit values for its admitted local workflow. That local exposure neither selects distributed audience nor makes edit token alone sufficient authority: runtime ownership registry separately checks token\u2192ownerGeneration.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationProjectionContracts.swift",
+          "line": 585
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Models/Transport/BridgeProductWorktreeAnnotationProjectionRecordCursor.swift",
+          "line": 4
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor+EditOwnership.swift",
+          "line": 17
+        }
+      ]
+    },
+    {
+      "family": "immutable output attempt inspection",
+      "consumer": "Output metadata/finite exact-byte source; effect reconciliation read",
+      "readTables": {
+        "annotation_output_attempt": [
+          "id",
+          "session_id",
+          "output_kind",
+          "state",
+          "format_version",
+          "content_type",
+          "snapshot_json",
+          "exact_bytes",
+          "destination_path",
+          "repeated_from_attempt_id",
+          "effect_error",
+          "cleanup_error",
+          "created_at",
+          "updated_at"
+        ],
+        "annotation_output_attempt_message": [
+          "message_id",
+          "expected_saved_revision",
+          "batch_ordinal"
+        ],
+        "annotation_output_event": [
+          "id",
+          "attempt_id",
+          "event_kind",
+          "created_at"
+        ]
+      },
+      "currentClosure": "inspectOutputAttempt calls databaseWriter.read \u2192 loadPreparedOutput; reads attempt, ordered exact membership and event, decodes stored snapshot at format version.",
+      "outsideSql": "Service read availability; finite output source issues bounded descriptor, consumes it once, rereads/compares immutable attempt and returns bytes/hash. Actual clipboard/file effect owner and user visibility are outside this read.",
+      "writesInNamedReadClosure": [],
+      "copyLimit": "A whole attempt table includes exact_bytes, snapshot_json, errors and destination_path, not just the selected history summary. Target export/privacy/history/custody must be chosen explicitly. Query/descriptor success does not perform or prove output.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift",
+          "line": 323
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift",
+          "line": 612
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationOutputSource.swift",
+          "line": 28
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Transport/WorktreeAnnotations/BridgePaneProductWorktreeAnnotationOutputSource.swift",
+          "line": 45
+        }
+      ]
+    },
+    {
+      "family": "bounded output history summary",
+      "consumer": "Annotation output history and canMarkNotHandled presentation",
+      "readTables": {
+        "annotation_output_attempt": [
+          "id",
+          "session_id",
+          "output_kind",
+          "state",
+          "repeated_from_attempt_id",
+          "created_at",
+          "updated_at"
+        ],
+        "annotation_output_attempt_message": [
+          "attempt_id",
+          "message_id",
+          "expected_saved_revision"
+        ],
+        "annotation_message": [
+          "id",
+          "handled",
+          "saved_revision"
+        ]
+      },
+      "currentClosure": "fetchOutputHistory uses one databaseWriter.read query joining attempts/membership/current message, excludes cancelled, groups by attempt, orders newest first, applies limit. can_mark_not_handled depends on succeeded state and current handled matching saved revision.",
+      "outsideSql": "Service availability and maximum-history-summary bound. A later clearOutputHandled is a separate revision-fenced write, not an effect of reading this boolean.",
+      "writesInNamedReadClosure": [],
+      "copyLimit": "History is not append-only event replay and canMarkNotHandled is state-dependent, not a grant. All joined rows must come from the selected coherent read/position. Unrelated latest positions or partial joins cannot fabricate a complete summary.",
+      "sources": [
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift",
+          "line": 511
+        },
+        {
+          "path": "Sources/AgentStudio/Features/Bridge/Runtime/WorktreeAnnotations/WorktreeAnnotationServiceActor.swift",
+          "line": 486
+        }
+      ]
+    }
+  ],
+  "productionWiring": [
+    {
+      "path": "Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift",
+      "line": 268
+    },
+    {
+      "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationRepositoryAccess.swift",
+      "line": 242
+    },
+    {
+      "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationRepositoryAccess.swift",
+      "line": 489
+    },
+    {
+      "path": "Sources/AgentStudio/Core/State/SQLite/WorkspaceSQLiteDatastoreActor.swift",
+      "line": 622
+    }
+  ],
+  "writeCounterexample": {
+    "meaning": "Output finalization is a separate writer transaction; inserts event, sets attempt succeeded/destination, marks matching revisions handled and advances session. Never replay from copy invalidation.",
+    "tables": [
+      "annotation_output_event",
+      "annotation_output_attempt",
+      "annotation_output_attempt_message",
+      "annotation_message",
+      "annotation_session"
+    ],
+    "source": {
+      "path": "Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Output.swift",
+      "line": 362
+    }
+  },
+  "instrumentCorrections": [
+    "Guessed +Projection.swift/+Messages.swift/+Sessions.swift filenames were absent; bounded rg file inventory located actual repository Loading/CatalogLoading files. No absence-of-feature claim adopted.",
+    "Shell glob for annotation projection files had no match; rg --files found WorktreeAnnotationProjection* actual files."
+  ],
+  "proofLimit": "Current named read closures and deciding wrappers/decoders inspected. DatabaseWriter.read observed as source API usage, not new external-library snapshot proof. Datastore preparedLocalRepository internals not retraced. No runtime, copy apply, native effect, schema migration or distributed permission proof."
+}

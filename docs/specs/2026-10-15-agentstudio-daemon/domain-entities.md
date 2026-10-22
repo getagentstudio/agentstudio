@@ -1,0 +1,135 @@
+# Service domain and identity
+
+This is the domain appendix of the [observable Specification](2026-10-15-agentstudio-daemon.md), governed by the separate [Requirements](user-requirements.md). E1–E6 retain their definitions in the spine. The definitions here make the remaining capability contracts readable; they do not select public exposure, persistence, wire schemas or internal owners. A baseline identity rule is labelled where the target rule remains undecided.
+
+## Host and Gateway service identities
+
+The reader question is what R7 and R11 count. The diagram shows the required multiple-Mac pair or a mixed Mac/iOS pair connected to the same Host. Two client connections to one Gateway are not two Gateways; both cases require distinct running Gateway instances. Independently, one Gateway can connect to several distinct Hosts. This view selects no numeric maximum or requirement for three Gateways simultaneously.
+
+```mermaid
+flowchart LR
+    First["E24 Gateway instance<br/>one running service on Mac A"] -->|"Host-directed communication"| Host["E23 Host instance<br/>one running service in one work environment"]
+    Second["E24 Gateway instance<br/>one runtime on Mac B or iPhone"] -->|"simultaneous use supported"| Host
+    First -->|"also connected to a distinct Host"| OtherHost["E23 Another Host instance<br/>independent work environment"]
+    Host -.->|"connection loss does not end"| Session["E1 Execution session"]
+```
+
+[Full-size rendered diagram](assets/service-instance-identity.svg).
+
+| Entity | Identity and relationships | Invariants, observable states and basis |
+| --- | --- | --- |
+| **E23 — Host instance** | One running Host service instance in a declared machine/work environment. Two separate running instances are distinct even if their paths/configuration match. A reconnect to the same running instance does not create another Host. Stable service identity, session re-adoption and same-resource rules across restart/reinstall/machine replacement remain G3/G12. One instance can serve multiple E24 instances simultaneously under R7; its E7 resources are qualified by that Host context. | Running, stopping and stopped service state are distinct from E1 execution and E3 connection state. Losing a Gateway connection alone does not stop sessions under R6. Canonicalizes the Host being addressed/counting service instances, not a machine count or selected process supervisor. U1/U11/U15/U16/U17/U18; K5/K13/K15. |
+| **E24 — Gateway instance** | One running Gateway runtime instance on a supported macOS or iOS device. Two connections or two frontend clients using it are not two Gateways. Distinct simultaneously running Gateways on distinct Macs establish the selected multiple-Mac case. Per-Mac instance limits and stable identity across restart/reinstall remain G2/G12. It can connect to multiple E23 instances simultaneously under R11 and carries each frontend Host-directed E4 attempt to its attached Host context; a replacement connection does not by itself replace this running service. | Running, stopping and stopped are independent of each frontend's E3 lifetime. Gateway runs on macOS and iOS under R3; frontend Host access uses its declared local entry under S32. iOS suspension/termination availability and restart identity need their explicit G2/G3/G12 profile and do not terminate E1 Host execution. No per-Mac singleton, unlimited Host fanout or restart continuity is implied. Canonicalizes the Gateway runtime role separately from its UX client; S32 selects embedded iOS hosting, whose actual lifecycle and native interface remain structural qualification. U1/U12/U16/U17/U18; K13/K15. |
+
+## Repositories and observations
+
+The reader question is whether a path, a registration, a moving name and an observed value identify the same thing. They do not.
+
+```mermaid
+flowchart LR
+    Worktree["E8 Worktree<br/>registration distinct from directory<br/>valid / stale / removal effects"] -->|"belongs to 1 repository"| Repository["E7 Repository<br/>Host-qualified repository identity<br/>available / unavailable"]
+    Observation["E22 Scoped observation<br/>source, scope, generation and position<br/>current / superseded / incomplete"] -->|"describes 1 declared subject and scope"| Worktree
+    Observation -.->|"does not itself change membership"| Repository
+```
+
+[Full-size rendered diagram](assets/repository-observation.png).
+
+| Entity | Identity and relationships | Invariants, observable states and basis |
+| --- | --- | --- |
+| **E7 — Repository** | The repository whose object/ref and worktree administration are being addressed, qualified by its executing Host. Two Hosts having the same path or commit do not establish the same repository. One repository has one or more E8 worktrees when non-bare; bare/discovery eligibility remains K3/G7. Current canonical-common-directory IDs are baseline locators, not directory-incarnation proof. Replacement at the same path and restart identity remain G3/G7. | Ref names identify mutable names within this repository; an object revision identifies immutable content in its object model. Neither is an E4 operation identity. Observable availability, failed access and exact-candidate non-repository outcomes remain distinguishable. Canonicalizes repository/common-directory versus a displayed project name. U4–U6/U11; K1/K3. |
+| **E8 — Worktree** | A repository worktree registration plus its associated working directory, belonging to exactly one E7. Administrative registration and directory are distinct effect targets. Two registrations are not the same solely because a directory path was reused. The current package uses path-derived IDs; target replacement/re-adoption rules remain G3/G7. | Lock state, HEAD/ref state and dirty state are facts about the worktree, not its identity. Valid, invalid/stale, locked/unlocked and removal dispositions are separately observable; a missing directory does not prove administration removed. Canonicalizes main/linked worktree, not pane or branch. U4/U5/U6/U11; K1–K4. |
+| **E22 — Scoped observation** | One observation of a declared subject and coverage scope from a declared source lifetime/position. It describes one subject; different observations may describe the same E1/E7/E8 or E16. A sequence without its source/generation is not a globally ordered revision. Equal values do not establish uninterrupted observation. | Currentness, completeness, failure and supersession remain distinct. A discovery observation is not canonical membership; a scoped status read is not a full-worktree line-count snapshot. Baseline epochs, counters, watcher continuity and revision witnesses have different scopes. Cross-service clocks/coverage/retention remain G6/G9. U4/U9/U13/U15; K3/K5/K6/K8/K11. |
+
+Machine-qualified location, repository object revision, mutable ref name, coverage scope, UTC observation time and elapsed duration are validated values used by these entities. A remote path is not a client-local path. The supported byte-name/case/collision domain remains G7; converting an unrepresentable name to a lossy string cannot establish identity.
+
+## Agent context and client views
+
+The reader question is which resource survives when a pane, provider turn, connection or authority lease changes. E1 execution, E9 provider history, E10 binding and E16 presentation targets have separate identities.
+
+```mermaid
+flowchart LR
+    Binding["E10 Agent binding<br/>one association generation<br/>current / superseded / ended"] -->|"references 1 provider conversation"| Conversation["E9 Provider conversation<br/>provider-qualified identity<br/>live / ended / unbound relation"]
+    Binding -->|"references 1 Host execution context"| Session["E1 Execution session<br/>continues without a view"]
+    Message["E11 Context message<br/>scope + message identity<br/>notice or ask; retained settlement"] -->|"in-session input addresses Host context"| Session
+    Message -.->|"may be presented through client view"| View["E16 Client view target<br/>window / workspace / pane / tab / drawer child<br/>present / absent"]
+    Attachment["E2 Terminal attachment"] -->|"displayed through a client view"| View
+    View -.->|"closing view does not terminate"| Session
+```
+
+[Full-size rendered diagram](assets/agent-view-identity.png).
+
+| Entity | Identity and relationships | Invariants, observable states and basis |
+| --- | --- | --- |
+| **E9 — Provider conversation** | A provider-qualified conversation identifier. The same opaque identifier from different providers is not the same conversation. Turns/tools/subagents are subordinate provider observations; an E1 session can be associated with provider conversations without being identical to them. Exact conversation multiplicity/rebinding policy remains G8. | Resume of provider history does not establish continuity of an OS process or terminal incarnation. Baseline query states distinguish unbound, live and ended associations. Canonicalizes Codex/Claude conversation/session vocabulary only in the provider domain. U4/U15; K7. |
+| **E10 — Agent binding** | One association generation connecting provider conversation/provenance to its admitted AgentStudio context. Replacing that generation makes older writers stale even if conversation text or pane IDs match. Baseline binds to a pane. In-session target bindings reference one E1 Host execution context independently of E16 view presence under S14/U15. Provider multiplicity/rebinding and restart identity remain G3/G8. | Provider occurrence/correlation ID, binding generation, writer epoch and OS incarnation are different. Current, superseded and ended/stale associations govern admission; a recorded-only observation need not change active binding/activity. Canonicalizes session binding and producer provenance. U9/U15; K7/K8. |
+| **E11 — Context message** | A retained notice or ask addressed to one declared context scope, with sender identity and message identity. Baseline server identity is pane + message ID; the CLI outbox instead deduplicates message ID within its own store. These are different namespaces, not one distributed deduplication contract. For authorized in-session input, the target scope is the E1 Host session and its E10 binding under S14; it survives absence of E16. Other selected scopes, retention and cross-client presentation remain G8/G9. The current CLI outbox is baseline app-availability machinery, not a selected target outbox. | Notice unread/read/withdrawn and ask open/answered/handed-back/expired/withdrawn/stale are distinct states. An ask has at most one retained terminal settlement in its scope. Reading details, acknowledging changes, marking read, and an agent acting on an answer are distinct effects. Canonicalizes pane notice/ask; not terminal output. U4/U9/U15; K8. |
+| **E16 — Client view target** | A kind-qualified actual client presentation target: window, workspace, pane, tab or drawer child. Equal raw IDs of different kinds do not merge targets. It belongs to its native client hierarchy; an E2 attachment references a terminal view but is not the pane. E25 shared workspace composition is a distinct logical resource; exact projection/element mapping remains G4/G9. | Present/absent, focused/unfocused and content kind are actual presentation facts. A current/focused target is not stable remote authority. Closing a view obeys R5/R6; a shared-model update and physical native application are distinct observations. U4/U13/U14/U16/U22; K6/K12; R17. |
+
+Provider IDs stay opaque where the upstream contract makes them opaque. First-party generated identities use the repository's UUIDv7 convention; that convention does not authorize replacing upstream identifiers or collapsing different identity kinds.
+
+## Reviews, annotations and output
+
+The reader question is whether current draft text, saved annotation history, a prepared output and a destination effect are the same revision. They are not.
+
+```mermaid
+flowchart LR
+    Message["E14 Annotation message<br/>saved revision distinct from draft<br/>saved / edited / removed"] -->|"belongs to 1 thread"| Thread["E13 Annotation thread<br/>anchor and thread identity<br/>open / resolved / removed"]
+    Thread -->|"belongs to 1 annotation session"| Review["E12 Annotation session<br/>source/comparison identity<br/>active / released or stale"]
+    Attempt["E15 Output attempt<br/>immutable members, bytes, destination<br/>prepared / final / unknown"] -->|"captures exact saved message revisions"| Message
+    Content["E20 Finite content transfer<br/>descriptor, lease, length, digest<br/>available / ended / invalidated"] -->|"delivers a declared review/file product"| Review
+```
+
+[Full-size rendered diagram](assets/annotation-output-identity.png).
+
+| Entity | Identity and relationships | Invariants, observable states and basis |
+| --- | --- | --- |
+| **E12 — Annotation session** | One annotation context tied to its declared source/comparison identity. Releasing/replacing a client view does not establish the same context merely because filenames match. Exact restart retention remains G3/G9. One session has zero or more E13 threads. | Source refresh/currentness and annotation revision are separate. Active/released/stale context checks gate particular operations; source refresh can commit before a later stale result. Canonicalizes review annotation session, not terminal/provider session. U4/U9/U13; K9/K10. |
+| **E13 — Annotation thread** | One thread within exactly one E12, with its own identity and anchor. Moving/editing an anchor does not silently create a new thread. One thread has zero or more E14 messages as permitted by the operation. | Open/resolved/removed state, anchor validity and session currentness are independent. Stale revision or changed source may refuse an operation. Canonicalizes annotation thread, not Git branch. U4/U9/U13; K10. |
+| **E14 — Annotation message** | One message within exactly one E13, with saved revision distinct from unsaved draft/edit ownership. Equal text does not merge messages or revisions. E15 may refer to a specific saved revision. | Draft, saved, edited and removed observations cannot substitute for each other. An edit lease/session is not the saved message's identity. Canonicalizes annotation comment, not E11 agent context. U4/U9/U13; K10. |
+| **E15 — Output attempt** | One prepared output effect attempt with immutable exact saved-message membership, bytes and destination. Repeating an uncertain attempt creates another attempt with explicit lineage; it is not proof that the earlier effect failed. One attempt refers to zero or more selected E14 saved revisions and one declared destination. | Prepared, known success, known failure, cancelled and unknown effect/finalization outcomes remain distinct as the operation allows. Known destination effect followed by failed finalization is partial success. History is bounded and may omit cancelled attempts; it is not a complete audit journal. Canonicalizes prepared annotation output/repeat, not transport request ID. U4/U9/U13; K10. |
+| **E20 — Finite content transfer** | One descriptor/lease-scoped delivery of a declared finite content product. Descriptor identity, lease lifetime, content length/digest, source currentness and publication generation describe different constraints. Multiple deliveries can carry the same bytes. | Available, ended, refused, invalidated and failed transfer observations are distinguished from worker application or visible pixels. Correct bytes/hash do not prove current source or rendered output. Canonicalizes Bridge finite content and its delivery, not an E19 subscription. U3/U4/U9/U13; K9/K13. |
+
+## Authority, subscriptions and installation
+
+The reader question is what a credential, grant, subscription or installed file actually proves. None is a substitute for the effect it permits or delivers.
+
+```mermaid
+flowchart LR
+    Grant["E18 Authority grant<br/>principal + scope + privilege<br/>active / revoked or expired"] -->|"authorizes 1 principal"| Principal["E17 Authenticated principal<br/>admitted actor context<br/>authenticated / invalidated"]
+    Subscription["E19 Subscription<br/>logical interest and delivery instance<br/>requested / active / interrupted / ended"] -->|"observed under a principal's authority"| Principal
+    Installation["E21 Provider installation<br/>machine + provider + root<br/>absent / partial / installed / removed"] -.->|"does not itself establish"| Principal
+```
+
+[Full-size rendered diagram](assets/authority-subscription-identity.png).
+
+| Entity | Identity and relationships | Invariants, observable states and basis |
+| --- | --- | --- |
+| **E17 — Authenticated principal** | One admitted actor context at its declared authority boundary. Credential record, bearer verifier, connection lease, provider process and frontend device remain distinct. One credential may produce multiple principals under the baseline; target cross-service continuity is G8/G12. | Authenticated/invalidated/disconnected context and credential revocation are distinct observations. Current same-UID/bearer admission is not remote process attestation. Canonicalizes caller principal; not a person merely named in payload. U4/U9/U15/U17; K7/K14. |
+| **E18 — Authority grant** | Authorization for a particular E17 over a declared target/data scope and privilege. Grants with different scopes are not interchangeable even if represented by one credential. A grant is not an E4 request receipt. | Active, revoked/expired and pending approval outcomes remain distinguishable where applicable. A view disappearing does not itself define revocation for the selected view-independent outcome; exact credential/revocation policy remains G8/G12. In-session authorization concerns the E1 Host context, not presence of an E16 pane. Internal permission-broker APIs do not imply a new public approval API. U9/U15/U17; K14. |
+| **E19 — Subscription** | A consumer's declared interest in a subject/fact class, distinct from each live delivery instance or E3 connection. Whether logical interest automatically survives reconnect is G6/G8, not selected by this definition. A subscription may observe multiple E22 observations within its declared scope. | Requested, active, interrupted and ended delivery do not imply retained history or a gap-free resume. Cursor/sequence is interpreted within its source lifetime and coverage. Canonicalizes events/observations interest, not session or finite content transfer. U3/U4/U13/U15; K5/K11/K13. |
+| **E21 — Provider installation** | The owned provider integration at a declared machine + provider + configuration root. Installing the same resources elsewhere is another installation. Reinstall may converge file content without being the same request attempt. | Absent, preflight-refused, partially applied, installed and removed states are distinct. Per-file atomic replacement is not aggregate transactionality; ownership markers do not grant provider trust or revoke credentials. Canonicalizes Codex/Claude package integration. U2/U4/U6/U11; K2/K15. |
+
+## Shared workspace composition and read state
+
+The user shares portable tabs/layout and read marks across devices under U22. A shared logical resource is distinct from each native presentation of it. These definitions select no database, service owner, synchronization mechanism or identifier encoding.
+
+An **acknowledged shared-state position** means the source-scoped established state version that a successful shared read or observation reports as incorporated for one authoritative E25 resource or kind-qualified E26 marker. The version is qualified by its resource and source lifetime; it is not a network-frame acknowledgement, user-read action, native publication receipt or global cross-Host clock. Establishing a transient marker version does not promise a SQL commit or restart durability. R17/C6/V8 use this meaning for agreement and progress without selecting the encoded version shape.
+
+```mermaid
+flowchart LR
+    Arrangement["E25 Shared workspace composition<br/>same logical resource as tabs/layout change<br/>current / changed / removed"] -->|"0 or more native projections"| View["E16 Client view target<br/>actual device hierarchy<br/>present / absent"]
+    Marker["E26 Shared read marker<br/>reader scope + kind-qualified subject<br/>unread or viewed; coverage qualified"] -->|"0 or more scoped observations"| Observation["E22 Scoped observation<br/>current / superseded / incomplete"]
+```
+
+[Full-size rendered diagram](assets/shared-workspace-identity.svg).
+
+| Entity | Identity and relationships | Invariants, observable states and basis |
+| --- | --- | --- |
+| **E25 — Shared workspace composition** | One declared shared logical workspace-composition resource in its shared user/workspace scope. Changing its tabs/layout updates that resource; another E6 device does not create another composition. Equal layouts in independently declared resources do not merge identity. Named/default per-tab arrangement definitions are contents of this model, not synonyms for its identity. It can have zero or more E16 native projections and qualified references to resources on different Hosts. Exact element membership and audience binding remain G9/G12. | Participating devices agree at the same acknowledged position of this resource and satisfy R17's qualitative progress obligation while a device presents the state or requests its current value on an available continuing path. Actual native geometry, residency and focus remain E16 observations. Current, changed and explicitly removed logical state are distinct; losing a view/connection is not a shared mutation or execution termination. Exact layout-selection, concurrent/offline and close/Undo projection contracts remain G4/G9. Canonicalizes shared tabs/layout composition, not a native window or one saved per-tab layout. U22/S26; R17; IP11. |
+| **E26 — Shared read marker** | One declared read/view marker kind for a kind-qualified subject in one shared readership scope. Its reporting device, connection and delivery attempt are not its identity. Different reader scopes, subject kinds or subject identities do not merge because raw labels match; applicable Host qualification remains. It refers to exactly one declared subject; current marker-class/subject mapping and user/audience binding remain G9/G12. E22 observations can report its state. | Sharing preserves the same declared marker meaning across participating devices. Actual user viewing/reading, received bytes, message settlement and an output effect remain different. Unread/not-established, read/viewed under its declared coverage, and superseded/incomplete coverage are distinguishable where applicable. Source revision coverage, explicit unread/conflict/offline rules and retained lifetime remain G3/G8/G9. Canonicalizes shared read marks, not an ask answer or generic delivery acknowledgement. U22/S26; R17; IP12. |
+
+## Identity constraints used by the contracts
+
+K1–K15 name the applicable entities explicitly. Their typed interfaces must keep identity kinds, validated input and effect states distinct under U9/R8. No entity definition creates a generic operation journal, shared database, globally ordered bus, process-attestation service or public API. G3–G9/G12 name the unresolved same-instance, authority and retention choices at the boundary where they matter.
+
+E27 — Bridge access grant is defined once in the [Bridge transport specification](increments/00-qualification/bridge-gateway-transport/specification.md#browser-access-and-identity), as a scoped issuance under E17/E18. Its browser access meaning is distinct from central database-writer lease authority.

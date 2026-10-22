@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current CLI entry surface and parser boundaries</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="cli-entry-surface.html">AgentStudio daemon · Current CLI entry surface and parser boundaries</a></nav></ex-nav>
+<ex-document id="content"><h1>Current CLI entry surface and parser boundaries</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](cli-entry-surface.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current CLI entry surface and parser boundaries
+
+**Preserve how a command enters, not only its method name.** Worktree operations, provider installers/hooks, local help, pane intents and descriptor tooling take different current paths. This is the source baseline for their strangler cutover, not a selection of future Host/Gateway endpoints or permission to execute any command below.
+
+Application source: `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. The grouped grammar and constraints below are checked source forms, including surprising leniency and retained helper syntax. They are neither a recommendation to preserve every parser accident forever nor a claim that these commands were run. The owning capability must explicitly settle any observable change before its cutover.
+
+## Dispatch before transport
+
+```mermaid
+flowchart LR
+    Entry["Current CLI"] --> Worktree{"Worktree command?"}
+    Worktree -->|yes| Machine["Local runner or help"]
+    Worktree -->|no| Provider{"Provider command?"}
+    Provider -->|yes| ProviderOwner["Installer or hook"]
+    Provider -->|no| Help{"Local help?"}
+    Help -->|yes| Display["Offline help"]
+    Help -->|no| Global["Endpoint and credentials"]
+    Global --> Model["Pane or tooling parser"]
+    Model --> IPC["Current app IPC"]
+```
+
+The target route is separately fixed by [IP3](../../../initial-profile.html): machine-scoped worktree CLI uses its executing machine's attached Host daemon and starts or activates that local Host when absent, independently of Gateway availability. UX/frontend CLI retains its separate Gateway route. Exact activation/readiness/failure, non-session authority, syntax changes and supported Linux CLI packaging remain contract work; Mac CLI remote use is required, while direct connection versus local Host relay and its credential remain open. The source's early local dispatch is evidence to preserve or deliberately replace, not a hidden target fallback.
+
+## Descriptor, help and command envelope
+
+The descriptor schema remains the source of field names/requiredness. `GLOBALS` below means the first row's prefix options; the written forms do not create new RPC identities.
+
+| Current form | Accepted source behavior / constraints |
+| --- | --- |
+| **Global descriptor/pane prefix**<br/>`agentstudio [--socket PATH] [--metadata PATH] [--token-stdin] <verb-or-method> ...` | Only prefix options; token stdin once; socket and metadata are not enforced mutually exclusive by parser despite help's `\|`; token stdin conflicts with method `--stdin`. Provider/worktree paths dispatch before these globals.<br/>[AgentStudioIPCClientArguments.swift:33](../../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientArguments.swift) |
+| **Local help**<br/>`agentstudio --help`; `agentstudio help`; `agentstudio help METHOD_OR_PANE_VERB`; `agentstudio METHOD_OR_PANE_VERB --help` | Exact local-help forms resolve before endpoint/credentials; no top-level `-h` form here.<br/>[IPCDescriptorCLIHelp.swift:8](../../../../../../Sources/AgentStudioIPCClientCore/IPCDescriptorCLIHelp.swift) |
+| **Live help/catalog**<br/>`agentstudio [GLOBALS] help --live`; `... system.capabilities [tooling params]`; `... command.list [tooling params]` | Explicit live catalog discovery; returns bytes/help from server catalog, not per-command current enablement.<br/>[AgentStudioIPCClientCommandLineRunner.swift:162](../../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCommandLineRunner.swift) |
+| **Descriptor tooling forms**<br/>`agentstudio [GLOBALS] METHOD [--kebab-field VALUE ...]`; `METHOD --json [JSON_OBJECT]`; `METHOD --stdin` | `--json` alone supplies {}; JSON one payload; stdin no method options; scalar strings/Int64/finite number/true\|false; arrays/objects use JSON/stdin. Field names and requiredness remain the selected descriptor schema; repeated scalar fields refuse. All57 method names are the source-equal set checked above.<br/>[IPCDescriptorInvocationParser.swift:55](../../../../../../Sources/AgentStudioIPCClientCore/IPCDescriptorInvocationParser.swift) /116 /425 |
+| **Authentication shortcut**<br/>`agentstudio [GLOBALS] auth.login`; `... auth.login --stdin` | Bare login uses configured token; non-bare scalar/JSON forms are rejected by this special parser; token-stdin plus method-stdin is refused.<br/>[AgentStudioIPCClientArguments.swift:107](../../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientArguments.swift) |
+| **Raw command envelope**<br/>`... command.execute --command-id ID [--correlation-id UUID] [--arg KEY=VALUE ...]`; or `command.execute --json JSON` /`--stdin` | One command ID; repeated distinct arg keys; no duplicate key; omitted correlation generated. App command argument semantics remain server-side typed catalog, not arbitrary CLI fields.<br/>[IPCCommandCLIInvocationParser.swift:10](../../../../../../Sources/AgentStudioIPCClientCore/IPCCommandCLIInvocationParser.swift) |
+
+
+## Pane intents and ordered agent values
+
+`ASK_OPTIONS` refers to the nonwaiting ask row. These intents target the admitted own context; order, ask settlement and the narrow notice-only outbox are separate contracts.
+
+| Current form | Accepted source behavior / constraints |
+| --- | --- |
+| **Notice**<br/>`notify TEXT [--kind info\|attention\|done\|failure] [--open PATH[:POSITIVE_LINE]]` | Exactly one nonempty text positional; default info; --open path may contain colon and only numeric last part becomes line. Eligible never-submitted own notice may queue; not an uncertain mutation replay.<br/>[PaneCLIInvocation.swift:170](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /216 |
+| **Ask without wait**<br/>`ask QUESTION [--reason approval\|question\|blocked] [--choice a,b,...] [--kind info\|attention\|done\|failure] [--open PATH[:LINE]]` | --kind/--open are accepted although omitted from short ask usage; default reason question; comma choices nonempty/unique; no --timeout without --wait.<br/>[PaneCLIInvocation.swift:72](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /173 |
+| **Ask with wait**<br/>`ask QUESTION --wait [--timeout SECONDS] [ASK_OPTIONS]` | ASK_OPTIONS are CLI08 options; --wait selects pane.message.ask rather than nonwaiting pane.message.send; finite nonnegative seconds ≤Int64.max−2; default ask timeout, transport allowance +2.<br/>[PaneCLIInvocation.swift:19](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /62 /72 /208 |
+| **Withdraw**<br/>`withdraw UUID` | Exactly one valid UUID, no option values.<br/>[PaneCLIInvocation.swift:91](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /182 |
+| **Answers**<br/>`answers` | No positionals/options; mapped to changes/receipt workflow, not a pure read-copy request.<br/>[PaneCLIInvocation.swift:94](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+| **Working Agent Line**<br/>`line SUMMARY [--working] [--step CURRENT/TOTAL] [--detail TEXT] [--expires SECONDS]` | Omitted work mode means working; total>0, 0≤current≤total; mode at most one; --step only for working; finite nonnegative expiry.<br/>[PaneCLIInvocation.swift:110](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /179 |
+| **Monitoring Agent Line**<br/>`line SUMMARY --monitoring TARGET [--detail TEXT] [--expires SECONDS]` | Exclusive work mode; --step refused with it.<br/>[PaneCLIInvocation.swift:124](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /143 |
+| **Needs-person Agent Line**<br/>`line SUMMARY --blocked-on-you ACTION [--detail TEXT] [--expires SECONDS]` | Exclusive mode; not an ask or permission grant.<br/>[PaneCLIInvocation.swift:126](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+| **Done Agent Line**<br/>`line SUMMARY --done [--detail TEXT] [--expires SECONDS]` | Exclusive mode; ordered current value, not completion receipt for a separate operation.<br/>[PaneCLIInvocation.swift:122](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+| **Failed Agent Line**<br/>`line SUMMARY --failed REASON [--detail TEXT] [--expires SECONDS]` | Exclusive mode.<br/>[PaneCLIInvocation.swift:128](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+| **Clear Agent Line**<br/>`line --clear` | No summary, other flags or values allowed.<br/>[PaneCLIInvocation.swift:111](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+| **Set Agent Title**<br/>`title TEXT` | One nonempty text positional; ordered stream/epoch workflow.<br/>[PaneCLIInvocation.swift:100](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) /203 |
+| **Reset Agent Title**<br/>`title --reset` | No positional; distinct nil reset, not empty text.<br/>[PaneCLIInvocation.swift:101](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+| **Pane context**<br/>`pane` | No positionals/options. It is the CLI model verb, not the `pane.*` method family.<br/>[PaneCLIInvocation.swift:97](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift) |
+
+
+## Provider package installation
+
+Install/uninstall is filesystem/configuration work before IPC, with provider-specific parsing and resource ownership. Installing hooks is distinct from authenticated hook delivery.
+
+| Current form | Accepted source behavior / constraints |
+| --- | --- |
+| **Install Codex package**<br/>`package install codex [--codex-home PATH \| --provider-home PATH]` | Provider parser accepts exact two-token home suffix; absent/unrecognized/extra suffix yields nil home rather than rejecting the install. Explicit nonempty root wins, then CODEX_HOME, then current user's ~/.codex. Executes before IPC.<br/>[AgentPackageCommandLine.swift:15](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/AgentPackageCommandLine.swift) /35 /120; [CodexPackageInstaller.swift:60](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/CodexPackageInstaller.swift) |
+| **Uninstall Codex package**<br/>`package uninstall codex [--codex-home PATH \| --provider-home PATH]` | Same root/suffix rules; ownership-aware remove, not unconditional provider config deletion.<br/>[AgentPackageCommandLine.swift:25](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/AgentPackageCommandLine.swift) /35 /120 |
+| **Install Claude Code package**<br/>`package install claude [--config-dir PATH] [--provider-version VERSION]` | First matching flag value; unrecognized options are not globally rejected; config dir explicit, CLAUDE_CONFIG_DIR, then HOME/.claude; package root from AGENTSTUDIO_PACKAGE_ROOT or executable; version explicit, installed-version read, supported default. Claude router runs first.<br/>[ClaudeCodePackageCommand.swift:38](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/ClaudeCodePackageCommand.swift) /75 /92 /105 /119; [AgentStudioIPCClientCommandLineRunner.swift:326](../../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCommandLineRunner.swift) |
+| **Uninstall Claude Code package**<br/>`package uninstall claude [--config-dir PATH] [--provider-version VERSION]` | Same parser/resolution; provider-version is still parsed into installation input on uninstall; don't route through Codex runner.<br/>[ClaudeCodePackageCommand.swift:38](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/ClaudeCodePackageCommand.swift) /55 /65 |
+
+
+## Provider hook child processes
+
+Hook failure must retain the provider-facing exit/stdout contract. A zero exit or an installed script is not evidence that the Host admitted a fact. Event counts describe this pinned source, not current upstream-provider compatibility.
+
+| Current form | Accepted source behavior / constraints |
+| --- | --- |
+| **Codex hook child**<br/>`hook codex EVENT` + stdin JSON | Exactly three arguments in AgentPackage parser. Recognized EVENT enum has12 names: SessionStart, SessionEnd, UserPromptSubmit, PermissionRequest, PreToolUse, PostToolUse, SubagentStart, SubagentStop, Stop, Interrupt, PreCompact, PostCompact. InstalledEvents has9 (not the stale “eight” comment); PostToolUse/PreCompact/PostCompact are recognized but unprojected. Unknown event returns0; missing credential/unprojected event can read no stdin. Unknown provider hook also returns0. SessionEnd gets synchronous lifecycle limit.<br/>[AgentPackageCommandLine.swift:17](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/AgentPackageCommandLine.swift) /93; [CodexHookProjection.swift:9](../../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/CodexHookProjection.swift) /26; [ProviderHookInvocation.swift:119](../../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift) |
+| **Claude hook child**<br/>`hook claude EVENT [--provider-version VERSION]` + stdin JSON | Recognized payload hook vocabulary: SessionStart, UserPromptSubmit, PreToolUse, PostToolUse, PostToolUseFailure, PermissionRequest, SubagentStart, SubagentStop, Stop, StopFailure, Elicitation, ElicitationResult, SessionEnd (13). Announced EVENT required/nonflag; payload's event is projected; remaining version flag uses first value or supported default; failures return0 with no provider stdout.<br/>[ClaudeCodeHookInvocation.swift:45](../../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ClaudeCodeHookInvocation.swift) /55 /133; [ClaudeCodeHookProjection.swift:7](../../../../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ClaudeCodeHookProjection.swift) |
+| **Installed Codex shell hook**<br/>`agentstudio-codex-hook.sh EVENT` → `"$AGENTSTUDIO_CLI" hook codex "$1"` | Executable guard exits0 when unavailable; stdin inherited by exec. This shell entry is an additional artifact/process boundary, not a new RPC.<br/>[agentstudio-codex-hook.sh:8](../../../../../../Sources/AgentStudio/Resources/AgentPackage/providers/codex/hooks/agentstudio-codex-hook.sh) |
+| **Installed Claude shell hook**<br/>`agentstudio-claude-hook.sh EVENT VERSION` → `"$AGENTSTUDIO_CLI" hook claude "$1" --provider-version "$2"` | Executable guard exits0; stdin preserved. Installer writes event+installed provider version into each hook command.<br/>[agentstudio-claude-hook.sh:11](../../../../../../Sources/AgentStudio/Resources/AgentPackage/providers/claude/hooks/agentstudio-claude-hook.sh); [ClaudeCodePackageInstaller.swift:135](../../../../../../Sources/AgentStudioIPCClientCore/AgentPackage/ClaudeCodePackageInstaller.swift) |
+
+
+## Worktree operations and help
+
+The current runner uses caller-local paths and defaults to fetch unless explicitly skipped. In the target, interpret addressed Host paths at the Host; do not canonicalize them on the Mac or infer that a preview/list command has no effects.
+
+| Current form | Accepted source behavior / constraints |
+| --- | --- |
+| **Worktree overview help**<br/>`worktree`; `worktree --help`; `worktree -h`; `worktree help` (help handling filters --json) | Runs before IPC. Help short-circuits operation validation; bare `worktree --json` is not the no-arguments form after this check because original arguments are not empty.<br/>[WorktreeCommandLine.swift:32](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLine.swift) |
+| **Worktree command help**<br/>`worktree help new\|list\|remove\|prune`; `worktree COMMAND ... --help\|-h` | `--json` filtered for help selection; per-command help bypasses operation parsing and can ignore extra help arguments.<br/>[WorktreeCommandLine.swift:33](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLine.swift) /47 |
+| **Open existing branch worktree**<br/>`worktree new BRANCH [--repo PATH] [--from WORKTREE] [--no-fetch] [--json]` | One branch positional; without -c opens existing local/origin branch using default copyOnWrite; --from names copied source; --repo defaults caller directory.<br/>[WorktreeCommandLineArguments.swift:240](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift) /276 |
+| **Create branch worktree**<br/>`worktree new -c\|--create BRANCH [--repo PATH] [--from WORKTREE] [--from-branch BRANCH] [--no-fetch] [--json]` | Create flag is a flag; BRANCH remains positional. --from-branch requires create; default source mainWorktree; default materialization copyOnWrite.<br/>[WorktreeCommandLineArguments.swift:251](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift) /276 /345 |
+| **Checkout materialization**<br/>`worktree new [--create\|-c] BRANCH --no-fork [--repo PATH] [--from WORKTREE] [--from-branch START_BRANCH when creating] [--no-fetch] [--json]` | --no-fork selects checkout; conflicts with --changes-only. Existing/new branch distinction retained.<br/>[WorktreeCommandLineArguments.swift:260](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift) /274 |
+| **Changes-only materialization**<br/>`worktree new -c\|--create BRANCH --from WORKTREE --changes-only [--repo PATH] [--no-fetch] [--json]` | Requires create and from; cannot combine no-fork or from-branch; otherwise throws the source stop/refusal.<br/>[WorktreeCommandLineArguments.swift:251](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift)–274 |
+| **List worktrees**<br/>`worktree list [TARGET ...] [--repo PATH] [--no-fetch] [--json]` | Zero or many target strings; default fetch policy is fetch, so listing is not inherently read-only.<br/>[WorktreeCommandLineArguments.swift:170](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift) /317; [capability-placement-map.md:67](../../11-operations-integration/capability-placement-map.html) |
+| **Remove worktrees**<br/>`worktree remove TARGET ... [--repo PATH] [--no-fetch] [-f\|--force] [-D \| --no-delete-branch] [--archive-to PATH \| --archive-to-main \| --discard-tmp] [--remove-stale-lock] [--dry-run] [--json]` | At least one target; default branch deleteIfIntegrated, evidence requireEmpty; force discards working changes; -D deletes at observed commit; CLI fixes closePanes/removeWithOpenPanes false. Dry-run may fetch. Mutually exclusive evidence policies and branch policies enforced.<br/>[WorktreeCommandLineArguments.swift:177](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift)–212 /466; [WorktreeCommandLineHelp.swift:39](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineHelp.swift) |
+| **Prune worktrees**<br/>`worktree prune [--repo PATH] [--no-fetch] [--archive-to PATH \| --archive-to-main] [--apply] [--json]` | No positionals; preview unless --apply; default evidence requireEmpty; preview may fetch. `--discard-tmp`, `--dry-run`, force and branch-delete flags are not prune options.<br/>[WorktreeCommandLineArguments.swift:74](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift) /213 /367 |
+
+
+## Shared constraints and retained helper syntax
+
+| Current form | Accepted source behavior / constraints |
+| --- | --- |
+| **Shared parser constraints**<br/>Pane: options may interleave with exactly required positionals; worktree: subcommand-specific flags/values, paths relative to caller, aliases normalized | No `--name=value` or `--` terminator in pane/worktree parsers; expected flags/values are separate tokens. Duplicate flags/values reject except provider suffix leniency above. Worktree value cannot be empty or start '-'; archive policies mutually exclusive; -D and no-delete-branch conflict. JSON in worktree is output selection, while JSON in descriptor CLI supplies input.<br/>[PaneCLIInvocation.swift:166](../../../../../../Sources/AgentStudioIPCClientCore/PaneCLIInvocation.swift); [WorktreeCommandLineArguments.swift:111](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLineArguments.swift) /333 /395 /437 /466 |
+| **Retained descriptor-model parser, not another live pane syntax**<br/>Internal model projections can parse `--detail` and `--` before flag-shaped positional text | **source:** [IPCDescriptorInvocationParser.swift:277][s785] declares these forms. Current enum has only seven pane variants ([IPCMethodDescriptorMetadata.swift:19][s786]), and main runner intercepts all seven with PaneCLIIntent before descriptor model parsing ([AgentStudioIPCClientCommandLineRunner.swift:106][s787]). **inference:** do not advertise model `--detail` as a second working syntax for notify/ask/pane today; preserve the live interception or explicitly change it.<br/>[IPCDescriptorInvocationParser.swift:277](../../../../../../Sources/AgentStudioIPCClientCore/IPCDescriptorInvocationParser.swift) |
+
+## Output and cutover obligations
+
+Current worktree parsing failures return exit64; formatting/effect/refusal paths have their own output and exit outcomes. Descriptor/pane failures preserve structured refusal, not-sent and uncertain-delivery distinctions. Provider hook paths retain zero exit and no provider decision output on the guarded failure paths. See [worktree dispatch](../../../../../../Sources/AgentStudioWorktreeOperations/WorktreeCommandLine.swift) and [CLI error presentation](../../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCommandLineRunner.swift).
+
+These39 grammar/helper groups supplement the [293-declaration operation index](../../11-operations-integration/migration-operation-crosswalk.html). They are not39 independent features or an exhaustive enumeration of every value/descriptor-schema combination. The selected slice still needs real parser/producer/consumer/operation/effect proof, exact supported version pairs and the required artifact paths. No parser, installer, shell, service or socket experiment ran for this reference.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

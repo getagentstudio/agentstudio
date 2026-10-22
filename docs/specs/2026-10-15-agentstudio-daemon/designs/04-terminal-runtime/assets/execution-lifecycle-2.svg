@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1496.4679999999998 116.9" width="1496.4679999999998" height="116.9" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 1496px; --diagram-readable-width: 1197px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+  <marker id="arrowhead-start" markerWidth="8" markerHeight="5" refX="1" refY="2.5" orient="auto-start-reverse">
+    <polygon points="8 0, 0 2.5, 8 5" fill="var(--_arrow)" stroke="var(--_arrow)" stroke-width="0.75" stroke-linejoin="round"></polygon>
+  </marker>
+</defs>
+<polyline class="edge" data-from="Source" data-to="Admit" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="307.9549999999999,58.45 355.9549999999999,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Admit" data-to="Facts" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="509.05499999999995,58.45 557.055,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Facts" data-to="Write" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="736.0899999999999,58.45 784.0899999999999,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Write" data-to="Read" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="981.6499999999999,58.45 1029.6499999999999,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<polyline class="edge" data-from="Read" data-to="View" data-style="solid" data-arrow-start="false" data-arrow-end="true" points="1228.692,58.45 1276.692,58.45" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#arrowhead)"></polyline>
+<g class="node" data-id="Source" data-label="Qualified backend or Host-local source" data-shape="rectangle" id="source--diagram-2--Source">
+  <rect x="40" y="40" width="267.9549999999999" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="173.97749999999996" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Qualified backend or Host-local source</text>
+</g>
+<g class="node" data-id="Admit" data-label="Host fact admission" data-shape="rectangle" id="source--diagram-2--Admit">
+  <rect x="355.9549999999999" y="40" width="153.1" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="432.50499999999994" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host fact admission</text>
+</g>
+<g class="node" data-id="Facts" data-label="Host terminal fact owner" data-shape="rectangle" id="source--diagram-2--Facts">
+  <rect x="557.055" y="40" width="179.035" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="646.5725" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host terminal fact owner</text>
+</g>
+<g class="node" data-id="Write" data-label="Guarded observation write" data-shape="rectangle" id="source--diagram-2--Write">
+  <rect x="784.0899999999999" y="40" width="197.55999999999997" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="882.8699999999999" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Guarded observation write</text>
+</g>
+<g class="node" data-id="Read" data-label="Host read or selected copy" data-shape="rectangle" id="source--diagram-2--Read">
+  <rect x="1029.6499999999999" y="40" width="199.042" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1129.1709999999998" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Host read or selected copy</text>
+</g>
+<g class="node" data-id="View" data-label="Gateway prepared view" data-shape="rectangle" id="source--diagram-2--View">
+  <rect x="1276.692" y="40" width="179.77599999999995" height="36.900000000000006" rx="0" ry="0" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="0.75"></rect>
+  <text x="1366.58" y="58.45" text-anchor="middle" font-size="13" font-weight="500" fill="var(--_text)" dy="4.55">Gateway prepared view</text>
+</g>
+</svg>

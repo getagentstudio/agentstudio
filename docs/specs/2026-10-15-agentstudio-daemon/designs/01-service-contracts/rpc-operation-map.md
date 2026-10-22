@@ -1,0 +1,153 @@
+# Where the 57 existing app RPC methods lead
+
+**An RPC name identifies an entry point, not its future machine or its completion guarantee.** This map separates the current source/effect of every declared app method from the Lead's proposed Host, Gateway and native-client realization.
+
+The current-source baseline is AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. All 57 names reconcile with the [compiled method index](../../../../../Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBuiltInMethodIndex.swift:15), including its three composition entries. Deeper effects reuse explicitly labeled same-HEAD research; this is neither a fresh deep audit of every transitive function nor execution evidence. The [machine-readable evidence map](../../research/evidence/2026-10-17-daemon-capability-placement/rpc-operation-source-map.json) retains current owner, native prerequisites, decisive pointers and reuse limits per row; [research notes](../../research/evidence/2026-10-17-daemon-capability-placement/rpc-operation-source-map-notes.md) explain the reconciliation.
+
+**Proposed placement below is structural synthesis, not a selected public method list or complete Program Design.** All current methods share today's app-composed server startup boundary, even when their own handler makes no window/view call. The new standalone Host/Gateway services do not exist yet. The [family map](../11-operations-integration/capability-placement-map.md) covers acquisition outside this RPC catalog, and the [154 command identities](../10-swift-client/command-operation-map.md) form a separate overlapping layer.
+
+## How to use this map
+
+Read the proposed path above a table, then the operation's current acquisition/effect row. The final paragraph in each section names the exact contract work still needed. Only an authorized subset becomes a service operation. Faithful SQL copies can supply selected reads; they do not execute commands, acknowledge answers or reproduce native effects. Shared state/view scope is chosen in DS02, not by method spelling.
+
+## Service identity, catalog and connection authority
+
+**Proposed path.** The responding service owns its identity, version, catalog and connection admission. Gateway and Host each report their own role and enforce their actual boundary; a Gateway login must not invent Host authority. Swift retains the native command/display catalog and consumes selected service capability metadata. Catalog availability is distinct from current enablement and readiness.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `auth.login` · [source](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift:330) | Consumes bearer input and current runtime/credential/membership authority; replaces connection authenticated context, releases prior lease, and may enqueue credential persistence. Also reads CLI-store read-through cursor for login result. |
+| `auth.status` · [source](../../../../../Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift:362) | Returns connection-local authenticated principal/runtime/access-mode snapshot; no durable credential or current product-state read is performed by this status closure. |
+| `system.identify` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:31) | Returns captured runtimeId, accessMode and appVersion from app composition; no product mutation. |
+| `system.ping` · [source](../../../../../Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations.swift:17) | Returns captured runtimeId from registration inputs; observes responding runtime rather than all subsystem health. |
+| `system.version` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:35) | Returns captured application version from composition, not provider/backend binary identity. |
+| `system.capabilities` · [source](../../../../../Sources/AgentStudioAppIPC/AgentStudioIPCRegistryAuthorization.swift:42) | Returns immutable composition/channel-filtered catalog and cached encoded result after ordinary admission. Catalog construction validates it against registered metadata. |
+| `command.list` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandCatalogProjection.swift:29) | Captures AppCommand definitions/ipcSpec by channel, builds immutable descriptors off-main and returns composition.catalogResult/cached encoding. Does not ask each current owner for enablement. |
+
+**Boundary to finish.** DS01/DS03 must bind identity, pairing, credential custody and revocation at each hop. Catalog schemas must distinguish service role and native versus Host capability. Neither a ping nor a catalog entry proves every backend is healthy.
+
+## Connection subscriptions and recoverable client interest
+
+**Proposed path.** Gateway owns desired frontend interests and bounded client delivery. Each Host owns its source subscriptions and their observation positions. The logical interest can survive replacement of a transport connection; its authorization and actual delivery still require admission. A copied row is neither a live subscriber nor an event acknowledgement.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `events.subscribe` · [source](../../../../../Sources/AgentStudioAppIPC/AppIPCBuiltInPresentationAndEventRegistrations.swift:89) | Allocates fresh UUID and inserts connection/principal-owned event-name/subscriber record; returns ID/event names. No cursor/replay input. |
+| `events.unsubscribe` · [source](../../../../../Sources/AgentStudioAppIPC/AppIPCBuiltInPresentationAndEventRegistrations.swift:107) | Checks exact subscription principal+connection then removes runtime subscription; missing/mismatched ID refuses rather than idempotent success. |
+
+**Boundary to finish.** DS01/DS02 must define source lifetimes, replay positions, overflow/refill and freshness. Current subscribe has no resume cursor, and unsubscribe is connection-bound. Preserve those current facts while designing the replacement; do not claim the current API already supports durable resume.
+
+## Provider ingress and session status
+
+**Proposed path.** The addressed Host acquires provider evidence, validates binding and reduces backend/session status without a Mac. Gateway prepares display status from that Host state and the selected viewing scope; Swift supplies actual viewing facts and publishes prepared values. The existing query mixes hydration, pending-input consumption and presentation status, so it must be split at those responsibilities.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `session.event` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift:32) | Consumes matching-pane provider envelope, maps signal, generates fresh record ID/time/owner lookup and awaits ingestion/reduction. Applied/bound commit submits activity; ignored reduction can still return admitted. |
+| `session.refusal` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift:84) | Consumes matching-pane refusal, records latest refusal in runtime map if status/pane not closed/retired; can start viewed ingress first. |
+| `session.query` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift:99) | Reads unbound/live/ended summary and lastRefusal, but can lazily restore runtime status, load open-ask summaries, consume pending viewed/retirement inputs and publish status. Open-ask source is wired through PaneContextService.ensureOpen. |
+
+**Boundary to finish.** DS07 owns provider/binding admission and retained status evidence. DS02/DS10 still need the viewed-after-completion scope: one client versus shared same-user clients. No choice is implied by putting all provider processing on Host. Query hydration must not silently acknowledge user-visible work.
+
+## Context messages, ordered values and answer receipts
+
+**Proposed path.** Host owns admitted context transactions, writer epochs, message identity and settlement. Gateway can prepare scoped message/status pages from permitted data, but answer progress and receipt pruning must execute at the authoritative workflow owner. Swift supplies native display and user actions. Selected Host-local agent/context ingress stays independent of Gateway availability.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `pane.context.get` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:179) | Reads bounded paged SQLite/detail/membership/session/read-time projection and updates in-memory detail-version bookkeeping. ensureOpen can perform startup blocking-ask settlement and pending retirement drain; does not mark notices read. |
+| `pane.line.set` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:134) | Resolves writer/binding, rejects historical writer, maps line and applies ordered epoch/counter current-value write; returns applied/stale/refusal. |
+| `pane.title.set` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:146) | Resolves writer/binding, rejects historical writer, applies ordered title replacement by writer/stream/epoch/counter; returns applied/stale/refusal. |
+| `pane.writer.claimEpoch` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:157) | Allocates or replays writer-stream epoch under retained claimId; mismatched claim reuse is refused. This is a state allocation, not a read of a counter. |
+| `pane.message.send` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:32) | Maps writer/binding and typed notice/nonblocking-ask intent, transactionally records it, returns created/existing or refusal; retained message identity supplies same-intent duplicate semantics. |
+| `pane.message.ask` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:61) | Commits blocking ask using retained message identity, then waits for committed settlement; connection end/app stop settlement differs. |
+| `pane.message.withdraw` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:91) | Resolves writer then withdraws an owned unread notice/open ask; returns withdrawn/alreadySettled/notFound/refusal. |
+| `pane.message.changes` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:108) | Not pure read: SQLite write monotonically records reported answer position, confirms matching receipts and may prune aged acknowledged pane_event rows; returns bounded later changes and can publish affected sources. |
+
+**Boundary to finish.** DS07/DS02 must bind portable session/binding targets, audience, transaction closure, retained history, cancellation and connection-loss settlement. A replica read cannot replace message.changes acknowledgement, and a cached context page cannot trigger Host startup settlement. Separate read DTOs from acknowledgement operations where the final contract requires it.
+
+## Native workspace, pane and window reads
+
+**Proposed path.** The native client owns actual window residency, focus and mounted presentation. Gateway may prepare selected arrangement/sidebar views from explicitly scoped client input plus Host inventory. Host owns machine/session facts used by those views; it does not manufacture a native window from a copied arrangement row.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `window.current` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:55) | Resolves preferredWorkspaceWindowId and requires that ID remain in registered windows; otherwise noActiveWindow. |
+| `window.list` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:39) | Projects registered/key/focused/preferred window lifecycle facts with current composed workspace ID. List can be empty; does not create a window. |
+| `workspace.current` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:72) | Requires currentWindow, then projects the composed workspace snapshot. |
+| `workspace.list` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:68) | Projects the one composed workspace identity, tabs, panes and repository topology from live atoms; no per-request SQLite/Git/filesystem refresh. |
+| `pane.current` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:82) | Requires currentWindow, selects activeTab.activePaneId, snapshots pane/tab/workspace and principal-filters activity. |
+| `pane.list` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:77) | Projects tab/pane graph and PaneActivityTimeAtom; registration principal-filters activity based on own-pane scope. No terminal output/screen read. |
+| `pane.snapshot` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift:91) | Requires currentWindow, existence then same-step own-pane relationship, and projects explicit pane/tab/workspace plus principal-filtered activity. |
+| `sidebar.grouping.get` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSidebarAdapter.swift:20) | Reads groupingMode for requested repo/panes surface; dormant Inbox request is rejected. |
+| `sidebar.surface.get` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSidebarAdapter.swift:32) | Reads current sidebar surface; retained Inbox surface rejected. |
+
+**Boundary to finish.** DS02/DS10 must settle retained arrangement/preference scope, native-client addressing and absence behavior. Some current list calls require atoms without requiring an active window; preserve that distinction. The Mac-native baseline is not automatically the iOS window model.
+
+## Native layout, presentation and command dispatch
+
+**Proposed path.** Keep native layout/focus/presentation at the addressed client. Route underlying execution/session/Git effects through Gateway to their Host owner using typed operations. A combined command names both results: backend state can change before native presentation fails. Closing the last pane detaches under the selected target contract; it does not terminate execution.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `command.execute` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift:117) | Parses selected command's typed arguments, canonicalizes/revalidates current durable target/window, dispatches to existing owner and permits only declared applied/accepted/presented/unavailable result boundaries. |
+| `drawer.addPane` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:118) | Allocates child UUID, validates parent/content, awaits addDrawerChildInBackground and rereads graph membership. Terminal durable creation differs from browser graph/native-view/rollback/autosave path. |
+| `drawer.toggle` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:167) | Resolves parent, validates it is not drawer child, awaits toggleDrawer; toggles expansion state and may schedule later geometry work. |
+| `pane.close` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:82) | Resolves current pane/tab; own-drawer variant selects removeDrawerPane; action execution rechecks own-pane assertion. E2 records durable close/Undo ownership before publication/teardown. |
+| `pane.focus` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:37) | Resolves target; awaits serialized committed focus operation that reveals tab/arrangement/drawer and applies native responder/runtime focus before focused:true. |
+| `pane.split` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift:62) | Submits insertPane(newTerminal) targeted at resolved tab/pane; E2 records durable placement before native materialization. Reply names target/direction, not created pane. |
+| `ui.arrangements.open` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCUIPresentationAdapter.swift:36) | Validates optional durable pane, calls native arrangements presenter for window/context, returns resulting tab/context. |
+| `ui.commandBar.open` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCUIPresentationAdapter.swift:24) | Calls native presenter for explicit workspaceWindowId/scope and returns presented scope/window/correlation. |
+
+**Boundary to finish.** DS09/DS10 must bind the actual native target and backend capability per command/variant. The separate [154-command execution map](../10-swift-client/command-execution-map.md) follows each current immediate owner/refusal and its result limit. Exact route to an absent or different native client, Undo/cutover and Mac-local ordinary CLI routing remain unsettled; no generic forwarded command enum selects them.
+
+## Terminal input, process facts and renderer facts
+
+**Proposed path.** Host owns execution/attachment/input authority and renderer-independent terminal facts. Swift/Ghostty owns renderer health and actual native input/rendering. Gateway binds these observations to the correct Host/session/attachment and prepares client status. Terminal bytes use their own bounded continuation path, not a materialized SQL view.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `terminal.send` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift:69) | Rechecks own-pane immediately before dispatching exact input; maps result to accepted/queued command ID and optional queue position. |
+| `terminal.snapshot` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift:46) | Reads runtime-local sequence/timestamp/lifecycle/capabilities plus rendererHealthy/readOnly/secureInput facts; carries no terminal bytes. |
+| `terminal.status` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift:30) | Resolves pane/type and same-step own-pane assertion; returns lifecycle, ready, backend and capabilities from registered runtime snapshot. |
+| `terminal.wait` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift:90) | Observes attachReady/commandFinished/rendererHealthy with sequence fence, subscribes before replay and rechecks own-pane after wait; temporary waiter/subscription lifecycle is runtime state. |
+
+**Boundary to finish.** DS04 must define the new attachment/stream/input contract, restoration cut, controller policy and fact witnesses. Current snapshot has no screen bytes; status is not a new process probe; wait consumes declared runtime facts. Those methods cannot stand in for a qualified ZMX restoration or remote input experiment.
+
+## Review/file acquisition versus native pane creation
+
+**Proposed path.** Host acquires repository/file/review source data and owns source currentness. Gateway prepares authorized package/content views and routes bounded content. The client owns pane creation, selection and display-publication application. Preserve the distinction between requesting source refresh, allocating a descriptor, receiving bytes and constructing/rendering a pane.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `bridge.diff.getPackage` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:60) | Reads paneState.diff.packageMetadata/status/error and selectedReviewItemId into bounded package metadata result; does not itself fetch package source bytes. |
+| `bridge.diff.load` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:31) | Uses explicit worktree context to create review Bridge pane/native host/new tab and returns fresh pane handle; registration then publishes Bridge update event. |
+| `bridge.diff.refresh` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:53) | Resolves mounted controller, issues fresh loadDiff identity and awaits handling; returns current status/package/generation and refreshed flag. Registration publishes Bridge update event. |
+| `bridge.diff.selectFile` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:70) | Checks current committed publication/item and installation admission, requests review navigation/publication, sets native selectedReviewItemId and returns selected:true; registration publishes selection event. |
+| `bridge.fileView.getContent` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:152) | Returns content-handle metadata and MIME, not file bytes. Requires current review publication/generation/install admission; allocates a runtime content lease and settles it on return. |
+| `bridge.fileView.open` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:42) | Uses worktree context to create file-view Bridge pane/native host/new tab; returns fresh pane handle then publishes Bridge update event. |
+
+**Boundary to finish.** DS08/DS10 must bind source generations, finite-content leases and client publication fences. getContent currently returns handle metadata after a runtime lease, not file bytes. load/open create native panes; they cannot move unchanged into a headless file API.
+
+## Page controls and native diagnostics
+
+**Proposed path.** Keep native/page interaction and DOM/render diagnostics at the addressed renderer. Host supplies source/content and its own observability; Gateway may aggregate qualified diagnostic/status results without turning them into backend truth. Search/filter may have a prepared-data counterpart, while the existing methods operate on a live page and retain that meaning.
+
+| Current method | Current acquisition, state or effect boundary |
+| --- | --- |
+| `bridge.diff.collapseFile` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:100) | Dispatches page control setting a review item collapsed; page can reject missing/unrendered item or unsupported surface. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence. |
+| `bridge.diff.expandFile` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:90) | Dispatches page control setting a review item expanded; page can reject missing/unrendered item or unsupported surface. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence. |
+| `bridge.diff.renderState` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:66) | Samples native product-session/refresh diagnostics and calls page JavaScript to inspect DOM/probes; JS failure can return diagnostic result evaluateSucceeded:false. |
+| `bridge.diff.scrollToFile` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:80) | Dispatches page control selecting/scrolling a review item and returns immediate control probe. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence. |
+| `bridge.fileTree.revealPath` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:130) | Dispatches page path-reveal/selection control and returns immediate control probe. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence. |
+| `bridge.fileTree.search` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:110) | Replaces page semantic text/regex search criteria and returns immediate control probe; result rows may settle later. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence. |
+| `bridge.fileTree.setFilter` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:120) | Replaces complete surface-specific page filter and returns immediate control probe; not a query of stored filter. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence. |
+| `bridge.fileView.showMarkdownPreview` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:140) | Native entry forwards preview control, but both examined live Review and File handlers in same-HEAD E2 return unsupported_surface. |
+| `bridge.telemetry.flush` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:166) | Begins proof snapshot capture, drains sidecar, takes native proof through accepted batch sequence, records sidecar proof, returns qualified report/drained; failures cancel capture or return unavailable. |
+| `bridge.telemetry.snapshot` · [source](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift:162) | Samples telemetry sidecar then native session snapshot, or returns explicit disabled/failed unavailable. No drain/proof-capture path is called by this method. |
+
+**Boundary to finish.** DS08/DS10/DS11 must define selected native control exposure and proof. The existing Markdown-preview route is declared but currently unavailable in the inspected page handlers. Telemetry flush can change proof-capture state; snapshot/export/delivery are different. Page control acceptance does not prove final rows, DOM or pixels.
+
+## What declaration coverage does and does not close
+
+Every current method appears once in this map: 57 of 57, with no missing, extra or duplicate identities. That closes the named-entry inventory. It does not settle parameter variants, all 154 command handlers, public exposure, future wire shapes, target authority, data-export selection, native reverse routing, cancellation or restart semantics. These stay in their owning DS01–DS11 contracts. Real Swift/Rust sockets, schemas, native behavior and Mac/Linux service effects remain unobserved; the [socket compatibility qualification](experiments/swift-socket-compatibility.md) is a proposed procedure, not a passing result.

@@ -1,0 +1,31 @@
+{
+  "source": "Direct owner follow-up messages in the active Lead conversation",
+  "preserved_on": "2026-10-17",
+  "provenance_limit": "Bodies copied from current conversation context; original timestamps and session-log line positions were not independently recovered for this supplement.",
+  "messages": [
+    {
+      "body": "so gateway need sto have matrizled view that clietn depend on",
+      "body_utf8_sha256": "b7e2423ae0ff87bf6063348caf59d5f565e4712473f947ee3e6b1b1c2041d55f"
+    },
+    {
+      "body": "and host ahs to ahve state in a way that makes it easy to replicqate, aqnd use and proccessed good enough right?",
+      "body_utf8_sha256": "25fc4878ca56cf383d9514e567c3d18286f6620eb773f63357531d91b68fa86e"
+    },
+    {
+      "body": "hsot ahs to knwo what hand how to get the data it needs.  beasically you ened to map out allt eh fucvnitosn agent studio does and hten figure out where and hwo they leive in specs",
+      "body_utf8_sha256": "62c6e34d31fdfaac8fffdbc3f6dd53f6baadadf5d6303c4e4bbe7abfc4b229ef"
+    }
+  ],
+  "clarified_scope": "Map all AgentStudio capabilities, including their data acquisition and processing, to their responsible specifications. The Host is an active machine backend; discuss structured replicable operational state and Gateway-prepared client views as part of that whole map.",
+  "authority_limit": "These messages reinforce the full-survey and placement task. The first two are questions about the working model, not approval of exact data units, persisted projections, public schemas, export membership, library adoption or viewing-state sharing. Existing exclusions and open product choices remain.",
+  "existing_requirements_home": "../../user-requirements.md",
+  "existing_scope_rows": [
+    "U4",
+    "U9",
+    "U13",
+    "U15",
+    "U16",
+    "U18"
+  ],
+  "existing_capability_catalog": "../../capability-contracts.md"
+}

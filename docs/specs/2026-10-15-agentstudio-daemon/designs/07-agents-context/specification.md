@@ -1,0 +1,31 @@
+# Agents, provider input and retained context: observable contracts
+
+This is the DS07 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.md). The separate [Requirements](../../user-requirements.md) authorize its meaning; the [domain definitions](../../domain-entities.md) and shared [operation interpretation](../../capability-contracts.md#shared-interpretation-of-an-operation) apply. Its [design brief](README.md) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.md) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K7 — Provider events, bindings and autonomous agent input
+
+**Consumer / entities / basis:** authorized Codex/Claude integration; E1/E9/E10/E17/E18/E22; U4/U9/U15. Provider conversation, turn/tool/subagent occurrence, binding generation, correlation and OS incarnation remain distinct. Admitted input may be recorded-only or ignored rather than applied to live activity; the public result must preserve its actual boundary.
+
+Current hooks project provider-specific input then use authenticated pane RPC. Recognized hooks fail open with exit zero even if delivery/refusal reporting fails; exit zero is not Host admission. Current hooks are not eligible for the notice-only offline queue. Equal occurrence/correlation does not establish a generic duplicate guarantee.
+
+The target preserves authorized integration during presentation absence under U15/R9: agents, provider hooks and eligible context calls inside a Host session use that Host locally without a Mac. Authority concerns E1/E10 rather than pane presence or mere reachability. IP4 separately governs work requiring an invalid writer grant; it does not turn Gateway absence into invalid authority. Public methods, credentials, gate/coverage and effect-time races remain G1/G8/G12/G13.
+
+**Proof:** real provider-shaped input at its Host-local admission boundary, independently observed retained reduction/binding/currentness, and stale-generation or disallowed-scope refusal. Include Swift absent and all Gateways (macOS and iOS) unavailable. Hook exit zero, a mock delivery or today’s frontend socket test cannot establish this target outcome. Separate frontend operations retain R1/R12.
+
+## K8 — Notices, asks, answers, writer ordering and offline notices
+
+**Consumer / entities / basis:** person and authorized agent; E10/E11/E16/E17/E18/E22; U4/U9/U13/U15. The eight current pane-context RPC methods and person-owned actions are distinct interfaces; internal person APIs are not additional public RPC names.
+
+| Operation | Meaning to preserve or explicitly replace | Failure/uncertainty and target gap |
+| --- | --- | --- |
+| Send/withdraw notice or ask | Retained scope + message identity; same-intent repeat differs from changed-intent conflict. Sender and current/historical binding rules differ by message kind. Withdrawn/already-settled/not-found/refused differ. | Host-session scope under S14; exact source identity and cross-client presentation G8/G9; response loss does not prove absent message. |
+| Blocking ask/answer/dismiss | One retained terminal outcome; answered, handed back, expired, withdrawn and stale differ. Baseline EOF/app-stop policies differ from nonblocking ask. | Retained settlement is not reply receipt or the agent acting. Remote person authority, reconnect waiting and deadline policy G8/G9. |
+| Changes/context/read/action | Changes reads can acknowledge/prune receipt state; detail reads do not mark a notice read. Run-action validates stored action membership and may be unavailable. | Reading, acknowledgement, read status and native action effect cannot merge. Exact retention/cursor recovery G3/G8/G9. |
+| Writer claim/title/line | Claim identity, writer epoch/counter and binding generation differ. Clear can retain a watermark. A stale writer cannot become current merely by reconnecting. | Host-session writer ownership across Gateway clients, monotonicity and process restart G3/G8/G9. A lost claim response does not permit blind title retry. |
+| Offline notice append/intake | Current eligible never-submitted notice may commit locally; queued is not delivered. Store-scoped message dedup preserves its original row and differs from server scope+intent comparison. Intake notice and source-store cursor commit together in the current app transaction. | Auth refusal/post-submit unknown/asks/hooks are not generic queue inputs. No shared remote SQLite, new spool or generalized exactly-once receipt is implied. This is baseline app-availability machinery, not a required target capability. Host-local session input does not require a Mac-reachability outbox; separately selected frontend offline behavior needs its own G1/G8/G12 contract. |
+
+**Proof:** real transactional outcomes and held races for duplicate/conflict, answer versus EOF, stale writer at commit, revoked scope, and failed cursor commit with no admitted notice. Actual socket/CLI journey supplies delivery boundaries. Local-only SQL tests do not prove remote waiting or cross-service atomicity.
+
+IP12/R17 require shared read-marker meaning across devices; E26 subject/coverage mapping must keep provider completion, a person viewing, notice read, ask settlement and received changes distinct. Exact mapping, source revision and conflict/offline semantics remain G8/G9; delivery alone is not a read action.

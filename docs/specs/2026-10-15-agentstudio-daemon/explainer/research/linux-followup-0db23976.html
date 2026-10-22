@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Linux experiments: first executed follow-up</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="linux-followup-0db23976.html">AgentStudio daemon · Linux experiments: first executed follow-up</a></nav></ex-nav>
+<ex-document id="content"><h1>Linux experiments: first executed follow-up</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+[Current work report](../progress.html) · [Markdown source](../../../../../tmp/practices-research/2026-10-21-daemon-progress/linux-followup.md) · [Project overview](../index.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Linux experiments: first executed follow-up
+
+**The pinned ZMX binary now runs on a real Linux VM. This Fly filesystem does not support the tested reflink operation; the separate full-copy fixture preserved the measured state.** These are primitive/component observations, not complete Host or worktree-fork parity.
+
+The owner authorized trying the experiments. No additional owner input was needed for this run: Fly authentication succeeded through the normal host-access route. One temporary VM at a time ran in a new experiment-only application, without public services or persistent volumes. Raw records and the rerunnable probe are in [the experiment directory](../../../../../tmp/experiments/2026-10-21-experiment-frontier/run-summary.json).
+
+## What ran
+
+- Lead cross-built unmodified ZMX source `7f0ffdb999833a1817dd3c6222c269d4ed4a7548` using Zig0.16.0, ReleaseSafe, target `x86_64-linux-musl`: 42/42 build steps, exit0. [Build log](../../../../../tmp/experiments/2026-10-21-experiment-frontier/build-linux.log).
+- The transferred binary's SHA-256 matched `42d45f352eb9ee4d7070d20cfb85c9c87b677259fffa2e773f6d57b87067a5d2` inside Linux. Its isolated version call succeeded. The VM reported Linux `6.12.105-fly`, x86_64 and overlayfs.
+- An actual ZMX task printed `LINUX-PTY-READY` and a task-completion marker with status0 through its PTY/output path. This was task-mode execution, not the interactive-shell creation or native-renderer experiment. [Raw output](../../../../../tmp/experiments/2026-10-21-experiment-frontier/linux-zmx-task.json).
+- The Pydantic-validated [probe](../../../../../tmp/experiments/2026-10-21-experiment-frontier/linux_platform_probe.py) exercised synthetic Git state, ordinary/non-UTF-8/newline names, mode bits, xattrs, a dangling symlink and a hardlink group. Raw Git status bytes were compared without UTF-8 normalization.
+
+## What the filesystem showed
+
+| Observation | Result | Limit |
+| --- | --- | --- |
+| `cp -a --reflink=always` | Exit1; the kernel/filesystem reported Operation not supported. | Not a claim that all Linux filesystems lack CoW. No silent fallback was selected. |
+| Explicit `cp -a --reflink=never` | Exit0; tree contents/metadata before a Git read and raw Git status matched the source. | Whole-directory copy is not AgentStudio Git's complete worktree fork/registration transaction. |
+| Hardlink preservation and source independence | The destination retained the tested hardlink relationship; changing its file left the source unchanged. | Finite synthetic files only; no large-repository performance result. |
+| Negative control | A deliberate post-copy file mutation changed the observed tree after Git's index-refresh observation. | The observer does not merely assume a successful copy. |
+| Basic inotify lifecycle | Rename-from, rename-to, delete and the correlated closing write were observed; the watcher was terminated and reaped. | This first fixture did not exercise overflow or replacement. A separate [watch follow-up](linux-watch-results-340b436a.html) now has those observations; product reconciliation remains untested. |
+
+The [full result](../../../../../tmp/experiments/2026-10-21-experiment-frontier/linux-probe-result.json) retains command stderr and per-observation values. Probe quality checks: Ruff passed; basedpyright reported0errors/0warnings.
+
+## Setup correction and cleanup
+
+The first VM exited before any probe ran. Its observed command contained a stray `off` argument because the CLI's optional-value flag required `--autostop=off`. The first machine was confirmed absent before creating one replacement with the corrected flag. No ZMX result is attributed to that failed setup.
+
+After preserving results, the synthetic ZMX session was killed. Stopping the VM returned exit1 because the wait expected a stopped state but the automatically removed machine was already not found. An independent final inventory succeeded and returned **zero machines**. The empty experiment app remains available; no test VM is left running. [Cleanup record](../../../../../tmp/experiments/2026-10-21-experiment-frontier/run-summary.json).
+
+## Work still ahead
+
+The [unforked native Ghostty component and Swift/Rust socket fixtures](native-and-socket-results-49880ceb.html), and the separate [watch overflow/replacement fixture](linux-watch-results-340b436a.html), have now run. Full Host/Gateway/Swift integration, automatic agent recovery, complete renderer-free Host facts, Linux worktree-fork behavior, mobile lifecycle and route performance remain unqualified. Lossy terminal restoration remains permitted under IP13; Ghostty was not modified.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

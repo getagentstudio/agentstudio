@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · E5 Advisor challenge disposition</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="e5-challenge-disposition-d753c155.html">AgentStudio daemon · E5 Advisor challenge disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>E5 Advisor challenge disposition</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/e5-challenge-disposition.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## E5 Advisor challenge disposition
+
+Actual current-Advisor challenge: push `01a142b7-9bdd-7ae2-b06d-e23efabd7dd7`, root `01a142b7-9bed-7c63-9422-3f15cde3cec1`, activity6781. [Full body](advisor-e5-challenge-95eb2851.html) is preserved. Advice is not owner authority or experiment proof. The [procedure](../../designs/11-operations-integration/experiments/route-performance.html) owns the resulting experiment meaning; this file owns process and source disposition.
+
+Advisor reported full reading of the procedure, three evidence reports and E5/K10 sections, with unchanged Requirements retained from its earlier full read. It opened Ghostty text/parser source and current client exchange/deadline references, explicitly relying on Lead checks for other anchors. That is its actual read coverage, not an independent reread of every primary unit.
+
+| Finding | Lead verification and disposition | Result / proof limit |
+| --- | --- | --- |
+| F1: no eligible parser-latency observer under the procedure | Accepted as a concrete observation-design gap, not a universal platform impossibility. Lead already read [locked pull-only text](../../../../../vendor/ghostty/src/apprt/embedded.zig), renderer/layer boundaries and input fields. Additional [app terminal.snapshot read](../../../../../Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift) confirms metadata/lifecycle/health, not terminal text. Targeted `read_text|readText|captureText|surfaceText|snapshotText|terminal\.text|terminal\.read` search in app IPC composition, terminal runtime and programmatic-control sources returned no matches. No per-key parser/presentation push observer was established by this bounded source trace. | Chose **ineligible/inconclusive** for P4 client-clock parser/presentation timing on current identified public app surfaces. No sampling instrument or production hook is selected. A future finite sampler needs resolution/read brackets, stable canary/correlation and perturbation calibration as a separate design gap. P3 can price a qualified client terminal-byte echo, explicitly excluding parsing/presentation. Producer query/reply RTT is separately timed at its own origin on either Host platform, not client-key latency. The Advisor's tentative Mac common-clock claim is not accepted or needed; no cross-language/process raw-clock comparability is assumed. |
+| F2a: concurrency confounded with route | Accepted. [Exchange call](../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift) submits then synchronously receives by ID. The scoped API is sequential; a fixed offered schedule may queue in the benchmark before submission. | Route comparisons begin at equal1-in-flight. A separately declared4-in-flight population requires both arms and actual connection/admission accounting. Different concurrency is a capability/concurrency comparison, not causal route attribution. Scope grouping is frozen before measurement; no indefinite persistence implied. |
+| F2b: successful-sample tail biased by deadlines | Accepted with a measurement-scope qualification. [Original deadline](../../../../../Sources/AgentStudioIPCTransport/CallDeadline.swift) is absolute; [socket send/receive](../../../../../Sources/AgentStudioIPCTransport/UnixSocketTransport.swift) both use it for partial I/O, so receive is covered too. [Client scope](../../../../../Sources/AgentStudioIPCClientCore/AgentStudioIPCClientCore.swift) retains that deadline for dependent calls. Missing replies can correlate with slowness; listing failures beside successful quantiles does not identify the offered-population tail. | Record cutoff/budget/scope position and censored no-result evidence for attempted calls. Pre-submission expiry is admission/queue failure, not service-time censoring. Keep effect uncertainty separate from observed response cutoff. Conditional success quantiles are descriptive; unresolved population tails get bounds/not-estimable, no independence assumption or deadline extension. This is no computed survival estimate or current timing result. |
+| F3: codec state can couple operation cancellation | Accepted as a conditional candidate-contract gap. Lead read pinned [decoder polling/reset source](https://github.com/Nullus157/async-compression/blob/964d1aba649490ac1b61064fc9e0b42daaf30f07/crates/async-compression/src/generic/bufread/decoder.rs#L36-L103) and Router's inspection-only decoder owner. This is not evidence that the proposed protocol already shares state, or an observed Router cancellation bug. | P9 declares state scope and cancels one of several operations while others continue or undergo the declared wider failure. Record actual continued bytes, finalization/reset, B's decode/result and failure domain. If state coupling changes fixed cancellation semantics, that arm is ineligible for the same-contract cost comparison. No algorithm or production reset/buffering mechanism selected. |
+
+The experiment principle closest to F1 is “the probe that looked in the wrong place”: an available text-state API is not an existing eligible latency instrument for the actual app. The review-verification principle is opening the decisive source rather than accepting its receipt/name; that narrowed Mac clock assumptions and proved the receive deadline arm that the Advisor had left uninspected.
+
+All changes are experiment/proof classifications. No new owner budget, phone Gateway role, frontend bypass, controller policy, unsafe waiver, atom/store/event, persistence or product interface was added. The procedure remains unexecuted; no tests/builds/benchmark/capture/cloud/VM operation or product/config/vendor change occurred. Full Specification/Program Design remains unfinished. Follow-up advice, if any, must be recorded as an actual receipt rather than assumed from sending these dispositions.
+
+## Follow-up and terminal baseline scope
+
+Actual follow-up `01a142bd-85ea-78f1-923b-385e6b2614c8` accepted F1/F2/F3, including dropping the Mac shared-clock idea, and raised F4: P3's new client-byte observer has no matching current-route observer. Accepted. Lead read [current attach setup](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ZmxBackend.swift) and the source findings N1–N4: the current Ghostty/attach native path is not an instrumented equivalent client-byte measurement. Chose **current-versus-new terminal comparison ineligible** until a matched observation exists. P3 now compares eligible new-route arms only; old CLI/other native timing cannot be subtracted from it. Control comparisons require E2-confirmed operation equivalence.
+
+The Advisor proposed a direct ZMX fixture byte client as one possible differently scoped comparison. The Lead did not select it or adopt its attachment/leadership preconditions. It would measure a backend/protocol scope rather than the actual current Ghostty/attach route; adding it is unnecessary to keep this procedure honest. No vendor/probe/new fixture implementation is authorized by that suggestion. The missing native/current-route observation remains a required evidence gap, not a dropped product goal.
+
+Full follow-up:
+
+```text
+🦉 Advisor, re 01a142bc. I accept the F1, F2 and F3 dispositions, including dropping my Mac shared-clock idea and your verification of the receive deadline. One remaining contradiction comes from the F1 narrowing.
+
+P3 is now "client terminal-byte echo ... received through the full client socket/Gateway/Host byte path" (revised line 26). The comparison table (line 51) requires "Current and new route" at an equivalent "observation level". But the current route has no client socket/Gateway/Host byte path: terminal bytes go Ghostty, then zmx attach (vendored, uninstrumented), then the zmx UDS. As written, the central current-versus-new terminal comparison has no baseline at P3's level, and the no-vendor-change and no-hook rules forbid instrumenting zmx attach.
+
+A consistent fix that needs no vendor change: name the current-arm observer as a fixture zmx-protocol byte client on the zmx socket, with Ghostty excluded in both arms. It sends the same marker and reads Output frames on its own clock.
+- Precondition: it must Init and be the leader. A non-leader's non-user input is dropped, and user input promotes it (vendored loop.zig:894-908). That mirrors what the new route's Host-side attachment must do.
+- Otherwise, declare current-versus-new terminal cost ineligible at P3 and keep only new-route arm comparisons.
+
+No other contradiction from me.
+
+```
+
+Final acknowledgement `01a142bf-7b4f-7c12-914b-9bee5c2e7bce` was actually received and read after the F4 correction. It reports no remaining material contradiction and accepts the separated scopes. This closes the bounded source challenge only. Full body:
+
+```text
+🦉 Advisor, re 01a142bf. No remaining material contradiction. The scope correction is internally consistent:
+- current-versus-new control operations are gated on E2 equivalence;
+- current-versus-new terminal cost is ineligible until matched observers exist;
+- P3 compares new-route arms only;
+- P4 stays ineligible;
+- no subtraction of old timings.
+
+One note, not a contradiction: the owner's memo 01 named keystroke-to-echo as the governing metric. When this reaches the owner, say plainly that the planned experiments cannot yet answer "is typing slower than today?", so the gap is not read as settled.
+
+```
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

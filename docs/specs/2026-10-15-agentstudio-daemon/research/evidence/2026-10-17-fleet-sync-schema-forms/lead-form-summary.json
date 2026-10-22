@@ -1,0 +1,1023 @@
+{
+  "product_head": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "library_head": "53995d76150259464e7158c479c1e84bce7c51b3",
+  "tables": 86,
+  "known_form_conflict": 68,
+  "no_known_conflict_in_these_checks": 18,
+  "overlapping_reason_counts": {
+    "PrimaryKeyOmitsExplicitNotNull": 44,
+    "PrimaryKeyNotText": 14,
+    "AttachedTrigger": 16,
+    "MissingDeclaredPK": 3,
+    "VirtualTable": 1
+  },
+  "by_database": {
+    "core.sqlite": {
+      "tables": 28,
+      "known_form_conflict": 26,
+      "no_known_conflict_in_these_checks": 2
+    },
+    "local.sqlite": {
+      "tables": 53,
+      "known_form_conflict": 39,
+      "no_known_conflict_in_these_checks": 14
+    },
+    "ipc/cli.sqlite": {
+      "tables": 3,
+      "known_form_conflict": 1,
+      "no_known_conflict_in_these_checks": 2
+    },
+    "in-memory search": {
+      "tables": 2,
+      "known_form_conflict": 2,
+      "no_known_conflict_in_these_checks": 0
+    }
+  },
+  "mismatches": [],
+  "source_files_checked_against_head": 24,
+  "rows": [
+    {
+      "database": "core.sqlite",
+      "table": "workspace",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:128"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "app_workspace_selection",
+      "reasons": [
+        "PrimaryKeyNotText",
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:136"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "watched_path",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:9",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:91"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "repo",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:17",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:92",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SidebarPins.swift:4"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "worktree",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:29",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:93"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "repo_tag",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:42",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+GlobalTopology.swift:94"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "unavailable_repo",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:5",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:14",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:20"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "unavailable_worktree",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:15",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+RepositoryAbsence.swift:20"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "pane",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull",
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:256",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:327",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:336",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:345",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:362"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "pane_content_terminal",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull",
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:24",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:35",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:36",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:41",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:49",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:57",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:70"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "pane_content_webview",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull",
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:377",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:461",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:469"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "pane_content_code_viewer",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull",
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:385",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:477",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:485"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "pane_content_payload",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull",
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:392",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:493",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:505"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "drawer",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:399"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "drawer_pane",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:406",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:416",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:429"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "tab_shell",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:520"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "tab_pane",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:529",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:539",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:548"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "tab_arrangement",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:557"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "arrangement_layout_pane",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:573",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:583",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:596",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:49"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "arrangement_layout_divider",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:609"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "arrangement_minimized_pane",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:632",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:639",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:652"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "arrangement_drawer_view",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:665",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:673",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:691"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "drawer_view_layout_pane",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:709",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:724",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:737",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:66",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:87",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:98"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "drawer_view_layout_divider",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:750",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:109",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+TabGraphLayoutRepair.swift:120"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "drawer_view_minimized_pane",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:782",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:793",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations.swift:806"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "workspace_terminal_session_ownership",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:184",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:195",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:210"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "workspace_undo_close",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:85",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:156",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:168"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "workspace_undo_close_member",
+      "reasons": [
+        "AttachedTrigger"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:109",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:123",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:136",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift:143"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_conversation",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:55"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_operation",
+      "reasons": [
+        "PrimaryKeyNotText",
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:69",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:10"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_pane_binding",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:99",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:10",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:7",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:19"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_source",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:128",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:7",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:34"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_evidence",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:52",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:7",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:91",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:92"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_provider_question",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:26",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:7"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "sessions_provider_question_option",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+Sessions.swift:36",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+SessionsCleanup.swift:7"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_state",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:27",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:5"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_state_action",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:176",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:39",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:5"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:45",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_event",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:64",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request_action",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:176",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:79",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_event_action",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:176",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:80",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request_choice",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:86",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request_property",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:94",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request_required",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:105",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request_property_choice",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:113",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_request_answer_value",
+      "reasons": [
+        "PrimaryKeyNotText"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:126",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:8"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_write_order",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:138",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:13"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_epoch_claim",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:146",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:13"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_answer_position",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:156",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:16"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_retirement",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:168",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneContext.swift:19"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_ipc_credential",
+      "reasons": [
+        "MissingDeclaredPK"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift:122",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift:118",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift:119",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift:142",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift:145"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_context_cli_outbox_cursor",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+CLIOutbox.swift:8",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+CLIOutbox.swift:5"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_workspace_cursor",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:310",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_tab_cursor",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:317",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_arrangement_cursor",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:327",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_drawer_cursor",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:337",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:347"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_arrangement_drawer_cursor",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:352",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_drawer_presentation",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+DrawerPresentation.swift:14",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_window_state",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:366",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:105",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:12",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PanesDrawerVisibility.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_window_sidebar_collapsed_group",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:91",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:76"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_editor_preferences",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:488",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_repo_explorer_preferences",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:495",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:105",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PerScreenSidebar.swift:120"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_inbox_notification_preferences",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:503",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_entity_recency",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:40",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_workspace_entity_recency",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:61",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "cache_metadata",
+      "reasons": [
+        "PrimaryKeyNotText",
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:516",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "cache_repo_enrichment",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:523",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "cache_worktree_enrichment",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:537",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_repository_activity",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:172",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_repository_activity_cursor",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:186",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_pane_activity",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+PaneActivity.swift:8",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_session",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:560",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:229",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:272"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_thread",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:579",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_message",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:595",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:200",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:213"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_message_draft",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:612",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_output_attempt",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:622",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_output_attempt_message",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:641",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_output_event",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:655",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_recovery_provenance",
+      "reasons": [
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:668",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:194"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_notification_inbox_item",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:412",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_notification_inbox_collapsed_group",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:405",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations.swift:4"
+      ]
+    },
+    {
+      "database": "ipc/cli.sqlite",
+      "table": "cli_store_identity",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:61",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:12",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStore.swift:142",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStore.swift:207"
+      ]
+    },
+    {
+      "database": "ipc/cli.sqlite",
+      "table": "cli_outbox",
+      "reasons": [
+        "PrimaryKeyNotText",
+        "PrimaryKeyOmitsExplicitNotNull"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:80",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:12",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStore.swift:142",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStore.swift:207"
+      ]
+    },
+    {
+      "database": "ipc/cli.sqlite",
+      "table": "cli_state",
+      "reasons": [],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:96",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStoreMigrator.swift:12",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStore.swift:142",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudioCLIStore/CLIStore.swift:207"
+      ]
+    },
+    {
+      "database": "in-memory search",
+      "table": "search_document",
+      "reasons": [
+        "MissingDeclaredPK"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:244",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:13",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:54",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:280"
+      ]
+    },
+    {
+      "database": "in-memory search",
+      "table": "search_document_fts",
+      "reasons": [
+        "MissingDeclaredPK",
+        "VirtualTable"
+      ],
+      "source_anchors": [
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:252",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:13",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:54",
+        "/Users/shravansunder/code/projects/agentstudio.feat-daemon/Sources/AgentStudio/Core/Search/SearchService.swift:280"
+      ]
+    }
+  ]
+}

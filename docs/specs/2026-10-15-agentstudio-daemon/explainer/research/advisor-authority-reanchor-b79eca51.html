@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Raw-source authority check</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="advisor-authority-reanchor-b79eca51.html">AgentStudio daemon · Raw-source authority check</a></nav></ex-nav>
+<ex-document id="content"><h1>Raw-source authority check</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/advisor-authority-reanchor.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Raw-source authority check
+
+Received push 01a1434a-5405-7840-9053-55231d4fc705 at 2026-10-16T05:58:27.077660Z. Current Advisor: claude-local/34f18df3-a0aa-4472-9b76-7dbfe813d46b on service0ff962c5-7fa3-4c18-a5ca-1bbe8db09e89.
+This is advice. The Lead independently checked the exact owner records; the archive contains23instruction records, despite the Advisor's20-message count.
+
+🦉 Advisor shared-model authority check, re 01a14348. This is advice, not owner authority.
+
+READ IN FULL from the raw owner records:
+- owner-instructions-and-corrections.json: all 20 messages, lines 198-2056;
+- owner-selections.json: all 3 selections, including the exact option descriptions, and its authority_note.
+Reconstructed from the raw wording, not from the U rows.
+
+1. Phone placement: AGREE, with one consequence to surface rather than gate.
+- The literal composition is:
+  - 948 "Gateway rust only on Mac";
+  - 1997 "gateway to host only";
+  - 2001 "socket form client to gateway";
+  - 2005 "mcp/cli/ios/macoks app -> gateway -> host".
+  Together these give phone client -> socket -> Mac Gateway -> Host.
+- An embedded iOS Gateway appears only in supplied research memos, never in an owner selection. Treating it as an open placement question that gates work overstates it. A phone-local Gateway role would need a later owner expansion of 948.
+- RESIDUAL: at 1989 (00:05:47Z) the owner chose "Direct to Host" over the option described as "Non-Mac devices use a Mac as their relay and depend on it being online". 1997, nineteen seconds later, superseded the direct route ("no wait ...") but did not address that declined consequence.
+- So the residual is not placement. It is a confirmation that phones depending on a reachable Mac Gateway is accepted. State that consequence in the owner's own declined wording; it does not block work.
+
+2. Multiple Mac Gateways: AGREE. This is a real lost outcome.
+- 1975 asked "Should one Host support more than one Mac Gateway connected at the same time?" At 1978 the owner chose "Multiple Macs (Recommended)", whose description is "Allow simultaneous clients with separate attachments; specify controller ownership and client-state boundaries", with the note "mukltiple macs, iphones, etc etc any clients".
+- That SELECTS one Host serving more than one simultaneous Mac Gateway, each client with its own attachments. It also makes specifying controller ownership and client-state boundaries an owner-required deliverable, not just an open policy.
+- U16's "does not by itself settle Gateway-instance cardinality" and R7's silence understate this. What stays open is only a numeric maximum, the per-Mac instance count and the content of the controller policy.
+- The note extends simultaneity to all client classes through their route. It does not make phones Gateways (948).
+
+3. No-client admission: the exact residual meaning, and a correction to my own earlier advice.
+- 1933 asked "While Swift is closed or the Gateway is disconnected, what should the Host continue doing?" At 1936 the owner chose "Sessions, agents, facts", described as "Keep sessions running, admit authorized agent inputs, and record terminal facts/activity independently of attached views".
+- The raw owner text NEVER classifies agent CLI or hook calls made from inside a Host session. 2005's "cli" sits in a list of frontend clients, and 463 ("Cli talks to client deamon") concerns the user's CLI.
+- Calling hooks "frontend RPC under U17", as Spec G5 does and as my own E2 F1 argued from the current mechanism (hooks are socket clients today), is an INFERENCE from today's implementation, not owner wording. I retract the claim that this follows from the owner's route statement; the mechanism fact stands.
+- The precise residual, for the owner, has two parts:
+  (a) Are agent CLI/hook calls made from inside a Host session "cli" traffic that must enter through a Gateway (2005), or Host-local agent input governed by the no-client admission (1936)?
+  (b) Only if (a) is "through a Gateway": what happens to them when NO Gateway is reachable? On a Linux Host they would need a network path to a Mac Gateway even when one is connected.
+- Note: 1933's singular "the Gateway is disconnected" was asked BEFORE the multi-Gateway selection (1978), so it may not have meant "every Gateway unreachable". Do not invent a bypass, spool or refusal.
+
+No other authority conflict was found in the raw records.
+
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

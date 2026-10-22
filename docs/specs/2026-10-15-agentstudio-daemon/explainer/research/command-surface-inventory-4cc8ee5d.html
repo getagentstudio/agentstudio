@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current command surface inventory</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="command-surface-inventory-4cc8ee5d.html">AgentStudio daemon · Current command surface inventory</a></nav></ex-nav>
+<ex-document id="content"><h1>Current command surface inventory</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../research/evidence/2026-10-15-daemon-extraction-survey/command-surface-inventory.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current command surface inventory
+
+Source-text inventory at AgentStudio `624300332`; no runtime execution. Every identity is included, including dormant/unavailable commands. Future Host/Gateway/client ownership is unassigned.
+
+Authority: `AppCommand.swift` identity set and `AppCommand+IPCProjection.swift` exhaustive exposure/mode switches. The 154 identity sets match exactly in this extraction. Exposure is not authority, availability, or effect completion.
+
+| Command identity | Current exposure | Current execution-mode tag |
+| --- | --- | --- |
+| `addDrawerPane` | `debugTesting` | `headless` |
+| `breakUpTab` | `debugTesting` | `headless` |
+| `clearAllInboxNotifications` | `debugTesting` | `headless` |
+| `clearPaneInboxNotifications` | `debugTesting` | `headless` |
+| `clearReadInboxNotifications` | `debugTesting` | `headless` |
+| `closeDrawerPane` | `allChannels` | `headless` |
+| `closePane` | `debugTesting` | `headless` |
+| `closeTab` | `debugTesting` | `headless` |
+| `closeWindow` | `debugTesting` | `headless` |
+| `copyCurrentPanePath` | `debugTesting` | `headless` |
+| `cycleArrangement` | `debugTesting` | `headless` |
+| `deleteArrangement` | `debugTesting` | `headless` |
+| `detachDrawerPane` | `debugTesting` | `headless` |
+| `editPaneNote` | `debugTesting` | `uiPresentation` |
+| `enterDrawer` | `debugTesting` | `headless` |
+| `equalizePanes` | `debugTesting` | `headless` |
+| `expandPane` | `debugTesting` | `headless` |
+| `extractPaneToTab` | `debugTesting` | `headless` |
+| `filterSidebar` | `debugTesting` | `uiPresentation` |
+| `focusDrawerPane1` | `debugTesting` | `headless` |
+| `focusDrawerPane2` | `debugTesting` | `headless` |
+| `focusDrawerPane3` | `debugTesting` | `headless` |
+| `focusDrawerPane4` | `debugTesting` | `headless` |
+| `focusDrawerPane5` | `debugTesting` | `headless` |
+| `focusDrawerPane6` | `debugTesting` | `headless` |
+| `focusDrawerPane7` | `debugTesting` | `headless` |
+| `focusDrawerPane8` | `debugTesting` | `headless` |
+| `focusDrawerPane9` | `debugTesting` | `headless` |
+| `focusDrawerPaneDown` | `debugTesting` | `headless` |
+| `focusDrawerPaneLeft` | `debugTesting` | `headless` |
+| `focusDrawerPaneRight` | `debugTesting` | `headless` |
+| `focusDrawerPaneUp` | `debugTesting` | `headless` |
+| `focusNextPane` | `debugTesting` | `headless` |
+| `focusNextPinnedPane` | `debugTesting` | `headless` |
+| `focusPane` | `debugTesting` | `headless` |
+| `focusPane1` | `debugTesting` | `headless` |
+| `focusPane2` | `debugTesting` | `headless` |
+| `focusPane3` | `debugTesting` | `headless` |
+| `focusPane4` | `debugTesting` | `headless` |
+| `focusPane5` | `debugTesting` | `headless` |
+| `focusPane6` | `debugTesting` | `headless` |
+| `focusPane7` | `debugTesting` | `headless` |
+| `focusPane8` | `debugTesting` | `headless` |
+| `focusPane9` | `debugTesting` | `headless` |
+| `focusPaneDown` | `debugTesting` | `headless` |
+| `focusPaneLeft` | `debugTesting` | `headless` |
+| `focusPaneRight` | `debugTesting` | `headless` |
+| `focusPaneUp` | `debugTesting` | `headless` |
+| `focusPrevPane` | `debugTesting` | `headless` |
+| `focusPreviousPinnedPane` | `debugTesting` | `headless` |
+| `focusSidebar` | `allChannels` | `uiPresentation` |
+| `forkWorktree` | `debugTesting` | `headless` |
+| `jumpToNextPrompt` | `allChannels` | `headless` |
+| `jumpToPreviousPrompt` | `allChannels` | `headless` |
+| `managementLayerCreateBrowser` | `debugTesting` | `headless` |
+| `managementLayerCreateTerminal` | `debugTesting` | `headless` |
+| `managementLayerEnterDrawer` | `debugTesting` | `headless` |
+| `managementLayerExit` | `debugTesting` | `headless` |
+| `managementLayerExitDrawer` | `debugTesting` | `headless` |
+| `managementLayerFocusLeft` | `debugTesting` | `headless` |
+| `managementLayerFocusRight` | `debugTesting` | `headless` |
+| `managementLayerOpenDrawer` | `debugTesting` | `headless` |
+| `minimizePane` | `debugTesting` | `headless` |
+| `movePaneToTab` | `debugTesting` | `headless` |
+| `moveZoomDrawerToBridge` | `debugTesting` | `headless` |
+| `moveZoomDrawerToTerminal` | `debugTesting` | `headless` |
+| `navigateDrawerPane` | `debugTesting` | `headless` |
+| `newFloatingTerminal` | `debugTesting` | `headless` |
+| `newTab` | `debugTesting` | `headless` |
+| `newTerminalInTab` | `debugTesting` | `headless` |
+| `newWindow` | `debugTesting` | `headless` |
+| `newWorktree` | `debugTesting` | `headless` |
+| `newWorktreeFromBranch` | `debugTesting` | `headless` |
+| `newWorktreeFromDefault` | `debugTesting` | `headless` |
+| `nextArrangement` | `debugTesting` | `headless` |
+| `nextTab` | `debugTesting` | `headless` |
+| `openBridgeFilesInNewTab` | `debugTesting` | `headless` |
+| `openBridgeReviewInNewTab` | `debugTesting` | `headless` |
+| `openNewTerminalInTab` | `debugTesting` | `headless` |
+| `openPaneLocationInBookmarkedEditor` | `debugTesting` | `headless` |
+| `openPaneLocationInEditorMenu` | `debugTesting` | `uiPresentation` |
+| `openPaneLocationInFinder` | `debugTesting` | `headless` |
+| `openPullRequest` | `debugTesting` | `headless` |
+| `openWebview` | `debugTesting` | `headless` |
+| `openWorktree` | `debugTesting` | `headless` |
+| `openWorktreeInPane` | `debugTesting` | `headless` |
+| `pinPane` | `allChannels` | `headless` |
+| `pinRepo` | `allChannels` | `headless` |
+| `prevTab` | `debugTesting` | `headless` |
+| `previousArrangement` | `debugTesting` | `headless` |
+| `reloadBridgeWebView` | `allChannels` | `headless` |
+| `removeRepo` | `debugTesting` | `headless` |
+| `renameArrangement` | `debugTesting` | `headless` |
+| `renameTab` | `debugTesting` | `headless` |
+| `saveArrangement` | `debugTesting` | `headless` |
+| `scrollPageDown` | `allChannels` | `headless` |
+| `scrollPageUp` | `allChannels` | `headless` |
+| `scrollSmallStepDown` | `allChannels` | `headless` |
+| `scrollSmallStepUp` | `allChannels` | `headless` |
+| `scrollToBottom` | `allChannels` | `headless` |
+| `selectTab` | `debugTesting` | `headless` |
+| `selectTab1` | `debugTesting` | `headless` |
+| `selectTab2` | `debugTesting` | `headless` |
+| `selectTab3` | `debugTesting` | `headless` |
+| `selectTab4` | `debugTesting` | `headless` |
+| `selectTab5` | `debugTesting` | `headless` |
+| `selectTab6` | `debugTesting` | `headless` |
+| `selectTab7` | `debugTesting` | `headless` |
+| `selectTab8` | `debugTesting` | `headless` |
+| `selectTab9` | `debugTesting` | `headless` |
+| `setInboxContentMode` | `debugTesting` | `headless` |
+| `setInboxGroupingNone` | `debugTesting` | `headless` |
+| `setInboxGroupingPane` | `debugTesting` | `headless` |
+| `setInboxGroupingRepo` | `debugTesting` | `headless` |
+| `setInboxGroupingTab` | `debugTesting` | `headless` |
+| `setInboxRowStateFilter` | `debugTesting` | `headless` |
+| `setPanesSortFieldActivity` | `debugTesting` | `headless` |
+| `setPanesSortFieldName` | `debugTesting` | `headless` |
+| `setReposGroupingActivity` | `allChannels` | `headless` |
+| `setReposGroupingRepo` | `allChannels` | `headless` |
+| `setReposSortFieldActivity` | `allChannels` | `headless` |
+| `setReposSortFieldName` | `allChannels` | `headless` |
+| `showBridgeFiles` | `debugTesting` | `headless` |
+| `showBridgeReview` | `debugTesting` | `headless` |
+| `showCommandBarCommands` | `debugTesting` | `uiPresentation` |
+| `showCommandBarEverything` | `debugTesting` | `uiPresentation` |
+| `showCommandBarPanes` | `debugTesting` | `uiPresentation` |
+| `showCommandBarQuickOpen` | `debugTesting` | `uiPresentation` |
+| `showCommandBarRepos` | `debugTesting` | `uiPresentation` |
+| `showInboxNotifications` | `debugTesting` | `headless` |
+| `showPaneInboxNotifications` | `debugTesting` | `headless` |
+| `showPanesSidebar` | `allChannels` | `headless` |
+| `showReposSidebar` | `allChannels` | `headless` |
+| `showViewer` | `debugTesting` | `headless` |
+| `signInGitHub` | `debugTesting` | `uiPresentation` |
+| `signInGoogle` | `debugTesting` | `uiPresentation` |
+| `splitLeft` | `debugTesting` | `headless` |
+| `splitRight` | `debugTesting` | `headless` |
+| `switchArrangement` | `debugTesting` | `headless` |
+| `toggleDrawer` | `debugTesting` | `headless` |
+| `toggleInboxNotificationSort` | `debugTesting` | `headless` |
+| `toggleManagementLayer` | `debugTesting` | `headless` |
+| `togglePanesShowsDrawers` | `debugTesting` | `headless` |
+| `togglePanesShowsPinned` | `allChannels` | `headless` |
+| `togglePanesSortDirection` | `debugTesting` | `headless` |
+| `toggleReposShowsPinned` | `allChannels` | `headless` |
+| `toggleReposSortDirection` | `allChannels` | `headless` |
+| `toggleSidebar` | `debugTesting` | `headless` |
+| `undoCloseTab` | `debugTesting` | `headless` |
+| `unpinPane` | `allChannels` | `headless` |
+| `unpinRepo` | `allChannels` | `headless` |
+| `updateRepositoryFacts` | `debugTesting` | `headless` |
+| `watchFolder` | `debugTesting` | `headless` |
+| `zoomPane` | `allChannels` | `headless` |
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

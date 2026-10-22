@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Agents and context</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="index.html">AgentStudio daemon · Agents and context</a></nav></ex-nav>
+<ex-document id="content"><h1>Agents and context</h1>
+<ex-markdown id="domain-outcome"><script type="text/markdown">
+**Usable outcome:** Provider hooks and authorized in-session input use the Host locally; context, writer order and ask/answer settlement continue without Swift.
+
+**Proposed delivery placement:** I2; source/authority contracts begin before its implementation. Read this domain together with its inputs; a whole capability is more than an SDK call or a parser success.
+
+[MVP/increments](../../explainer/delivery.html) · [Technical integration](../../explainer/architecture.html) · [All features](../../explainer/features.html)
+</script></ex-markdown><h2 id="contract">Complete capability contract</h2><ex-markdown id="domain-contract"><script type="text/markdown">
+## Agents, provider input and retained context: observable contracts
+
+This is the DS07 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.html). The separate [Requirements](../../user-requirements.html) authorize its meaning; the [domain definitions](../../domain-entities.html) and shared [operation interpretation](../../capability-contracts.html#source--shared-interpretation-of-an-operation) apply. Its [design brief](README.html) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.html) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K7 — Provider events, bindings and autonomous agent input
+
+**Consumer / entities / basis:** authorized Codex/Claude integration; E1/E9/E10/E17/E18/E22; U4/U9/U15. Provider conversation, turn/tool/subagent occurrence, binding generation, correlation and OS incarnation remain distinct. Admitted input may be recorded-only or ignored rather than applied to live activity; the public result must preserve its actual boundary.
+
+Current hooks project provider-specific input then use authenticated pane RPC. Recognized hooks fail open with exit zero even if delivery/refusal reporting fails; exit zero is not Host admission. Current hooks are not eligible for the notice-only offline queue. Equal occurrence/correlation does not establish a generic duplicate guarantee.
+
+The target preserves authorized integration during presentation absence under U15/R9: agents, provider hooks and eligible context calls inside a Host session use that Host locally without a Mac. Authority concerns E1/E10 rather than pane presence or mere reachability. IP4 separately governs work requiring an invalid writer grant; it does not turn Gateway absence into invalid authority. Public methods, credentials, gate/coverage and effect-time races remain G1/G8/G12/G13.
+
+**Proof:** real provider-shaped input at its Host-local admission boundary, independently observed retained reduction/binding/currentness, and stale-generation or disallowed-scope refusal. Include Swift absent and all Gateways (macOS and iOS) unavailable. Hook exit zero, a mock delivery or today’s frontend socket test cannot establish this target outcome. Separate frontend operations retain R1/R12.
+
+## K8 — Notices, asks, answers, writer ordering and offline notices
+
+**Consumer / entities / basis:** person and authorized agent; E10/E11/E16/E17/E18/E22; U4/U9/U13/U15. The eight current pane-context RPC methods and person-owned actions are distinct interfaces; internal person APIs are not additional public RPC names.
+
+| Operation | Meaning to preserve or explicitly replace | Failure/uncertainty and target gap |
+| --- | --- | --- |
+| Send/withdraw notice or ask | Retained scope + message identity; same-intent repeat differs from changed-intent conflict. Sender and current/historical binding rules differ by message kind. Withdrawn/already-settled/not-found/refused differ. | Host-session scope under S14; exact source identity and cross-client presentation G8/G9; response loss does not prove absent message. |
+| Blocking ask/answer/dismiss | One retained terminal outcome; answered, handed back, expired, withdrawn and stale differ. Baseline EOF/app-stop policies differ from nonblocking ask. | Retained settlement is not reply receipt or the agent acting. Remote person authority, reconnect waiting and deadline policy G8/G9. |
+| Changes/context/read/action | Changes reads can acknowledge/prune receipt state; detail reads do not mark a notice read. Run-action validates stored action membership and may be unavailable. | Reading, acknowledgement, read status and native action effect cannot merge. Exact retention/cursor recovery G3/G8/G9. |
+| Writer claim/title/line | Claim identity, writer epoch/counter and binding generation differ. Clear can retain a watermark. A stale writer cannot become current merely by reconnecting. | Host-session writer ownership across Gateway clients, monotonicity and process restart G3/G8/G9. A lost claim response does not permit blind title retry. |
+| Offline notice append/intake | Current eligible never-submitted notice may commit locally; queued is not delivered. Store-scoped message dedup preserves its original row and differs from server scope+intent comparison. Intake notice and source-store cursor commit together in the current app transaction. | Auth refusal/post-submit unknown/asks/hooks are not generic queue inputs. No shared remote SQLite, new spool or generalized exactly-once receipt is implied. This is baseline app-availability machinery, not a required target capability. Host-local session input does not require a Mac-reachability outbox; separately selected frontend offline behavior needs its own G1/G8/G12 contract. |
+
+**Proof:** real transactional outcomes and held races for duplicate/conflict, answer versus EOF, stale writer at commit, revoked scope, and failed cursor commit with no admitted notice. Actual socket/CLI journey supplies delivery boundaries. Local-only SQL tests do not prove remote waiting or cross-service atomicity.
+
+IP12/R17 require shared read-marker meaning across devices; E26 subject/coverage mapping must keep provider completion, a person viewing, notice read, ask settlement and received changes distinct. Exact mapping, source revision and conflict/offline semantics remain G8/G9; delivery alone is not a read action.
+
+</script></ex-markdown><h2 id="folder-documents">All documents in this spec folder</h2><ex-markdown id="folder-document-links"><script type="text/markdown">
+- [DS07 — Agents, provider input and retained context: Markdown](README.md) · [HTML](README.html)
+- [Context counts: Host meaning, Gateway composition: Markdown](context-count-preparation.md) · [HTML](context-count-preparation.html)
+- [E2 Host autonomy, authority and effect evidence: Markdown](experiments/host-autonomy.md) · [HTML](experiments/host-autonomy.html)
+- [Host-local agents and context lifetime: Markdown](host-context-lifecycle-design.md) · [HTML](host-context-lifecycle-design.html)
+- [Context-count reads: local engine source qualification: Markdown](research/count-read-engine-evidence.md) · [HTML](research/count-read-engine-evidence.html)
+- [Session status: shared execution facts and viewed state: Markdown](research/session-status-ownership.md) · [HTML](research/session-status-ownership.html)
+- [Agents, provider input and retained context: observable contracts: Markdown](specification.md) · [HTML](specification.html)
+</script></ex-markdown><h2 id="design-inputs">Inputs, open decisions and proof boundary</h2><ex-markdown id="domain-brief"><script type="text/markdown">
+## DS07 — Agents, provider input and retained context
+
+## Read this folder
+
+- [Folder HTML reader](index.html).
+- [Specification: Markdown](specification.md) · [HTML](specification.html).
+- [Context counts: Host classification, Gateway view composition and exact internal family values](context-count-preparation.html).
+- [Shared Requirements](../../user-requirements.html) · [overall Specification](../../2026-10-15-agentstudio-daemon.html).
+
+Provider evidence, conversation/binding provenance, Host-local authorized hooks, title/line ordering, notices, asks, answers and retained settlements independent of pane presence.
+
+## Contract and inputs
+
+- Requirements: [shared authoritative source](../../user-requirements.html), scoped to U4/U9/U13/U15.
+- Specification: [this design's capability contracts](specification.html), owning K7, K8; apply R2/R6/R9/R10 and the shared [observable spine](../../2026-10-15-agentstudio-daemon.html).
+- Domain definitions: [global identity appendix](../../domain-entities.html) and E1–E6 in the spine. This folder creates no new identity merely by being separate.
+- Required contract inputs: [DS04](../04-terminal-runtime/README.html), [DS05](../05-git-discovery/README.html)
+
+## What this design must settle
+
+- Set exact method/scope/credential contracts while preserving authorized input with Swift and every Gateway (macOS or iOS) absent.
+- Preserve message/binding/intake-cursor atomicity, answer versus EOF/deadline races and stale writer refusal.
+- Classify baseline CLI notice queues without inventing a universal outbox, hook spool or exactly-once operation journal.
+
+## Result consumed by later designs
+
+One Host-local admission and retained-workflow contract with distinct provider/session/binding/request identities and operation-specific duplicate/uncertain outcomes.
+
+## Evidence to reopen
+
+- [Host-local agents and context lifecycle proposal](host-context-lifecycle-design.html)
+- [2026-10-15-daemon-host-autonomy-experiment.md](experiments/host-autonomy.html)
+- [data-agent-context-evidence.md](../../explainer/research/data-agent-context-evidence-f65f8515.html)
+- [e2-agent-admission-evidence.md](../../explainer/research/e2-agent-admission-evidence-4cc6e70a.html)
+
+## Proof boundary
+
+Actual provider-shaped input, stale-generation and denied-scope cases, retained notice/ask outcomes and failed cursor commits, including no-view/no-Gateway operation. E2/E3.
+
+## Design cycle
+
+Use the [common cycle and completion rule](../README.html#source--each-design-cycle). The scoped Specification here contains carried-forward draft contracts, not a completed Program Design. Author its structural realization after the affected meaning is settled, then complete Verification Design and independent four-document review. Bring only actual unresolved owner decisions to Sun; there is no generic structural-confirmation gate. There is no empty `program-design.md` standing in for unfinished work. Required missing meaning remains explicit, and unrelated source research can proceed.
+
+</script></ex-markdown><h2 id="technical-evidence">Detailed technical evidence</h2><ex-markdown id="evidence-links"><script type="text/markdown">
+- [Current capability evidence: authority, pane context, Sessions and provider packages](../../explainer/research/capability-agent-control-evidence-b9f5142c.html)
+- [E2 provider/session/hook admission and revocation evidence](../../explainer/research/e2-agent-admission-evidence-4cc6e70a.html)
+- [Application-local agent/context data: current-source evidence](../../explainer/research/data-agent-context-evidence-f65f8515.html)
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

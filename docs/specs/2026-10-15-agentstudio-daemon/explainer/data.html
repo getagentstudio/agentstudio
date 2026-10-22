@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Data and replication</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script>
+<link rel="stylesheet" href="../assets/reader-layout.css"></head>
+<body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Understand the system</a><a href="features.html">Explore AgentStudio features</a><a href="progress.html">What was built and tried</a><a href="walkthroughs.html">Follow a workflow</a><a href="delivery.html">MVP and integration phases</a><a href="requirements.html">Requirements</a><a href="architecture.html">Technical architecture</a><a href="communication.html">Communication</a><a href="data.html">Data ownership</a><a href="schema.html">Tables and fields</a><a href="sequence.html">Spec dependencies</a><a href="experiments.html">Experiments and decisions</a><a href="research.html">Research library</a><a href="../index.html">All specification documents</a></nav></ex-nav>
+<ex-document id="content">
+<h1>Data: truth, copies and prepared views</h1>
+<ex-markdown id="data-opening"><script type="text/markdown">
+**The Host's domain truth, a faithful database copy and a prepared client view are different things.** Replication can move selected state without moving authority or performing the original effect again.
+
+Start with [how the newer agent-fleet-sync implementation fits AgentStudio](../designs/02-data-ownership-replication/research/fleet-sync-consumer-fit.html): Host writes, Gateway read copies, central lease authority, four traffic lanes and actual crate responsibilities. The recorded source/PR inspection supplies implementation evidence beyond the earlier plan-only picture; it does not establish current merge status or AgentStudio integration. Replicated keys are immutable canonical UUIDv7, not arbitrary existing SQL keys.
+
+The current inventory is source evidence. Exact target units, export membership and data homes remain proposals; this walkthrough does not adopt an engine or claim integration works.
+
+For the actual client inputs, read [which data a view needs](../designs/02-data-ownership-replication/research/query-data-dependencies.html) and [the current use of every table](../designs/02-data-ownership-replication/research/table-use-index.html). These separate display reads from maintenance, acknowledgements, credentials, custody, native preferences and disposable search state.
+
+The [typed input-processing proposal](../designs/02-data-ownership-replication/research/typed-input-processing.html) explains incoming sessions, domain reducers, safe coalescing, compile-time type wiring and the limited role of a bus, with a source-by-source map.
+</script></ex-markdown>
+<ex-callout tone="note" title="The invalid-writer direction is selected">
+IP4 selects pause/refusal for work requiring invalid writer authority, without a new spool or execution termination. Mac Client-daemon absence is a different event. Exact gate coverage, durations/renewal, truthful partial outcomes and lost-coverage reporting remain G13 detail. The initial-profile specification owns the selection.
+</ex-callout>
+
+<h2 id="truth-boundaries">Start with meaning, then choose storage</h2>
+<ex-board id="data-boundaries" cols="2">
+<ex-region id="host-truth" title="Host work and workflow" icon="database" tone="decision">
+Git/worktree facts, execution associations and authorized session input belong to the addressed Host backend.
+<ex-markdown detail id="host-detail"><script type="text/markdown">
+**Candidate unit cuts:** operational session/context work; annotation workflow; topology/observations. They may share a physical database where it preserves real transactions. This is not a selected three-file layout.
+
+Current binding/context admission, intake cursor commits and annotation finalization have atomic relationships that a future split must account for.
+
+The [current transaction walkthrough](../designs/02-data-ownership-replication/research/transaction-boundaries.html) shows these relationships, including private tables in a writer transaction, the actual notice-only cursor path and output's separate external effect.
+</script></ex-markdown>
+</ex-region>
+<ex-region id="arrangements" title="Shared logical composition" icon="users" tone="decision">
+The owner selected shared tabs/layout and read marks across devices. Actual native geometry and focus remain separate from the logical model.
+<ex-markdown detail id="arrangement-detail"><script type="text/markdown">
+The [shared-state proposal](../designs/10-swift-client/shared-client-state-design.html) uses a designated existing Host for the shared workspace unit, with qualified references to other Hosts. Clients copy/prepare; native projections adapt per device. Exact designation, identity, marker families and synchronization/conflict/Undo contracts remain explicit. No writer transfer or new server is introduced, and Undo expiry cannot become execution termination.
+</script></ex-markdown>
+</ex-region>
+<ex-region id="private-state" title="Private authority and producer state" icon="lock" tone="risk">
+Credentials, grants, provider binding authority, pending producer claims and consumed positions are not default UI exports.
+<ex-markdown detail id="private-detail"><script type="text/markdown">
+Private-from-readers does not mean disposable or a separate transaction. A private intake cursor may need to commit with the accepted domain effect. Permission to connect is not permission to receive an entire copy.
+</script></ex-markdown>
+</ex-region>
+<ex-region id="prepared-state" title="Derived and native state" icon="stack" tone="note">
+Search/sidebar projections and prepared views may be rebuildable. Native windows, renderer state and client preferences retain their client scope unless a portable meaning is selected.
+<ex-markdown detail id="prepared-detail"><script type="text/markdown">
+A stored projection is still derived. A displayed copy does not become another backend writer. Exact Rust/Gateway derivation owners and Swift publication adapters await Program Design.
+</script></ex-markdown>
+</ex-region>
+</ex-board>
+<ex-markdown id="dimension-table"><script type="text/markdown">
+These dimensions are independent:
+
+| Question | Distinction to retain |
+| --- | --- |
+| What is it about? | Subject, Host context and source lifetime |
+| Who decides a mutation? | Authoritative source versus reader/projection |
+| What survives? | Current value, transient progress and retained history |
+| What representation is this? | Source fact, faithful copy or derived view |
+| Who may receive it? | Declared audience and target/data scope |
+| How do changes arrive? | Ordered facts, replaceable latest state, gaps and resume |
+| What can the result claim? | Complete, partial, superseded or coverage not established |
+
+The reviewed rule is explicit: **coverage that has not been established cannot be reported as complete/current.** Equal payload values do not prove uninterrupted observation. No global freshness deadline or coherent multi-Host snapshot is inferred.
+
+Sources: [DS02 observable contract](../designs/02-data-ownership-replication/specification.html), [data decision map](../designs/02-data-ownership-replication/research/data-replication-decisions.html).
+</script></ex-markdown>
+
+<h2 id="replication-path">One write reaching a copy: the candidate mechanism</h2>
+<ex-callout tone="planned" title="Proposal, not an adopted topology">
+The flow below condenses the supplied fleet-sync plan. Central lease authority is selected. Receiver placement, exact database/copy bindings and acknowledgement semantics still need AgentStudio contracts.
+</ex-callout>
+<ex-flow id="replication-flow" cols="3">
+<ex-card id="writer-txn" title="Host write transaction" icon="database" tone="planned">
+Validate domain/binding state and the selected writer gate. Commit the domain change with required capture/intake state.
+</ex-card>
+<ex-card id="sender" title="Capture and sender" icon="envelope" tone="planned">
+Read after each copy's position. Preserve transaction/schema ordering; send independently to configured receivers through a resumable protocol session.
+</ex-card>
+<ex-card id="receiver" title="Receiver apply" icon="hard-drives" tone="planned">
+Validate epoch and continuation position. Atomically apply selected rows, position and required local hook/work intent under the shared plan.
+</ex-card>
+<ex-arrow from="writer-txn" to="sender" label="Changes"></ex-arrow>
+<ex-arrow from="sender" to="receiver" label="Pieces"></ex-arrow>
+<ex-arrow from="receiver" to="sender" label="Ack"></ex-arrow>
+</ex-flow>
+<ex-markdown id="after-apply"><script type="text/markdown">
+**Then query and publish:** eligible receiver state can feed prepared observations and Swift's socket contract. A database row is not itself the UI contract, a public domain event or a replay instruction for a clipboard/Git effect.
+
+[Reading a Gateway copy honestly](../designs/02-data-ownership-replication/research/replica-read-contract.html) explains applied position versus source coverage, command-result lag, snapshot readiness and the open offline metadata profile.
+
+[Where durable delivery fits](../designs/02-data-ownership-replication/research/durable-delivery-fit.html) distinguishes queue/custody/recipient storage from local acceptance and explains why uncertain local dispatch is not blindly repeated.
+
+**Shared receiver contract:** commit applied rows/position and admitted follow-up intent before answering. Actual follow-up delivery and external-effect completion are separate outcomes. AgentStudio still supplies the selected hook and its operation-specific handling; copying a row cannot prove a native effect.
+
+**Transport independence:** the supplied shared plan separates protocol frames, logical protocol session, transport adapters, writer, lease, receiver and service hosting. Logical protocol sessions survive connection replacement; terminal execution sessions are another identity again. Future transport changes must preserve the selected session semantics. No final AgentStudio crate list, WebSocket/QUIC winner or generic replay policy is selected.
+</script></ex-markdown>
+
+<h2 id="inventory">What the SQL survey actually found</h2>
+<ex-grid cols="3">
+<ex-stat value="86" label="Logical tables" note="Final source profiles, not every installed database"></ex-stat>
+<ex-stat value="597" label="Columns inventoried" note="Plus 35 expanded value containers"></ex-stat>
+<ex-stat value="68" label="Known source-form conflicts" note="Of 86 legacy declarations if selected unchanged; 18 clear only the five checks, none has engine admission" tone="risk"></ex-stat>
+</ex-grid>
+<ex-markdown id="schema-results"><script type="text/markdown">
+| Current source profile | Tables | Declared primary keys | Trigger-bearing tables |
+| --- | ---: | ---: | ---: |
+| Core | 28 | 28 | 16 |
+| Local boot/full union | 53 | 52 | 0 |
+| CLI store | 3 | 3 | 0 |
+| Replaceable in-memory search | 2 | 0 | 0 |
+
+The 83 declared keys are **45 single text, four single integer and 34 composite keys**. UUIDv7 for new application identities does not mean every SQL row has a UUID primary key named `id`.
+
+- Three tables lack declared primary keys: `local_ipc_credential`, `search_document` and `search_document_fts`. The last is also virtual.
+- Sixteen Core tables have 42 attached triggers. Their integrity/lifecycle meaning cannot be dropped to satisfy an engine profile.
+- Forty single-text-key declarations omit explicit `NOT NULL`; the newer form check counts 44 tables when the four INTEGER declarations are included. This says what the DDL explicitly declares, not whether every key form actually permits a stored NULL.
+- The newer five-form census finds 68 known conflicts if selected unchanged and 18 with no known conflict in those checks. Tracing those 18 through their actual key domains and ordinary writers finds **eight with source counterexamples and ten still unproved**. No table has passed actual target-engine admission.
+
+These are current-source facts, **not 68 required migrations** or an export list. The older 19-table comparison used a narrower profile. Private authority and derived search already have different proposal families from Host workflow data.
+
+Open the [key meanings and writer traces](../designs/02-data-ownership-replication/research/schema-prerequisites.html#source--key-meanings-and-ordinary-writers-after-the-form-check), [schema prerequisites](../designs/02-data-ownership-replication/research/schema-prerequisites.html), [full 86-table catalog](../designs/02-data-ownership-replication/research/data-catalog.json) and [storage survey](../designs/02-data-ownership-replication/research/data-ownership-survey.html) for exact declarations and reasons.
+</script></ex-markdown>
+
+<ex-markdown id="storage-model-guide"><script type="text/markdown">
+Start with [where each kind of state lives](../designs/02-data-ownership-replication/storage-placement-design.html) and [the seven-branch complete table map](../designs/02-data-ownership-replication/storage-placement-matrix.html). The **Where stored state lives** walkthrough in [Follow a workflow](walkthroughs.html) carries the same explanation across these chapters with Next and Previous.
+</script></ex-markdown>
+<h2 id="complete-data">Every table, transaction and placement proposal</h2><ex-markdown id="complete-data-links"><script type="text/markdown">
+[Read the complete reduced86-table inventory](research/R2-reduced-inventory-9cc55da3.html), the full ownership/materialization survey (original reference: `../designs/02-data-ownership-replication/research/data-ownership-survey.html`; not a verified browser link) and [all storage/source reports](research.html#research-group-4). The table-level evidence includes current writers/readers, transaction groups, column meanings and private/copy/projection distinctions; the JSON catalog is linked from those sources. These remain source facts and placement proposals, not an adopted export list.
+</script></ex-markdown>
+<h2 id="data-next">The next data decisions</h2>
+<ex-tree id="data-decisions" title="Decide in dependency order" icon="database"><script type="text/markdown">
+- question: [Truth and scope](data.html#truth-boundaries)
+  - Shared tabs/layout/read marks are selected; bind exact portable elements and marker subjects
+  - Which private state must stay in the authoritative transaction?
+- question: [Units and schemas](data.html#inventory)
+  - Host-wide versus per-project cuts; preserve actual transaction/FK closure
+  - Exact declared tables, valid keys, migrations and trigger meanings
+- question: [Authority and recovery](experiments.html#owner-decisions)
+  - Exact central binding/renewal and gate/failure coverage under the selected invalid-writer profile
+  - Same-owner restore and copy refill; database-writer transfer stays excluded
+- planned: [Copy and client contracts](data.html#replication-path)
+  - Retention, snapshots, acknowledgement and after-commit work
+  - Typed observations, data audience, real Swift/socket compatibility
+</script></ex-tree>
+<ex-markdown id="data-sources"><script type="text/markdown">
+[Back to system](index.html) · [Design sequence](sequence.html) · [Experiments](experiments.html)
+
+The canonical [DS02 specification](../designs/02-data-ownership-replication/specification.html) owns the data/validity obligations. The [decision map](../designs/02-data-ownership-replication/research/data-replication-decisions.html) labels proposals and open choices. Library binding: Demistify `v1`, recorded `1.2.2` / `69d403c91e39a4cd768012d748d985586d4b43c9`.
+</script></ex-markdown>
+<ex-presentation id="data-walk" title="Follow the data" description="Meaning and ownership before replication machinery and schema admission.">
+<ex-step to="data-boundaries">Separate the kinds of truth.</ex-step>
+<ex-step to="replication-flow">Inspect the candidate write-to-copy path.</ex-step>
+<ex-step to="schema-results">See what the existing SQL declarations constrain.</ex-step>
+</ex-presentation>
+</ex-document>
+</body>
+</html>

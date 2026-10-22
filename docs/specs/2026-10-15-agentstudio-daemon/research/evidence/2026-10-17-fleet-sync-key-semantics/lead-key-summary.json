@@ -1,0 +1,134 @@
+{
+  "traced_tables": 18,
+  "source_counterexample_tables": 8,
+  "remaining_unproved_tables": 10,
+  "accepted_compatible_tables": 0,
+  "source_files_matched_to_head": 73,
+  "row_outcomes": [
+    {
+      "database": "core.sqlite",
+      "table": "repo_tag",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "core.sqlite",
+      "table": "arrangement_layout_divider",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_write_order",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_answer_position",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "pane_context_cli_outbox_cursor",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_tab_cursor",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_arrangement_cursor",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_drawer_cursor",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_arrangement_drawer_cursor",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_drawer_presentation",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_window_sidebar_collapsed_group",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_entity_recency",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_workspace_entity_recency",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "annotation_output_attempt_message",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_notification_inbox_item",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "ExplicitPrimaryKeyAssignment",
+        "RetainedNonV7IdentityLiteral"
+      ]
+    },
+    {
+      "database": "local.sqlite",
+      "table": "local_notification_inbox_collapsed_group",
+      "status": "KnownSourceCounterexample",
+      "reasons": [
+        "NonUuidKeyDomain"
+      ]
+    },
+    {
+      "database": "ipc/cli.sqlite",
+      "table": "cli_store_identity",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    },
+    {
+      "database": "ipc/cli.sqlite",
+      "table": "cli_state",
+      "status": "UnprovedAfterBoundedSourceTrace",
+      "reasons": []
+    }
+  ]
+}

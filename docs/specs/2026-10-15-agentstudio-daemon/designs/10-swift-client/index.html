@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Swift and native interaction</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="index.html">AgentStudio daemon · Swift and native interaction</a></nav></ex-nav>
+<ex-document id="content"><h1>Swift and native interaction</h1>
+<ex-markdown id="domain-outcome"><script type="text/markdown">
+**Usable outcome:** The native app displays prepared state, hosts Ghostty/Bridge viewers, accepts input and performs declared native effects through existing owning boundaries.
+
+**Proposed delivery placement:** I1 terminal integration; I2/I3/I5 domain views; I6 arrangement scope; I7 devices. Read this domain together with its inputs; a whole capability is more than an SDK call or a parser success.
+
+[MVP/increments](../../explainer/delivery.html) · [Technical integration](../../explainer/architecture.html) · [All features](../../explainer/features.html)
+</script></ex-markdown><h2 id="contract">Complete capability contract</h2><ex-markdown id="domain-contract"><script type="text/markdown">
+## Swift clients, commands and native interaction: observable contracts
+
+This is the DS10 slice of the [system Specification](../../2026-10-15-agentstudio-daemon.html). The separate [Requirements](../../user-requirements.html) authorize its meaning; the [domain definitions](../../domain-entities.html) and shared [operation interpretation](../../capability-contracts.html#source--shared-interpretation-of-an-operation) apply. Its [design brief](README.html) owns scope, inputs and unresolved work. Existing open gaps are preserved; this partition selects no new behavior.
+The [initial profile](../../initial-profile.html) supplies the selected IP1–IP12 directions. Remaining gaps concern their exact contracts and realization; they do not reopen the selected high-level choices.
+
+
+## K6 — Command catalog, targets and workspace interaction
+
+**Consumer / entities / basis:** GUI/CLI/MCP caller; E4/E16/E25/E26; U4/U9/U13/U17/U22. The current [154-command catalog](../../explainer/research/command-surface-inventory-4cc8ee5d.html) has independent exposure, channel, target, privilege, mode and eligibility axes. Command identity/display copy stay one catalog; transport methods do not become new `command.execute` verbs.
+
+`window/workspace/pane` list/current/snapshot/focus/split/close, drawer operations, command listing/execution, sidebar and UI-open methods must retain kind-qualified targets. Current/focused is a client view observation. A split result currently identifies the targeted pane, not necessarily a newly created pane; command accepted-without-value does not prove a view/effect. Headless-tagged does not mean app-independent.
+
+IP11/IP12/R17 require shared logical tabs/layout and read marks. E25/E26 are distinct from each actual E16 native projection: shared-state acceptance, physical native application and user viewing are different observations. Exact logical/native element mapping, authority/storage, concurrent/offline and close/Undo projection contracts remain G4/G8/G9/G12, not the question whether sharing is wanted.
+
+Four worktree-create command identities, dormant Inbox and retired settings currently report unavailable. IP10 preserves selected external native automation without making every enum case a working/public capability. Exact subset and hard-cutover names remain G1/G8. Administrative Host capability is not generic remote UI authority.
+
+**Proof:** actual supported client command entry, exact target/effect and independent refusal/channel/eligibility cases. Native display needs native evidence; declaring a spec or dispatching a callback is insufficient.
+
+## K12 — Native effects and platform ingress
+
+**Consumer / entities / basis:** Mac app user and supported device client; E2/E4/E16/E20; U4/U6/U11/U13. Client display, keyboard/mouse/accessibility, AppKit lifecycle, chooser, clipboard, editor/browser/Finder and local UI continuation are client-platform effects. Rust Host feature parity does not require a Linux Finder/clipboard acting on the Mac's behalf.
+
+An operation must identify the actual effect machine and kind-qualified target. A Host path is not a local file URL. Opening an application/URL or accepting a chooser is not proof of document load, pixels or external editor success. Client termination notification is not proof that an execution ended. Credential OAuth callbacks/configuration remain separate from visible login command presence; current provider IDs/placeholders and token exchange/storage TODOs do not establish implemented sign-in.
+
+Current [terminal clipboard callbacks](../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttyCallbackRouter.swift) retain beta auto-approval for reads and writes. That is baseline behavior, not a selected remote-Host policy. Which Host-originated clipboard/link/editor/Finder effects are permitted, how their origin is shown, and what consent/refusal means remain G8/G9/G12. No policy change or authority grant is implied by transport extraction.
+
+**Proof:** actual supported native surface, target and effect, with missing/unrepresentable remote path and unavailable application cases. Existing placeholder/unavailable features remain explicit until selected. Shared window/layout, phone UX, detached-session screen and accessibility changes are G4/G9; no current UI establishes those new experiences.
+
+</script></ex-markdown><h2 id="folder-documents">All documents in this spec folder</h2><ex-markdown id="folder-document-links"><script type="text/markdown">
+- [DS10 — Swift clients, commands and native interaction: Markdown](README.md) · [HTML](README.html)
+- [The 154 commands: current execution and proposed integration: Markdown](command-execution-map.md) · [HTML](command-execution-map.html)
+- [Command identities, native dispatch and backend capability calls: Markdown](command-operation-map.md) · [HTML](command-operation-map.html)
+- [E3 coordination and Swift publication experiment: Markdown](experiments/coordination.md) · [HTML](experiments/coordination.html)
+- [Session, context and native client read needs: Markdown](session-native-read-needs.md) · [HTML](session-native-read-needs.html)
+- [Shared tabs and read state: proposed realization: Markdown](shared-client-state-design.md) · [HTML](shared-client-state-design.html)
+- [Sidebar client data and preparation boundaries: Markdown](sidebar-read-needs.md) · [HTML](sidebar-read-needs.html)
+- [Swift clients, commands and native interaction: observable contracts: Markdown](specification.md) · [HTML](specification.html)
+</script></ex-markdown><h2 id="design-inputs">Inputs, open decisions and proof boundary</h2><ex-markdown id="domain-brief"><script type="text/markdown">
+## DS10 — Swift clients, commands and native interaction
+
+## Read this folder
+
+- [Folder HTML reader](index.html).
+- [Command operation map](command-operation-map.html): all 154 current identities, their source-checked exposure/mode, current dispatch path and the backend/native mapping still to bind.
+- [Specification: Markdown](specification.md) · [HTML](specification.html).
+- [All 154 commands: current execution owners and proposed integration](command-execution-map.html).
+- [Sidebar client read needs: source fields, prepared rows and native application](sidebar-read-needs.html).
+- [Session/context/native read needs: fields, publication and read-side effects](session-native-read-needs.html).
+- [Shared Requirements](../../user-requirements.html) · [overall Specification](../../2026-10-15-agentstudio-daemon.html).
+
+Native publication and interaction, command catalog/targets, workspace/layout meaning, terminal display/input and declared clipboard/editor/browser/Finder/chooser/platform ingress.
+
+## Contract and inputs
+
+- Requirements: [shared authoritative source](../../user-requirements.html), scoped to U4/U6/U9/U11/U13/U14/U16/U17/U19.
+- Specification: [this design's capability contracts](specification.html), owning K6, K12; apply R1/R3/R5/R7/R13 and the shared [observable spine](../../2026-10-15-agentstudio-daemon.html).
+- Domain definitions: [global identity appendix](../../domain-entities.html) and E1–E6 in the spine. This folder creates no new identity merely by being separate.
+- Required contract inputs: [DS02](../02-data-ownership-replication/README.html), [DS04](../04-terminal-runtime/README.html), [DS08](../08-files-review-output/README.html), [DS09](../09-gateway-cli/README.html)
+
+## What this design must settle
+
+- Realize the client-arrangement scope selected in design 02; Host execution identity and native implementation convenience do not choose the data owner.
+- Preserve the command/display/IPC catalog and current unavailable features; do not resurrect dormant capabilities.
+- Set remote-origin native effect policy, consent/refusal and phone/native lifecycle outcomes. Sockets do not require Rust-Swift FFI.
+
+## Result consumed by later designs
+
+A thin Swift client boundary with domain work and derivation off MainActor, publication at the native owner, authoritative schemas and explicit native target/effect identity.
+
+## Evidence to reopen
+
+- [2026-10-15-daemon-coordination-experiment.md](experiments/coordination.html)
+- [e3-swift-publication-evidence.md](../../explainer/research/e3-swift-publication-evidence-2c16dba4.html)
+- [command-surface-inventory.md](../../explainer/research/command-surface-inventory-4cc8ee5d.html)
+- [2026-10-16-daemon-data-ownership-survey.md](../02-data-ownership-replication/research/data-ownership-survey.html)
+
+## Proof boundary
+
+Real Swift/Rust producer-consumer interoperability, exact native targets/effects/refusals, MainActor publication/unchanged suppression and matched key-to-visible/presentation observations. E3/E5/E6; UI changes need their own current-app visual design.
+
+## Design cycle
+
+Use the [common cycle and completion rule](../README.html#source--each-design-cycle). The scoped Specification here contains carried-forward draft contracts, not a completed Program Design. Author its structural realization after the affected meaning is settled, then complete Verification Design and independent four-document review. Bring only actual unresolved owner decisions to Sun; there is no generic structural-confirmation gate. There is no empty `program-design.md` standing in for unfinished work. Required missing meaning remains explicit, and unrelated source research can proceed.
+
+</script></ex-markdown><h2 id="technical-evidence">Detailed technical evidence</h2><ex-markdown id="evidence-links"><script type="text/markdown">
+- [Workspace and platform capability evidence](../../explainer/research/capability-workspace-platform-evidence-d945eb68.html)
+- [E3 Swift publication and source-admission evidence](../../explainer/research/e3-swift-publication-evidence-2c16dba4.html)
+- [E5 native key-to-echo observation evidence](../../explainer/research/e5-native-observation-evidence-2fd1eab9.html)
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

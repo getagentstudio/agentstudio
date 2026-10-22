@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · E3 Advisor challenge disposition</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../index.html">Understand the system</a><a href="../features.html">Explore AgentStudio features</a><a href="../progress.html">What was built and tried</a><a href="../walkthroughs.html">Follow a workflow</a><a href="../delivery.html">MVP and integration phases</a><a href="../requirements.html">Requirements</a><a href="../architecture.html">Technical architecture</a><a href="../communication.html">Communication</a><a href="../data.html">Data ownership</a><a href="../schema.html">Tables and fields</a><a href="../sequence.html">Spec dependencies</a><a href="../experiments.html">Experiments and decisions</a><a href="../research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="e3-challenge-disposition-fdeb33b5.html">AgentStudio daemon · E3 Advisor challenge disposition</a></nav></ex-nav>
+<ex-document id="content"><h1>E3 Advisor challenge disposition</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](../../../../../tmp/practices-research/2026-10-15-daemon-extraction-survey/e3-challenge-disposition.md) · [Research library](../research.html) · [MVP](../delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## E3 Advisor challenge disposition
+
+Current Advisor `claude-local/34f18df3-a0aa-4472-9b76-7dbfe813d46b` returned [the full source challenge](advisor-e3-challenge-37d97d44.html) in push `01a14290-80f1-73f1-bd80-90e8d97e85d5`, root message `01a14290-8102-7a21-a3bf-cfd1661d889b`, activity6774. Advice is not owner authority or executed proof. This file records process and verification; the procedure itself remains in [the E3 document](../../designs/10-swift-client/experiments/coordination.html).
+
+Advisor reported full reading of the procedure, both source catalogs, Requirements and relevant E3/K02 sections, and opened three named source units: cache coordinator, topology atom and Git projector. It explicitly did not reopen the other anchors. The Lead does not convert that partial primary-source coverage into universal independent source verification.
+
+| Finding | Lead source check and disposition | Procedure change / limitation |
+| --- | --- | --- |
+| F1: noisy producer and cardinality missing | Accepted. [Git intake](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Git/GitWorkingDirectoryProjector.swift) shares one lossy queue across topology and worktree filesystem topics; [default limit](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Git/GitWorkingDirectoryProjector.swift) is256. Shared replay is finite per source, not across source cardinality; scoped wiring also has a cardinality cost. This establishes a source-permitted pressure condition, not an observed lost registration or final effect. | C12 adds hot/quiet different-topic inputs and 8/64-source populations with idle seeds. Hot volume is capped at8192offers; any capacity not crossed remains unexercised, and an unbounded queue is not assigned a fictional threshold. Record actual subscriptions and retained storage, not an assumed owner-times-consumer allocation. |
+| F2: causally dependent producers missing | Accepted as an experiment gap, narrowed as an explanation of current code. [One cache intake](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator.swift) awaits direct topology handling and flushes governors; [enrichment apply](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator.swift) rejects lifetimes absent from [topology admission](../../../../../Sources/AgentStudio/Core/State/MainActor/Atoms/RepositoryTopologyAtom.swift). But the cache loop explicitly skips worktreeRegistered/unregistered; Git ignores repoDiscovered/reconciled events in its separate intake. [Scoped topology](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator+ScopedTopology.swift) mutates canonical state and invokes direct effects that establish further dependencies. Therefore merged arrival alone is not the complete current correctness mechanism, and the Advisor's generic registration example is not a verified whole-path bug. | C13 covers explicit cause→dependent status under separate consumer paths, with a first-demand outcome and declared dependency/recovery behavior. Preserve causal order across producers without requiring a global unrelated order or selecting a buffer/retry mechanism. No current runtime race or mandatory future ordering implementation is claimed. |
+| F3: replay/live cut untested | Accepted with a narrower guarantee. [Subscribe](../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Events/EventBus.swift) captures replay/registers without an await inside the actor operation. Current baseline does not permit arbitrary internal preemption; candidate cuts may have real suspensions. Neither bell nor command-finished is a proved non-idempotent final effect for every current consumer. | C14 checks omission/duplication for one canary at one fresh subscription handoff, through legal interleavings and an independently counted synthetic effect. This is not durable exactly-once, dedup across reconnection, or replaying already-applied history without duplicates. |
+| F4: missing controls and premature close | Accepted. Source/read tests and FactRecorder do not make an arbitrary case close cover work released afterward. Cache [ignored/applied scope fact](../../../../../Sources/AgentStudio/App/Coordination/WorkspaceCacheCoordinator.swift) can close that application only. | C0 now calibrates equal-final-state reorder, one-checkpoint-late correct result, and premature closure; negative claims require specific released-item disposition or an actual owner join that covers it. Missing observer/closure remains inconclusive; no new production event or test hook added. |
+
+The closest verification principle is “the review finding that was wrong”: findings are claims whose cited path must be opened. F2 survives as a useful causal-contract case while its whole-path current explanation is narrowed. The closest experiment principle is “the oracle stricter than the contract”: exactness is scoped to promised transitions and one tested handoff, not a new global/durable guarantee. These choices preserve settled owner outcomes.
+
+Lead also checked the [native real-load obligation](../../../../architecture/observability/observability_and_traceability.md) while the Advisor reviewed. Small deterministic E3 fixtures cannot establish acceptable loaded MainActor performance. The procedure now separates that proof from semantic correctness and from strict-sidebar versus terminal-fleet populations. This qualification is independently grounded, not attributed to Advisor acceptance.
+
+No hidden owner policy was found by the Advisor; Lead likewise selected no bus, codec, domain/storage owner, extra VT/transcript, new atom/store/event, controller/shared-layout policy or dependency safety exception. Current phone placement and disconnected-agent ingress questions remain unchanged. No test, build, native run, benchmark, Fly operation or product/config/vendor change occurred. Full product Specification/Program Design remains unfinished; this is a source-checked revision of one experiment procedure.
+
+Actual follow-up acknowledgement arrived in `01a14294-ca30-7a03-9011-6a10a4205200`. Advisor verified the F2 narrowing and expressly corrected its earlier concrete chain; it accepted F1/F3/F4 narrowings and reported no remaining material error or contradiction. This closes that bounded source challenge, not runtime proof or whole-system design acceptance. Full acknowledgement follows.
+
+```text
+🦉 Advisor ack, re 01a14294. I verified your F2 narrowing and you are right. The cache loop skips worktreeRegistered and worktreeUnregistered (WorkspaceCacheCoordinator:165), and topology ingress handles watchedFolderReconciled and repoDiscovered (+TopologyIngress:15-33).
+
+So my specific chain was wrong: a registration arriving before a status on the merged subscription is not today's mechanism. What remains is a generic causal gap (the lifetime gate at :452-459), and C13 now states that correctly without global FIFO.
+
+I accept the F1, F3 and F4 narrowings as written. No material error or contradiction remains from me.
+
+```
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

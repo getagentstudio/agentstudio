@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · AgentStudio service system: observable specification</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="explainer/index.html">Understand the system</a><a href="explainer/features.html">Explore AgentStudio features</a><a href="explainer/progress.html">What was built and tried</a><a href="explainer/walkthroughs.html">Follow a workflow</a><a href="explainer/delivery.html">MVP and integration phases</a><a href="explainer/requirements.html">Requirements</a><a href="explainer/architecture.html">Technical architecture</a><a href="explainer/communication.html">Communication</a><a href="explainer/data.html">Data ownership</a><a href="explainer/schema.html">Tables and fields</a><a href="explainer/sequence.html">Spec dependencies</a><a href="explainer/experiments.html">Experiments and decisions</a><a href="explainer/research.html">Research library</a><a href="index.html">All specification documents</a><a href="2026-10-15-agentstudio-daemon.html">AgentStudio daemon · AgentStudio service system: observable specification</a></nav></ex-nav>
+<ex-document id="content"><h1>AgentStudio service system: observable specification</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](2026-10-15-agentstudio-daemon.md) · [Research library](explainer/research.html) · [MVP](explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## AgentStudio service system: observable specification
+
+A terminal view and its execution session have different lifetimes. A user can close the view while work continues, then access that continuing session through the required service entry. macOS, MCP, phone and frontend CLI consumers use that entry. Machine-scoped worktree CLI and authorized agents/hooks use their own Host locally; worktree CLI starts or activates an absent local Host under IP3. UX/frontend CLI retains the Gateway route. A Gateway can connect to several Hosts. A command’s attached machine determines its execution context.
+
+The [user requirements](user-requirements.html) own the authorized needs, priorities and service boundary. This document owns the observable obligations below. The named contract gaps preserve unresolved meaning; they do not exclude those capabilities or authorize an implementation to choose defaults. The [capability survey](research/extraction-survey.html) supplies current-source evidence, while the [experiment map](experiments/primary-experiments.html) supplies prospective discriminators rather than feature acceptance.
+
+Read this spine first, then the [initial profile](initial-profile.html), [domain and identity appendix](domain-entities.html) and [capability/interface contracts](capability-contracts.html). Together these and the linked capability slices form one Specification. Requirements remains a separate identity; the structural Program Design is its own downstream workbench. The [multi-design entry](designs/README.html) breaks the work into bounded cycles. K1–K15 account for the surveyed surface; IP1–IP12 distinguish the now-selected initial choices from their remaining contract detail.
+
+## Consumers and visible difference
+
+Each journey concerns one consumer class. Current-source observations are not measured runtime outcomes.
+
+| Mac terminal user | Current evidence / pain boundary | Required difference |
+| --- | --- | --- |
+| View a session → close its pane → return to the continuing work | Current close/Undo couples pane presence, authority and native cleanup; source evidence does not establish the new service journey. [Close owner](../../../Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+Undo.swift). | R5/R6 preserve execution across presentation absence. Detached-session screen/cleanup UX is not selected. U14/U15. |
+
+| CLI/API developer | Current evidence / pain boundary | Required difference |
+| --- | --- | --- |
+| Invoke an operation → receive its result → inspect an uncertain effect when necessary | Worktree dispatch and provider installation currently precede ordinary app IPC; one receipt does not cover every effect. [CLI entry](../../../Sources/AgentStudioIPCClient/main.swift). Exact user cost is not measured. | R1 fixes service entry; G1/G8/G12 retain branch scope, effect and location questions. U2/U4/U17. |
+
+| Phone/other-device user | Current evidence / pain boundary | Required difference |
+| --- | --- | --- |
+| Access work while another device is active → leave the view → return | No current daemon-backed phone UI or physical-device journey is established. Current pain beyond the requested access is unknown. | R1/R3/R7 apply through the device's macOS/iOS Gateway; G2 retains availability/limits and G4 shared-view/control meaning. U12/U16/U17. |
+
+| Service operator | Current evidence / pain boundary | Required difference |
+| --- | --- | --- |
+| Run a Host in a Mac or Linux work environment → clients arrive/leave → work continues | The current Git reference has macOS-specific artifacts/process paths; Linux leaf feasibility is not a complete counterpart. [Package realization](https://github.com/getagentstudio/agentstudio-git/blob/4cca397dfc869857064da4e9ec8289ea46adc479/Package.swift#L17). | R2/R4/R6 preserve the requested deployment/parity/lifecycle outcomes; G3/G7/G12 define remaining operational promises. U1/U5/U6/U11/U15. |
+
+| Authorized agent/integration consumer | Current evidence / pain boundary | Required difference |
+| --- | --- | --- |
+| Report or request authorized work → Swift closes or Gateway disconnects → continue authorized integration | Current hooks invoke frontend RPC. That mechanism does not settle whether the future Host-local agent input belongs to the frontend contract. [Hook client](../../../Sources/AgentStudioIPCClientCore/ProviderHooks/ProviderHookInvocation.swift). | U15/R9 require Host-local authorized session input even with every Gateway (macOS or iOS) absent. G6 retains exact fact coverage; G8/G12 retain authority and credentials. No frontend bypass or spool is selected. |
+
+The system is opaque in this context view. Service-role routing constraints are stated in R1–R3; the picture does not select internal components or data owners.
+
+```mermaid
+flowchart LR
+    Mac["Mac user / Swift client"] -->|"Service requests; terminal view/control"| System["AgentStudio service system"]
+    Cli["CLI / API developer"] -->|"Operation requests and results"| System
+    Phone["Phone and other-device user"] -->|"Concurrent access through a device Gateway"| System
+    MCP["MCP frontend consumer"] -->|"Frontend requests through Mac Gateway"| System
+    Integration["Host-local CLI / in-session agent"] -->|"Host-local machine work and session input"| System
+    Operator["Service operator"] -->|"Supported environment and lifecycle"| System
+    System --- Work["Managed sessions, repositories and files"]
+    System -.->|"No native Mac presentation obligation on Linux"| Negative["Native client effects remain distinct"]
+```
+
+[Full-size rendered diagram](assets/specification-context-s28.svg).
+
+## Domain entities
+
+### E1 — Execution session
+
+- **Meaning and identity:** the continuing execution resource the user views. Changing its view, title, directory or communication connection does not create a different session. Two separately created execution resources remain different even if their displayed values match. Two Hosts’ execution resources remain distinct even when local IDs, titles or paths match; cross-service references preserve the addressed Host context under R11/R12. Identity after execution/Host failure remains G3/G8.
+- **Relationships:** a session can have no terminal attachment; every E2 attachment refers to exactly one session. IP2 permits at most one controller, with other attachments viewing; supported attachment limits and handoff/no-controller behavior remain G4, not an unlimited-concurrency promise.
+- **Invariant:** view/connection absence alone does not terminate the session. The session is distinct from a pane, a provider conversation, an OS process incarnation and a communication connection.
+- **Observable states:** continuing execution versus an independently established termination. Natural exit, failed/replaced processes, retained ended-session records and restart transitions are G3.
+- **Canonicalizes / basis:** “session keeps running,” “sessions” and the target of explicit termination; U14/U15/U18. A resumed provider conversation is not by itself proof of the same execution resource.
+
+### E2 — Terminal attachment
+
+- **Meaning and identity:** the particular viewing association being attached to or detached from an E1 session. A screen label or pane title is not that association's identity. Reuse or replacement of attachment identity after connection loss is G4.
+- **Relationships:** refers to exactly one execution session and a client terminal view. IP2 fixes one controller with other attachments viewing; exact multiplicity, transport association, handoff and child-visible resize/focus rules remain G4.
+- **Invariant:** ending the viewing association is different from terminating its execution session.
+- **Observable states:** associated with the session; detached from it. Pending/failed attach, lost-connection and remote-cleanup states require G4/G8; a closed local view does not prove remote resource cleanup.
+- **Canonicalizes / basis:** “attachment,” “detach,” “closing the last pane”; U14/U15. Backend sockets and native retained Undo surfaces are not interchangeable definitions of this entity.
+
+### E3 — Communication connection
+
+- **Meaning and identity:** one established communication-channel lifetime. Replacing a closed channel creates another connection; it does not create another E1 session. A path/address change alone does not settle whether the selected protocol retained the same channel.
+- **Relationships:** carries zero or more E4 attempts over its lifetime; mapping requests/streams/attachments to connections and concurrent-admission bounds is G4/G8. No session lifetime is owned by this relationship.
+- **Invariant:** connection loss is not session termination. The required client-entry and Gateway/Host edges remain R1 even when a connection is absent.
+- **Observable states:** established or closed/replaced at the channel's actual boundary. Suspension, timeout and transport-resumption details are G2/G8.
+- **Canonicalizes / basis:** “Gateway disconnected” and the communication channel rather than the continuing workload; U1/U15/U17.
+
+### E4 — Frontend request attempt
+
+- **Meaning and identity:** one submission attempt from a frontend consumer to the service interface. Forwarding that attempt across the mandated route is not a second user invocation. A later resubmission is another attempt, even when an operation-specific duplicate contract could refer to the same intent; those duplicate rules are G8.
+- **Relationships:** issued by one frontend consumer at an E6 device; carried across the applicable E3 connections. A Host-directed attempt requests one E5 capability; exact method/target/batch surfaces and origin attribution are G1/G8. The attached E23 Host is the work context under R12; an unqualified path is not a cross-Host identity.
+- **Invariant:** its entry route obeys R1. Host-local session inputs and attached-machine CLI work under R9/R12 are not E4 frontend attempts. A request/correlation label alone does not define a durable intent, permission or completed effect.
+- **Observable states:** not submitted, submitted, response observed or no authoritative response observed. Public result, partial-effect, cancellation and reconciliation contracts are G8; these words do not select wire variants.
+- **Canonicalizes / basis:** “CLI talks to client daemon,” incoming service inputs, and MCP/CLI/iOS/macOS frontend requests; U1/U2/U16/U17.
+
+### E5 — Host capability
+
+- **Meaning and identity:** a selected externally observable operation/behavior contract provided in the work environment. A different OS mechanism alone does not make it a different capability. The complete selected contract set, names and compatibility identity are G1/G7/G8; the SDK inventory does not automatically select every API.
+- **Relationships:** can be referenced by zero or more E4 attempts over its contract lifetime and has the required macOS/Linux realizations under R2/R4. Session-targeted versus repository/file/native targets require their own contracts in G1; not every capability belongs to E1. Concurrent-admission limits remain G8.
+- **Invariant:** calling a Linux primitive successfully does not establish the corresponding complete capability. Platform realizations cannot silently weaken a selected contract.
+- **Observable states:** this is a behavior contract, not a second execution state machine. Its availability/refusal profiles and admitted platform differences are G7.
+- **Canonicalizes / basis:** “feature parity,” “interface contracts” and Linux fork counterpart; U5/U6/U11.
+
+### E6 — Frontend device
+
+- **Meaning and identity:** the actual Mac, phone or other device originating frontend service use. Opening another process or socket on one device does not by itself establish another device. This is a semantic/observation distinction, not a selected hardware identifier, enrollment protocol or process-attestation requirement.
+- **Relationships:** can originate zero or more E4 attempts through the named frontend classes. Device identity differs from the E23 Host and E24 Gateway service identities in the domain appendix. Limits and attribution through adapters are G2/G8. S14’s authorized session inputs and S16’s CLI work on its attached Host are Host-local. Remote-target frontend calls use their explicitly attached Host context through R1; device location does not itself confer authority.
+- **Invariant:** a count of subscriptions, connections or credentials is not independently a count of devices.
+- **Observable states:** participating in service use or absent. Registration, authenticated device identity and cross-restart continuity are G2/G8.
+- **Canonicalizes / basis:** “multiple Macs, iPhones ... any clients” as device concurrency, distinct from account or socket count; U16/U17.
+
+The diagram shows only the settled identity relationships. Unresolved multiplicity is labelled rather than rendered as an unlimited maximum.
+
+```mermaid
+flowchart TB
+    Attachment["E2 Terminal attachment<br/>one viewing association<br/>associated / detached"] -->|"exactly 1 session"| Session["E1 Execution session<br/>same continuing execution<br/>continuing / termination established"]
+    Session -->|"0 attachments allowed; upper limit G4"| Attachment
+    Connection["E3 Communication connection<br/>one channel lifetime<br/>established / closed or replaced"] -.->|"loss does not terminate"| Session
+    Request["E4 Frontend request attempt<br/>one submission attempt<br/>submitted / response observation"] -->|"Host-directed attempt requests 1"| Capability["E5 Host capability<br/>same selected behavior across OS<br/>availability profiles G7"]
+    Request -.->|"connection/stream mapping G8"| Connection
+    Device["E6 Frontend device<br/>actual device, not socket count<br/>participating / absent"] -->|"originates 0 or more attempts"| Request
+```
+
+[Full-size rendered diagram](assets/session-identity.png).
+
+E7–E26 in the [domain appendix](domain-entities.html) define repositories/worktrees, provider conversations/bindings, context messages, annotation/output resources, client targets, authority, subscriptions, finite content, installation, scoped observations, Host/Gateway service instances and shared arrangement/read-marker resources. They extend these identity distinctions without choosing their internal owners or storage.
+
+## Problems, outcomes and obligations
+
+| Link | Observable problem or constraint | Outcome |
+| --- | --- | --- |
+| P1 → O1 | Existing IPC, standalone CLI and provider paths differ; no complete cross-service entry contract exists in the source baseline. | The required entry is consistent for frontend service attempts. |
+| P2 → O2 | Current pane/native/authority and execution lifetimes do not by themselves establish the requested detached/no-client behavior. | A view or connection can disappear without terminating continuing execution. |
+| P3 → O3 | A Linux user needs the complete worktree/Host behavior, not only file-data cloning; the inspected Mac package supplies the current behavior reference. | Selected Host capabilities have explicit macOS/Linux counterparts. |
+| P4 → O4 | The owner mandates engineering and multi-client constraints; no present defect or measured latency is inferred from that request. | Concurrency and the inherited engineering constraints remain inspectable obligations. |
+| P5 → O5 | Current tables mix client composition, execution/workflow records, credentials, intake progress, observations and derived search; a table or bus name does not settle its distributed meaning. The owner explicitly requests this correlation in S24. | Consumers and maintainers can distinguish authoritative facts, their declared lifetime/exposure and the validity of prepared observations. |
+| P6 → O6 | Current native composition and process-local viewed state do not establish the owner's selected cross-device sharing outcome. No service-backed shared-device UI is established. | Participating devices observe the same declared shared tabs/layout and read-marker meaning, while actual native presentation remains distinguishable. |
+
+“MUST” below applies only to the stated clause. It does not fill a referenced contract gap.
+
+| Requirement | Observable obligation | Basis and outcome | Contract / proof |
+| --- | --- | --- | --- |
+| R1 — Frontend entry | An E4 frontend attempt from MCP, iOS, the macOS app or frontend CLI MUST use the declared Gateway entry under S32/U17; Host-directed frontend communication MUST proceed Gateway → Host. CLI work attached to its executing machine’s Host and authorized session-local agent/hook/context input MUST use that Host locally under R9/R12. These are separate from frontend attempts. | U1/U2/U15/U17 and S14/S16; O1/O2 | C1 / V1; C3 / V3 |
+| R2 — Host platforms | The Rust Host role MUST provide selected E5 capabilities on macOS and Linux, including Mac-local work. Selected Git/worktree, agent and session work MUST execute in the addressed Host environment without requiring Swift to perform that backend work. A platform profile or missing implementation MUST NOT silently remove the Linux counterpart. Native client effects remain distinct. | U1/U4/U5/U6/U11; O3 | C2 / V2 |
+| R3 — Gateway platform | The Rust Gateway role MUST run on macOS and iOS. Each device's UX client MUST use its declared Gateway entry under R1/S32; its Gateway communicates with addressed Hosts. iOS access MUST NOT depend on a Mac Gateway relay. This changes the Gateway platform, not the macOS/Linux Host boundary. S32 selects separate macOS and embedded iOS hosting; suspension/reconnect and startup/admission details remain G2/G3/G8/G11/G12. No always-on background runtime is promised. | U12/U17 and S28; O1 | C1 / V1; G2 |
+| R4 — Capability parity | Each selected E5 capability MUST have explicit input, effect/result, failure/partial-effect and platform-difference contracts. Its macOS/Linux realizations MUST meet those contracts; method-name equality or a lower-level primitive is insufficient. Exact fork/path/profile semantics remain G7. | U5/U6/U11; O3 | C2 / V2 |
+| R5 — Detach | When a user closes the last terminal pane, ending E2's viewing association MUST be detach rather than E1 termination. Detach and explicit session termination MUST remain separately expressible primitives. Remote acknowledgement/cleanup and attachment identity are G4/G8. | U14; O2 | C3 / V3 |
+| R6 — Execution without presentation | Given an E1 session executing immediately before Swift closure, loss of attached views or Gateway disconnection, that event alone MUST NOT request or cause its termination. This clause covers execution continuity; U15’s authorized-agent and terminal-fact outcomes remain independently required through R9/R10; G6 retains exact fact coverage. An independent natural exit/Host failure and any restart promise are G3, not a reason to relabel termination caused by presentation loss. | U14/U15; O2 | C3 / V3; G3/G6 |
+| R7 — Concurrent frontends | One Host MUST support multiple Gateways connected simultaneously, including both multiple Mac Gateways and a Mac Gateway together with an iOS Gateway, with separate client attachments and valid overlapping service use from the named Mac/phone/CLI/MCP frontend classes. One Gateway need not exit for another to use an independently authorized capability. The IP2 single-controller/viewer profile applies; R17 governs selected shared state. Numeric maxima, per-device instance counts and exact control/handoff/focus and iOS availability contracts remain G2/G4/G8. | U16 and S12/S25/S28; O4 | C1 / V4; G2/G4/G8 |
+| R8 — Inherited engineering constraints | The Rust realization MUST satisfy [U7–U10](user-requirements.html) under the IP6 first-party safety boundary. No crate graph, schema generator, first-party safety exception or substitute runtime is selected; G8/G9/G11 retain concrete binding and compliance work. | U7/U8/U9/U10 and S25; O4 | C4 / V5 |
+| R9 — Authorized integration without presentation | Authorized agent/provider-hook/context input inside an E1 Host session MUST be admitted locally without depending on Swift, an attached view or any Gateway connection (macOS or iOS). Session scope/authority remain distinct from pane presence. Work requiring invalid writer authority follows IP4; presentation absence is not that failure. Refusing integration until a client returns does not satisfy U15, and local reachability alone grants no authority. | U15 and S14/S25; O2 | C3 / V3; K7/K8/K14; G8/G12/G13 |
+| R10 — Facts without presentation | The Host MUST record terminal facts/activity independently of attached views or connected Gateways. A renderer-dependent feed alone cannot establish this obligation. Invalid-authority gated writes follow IP4 with truthful coverage-loss/refusal meaning; an absent viewer is not invalid writer authority. Exact sources, currentness, ordering and retained history remain G6. | U15 and S25; O2 | C3 / V3; K5/K11; G6/G13 |
+| R11 — Multiple Hosts | One E24 Gateway MUST support connections to more than one E23 remote Host. Requests, results, subscriptions and views MUST preserve their target Host context. One Host’s loss MUST NOT misattribute another Host’s availability or redirect work. Numeric limits, selection UX and cross-Host aggregate partial results remain G2/G8/G9. | U18; O1/O4 | C1 / V4 |
+| R12 — Attached-machine CLI execution | A machine-scoped CLI command MUST act on its attached E23 Host. For work targeting its executing machine, worktree CLI MUST use that machine's attached Host daemon independently of Gateway availability, and MUST start or activate that local daemon when absent under IP3. Authorized E1-session CLI work remains Host-local; UX/frontend CLI uses R1. Exact bootstrap/readiness/failure, attachment discovery and non-session authority remain G1/G8/G12. The relayed Mac CLI `--host vm-1` use case is required; direct remote connection versus local Host relay and its credential remain open. A missing/ambiguous attachment MUST NOT cause an effect on an inferred default machine; startup failure MUST NOT be reported as successful submission. Native effects require their declared target under K12. | U2/U18 and S16/S30; O1/O3 | C1 / V1 |
+| R13 — Swift/socket interoperability | The selected Swift UX↔Gateway contracts MUST have real cross-language producer/consumer coverage for every selected request, response, event, frame and error schema, including the real macOS Unix-socket boundary and S32's selected embedded iOS native binding. Coverage MUST include semantic invalidity, framing/limits, supported version pairs, incompatible-pair refusal and interrupted traffic. One implementation’s encode/decode self-roundtrip is insufficient. | U9/U17/U19; O1/O4 | C1/C4 / V6 |
+| R14 — Central authority and scope constraints | Lease-registry authority MUST belong to the central control plane, independently of Gateway routing/presentation. A Gateway MUST NOT become a lease issuer because a Host is attached. Gateway operation assumes ready, connected machines; machine preparation/move/copy is outside its scope. Authority integration remains separately composable; writer transfer stays outside current scope and the authority server is later work. Invalid/lapsed grants follow IP4. Duration/renewal and exact gate coverage remain G13; presentation absence is not invalid authority and cannot cause R9/R10 refusal or execution termination. | U20/U21 and S21–S25; O1/O4 | C1/C4 / V1/V5; G13 |
+| R15 — State-boundary contracts | For each selected state-bearing operation or observation (E4/E5/E16/E22 as applicable), its observable contract MUST distinguish authoritative subject/scope, retained versus transient meaning, copied versus derived observations, permitted data audience, and change/history semantics. A representation's arrival or storage location MUST NOT by itself confer another mutation authority or prove an E15 destination effect. Exact selected data sets/lifetimes remain G3/G6/G8/G9; this clause selects no database layout, event-sourcing mechanism or new retained history. | U4/U9/U13/U15/U16/U18 and S24; O2/O4/O5 | C5 / V7; K11 |
+| R16 — Observation validity | If a selected read or E19 subscription delivers E22 observations whose declared source coverage is known incomplete or superseded, or whose coverage/continuity has not been established for that scope, the result MUST preserve that distinction and MUST NOT assert complete current coverage for that scope. Host-qualified results MUST retain their addressed Host context under R11. This is not a universal freshness deadline, global order or coherent multi-Host snapshot promise; exact validity/retention/refusal profiles remain G6/G8/G9. | U9/U13/U15/U16/U18; E22's existing currentness invariant; O2/O4/O5 | C5 / V7; K3/K11 |
+| R17 — Shared device state | Participating authorized devices MUST share the declared E25 tabs/layout and E26 read-marker state under IP11/IP12. For each authoritative E25 resource or kind-qualified E26 marker, reads at the same acknowledged position of that resource MUST agree on its shared logical state; using another E6 device MUST NOT create an independent per-device-only copy of its meaning. No combined cross-resource or cross-Host position is promised. For a participating authorized device presenting that shared state or requesting its current value, while its resource and communication remain available, the device MUST converge to the latest established shared state after changes quiesce, without a manual restart or reopening the view. Superseded intermediate versions need not each be displayed or retained. Actual E16 native presentation, user viewing, delivery and execution remain distinct. Exact subject/element scope, concurrent/offline transitions and propagation cadence/bounds remain G4/G8/G9/G12 and may not silently narrow this agreement and progress outcome. | U22 and S26; O6 | C6 / V8; G4/G8/G9/G12 |
+
+R18–R23 and E27 have one normative home in the [Bridge transport specification](increments/00-qualification/bridge-gateway-transport/specification.html). They refine S32's browser/native/remote split without changing Host-local CLI, central lease authority, existing K9/K10 semantics or R5/R6 execution lifetime.
+
+## Contract boundaries and proof
+
+| Contract | Inputs, observations and negative space | Failure/partial/cancellation/compatibility still to settle |
+| --- | --- | --- |
+| C1 — Frontend service access | E4 frontend attempts use R1’s entry and R12’s attached Host context. A direct frontend Host call cannot count as compliant frontend access. R9/R12 Host-local session input and CLI work are separately compliant local access, not E4 attempts. Multiple Hosts/Gateways retain distinct identities and availability. Under R14, ready-machine client access is distinct from the central lease-authority contract; a Gateway attachment does not grant writer authority. | G1/G2/G8 define exact methods, target-resolution outcomes, admission, cross-hop authority, results and pairing. G13 retains the separate lease-control profile. No implicit local fallback or generic retry is selected. |
+| C2 — Cross-platform capability | Compare the same selected E5 behavior at its complete effect boundary, with explicit platform profiles. Fork counterpart includes its eventual complete contract, not only file-data cloning. | G1/G7/G8 define exact targets, path/metadata domains, refusals, partial effects and cancellation. No universal filesystem claim or byte-copy fallback is selected. |
+| C3 — View and execution lifetime | Given a continuing E1 session and its E2 view, closing/detaching the view leaves the same execution continuing. Presentation/connection absence alone cannot be a termination cause. A termination request, actual termination and cleanup completion remain different observations. | G3/G4/G6/G8 define attach/terminate authority, lost connection, pending cleanup, facts and restart/retention. No fifteen-minute cleanup default is selected. |
+| C4 — Engineering acceptance | The first-party implementation, generated scaffolding and dependency graph satisfy the inherited constraints under IP6. A safe-looking API example is not compiled compliance evidence. | G8/G9/G11 retain generation, decomposition, concrete safe-interface bindings and dependency/native-boundary inventory. No first-party unsafe waiver follows from an experiment or dependency choice. |
+| C5 — State meaning and observations | State-bearing operations and E22 observations preserve the distinctions in R15/R16. Private, retained and derived describe different dimensions; one is not a replacement for the others. Receipt of copied state, reading it, acknowledging delivery, changing a domain record and performing a native effect remain distinct. The [DS02 scenarios](designs/02-data-ownership-replication/specification.html#source--c5-state-meaning-and-observation-scenarios) expose the consumer consequences. | G3/G6/G8/G9/G13 retain exact data sets, arrangement scope, validity/retention, credential/data access, failure and lease profiles. No whole-database export, automatic promotion, indefinite backlog, public event per SQL row or replayed native effect is selected. |
+| C6 — Shared logical state | E25/E26 sharing concerns the same declared user/workspace and kind-qualified subject scope across devices. Native E16 values remain actual device observations. Agreement is evaluated at an acknowledged position per authoritative E25 resource or E26 marker; there is no combined cross-resource or cross-Host position. The domain appendix defines the reported resource-scoped version meant by an acknowledged position. R17 requires qualitative convergence for a participating authorized device presenting the shared state or requesting its current value on an available continuing path; remaining stale forever is not a compliant substitute. Interrupted or unestablished coverage remains explicit under R16/IP1. A delivered observation cannot mark a subject read or settle an ask. | G4/G8/G9/G12 must finish element/subject/audience binding, authority, concurrent/offline outcomes and actual change/publication contracts. No storage owner, last-writer-wins rule, automatic merge, global clock or new service is selected here. |
+
+| Proof | Evidence class and required distinction | Exact current gap |
+| --- | --- | --- |
+| V1 — Entry/platform boundary | Real API/CLI interaction and runtime/artifact evidence showing actual supported caller, route and service platform, including absence of a supported direct-Host frontend mode and actual effects on the CLI’s attached machine. R9/R12 Host-local inputs/work are separately compliant local access. For R14, establish central lease issuance, no Gateway-issued writer grants and renewal independent of every Gateway (macOS or iOS) under the selected G13 profile. Denial/misuse cases additionally need the selected G8 authority contract. | No full service realization or selected network/authority profile is established. Phone placement follows R3. Route evidence alone is not process attestation or a complete security claim; source APIs or a transport echo cannot supply runtime proof. |
+| V2 — Capability parity | Real filesystem/storage/process/domain interactions against the same capability contract on both Host platforms, including its refusal/partial/cancellation cases. | Complete capability/profile contracts and Linux integration realization are missing; Mac reference and Linux leaf evidence are separate. |
+| V3 — Detached continuity | Actual user/runtime journey plus independent execution/session observation: final view closes, the same workload continues, and a separately authorized terminate effect can be distinguished. | No daemon-backed UI journey or closed complete Host-fact witness is established. No current UI for a new detached-session experience is specified. Existing close controls alone do not prove the changed outcome. |
+| V4 — Multiple devices and Hosts | Real concurrent clients: multiple Mac Gateways connected to one Host; a Mac Gateway and an iOS Gateway connected to one Host; and one Gateway connected to multiple real Hosts. Observe separate attachments, Host-qualified results, CLI effects on the intended machine and one Host’s loss without misattributing another’s availability. Mobile suspension/resume follows the declared availability profile and must not terminate Host execution or prevent the other connected Gateway's valid use. In-process subscriber counts do not substitute. | Numeric limits, shared control, selection, aggregate partial-result, mobile availability and authority profiles remain G2/G4/G8/G9. Both multiplicity directions and the mixed-device case are required independently; two Macs alone do not establish iOS concurrency. |
+| V5 — Engineering constraints | Current build/lint/generated-code/dependency evidence, plus behavioral tests that can detect incorrect outcomes at the claimed boundary. | No target Rust implementation/gates exist from this research; type declarations or self-roundtrips alone do not establish compliance. |
+| V6 — Swift/socket compatibility | Real Swift and Rust producers/consumers exchange the selected requests, responses, events, frames and errors across the actual supported socket boundary on macOS and iOS. The Mac profile includes a Swift process and separate Rust Gateway process over Unix sockets. The iOS profile uses its actual selected application/runtime hosting and socket path; it does not infer a second independently running app daemon. Cover every selected schema/variant/rejection surface, fragmentation/coalescing, bounds, semantic invalidity, supported version pairs/refusal and interruption. | No target wire contract, generated-schema path or runnable Rust Gateway is established. Mobile startup/safety/suspension needs actual iOS qualification; simulator observations do not by themselves establish physical-device background behavior. Gateway↔Host compatibility is a separate boundary. |
+| V7 — State provenance and validity | Source/data inspection establishes current inventory/classification; real allowed/refused state interactions and independent source observations establish the selected target contract. Include known stale/incomplete coverage, coverage/continuity not established for the declared scope, wrong-Host attribution, view absence and copied state versus actual domain/native effect. Static counts or faithful SQL values alone do not prove these application outcomes. | Source inventory exists; exact target data sets, ownership/sharing/lifetime/authority profiles and runnable observations remain G3/G6/G8/G9/G13. No selected engine or target schema has passed runtime admission. |
+| V8 — Shared-state agreement | Correctness is judged against U22/S26 and R17/C6/IP11/IP12: compare participating reads at the same acknowledged position of each authoritative E25 resource or kind-qualified E26 marker. They agree on that resource's shared meaning, retain its qualified scope and distinguish actual native viewing/effects from delivery. No global position or combined cross-Host snapshot is required. Also establish R17 progress: after an update and quiescence, a participating authorized device presenting the shared state or requesting its current value on an available continuing path converges to the latest established resource state without manual restart/reopen. A permanently stale healthy reader fails even if labelled last-known; skipped superseded intermediate versions alone do not fail. A per-device-only declared shared marker/layout or stale result asserted as current fails that obligation. | Exact subject/element/audience binding, concurrent/offline outcomes and propagation/retention profile remain G4/G8/G9/G12. No current service-backed phone/Mac shared UI or complete Verification Design establishes those outcomes. |
+
+## Cross-cutting boundaries
+
+| Quality | Observable constraint or exact gap |
+| --- | --- |
+| Trust and privacy | G8/G12 must establish principals, scope, revocation and credential/effect location. The baseline documentation specifies [loopback HTTP export](../../architecture/observability/observability_and_traceability.md) and a [source-side field projection](../../architecture/observability/observability_and_traceability.md). The distributed service's exported content, destinations, cross-machine transport and access contract remain G1/G8/G9/G12; this draft selects no replacement privacy policy. |
+| Reliability and data lifetime | R5/R6 distinguish presentation loss from execution termination. G3/G6/G8 still define crash/restart, missed history, retention, partial effects and cleanup; no durability or automatic-retry promise follows from connection recovery. |
+| Efficiency and observability | G10 must name workload, observation boundary and acceptance tolerance. A monitoring producer's flush, shutdown and exported delivery are separate outcomes, not proof that a user saw a result. |
+| Native interaction/accessibility | G1/G9 preserve actual selected client interaction/effect boundaries. R17 fixes shared logical tabs/layout/read marks; their concrete phone/Mac UI and accessibility behavior remain to be designed. No current UI establishes that new service-backed shared experience or a new detached-session screen. |
+| Platform and operation | R2/R4 remain required; G7/G12 define supported profiles and operational pairing. No platform/filesystem fallback or live-backend replacement is selected by research. |
+| Compliance | No source establishes a specific regulatory or certification obligation. No compliance claim is made. |
+
+## Contract gaps retained from the requirements
+
+| Gap | Exact missing meaning or boundary |
+| --- | --- |
+| G1 — Capability and CLI scope | K1–K15 cover the surveyed families; IP10 retains selected external native automation and IP3 fixes worktree machine CLI routing and absent-local-Host activation; frontend-verb classification and direct remote CLI access remain open. Finish exact public Host/native method and channel membership, standalone availability and operation-specific targets/results. Internal SDK/permission APIs and dormant commands are not automatically new public features. |
+| G2 — Reachability and service limits | A Gateway runs on macOS or iOS under R3, with no Mac relay prerequisite for phone access. One Host supports multiple simultaneous Gateways under R7, including multiple Mac Gateways and a Mac Gateway with an iOS Gateway; one Gateway supports multiple remote Hosts under R11. Define platform availability/suspension, numeric/per-instance limits and supported-client profiles without reopening these outcomes. |
+| G3 — Failure/restart and ended sessions | Define natural exit, process/Host failure, reboot, re-adoption, ended-session identity/retention and optional cleanup. Client absence does not select crash recovery or immortal execution. |
+| G4 — Attachments and control detail | IP2 fixes one controller/other viewers; IP11/R17 fix shared logical tabs/layout. Finish attachment identity after connection replacement, multiplicity, acquisition/handoff/revocation, no-controller and child-visible input/resize/focus contracts. Sharing versus per-device-only is no longer an open direction. |
+| G5 — Host-local agent ingress (resolved) | S14 selects authorized in-session agent/provider-hook/context inputs as Host-local, independent of Mac reachability and distinct from E4 attempts. S16/R12 also locates CLI machine work at its attached Host. Remaining method mapping, authority and credentials have homes in G1/G8/G12; this is no longer an owner routing choice. |
+| G6 — Terminal facts and history | K5/K7/K11 distinguish output/title/CWD/shell completion/provider activity/physical exit and their proof boundaries. Select the exact required set, ordered-versus-latest coverage, host/path provenance, viewport dependence and retention/recovery. R10 preserves view-independent recording; raw bytes, quiet heuristics and exit remain different meanings. |
+| G7 — Platform/fork/path contracts | IP7 selects one qualified initial Linux environment/filesystem profile. Define that complete Git/fork behavior, actual eligibility, metadata/names/special-node policy, native error/residue and counterpart proof. The [fork worksheet](designs/06-worktree-fork/research/worktree-fork-contracts.html) remains the detailed gap source; a primitive cannot weaken U5/U11. |
+| G8 — Requests, authority and public protocol | K1–K15 now identify operation-specific target/effect/partial/unknown/cancellation distinctions. Select complete public method/target and scope/revocation contracts, including Host-originated native effects such as clipboard access, retained reconciliation/duplicate policy, resource limits and channel/version pairing. No generic retry/exactly-once/rollback promise follows from correlation, expected OIDs or reliable transport. |
+| G9 — Shared state and native detail | U22/R17/IP11/IP12 fix sharing of tabs/layout and read marks; IP1 fixes authorized offline last-known presentation. Completed-agent viewed sharing is settled; exact additional marker-family coverage is with Sun. Finish E25 element and E26 subject/scope mapping, currentness, retained/transient meaning, concurrent/offline transitions, multi-Host selection/aggregate results and actual native display/control outcomes. Internal authority/storage/sync and MainActor realization belong to Program Design; sharing itself is not an unanswered question. |
+| G10 — Efficiency acceptance | IP8 selects desktop/remote exploratory qualification first. Mandatory product workload scope remains with the owner; matched baselines, actual interaction/resource boundaries and acceptance tolerances remain undefined. Byte echo is not keystroke-to-visible-echo or native presentation proof. |
+| G11 — Safety realization | IP6 fixes the initial first-party unsafe ban with pinned dependencies used through safe interfaces allowed. Finish the concrete Git/terminal/native binding inventory and compliance evidence. Generated first-party scaffolding and relabelling cannot bypass the ban; socket interoperability itself requires no Rust–Swift FFI. |
+| G12 — Installation and operational pairing | IP9 fixes the paired private-fleet profile and IP10 retains selected external native automation. Finish installation/upgrade/channel/backend pairing, user/shared-scope binding, macOS privacy/TCC, native consent/refusal and credential custody/revocation. No public-access/identity service or live backend replacement is implied. |
+| G13 — Current lease detail | R14 fixes central authority, composability, no writer transfer and later server work; IP4 fixes invalid-grant write pause/refusal without a new spool. Finish setup, one designated authority binding per gated database, copy relationships, durations/renewal, exact gate/failure/coverage-loss outcomes. Gateway absence cannot substitute for invalid authority or remove Host-local independence. |
+
+## Requirement-to-contract coverage
+
+Each U row retains its meaning in the Requirements source. A gap is an undischarged obligation or missing decision, not an implementation deferral.
+
+| U | Entities | Problem → outcome | Requirement → contract → proof / exact gap |
+| --- | --- | --- | --- |
+| U1 | E3/E4/E5 | P1/P3 → O1/O3 | R1/R2 → C1/C2 → V1/V2; G1/G8/G12 |
+| U2 | E4/E23 | P1 → O1 | R1/R12 → C1 → V1; G1/G8/G12 |
+| U3 | E3/E4 | P4 → O4 | G10: measurable contract/proof boundary not settled |
+| U4 | E1–E24 as used in K1–K15 | P1/P3/P5 → O1/O3/O5 | K1–K15 retain all eighteen surveyed families; R15 → C5 → V7 adds explicit data classification/meaning; G1/G7/G9 retain exact selected scope/profile/sharing |
+| U5 | E5 | P3 → O3 | R2/R4 → C2 → V2; G7 complete fork counterpart |
+| U6 | E5 | P3 → O3 | R4 → C2 → V2; G7/G8 platform interface details |
+| U7 | Engineering constraint; no new domain entity | P4 → O4 | R8 → C4 → V5; structural DAG/naming/dependency binding still needed |
+| U8 | E3/E4; implementation lifetime constraint | P4 → O4 | R8 → C4 → V5; actual Tokio ownership/closure binding still needed |
+| U9 | E4/E5/E22; engineering constraint | P4/P5 → O4/O5 | R8 → C4 → V5; R15/R16 → C5 → V7; G8 semantic types/observable outcomes |
+| U10 | Engineering constraint; no new domain entity | P4 → O4 | R8 → C4 → V5; G11 dependency/FFI scope |
+| U11 | E5 | P3 → O3 | R2/R4 → C2 → V2; G1/G7/G12 |
+| U12 | E3/E4 | P1 → O1 | R3 → C1 → V1; G2 |
+| U13 | E2/E3/E4/E11–E16/E19/E20/E22 | P2/P4/P5 → O2/O4/O5 | R15/R16 → C5 → V7; K6/K8–K13 define state/native/effect distinctions; G9/G10 retain sharing and measured acceptance; structural reevaluation follows |
+| U14 | E1/E2/E3 | P2 → O2 | R5/R6 → C3 → V3; G3/G4/G8 |
+| U15 | E1/E2/E3/E9/E10/E11/E17/E18/E19/E22 | P2/P5 → O2/O5 | R6/R9/R10 → C3 → V3; R15/R16 → C5 → V7; K5/K7/K8/K11/K14; S14 resolves ingress; G6/G8/G12 retain fact/history and authority profile |
+| U16 | E2/E3/E4/E6/E22 | P4/P5 → O4/O5 | R7 → C1 → V4; R15/R16 → C5 → V7; G2/G4/G8/G9 |
+| U17 | E3/E4/E6 | P1 → O1 | R1/R3/R13 → C1/C4 → V1/V6; G2/G8 |
+| U18 | E3/E4/E7/E8/E22/E23/E24 | P1/P4/P5 → O1/O4/O5 | R11/R12 → C1 → V1/V4; R15/R16 → C5 → V7; G2/G8/G9 |
+| U19 | E3/E4/E19/E20 | P1/P4 → O1/O4 | R13 → C1/C4 → V6; G8/G10/G12 |
+| U20 | E23/E24; owner-set authority/deployment constraint | P1/P4 → O1/O4 | R14 → C1/C4 → V1/V5; G13 central lease profile; Gateway assumes ready machines; authority-server implementation and writer transfer excluded from current scope |
+| U21 | Engineering/hosting-separation constraint; no new domain entity | P4 → O4 | R14 → C4 → V5; exact crate/module composition belongs to Program Design |
+| U22 | E6/E16/E25/E26 | P6 → O6 | R17 → C6 → V8; G4/G8/G9/G12 retain exact sharing/currentness/authority and native projection contracts |
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

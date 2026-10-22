@@ -1,0 +1,88 @@
+# What the terminal backend experiments establish
+
+**A Host can establish an interactive shell without a viewer. The tested Capture-plus-live-output reconstruction is insufficient, and ZMX leadership cannot enforce AgentStudio's controller policy.** These are observations under the original strict reconstruction profile. The later owner-selected [IP13](../../../initial-profile.md) accepts lossy ZMX restoration and requires unforked Ghostty; complete-state equality is no longer the initial integration gate. The failed comparisons remain useful descriptions of actual loss, not a pass under their original scoring rule.
+
+The backend experiments used one macOS arm64 build of ZMX at `0a18bee7d3555b7822d1cb79cca2304d6ef2711b`, binary SHA-256 `9e4bb4b3d29c790c24b56eddaab8b6087e759999ae2d0cfe5f584a0d8886f5da`. They used a separate experiment socket root. They did not update AgentStudio's vendored backend or qualify the real app's native renderer, Linux, iOS or the complete Gateway/Host route. The later snapshot-component run below has its own target and proof limit.
+
+## Establishment and control are separate
+
+The [viewerless establishment experiment](../../../research/evidence/2026-10-20-zmx-latest/EX1-report.md) created a continuing interactive login zsh from a non-TTY process. Later PTY attachments received detached markers, title and explicitly emitted CWD. Eight attachment snapshots contained all three; the same shell survived attachment changes.
+
+This is feasibility evidence, not a selected creation API. Immediate-EOF `attach` happened to create the child before flushing its Init request; it relies on an undocumented branch. Ordinary piped attach temporarily becomes a terminal client and affects leadership/geometry. Detached `run` wraps the requested shell in task-mode bash. An explicit supported creation operation and its readiness/failure contract still need design.
+
+CWD was explicitly emitted with OSC 7 in this experiment. Automatic title/CWD/completion acquisition and the full installed shell environment remain separate work; a surviving shell does not establish Host-local agent integration.
+
+## Why ordered bytes still fail to restore
+
+The [Capture-cut experiment](../../../research/evidence/2026-10-20-zmx-latest/EX2a-report.md) compared snapshot replay followed by its exact live suffix against uninterrupted parsing of the same finite corpus.
+
+```mermaid
+flowchart TB
+    Bytes["Live bytes"] --> State["Terminal and parser state"]
+    State --> Capture["Formatted Capture"]
+    Capture -.-> Fresh["Fresh parser plus suffix"]
+```
+
+The dashed edge lacks a complete reconstruction guarantee: formatted screen/history bytes do not preserve every pending parser state or saved screen. Correct FIFO delivery cannot supply information omitted at capture.
+
+| Observation | Result at the tested pin | What it establishes |
+| --- | --- | --- |
+| Same-connection Capture boundary | 110 of 110 subsequent raw streams matched the exact producer suffix | A positive FIFO delimiter in this implementation/profile |
+| Capture reconstruction | 0 of 110 final line states matched the uninterrupted oracle | Counterexamples to complete Capture-plus-live reconstruction |
+| Init reconstruction | 0 of 55 final line states matched | Init is not a proven substitute for this profile |
+| Uninterrupted raw-stream control | Matched the oracle | The byte-feeding/scoring path can reproduce the reference |
+| Deliberate line drop and duplication | Each identified the chosen line | The comparison detects those injected errors |
+
+Concrete failures include replacement characters when capture splits UTF-8, visible escape suffixes when it splits CSI/OSC, omitted title, overwritten content at a restored cursor and lost saved primary history when capture occurs in the alternate screen. Source inspection shows Capture formats the active screen and appends CWD, while its serializer receives the Terminal without the separately held live parser stream.
+
+The retained framing audit found 779,902 complete frames in 558 wire files, with no framing residue. That distinguishes terminal reconstruction failure from malformed IPC framing in these runs. A sequence number alone would not restore the missing parser or screen state.
+
+These are finite-profile counterexamples, not a claim that every capture fails or that every terminal element was scored independently. The replay and oracle use the same VT engine; shared parser defects can escape that comparison. Native Ghostty rendering, its own VT version, terminal queries and actual screen presentation still need the separate native experiment.
+
+## Host control cannot be delegated to ZMX leadership
+
+The [control experiment](../../../research/evidence/2026-10-20-zmx-latest/EX5-report.md) observed actual foreground-child input and geometry. Recognized user input from a different socket—including one without Init—takes leadership and reaches the child. Send bypasses leadership; Resize can claim an empty leadership slot. A viewer's split terminal reply can be mistaken for input and take control. Query and focus behavior follow other backend conditions as well.
+
+Under IP2, attaching a viewer does not grant input/resize authority. Therefore the Host must enforce that policy before backend effects, including terminal-response handling, pending input and actual control loss/handoff. Calling a backend socket a viewer cannot establish read-only behavior.
+
+A single Host-owned backend attachment with Host fanout is one candidate realization. Backend changes or other mediated arrangements may also satisfy the contract. The experiment does not prove that a particular socket count is the only valid architecture. Same-user access to the backend socket and the product's controller-loss/focus policy remain explicit trust and behavior choices.
+
+## An existing checkpoint primitive is worth qualifying
+
+The [bounded snapshot-component run](../../../research/evidence/2026-10-20-zmx-latest/EX2c-snapshot-component/report.md) exercised the existing complete-snapshot test group at ZMX's actual Ghostty dependency pin `8af6897`. From the upstream package root it passed 44 tests in one build root and 45 in the other, exit 0. The roots overlap; 89 executions are not 89 independent behaviors.
+
+The group includes history/alternate-screen golden data and explicitly tracked pending parser continuation across finite cuts. It gives a concrete existing component to investigate before adding another Host VT. The initial run failed on the relative golden-fixture path; that log is retained, and no test or fixture was changed to obtain the corrected run.
+
+Binary complete snapshots and formatted Capture are different interfaces. ZMX exposure, continuation tracking from the beginning of input, native embedded-surface import, cross-pin behavior, format/resource/version contracts and safe Rust integration are still unproven. Passing these component tests does not make the current relay work or select the snapshot format for production.
+
+The native receiving boundary is now source-checked more precisely. At Z, [`ghostty_snapshot_decoder_ready`](https://github.com/ghostty-org/ghostty/blob/8af6897c0afc63037a8a3efee4162a380e3a4572/include/ghostty/vt/snapshot.h#L423) returns a caller-owned `GhosttyTerminal`, with parser continuation restored and older history still subject to the decoder lifecycle. AgentStudio instead creates an embedded `ghostty_surface_t` through [its surface configuration](../../../../../../Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:386). Neither inspected app header at Z nor A exposes a snapshot-to-surface import or raw output-injection call. At A, [Surface initialization](https://github.com/ghostty-org/ghostty/blob/2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33/src/Surface.zig#L664) constructs the command/PTY execution backend; [`ghostty_surface_text`](https://github.com/ghostty-org/ghostty/blob/2fb0c9cacb3fc75dbc8aedee9b7ed4321f091d33/src/apprt/embedded.zig#L2067) is user text/paste input. It cannot stand in for incoming remote output or binary checkpoint import.
+
+The proposed PTY-facing relay can use that existing output path for VT bytes, subject to its separate native experiment. Complete binary-state import needs a deliberately designed receiving integration; writing a binary snapshot to the PTY does not establish it. This source check selects no vendor extension, renderer replacement or change in the required restoration outcome.
+
+### Keep checkpoint production and native consumption separate
+
+An additional Host VT would still need a way to restore the declared state into the actual native renderer. Choosing where to maintain terminal state cannot close that receiving boundary by itself.
+
+| Candidate to investigate | What it could supply | Cost and common remaining boundary |
+| --- | --- | --- |
+| Expose complete state from ZMX's existing VT | Checkpoint and continuation from the current session owner | Maintainers own a backend API/version change; native import and actual restore still need proof |
+| Maintain additional Host VT state | Host-controlled checkpoint custody and observation | Host pays duplicate parsing/state/resource cost; exact source continuity and native import still need proof |
+| Narrower screen resynchronization | A smaller declared display recovery contract | Users bear any accepted loss of history/state; changed guarantees need explicit authority and proof |
+
+Under [IP13](../../../initial-profile.md), the next required native observation is best-effort ZMX restoration and continued useful interaction through Ghostty's existing PTY-facing path, without a Ghostty fork. Complete binary-checkpoint import is optional research rather than a prerequisite. The existing component result does not select a production wire format or require another terminal-state owner.
+
+## The experiment pin changes the upgrade boundary
+
+The [pin investigation](../../../../../../tmp/experiments/2026-10-20-zmx-latest/EX0-zmx-pin-findings.md) identifies a wire change after the earlier `2d23c0d` research candidate. At `0a18bee`, headers carry protocol version 1 and unknown tags can receive Unsupported. The compatibility analysis for the older candidate's Capture-then-Info behavior cannot be applied unchanged.
+
+Both this build and the vendored revision can display the version string `0.8.1`. That string is insufficient to identify the actual backend protocol. Installed running sessions need their own version/adoption policy; these experiments authorize neither replacing them nor introducing a legacy compatibility path.
+
+## What changes in the next design
+
+- Preserve the Host/Gateway/UX responsibility split and independent execution/attachment/connection lifetimes.
+- Treat creation without a viewer as feasible, with the supported backend API and readiness still unqualified.
+- Preserve the negative complete-reconstruction result. Apply the later owner-authorized lossy ZMX profile in IP13 instead of making full binary-state import or a Ghostty fork a prerequisite; measure and disclose what recovery loses. Automatic agent-recovery survival scope still needs its own contract.
+- Enforce AgentStudio controller policy at the Host; separately select control loss/handoff, query/focus handling and socket trust.
+- Pin the tested backend and qualify its installed-session transition before product adoption.
+
+The [restoration procedure](../experiments/terminal-restoration.md) still owns the broader proof obligations. EX2a supplies bounded backend evidence; it does not close the native or complete-route proof levels. The [near-term contract checklist](../../11-operations-integration/near-term-migration.md#near-term-contract-closures) remains open until the revised realization and actual integrations satisfy it.

@@ -1,0 +1,461 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Find a command or operation in the migration</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../explainer/index.html">Understand the system</a><a href="../../explainer/features.html">Explore AgentStudio features</a><a href="../../explainer/progress.html">What was built and tried</a><a href="../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../explainer/delivery.html">MVP and integration phases</a><a href="../../explainer/requirements.html">Requirements</a><a href="../../explainer/architecture.html">Technical architecture</a><a href="../../explainer/communication.html">Communication</a><a href="../../explainer/data.html">Data ownership</a><a href="../../explainer/schema.html">Tables and fields</a><a href="../../explainer/sequence.html">Spec dependencies</a><a href="../../explainer/experiments.html">Experiments and decisions</a><a href="../../explainer/research.html">Research library</a><a href="../../index.html">All specification documents</a><a href="migration-operation-crosswalk.html">AgentStudio daemon · Find a command or operation in the migration</a></nav></ex-nav>
+<ex-document id="content"><h1>Find a command or operation in the migration</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](migration-operation-crosswalk.md) · [Research library](../../explainer/research.html) · [MVP](../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Find a command or operation in the migration
+
+This is a navigational index of **293 recorded declarations across five overlapping layers**, not293 independent features. Every identity retains its original layer, source and detailed current behavior. Group assignment is a Lead-authored migration navigation decision; it is not public exposure, a wire rename, a passed parity check or a completed target interface. Read the [whole migration map](migration-map.html) and [feature tree](migration-feature-checklist.html).
+
+The app source baseline is `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`; the consumed Git package is `4cca397dfc869857064da4e9ec8289ea46adc479`. Source semantics and proof limits remain in the linked operation maps; the new index does not replace them. API arguments, native target selection, refusal and nested branch coverage still require the owning slice.
+
+## CLI entry syntax is another layer
+
+The 293 declarations below do not count CLI parser verbs, argument branches or installer/hook child-process entrypoints as app command identities. The [18-family source map](capability-placement-map.html) separately carries standalone worktree CLI, provider-package installation, provider hooks and pane verbs. Their routing, bootstrap and producer-local state must be traced in each selected slice. No claim of complete CLI syntax/argument coverage is made by the five-layer count.
+
+## How one command reaches its work
+
+Preserve current command identity and display/shortcut metadata. Classify its parts as addressed Host work, selected logical workspace mutation, actual native interaction or Gateway read/interest. Route each part to that owner with its declared authority and result. The app command catalog is not replaced by the Git SDK list or one untyped global execute message. Native-only actions can remain local; external frontend Host work follows Gateway.
+
+For example, a terminal-creation action can request execution at one Host, place its logical view at the declared workspace authority, then mount a native surface. Those steps retain separate failure results. Similarly, an unavailable typed worktree wrapper does not make the interactive worktree feature unavailable.
+
+## Commands: 154 recorded identities
+
+[Detailed source/effect/result map](../10-swift-client/command-execution-map.html). The following subgroups cover every currently recorded identity in this layer once.
+
+### Commands: files-review
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `openBridgeFilesInNewTab` | `native-bridge-always-create-acceptance`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openBridgeReviewInNewTab` | `native-bridge-always-create-acceptance`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openWebview` | `native-webview-pane-creation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `reloadBridgeWebView` | `native-webview-reload-acceptance`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showBridgeFiles` | `native-bridge-reuse-or-create-acceptance`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showBridgeReview` | `native-bridge-reuse-or-create-acceptance`; [operation contract input](../10-swift-client/command-execution-map.html) |
+
+### Commands: native-workspace
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `breakUpTab` | `workspace-layout-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `closeDrawerPane` | `drawer-close-lifecycle`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `closePane` | `workspace-close-lifecycle`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `closeTab` | `workspace-close-lifecycle`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `closeWindow` | `native-window-close`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `copyCurrentPanePath` | `native-clipboard-effect-with-discarded-result`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `cycleArrangement` | `workspace-arrangement-switch`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `deleteArrangement` | `workspace-arrangement-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `detachDrawerPane` | `drawer-to-main-topology-and-native-attachment`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `editPaneNote` | `native-pane-note-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `enterDrawer` | `validated-log-only-typed-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `equalizePanes` | `workspace-layout-and-deferred-geometry`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `expandPane` | `workspace-layout-and-native-attachment`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `extractPaneToTab` | `workspace-tab-pane-topology`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `filterSidebar` | `native-sidebar-filter-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane1` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane2` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane3` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane4` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane5` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane6` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane7` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane8` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPane9` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPaneDown` | `validated-log-only-typed-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPaneLeft` | `validated-log-only-typed-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPaneRight` | `validated-log-only-typed-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusDrawerPaneUp` | `validated-log-only-typed-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusNextPane` | `native-focus-trigger-with-unchecked-apply-bool`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusNextPinnedPane` | `typed-state-unavailable-interactive-focus-separate`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane1` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane2` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane3` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane4` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane5` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane6` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane7` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane8` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPane9` | `native-pane-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPaneDown` | `native-focus-trigger-with-unchecked-apply-bool`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPaneLeft` | `native-focus-trigger-with-unchecked-apply-bool`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPaneRight` | `native-focus-trigger-with-unchecked-apply-bool`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPaneUp` | `native-focus-trigger-with-unchecked-apply-bool`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPreviousPinnedPane` | `typed-state-unavailable-interactive-focus-separate`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusPrevPane` | `native-focus-trigger-with-unchecked-apply-bool`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `focusSidebar` | `native-sidebar-focus-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerCreateBrowser` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerCreateTerminal` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerEnterDrawer` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerExit` | `client-management-state-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerExitDrawer` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerFocusLeft` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerFocusRight` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `managementLayerOpenDrawer` | `client-management-scope-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `minimizePane` | `workspace-layout-and-native-attachment`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `movePaneToTab` | `workspace-cross-tab-topology`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `moveZoomDrawerToBridge` | `client-zoom-drawer-position-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `moveZoomDrawerToTerminal` | `client-zoom-drawer-position-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `navigateDrawerPane` | `drawer-selection-and-native-focus`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newWindow` | `native-window-show-or-create`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `nextArrangement` | `workspace-arrangement-switch`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `nextTab` | `workspace-tab-cycle`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openPaneLocationInBookmarkedEditor` | `native-external-editor-initiation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openPaneLocationInEditorMenu` | `native-editor-chooser-presentation-state`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openPaneLocationInFinder` | `native-finder-effect`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openPullRequest` | `native-browser-open-from-current-forge-facts`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `pinPane` | `pane-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `previousArrangement` | `workspace-arrangement-switch`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `prevTab` | `workspace-tab-cycle`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `renameArrangement` | `workspace-arrangement-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `renameTab` | `workspace-tab-name-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `saveArrangement` | `workspace-arrangement-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab1` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab2` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab3` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab4` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab5` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab6` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab7` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab8` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `selectTab9` | `workspace-selection-and-native-restoration`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setReposGroupingActivity` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setReposGroupingRepo` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setReposSortFieldActivity` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setReposSortFieldName` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showCommandBarCommands` | `native-command-bar-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showCommandBarEverything` | `native-command-bar-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showCommandBarPanes` | `native-command-bar-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showCommandBarQuickOpen` | `native-command-bar-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showCommandBarRepos` | `native-command-bar-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showPanesSidebar` | `client-sidebar-state-and-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showReposSidebar` | `client-sidebar-state-and-presentation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showViewer` | `client-zoom-viewer-state`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `switchArrangement` | `workspace-arrangement-and-native-attachment`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `toggleDrawer` | `drawer-state-and-native-attachment`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `toggleManagementLayer` | `client-management-state-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `togglePanesShowsDrawers` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `togglePanesShowsPinned` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `toggleReposShowsPinned` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `toggleReposSortDirection` | `client-sidebar-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `toggleSidebar` | `native-sidebar-toggle`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `undoCloseTab` | `workspace-undo-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `unpinPane` | `pane-preference-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `zoomPane` | `client-zoom-state-and-native-composition`; [operation contract input](../10-swift-client/command-execution-map.html) |
+
+### Commands: operation
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `signInGitHub` | `native-oauth-presentation-currently-unconfigured`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `signInGoogle` | `native-oauth-presentation-currently-unconfigured`; [operation contract input](../10-swift-client/command-execution-map.html) |
+
+### Commands: repository-git
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `openWorktree` | `worktree-terminal-open-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `pinRepo` | `repository-preference-topology-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `removeRepo` | `repository-topology-removal-forwarding`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `unpinRepo` | `repository-preference-topology-mutation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `updateRepositoryFacts` | `repository-refresh-acceptance-and-progress`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `watchFolder` | `filesystem-scan-acceptance-with-client-progress`; [operation contract input](../10-swift-client/command-execution-map.html) |
+
+### Commands: terminal
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `addDrawerPane` | `terminal-drawer-pane-insertion`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `jumpToNextPrompt` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `jumpToPreviousPrompt` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newFloatingTerminal` | `terminal-floating-creation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newTab` | `terminal-new-tab-creation`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newTerminalInTab` | `terminal-pane-insertion`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openNewTerminalInTab` | `terminal-new-tab-from-explicit-source`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `openWorktreeInPane` | `terminal-insertion-from-target-pane-cwd`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `scrollPageDown` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `scrollPageUp` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `scrollSmallStepDown` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `scrollSmallStepUp` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `scrollToBottom` | `terminal-runtime-surface-command`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `splitLeft` | `terminal-pane-insertion`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `splitRight` | `terminal-pane-insertion`; [operation contract input](../10-swift-client/command-execution-map.html) |
+
+### Commands: unavailable
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `clearAllInboxNotifications` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `clearPaneInboxNotifications` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `clearReadInboxNotifications` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `forkWorktree` | `typed-unavailable-interactive-creation-separate`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newWorktree` | `typed-unavailable-interactive-creation-separate`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newWorktreeFromBranch` | `typed-unavailable-interactive-creation-separate`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `newWorktreeFromDefault` | `typed-unavailable-interactive-creation-separate`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setInboxContentMode` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setInboxGroupingNone` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setInboxGroupingPane` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setInboxGroupingRepo` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setInboxGroupingTab` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setInboxRowStateFilter` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setPanesSortFieldActivity` | `typed-retired-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `setPanesSortFieldName` | `typed-retired-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showInboxNotifications` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `showPaneInboxNotifications` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `toggleInboxNotificationSort` | `typed-dormant-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+| `togglePanesSortDirection` | `typed-retired-unavailable`; [operation contract input](../10-swift-client/command-execution-map.html) |
+
+## App RPC: 57 recorded identities
+
+[Detailed source/effect/result map](../01-service-contracts/rpc-operation-map.html). The following subgroups cover every currently recorded identity in this layer once.
+
+### App RPC: agents-context
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `pane.context.get` | `pane_context_projection_with_demand_lifecycle`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.line.set` | `pane_context_ordered_value_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.message.ask` | `pane_context_transaction_and_connection_wait`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.message.changes` | `pane_context_receipt_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.message.send` | `pane_context_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.message.withdraw` | `pane_context_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.title.set` | `pane_context_ordered_value_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.writer.claimEpoch` | `pane_context_epoch_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `session.event` | `provider_ingress_transaction_and_runtime_publication`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `session.query` | `session_projection_with_runtime_hydration`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `session.refusal` | `provider_refusal_runtime_state`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+
+### App RPC: files-review
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `bridge.diff.collapseFile` | `web_page_control_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.expandFile` | `web_page_control_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.getPackage` | `native_bridge_package_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.load` | `native_bridge_pane_creation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.refresh` | `native_bridge_product_refresh`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.renderState` | `native_web_dom_diagnostics`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.scrollToFile` | `web_page_control_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.diff.selectFile` | `native_bridge_navigation_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.fileTree.revealPath` | `web_page_control_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.fileTree.search` | `web_page_control_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.fileTree.setFilter` | `web_page_control_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.fileView.getContent` | `bridge_content_handle_projection_with_lease`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.fileView.open` | `native_bridge_pane_creation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.fileView.showMarkdownPreview` | `declared_web_page_control_unavailable`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+
+### App RPC: native-workspace
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `drawer.addPane` | `workspace_background_pane_creation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `drawer.toggle` | `workspace_presentation_mutation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.close` | `workspace_close_lifecycle_transaction`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.current` | `workspace_atom_activity_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.focus` | `native_layout_focus_effect`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.list` | `workspace_atom_activity_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.snapshot` | `workspace_atom_activity_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `pane.split` | `workspace_topology_creation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `sidebar.grouping.get` | `native_client_preference_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `sidebar.surface.get` | `native_client_presentation_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `ui.arrangements.open` | `native_ui_presentation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `ui.commandBar.open` | `native_ui_presentation`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `window.current` | `app_window_lifecycle_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `window.list` | `app_window_lifecycle_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `workspace.current` | `workspace_atom_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `workspace.list` | `workspace_atom_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+
+### App RPC: operation
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `auth.login` | `connection_authority_state`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `auth.status` | `connection_principal_snapshot`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.telemetry.flush` | `native_web_telemetry_drain_and_proof_state`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `bridge.telemetry.snapshot` | `native_web_telemetry_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `command.execute` | `typed_command_dispatch_mixed_effects`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `command.list` | `compiled_command_catalog`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `events.subscribe` | `connection_subscription_state`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `events.unsubscribe` | `connection_subscription_state`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `system.capabilities` | `compiled_channel_catalog`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `system.identify` | `runtime_identity`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `system.ping` | `runtime_identity`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `system.version` | `runtime_identity`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+
+### App RPC: terminal
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `terminal.send` | `native_terminal_input_effect`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `terminal.snapshot` | `registered_terminal_renderer_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `terminal.status` | `registered_terminal_runtime_projection`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+| `terminal.wait` | `terminal_runtime_fact_wait`; [operation contract input](../01-service-contracts/rpc-operation-map.html) |
+
+## Git SDK: 44 recorded identities
+
+[Detailed source/effect/result map](../05-git-discovery/git-operation-map.html). The following subgroups cover every currently recorded identity in this layer once.
+
+### Git SDK: branches
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `branches` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `remoteNames` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `branchUse` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `aheadBehind` | `native_git_graph_calculation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `assessBranchIntegration` | `native_git_graph_calculation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `resolveReviewDefaultTarget` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+
+### Git SDK: comparison-content
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `captureReviewComparisonTargets` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `resolveRevision` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `readTree` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `diff` | `native_git_diff_or_content_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `countCommitRange` | `native_git_graph_calculation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `summarizeDiffImpact` | `native_git_diff_or_content_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `contributionDiff` | `native_git_diff_or_content_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `directReviewComparison` | `native_git_diff_or_content_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `content` | `native_git_diff_or_content_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+
+### Git SDK: discovery
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `repositoryIdentity` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `worktrees` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `validateWorktree` | `native_git_metadata_or_object_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `readDiscoveryCandidate` | `native_git_exact_candidate_discovery_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+
+### Git SDK: remote-effects
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `deleteLocalBranch` | `native_git_ref_or_worktree_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `clone` | `system_git_network_and_repository_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `fetch` | `system_git_network_and_repository_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `captureRemoteTrackingSnapshot` | `system_git_local_config_and_ref_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `stageFetch` | `system_git_network_and_repository_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `promoteStagedFetch` | `native_git_ref_promotion_transaction`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `cleanupStagedFetch` | `system_git_local_ref_cleanup_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `cleanupAbandonedStagedFetches` | `system_git_local_ref_cleanup_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `push` | `system_git_network_and_repository_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `remoteReferences` | `system_git_network_ref_query`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `probeRemoteBranch` | `system_git_network_ref_query`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+
+### Git SDK: status-ignore
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `statusObservationPlan` | `native_git_observation_scope_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `statusFacts` | `native_git_status_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `exactLineCountDetail` | `native_git_status_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `completeStatus` | `native_git_status_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `trackedPaths` | `native_git_index_or_ignore_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `isPathIgnored` | `native_git_index_or_ignore_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `ignoredPaths` | `native_git_index_or_ignore_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+
+### Git SDK: worktree-effects
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `createWorktree` | `native_git_ref_or_worktree_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `forkWorktree` | `native_git_filesystem_fork_transaction`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `forkWorktreeEligibility` | `native_platform_filesystem_capability_read`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `pruneStaleWorktree` | `native_git_ref_or_worktree_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `removeWorktree` | `native_git_ref_or_worktree_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `lockWorktree` | `native_git_ref_or_worktree_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+| `unlockWorktree` | `native_git_ref_or_worktree_mutation`; [operation contract input](../05-git-discovery/git-operation-map.html) |
+
+## Bridge semantic calls: 16 recorded identities
+
+[Detailed source/effect/result map](../08-files-review-output/bridge-operation-map.html). The following subgroups cover every currently recorded identity in this layer once.
+
+### Bridge semantic calls: annotation-workflow
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `file.annotations.command` | `nested_annotation_operation_dispatch`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `file.annotations.output.inspect` | `annotation_sql_attempt_read_and_runtime_descriptor`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `file.annotations.projection.query` | `annotation_sql_source_projection_and_runtime_reservation`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.annotations.command` | `nested_annotation_operation_dispatch`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.annotations.output.inspect` | `annotation_sql_attempt_read_and_runtime_descriptor`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.annotations.projection.query` | `annotation_sql_source_projection_and_runtime_reservation`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+
+### Bridge semantic calls: review-source-and-native
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `file.source.current` | `filesystem_root_authority_read`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `file.refresh.retry` | `native_refresh_scheduling`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `file.activeViewerMode.update` | `native_viewer_state_and_refresh_control`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.activeViewerMode.update` | `native_viewer_state_and_refresh_control`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.comparison.update` | `native_pane_source_mutation_and_review_scheduling`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.comparisonTargets.query` | `native_review_authorization_and_runtime_catalog_reservation`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.intake.ready` | `native_review_intake_and_publication_control`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.markFileViewed` | `native_review_viewed_state_mutation`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.publication.install.admit` | `native_review_install_authority_mutation`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+| `review.publication.applied` | `native_review_publication_application_mutation`; [operation contract input](../08-files-review-output/bridge-operation-map.html) |
+
+## Annotation kinds: 22 recorded identities
+
+[Detailed source/effect/result map](../08-files-review-output/annotation-operation-map.html). The following subgroups cover every currently recorded identity in this layer once.
+
+### Annotation kinds: edit
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `reply.create` | `annotation_sql_mutation_and_edit_ownership`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `root.create` | `source_admitted_annotation_sql_mutation_and_edit_ownership`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `draft.edit.acquire` | `runtime_edit_ownership_and_annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `draft.edit.release` | `runtime_edit_ownership_and_annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `draft.flush` | `annotation_sql_mutation_and_edit_ownership`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `draft.revert` | `annotation_sql_mutation_and_edit_ownership`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `draft.save` | `annotation_sql_mutation_and_edit_ownership`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+
+### Annotation kinds: output-and-native
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `output.history` | `annotation_sql_read`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `output.handled.clear` | `annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `output.scope.commit` | `annotation_sql_attempt_workflow_and_native_output_effect`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `output.preference.changeFolder` | `native_folder_chooser_and_runtime_preference_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `output.reveal` | `annotation_sql_attempt_read_and_native_finder_effect`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `output.repeat` | `annotation_sql_new_attempt_and_native_output_effect`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+
+### Annotation kinds: source-session-and-viewed
+
+| Current identity | Current effect class / detailed source |
+| --- | --- |
+| `recovery.acknowledge` | `annotation_sql_recovery_acknowledgement_and_runtime_publication`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `demand.acquire` | `runtime_demand_mutation_with_sql_detail_read`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `continuity.choose` | `source_admitted_annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `session.discover` | `annotation_sql_read`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `message.viewed.mark` | `annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `demand.release` | `runtime_demand_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `session.lifecycle.set` | `annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `source.refresh` | `source_evaluation_with_possible_annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+| `thread.resolution.set` | `annotation_sql_mutation`; [operation contract input](../08-files-review-output/annotation-operation-map.html) |
+
+## Limits and additions
+
+Exact set reconciliation detects a recorded identity dropped by this index; it does not detect a feature never inventoried, a changed argument branch or an effect hidden behind a current facade. New discoveries join the owning feature branch and operation map before migration. No source-form count checks a feature off. The [near-term slice](near-term-migration.html) names its required contract closures.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

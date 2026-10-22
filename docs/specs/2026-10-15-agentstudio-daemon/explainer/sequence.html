@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Design sequence</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script>
+<link rel="stylesheet" href="../assets/reader-layout.css"></head>
+<body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="index.html">Understand the system</a><a href="features.html">Explore AgentStudio features</a><a href="progress.html">What was built and tried</a><a href="walkthroughs.html">Follow a workflow</a><a href="delivery.html">MVP and integration phases</a><a href="requirements.html">Requirements</a><a href="architecture.html">Technical architecture</a><a href="communication.html">Communication</a><a href="data.html">Data ownership</a><a href="schema.html">Tables and fields</a><a href="sequence.html">Spec dependencies</a><a href="experiments.html">Experiments and decisions</a><a href="research.html">Research library</a><a href="../index.html">All specification documents</a></nav></ex-nav>
+<ex-document id="content">
+<h1>Eleven designs, one system</h1>
+<ex-markdown id="sequence-opening"><script type="text/markdown">
+**Set the shared contracts and data meaning first. Then complete the capability designs and compose the clients.** Each folder owns a bounded design cycle, not a new service or crate.
+
+One shared Requirements source keeps the outcome coherent. The Specification owns observable meaning; each later Program Design will bind that meaning to owners, interfaces, schemas, concurrency and proof seams.
+</script></ex-markdown>
+<ex-callout tone="note" title="Current maturity">
+All eleven folders contain a scope brief and draft specification. Program Designs have not been completed. The independently accepted DS02 data-contract changes close only their bounded question; they do not make DS02 or the system ready for planning.
+</ex-callout>
+
+<ex-markdown id="delivery-order"><script type="text/markdown">
+**Topic dependencies are not delivery milestones.** The eleven folders below own domain contracts. [MVP and usable increments](delivery.html) composes those slices into outcomes you can integrate into AgentStudio, starting with the remote terminal. [All features](features.html) opens each full contract and its evidence.
+</script></ex-markdown>
+<h2 id="dependency-map">The dependency map</h2>
+<ex-markdown id="dependency-intro"><script type="text/markdown">
+Arrows mean **the downstream design consumes a contract from the upstream design**. The drawing omits transitive edges; the canonical index lists all direct inputs. Independent source research can proceed while an unrelated owner decision waits.
+</script></ex-markdown>
+<ex-flow id="design-flow" cols="3">
+<ex-card id="foundation" title="Shared contracts" icon="plug" tone="planned">
+**DS01** identities, targeting, outcomes and schemas → **DS02** data meaning/units → **DS03** central authority and leases.
+</ex-card>
+<ex-card id="backend-branches" title="Backend branches" icon="git-branch" tone="planned">
+**DS04** terminal runtime and **DS05** Git/discovery consume the shared contracts. They establish the behavior downstream domains depend on.
+</ex-card>
+<ex-card id="domain-designs" title="Capability designs" icon="stack" tone="planned">
+**DS06** worktree fork; **DS07** agents/context; **DS08** files/review/output. Agents/context combines terminal and Git inputs; fork and review consume Git.
+</ex-card>
+<ex-card id="gateway-design" title="Gateway and CLI" icon="plug" tone="planned">
+**DS09** composes public entry, attached-machine CLI operations, multiple Hosts and adapters from the capability contracts.
+</ex-card>
+<ex-card id="swift-design" title="Swift clients" icon="user" tone="planned">
+**DS10** realizes native publication, terminal interaction and declared client effects. Arrangement meaning comes from DS02.
+</ex-card>
+<ex-card id="integration-design" title="Integrated Rust and operation" icon="gear" tone="planned">
+**DS11** composes the crate/owner DAG, installation, safety, pairing, shutdown, privacy and real whole-route proof.
+</ex-card>
+<ex-arrow from="foundation" to="backend-branches" label="Shared contracts"></ex-arrow>
+<ex-arrow from="backend-branches" to="domain-designs" label="Terminal and Git behavior"></ex-arrow>
+<ex-arrow from="domain-designs" to="gateway-design" label="Public operations"></ex-arrow>
+<ex-arrow from="gateway-design" to="swift-design" label="Client contract"></ex-arrow>
+<ex-arrow from="swift-design" to="integration-design" label="Compose and prove"></ex-arrow>
+</ex-flow>
+<ex-markdown id="sequence-caveat"><script type="text/markdown">
+This compact map groups the full DAG for readability. [The canonical design index](../designs/README.html#source--contract-dependencies) retains every direct dependency and the expanded rendered graph.
+
+Tokio, strong types, naming/decomposition, linting and first-party no-unsafe constraints apply **from the first design**. Integration checks them; it does not postpone them.
+</script></ex-markdown>
+
+<h2 id="folder-tree">Open one bounded design</h2>
+<ex-tree id="design-tree" title="Design folders" icon="folder"><script type="text/markdown">
+- [Shared foundation](sequence.html#dependency-map)
+  - planned: [DS01 · Service contracts](../designs/01-service-contracts/README.html)
+    - Host-qualified targets, result meanings, exposure, schema/version pairing
+  - planned: [DS02 · Data ownership and replication](../designs/02-data-ownership-replication/README.html)
+    - Units, transactions, private/exported state, copies and prepared views
+  - planned: [DS03 · Authority and control plane](../designs/03-authority-control-plane/README.html)
+    - Central issuer, caller scope, write validity, outage and revocation
+- [Backend capabilities](sequence.html#dependency-map)
+  - planned: [DS04 · Terminal runtime](../designs/04-terminal-runtime/README.html)
+    - Sessions, attachments, controller, facts and ordered restoration
+  - planned: [DS05 · Git and discovery](../designs/05-git-discovery/README.html)
+    - Operations, repository identity, observations and platform profiles
+  - planned: [DS06 · Worktree fork](../designs/06-worktree-fork/README.html)
+    - Complete Mac/Linux counterpart, cancellation and residue
+  - planned: [DS07 · Agents and context](../designs/07-agents-context/README.html)
+    - Host-local provider input, bindings, retained context and asks
+  - planned: [DS08 · Files, review and output](../designs/08-files-review-output/README.html)
+    - Finite content, revisions and actual destination effects
+- [Clients and composition](sequence.html#dependency-map)
+  - planned: [DS09 · Gateway and CLI](../designs/09-gateway-cli/README.html)
+    - Thin entry adapters, multi-Host routing and attached-machine execution
+  - planned: [DS10 · Swift clients](../designs/10-swift-client/README.html)
+    - Native interaction, compact publication and real socket compatibility
+  - planned: [DS11 · Operations and integration](../designs/11-operations-integration/README.html)
+    - Integrated Rust DAG, operational profiles and end-to-end proof
+</script></ex-tree>
+
+<h2 id="capability-coverage">The umbrella includes more than terminals</h2>
+<ex-markdown id="coverage"><script type="text/markdown">
+| Capability group | Surface accounted for |
+| --- | --- |
+| Git and worktrees | Discovery, status/diff/content, branches/remotes, create/remove/prune/lock, staged fetch/promotion and full fork counterpart |
+| Sessions and agents | Persistent execution, attachments/control, renderer-free facts, provider installation/hooks, binding, context, asks and answer settlement |
+| Files and reviews | Finite content, Bridge File/Review construction, annotation revisions, immutable output attempts and declared destinations |
+| Client interaction | Commands and kind-qualified targets, arrangements, native windows, keyboard/mouse, clipboard, editor/browser/Finder and publication |
+| Access and operation | Socket/wire schemas, pairing, caller/data authority, lease control, installation, privacy, observability and shutdown |
+
+The source catalogs contain **57 RPC names, 154 command identities and 44 Git SDK operations**, plus overlapping Bridge vocabularies. These are not additive feature counts or automatically selected public methods. Dormant/unavailable commands do not become features because a catalog contains them.
+
+[The capability catalog](../capability-contracts.html#source--complete-surveyed-family-disposition) accounts for all eighteen surveyed families. [The extraction survey](../research/extraction-survey.html) carries the source evidence.
+</script></ex-markdown>
+
+<h2 id="cycle">What completes one design</h2>
+<ex-markdown id="cycle-steps"><script type="text/markdown">
+1. Read the relevant shared Requirements and settle only genuinely missing owner meaning.
+2. Complete observable normal, failure, partial/unknown and compatibility contracts.
+3. Author the structural Program Design: owners, entities, interfaces, state, flow, concurrency, trust and proof seams.
+4. Inspect the design together; obtain independent Requirements/Specification/Program Design review and verify material corrections.
+5. Compose its contracts with consumers. Implementation planning follows only the reviewed scope.
+
+A folder, diagram, draft specification or successful source audit is not a substitute for that cycle. The Lead retains governing authorship; helpers supply evidence and independent review.
+
+[System picture](index.html) · [Data boundaries](data.html) · [Experiments and decisions](experiments.html)
+
+Library binding: Demistify `v1`, recorded `1.2.2` / `69d403c91e39a4cd768012d748d985586d4b43c9`.
+</script></ex-markdown>
+<ex-presentation id="sequence-walk" title="Navigate the design effort" description="Contract dependencies, bounded folders and the completion boundary.">
+<ex-step to="design-flow">Read the contract dependency order.</ex-step>
+<ex-step to="design-tree">Choose a bounded domain to inspect.</ex-step>
+<ex-step to="cycle-steps">Separate a folder from a completed design cycle.</ex-step>
+</ex-presentation>
+</ex-document>
+</body>
+</html>

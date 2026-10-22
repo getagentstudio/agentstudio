@@ -1,0 +1,1772 @@
+[
+  {
+    "methodName": "auth.login",
+    "currentSourceClass": "connection_authority_state",
+    "presentOwner": "AppIPC connection context → AgentStudioIPCAuthenticator / principal registry / credential persistence lane",
+    "effectOrStateBoundary": "Consumes bearer input and current runtime/credential/membership authority; replaces connection authenticated context, releases prior lease, and may enqueue credential persistence. Also reads CLI-store read-through cursor for login result.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSystemAndAuthMethodDescriptors.swift",
+        "line": 90,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift",
+        "line": 330,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations.swift",
+        "line": 50,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 19,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh connection-handler refresh; credential verification/persistence internals reuse E2 at this HEAD. Login result does not prove queued persistence drained or downstream operations succeeded."
+  },
+  {
+    "methodName": "auth.status",
+    "currentSourceClass": "connection_principal_snapshot",
+    "presentOwner": "AppIPC connection authenticationStatus closure",
+    "effectOrStateBoundary": "Returns connection-local authenticated principal/runtime/access-mode snapshot; no durable credential or current product-state read is performed by this status closure.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSystemAndAuthMethodDescriptors.swift",
+        "line": 131,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AgentStudioAppIPCServer.swift",
+        "line": 362,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 20,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh handler read; status does not independently establish current pane membership, durable credential custody or feature health."
+  },
+  {
+    "methodName": "bridge.diff.collapseFile",
+    "currentSourceClass": "web_page_control_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.applyPageControlForIPC → active BridgeWeb handler",
+    "effectOrStateBoundary": "Dispatches page control setting a review item collapsed; page can reject missing/unrendered item or unsupported surface. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 92,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 100,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 50,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native injection/probe path; exact page effect/rejection branches reused E2 same HEAD, not newly retraced. Accepted probe is not post-render/scroll fulfillment or retained duplicate receipt."
+  },
+  {
+    "methodName": "bridge.diff.expandFile",
+    "currentSourceClass": "web_page_control_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.applyPageControlForIPC → active BridgeWeb handler",
+    "effectOrStateBoundary": "Dispatches page control setting a review item expanded; page can reject missing/unrendered item or unsupported surface. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 71,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 90,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 50,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native injection/probe path; exact page effect/rejection branches reused E2 same HEAD, not newly retraced. Accepted probe is not post-render/scroll fulfillment or retained duplicate receipt."
+  },
+  {
+    "methodName": "bridge.diff.getPackage",
+    "currentSourceClass": "native_bridge_package_projection",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.ipcReviewPackageSnapshot",
+    "effectOrStateBoundary": "Reads paneState.diff.packageMetadata/status/error and selectedReviewItemId into bounded package metadata result; does not itself fetch package source bytes.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeReviewMethodDescriptors.swift",
+        "line": 127,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 60,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 74,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 170,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 46,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive projection and mounted-controller lookup. Generation/package identifies observed publication; not rendered state or an effect receipt."
+  },
+  {
+    "methodName": "bridge.diff.load",
+    "currentSourceClass": "native_bridge_pane_creation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → WorkspaceActionExecutor → WorkspaceSurfaceCoordinator",
+    "effectOrStateBoundary": "Uses explicit worktree context to create review Bridge pane/native host/new tab and returns fresh pane handle; registration then publishes Bridge update event.",
+    "requiredNativeContext": "App workspace creation owner/native view composition; new review host, rather than only a backend diff computation.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeReviewMethodDescriptors.swift",
+        "line": 31,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 31,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInBridgeReviewRegistrations.swift",
+        "line": 34,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+BridgeReviewOpening.swift",
+        "line": 106,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 44,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter/registration; graph rollback/autosave/native creation reused E2. Handle is not loaded package, DOM render or durable-save completion."
+  },
+  {
+    "methodName": "bridge.diff.refresh",
+    "currentSourceClass": "native_bridge_product_refresh",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.handleDiffCommand",
+    "effectOrStateBoundary": "Resolves mounted controller, issues fresh loadDiff identity and awaits handling; returns current status/package/generation and refreshed flag. Registration publishes Bridge update event.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeReviewMethodDescriptors.swift",
+        "line": 95,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 53,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 94,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+DiffCommands.swift",
+        "line": 37,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInBridgeReviewRegistrations.swift",
+        "line": 91,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 45,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh IPC entry/result; deeper source/foreground/installation refresh gates reused E2. Native publication is not DOM fulfillment."
+  },
+  {
+    "methodName": "bridge.diff.renderState",
+    "currentSourceClass": "native_web_dom_diagnostics",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.renderStateForIPC",
+    "effectOrStateBoundary": "Samples native product-session/refresh diagnostics and calls page JavaScript to inspect DOM/probes; JS failure can return diagnostic result evaluateSucceeded:false.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeReviewMethodDescriptors.swift",
+        "line": 148,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 66,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 127,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 47,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh top-level sample path; auxiliary probe internals not fully retraced. RPC success does not mean page evaluation/rendering succeeded."
+  },
+  {
+    "methodName": "bridge.diff.scrollToFile",
+    "currentSourceClass": "web_page_control_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.applyPageControlForIPC → active BridgeWeb handler",
+    "effectOrStateBoundary": "Dispatches page control selecting/scrolling a review item and returns immediate control probe. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 50,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 80,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 49,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native injection/probe path; exact page effect/rejection branches reused E2 same HEAD, not newly retraced. Accepted probe is not post-render/scroll fulfillment or retained duplicate receipt."
+  },
+  {
+    "methodName": "bridge.diff.selectFile",
+    "currentSourceClass": "native_bridge_navigation_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.selectReviewItemForIPC",
+    "effectOrStateBoundary": "Checks current committed publication/item and installation admission, requests review navigation/publication, sets native selectedReviewItemId and returns selected:true; registration publishes selection event.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeReviewMethodDescriptors.swift",
+        "line": 171,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 70,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 211,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInBridgeReviewRegistrations.swift",
+        "line": 211,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 48,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive native selection path; navigation downstream fulfillment reused E2. Selection receipt is not DOM scroll/render observation."
+  },
+  {
+    "methodName": "bridge.fileTree.revealPath",
+    "currentSourceClass": "web_page_control_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.applyPageControlForIPC → active BridgeWeb handler",
+    "effectOrStateBoundary": "Dispatches page path-reveal/selection control and returns immediate control probe. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 162,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 130,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 49,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native injection/probe path; exact page effect/rejection branches reused E2 same HEAD, not newly retraced. Accepted probe is not post-render/scroll fulfillment or retained duplicate receipt."
+  },
+  {
+    "methodName": "bridge.fileTree.search",
+    "currentSourceClass": "web_page_control_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.applyPageControlForIPC → active BridgeWeb handler",
+    "effectOrStateBoundary": "Replaces page semantic text/regex search criteria and returns immediate control probe; result rows may settle later. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 113,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 110,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 51,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native injection/probe path; exact page effect/rejection branches reused E2 same HEAD, not newly retraced. Accepted probe is not post-render/scroll fulfillment or retained duplicate receipt."
+  },
+  {
+    "methodName": "bridge.fileTree.setFilter",
+    "currentSourceClass": "web_page_control_mutation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.applyPageControlForIPC → active BridgeWeb handler",
+    "effectOrStateBoundary": "Replaces complete surface-specific page filter and returns immediate control probe; not a query of stored filter. Native code clears the old probe, emits __bridge_review_control and validates returned method/sequence.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 135,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 120,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 51,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native injection/probe path; exact page effect/rejection branches reused E2 same HEAD, not newly retraced. Accepted probe is not post-render/scroll fulfillment or retained duplicate receipt."
+  },
+  {
+    "methodName": "bridge.fileView.getContent",
+    "currentSourceClass": "bridge_content_handle_projection_with_lease",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.loadContentForIPC / BridgeReviewPublicationCoordinator",
+    "effectOrStateBoundary": "Returns content-handle metadata and MIME, not file bytes. Requires current review publication/generation/install admission; allocates a runtime content lease and settles it on return.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 185,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 152,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 310,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/ReviewFoundation/BridgeReviewPublicationCoordinator.swift",
+        "line": 453,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/ReviewFoundation/BridgeReviewPublicationCoordinator.swift",
+        "line": 495,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 53,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive handle/lease source. Runtime lease bookkeeping is a mutation but no content transfer/DOM result/durable receipt follows; bytes use separate Bridge protocol."
+  },
+  {
+    "methodName": "bridge.fileView.open",
+    "currentSourceClass": "native_bridge_pane_creation",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → WorkspaceActionExecutor → WorkspaceSurfaceCoordinator",
+    "effectOrStateBoundary": "Uses worktree context to create file-view Bridge pane/native host/new tab; returns fresh pane handle then publishes Bridge update event.",
+    "requiredNativeContext": "App/native pane creation composition; not a finite file-content read.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeReviewMethodDescriptors.swift",
+        "line": 63,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 42,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInBridgeReviewRegistrations.swift",
+        "line": 60,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+BridgeReviewOpening.swift",
+        "line": 106,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 44,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter/registration; deeper creation/rollback/autosave reused E2. No content or renderer-ready receipt."
+  },
+  {
+    "methodName": "bridge.fileView.showMarkdownPreview",
+    "currentSourceClass": "declared_web_page_control_unavailable",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController page control → Review/File handlers",
+    "effectOrStateBoundary": "Native entry forwards preview control, but both examined live Review and File handlers in same-HEAD E2 return unsupported_surface.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeControlMethodDescriptors.swift",
+        "line": 230,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 140,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "BridgeWeb/src/app/use-bridge-review-control-event-listeners.ts",
+        "line": 167,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "BridgeWeb/src/file-viewer/use-bridge-file-viewer-control-event-listeners.ts",
+        "line": 127,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 52,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh native route; both page refusal anchors explicitly reused from E2, not re-reviewed this pass. Declaration/fixture-port success is not working Markdown preview."
+  },
+  {
+    "methodName": "bridge.telemetry.flush",
+    "currentSourceClass": "native_web_telemetry_drain_and_proof_state",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.flushTelemetryForIPC / telemetry session/sidecar",
+    "effectOrStateBoundary": "Begins proof snapshot capture, drains sidecar, takes native proof through accepted batch sequence, records sidecar proof, returns qualified report/drained; failures cancel capture or return unavailable.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch. Enabled native telemetry installation/session and live sidecar.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeTelemetryMethodDescriptors.swift",
+        "line": 50,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 166,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 365,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 55,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh capture/drain/result function; downstream sidecar/proof-record mechanisms reuse E2. Not generic exactly-once flush or exporter receipt."
+  },
+  {
+    "methodName": "bridge.telemetry.snapshot",
+    "currentSourceClass": "native_web_telemetry_projection",
+    "presentOwner": "AgentStudioIPCBridgeAdapter → BridgePaneController.telemetrySnapshotForIPC",
+    "effectOrStateBoundary": "Samples telemetry sidecar then native session snapshot, or returns explicit disabled/failed unavailable. No drain/proof-capture path is called by this method.",
+    "requiredNativeContext": "Existing Bridge pane plus ViewRegistry-mounted BridgePaneMountView/controller in this app process; page-control/DOM paths additionally require its live web page. Debug-testing declaration, not portable data-only dispatch. TelemetrySessionOwner must be enabled for report.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCBridgeTelemetryMethodDescriptors.swift",
+        "line": 22,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCBridgeAdapter.swift",
+        "line": 162,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+IPCProjection.swift",
+        "line": 435,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 54,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh projection entry; sidecar dependency reused E2. Observation does not prove exporter delivery/durability."
+  },
+  {
+    "methodName": "command.execute",
+    "currentSourceClass": "typed_command_dispatch_mixed_effects",
+    "presentOwner": "AgentStudioIPCCommandAdapter → AppCommandDispatcher → shell/workspace/native/runtime owner selected by command",
+    "effectOrStateBoundary": "Parses selected command's typed arguments, canonicalizes/revalidates current durable target/window, dispatches to existing owner and permits only declared applied/accepted/presented/unavailable result boundaries.",
+    "requiredNativeContext": "Per-command and argument dependent. Current app shell/workspace handlers are required; many commands require native window/view/surface even when headless-tagged.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/IPCCommandMethodComposition.swift",
+        "line": 22,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandAdapter.swift",
+        "line": 117,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandTargetResolution.swift",
+        "line": 54,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Commands/AppCommandDispatcher.swift",
+        "line": 161,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Boot/AppDelegate+HeadlessIPCCommandHandling.swift",
+        "line": 30,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 60,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source reused at same HEAD. Does not newly classify all 154 command identities; unavailable worktree-create/Inbox/retired settings stay explicit. Applied need not mean persisted; accepted need not mean complete."
+  },
+  {
+    "methodName": "command.list",
+    "currentSourceClass": "compiled_command_catalog",
+    "presentOwner": "AgentStudioIPCCommandCatalogProjection → AppIPCDescriptorCatalogBuilder → AppIPCCommandMethodRegistrations",
+    "effectOrStateBoundary": "Captures AppCommand definitions/ipcSpec by channel, builds immutable descriptors off-main and returns composition.catalogResult/cached encoding. Does not ask each current owner for enablement.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/IPCCommandMethodComposition.swift",
+        "line": 14,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCCommandCatalogProjection.swift",
+        "line": 29,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AppIPCDescriptorCatalogBuilder.swift",
+        "line": 61,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCCommandMethodRegistrations.swift",
+        "line": 11,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 22,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker direct source reused plus current authoritative name reconciliation. Catalog does not make every command available; command effects are a separate subcatalog."
+  },
+  {
+    "methodName": "drawer.addPane",
+    "currentSourceClass": "workspace_background_pane_creation",
+    "presentOwner": "AgentStudioIPCLayoutAdapter → WorkspaceActionExecutor / WorkspaceSurfaceCoordinator insertion",
+    "effectOrStateBoundary": "Allocates child UUID, validates parent/content, awaits addDrawerChildInBackground and rereads graph membership. Terminal durable creation differs from browser graph/native-view/rollback/autosave path.",
+    "requiredNativeContext": "Current preferred registered window and app insertion/native composition; terminal/browser variants differ.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCLayoutMethodDescriptors.swift",
+        "line": 132,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift",
+        "line": 118,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+PaneInsertion.swift",
+        "line": 185,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 29,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior adapter read and E2 variant distinction reused at same HEAD. Returned child ID proves neither native readiness nor completed durable browser save."
+  },
+  {
+    "methodName": "drawer.toggle",
+    "currentSourceClass": "workspace_presentation_mutation",
+    "presentOwner": "AgentStudioIPCLayoutAdapter → WorkspaceActionExecutor",
+    "effectOrStateBoundary": "Resolves parent, validates it is not drawer child, awaits toggleDrawer; toggles expansion state and may schedule later geometry work.",
+    "requiredNativeContext": "Current preferred registered workspace window and app layout owner.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCLayoutMethodDescriptors.swift",
+        "line": 103,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift",
+        "line": 167,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 30,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker adapter read + E2 effect detail reused. Repetition toggles again; response is not persistence/geometry settlement."
+  },
+  {
+    "methodName": "events.subscribe",
+    "currentSourceClass": "connection_subscription_state",
+    "presentOwner": "AppIPCBuiltInPresentationAndEventRegistrations → IPCEventBroker",
+    "effectOrStateBoundary": "Allocates fresh UUID and inserts connection/principal-owned event-name/subscriber record; returns ID/event names. No cursor/replay input.",
+    "requiredNativeContext": "Live authenticated app IPC connection/subscriber; no operation-intrinsic native UI context.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCEventMethodDescriptors.swift",
+        "line": 20,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInPresentationAndEventRegistrations.swift",
+        "line": 89,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/IPCEventBroker.swift",
+        "line": 66,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 58,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh insertion and registration source; subscription/producer availability differs from declaration. Lost reply can leave live subscription until cleanup/backpressure; no consumer-applied receipt."
+  },
+  {
+    "methodName": "events.unsubscribe",
+    "currentSourceClass": "connection_subscription_state",
+    "presentOwner": "AppIPCBuiltInPresentationAndEventRegistrations → IPCEventBroker",
+    "effectOrStateBoundary": "Checks exact subscription principal+connection then removes runtime subscription; missing/mismatched ID refuses rather than idempotent success.",
+    "requiredNativeContext": "Owning live authenticated connection; no operation-intrinsic UI context.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCEventMethodDescriptors.swift",
+        "line": 44,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInPresentationAndEventRegistrations.swift",
+        "line": 107,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/IPCEventBroker.swift",
+        "line": 93,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 59,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh removal source; broker absence is removal state, not consumer processing/drain proof."
+  },
+  {
+    "methodName": "pane.close",
+    "currentSourceClass": "workspace_close_lifecycle_transaction",
+    "presentOwner": "AgentStudioIPCLayoutAdapter → WorkspaceActionExecutor close/remove-drawer action",
+    "effectOrStateBoundary": "Resolves current pane/tab; own-drawer variant selects removeDrawerPane; action execution rechecks own-pane assertion. E2 records durable close/Undo ownership before publication/teardown.",
+    "requiredNativeContext": "Current preferred registered window and app workspace close owner; current baseline close does not imply process termination.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCLayoutMethodDescriptors.swift",
+        "line": 79,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift",
+        "line": 82,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift",
+        "line": 240,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 28,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker adapter read reused; durable close/Undo/cleanup detail reused from E2 rather than a new full close trace. No process-ended receipt or general duplicate contract."
+  },
+  {
+    "methodName": "pane.context.get",
+    "currentSourceClass": "pane_context_projection_with_demand_lifecycle",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.readDetail + Sessions summary bridge",
+    "effectOrStateBoundary": "Reads bounded paged SQLite/detail/membership/session/read-time projection and updates in-memory detail-version bookkeeping. ensureOpen can perform startup blocking-ask settlement and pending retirement drain; does not mark notices read.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 277,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 179,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+        "line": 27,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Detail.swift",
+        "line": 56,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+        "line": 93,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 40,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive read/lifecycle/version code. Conditional service opening is separate from ordinary detail read; no claim every get writes durable state or retained immutable snapshots."
+  },
+  {
+    "methodName": "pane.current",
+    "currentSourceClass": "workspace_atom_activity_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter + AppIPC activity visibility projection",
+    "effectOrStateBoundary": "Requires currentWindow, selects activeTab.activePaneId, snapshots pane/tab/workspace and principal-filters activity.",
+    "requiredNativeContext": "Preferred registered window plus active tab/pane state; not an independent OS first-responder query.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 169,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 82,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations+Activity.swift",
+        "line": 18,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 24,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Source projection only; selection can change and is not a terminal/screen capture."
+  },
+  {
+    "methodName": "pane.focus",
+    "currentSourceClass": "native_layout_focus_effect",
+    "presentOwner": "AgentStudioIPCLayoutAdapter → AppDelegate/PaneTabViewController focus owner",
+    "effectOrStateBoundary": "Resolves target; awaits serialized committed focus operation that reveals tab/arrangement/drawer and applies native responder/runtime focus before focused:true.",
+    "requiredNativeContext": "Accepting main-window/controller, live target membership and native pane host/window are required.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCLayoutMethodDescriptors.swift",
+        "line": 27,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift",
+        "line": 37,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Commands/PaneFocusAppControl.swift",
+        "line": 36,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Panes/PaneCommittedFocusOperation.swift",
+        "line": 13,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Panes/PaneFocusExecutor.swift",
+        "line": 284,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 26,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker full representative path reused; no native run/pixel evidence. Correlation is not deduplication."
+  },
+  {
+    "methodName": "pane.line.set",
+    "currentSourceClass": "pane_context_ordered_value_transaction",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.setLine",
+    "effectOrStateBoundary": "Resolves writer/binding, rejects historical writer, maps line and applies ordered epoch/counter current-value write; returns applied/stale/refusal.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 179,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 134,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+        "line": 24,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 38,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter; ordered SQL admission reused E2. Current value is not a general operation receipt."
+  },
+  {
+    "methodName": "pane.list",
+    "currentSourceClass": "workspace_atom_activity_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter + AppIPC activity visibility projection",
+    "effectOrStateBoundary": "Projects tab/pane graph and PaneActivityTimeAtom; registration principal-filters activity based on own-pane scope. No terminal output/screen read.",
+    "requiredNativeContext": "Needs live app atoms; list adapter has no current-window guard. Native-derived activity may be present but is a projection.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 146,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 77,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 122,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations+Activity.swift",
+        "line": 6,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 23,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh principal-filter refresh; prior Worker query source reused. Ordinals are presentation-relative; state alone does not identify an earlier request."
+  },
+  {
+    "methodName": "pane.message.ask",
+    "currentSourceClass": "pane_context_transaction_and_connection_wait",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService + waitForPaneContextAsk",
+    "effectOrStateBoundary": "Commits blocking ask using retained message identity, then waits for committed settlement; connection end/app stop settlement differs.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate. Blocking wait additionally owns current connection lifecycle.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 78,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 61,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAskWait.swift",
+        "line": 6,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCPaneContextMethodRegistrations.swift",
+        "line": 119,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 35,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter/reader-adjacent registration; settlement races/joins reused E2. Answer response does not prove answer acted upon."
+  },
+  {
+    "methodName": "pane.message.changes",
+    "currentSourceClass": "pane_context_receipt_transaction",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.changes",
+    "effectOrStateBoundary": "Not pure read: SQLite write monotonically records reported answer position, confirms matching receipts and may prune aged acknowledged pane_event rows; returns bounded later changes and can publish affected sources.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 147,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 108,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+        "line": 11,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift",
+        "line": 100,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 37,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive SQL read. Returned nextPosition alone does not confirm receipt; later reported after position does. No execution/restart probe."
+  },
+  {
+    "methodName": "pane.message.send",
+    "currentSourceClass": "pane_context_transaction",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.send / shared SQLite",
+    "effectOrStateBoundary": "Maps writer/binding and typed notice/nonblocking-ask intent, transactionally records it, returns created/existing or refusal; retained message identity supplies same-intent duplicate semantics.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 44,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 32,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+Messages.swift",
+        "line": 20,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 34,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh wire→service adapter; transaction/duplicate details reused from E2 at same HEAD. Created response is not user presentation or subsequent action."
+  },
+  {
+    "methodName": "pane.message.withdraw",
+    "currentSourceClass": "pane_context_transaction",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.withdraw",
+    "effectOrStateBoundary": "Resolves writer then withdraws an owned unread notice/open ask; returns withdrawn/alreadySettled/notFound/refusal.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 115,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 91,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 36,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter; transactional state/retention distinctions reused E2 rather than new full SQL trace."
+  },
+  {
+    "methodName": "pane.snapshot",
+    "currentSourceClass": "workspace_atom_activity_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter",
+    "effectOrStateBoundary": "Requires currentWindow, existence then same-step own-pane relationship, and projects explicit pane/tab/workspace plus principal-filtered activity.",
+    "requiredNativeContext": "Preferred registered window and live app pane graph even when explicit pane identity is supplied.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 223,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 91,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations+Activity.swift",
+        "line": 29,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 25,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source plus fresh registration projection; no terminal output, native rendering or durable snapshot retention."
+  },
+  {
+    "methodName": "pane.split",
+    "currentSourceClass": "workspace_topology_creation",
+    "presentOwner": "AgentStudioIPCLayoutAdapter → WorkspaceActionExecutor / WorkspaceSurfaceCoordinator pane insertion",
+    "effectOrStateBoundary": "Submits insertPane(newTerminal) targeted at resolved tab/pane; E2 records durable placement before native materialization. Reply names target/direction, not created pane.",
+    "requiredNativeContext": "Current preferred registered workspace window; current app action/execution and native materialization composition.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCLayoutMethodDescriptors.swift",
+        "line": 50,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCLayoutAdapter.swift",
+        "line": 62,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+PaneInsertion.swift",
+        "line": 114,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 27,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Adapter source reused from prior Worker; deeper durable insertion effect reused from E2, not freshly retraced. No terminal readiness or per-request attribution after reply loss."
+  },
+  {
+    "methodName": "pane.title.set",
+    "currentSourceClass": "pane_context_ordered_value_transaction",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.setTitle",
+    "effectOrStateBoundary": "Resolves writer/binding, rejects historical writer, applies ordered title replacement by writer/stream/epoch/counter; returns applied/stale/refusal.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 211,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 146,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService+OrderedWrites.swift",
+        "line": 24,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 38,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter; ordered SQL detail reused E2. Does not establish native title rendering."
+  },
+  {
+    "methodName": "pane.writer.claimEpoch",
+    "currentSourceClass": "pane_context_epoch_transaction",
+    "presentOwner": "AgentStudioIPCPaneContextAdapter → PaneContextService.claimEpoch / PaneContextStorage",
+    "effectOrStateBoundary": "Allocates or replays writer-stream epoch under retained claimId; mismatched claim reuse is refused. This is a state allocation, not a read of a counter.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPaneContextMethodDescriptors.swift",
+        "line": 245,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift",
+        "line": 157,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift",
+        "line": 133,
+        "evidence": "reused-E2-primary-pointer-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 39,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter; claim retention/duplicate storage reused E2. ClaimId contract is distinct from generic correlation ID."
+  },
+  {
+    "methodName": "session.event",
+    "currentSourceClass": "provider_ingress_transaction_and_runtime_publication",
+    "presentOwner": "AgentStudioIPCSessionsAdapter → SessionsIngestion → SessionsRepository",
+    "effectOrStateBoundary": "Consumes matching-pane provider envelope, maps signal, generates fresh record ID/time/owner lookup and awaits ingestion/reduction. Applied/bound commit submits activity; ignored reduction can still return admitted.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSessionMethodDescriptors.swift",
+        "line": 26,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift",
+        "line": 32,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion.swift",
+        "line": 115,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 41,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter/ingestion entry; reducer/SQL outcome detail reused E2. Correlation/occurrence reuse is not generic hook dedup; admitted is not necessarily applied."
+  },
+  {
+    "methodName": "session.query",
+    "currentSourceClass": "session_projection_with_runtime_hydration",
+    "presentOwner": "AgentStudioIPCSessionsAdapter → SessionsIngestion status runtime / repository / pane-viewed mailbox",
+    "effectOrStateBoundary": "Reads unbound/live/ended summary and lastRefusal, but can lazily restore runtime status, load open-ask summaries, consume pending viewed/retirement inputs and publish status. Open-ask source is wired through PaneContextService.ensureOpen.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSessionMethodDescriptors.swift",
+        "line": 102,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift",
+        "line": 99,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+        "line": 33,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+        "line": 45,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion+Status.swift",
+        "line": 191,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/PaneContext/SessionsPaneContextComposition.swift",
+        "line": 38,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/PaneContext/PaneContextSessionsBridge.swift",
+        "line": 24,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/PaneContext/PaneContextService.swift",
+        "line": 178,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 43,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh hydration/mailbox and actual bridge wiring checked. No new receipt acknowledgement is implied; conditional PaneContext opening can settle old blocking asks. Not proof of live provider process."
+  },
+  {
+    "methodName": "session.refusal",
+    "currentSourceClass": "provider_refusal_runtime_state",
+    "presentOwner": "AgentStudioIPCSessionsAdapter → SessionsIngestion.recordRefusal",
+    "effectOrStateBoundary": "Consumes matching-pane refusal, records latest refusal in runtime map if status/pane not closed/retired; can start viewed ingress first.",
+    "requiredNativeContext": "Current pane membership/binding and app-composed service/repositories; no NSView/NSWindow call in this adapter/service path. Common app-server composition gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSessionMethodDescriptors.swift",
+        "line": 82,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSessionsAdapter.swift",
+        "line": 84,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion.swift",
+        "line": 74,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 42,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh handler/runtime-map read. Response not durable refusal history; query can observe only current memory."
+  },
+  {
+    "methodName": "sidebar.grouping.get",
+    "currentSourceClass": "native_client_preference_projection",
+    "presentOwner": "AgentStudioIPCSidebarAdapter → RepoExplorerSidebarPrefsAtom",
+    "effectOrStateBoundary": "Reads groupingMode for requested repo/panes surface; dormant Inbox request is rejected.",
+    "requiredNativeContext": "App-owned MainActor sidebar preference atom; method does not require mounted sidebar view.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPresentationAndSidebarMethodDescriptors.swift",
+        "line": 92,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSidebarAdapter.swift",
+        "line": 20,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 57,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive read; current local UI memory, not shared/global grouping or effect attribution."
+  },
+  {
+    "methodName": "sidebar.surface.get",
+    "currentSourceClass": "native_client_presentation_projection",
+    "presentOwner": "AgentStudioIPCSidebarAdapter → WorkspaceSidebarState",
+    "effectOrStateBoundary": "Reads current sidebar surface; retained Inbox surface rejected.",
+    "requiredNativeContext": "App-owned MainActor sidebar state; no live view/window call within method.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPresentationAndSidebarMethodDescriptors.swift",
+        "line": 110,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCSidebarAdapter.swift",
+        "line": 32,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 57,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh decisive read; not screenshot or evidence that a sidebar frame is visible."
+  },
+  {
+    "methodName": "system.capabilities",
+    "currentSourceClass": "compiled_channel_catalog",
+    "presentOwner": "AppIPCMethodRegistry + IPCSystemCapabilitiesDescriptorFactory",
+    "effectOrStateBoundary": "Returns immutable composition/channel-filtered catalog and cached encoded result after ordinary admission. Catalog construction validates it against registered metadata.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/IPCSystemCapabilitiesComposition.swift",
+        "line": 28,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AgentStudioIPCRegistryAuthorization.swift",
+        "line": 42,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/IPCSystemCapabilitiesComposition.swift",
+        "line": 25,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 22,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh registry/factory read. Advertised schema/exposure is not current owner availability or successful effect; cache is catalog bytes, not operation receipts."
+  },
+  {
+    "methodName": "system.identify",
+    "currentSourceClass": "runtime_identity",
+    "presentOwner": "AgentStudioIPCQueryAdapter",
+    "effectOrStateBoundary": "Returns captured runtimeId, accessMode and appVersion from app composition; no product mutation.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSystemAndAuthMethodDescriptors.swift",
+        "line": 49,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 31,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 21,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source read reused at unchanged HEAD; no runtime or credential-store freshness proof."
+  },
+  {
+    "methodName": "system.ping",
+    "currentSourceClass": "runtime_identity",
+    "presentOwner": "AppIPCBuiltInSystemAndQueryRegistrations",
+    "effectOrStateBoundary": "Returns captured runtimeId from registration inputs; observes responding runtime rather than all subsystem health.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSystemAndAuthMethodDescriptors.swift",
+        "line": 29,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudioAppIPC/AppIPCBuiltInSystemAndQueryRegistrations.swift",
+        "line": 17,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 21,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh registration read; response is reachability/identity only, not owner readiness."
+  },
+  {
+    "methodName": "system.version",
+    "currentSourceClass": "runtime_identity",
+    "presentOwner": "AgentStudioIPCQueryAdapter",
+    "effectOrStateBoundary": "Returns captured application version from composition, not provider/backend binary identity.",
+    "requiredNativeContext": "No operation-intrinsic NSWindow/view requirement in the inspected owner; runs in the current app-composed IPC service. The common app-server startup/window gate remains separate.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCSystemAndAuthMethodDescriptors.swift",
+        "line": 72,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 35,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 21,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source read reused; no installed-artifact or service-version pairing validation."
+  },
+  {
+    "methodName": "terminal.send",
+    "currentSourceClass": "native_terminal_input_effect",
+    "presentOwner": "AgentStudioIPCRuntimeAdapter → PaneRuntime command dispatcher → TerminalRuntime surface dispatcher",
+    "effectOrStateBoundary": "Rechecks own-pane immediately before dispatching exact input; maps result to accepted/queued command ID and optional queue position.",
+    "requiredNativeContext": "Registered terminal pane/runtime and current Ghostty surface command path; TerminalRuntime.sendInput delegates to surfaceCommandDispatcher.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCTerminalMethodDescriptors.swift",
+        "line": 52,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+        "line": 69,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/Features/Terminal/Runtime/TerminalRuntime.swift",
+        "line": 496,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 32,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter/surface delegation read; deeper input machinery reused from E2. Accepted is not shell execution/PTY-consumption or durable dedup receipt."
+  },
+  {
+    "methodName": "terminal.snapshot",
+    "currentSourceClass": "registered_terminal_renderer_projection",
+    "presentOwner": "AgentStudioIPCRuntimeAdapter → PaneRuntime + TerminalRuntimeSnapshotFactProviding",
+    "effectOrStateBoundary": "Reads runtime-local sequence/timestamp/lifecycle/capabilities plus rendererHealthy/readOnly/secureInput facts; carries no terminal bytes.",
+    "requiredNativeContext": "Registered terminal runtime; renderer/native fact provider is optional in adapter and values may be absent. No current-window guard in method.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCTerminalMethodDescriptors.swift",
+        "line": 86,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+        "line": 46,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 31,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter read; runtime fact producer internals reused, not newly traced. Sequence is not a durable execution incarnation; not output/screen capture."
+  },
+  {
+    "methodName": "terminal.status",
+    "currentSourceClass": "registered_terminal_runtime_projection",
+    "presentOwner": "AgentStudioIPCRuntimeAdapter → RuntimeRegistry / PaneRuntime.snapshot",
+    "effectOrStateBoundary": "Resolves pane/type and same-step own-pane assertion; returns lifecycle, ready, backend and capabilities from registered runtime snapshot.",
+    "requiredNativeContext": "Registered terminal runtime and current workspace membership. No direct NSWindow/surface read in status adapter; current runtime is app/native composed.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCTerminalMethodDescriptors.swift",
+        "line": 24,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+        "line": 30,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+        "line": 246,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 31,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter refresh; E2 runtime semantics reused. Ready can only mean runtime lifecycle; no independent provider/process-health proof."
+  },
+  {
+    "methodName": "terminal.wait",
+    "currentSourceClass": "terminal_runtime_fact_wait",
+    "presentOwner": "AgentStudioIPCRuntimeAdapter → runtime subscription/replay and condition matcher",
+    "effectOrStateBoundary": "Observes attachReady/commandFinished/rendererHealthy with sequence fence, subscribes before replay and rechecks own-pane after wait; temporary waiter/subscription lifecycle is runtime state.",
+    "requiredNativeContext": "Registered terminal runtime. Renderer-health/command-finished conditions consume current runtime/native source facts; not a detached process observer independent of that source.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCTerminalMethodDescriptors.swift",
+        "line": 118,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+        "line": 90,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCRuntimeAdapter.swift",
+        "line": 107,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 33,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh entry/subscription read; deeper wait/cancellation behavior reused from E2. Finite replay not durable catchup; timeout/cancellation not process termination."
+  },
+  {
+    "methodName": "ui.arrangements.open",
+    "currentSourceClass": "native_ui_presentation",
+    "presentOwner": "AgentStudioIPCUIPresentationAdapter → AppDelegate presenter",
+    "effectOrStateBoundary": "Validates optional durable pane, calls native arrangements presenter for window/context, returns resulting tab/context.",
+    "requiredNativeContext": "Live presenter, explicit workspace window and applicable tab/pane context.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPresentationAndSidebarMethodDescriptors.swift",
+        "line": 59,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCUIPresentationAdapter.swift",
+        "line": 36,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 56,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter; no native UI exercise or visible-frame proof."
+  },
+  {
+    "methodName": "ui.commandBar.open",
+    "currentSourceClass": "native_ui_presentation",
+    "presentOwner": "AgentStudioIPCUIPresentationAdapter → AppDelegate presenter",
+    "effectOrStateBoundary": "Calls native presenter for explicit workspaceWindowId/scope and returns presented scope/window/correlation.",
+    "requiredNativeContext": "Live native presenter and valid explicit workspace window.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCPresentationAndSidebarMethodDescriptors.swift",
+        "line": 28,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCUIPresentationAdapter.swift",
+        "line": 24,
+        "evidence": "opened-current-pass"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 56,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Fresh adapter; deeper presenter visibility reused E2. Return is not a frame/pixel-presentation receipt."
+  },
+  {
+    "methodName": "window.current",
+    "currentSourceClass": "app_window_lifecycle_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter",
+    "effectOrStateBoundary": "Resolves preferredWorkspaceWindowId and requires that ID remain in registered windows; otherwise noActiveWindow.",
+    "requiredNativeContext": "Requires a preferred registered workspace window in app lifecycle state.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 58,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 55,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 24,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source reused. Current window can change independently; no native screen/frame capture."
+  },
+  {
+    "methodName": "window.list",
+    "currentSourceClass": "app_window_lifecycle_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter + WorkspaceWindowLifecycleReader",
+    "effectOrStateBoundary": "Projects registered/key/focused/preferred window lifecycle facts with current composed workspace ID. List can be empty; does not create a window.",
+    "requiredNativeContext": "Reads AppKit-derived lifecycle memory in the app; list itself has no active-window guard. Not an OS-independent inventory of windows on another machine.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 38,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 39,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/App/Windows/WorkspaceWindowLifecycleReader.swift",
+        "line": 23,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 23,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker fresh source reused at same HEAD. Current state projection is not a lifecycle/effect receipt."
+  },
+  {
+    "methodName": "workspace.current",
+    "currentSourceClass": "workspace_atom_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter",
+    "effectOrStateBoundary": "Requires currentWindow, then projects the composed workspace snapshot.",
+    "requiredNativeContext": "Preferred registered workspace window plus live WorkspaceStore.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 112,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 72,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 24,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source reused; current projection, not mutation attribution/persistence proof."
+  },
+  {
+    "methodName": "workspace.list",
+    "currentSourceClass": "workspace_atom_projection",
+    "presentOwner": "AgentStudioIPCQueryAdapter → WorkspaceStore.programmaticControlSnapshot",
+    "effectOrStateBoundary": "Projects the one composed workspace identity, tabs, panes and repository topology from live atoms; no per-request SQLite/Git/filesystem refresh.",
+    "requiredNativeContext": "Needs current app WorkspaceStore/atoms; method itself does not require a current window although server composition does.",
+    "decisiveSourcePointers": [
+      {
+        "path": "Sources/AgentStudioProgrammaticControl/BuiltInDescriptors/IPCWorkspaceQueryMethodDescriptors.swift",
+        "line": 78,
+        "evidence": "enumeration-only-current-source"
+      },
+      {
+        "path": "Sources/AgentStudio/App/IPCComposition/AgentStudioIPCQueryAdapter.swift",
+        "line": 68,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceStore+ProgrammaticControlSnapshot.swift",
+        "line": 68,
+        "evidence": "reused-prior-worker-pass-same-head"
+      },
+      {
+        "path": "tmp/practices-research/2026-10-15-daemon-extraction-survey/e2-app-rpc-evidence.md",
+        "line": 23,
+        "evidence": "reused-same-head-report"
+      }
+    ],
+    "proofLimit": "Prior Worker source reused; not a machine-wide workspace discovery or durable snapshot receipt."
+  }
+]

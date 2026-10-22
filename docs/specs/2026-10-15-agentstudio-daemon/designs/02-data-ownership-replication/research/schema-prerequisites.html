@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current SQL keys and replication prerequisites</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="schema-prerequisites.html">AgentStudio daemon · Current SQL keys and replication prerequisites</a></nav></ex-nav>
+<ex-document id="content"><h1>Current SQL keys and replication prerequisites</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](schema-prerequisites.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current SQL keys and replication prerequisites
+
+The current source schema is **not a database we can declare replicated unchanged**. Across 86 logical tables, three lack declared primary keys and sixteen have attached triggers. Those nineteen tables conflicted with the earlier captured profile if selected unchanged; the other 67 cleared only those narrow source-form checks. The [newer inspected engine](fleet-sync-consumer-fit.html#source--what-changes-in-our-earlier-notes) additionally requires immutable canonical UUIDv7 values in explicitly non-null TEXT primary-key components. **Nineteen is not a complete current-profile conflict count**, and none of these tables has passed target-engine admission.
+
+The [data catalog](data-catalog.json) now records ordered keys and types, explicit key nullability, foreign keys, uniqueness, CHECKs, triggers and special forms for every table. Ownership and membership families remain proposals. This evidence advances [design 02](../README.html); it selects no export list, target schema, migration or new database owner.
+
+## Newer profile: five source-form checks
+
+At library commit `53995d76150259464e7158c479c1e84bce7c51b3`, **68 of the 86 legacy table declarations have a known conflict if selected unchanged; 18 have no known conflict in these five checks only.** The checks are declared PK, literal TEXT key components, explicit NOT NULL key declarations, attached triggers and virtual-table form. No table has passed actual engine admission.
+
+| Current database/profile | Tables | Known form conflict | No known conflict in these checks |
+| --- | ---: | ---: | ---: |
+| Core | 28 | 26 | 2 |
+| Local boot + optional/full union | 53 | 39 | 14 |
+| CLI store | 3 | 1 | 2 |
+| In-memory search | 2 | 2 | 0 |
+| Total | 86 | 68 | 18 |
+
+The reason counts overlap: 44 omit an explicit NOT NULL declaration on at least one key component; 14 have a non-TEXT key component; 16 carry attached triggers; three lack a declared PK; one is virtual. The 44-declaration figure includes four INTEGER PK declarations as well as the 40 single TEXT keys discussed below. It makes no claim that an INTEGER rowid alias actually permits a NULL stored identity.
+
+Every catalog row now carries a separately pinned `fleet_sync_current_source_form_comparison`; the earlier three-check comparison remains historical. The [schema reader](../../../explainer/schema.html) exposes the current result and reasons beside each table, including all three CLI tables and their 15 columns. Source forms, target membership, actual row values and write behavior are separate questions.
+
+In particular, **18 is not a count of compatible tables**. All 18 still need canonical UUIDv7 key values, immutable key write paths, supported migration/integrity behavior and actual engine admission checked if selected. A composite key can clear the declaration check while containing a general label such as the `repo_tag` tag component; TEXT NOT NULL alone cannot prove the value domain. A trigger attached to another table can also write a form-clearing table, so the selected transaction/schema closure still matters.
+
+These counts cover every legacy family, including client-local composition, private producer/authority state and derived search. They are not 68 required migrations, nor permission to replicate the other 18. Choose units/membership and preserve their invariants before designing any target transformation.
+
+## Key meanings and ordinary writers after the form check
+
+The 18 form-clearing tables were then traced through key creation, validation, SQL binding and ordinary writers. **Eight have concrete source counterexamples to the candidate engine contract; ten remain unproved. Zero is accepted as compatible.** This second check does not change the five-form count or assert what is in an installed database.
+
+```mermaid
+flowchart TB
+    Legacy["86 current table declarations"] --> Forms["68 with a known declaration conflict"]
+    Legacy --> Trace["18 clear only the five form checks"]
+    Trace --> Counter["8 with source counterexamples"]
+    Trace --> Unknown["10 still unproved after the source trace"]
+```
+
+The counterexamples are seven tables with non-UUID key domains and one retained inbox table with a forbidden PK assignment plus a fixed version-4 identity. Known allowed values and retained writer statements are source facts; no actual failing row or engine execution was observed. The inbox source is retired/dormant and is not thereby selected for replication or reconnection.
+
+| Form-clearing table or exact shared group | Key meaning / source observation | Ordinary PK assignment observation |
+| --- | --- | --- |
+| `repo_tag` | User tag text is a key component; [tag replacement](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+RepoSidebarMetadata.swift) validates tags without converting them to UUID identities | No assignment found in the scoped DELETE/INSERT writers |
+| `arrangement_layout_divider` | Supplied/restored arrangement and divider UUIDs do not universally establish version 7 or canonical text; [layout writer](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreRepository+TabGraphMutation.swift) binds the UUIDs | No assignment found in the scoped graph writers; indirect trigger deletes remain separate |
+| `pane_write_order` | [Writer keys](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage.swift) have `pane:`/`agent:` prefixes, and [streams](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextStorage+CurrentValues.swift) are `line`/`title` | UPSERT updates epoch/counter, not the key |
+| `pane_answer_position` | Despite the column name, `session_ref` stores that prefixed writer key; [answer-position write](../../../../../../Sources/AgentStudio/Core/PaneContext/PaneContextService+Changes.swift) | UPSERT updates positions/sequences, not the key |
+| `pane_context_cli_outbox_cursor` | Normal producer mints/checks v7; [commit participant](../../../../../../Sources/AgentStudio/App/PaneAgents/CLIOutboxCursorCommitParticipant.swift) forwards `uuidString`, without an exact canonical-string gate | UPSERT updates the handled position, not the key |
+| `local_tab_cursor`, `local_arrangement_cursor`, `local_drawer_cursor`, `local_arrangement_drawer_cursor` | Snapshot UUID associations bind through [cursor writers](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+Storage.swift); supplied/restored versions and exact text remain unproved | Scoped replacement deletes/inserts; no key SET assignment found |
+| `local_drawer_presentation` | Workspace/owner-pane UUIDs bind through [presentation merge](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalRepository+DrawerPresentation.swift); values remain unproved | UPSERT updates preferences/time, not the key |
+| `local_window_sidebar_collapsed_group` | [Presentation group identifiers](../../../../../../Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerProjection+Organization.swift) contain `panes:`/`repos:` prefixes; stored as a raw group key | Scoped DELETE/INSERT; no key SET assignment found |
+| `local_entity_recency` | Key includes `repository`/`worktree` plus a 16-hex stable key under [recency validation](../../../../../../Sources/AgentStudio/Core/Models/EntityRecency.swift) | Scoped DELETE/INSERT; no key SET assignment found |
+| `local_workspace_entity_recency` | Key includes literal `pane` under the [workspace recency domain](../../../../../../Sources/AgentStudio/Core/Models/EntityRecency.swift) | Scoped DELETE/INSERT; no key SET assignment found |
+| `annotation_output_attempt_message` | [Database encoding explicitly lowercases](../../../../../../Sources/AgentStudio/Features/Bridge/State/SQLite/WorktreeAnnotations/WorktreeAnnotationSQLiteRepository+Loading.swift); factory uses v7, but supplied/decoded UUID versions remain unrestricted | Membership INSERTs; no key SET assignment found |
+| `local_notification_inbox_item` | Retained source has a [fixed version-4 identity](../../../../../../Sources/AgentStudio/Features/InboxNotification/Models/InboxNotification+FullDiskAccess.swift) | [UPSERT assigns `workspace_id`](../../../../../../Sources/AgentStudio/Features/InboxNotification/State/MainActor/Persistence/InboxNotificationSQLiteRepository.swift), which is a PK component; even unchanged assignment is refused by the library |
+| `local_notification_inbox_collapsed_group` | [Section identifiers](../../../../../../Sources/AgentStudio/Features/InboxNotification/Models/InboxNotificationListModel.swift) include sentinel/prefixed/name strings | Scoped DELETE/INSERT; no key SET assignment found |
+| `cli_store_identity` | [Identity migration](../../../../../../Sources/AgentStudioCLIStore/CLIStoreMigrator.swift) mints v7 and the reader checks its version; exact canonical stored text remains unproved | No ordinary writer found outside identity creation/admission |
+| `cli_state` | [Ordinary allocation](../../../../../../Sources/AgentStudioCLIStore/CLIStore+State.swift) generates v7; `kind`/pane/session form a separate semantic UNIQUE key, not the PK | UPSERT does nothing on semantic conflict; updates change claims/counters, not `id` |
+
+The source trace covers the named ordinary writers and separates migration/import paths; “no assignment found” is bounded search evidence, not runtime immutability proof. Direct `uuidString` forwarding is an encoding gap here, not a claimed Foundation formatting failure. Conversely, annotation's explicit lowercasing is useful source evidence but does not prove every supplied historical identity is v7.
+
+`PaneId` [explicitly preserves historical UUID versions](../../../../../../Sources/AgentStudio/Core/RuntimeEventSystem/Contracts/PaneId.swift). An engine row key therefore cannot silently redefine or rewrite that application's resource identity. Target row identity, natural lookup keys, ordering/cursor fields, reference closure and installed-data treatment still need a coherent design if the corresponding data is selected. This evidence chooses no surrogate-key schema, UUID rewrite or migration.
+
+The catalog carries `fleet_sync_source_key_trace` for these 18 rows, alongside the independent declaration-form result. [Reduced source outcomes](../../../research/evidence/2026-10-17-fleet-sync-key-semantics/lead-key-summary.json) and the [research ledger](../../../explainer/research/research-ledger-a9c46973.html) preserve exact scope, writer traces and unproved layers. Other 68 tables were not given a new key-write audit by this task.
+
+## Source declaration counts
+
+| Current source database/profile | Logical tables | Declared PK | Tables with attached triggers | Virtual tables | AUTOINCREMENT |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Core migrations | 28 | 28 | 16 | 0 | 0 |
+| Local boot + optional/full union | 53 | 52 | 0 | 0 | 1 |
+| CLI store | 3 | 3 | 0 | 0 | 1 |
+| Replaceable in-memory search | 2 | 0 | 0 | 1 | 0 |
+| Total | 86 | 83 | 16 | 1 | 2 |
+
+The 83 declared keys comprise **45 single TEXT, four single INTEGER and 34 composite keys**. All 34 composite keys explicitly mark their components NOT NULL. These are current legacy identities, not engine eligibility. The newer engine does not require a column named `id` or categorically forbid a composite key; each replicated key component must be explicitly non-null TEXT and contain canonical UUIDv7 values that are not reassigned. Imported provider identities, integer sequences, singleton keys and ordered composite keys need explicit target treatment if their tables are selected. No blanket UUID rewrite is authorized.
+
+These are final source-declaration profiles, not an assertion that every installed database contains all 86 tables. Local's 29 boot-required tables and 24 optional/full tables have different creation paths. Guarded existing schemas, actual migration history and live row validity were not inspected.
+
+## The exceptions matter in different ways
+
+| Source form | Current tables | Consequence if selected for replication |
+| --- | --- | --- |
+| Unique index without declared PK | `local_ipc_credential` | A unique index is not the declared key required by the proposed profile. It is private authority state, not an automatic UI export; adding a key or exporting it is not selected. |
+| No declared PK | `search_document` | Its item index is nonunique; application deduplication does not supply a SQL PK. This is a derived search model, already outside the default export candidates. |
+| FTS virtual table without declared PK | `search_document_fts` | Both form conditions matter, counted as one table. It is a derived index, not a reason to replicate FTS shadow objects. |
+| Attached triggers | 16 Core tables, 42 surviving trigger declarations | The current profile excludes this form on replicated tables. Their integrity/lifecycle meanings cannot disappear merely to pass admission. |
+
+The credential recipe's [final migration](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceLocalMigrations+IPCCredentials.swift) has five columns and a separate unique index. The [search recipe](../../../../../../Sources/AgentStudio/Core/Search/SearchService.swift) creates an ordinary document table and external-content FTS5 table, with explicit writer synchronization. The [CLI recipe](../../../../../../Sources/AgentStudioCLIStore/CLIStoreMigrator.swift) uses an integer sequence specifically to avoid ID reuse after cursor retention/purge.
+
+The sixteen trigger-bearing tables intersect the existing proposal families as follows: ten client-composition tables whose scope remains open; five mixed pane/content tables requiring a domain split; and one Host-metadata candidate, `workspace_terminal_session_ownership`. This does **not** mean sixteen Host tables have been selected for export.
+
+The ownership journal illustrates why dropping triggers is a semantic change: its [guards](../../../../../../Sources/AgentStudio/Core/State/MainActor/Persistence/WorkspaceCoreMigrations+SessionOwnership.swift) constrain identity and retirement transitions, refuse retirement while owners remain, and refuse deletion before cleanup completes. The target must account for the required safety meaning through its selected domain/storage realization. This source audit chooses neither retaining that exact schema nor a replacement mechanism.
+
+## A declared text key is not necessarily a non-null key
+
+Forty single TEXT key declarations omit an explicit NOT NULL clause: fourteen in Core, nine in agent/context storage and seventeen in other Local storage. No inspected ordinary CREATE uses STRICT or WITHOUT ROWID.
+
+SQLite documents that PRIMARY KEY alone does not enforce non-nullness for these ordinary rowid-table text/composite forms; its integer-rowid, STRICT and WITHOUT ROWID rules differ. This is a schema guarantee question, not evidence that any stored key is NULL. Target Turso handling and admission must be verified separately. [SQLite CREATE TABLE](https://www.sqlite.org/lang_createtable.html#the_primary_key), [WITHOUT ROWID](https://www.sqlite.org/withoutrowid.html#differences_from_ordinary_rowid_tables), [STRICT tables](https://www.sqlite.org/stricttables.html#strict_tables).
+
+Keep three questions separate: what the SQL declaration enforces; what the current typed writer/reader admits; and what the selected replication engine can faithfully identify and replay. No nullable-key repair, UUID rewrite or legacy-data migration is selected here.
+
+## What design 02 must settle before engine adoption
+
+1. Choose the actual units and declared tables. A whole legacy SQLite file is not the ownership or privacy boundary.
+2. Preserve transaction/FK closure, private intake/authority boundaries and operation-specific ordering. A field that is private from readers may still be necessary in the source transaction.
+3. Account explicitly for selected trigger meanings, key non-nullness and domain validation. A schema-form refusal cannot justify deleting a required invariant.
+4. Define migrations and same-owner restore/refill against the real target. AUTOINCREMENT allocation state, application counters and retained receipts are not interchangeable with visible copied rows. Database-writer transfer remains excluded.
+5. Prove the selected target schema and exact row/value/key behavior through the shared engine. Static declarations, parsed JSON and a successful codec roundtrip are insufficient.
+
+## Discriminating proof cases, not executed experiments
+
+| Case | What the future proof must distinguish |
+| --- | --- |
+| Missing PK, trigger and FTS form | Explicit schema admission/refusal under the selected profile before any partial copy becomes readable |
+| Replicated key admission | Canonical UUIDv7 values in every declared TEXT NOT NULL PK component, including eligible composite UUID keys; refuse invalid values and forbidden key assignments without changing the original rows. Local-only integer/natural keys remain a separate current-source contract |
+| Key nullability boundary | The explicitly selected rejection or faithful handling of such data; no assumed SQLite/Turso equivalence |
+| Partial declared-table set | Selected migration/FK/schema closure and no accidental private table export |
+| Source trigger meaning | Required ownership/layout/lifecycle invariants survive the target realization and failed operations |
+| Allocation after original-writer recovery | IDs/counters do not reuse a value that retained admission/cursor state still recognizes |
+| Guarded old schema | Actual pre-existing shape is validated rather than inferred from a migration identifier or one table's existence |
+
+All experiments remain unexecuted. The pending central-outage decision belongs in design 03 and was not needed to establish these source declarations.
+
+## Evidence boundary
+
+Three Sol xhigh Researcher Workers supplied independent source groups: [Core 28](../../../explainer/research/core-key-evidence-2e7d8a7b.html), [agent/context 24](../../../explainer/research/context-key-evidence-aa2f7acb.html), and [review/client/CLI/search 34](../../../explainer/research/review-cli-key-evidence-c36d8da4.html). Their JSON reports retain per-row declarations, migration derivation, source anchors and search coverage. The Lead checked membership/types/anchors, opened the decisive exceptions and migration/guard sources, and matched all 24 anchored product files byte-for-byte to HEAD `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462` before integration.
+
+The original nineteen-table comparison uses the [captured SO5–SO7 profile](../../../research/evidence/2026-10-16-daemon-schema-admission/shared-schema-profile.txt), SHA-256 `a1341987af7794258c619c52056b1d4f8d02128449946a12c56cc28787e5bb82`. The [2026-10-17 update](fleet-sync-consumer-fit.html#source--current-library-source-and-prs) pins the newer implementation at `53995d76150259464e7158c479c1e84bce7c51b3`; it supersedes arbitrary/mutable-key eligibility without changing the legacy inventory.
+
+The newer five-form census uses fresh bounded Core/context/client-CLI-search source reads, reduced against the catalog and inspected library predicates. The Lead independently recomputed all 86 rows, found no membership/declaration/reason discrepancies, opened decisive form/trigger/key exceptions and matched all 24 anchored product files to the unchanged product HEAD. [Current aggregate](../../../research/evidence/2026-10-17-fleet-sync-schema-forms/lead-form-summary.json) retains per-table reasons and sources; the [research ledger](../../../explainer/research/research-ledger-df76830f.html) carries the method and limits. No complete row-value/immutability admission census has been run. The [earlier aggregate](../../../research/evidence/2026-10-16-daemon-schema-admission/lead-summary.json) and pre-integration catalog remain historical evidence. No product database, SQL migration, runtime, test, build or probe was executed, and the closed Advisor was not contacted.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

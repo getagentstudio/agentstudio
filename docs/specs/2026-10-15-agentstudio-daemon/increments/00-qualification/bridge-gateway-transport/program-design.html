@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Bridge transport owners and interfaces</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="program-design.html">AgentStudio daemon · Bridge transport owners and interfaces</a></nav></ex-nav>
+<ex-document id="content"><h1>Bridge transport owners and interfaces</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Design source; read its draft/proposal status.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](program-design.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Bridge transport owners and interfaces
+
+This realizes [R18–R23](specification.html) under [U25/S32](../../../user-requirements.html). Browser delivery, privileged native control and remote Host transport share typed operations while retaining different trust and lifetime boundaries. No second business implementation lives in the browser adapter.
+
+## One bootstrap and content read
+
+```mermaid
+sequenceDiagram
+    participant Native as Swift native client
+    participant Gateway as Rust Gateway
+    participant Browser as Bridge communication worker
+    participant Host as Addressed Rust Host
+    Native->>Gateway: Trusted bootstrap for admitted pane and principal
+    Gateway-->>Native: Bound origin and scoped access grant
+    Native->>Browser: Bootstrap intended worker for same-origin app
+    Browser->>Gateway: Authorized content request
+    Gateway->>Host: Typed Host-qualified request over authenticated QUIC
+    Host-->>Gateway: Descriptor and bounded content stream
+    Gateway-->>Browser: Direct HTTP bytes and completion
+    Note over Native,Browser: Swift publishes native state and performs declared native effects
+    Note over Gateway,Host: Delivery is separate from source validity or effect settlement
+```
+
+The current path registers `agentstudio://` in [BootstrapComposition](../../../../../../Sources/AgentStudio/Features/Bridge/Runtime/BridgePaneController+BootstrapComposition.swift). [BridgeSchemeHandler](../../../../../../Sources/AgentStudio/Features/Bridge/Transport/BridgeSchemeHandler.swift) produces response/data stream elements, while its RPC dispatcher and committed-effect path own operation admission and effect sequencing. The target removes Swift from content-byte forwarding, retains native rendering/effect ownership, and moves admission/stream ownership to the Rust Gateway and addressed Host. This is a changed transport path, not evidence that provider acceptance means rendered pixels.
+
+## Components and dependencies
+
+```mermaid
+flowchart TB
+    Native["Swift native adapter"] -->|"Bootstrap and privileged operations"| Core["Gateway typed API"]
+    Browser["BridgeWeb"] -->|"HTTP and authenticated WS"| Http["Bridge HTTP adapter"]
+    Http -->|"Validated typed requests"| Core
+    Core -->|"Host port"| Remote["Quinn Host adapter"]
+    Remote -->|"Authenticated streams"| Host["Host operation owners"]
+    Core -->|"Prepared view updates"| Http
+    Host -->|"Facts, descriptors and bytes"| Remote
+```
+
+| Component / home | Responsibility, consumers and reason to change |
+| --- | --- |
+| `gateway-core` — existing proposed engine | Owns the typed Gateway API, admitted E17/E18 context, pane-scoped E27 issuance/revocation and routing to the addressed Host. Native and browser adapters consume it; domain/routing policy changes here. It does not depend on Axum or Quinn. |
+| `gateway-bridge-http` — new adapter | Owns literal-loopback bind, same-origin Bridge assets, HTTP/WS parsing, pre-admission resource limits, Origin/authority checks and response-body ownership. Depends on Gateway ports and shared schema, not Host implementation or Swift. HTTP/WebSocket behavior changes here. |
+| `gateway-host-quic` — new adapter | Implements the Gateway's Host port using upstream Quinn/rustls and admitted peer identities. Owns connections and independent control/event/content/terminal streams. Network/TLS changes here, not in feature reducers. |
+| macOS Gateway binary / iOS embedded composition — modified proposed hosts | Compose one Tokio runtime, core and adapters. macOS is a separate process; iOS belongs to the app process. Runtime creation, signing, bootstrap and platform lifecycle change here. The native binding must satisfy U10; the ordinary UniFFI candidate does not. |
+| Existing BridgeWeb and native UI — modified transport clients | Keep product rendering and interaction. Native code handles bootstrap, native state publication and declared effects; BridgeWeb invokes the derived browser contract. These are not new Git/annotation engines. |
+
+Compilation dependencies point from adapters/composition toward ports/contracts. The runtime call through the Host port does not make `gateway-core` depend on its Quinn implementation. Session/fact owners and Gateway prepared projections retain their existing [data ownership](../../../designs/02-data-ownership-replication/specification.html). No bus is introduced to route commands.
+
+## Entity binding
+
+| Entity | Semantic owner | Proposed home / schema | Boundary representation |
+| --- | --- | --- | --- |
+| E1 execution | Host terminal/session owner | Existing proposed Host session domain / terminal contracts | Host-qualified `ExecutionSessionId`; never destroyed by browser/gateway detach |
+| E3 connection | Each actual native/HTTP/QUIC adapter | Adapter connection lifetime / connection contracts | Typed `ConnectionId` and `ConnectionState`; no persistent session identity inferred |
+| E4 request | Gateway admission and addressed Host operation owner | Gateway operation contracts / existing outcome envelope | `RequestId`, `HostId`, typed operation and explicit settled/unknown outcome |
+| E16 client view | Native UI hierarchy | Existing client pane model; derived shared client schema | Kind-qualified `PaneId` plus pane-context generation |
+| E17/E18 principal and authority | Existing native admission / Host authority owners | Existing authority ports; browser adapter receives a narrowed admitted context | `PrincipalId`, `AuthorityScope`; browser issuance cannot expand it or mint database-writer authority |
+| E19 subscription | Gateway logical subscription owner; adapter owns each delivery | Existing proposed subscription domain / typed event schema | `SubscriptionId`, Host/scope/source generation, cursor or explicit gap where supported |
+| E20 finite content | Host product owner; Gateway owns delivery resources | Existing content contracts / `finite_content_contract.rs` | Descriptor with content kind, revision, lease, length and digest; bounded byte stream remains separate |
+| E23/E24 Host/Gateway instances | Respective runtime composition | Existing service identity contracts | Distinct `HostInstanceId` and `GatewayInstanceId`; no identity from equal paths |
+| E27 browser grant | Gateway core's browser access owner | New `bridge_access_grant.rs` in shared Gateway contracts | `BridgeGrantId`, pane generation, Host/resource scope, operation allowlist, expiry and opaque redacted secret; grant state is a closed enum |
+
+The first-party safety profile, including generated scaffolding, remains U10. A dependency is used through a pinned safe interface. An unsafe native export cannot be relabelled as a dependency to evade that rule. The [compiler/source probe](native-binding-safety.html) found that ordinary UniFFI scaffolding contains unsafe despite compiling under the lint. That candidate does not realize U10; a compliant external ABI host or an explicit owner change is needed before this iOS boundary is realized. No general impossibility or exception is inferred.
+
+## Browser access and schema
+
+`NativeBridgeBootstrap` contains `gateway_instance`, a validated literal-loopback origin, `grant_id`, a redacted opaque credential, pane generation and the supported browser-schema version. It contains no Host private key or database writer lease. Its credential is for the intended Bridge communication worker: only that worker retains it and issues protected fetch/WS requests. The rendering thread receives prepared data, not a reusable bearer. If native bootstrap needs a main-thread handoff, the value is transient and must not remain in application state, logs or storage; T1 must qualify that actual handoff rather than claiming that a worker alone isolates compromised JavaScript. The current [worker factory](../../../../../../BridgeWeb/src/core/comm-worker/bridge-pane-comm-worker-session.ts) already creates a dedicated module worker, but does not establish this new credential contract. Reusing an old port/bootstrap after Gateway or pane replacement is forbidden; rebootstrap creates fresh access.
+
+The browser adapter exposes packaged static app assets without protected domain data. Protected HTTP uses a bearer credential in a header; credentials never go in URLs, cookies, diagnostics or telemetry. Protected routes emit no CORS response headers. Domain/resource scope is checked on every protected operation, new content chunk and each subscription `update` admission, including the current pane generation; an already-open subscription is not an authorization cache. Native/Host authorization still applies after browser admission. A scope-replacement transition changes the current pane generation and invalidates prior grants at the same access owner before new access is issued. The native caller must not report that transition as settled without the owner result; lost replies retain uncertainty. Already-admitted transport bytes cannot be recalled.
+
+Standard browser WebSocket construction has URL and subprotocol arguments, not arbitrary request headers. The selected adapter design therefore checks Host/Origin and resource limits before upgrade, then allows only one bounded authentication frame before useful operations. It does **not** claim that upgrade itself authenticates a browser.
+
+| Browser frame | Fields / admission |
+| --- | --- |
+| `hello` | `schema_version`, `grant_id`, redacted `credential`, `pane_generation`; only allowed first frame |
+| `ready` | Negotiated schema and a delivery-instance ID; emitted only after successful grant validation |
+| `subscribe` | Request/subscription ID plus typed permitted view and Host/resource scope; allowed only after `ready` |
+| `update` | Subscription ID, declared source generation/position and typed projection payload; admission rechecks the active grant and current pane generation for every frame |
+| `cancel` / `cancelled` | Exact request/subscription ID and retirement state; acknowledgement names which owner actually stopped |
+| `refused` | Closed reason enum: incompatible version, invalid/expired/revoked grant, wrong scope, wrong origin/authority, resource limit or unavailable service; no secret-bearing error text |
+
+All variants have one schema home, `bridge_transport_contract.rs`, with generated/validated TypeScript and native projections. They are adapter envelopes around the selected existing Bridge operations, not an untyped `command.execute` entry. Browser frame/connection limits and the unauthenticated-frame deadline are explicit adapter configuration; exact production values remain G8/G10. Unauthenticated upgrades consume a separately bounded allowance and cannot open subscriptions or invoke Host work.
+
+The selected browser control encoding is UTF-8 JSON text frames with an explicit `kind` discriminator and one supported schema-version enum. Parse and semantically validate once; reject unknown variants/fields and unsupported versions before dispatch. Raw finite-content bodies remain binary. This browser adapter choice does not select the remote RPC codec. Secrets use a redacting opaque type; the access owner checks a monotonic in-memory expiry deadline. Any client-visible `expires_at_utc` is RFC 3339 metadata, not client-supplied authority, and an `Instant` is never serialized.
+
+The initial finite-content kind enum preserves the surveyed five kinds: `annotation.output`, `annotation.projection`, `file.content`, `review.content`, `review.comparisonTargets`. Each descriptor preserves its product/source/admission checks. Full exposure of the sixteen semantic calls and twenty-two nested annotation operations requires their existing operation-by-operation mapping; a transport hello does not authorize them all.
+
+## Streaming, cancellation and currentness
+
+```mermaid
+stateDiagram-v2
+    [*] --> AwaitingAccess
+    AwaitingAccess --> Active: Valid hello and scope
+    AwaitingAccess --> Refused: Invalid frame or allowance exhausted
+    Active --> Stopping: Read delivery cancelled, revoked or disconnected
+    Stopping --> Retired: Local producer joined and reserved capacity released
+    Stopping --> Unknown: Remote retirement not established
+    Refused --> [*]
+    Retired --> [*]
+    Unknown --> [*]
+```
+
+This state machine describes delivery and reads, not mutation execution. The HTTP response body owns its stream producer or a cancellation token with tracked tasks and joined retirement. Dropping a Tokio join handle is not cancellation. Browser abort can cause local response-body destruction; the Gateway separately cancels the exact Host read stream and observes its retirement.
+
+Each operation declares its cancellation class under K9/K10. Consumer loss, revocation or QUIC loss retires reads/subscription delivery; an **already-admitted effect** continues to settlement under its operation record independently of that transport. Explicit cancellation may stop such an operation only where its own contract defines a safe cancellation point and the resulting effects. No browser abort, Gateway shutdown or task-drop shortcut may invent that permission. An uncertain mutation remains unknown to the disconnected caller until reconciliation; no automatic resubmission or rollback is introduced.
+
+Credit is consumed by actual buffered bytes and released on consumption or verified retirement. The reader being slow cannot make the Gateway or Host accumulate an unbounded queue. Control/input and bulk content use independent QUIC streams, but per-stream flow control is not a measured latency guarantee. Raw terminal VT bytes retain their own ordered stream; they are not JSON/base64 content frames or replicated SQL state.
+
+For content, the Host remains the source/revision owner; the Gateway relays the admitted descriptor and bounded bytes. Equal digest does not mean current source, browser installation or visible pixels. Source invalidation and stream interruption preserve the operation's typed currentness/failure result instead of silently serving a different revision under the old descriptor.
+
+## Mobile lifetime
+
+Native lifecycle signals enter a thin adapter; runtime scheduling, cancellation, transport and projection work stay off MainActor. MainActor only publishes already-admitted native outcomes and performs UI work.
+
+| Runtime state | Transition and ownership |
+| --- | --- |
+| Foreground, serving | Embedded composition owns one Tokio runtime, active loopback listener and remote connections |
+| Entering background | Proposed policy: stop accepting new browser work, invalidate current browser delivery access and request owned read/transport retirement; retain logical desired subscriptions separately and preserve admitted effect custody |
+| Suspended or terminated | No service progress is promised. A kernel-visible listener is not proof that application code can service it; Host execution continues independently |
+| Foreground recovery | Establish current runtime/connection state, rebootstrap fresh pane grants, restore desired subscriptions using their declared resnapshot/gap rules, then publish current results |
+
+Closing/reopening the listener is a design policy supported by Apple's archived guidance, not a claim that iOS always closes it automatically. Rebinding an OS-assigned port can change origin and require reloading the page/worker, losing in-memory view state. Reusing a free old port does not restore Gateway identity or grant validity. T2 counts actual origin replacements and reloads; no zero-reload promise is made. The exact timing of remote QUIC retirement versus a short background interval remains a qualification choice; physical-device T2 must observe it. Connection migration cannot substitute for recovery after suspension, timeout or termination.
+
+## Trust, alternatives and remaining realization gaps
+
+Loopback bind, authority, Origin, credential, operation scope and native/Host permissions are separate checks. Axum's upgrade extractor supplies the protocol upgrade; it does not provide those application policies. CSP and navigation restrictions derive from the actual packaged Bridge bundle, not a permissive wildcard. Native bootstrap authenticates the actual Gateway instance before distributing a scoped credential; its production credential/packaging profile remains G12.
+
+That integrity must hold after bootstrap too. Losing the verified macOS UDS/runtime or the embedded iOS runtime invalidates its page/worker access and triggers teardown/rebootstrap. Plaintext loopback plus an asynchronous native death notification alone does not establish protection against another process rebinding the port and answering in the gap. T1 must qualify the complete lifetime binding: authenticated loopback TLS for actual fetch/WS, or another demonstrated binding that prevents impersonated responses. The selected trust profile remains G12; a successful initial fetch cannot close it.
+
+S32 rules out keeping Swift as the content relay and making browser WebTransport mandatory. T1 starts with the bounded first-frame exchange and compares the actual browser handshake alternatives before the production choice closes:
+
+| WebSocket authentication | Gain | Cost and qualification |
+| --- | --- | --- |
+| Bounded first frame | Simple worker implementation; no new upgrade-ticket lifecycle | Unauthenticated upgraded slots can be exhausted by a local process that forges Origin. Pre-auth limits bound memory but do not guarantee the legitimate worker a slot. Measure refusal/recovery under that load. |
+| One-use upgrade ticket | Authentication can finish before useful WebSocket work | Adds issuance, consumption, expiry and replay rules; a URL-based ticket can leak through URL diagnostics. No ticket protocol is selected here. |
+| Credential-bearing subprotocol plus fixed application protocol | Browser constructor can supply it at the handshake, allowing refusal before upgrade | Header must be safe, bounded and redacted by every logging layer; response echoes only the fixed application protocol. Qualify WKWebView's actual multi-protocol handling. It removes upgraded unauthenticated slots, not ordinary HTTP/socket denial-of-service risk. |
+
+Kubernetes' [public authenticator](https://github.com/kubernetes/kubernetes/blob/2049416c7235eeec9a413c38472708e49af3ed88/staging/src/k8s.io/apiserver/pkg/authentication/request/websocket/protocol.go) is precedent for filtering a base64url bearer subprotocol before response selection, not a library or protocol imported into AgentStudio. Any final choice must preserve the same E27 scope checks and G12 lifetime identity proof.
+
+Mutual pinned X.509 identities and RFC 7250 raw keys are both feasible rustls profiles. Pairing enrollment/revocation, actual key storage, selected crypto provider and mobile-safe feature set must be fixed and tested before product use. No permissive verifier or silent TCP fallback is permitted by calling transport encrypted. Mac-local Gateway/Host transport remains its own profile; the remote Quinn selection does not force a local network hop.
+
+Remote TLS authenticates a peer, not every operation that peer requests. The Host's E17/E18 operation/data checks and central writer-lease gates remain authoritative after transport admission. A Gateway-issued E27 can narrow those rights for a pane; it cannot amplify them or create a central lease.
+
+## Obligation realization and proof seams
+
+| U · R · E | Owner | Interface | Shape and home | State | Failure | Proof seam |
+| --- | --- | --- | --- | --- | --- | --- |
+| U17/U25 · R18 · E3/E16/E19/E20/E24 | Bridge HTTP adapter and native bootstrap | Direct content request / bootstrap | `NativeBridgeBootstrap`, content descriptor; Gateway contracts | Admitted transfer / native display | Explicit read/currentness/transport failure | Real WebView request, Rust byte delivery and native relay counter |
+| U9/U25 · R19 · E4/E16/E17/E18/E23/E24/E27 | Gateway browser access owner | `hello`, scoped HTTP/operation admission | Closed browser frames and `BridgeGrantId`; shared contract modules | AwaitingAccess / Active / revoked or refused | Wrong origin/authority, grant, generation or operation rejected before protected work | Protected-read/effect/subscription journal correlated to supplied scope; native identity profile remains G12 |
+| U3/U18/U25 · R20 · E3/E4/E19/E20/E23/E24 | Quinn adapter plus admitted peer registry | Host port and mutual verifier | Host-qualified request and peer identity contracts | Authenticating / connected / closed | Wrong/unpaired/revoked key and unavailable transport distinct | Two real processes, independently provisioned allowed/wrong identities and Host readback |
+| U12/U14/U15/U17/U25 · R21 · E1/E3/E19/E24/E27 | Embedded composition and native lifecycle adapter | Stop/recover lifecycle entry | Closed runtime/connection state and fresh bootstrap | Foreground / stopping / unavailable / recovering | No stale connection or grant is presented as current | Physical device lifecycle, Host process/session identity and first resumed data |
+| U8/U9/U13/U25 · R22 · E3/E4/E19/E20 | Response-body owner and Host operation owner | Cancel exact stream / observe retirement | `cancel` / `cancelled` and existing unknown-effect envelope | Stopping / retired / unknown | Local close cannot impersonate remote completion | Body disposal, task joins, Host operation retirement and released byte credits |
+| U9/U17/U19/U25 · R23 · E3/E4/E19/E20/E24/E27 | Shared schema owner and concrete adapters | Native/browser/remote boundaries | One schema with derived projections; exact native binding remains U10 gap | Version admitted / refused | Malformed, incompatible or interrupted traffic stays typed | Actual Swift/TypeScript/Rust opposite-side inputs, not self-roundtrips |
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

@@ -1,0 +1,2057 @@
+{
+  "sourceHead": "624300332f5e50f7bb8cbb9fc786d5e5b4a3d462",
+  "scope": "Exact table-name coverage and named current source/read/write/purpose correlations; not a target export/unit/schema or runtime/deletion decision. Tables in read/support include wider loaders and auxiliary observations. Conditional branches are unioned, not every-call table sets.",
+  "counts": {
+    "cataloguedTables": 86,
+    "cataloguedColumns": 597,
+    "namedConsumerReadOrSupportTables": 71,
+    "otherTablePurposes": 15
+  },
+  "sourceRecords": [
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.json",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.json",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.json",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.json",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.json",
+    "tmp/practices-research/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json"
+  ],
+  "tables": [
+    {
+      "table": "workspace",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "snapshot identity dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "app_workspace_selection",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "snapshot selection dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "watched_path",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository topology and intent",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct topology restore / scan configuration"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "repo",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository topology and intent",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct topology and intent"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 7
+    },
+    {
+      "table": "worktree",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository topology and intent",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct topology and intent"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 7
+    },
+    {
+      "table": "repo_tag",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository topology and intent",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct filter/intent"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "unavailable_repo",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository topology and intent",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct membership suppression and retention timing"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "unavailable_worktree",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository topology and intent",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct membership suppression and retention timing"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Pane activity and retain membership",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "retained-membership query dependency"
+        },
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct intent/membership"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 20
+    },
+    {
+      "table": "pane_content_terminal",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "pane snapshot hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "pane_content_webview",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "pane snapshot hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "pane_content_code_viewer",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "pane snapshot hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "pane_content_payload",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "pane snapshot hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "drawer",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct parent/child composition"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "drawer_pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct parent/child composition"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "tab_shell",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct tab naming/order context"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "tab_pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct active-residency membership context"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "tab_arrangement",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "arrangement_layout_pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "arrangement_layout_divider",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "arrangement_minimized_pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "arrangement_drawer_view",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "drawer_view_layout_pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "drawer_view_layout_divider",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "drawer_view_minimized_pane",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "composition hydration dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "workspace_terminal_session_ownership",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "current execution custody and effect-reconciliation state",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json",
+          "role": "Named repository SELECT closures do not mutate. Datastore observe/retire methods hold persistence ordering across external callback and a later write, without keeping one SQLite transaction across await."
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "current execution custody and effect-reconciliation state",
+        "effect": "Named repository SELECT closures do not mutate. Datastore observe/retire methods hold persistence ordering across external callback and a later write, without keeping one SQLite transaction across await.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json"
+      },
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "workspace_undo_close",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Pane activity and retain membership",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "retained-membership query dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 11
+    },
+    {
+      "table": "workspace_undo_close_member",
+      "currentBacking": "core.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Pane activity and retain membership",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "retained-membership query dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "sessions_conversation",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "binding decoding dependency"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "sessions_operation",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "status-load revision/join and admitted write log"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 12
+    },
+    {
+      "table": "sessions_pane_binding",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct binding/context source"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 12
+    },
+    {
+      "table": "sessions_source",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "status-context source record hydration"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 13
+    },
+    {
+      "table": "sessions_evidence",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct reducer history"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 21
+    },
+    {
+      "table": "sessions_provider_question",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "conditional signal decoding dependency"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "sessions_provider_question_option",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sessions evidence/status input",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "conditional signal decoding dependency"
+        },
+        {
+          "meaning": "SessionsRepository.statusContext → loadContext(.pane)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "provider hook transaction producing persisted replay rows",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "pane_state",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Compact context and maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct display/title/line/revision source"
+        },
+        {
+          "meaning": "title / line / source revision / line staleness SQL decode",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "sessionEnded(bindingGenerationId) line/receipt maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "sessionEnded(bindingGenerationId) line/receipt maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 21
+    },
+    {
+      "table": "pane_state_action",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Compact context and maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "line decoding dependency"
+        },
+        {
+          "meaning": "title / line / source revision / line staleness SQL decode",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 10
+    },
+    {
+      "table": "pane_request",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Compact context and maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct message-count projection source"
+        },
+        {
+          "meaning": "PaneContextService.openAskSummaries → openAskUpdates / openAskUpdate(advancing:false)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "openAskUpdate(advancing:true) inside send/settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "sessionEnded(bindingGenerationId) line/receipt maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "sessionEnded(bindingGenerationId) line/receipt maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 31
+    },
+    {
+      "table": "pane_event",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Compact context and maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct message-count projection source"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 20
+    },
+    {
+      "table": "pane_request_action",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 10
+    },
+    {
+      "table": "pane_event_action",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 10
+    },
+    {
+      "table": "pane_request_choice",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "pane_request_property",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 12
+    },
+    {
+      "table": "pane_request_required",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "pane_request_property_choice",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "pane_request_answer_value",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "explicit notice markRead / notice dismiss state write",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "pane_write_order",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Compact context and maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "write admission support, not compact display read"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "pane_epoch_claim",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "Retained response for one claim identity scoped to pane/writerKey/title-or-line stream; not current provider binding generation or proof any title/line write applied.",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+          "role": "private-idempotent-claim-replay-and-order-allocation"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "Retained response for one claim identity scoped to pane/writerKey/title-or-line stream; not current provider binding generation or proof any title/line write applied.",
+        "effect": "Replay branch reads only this table but runs inside a write transaction after effectful ensureOpen.; Fresh claim allocates/mutates private writer-order state before payload write.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md"
+      },
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "pane_answer_position",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "PaneContextService.openAskSummaries → openAskUpdates / openAskUpdate(advancing:false)",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "openAskUpdate(advancing:true) inside send/settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "openAskUpdate(advancing:true) inside send/settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "person answer/dismiss/withdraw settlement transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "pane_retirement",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Compact context and maintenance",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "read exclusion / write admission support"
+        },
+        {
+          "meaning": "PaneContextService.setTitle/setLine write closures",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "computeDisplay → capturePaneContextDisplay write closure",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "ensureOpen startup settlement / pending retirement drain",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "capturePaneContextDetail read closure + nested full-message mapper",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "pane.message.changes reported-position / answer-receipt transaction",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        },
+        {
+          "meaning": "deadline selection / existing scheduler wiring / timed maintenance / retired purge",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named explicit SQL write target"
+        },
+        {
+          "meaning": "message send producer / same-intent replay / form and action writes",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/context-query-table-closure.md",
+          "role": "named SQL read dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "local_ipc_credential",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "Persisted SHA256 verifier plus pane/workspace/record identity and registered/revoked state. No bearer token, provider binding generation or diagnostic runtime credential is stored in this current table.",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+          "role": "private-pane-verifier-scope-continuity"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "Persisted SHA256 verifier plus pane/workspace/record identity and registered/revoked state. No bearer token, provider binding generation or diagnostic runtime credential is stored in this current table.",
+        "effect": "Repository lookup/list/verifier reads do not mutate SQL.; Full login can install/release leases, replace connection context and schedule separate persistence; login success is not persistence completion.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md"
+      },
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "pane_context_cli_outbox_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "Monotonic handled source-row prefix scoped by CLI store incarnation; handled can mean accepted same/new notice or permanently malformed/refused row, not display/user acceptance.",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+          "role": "private-store-incarnation-intake-disposition-checkpoint"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "Monotonic handled source-row prefix scoped by CLI store incarnation; handled can mean accepted same/new notice or permanently malformed/refused row, not display/user acceptance.",
+        "effect": "Cursor/read-through SELECTs are pure reads.; The intake workflow writes cursor on accepted/malformed/refused outcomes; reading source rows alone does not acknowledge.; Client call completion may later open CLI writer and purge aged handled rows; separate from read-through query.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md"
+      },
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "local_workspace_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct active-tab context through completed snapshot"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "local_tab_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct active-arrangement context through completed snapshot"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "local_arrangement_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct active-pane context through completed snapshot"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "local_drawer_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct expanded-drawer context through completed snapshot"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "local_arrangement_drawer_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Wider graph/content/cursor hydration",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct active-drawer-child context through completed snapshot"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "local_drawer_presentation",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "direct active native drawer preference consumer; wider canonical-composition hydration dependency",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "fetch itself read-only; decoder/filter defaults do not repair; boot preparation may import rows and mutate legacy UserDefaults markers"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "direct active native drawer preference consumer; wider canonical-composition hydration dependency",
+        "effect": "fetch itself read-only; decoder/filter defaults do not repair; boot preparation may import rows and mutate legacy UserDefaults markers",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "local_window_state",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sidebar/filter/collapse/sort memory",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct presentation memory"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 16
+    },
+    {
+      "table": "local_window_sidebar_collapsed_group",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sidebar/filter/collapse/sort memory",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct collapse memory"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "local_editor_preferences",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "direct active native editor-choice preference consumer",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "SQL fetch read-only and missing/error defaults; hydration mutates atom with save scheduling suppressed; command resolution can later heal missing installation bookmark"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "direct active native editor-choice preference consumer",
+        "effect": "SQL fetch read-only and missing/error defaults; hydration mutates atom with save scheduling suppressed; command resolution can later heal missing installation bookmark",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "local_repo_explorer_preferences",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Sidebar/filter/collapse/sort memory",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct workspace sort preferences"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "local_inbox_notification_preferences",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "retained schema/source and persistence helpers; no located external production caller",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "repository read is pure SELECT; invalid/missing record returns default without SQL repair"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "retained schema/source and persistence helpers; no located external production caller",
+        "effect": "repository read is pure SELECT; invalid/missing record returns default without SQL repair",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 9
+    },
+    {
+      "table": "local_entity_recency",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Auxiliary recency observation",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "adjacent recency store, not established direct sidebar read requirement"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "local_workspace_entity_recency",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Auxiliary recency observation",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "observed support / not consumed by current captured activity fields"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 5
+    },
+    {
+      "table": "cache_metadata",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Saved enrichment and runtime-status boundary",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "saved cache metadata"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "cache_repo_enrichment",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Saved enrichment and runtime-status boundary",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "saved identity enrichment"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 10
+    },
+    {
+      "table": "cache_worktree_enrichment",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Saved enrichment and runtime-status boundary",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "saved branch enrichment"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "local_repository_activity",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository activity and coverage",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct classifier source after live commit"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 7
+    },
+    {
+      "table": "local_repository_activity_cursor",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Repository activity and coverage",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "coverage checkpoint support"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "local_pane_activity",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "Pane activity and retain membership",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-query-table-closure.md",
+          "role": "direct durable activity record"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 3
+    },
+    {
+      "table": "annotation_session",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "annotation session discovery",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "coherent demanded annotation detail",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "annotation projection message output",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 11
+    },
+    {
+      "table": "annotation_thread",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "coherent demanded annotation detail",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "annotation projection message output",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 10
+    },
+    {
+      "table": "annotation_message",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "coherent demanded annotation detail",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "annotation projection message output",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "bounded output history summary",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 13
+    },
+    {
+      "table": "annotation_message_draft",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "coherent demanded annotation detail",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "annotation projection message output",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "annotation_output_attempt",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "immutable output attempt inspection",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "bounded output history summary",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 14
+    },
+    {
+      "table": "annotation_output_attempt_message",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "immutable output attempt inspection",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        },
+        {
+          "meaning": "bounded output history summary",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "annotation_output_event",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": true,
+      "currentUseEvidence": [
+        {
+          "meaning": "immutable output attempt inspection",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/bridge-query-table-closure.md",
+          "role": "named query/decode dependency"
+        }
+      ],
+      "additionalCurrentPurpose": null,
+      "cataloguedColumnCount": 4
+    },
+    {
+      "table": "local_recovery_provenance",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "current local database replacement witness and explicit acknowledgement",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json",
+          "role": "Repository fetch closures only read. restoreRecoveryState updates runtime admission/publication state; acknowledgeRecovery is a separate write and runtime transition."
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "current local database replacement witness and explicit acknowledgement",
+        "effect": "Repository fetch closures only read. restoreRecoveryState updates runtime admission/publication state; acknowledgeRecovery is a separate write and runtime transition.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json"
+      },
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "local_notification_inbox_item",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "retained/dormant Inbox snapshot source; operational decoder cleanup on retained read",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "fetchNotifications opens write and deletes malformed decoded rows; no retention cap on fetch; retained adapter combined load is not a pure read"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "retained/dormant Inbox snapshot source; operational decoder cleanup on retained read",
+        "effect": "fetchNotifications opens write and deletes malformed decoded rows; no retention cap on fetch; retained adapter combined load is not a pure read",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 36
+    },
+    {
+      "table": "local_notification_inbox_collapsed_group",
+      "currentBacking": "local.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "retained/dormant Inbox presentation-memory source; paired snapshot dependency",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "own fetch pure SELECT; paired load may previously delete malformed notification-item rows; hydration clears runtime pending filters/overrides"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "retained/dormant Inbox presentation-memory source; paired snapshot dependency",
+        "effect": "own fetch pure SELECT; paired load may previously delete malformed notification-item rows; hydration clears runtime pending filters/overrides",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "cli_store_identity",
+      "currentBacking": "ipc/cli.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "UUIDv7 incarnation and stable/beta/debug channel for one CLI source file. It is not a Host/device identity, pane credential or a universal operation log.",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+          "role": "private-producer-store-incarnation-and-channel-admission"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "UUIDv7 incarnation and stable/beta/debug channel for one CLI source file. It is not a Host/device identity, pane credential or a universal operation log.",
+        "effect": "readIdentity/openReader do not mutate the database.; Any caller opening writer for answer-state/cleanup can initialize/migrate identity or other CLI schema before subsequent read.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md"
+      },
+      "cataloguedColumnCount": 2
+    },
+    {
+      "table": "cli_outbox",
+      "currentBacking": "ipc/cli.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "Store-local AUTOINCREMENT order and immutable typed notice request payload, deduped across whole table by message_id. Source row commit is a queued result, not app admission.",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+          "role": "private-immutable-offline-notice-source-rows"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "Store-local AUTOINCREMENT order and immutable typed notice request payload, deduped across whole table by message_id. Source row commit is a queued result, not app admission.",
+        "effect": "readOutbox is pure SQL plus diagnostics; downstream intake/cursor commit separate.; App read does not remove rows; only CLI cleanup purge inspected.; Open writer for queue/cleanup can initialize/migrate store separately.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md"
+      },
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "cli_state",
+      "currentBacking": "ipc/cli.sqlite",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "Keyed by(kind,pane,session_ref). titleWriteNumber/lineWriteNumber hold pending claim, accepted epoch and last allocated counter; answerPosition holds local output progress. Producer allocation is not server acceptance.",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md",
+          "role": "private-producer-write-reservation-and-printed-change-progress"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "Keyed by(kind,pane,session_ref). titleWriteNumber/lineWriteNumber hold pending claim, accepted epoch and last allocated counter; answerPosition holds local output progress. Producer allocation is not server acceptance.",
+        "effect": "reserveWrite allocates or persists claim; acceptClaim allocates.; answerPosition() creates missing row in write transaction.; Server changes read separately confirms receipts/prunes events; local advance follows output sink, not remote operation effect.",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/cli-private-table-closure.md"
+      },
+      "cataloguedColumnCount": 7
+    },
+    {
+      "table": "search_document",
+      "currentBacking": "in-memory search",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "private operational in-memory search document projection for active CommandBar",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "matchingRows pure read; search may install/rebuild and write the ordinary/FTS pair"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "private operational in-memory search document projection for active CommandBar",
+        "effect": "matchingRows pure read; search may install/rebuild and write the ordinary/FTS pair",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 6
+    },
+    {
+      "table": "search_document_fts",
+      "currentBacking": "in-memory search",
+      "namedConsumerReadOrSupport": false,
+      "currentUseEvidence": [
+        {
+          "meaning": "private operational in-memory trigram FTS derivative of search_document",
+          "sourceRecord": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md",
+          "role": "matchingRows pure read; search may install/rebuild both tables"
+        }
+      ],
+      "additionalCurrentPurpose": {
+        "purpose": "private operational in-memory trigram FTS derivative of search_document",
+        "effect": "matchingRows pure read; search may install/rebuild both tables",
+        "source": "tmp/practices-research/2026-10-17-daemon-capability-placement/sidebar-remaining-table-closure.md"
+      },
+      "cataloguedColumnCount": 2
+    }
+  ],
+  "limits": [
+    "Current catalog/source declarations, not installed databases",
+    "No full transitive application or every-column-use audit",
+    "No automatic table export, migration, revival or deletion authority",
+    "No runtime, replication, process/native effect, interoperability or performance observation"
+  ],
+  "catalogSource": "data-catalog.json",
+  "evidenceNavigation": "The use index references source packets; exact columns and decisive pointers remain in their existing catalog/packet homes."
+}

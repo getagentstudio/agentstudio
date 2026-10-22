@@ -1,0 +1,92 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 786.328 592" width="786.328" height="592" style="--bg: var(--surface-content); --fg: var(--ink); --surface: var(--accent-soft); --border: var(--rule); --diagram-width: 786px; --diagram-readable-width: 629px;;--accent:#6fc0ca;--bg:#171d26;--border:#2c3542;--fg:#e7ebf1;--surface:#1a3236;background:#171d26;max-width:100%;height:auto" data-traced="">
+<style>
+
+  text { font-family: 'IBM Plex Sans Condensed', system-ui, sans-serif; }
+  svg {
+    /* Derived from --bg and --fg (overridable via --line, --accent, etc.) */
+    --_text:          var(--fg);
+    --_text-sec:      var(--muted, color-mix(in srgb, var(--fg) 60%, var(--bg)));
+    --_text-muted:    var(--muted, color-mix(in srgb, var(--fg) 40%, var(--bg)));
+    --_text-faint:    color-mix(in srgb, var(--fg) 25%, var(--bg));
+    --_line:          var(--line, color-mix(in srgb, var(--fg) 50%, var(--bg)));
+    --_arrow:         var(--accent, color-mix(in srgb, var(--fg) 85%, var(--bg)));
+    --_node-fill:     var(--surface, color-mix(in srgb, var(--fg) 3%, var(--bg)));
+    --_node-stroke:   var(--border, color-mix(in srgb, var(--fg) 20%, var(--bg)));
+    --_group-fill:    var(--bg);
+    --_group-hdr:     color-mix(in srgb, var(--fg) 5%, var(--bg));
+    --_inner-stroke:  color-mix(in srgb, var(--fg) 12%, var(--bg));
+    --_key-badge:     color-mix(in srgb, var(--fg) 10%, var(--bg));
+  }
+</style>
+<defs>
+  <marker id="seq-arrow" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polygon points="0 0, 8 2.5, 0 5" fill="var(--_arrow)"></polygon>
+  </marker>
+  <marker id="seq-arrow-open" markerWidth="8" markerHeight="5" refX="8" refY="2.5" orient="auto-start-reverse">
+    <polyline points="0 0, 8 2.5, 0 5" fill="none" stroke="var(--_arrow)" stroke-width="1"></polyline>
+  </marker>
+</defs>
+<g class="block" data-type="alt" data-label="Declared client route is available">
+  <rect x="30" y="188" width="726.328" height="354" rx="0" ry="0" fill="none" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <rect x="30" y="188" width="207.06999999999996" height="18" fill="var(--_group-hdr)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="36" y="197" font-size="11" font-weight="600" fill="var(--_text-sec)" dy="3.8499999999999996">alt [Declared client route is available]</text>
+  <line x1="30" y1="486" x2="756.328" y2="486" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+  <text x="38" y="500" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">[No admitted route before dispatch]</text>
+</g>
+<line class="lifeline" data-actor="CLI" x1="119.219" y1="70" x2="119.219" y2="562" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Gateway" x1="294.686" y1="70" x2="294.686" y2="562" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Client" x1="476.82199999999995" y1="70" x2="476.82199999999995" y2="562" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<line class="lifeline" data-actor="Effect" x1="674.519" y1="70" x2="674.519" y2="562" stroke="var(--_line)" stroke-width="0.75" stroke-dasharray="6 4"></line>
+<g class="message" data-from="CLI" data-to="Gateway" data-label="Selected operation and kind-qualified target" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="119.219" y1="90" x2="294.686" y2="90" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="206.9525" y="80" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Selected operation and kind-qualified target</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Gateway" data-label="Admit caller and resolve live client route" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="294.686,130 324.686,130 324.686,150 294.686,150" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></polyline>
+  <text x="332.686" y="140" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Admit caller and resolve live client route</text>
+</g>
+<g class="message" data-from="Gateway" data-to="Client" data-label="Typed client operation and route lifetime" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="294.686" y1="228" x2="476.82199999999995" y2="228" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="385.75399999999996" y="218" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Typed client operation and route lifetime</text>
+</g>
+<g class="message" data-from="Client" data-to="Client" data-label="Recheck actual target and admission" data-line-style="solid" data-arrow-head="filled" data-self="true">
+  <polyline points="476.82199999999995,268 506.82199999999995,268 506.82199999999995,288 476.82199999999995,288" fill="none" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></polyline>
+  <text x="514.8219999999999" y="278" font-size="11" text-anchor="start" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Recheck actual target and admission</text>
+</g>
+<g class="message" data-from="Client" data-to="Effect" data-label="Apply selected native action" data-line-style="solid" data-arrow-head="filled" data-self="false">
+  <line x1="476.82199999999995" y1="338" x2="674.519" y2="338" stroke="var(--_line)" stroke-width="1" marker-end="url(#seq-arrow)"></line>
+  <text x="575.6705" y="328" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Apply selected native action</text>
+</g>
+<g class="message" data-from="Effect" data-to="Client" data-label="Actual owner result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="674.519" y1="378" x2="476.82199999999995" y2="378" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="575.6705" y="368" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Actual owner result</text>
+</g>
+<g class="message" data-from="Client" data-to="Gateway" data-label="Qualified operation result" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="476.82199999999995" y1="418" x2="294.686" y2="418" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="385.75399999999996" y="408" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Qualified operation result</text>
+</g>
+<g class="message" data-from="Gateway" data-to="CLI" data-label="Same observed result boundary" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="294.686" y1="458" x2="119.219" y2="458" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="206.9525" y="448" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Same observed result boundary</text>
+</g>
+<g class="message" data-from="Gateway" data-to="CLI" data-label="Client unavailable, no dispatch" data-line-style="dashed" data-arrow-head="filled" data-self="false">
+  <line x1="294.686" y1="522" x2="119.219" y2="522" stroke="var(--_line)" stroke-width="1" stroke-dasharray="6 4" marker-end="url(#seq-arrow)"></line>
+  <text x="206.9525" y="512" font-size="11" text-anchor="middle" font-weight="400" fill="var(--_text-muted)" dy="3.8499999999999996">Client unavailable, no dispatch</text>
+</g>
+<g class="actor" data-id="CLI" data-label="Frontend CLI or MCP" data-type="participant">
+  <rect x="40" y="30" width="158.438" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="119.219" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Frontend CLI or MCP</text>
+</g>
+<g class="actor" data-id="Gateway" data-label="Mac Gateway" data-type="participant">
+  <rect x="238.438" y="30" width="112.49599999999998" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="294.686" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Mac Gateway</text>
+</g>
+<g class="actor" data-id="Client" data-label="Addressed native client" data-type="participant">
+  <rect x="390.93399999999997" y="30" width="171.77599999999998" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="476.82199999999995" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Addressed native client</text>
+</g>
+<g class="actor" data-id="Effect" data-label="Native effect owner" data-type="participant">
+  <rect x="602.71" y="30" width="143.618" height="40" rx="4" ry="4" fill="var(--_node-fill)" stroke="var(--_node-stroke)" stroke-width="1"></rect>
+  <text x="674.519" y="50" font-size="13" text-anchor="middle" font-weight="500" fill="var(--_text)" dy="4.55">Native effect owner</text>
+</g>
+</svg>

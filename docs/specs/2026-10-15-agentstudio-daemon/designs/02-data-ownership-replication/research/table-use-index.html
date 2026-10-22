@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AgentStudio daemon · Current use of every catalogued table</title>
+<link rel="stylesheet" href="https://demistify.getagentstudio.dev/v1/theme.css">
+<link rel="stylesheet" href="../../../assets/reader-layout.css">
+<script type="module" src="https://demistify.getagentstudio.dev/v1/runtime.js"></script></head><body>
+<ex-nav for="content"><nav slot="pages" aria-label="Pages"><a href="../../../explainer/index.html">Understand the system</a><a href="../../../explainer/features.html">Explore AgentStudio features</a><a href="../../../explainer/progress.html">What was built and tried</a><a href="../../../explainer/walkthroughs.html">Follow a workflow</a><a href="../../../explainer/delivery.html">MVP and integration phases</a><a href="../../../explainer/requirements.html">Requirements</a><a href="../../../explainer/architecture.html">Technical architecture</a><a href="../../../explainer/communication.html">Communication</a><a href="../../../explainer/data.html">Data ownership</a><a href="../../../explainer/schema.html">Tables and fields</a><a href="../../../explainer/sequence.html">Spec dependencies</a><a href="../../../explainer/experiments.html">Experiments and decisions</a><a href="../../../explainer/research.html">Research library</a><a href="../../../index.html">All specification documents</a><a href="table-use-index.html">AgentStudio daemon · Current use of every catalogued table</a></nav></ex-nav>
+<ex-document id="content"><h1>Current use of every catalogued table</h1>
+<ex-markdown id="source-context"><script type="text/markdown">
+**Research/source record.** Read the source’s own date, status and proof limits. Historical reports can be superseded by current Requirements; advice is not owner authority. Links are adapted for this local reader; missing historical references are shown as text, not hidden.
+
+[Original source](table-use-index.md) · [Research library](../../../explainer/research.html) · [MVP](../../../explainer/delivery.html)
+</script></ex-markdown><ex-markdown id="source"><script type="text/markdown">
+## Current use of every catalogued table
+
+**All 86 current logical table names are accounted for by their read, write, operational or retained-source purpose. This does not select 86 tables for replication.** The [view dependency map](query-data-dependencies.html) explains the consumer boundaries; this index lets a reader locate each table without mistaking credentials, custody, client preferences or disposable search for shared domain state.
+
+Source baseline: AgentStudio `624300332f5e50f7bb8cbb9fc786d5e5b4a3d462`. The existing [catalog](data-catalog.json) supplies 86 table identities and 597 named columns; the [structured use index](table-use-index.json) connects each identity to the named source closures and their limits. Backing-file names below describe the current code. Target units, audience, export membership, retention, client scope and schemas remain unselected. Installed rows, migrations and distributed behavior have not been observed.
+
+## What the coverage means
+
+The sidebar, Sessions/context and annotation read maps name 71 distinct table identities, including conditional children, wider snapshot hydration and auxiliary support. The fifteen identities outside that read/support union are classified separately below. Some already occur as maintenance write targets; “outside the read union” does not mean uninspected or unused.
+
+| Current purpose outside that read union | Tables | Why a read copy is insufficient |
+| --- | --- | --- |
+| Execution custody and recovery | `workspace_terminal_session_ownership`, `local_recovery_provenance` | Cleanup eligibility/effect reconciliation and a local replacement witness affect actual service admission. Receiving rows transfers neither destructive custody nor a receiver's recovery acknowledgement |
+| Protocol and producer bookkeeping | `pane_epoch_claim`, `local_ipc_credential`, `pane_context_cli_outbox_cursor`, `cli_store_identity`, `cli_outbox`, `cli_state` | Claim response, current write admission, verifier scope, handled prefix, queued intent and printed progress are different facts. They are not successful domain operations |
+| Active native preferences | `local_drawer_presentation`, `local_editor_preferences` | Stored intent joins actual composition, geometry or installed targets. Ordinary reads and boot/resolution side effects have different boundaries |
+| Retained Inbox source | `local_inbox_notification_preferences`, `local_notification_inbox_item`, `local_notification_inbox_collapsed_group` | Current boot source explicitly retires ingestion/presentation. Retained schema/functions do not select revival, removal or export; no located caller is a bounded search result |
+| Disposable search | `search_document`, `search_document_fts` | A current search can install/rebuild its private in-memory index before reading. The paired index is derived from the admitted document set and is not another domain truth |
+
+## Read the table index
+
+“Used by” records named current dependencies, not a minimal query schema or proposed service owner. The same table can support a passive read and a separate maintenance/acknowledgement write. Open its source record for exact column groups, read/write closures, production wiring, conditional paths and gaps. Complete column enumeration and source-key prerequisites remain in the [catalog](data-catalog.json) and [schema analysis](schema-prerequisites.html).
+
+## `core.sqlite`
+
+| Current table | Used by / current purpose | Source record |
+| --- | --- | --- |
+| `workspace` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `app_workspace_selection` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `watched_path` | Repository topology and intent | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `repo` | Repository topology and intent | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `worktree` | Repository topology and intent | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `repo_tag` | Repository topology and intent | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `unavailable_repo` | Repository topology and intent | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `unavailable_worktree` | Repository topology and intent | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `pane` | Pane activity and retain membership; Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `pane_content_terminal` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `pane_content_webview` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `pane_content_code_viewer` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `pane_content_payload` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `drawer` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `drawer_pane` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `tab_shell` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `tab_pane` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `tab_arrangement` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `arrangement_layout_pane` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `arrangement_layout_divider` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `arrangement_minimized_pane` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `arrangement_drawer_view` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `drawer_view_layout_pane` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `drawer_view_layout_divider` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `drawer_view_minimized_pane` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `workspace_terminal_session_ownership` | Execution custody; guarded cleanup and effect reconciliation | [custody/recovery](../../../research/evidence/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json) |
+| `workspace_undo_close` | Pane activity and retain membership | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `workspace_undo_close_member` | Pane activity and retain membership | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+
+## `local.sqlite`
+
+| Current table | Used by / current purpose | Source record |
+| --- | --- | --- |
+| `sessions_conversation` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `sessions_operation` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `sessions_pane_binding` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `sessions_source` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `sessions_evidence` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `sessions_provider_question` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `sessions_provider_question_option` | Sessions evidence/status input; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_state` | Compact context and maintenance; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_state_action` | Compact context and maintenance; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request` | Compact context and maintenance; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_event` | Compact context and maintenance; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request_action` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_event_action` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request_choice` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request_property` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request_required` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request_property_choice` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_request_answer_value` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_write_order` | Compact context and maintenance; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_epoch_claim` | Claim replay and writer-order allocation | [context](../../../explainer/research/context-query-table-closure-826084bd.html) · [CLI/admission](../../../explainer/research/cli-private-table-closure-b9ac671e.html) |
+| `pane_answer_position` | Sessions/context query or maintenance | [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `pane_retirement` | Compact context and maintenance; Sessions/context query or maintenance | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) · [context](../../../explainer/research/context-query-table-closure-826084bd.html) |
+| `local_ipc_credential` | Durable credential verifier/scope continuity | [CLI/admission](../../../explainer/research/cli-private-table-closure-b9ac671e.html) |
+| `pane_context_cli_outbox_cursor` | Handled notice-source prefix | [CLI/admission](../../../explainer/research/cli-private-table-closure-b9ac671e.html) |
+| `local_workspace_cursor` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_tab_cursor` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_arrangement_cursor` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_drawer_cursor` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_arrangement_drawer_cursor` | Wider graph/content/cursor hydration | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_drawer_presentation` | Active native drawer preference; boot import | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+| `local_window_state` | Sidebar/filter/collapse/sort memory | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_window_sidebar_collapsed_group` | Sidebar/filter/collapse/sort memory | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_editor_preferences` | Active native editor preference; resolution may heal bookmark | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+| `local_repo_explorer_preferences` | Sidebar/filter/collapse/sort memory | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_inbox_notification_preferences` | Retained Inbox preference helpers; no external production caller located | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+| `local_entity_recency` | Auxiliary recency observation | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_workspace_entity_recency` | Auxiliary recency observation | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `cache_metadata` | Saved enrichment and runtime-status boundary | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `cache_repo_enrichment` | Saved enrichment and runtime-status boundary | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `cache_worktree_enrichment` | Saved enrichment and runtime-status boundary | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_repository_activity` | Repository activity and coverage | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_repository_activity_cursor` | Repository activity and coverage | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `local_pane_activity` | Pane activity and retain membership | [sidebar](../../../explainer/research/sidebar-query-table-closure-503b8163.html) |
+| `annotation_session` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `annotation_thread` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `annotation_message` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `annotation_message_draft` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `annotation_output_attempt` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `annotation_output_attempt_message` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `annotation_output_event` | Annotation query/decode | [annotations](../../../explainer/research/bridge-query-table-closure-b8f95acd.html) |
+| `local_recovery_provenance` | Local replacement witness and explicit acknowledgement | [custody/recovery](../../../research/evidence/2026-10-17-daemon-capability-placement/custody-recovery-table-closure.json) |
+| `local_notification_inbox_item` | Retired Inbox persistence; retained fetch can prune malformed rows | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+| `local_notification_inbox_collapsed_group` | Retired Inbox presentation memory | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+
+## `ipc/cli.sqlite`
+
+| Current table | Used by / current purpose | Source record |
+| --- | --- | --- |
+| `cli_store_identity` | Producer-file identity and channel admission | [CLI/admission](../../../explainer/research/cli-private-table-closure-b9ac671e.html) |
+| `cli_outbox` | Producer notice source and cleanup | [CLI/admission](../../../explainer/research/cli-private-table-closure-b9ac671e.html) |
+| `cli_state` | Producer write reservation and printed-answer progress | [CLI/admission](../../../explainer/research/cli-private-table-closure-b9ac671e.html) |
+
+## `in-memory search`
+
+| Current table | Used by / current purpose | Source record |
+| --- | --- | --- |
+| `search_document` | Private in-memory search projection | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+| `search_document_fts` | Private in-memory FTS derivative | [native/Inbox/search](../../../explainer/research/sidebar-remaining-table-closure-091dab31.html) |
+
+## Extraction constraints
+
+- Preserve the writer's transaction predicates and required private bookkeeping while selecting the replication audience separately. Credentials and current authorization are separate; a copied verifier is not permission.
+- Keep retained claim replies separate from current writer epoch/counter admission. Retrying a claim and replaying a payload have different consequences.
+- Preserve notice intake's source identity and handled disposition. Handled may include refused/malformed entries; producer dedup differs from server semantic-intent dedup.
+- Keep client preference meaning separate from its future persistent home. A saved editor identifier cannot establish an installed app or successful external open.
+- Treat actual native presence, backend process evidence and local recovery acknowledgement as their own inputs. Current custody/recovery rows cannot be copied into a new owner and interpreted as a new grant.
+- Choose any search relocation from its real document/capability/native-context inputs. A derived SQL index does not need faithful replication merely because it uses SQLite.
+
+The named-source coverage closes table accounting at this depth. It does not close every operation, column use, permission race, provider transition, cascade/trigger, runtime liveness or future source-to-copy-to-client proof. The proposed [Host/Gateway/native processing split](../../09-gateway-cli/prepared-view-boundaries.html) and open data profiles retain their existing decision homes.
+
+</script></ex-markdown>
+<ex-markdown id="binding-note"><script type="text/markdown">
+This local reader edition is explanatory. Canonical sources retain their authority; proposals and historical advice are not adopted requirements. Demistify `v1`, observed `1.11.0` / `99d8f8f0dc0b51561ac074df74ad2cb1656c33dc`.
+</script></ex-markdown>
+</ex-document></body></html>

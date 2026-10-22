@@ -1,0 +1,18 @@
+{
+  "source": "Earlier direct owner messages supplied in the AgentStudio Lead conversation",
+  "captured_on": "2026-10-16",
+  "messages_verbatim": [
+    "what about all teh slite tablse we ahve we nee dinventory and classifciaiton",
+    "wher eit shoud live and why thi sneeds mroe thought",
+    "Lee, we need to know Verda. Storage of data and where certain things are materialized and what's events. We need to also collab, um, correlate the current SQLite database and data structures and what Agent Studio needs and how it works in the distributed system. And this is very important to go into a lot of detail, sabba"
+  ],
+  "authorized_need": "Detailed current-data inventory and classification, correlated with distributed AgentStudio behavior, data authority, persistence, copies, materialization and events",
+  "requirements_home": "Existing U4 and U13; no duplicate Requirements identity",
+  "not_selected_by_these_statements": [
+    "An exact target database or export table set",
+    "Gateway ownership of all authoritative data",
+    "Universal event sourcing, inbox/outbox or retained history",
+    "Treating each captured SQL change as a public domain event",
+    "A schema migration, new store, runtime mechanism or product implementation"
+  ]
+}
