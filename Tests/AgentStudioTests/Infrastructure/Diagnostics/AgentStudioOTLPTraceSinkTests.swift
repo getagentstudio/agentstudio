@@ -10,7 +10,8 @@ struct AgentStudioOTLPTraceSinkTests {
         let bootstrapper = RecordingOTLPBootstrapper()
         let context = AgentStudioOTLPTraceSinkContext(
             endpoint: URL(string: "http://127.0.0.1:4318")!,
-            otlpProtocol: .httpProtobuf
+            otlpProtocol: .httpProtobuf,
+            queueStatistics: AgentStudioTraceQueueStatistics()
         )
         let sink = AgentStudioOTLPTraceSink(context: context, bootstrapper: bootstrapper)
         let record = AgentStudioTraceRecord(

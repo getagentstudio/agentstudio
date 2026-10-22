@@ -700,7 +700,7 @@ struct AgentStudioOTLPPerformanceMetricsTests {
     }
 
     @Test
-    func traceQueueBacklogGaugeRecordsNonzeroThenZero() throws {
+    func traceQueueCopiesKeepEventCounterWithoutEventGauge() throws {
         let factory = OTLPRecordingMetricsFactory()
         let metrics = AgentStudioOTLPPerformanceMetrics(factory: factory)
         let dimensions = [("event", "performance.trace_queue.completeness")]
@@ -720,13 +720,12 @@ struct AgentStudioOTLPPerformanceMetricsTests {
                 ]
             ))
 
-        let gauge = try #require(
+        #expect(
             factory.recorder(
-                label: "agentstudio_performance_trace_queue_pending_request_count",
-                dimensions: dimensions
-            )
+                label: "agentstudio_performance_trace_queue_pending_request_count", dimensions: dimensions
+            ) == nil
         )
-        #expect(gauge.values == [3, 0])
+        #expect(factory.counter(label: "agentstudio_performance_events_total", dimensions: dimensions)?.totalValue == 2)
     }
 
     @Test

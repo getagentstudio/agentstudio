@@ -43,9 +43,17 @@ struct AgentStudioTraceEventQueueTests {
         #expect(completenessSnapshot.droppedRecordCount == 1)
         #expect(completenessSnapshot.highWaterMark == 1)
         #expect(completenessSnapshot.pendingRequestCount == 1)
+        #expect(
+            traceRuntime.queueStatistics.snapshot()
+                == .init(droppedRecordCount: 1, pendingRequestCount: 1, highWaterMark: 1)
+        )
 
         await blockingSink.resumeRecords()
         try await queue.drain()
+        #expect(
+            traceRuntime.queueStatistics.snapshot()
+                == .init(droppedRecordCount: 1, pendingRequestCount: 0, highWaterMark: 1)
+        )
 
         let retainedAttributes = try #require(
             await blockingSink.attributes(forBody: "trace.queue.retained")

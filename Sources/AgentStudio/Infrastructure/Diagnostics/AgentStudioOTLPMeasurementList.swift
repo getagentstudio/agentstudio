@@ -14,8 +14,8 @@
 // input_revision.count, stale_generation.count and topology.index.count are
 // tallies. pending_high_water_mark and hydration_unclassified.current are
 // occupancies, not sequence identities.
-// trace_queue entries remain only for S3: S4 moves them to process gauges and
-// removes these entries together with the per-event path, preserving its red.
+// trace_queue statistics use process gauges; copies in log attributes never
+// become per-event measurements.
 // Generic Bridge entries name their ingress declaration; the recorder copies
 // those numeric members in BridgePerformanceTraceRecorder.swift:103.
 
@@ -811,11 +811,5 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.trace_identity.fleet_capture.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:711; count
         "agentstudio.performance.trace_identity.refresh_request.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioTraceEventQueue.swift:198; count; S4 moves this to E5
-        "agentstudio.performance.trace_queue.dropped_record.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioTraceEventQueue.swift:201; occupancy; S4 moves this to E5
-        "agentstudio.performance.trace_queue.high_watermark",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioTraceEventQueue.swift:204; occupancy; S4 moves this to E5
-        "agentstudio.performance.trace_queue.pending_request.count",
     ]
 }
