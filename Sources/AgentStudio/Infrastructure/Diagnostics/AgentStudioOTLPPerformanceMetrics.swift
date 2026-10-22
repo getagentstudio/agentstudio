@@ -235,7 +235,8 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
             case .string(let interactionKind) = record.attributes[
                 "agentstudio.performance.interaction.kind"
             ],
-            isSafeDimensionValue(interactionKind)
+            isSafeDimensionValue(interactionKind),
+            isAllowedControlledStringValue(key: "agentstudio.performance.interaction.kind", value: interactionKind)
         {
             dimensions.append(
                 AgentStudioOTLPPerformanceMetricDimension(
@@ -776,7 +777,9 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         record: AgentStudioOTLPProjectedLogRecord,
         dimensions: inout [AgentStudioOTLPPerformanceMetricDimension]
     ) {
-        guard case .string(let value) = record.attributes[attributeKey] else { return }
+        guard case .string(let value) = record.attributes[attributeKey],
+            isAllowedMetricDimensionValue(key: attributeKey, value: value, resource: record.resource)
+        else { return }
         dimensions.append(AgentStudioOTLPPerformanceMetricDimension(name: name, value: value))
     }
 
@@ -811,6 +814,7 @@ enum AgentStudioOTLPPerformanceMeasurement: Equatable, Sendable {
 private enum SidebarMetricSurface: String {
     case inbox
     case repo
+    case panes
 }
 
 private enum SidebarMetricPhase: String {
@@ -835,6 +839,7 @@ private enum SidebarMetricGroupMode: String {
     case tab
     case noGrouping = "none"
     case notApplicable = "not_applicable"
+    case activity
 }
 
 private enum SidebarMetricTrigger: String {
