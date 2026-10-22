@@ -4,7 +4,10 @@ import { expect, test, vi } from 'vitest';
 import BridgeWebE2ERunner from '../../tests/e2e/bridge-web-e2e-runner.ts';
 import { runBridgeWebE2ETestBody } from '../../tests/e2e/bridge-web-e2e-test-retirement.ts';
 import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
-import { startOwnedBridgeDevelopmentServer } from './bridge-development-server-process.ts';
+import {
+	startOwnedBridgeDevelopmentServer,
+	type OwnedBridgeDevelopmentServerCleanup,
+} from './bridge-development-server-process.ts';
 import { ownNodeFixture, requireProcessAlive } from './bridge-web-chromium-test-support.ts';
 import type { BridgeWebTestLaunchDependencies } from './bridge-web-test-launch-contracts.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
@@ -18,6 +21,7 @@ test.for(['abort', 'late-ready', 'alive-after-stop', 'runner-join'] as const)(
 		const owner = new AbortController();
 		const entered = makeDeferred<void>();
 		const stopped = makeDeferred<void>();
+		const stopSettled = makeDeferred<OwnedBridgeDevelopmentServerCleanup>();
 		const release = makeDeferred<void>();
 		const terminal = makeDeferred<Error>();
 
@@ -32,6 +36,7 @@ test.for(['abort', 'late-ready', 'alive-after-stop', 'runner-join'] as const)(
 			pid: fixture.child.pid ?? 0,
 			wsEndpoint: 'ws://stub',
 			whenExited: fixture.exited,
+			whenStopped: stopSettled.promise,
 			stdoutTail: (): string => '',
 			stderrTail: (): string => '',
 			stop: vi.fn(async () => {
@@ -41,6 +46,7 @@ test.for(['abort', 'late-ready', 'alive-after-stop', 'runner-join'] as const)(
 				terminal.resolve(
 					new Error(mode === 'alive-after-stop' ? 'host alive after stop' : 'host stopped'),
 				);
+				stopSettled.resolve(stopResult);
 				return stopResult;
 			}),
 		};

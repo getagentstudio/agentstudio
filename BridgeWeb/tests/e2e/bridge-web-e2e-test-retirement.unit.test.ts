@@ -3,6 +3,7 @@ import { access } from 'node:fs/promises';
 import { chromium, type Browser } from 'playwright';
 import { expect, test, vi } from 'vitest';
 
+import type { OwnedBridgeDevelopmentServerCleanup } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import {
 	currentBridgeWebLaunchScope,
 	runWithBridgeWebLaunchScope,
@@ -22,19 +23,28 @@ import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
 vi.mock('../../scripts/dev-server/owned-bridge-web-browser-host.ts', () => ({
 	startOwnedBridgeWebBrowserHost: async (props: { readonly onSpawn?: (host: unknown) => void }) => {
+		let resolveStopped: (cleanup: OwnedBridgeDevelopmentServerCleanup) => void = (): void => {};
+		const whenStopped = new Promise<OwnedBridgeDevelopmentServerCleanup>((resolve): void => {
+			resolveStopped = resolve;
+		});
 		const host = {
+			whenStopped,
 			pid: 0,
 			wsEndpoint: 'ws://controlled-browser',
 			whenExited: Promise.resolve(),
 			stdoutTail: (): string => '',
 			stderrTail: (): string => '',
-			stop: async () => ({
-				exitCode: 0,
-				exitSignal: null,
-				forcedTerminationRequired: false,
-				ownedProcessAliveAfterStop: false,
-				browserGroups: [],
-			}),
+			stop: async () => {
+				const cleanup = {
+					exitCode: 0,
+					exitSignal: null,
+					forcedTerminationRequired: false,
+					ownedProcessAliveAfterStop: false,
+					browserGroups: [],
+				};
+				resolveStopped(cleanup);
+				return cleanup;
+			},
 		};
 		props.onSpawn?.(host);
 		return host;

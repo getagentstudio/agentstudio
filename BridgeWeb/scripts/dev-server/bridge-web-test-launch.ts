@@ -280,8 +280,28 @@ export class BridgeWebTestLaunch {
 				'Chromium acquisition',
 			);
 			this.#requireOpen();
+			const connecting = chromium.connect(host.wsEndpoint);
 			const browser = await this.#acquire(
-				chromium.connect(host.wsEndpoint),
+				Promise.race([
+					connecting,
+					host.whenStopped.then((cleanup): never => {
+						throw new Error(
+							cleanup.ownedProcessAliveAfterStop
+								? 'host alive after stop'
+								: 'browser host stopped during connect',
+						);
+					}),
+				]).catch((error: unknown): never => {
+					// Disposal joins the race, never an unresolved connect. Its eventual
+					// Browser still belongs to this launch even after stop won the race.
+					void handleLaunchPromise(
+						connecting.then(async (lateBrowser): Promise<void> => {
+							await lateBrowser.close();
+						}),
+						'late Chromium connect cleanup',
+					).settled;
+					throw error;
+				}),
 				(ownedBrowser): void => {
 					this.#browser = ownedBrowser;
 					this.#closeBrowser = ownedBrowser.close.bind(ownedBrowser);
@@ -450,10 +470,19 @@ export class BridgeWebTestLaunch {
 						{
 							name: 'browser contexts',
 							run: async (): Promise<void> => {
-								const outcomes = await Promise.allSettled(
-									(this.#browser?.contexts() ?? []).map(async (context): Promise<void> => {
-										await context.close(this.#browserCloseOptions);
+								// Subscribe to every current context before initiating any close. A
+								// close already in flight can return before its protocol events arrive.
+								const contexts = (this.#browser?.contexts() ?? []).map((context) => ({
+									context,
+									closed: new Promise<void>((resolve): void => {
+										context.once('close', (): void => resolve());
 									}),
+								}));
+								const outcomes = await Promise.allSettled(
+									contexts.flatMap(({ context, closed }) => [
+										closed,
+										context.close(this.#browserCloseOptions),
+									]),
 								);
 								const failures = outcomes.flatMap((outcome): unknown[] =>
 									outcome.status === 'rejected' ? [outcome.reason] : [],

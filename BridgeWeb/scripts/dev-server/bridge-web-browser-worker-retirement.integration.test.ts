@@ -12,11 +12,14 @@ import { handleLaunchPromise } from './handled-launch-promise.ts';
 test.for(['browser.close', 'launch.dispose', 'journey', 'E2E helper', 'journey deadline'] as const)(
 	'harness %s delivers dedicated Worker close before disconnecting the real host',
 	async (closeThrough, context) => {
-		const launch = await BridgeWebTestLaunch.start({ signal: context.signal });
+		const owner = new AbortController();
+		const onBound = (): void => owner.abort(context.signal.reason);
+		context.signal.addEventListener('abort', onBound, { once: true });
+		const launch = await BridgeWebTestLaunch.start({ signal: owner.signal });
 		try {
 			const browser =
 				closeThrough === 'E2E helper'
-					? await launchBridgeViewerE2EChromium({ testSignal: context.signal })
+					? await launchBridgeViewerE2EChromium({ testSignal: owner.signal })
 					: await launch.launchBrowser({ channel: 'chrome', headless: true });
 			const page = await browser.newPage();
 			page.setDefaultTimeout(0);
@@ -50,13 +53,14 @@ test.for(['browser.close', 'launch.dispose', 'journey', 'E2E helper', 'journey d
 			else if (closeThrough === 'launch.dispose') await launch.dispose();
 			else if (closeThrough === 'journey')
 				await closeBridgeViewerProductJourneyBrowser({ page, browser });
-			else if (closeThrough === 'E2E helper')
-				await closeBridgeViewerE2ETestBrowsers(context.signal);
-			else {
-				const owner = new AbortController();
+			else if (closeThrough === 'E2E helper') {
+				owner.abort(new Error('shared E2E helper owner aborted'));
+				await closeBridgeViewerE2ETestBrowsers(owner.signal);
+			} else {
 				const deadline = createOwnedProductJourneyDeadline({ signal: owner.signal, page, browser });
 				owner.abort(new Error('journey deadline fixture'));
 				await deadline.dispose();
+				await launch.dispose();
 			}
 			// Disconnect is the terminal observation. Missing Worker.close fails here
 			// without awaiting an event the retired connection can no longer deliver.
@@ -66,8 +70,10 @@ test.for(['browser.close', 'launch.dispose', 'journey', 'E2E helper', 'journey d
 				`CHROMIUM_WORKER_RETIREMENT close=${closeThrough} workerBeforeDisconnect=true\n`,
 			);
 		} finally {
+			context.signal.removeEventListener('abort', onBound);
+			owner.abort(new Error('fixture cleanup'));
 			await launch.dispose();
-			if (closeThrough === 'E2E helper') await closeBridgeViewerE2ETestBrowsers(context.signal);
+			if (closeThrough === 'E2E helper') await closeBridgeViewerE2ETestBrowsers(owner.signal);
 		}
 	},
 );

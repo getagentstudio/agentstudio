@@ -4,7 +4,10 @@ import { chromium, type Browser } from 'playwright';
 import { expect, test, vi } from 'vitest';
 
 import { makeDeferred } from '../verify-bridge-viewer-worktree-dev-server/utils.ts';
-import { startOwnedBridgeDevelopmentServer } from './bridge-development-server-process.ts';
+import {
+	startOwnedBridgeDevelopmentServer,
+	type OwnedBridgeDevelopmentServerCleanup,
+} from './bridge-development-server-process.ts';
 import { ownNodeFixture, requireProcessAlive } from './bridge-web-chromium-test-support.ts';
 import { BridgeWebTestLaunch } from './bridge-web-test-launch.ts';
 import { handleLaunchPromise } from './handled-launch-promise.ts';
@@ -135,21 +138,25 @@ test('browser.close joins host retirement while leaving its launch usable', asyn
 		{
 			startBackend: startOwnedBridgeDevelopmentServer,
 			startBrowserHost: async (props) => {
+				const stopped = makeDeferred<OwnedBridgeDevelopmentServerCleanup>();
 				const host = {
 					pid: fixture.child.pid ?? 0,
 					wsEndpoint: 'ws://fixture',
 					whenExited: fixture.exited,
+					whenStopped: stopped.promise,
 					stdoutTail: (): string => '',
 					stderrTail: (): string => '',
 					stop: async () => {
 						await fixture.reap();
-						return {
+						const cleanup = {
 							exitCode: null,
 							exitSignal: 'SIGKILL' as const,
 							forcedTerminationRequired: false,
 							ownedProcessAliveAfterStop: false,
 							browserGroups: [],
 						};
+						stopped.resolve(cleanup);
+						return cleanup;
 					},
 				};
 				props.onSpawn?.(host);

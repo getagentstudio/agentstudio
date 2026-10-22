@@ -18,6 +18,7 @@ export interface OwnedBridgeWebBrowserHost {
 	readonly wsEndpoint: string;
 	readonly stop: () => Promise<OwnedBridgeDevelopmentServerCleanup>;
 	readonly whenExited: Promise<void>;
+	readonly whenStopped: Promise<OwnedBridgeDevelopmentServerCleanup>;
 	readonly stdoutTail: () => string;
 	readonly stderrTail: () => string;
 }
@@ -94,6 +95,7 @@ export async function startOwnedBridgeWebBrowserHost(
 		stdoutTail: (): string => stdoutTail,
 		stderrTail: (): string => stderrTail,
 		whenExited: lifecycle.then((): void => {}),
+		whenStopped: stopped,
 		stop: async (): Promise<OwnedBridgeDevelopmentServerCleanup> => {
 			stopPromise ??= stopOwnedBridgeDevelopmentServerProcess(child, lifecycle, () => [
 				...browserGroups,
