@@ -32,8 +32,8 @@ struct PaneContextToolbarRenderingTests {
             ] {
                 let line = summary.map {
                     AgentLineDetail(
-                        summary: $0, work: .done, detail: nil, refs: [], writer: .pane(pane),
-                        updatedAt: .distantPast, lifetime: .untilReplaced, stale: false)
+                        summary: $0, refs: [], writer: .pane(pane),
+                        updatedAt: .distantPast)
                 }
                 atoms.paneContextPresentation.apply([
                     pane: .set(

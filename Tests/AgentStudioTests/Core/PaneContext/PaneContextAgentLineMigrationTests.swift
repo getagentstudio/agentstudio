@@ -58,8 +58,8 @@ struct PaneContextAgentLineMigrationTests {
             let request = PaneLineWriteRequest(
                 paneId: fixture.paneId, writer: fixture.sender,
                 line: .init(
-                    summary: "A new message", work: .done, detail: nil,
-                    refs: [.openFile(path: "/new-message-ref", line: 7)], lifetime: .untilReplaced),
+                    summary: "A new message",
+                    refs: [.openFile(path: "/new-message-ref", line: 7)]),
                 writeNumber: .init(epoch: epoch, counter: 1))
             #expect(await service.setLine(request) == .applied)
             let written = try #require(try await fixture.detail(service).agentLine)
@@ -73,7 +73,7 @@ struct PaneContextAgentLineMigrationTests {
                 defer { try? reopened.close() }
                 try WorkspaceLocalMigrations.migrate(reopened)
                 return try reopened.read { database in
-                    try PaneContextStorage.line(database, paneId: fixture.paneId, now: fixture.time.now)
+                    try PaneContextStorage.line(database, paneId: fixture.paneId)
                 }
             }
 

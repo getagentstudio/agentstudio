@@ -150,8 +150,8 @@ struct PaneManagementIdentityCaptureTests {
                 provider: try .init("codex"), sessionRef: try .init("provider-conversation"),
                 bindingGeneration: UUIDv7.generate())
             let detail = AgentLineDetail(
-                summary: "Checking changes", work: .monitoring("checks"), detail: nil, refs: [],
-                writer: writer, updatedAt: .distantPast, lifetime: .untilReplaced, stale: false)
+                summary: "Checking changes", refs: [],
+                writer: writer, updatedAt: .distantPast)
             atoms.paneContextPresentation.apply([
                 paneId: .set(
                     .init(

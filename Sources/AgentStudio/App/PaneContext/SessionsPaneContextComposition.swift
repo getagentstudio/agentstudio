@@ -47,9 +47,6 @@ struct SessionsPaneContextComposition: Sendable {
             currentBindingGeneration: PaneContextSessionsBridge.currentBindingGeneration,
             sessionSummary: { paneId in try await bridge.sessionSummary(paneId: paneId) },
             openAskSink: { update in await bridge.receiveOpenAskSummary(update) },
-            agentLineSink: { work, generation in
-                await bridge.receiveAgentLine(work: work, bindingGenerationId: generation)
-            },
             presentationLane: presentationLane)
         let ownerPaneLookup: @Sendable (PaneId) -> PaneId? = { directory.ownerPaneId(for: $0) }
         let composition = Self(

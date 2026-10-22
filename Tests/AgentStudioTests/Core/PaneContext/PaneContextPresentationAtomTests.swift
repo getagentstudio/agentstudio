@@ -70,8 +70,8 @@ struct PaneContextPresentationAtomTests {
         let atom = PaneContextPresentationAtom()
         let pane = PaneId.generateUUIDv7()
         let line = AgentLineDetail(
-            summary: "Watching", work: .monitoring("checks"), detail: nil, refs: [], writer: .pane(pane),
-            updatedAt: Date(timeIntervalSince1970: 100), lifetime: .untilReplaced, stale: true)
+            summary: "Watching", refs: [], writer: .pane(pane),
+            updatedAt: Date(timeIntervalSince1970: 100))
         atom.apply([pane: .set(presentationDisplay(line: line))])
         #expect(atom.value(for: pane)?.agentLine == line)
     }

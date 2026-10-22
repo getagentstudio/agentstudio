@@ -18,17 +18,7 @@ struct RepoExplorerPaneContextLineTests {
         #expect(active.glyphMotion == .opacityPulse)
         #expect(monitoring.tone.foregroundColor == AppStyles.General.Accent.primaryColor)
         #expect(monitoring.glyphMotion == .rotate)
-        for work in [AgentLineWork.working(.indeterminate), .working(.step(current: 1, total: 3))] {
-            let detail = AgentLineDetail(
-                summary: "Working", work: work, detail: nil, refs: [],
-                writer: .session(
-                    provider: try .init("codex"), sessionRef: try .init("run"),
-                    bindingGeneration: UUIDv7.generate()),
-                updatedAt: .distantPast, lifetime: .untilReplaced, stale: false)
-            let line = RepoExplorerPaneContextLine.agent(detail)
-            #expect(line.tone.foregroundColor == AppStyles.General.Accent.primaryColor)
-            #expect(line.glyphMotion == .opacityPulse)
-        }
+
         #expect(PaneContextChipTone.success.foregroundColor == AppStyles.Shell.Sidebar.chipSuccessColor)
         #expect(PaneContextChipTone.success.foregroundColor != AppStyles.General.Accent.primaryColor)
     }
@@ -110,35 +100,17 @@ struct RepoExplorerPaneContextLineTests {
         #expect((line == nil) == (status == .unknown))
     }
 
-    @Test(arguments: [
-        (AgentLineWork.working(.indeterminate), PaneLineGlyphMotion.opacityPulse),
-        (.working(.step(current: 1, total: 3)), .opacityPulse),
-        (.monitoring("checks"), .rotate), (.blockedOnYou(action: "Approve"), .still),
-        (.done, .still), (.failed(summary: "Build failed"), .still),
-    ])
-    func agentMotionMatchesWork(work: AgentLineWork, motion: PaneLineGlyphMotion) throws {
-        let detail = AgentLineDetail(
-            summary: "Agent work", work: work, detail: nil, refs: [],
-            writer: .session(
-                provider: try .init("codex"), sessionRef: try .init("run"), bindingGeneration: UUIDv7.generate()),
-            updatedAt: .distantPast, lifetime: .untilReplaced, stale: false)
-
-        let line = RepoExplorerPaneContextLine.agent(detail)
-
-        #expect(line.glyphMotion == motion)
-    }
-
     @Test(arguments: AgentConnectionRefusalReason.allCases)
     func connectionIssueNeverMoves(reason: AgentConnectionRefusalReason) {
         #expect(RepoExplorerPaneContextLine.connection(reason).glyphMotion == .still)
     }
     @Test
-    func everyExistingLineShowsInBothVariantsWithIndependentAgentWork() throws {
+    func everyExistingLineShowsInBothVariantsWithIndependentMessage() throws {
         let line = AgentLineDetail(
-            summary: "Watching CI", work: .monitoring("checks"), detail: nil, refs: [],
+            summary: "Watching CI", refs: [],
             writer: .session(
                 provider: try .init("codex"), sessionRef: try .init("run"), bindingGeneration: UUIDv7.generate()),
-            updatedAt: .distantPast, lifetime: .untilReplaced, stale: true)
+            updatedAt: .distantPast)
         let variants = RepoExplorerPaneRowVariants.make(
             title: "Agent title", branchContext: "repo · main", note: "Review this", isDrawer: true,
             branchStatus: nil, isActive: false, agentLine: line, sessionStatus: .needsYou(.approval))
@@ -152,9 +124,9 @@ struct RepoExplorerPaneContextLineTests {
             return
         }
         #expect(workLine.text == "Watching CI")
-        #expect(workLine.icon == .system(.circleDotted))
-        #expect(workLine.tone == .info)
-        #expect(workLine.stale)
+        #expect(workLine.icon == .system(.textBubble))
+        #expect(workLine.tone == .neutral)
+        #expect(workLine.glyphMotion == .still)
         #expect(statusLine.icon == .system(.flag))
         #expect(statusLine.text == "Needs you · approval")
     }

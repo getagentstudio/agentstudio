@@ -32,7 +32,6 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     let currentBindingGeneration: @Sendable (PaneId, Database) throws -> UUID?
     let sessionSummary: @Sendable (PaneId) async throws -> SessionSummary?
     let openAskSink: @Sendable (PaneContextOpenAskUpdate) async -> Void
-    let agentLineSink: @Sendable (AgentLineWork?, UUID) async -> Void
     let actionRunner: @Sendable (MessageAction) async -> MessageActionResult
     nonisolated let presentationLane: PaneContextPublicationLane?
 
@@ -59,7 +58,6 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         currentBindingGeneration: @escaping @Sendable (PaneId, Database) throws -> UUID?,
         sessionSummary: @escaping @Sendable (PaneId) async throws -> SessionSummary? = { _ in nil },
         openAskSink: @escaping @Sendable (PaneContextOpenAskUpdate) async -> Void = { _ in },
-        agentLineSink: @escaping @Sendable (AgentLineWork?, UUID) async -> Void = { _, _ in },
         presentationLane: PaneContextPublicationLane? = nil,
         actionRunner: @escaping @Sendable (MessageAction) async -> MessageActionResult = { _ in
             .unavailable(.databaseUnavailable)
@@ -72,7 +70,6 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
         self.currentBindingGeneration = currentBindingGeneration
         self.sessionSummary = sessionSummary
         self.openAskSink = openAskSink
-        self.agentLineSink = agentLineSink
         self.actionRunner = actionRunner
         self.presentationLane = presentationLane
         let wake = AsyncStream<Void>.makeStream(bufferingPolicy: .bufferingNewest(1))

@@ -60,7 +60,6 @@ package struct RepoExplorerPaneContextLineView: View {
                 .truncationMode(.tail)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .opacity(line.stale ? AppStyles.General.Foreground.secondary : 1)
     }
 
     private var opacityPulseIsActive: Bool {

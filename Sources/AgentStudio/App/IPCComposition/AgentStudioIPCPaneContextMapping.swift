@@ -91,27 +91,6 @@ enum PaneContextIPCMapping {
         }
     }
 
-    static func work(_ value: IPCPaneAgentLineWork) -> AgentLineWork {
-        switch value {
-        case .working(let progress):
-            switch progress {
-            case .indeterminate: return .working(.indeterminate)
-            case .step(let current, let total): return .working(.step(current: current, total: total))
-            }
-        case .monitoring(let target): return .monitoring(target)
-        case .blockedOnYou(let action): return .blockedOnYou(action: action)
-        case .done: return .done
-        case .failed(let summary): return .failed(summary: summary)
-        }
-    }
-
-    static func lifetime(_ value: IPCPaneAgentLineLifetime) -> AgentLineLifetime {
-        switch value {
-        case .untilReplaced: .untilReplaced
-        case .expires(let at): .expires(at: at)
-        }
-    }
-
     static func line(_ value: IPCPaneAgentLineInput) throws -> AgentLineInput {
         for reference in value.refs {
             guard try JSONEncoder().encode(reference).count <= AppPolicies.PaneContext.maximumLineRefBytes else {
@@ -119,8 +98,8 @@ enum PaneContextIPCMapping {
             }
         }
         return AgentLineInput(
-            summary: value.summary, work: work(value.work), detail: value.detail,
-            refs: try value.refs.map(action), lifetime: lifetime(value.lifetime))
+            summary: value.summary,
+            refs: try value.refs.map(action))
     }
 
     static func validateActions(_ values: [IPCPaneMessageAction]) throws {

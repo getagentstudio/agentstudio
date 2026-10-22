@@ -71,9 +71,6 @@ final class PaneContextSessionsBridgeFixture: Sendable {
             },
             sessionSummary: { paneId in try await bridge.sessionSummary(paneId: paneId) },
             openAskSink: { update in await bridge.receiveOpenAskSummary(update) },
-            agentLineSink: { work, generation in
-                await bridge.receiveAgentLine(work: work, bindingGenerationId: generation)
-            }
         )
         bridge.connect(service: service, ingestion: ingestion)
     }

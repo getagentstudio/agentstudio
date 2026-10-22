@@ -198,62 +198,32 @@ struct PaneContextOrderedWriteTests {
         }
     }
 
-    @Test("Agent Line expiry fires without another write and leaves the line visible as stale")
-    func lineExpiryIsScheduled() async throws {
-        try await withPaneContextService { fixture, service in
-            let epoch = try await fixture.epoch(service, stream: .line)
-            try #require(
-                await service.setLine(
-                    fixture.line(
-                        "watching", epoch: epoch, counter: 1,
-                        lifetime: .expires(at: fixture.time.now.addingTimeInterval(10)))) == .applied)
-            await fixture.clock.waitForPendingSleepCount(exactly: 1)
-            let committed = HeldStep<Void>("line expiry transaction committed")
-            committed.release()
-            await fixture.sqliteAccess.observeNextCommit(committed)
-
-            fixture.clock.advance(by: .seconds(10))
-            try await committed.firstArrival()
-
-            let line = try #require(try await fixture.detail(service).agentLine)
-            #expect(line.summary == "watching")
-            #expect(line.stale)
-        }
-    }
-
-    @Test("One scheduler serves the earliest of an ask deadline and a line expiry")
-    func oneReschedulableDeadlineServesBothKinds() async throws {
+    @Test("message writes do not disturb the shared ask and retention scheduler")
+    func messageWritePreservesAskDeadline() async throws {
         try await withPaneContextService { fixture, service in
             let lineEpoch = try await fixture.epoch(service, stream: .line)
             try #require(
                 await service.setLine(
                     fixture.line(
-                        "line", epoch: lineEpoch, counter: 1,
-                        lifetime: .expires(at: fixture.time.now.addingTimeInterval(20)))) == .applied)
+                        "line", epoch: lineEpoch, counter: 1)) == .applied)
             let ask = fixture.ask(blocking: true, deadline: fixture.time.now.addingTimeInterval(10))
             try await fixture.sendCreated(ask, to: service)
             await fixture.clock.waitForPendingSleepCount(exactly: 1)
 
             fixture.clock.advance(by: .seconds(10))
             #expect(await service.waitForAskOutcome(messageId: ask.messageId, paneId: fixture.paneId) == .expired)
-            await fixture.clock.waitForPendingSleepCount(exactly: 1)
-            let committed = HeldStep<Void>("remaining line expiry committed")
-            committed.release()
-            await fixture.sqliteAccess.observeNextCommit(committed)
-            fixture.clock.advance(by: .seconds(10))
-            try await committed.firstArrival()
-
-            #expect(try await fixture.detail(service).agentLine?.stale == true)
+            #expect(try await fixture.detail(service).agentLine?.summary == "line")
             await service.stop()
             #expect(fixture.clock.pendingSleepCount == 0)
         }
     }
 
-    @Test("Session end marks only that writer's Agent Line stale")
-    func sessionEndMarksLineStale() async throws {
+    @Test("session end preserves the message for both related and unrelated writers")
+    func sessionEndKeepsMessage() async throws {
         try await withPaneContextService { fixture, service in
             let epoch = try await fixture.epoch(service, stream: .line)
             try #require(await service.setLine(fixture.line("current", epoch: epoch, counter: 1)) == .applied)
+            let written = try #require(try await fixture.detail(service).agentLine)
             let unrelated = AgentMessageSender.session(
                 provider: try BridgeAgentProviderName("codex"),
                 sessionRef: try BridgeAgentSessionRef("unrelated"),
@@ -262,11 +232,11 @@ struct PaneContextOrderedWriteTests {
             if case .session(_, _, let generation) = unrelated {
                 await service.sessionEnded(bindingGenerationId: generation)
             }
-            #expect(try await fixture.detail(service).agentLine?.stale == false)
+            #expect(try await fixture.detail(service).agentLine == written)
 
             await service.sessionEnded(bindingGenerationId: try fixture.bindingGenerationId)
 
-            #expect(try await fixture.detail(service).agentLine?.stale == true)
+            #expect(try await fixture.detail(service).agentLine == written)
         }
     }
 }
