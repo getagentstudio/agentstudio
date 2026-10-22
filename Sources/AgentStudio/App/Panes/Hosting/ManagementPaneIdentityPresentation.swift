@@ -5,6 +5,8 @@ import Foundation
 /// Card-only projection. Context remains the authority for verified session identity.
 @MainActor
 struct ManagementPaneIdentityPresentation {
+    static let widestCaption = "worktree"
+
     let title: String
     let status: RepoExplorerPaneContextLine?
     let rows: [PaneManagementIdentityRow]
@@ -50,7 +52,7 @@ struct ManagementPaneIdentityPresentation {
         switch row.id {
         case "repo": "repo"
         case "branch": "branch"
-        case "worktree": "worktree"
+        case "worktree": Self.widestCaption
         case "cwd": "cwd"
         case "session": "session"
         case "pane": "pane"

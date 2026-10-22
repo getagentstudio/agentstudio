@@ -112,7 +112,10 @@ struct ManagementPaneIdentityStrip: View {
                         .foregroundStyle(.secondary.opacity(0.92))
                         .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
                         .background { identityBounds("\(row.id).icon", label: "") }
-                    Text(presentation.caption(for: row))
+                    // Measure the complete caption set even when WORKTREE is omitted.
+                    Text(ManagementPaneIdentityPresentation.widestCaption)
+                        .hidden()
+                        .overlay(alignment: .leading) { Text(presentation.caption(for: row)) }
                         .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
                         .foregroundStyle(.secondary.opacity(0.72))
                         .textCase(.uppercase)
@@ -137,7 +140,7 @@ struct ManagementPaneIdentityStrip: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 0, alignment: .leading)
                 .clipped()
                 .background { identityBounds("\(row.id).text", label: row.text) }
             if ["pane", "session"].contains(row.id) {

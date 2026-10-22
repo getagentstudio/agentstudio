@@ -212,7 +212,7 @@ struct PaneContextToolbarRenderingTests {
                                 size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium,
                                 design: row.id == "pane" ? .monospaced : .default)
                         )
-                        .foregroundStyle(Color.white.opacity(0.92))
+                        .foregroundStyle(Color.primary.opacity(0.92))
                         .textSelection(.enabled)
                         .fixedSize()
                 ), width: nil)
@@ -428,10 +428,11 @@ struct PaneContextToolbarRenderingTests {
                             paneId: pane, readers: readers, octiconLoader: loader, clock: clock,
                             wallNow: Date(timeIntervalSince1970: 1_800_000_125),
                             onRelativeTimeEvent: { clock.observeOwner($0) }))
-                ).frame(width: width)))
+                ).frame(width: width).environment(\.colorScheme, .dark)))
         host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
+        window.appearance = NSAppearance(named: .darkAqua)
         window.contentView = host
         window.orderFront(nil)
         window.layoutIfNeeded()

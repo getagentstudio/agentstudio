@@ -36,7 +36,7 @@ package struct RepoExplorerPaneTitleLineView: View {
             )
             Text(text)
                 .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
-                .lineLimit(maximumLineCount, reservesSpace: maximumLineCount > 1)
+                .lineLimit(maximumLineCount)
                 .truncationMode(.tail)
                 .layoutPriority(1)
                 .foregroundStyle(.primary)

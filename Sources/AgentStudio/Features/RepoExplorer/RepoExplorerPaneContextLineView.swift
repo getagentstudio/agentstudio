@@ -62,7 +62,7 @@ package struct RepoExplorerPaneContextLineView: View {
             Text(line.text)
                 .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
                 .foregroundStyle(isAgentLine ? Color.primary : Color.secondary)
-                .lineLimit(maximumLineCount, reservesSpace: maximumLineCount > 1)
+                .lineLimit(maximumLineCount)
                 .truncationMode(.tail)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             if let ageText = line.ageText {

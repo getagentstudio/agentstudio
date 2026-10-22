@@ -3,11 +3,14 @@ import Testing
 
 @MainActor
 enum PaneManagementIdentityTestInk {
-    static func ink(in view: NSView, maximumX: Int?) throws -> (width: Int, height: Int, points: [Bool]) {
+    static func ink(
+        in view: NSView, maximumX: Int?, bounds: CGRect? = nil
+    ) throws -> (width: Int, height: Int, points: [Bool]) {
         view.layoutSubtreeIfNeeded()
         view.displayIfNeeded()
-        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
-        view.cacheDisplay(in: view.bounds, to: bitmap)
+        let displayBounds = bounds ?? view.bounds
+        let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: displayBounds))
+        view.cacheDisplay(in: displayBounds, to: bitmap)
         let image = try #require(bitmap.cgImage)
         var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
         try bytes.withUnsafeMutableBytes { buffer in
@@ -18,8 +21,8 @@ enum PaneManagementIdentityTestInk {
                     bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
             context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         }
-        let pixelsPerPoint = image.width / Int(view.bounds.width)
-        let width = min(image.width, (maximumX ?? Int(view.bounds.width)) * pixelsPerPoint)
+        let pixelsPerPoint = image.width / Int(displayBounds.width)
+        let width = min(image.width, (maximumX ?? Int(displayBounds.width)) * pixelsPerPoint)
         var points: [Bool] = []
         for row in 0..<image.height {
             for column in 0..<width {

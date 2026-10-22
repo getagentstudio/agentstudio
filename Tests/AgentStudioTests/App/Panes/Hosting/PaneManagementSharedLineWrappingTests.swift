@@ -33,20 +33,44 @@ struct PaneManagementSharedLineWrappingTests {
         }
     }
 
-    private func lineView(isMessage: Bool, maximumLineCount: Int?) -> AnyView {
+    @Test(arguments: [false, true])
+    func shortCardLinesNeverReserveABlankSecondLine(isMessage: Bool) {
+        let sidebar = PaneIdentityCardFixture.mountView(
+            lineView(isMessage: isMessage, maximumLineCount: nil, short: true), width: 420)
+        let card = PaneIdentityCardFixture.mountView(
+            lineView(isMessage: isMessage, maximumLineCount: 2, short: true), width: 420)
+        defer {
+            sidebar.window.contentView = nil
+            sidebar.window.close()
+            card.window.contentView = nil
+            card.window.close()
+        }
+        #expect(card.host.fittingSize.height == sidebar.host.fittingSize.height)
+    }
+
+    private var shortMessage: RepoExplorerPaneContextLine {
+        .init(
+            text: "Ready", icon: .system(.terminal),
+            tooltip: .init(text: "Message", shortcutDisplayText: nil), tone: .neutral,
+            glyphMotion: .still, ageText: "2 min ago")
+    }
+
+    private func lineView(isMessage: Bool, maximumLineCount: Int?, short: Bool = false) -> AnyView {
         let loader = makeTestOcticonLoader()
         if isMessage {
             if let maximumLineCount {
                 return AnyView(
                     RepoExplorerPaneContextLineView(
-                        line: PaneIdentityCardFixture.message, isAgentLine: true, octiconLoader: loader,
+                        line: short ? shortMessage : PaneIdentityCardFixture.message, isAgentLine: true,
+                        octiconLoader: loader,
                         maximumLineCount: maximumLineCount))
             }
             return AnyView(
                 RepoExplorerPaneContextLineView(
-                    line: PaneIdentityCardFixture.message, isAgentLine: true, octiconLoader: loader))
+                    line: short ? shortMessage : PaneIdentityCardFixture.message, isAgentLine: true,
+                    octiconLoader: loader))
         }
-        let title = "Presentation experiments — checking the layout"
+        let title = short ? "Agent" : "Presentation experiments — checking the layout"
         if let maximumLineCount {
             return AnyView(
                 RepoExplorerPaneTitleLineView(

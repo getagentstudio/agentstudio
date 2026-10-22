@@ -1,5 +1,6 @@
 import AgentStudioInfrastructure
 import AgentStudioSharedComponents
+import AgentStudioTestSupport
 import AppKit
 import SwiftUI
 import Testing
@@ -23,27 +24,55 @@ enum PaneIdentityCardFixture {
         text: "Agent connection needs attention", icon: .system(.terminal),
         tooltip: .init(text: "Connection", shortcutDisplayText: nil), tone: .warning, glyphMotion: .still, ageText: nil)
 
-    static func context(belowRoot: Bool = false, branch: String = "detached HEAD") -> PaneManagementContext {
-        PaneManagementContext(
-            paneId: UUID(uuidString: paneText)!,
-            identityRows: [
-                .init(id: "repo", icon: .octicon("octicon-repo"), text: "project", toolTip: nil),
-                .init(id: "branch", icon: .octicon("octicon-git-branch"), text: branch, toolTip: nil),
-                .init(id: "worktree", icon: .system("folder"), text: "project", toolTip: "/tmp/project"),
-                .init(
-                    id: "cwd", icon: .system("folder"), text: belowRoot ? "Sources/App" : "project",
-                    toolTip: belowRoot ? "/tmp/project/Sources/App" : "/tmp/project"),
-                .init(id: "pane", icon: .system("terminal"), text: paneText, toolTip: paneText),
-            ],
-            statusChips: .init(
-                branchStatus: .init(
-                    isDirty: true, syncState: .noUpstream, prCount: nil, pullRequestDataUnavailable: true,
-                    linesAdded: 0, linesDeleted: 0, untrackedFileCount: 1)),
-            targetPath: URL(filePath: belowRoot ? "/tmp/project/Sources/App" : "/tmp/project"), showsIdentityBlock: true
-        )
+    static func context(
+        belowRoot: Bool = false, branch: String = "detached HEAD", worktreeName: String? = nil,
+        hasGitChanges: Bool = true
+    ) throws -> PaneManagementContext {
+        try withTestCoreAtoms { atoms in
+            let store = WorkspaceStore(
+                catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
+                interactionAtom: atoms.workspaceTabLayout)
+            let repo = store.addRepo(at: URL(filePath: "/tmp/project"))
+            var worktree = try #require(repo.worktrees.first)
+            if let worktreeName {
+                worktree = Worktree(
+                    id: UUIDv7.generate(), repoId: repo.id, name: worktreeName,
+                    path: repo.repoPath.appending(path: worktreeName))
+                store.reconcileDiscoveredWorktrees(repo.id, worktrees: repo.worktrees + [worktree])
+            }
+            let cwd = belowRoot ? worktree.path.appending(path: "Sources/App") : worktree.path
+            let pane = Pane(
+                id: UUID(uuidString: paneText)!,
+                content: .terminal(
+                    TerminalState(provider: .zmx, lifetime: .persistent, zmxSessionID: .generateUUIDv7())),
+                metadata: PaneMetadata(
+                    launchDirectory: worktree.path, title: "Agent | project",
+                    facets: PaneContextFacets(repoId: repo.id, worktreeId: worktree.id, cwd: cwd)))
+            try #require(store.paneAtom.insertRestoredPane(pane))
+            let branchName = branch == "detached HEAD" ? "" : branch
+            atoms.repoCache.setWorktreeEnrichment(
+                WorktreeEnrichment(
+                    worktreeId: worktree.id, repoId: repo.id, branch: branchName,
+                    snapshot: GitWorkingTreeSnapshot(
+                        worktreeId: worktree.id, repoId: repo.id, rootPath: worktree.path,
+                        summary: GitWorkingTreeSummary(
+                            changed: 0, staged: 0, untracked: hasGitChanges ? 1 : 0,
+                            linesAdded: 0, linesDeleted: 0, aheadCount: 0, behindCount: 0, hasUpstream: true),
+                        branch: branchName)))
+            if let key = RepoBranchKey(repoId: repo.id, branch: branchName) {
+                atoms.repoCache.applyPullRequestFacts([key: .init(openCount: 0, exactOpenURL: nil)])
+            }
+            return PaneManagementContext.project(paneId: pane.id, store: store)
+        }
     }
 
-    static func strip(_ name: String) -> ManagementPaneIdentityStrip {
+    static func verifiedSession(reference: String = "01A1631E-ABCD-7443-8AC3-75EEE79D3333") throws -> SessionSummary {
+        SessionSummary(
+            id: UUIDv7.generate(), provider: try .init("codex"), sessionRef: try .init(reference),
+            bindingGeneration: UUIDv7.generate(), status: .working(.active), providerPrompts: [])
+    }
+
+    static func strip(_ name: String) throws -> ManagementPaneIdentityStrip {
         let title = name == "long-title" ? String(repeating: "A long agent title ", count: 8) : "Agent | project"
         var lines: [RepoExplorerPaneRowLine] = [.title(title)]
         if name == "secondary-lines" {
@@ -56,22 +85,11 @@ enum PaneIdentityCardFixture {
         let branch =
             name == "long-branch"
             ? String(repeating: "feature/one-row-", count: 8) : (name == "card-3-like" ? "main" : "detached HEAD")
-        let base = context(belowRoot: name == "session-where", branch: branch)
-        var rows = base.identityRows
-        if name == "session-where" {
-            rows = rows.map { row in
-                row.id == "worktree"
-                    ? .init(id: row.id, icon: row.icon, text: "pane-card-one-row", toolTip: row.toolTip) : row
-            }
-            rows.append(
-                .init(
-                    id: "session", icon: .system("terminal"), text: "codex · 01A1631E-ABCD-7443-8AC3-75EEE79D3333",
-                    toolTip: nil))
-        }
-        let cardContext = PaneManagementContext(
-            paneId: base.paneId, identityRows: rows,
-            statusChips: name == "card-3-like" ? nil : base.statusChips,
-            targetPath: base.targetPath, showsIdentityBlock: true)
+        let base = try context(
+            belowRoot: name == "session-where", branch: branch,
+            worktreeName: name == "session-where" ? "pane-card-one-row" : nil,
+            hasGitChanges: name != "card-3-like")
+        let cardContext = base.includingVerifiedLiveSession(name == "session-where" ? try verifiedSession() : nil)
         return ManagementPaneIdentityStrip(
             context: cardContext, octiconLoader: makeTestOcticonLoader(), lines: lines,
             recencyText: "2d", recencyTier: .grey, isActive: false)
@@ -129,15 +147,24 @@ enum PaneIdentityCardFixture {
     }
 
     static func naturalValueWidth(_ row: PaneManagementIdentityRow) -> CGFloat {
-        NSHostingView(
-            rootView: Text(row.text)
-                .font(
-                    .system(
-                        size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium,
-                        design: row.id == "pane" ? .monospaced : .default)
-                )
-                .lineLimit(1).fixedSize()
-        ).fittingSize.width
+        let mounted = mountView(
+            AnyView(
+                Text(row.text)
+                    .font(
+                        .system(
+                            size: AppStyles.Shell.Sidebar.branchFontSize, weight: .medium,
+                            design: row.id == "pane" ? .monospaced : .default)
+                    )
+                    .lineLimit(1).fixedSize()
+                    .background {
+                        AccessibilityLabelBridge(identifier: "paneManagement.card.reference", label: "")
+                    }), width: 2000)
+        defer {
+            mounted.window.contentView = nil
+            mounted.window.close()
+        }
+        // Native bounds preserve fractional points; fittingSize rounds them to whole points.
+        return frames(in: mounted.host)["reference"]!.width
     }
 
     static func elements(in host: NSView) -> [(label: String, frame: CGRect)] {
