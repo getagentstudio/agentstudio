@@ -25,6 +25,8 @@ package actor WatchedFolderScanScheduler {
     private var staleDropsBySourceID: [FilesystemSourceID: StaleDropCounts] = [:]
     private var nextFIFOOrdinal: UInt64 = 0
     private var nextCompletionOrdinal: UInt64 = 0
+    var nextDiagnosticLeaseOrdinal: UInt64 = 0
+    var lastResultLeaseOutcomes: [WatchedFolderScanResultConsumerToken: ResultLeaseResolutionObservation] = [:]
     private var resultCustodyHighWater = 0
     private var boundResultConsumer: WatchedFolderScanResultConsumerToken?
     private var resultWaiter: ResultWaiter?
@@ -290,14 +292,26 @@ extension WatchedFolderScanScheduler {
     func resolveResultLease(
         for consumer: WatchedFolderScanResultConsumerToken,
         leaseID: WatchedFolderScanResultLeaseID,
+        submittedDiagnostics: SubmittedLeaseDiagnostics,
         resolution: WatchedFolderScanResultLeaseResolution
     ) -> WatchedFolderScanResultLeaseResolutionResult {
-        guard boundResultConsumer == consumer else { return .rejected(.consumerMismatch) }
-        guard let located = locateLeasedResult() else { return .rejected(.noLeaseOutstanding) }
+        let transitionOrdinalAtResolve = stateBySourceID.currentTransitionOrdinal
+        guard boundResultConsumer == consumer else {
+            return recordResultLeaseResolution(
+                .rejected(.consumerMismatch), for: consumer, leaseID: leaseID,
+                submitted: submittedDiagnostics, transitionOrdinalAtResolve: transitionOrdinalAtResolve)
+        }
+        guard let located = locateLeasedResult() else {
+            return recordResultLeaseResolution(
+                .rejected(.noLeaseOutstanding), for: consumer, leaseID: leaseID,
+                submitted: submittedDiagnostics, transitionOrdinalAtResolve: transitionOrdinalAtResolve)
+        }
         guard located.leased.leaseID == leaseID else {
-            return .rejected(
-                .leaseMismatch(submitted: leaseID, current: located.leased.leaseID)
-            )
+            return recordResultLeaseResolution(
+                .rejected(.leaseMismatch(submitted: leaseID, current: located.leased.leaseID)),
+                for: consumer, leaseID: leaseID, submitted: submittedDiagnostics,
+                transitionOrdinalAtResolve: transitionOrdinalAtResolve,
+                current: locatedResultLeaseDiagnostics(sourceID: located.sourceID, leased: located.leased))
         }
 
         let currentRegistration = currentRootBySourceID[located.sourceID]?.registration
@@ -307,18 +321,26 @@ extension WatchedFolderScanScheduler {
         case .retry where resultIsCurrent:
             restorePendingResult(located)
             signalResultAvailability()
-            return .queuedForRetry
+            return recordResultLeaseResolution(
+                .queuedForRetry, for: consumer, leaseID: leaseID,
+                submitted: submittedDiagnostics, transitionOrdinalAtResolve: transitionOrdinalAtResolve)
         case .retry:
             recordStaleRegistrationDrop(sourceID: located.sourceID)
             finishTransferredResult(located)
-            return .staleResultDiscarded
+            return recordResultLeaseResolution(
+                .staleResultDiscarded, for: consumer, leaseID: leaseID,
+                submitted: submittedDiagnostics, transitionOrdinalAtResolve: transitionOrdinalAtResolve)
         case .transferred where resultIsCurrent:
             finishTransferredResult(located)
-            return .transferred
+            return recordResultLeaseResolution(
+                .transferred, for: consumer, leaseID: leaseID,
+                submitted: submittedDiagnostics, transitionOrdinalAtResolve: transitionOrdinalAtResolve)
         case .transferred:
             recordStaleRegistrationDrop(sourceID: located.sourceID)
             finishTransferredResult(located)
-            return .staleResultDiscarded
+            return recordResultLeaseResolution(
+                .staleResultDiscarded, for: consumer, leaseID: leaseID,
+                submitted: submittedDiagnostics, transitionOrdinalAtResolve: transitionOrdinalAtResolve)
         }
     }
 
@@ -415,27 +437,6 @@ extension WatchedFolderScanScheduler {
                 resultCustodyHighWater: resultCustodyHighWater
             )
         )
-    }
-
-    func readySelectionInspection() -> ReadySelectionInspection {
-        ReadySelectionInspection(
-            selectionCount: stateBySourceID.readySelectionCount,
-            workUnitCount: stateBySourceID.readySelectionWorkUnitCount,
-            readyRootCount: stateBySourceID.counts.ready,
-            scheduledRootCount: stateBySourceID.scheduledRootCount
-        )
-    }
-
-    func replaceSchedulingState(
-        for sourceID: FilesystemSourceID,
-        with replacement: RootSchedulingState
-    ) {
-        stateBySourceID[sourceID] = replacement
-    }
-
-    @discardableResult
-    func removeSchedulingState(for sourceID: FilesystemSourceID) -> RootSchedulingState? {
-        stateBySourceID.removeValue(forKey: sourceID)
     }
 
     func shutdown() async {
@@ -799,7 +800,8 @@ extension WatchedFolderScanScheduler {
             }
             return WatchedFolderScanResultLease(
                 leaseID: leased.leaseID,
-                result: leased.pending.result
+                result: leased.pending.result,
+                submittedDiagnostics: makeSubmittedLeaseDiagnostics(for: leased.pending)
             )
         }
     }
@@ -981,9 +983,7 @@ extension WatchedFolderScanScheduler {
         return counts.pending + counts.leased
     }
 
-    private var stateCounts: StateCounts {
-        stateBySourceID.counts
-    }
+    private var stateCounts: StateCounts { stateBySourceID.counts }
 
     func recordStaleRegistrationDrop(sourceID: FilesystemSourceID) {
         var counts = staleDropsBySourceID[sourceID] ?? StaleDropCounts()

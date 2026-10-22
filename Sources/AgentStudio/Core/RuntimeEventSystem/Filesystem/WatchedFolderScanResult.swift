@@ -95,6 +95,12 @@ struct WatchedFolderScanResultLeaseID: Hashable, Sendable {
 struct WatchedFolderScanResultLease: Equatable, Sendable {
     let leaseID: WatchedFolderScanResultLeaseID
     let result: ScheduledWatchedFolderScanResult
+    let submittedDiagnostics: WatchedFolderScanScheduler.SubmittedLeaseDiagnostics
+
+    // Diagnostic metadata does not change the lease's existing equality contract.
+    static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.leaseID == rhs.leaseID && lhs.result == rhs.result
+    }
 }
 
 enum WatchedFolderScanResultConsumerBinding: Equatable, Sendable {
