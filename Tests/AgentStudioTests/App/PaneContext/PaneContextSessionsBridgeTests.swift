@@ -37,11 +37,6 @@ struct PaneContextSessionsBridgeTests {
         }
     }
 
-    private static let replacementWorkKinds: [AgentStudioCore.AgentLineWork?] = [
-        .working(.indeterminate), .working(.step(current: 1, total: 2)), .blockedOnYou(action: "Choose a response"),
-        .done, .failed(summary: "A line failure"), nil,
-    ]
-
     @Test("real session end keeps nonblocking asks answerable and attention active while unconfirming prior answers")
     func sessionEndPreservesOpenAskAndReceipt() async throws {
         try await withPaneContextSessionsBridge { fixture in
@@ -213,7 +208,7 @@ struct PaneContextSessionsBridgeTests {
         }
     }
 
-    @Test("a monitoring line refines working, and the Sessions end callback marks that line stale")
+    @Test("a message preserves Working and remains intact after the Sessions end callback")
     func lineAndSessionEndReachTheirOwners() async throws {
         try await withPaneContextSessionsBridge { fixture in
             let binding = try await fixture.bindConversation("first")
@@ -225,48 +220,37 @@ struct PaneContextSessionsBridgeTests {
                     .init(
                         paneId: fixture.paneId, writer: writer,
                         line: .init(
-                            summary: "Watching checks", work: .monitoring("checks"), detail: nil, refs: [],
-                            lifetime: .untilReplaced), writeNumber: .init(epoch: epoch, counter: 1))) == .applied)
+                            summary: "Watching checks", refs: []), writeNumber: .init(epoch: epoch, counter: 1)))
+                    == .applied)
             #expect(
-                try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .working(.monitoring)
+                try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .working(.active)
             )
-            #expect(try await fixture.detail().agentLine?.stale == false)
+            let written = try #require(try await fixture.detail().agentLine)
             try await fixture.applyHook(binding, eventName: .sessionEnd, signal: .sessionEnd)
-            #expect(try await fixture.detail().agentLine?.stale == true)
+            #expect(try await fixture.detail().agentLine == written)
             #expect(try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .idle(.ended))
         }
     }
 
-    @Test(
-        "non-monitoring and cleared lines remove the monitoring refinement without replacing the Sessions turn",
-        arguments: replacementWorkKinds)
-    func replacementLineClearsMonitoring(work: AgentStudioCore.AgentLineWork?) async throws {
+    @Test("replacing and clearing messages preserves the hook turn", arguments: [false, true])
+    func replacementMessagePreservesHookStatus(clear: Bool) async throws {
         try await withPaneContextSessionsBridge { fixture in
             let binding = try await fixture.bindConversation("first")
             let writer = try fixture.sender(binding)
             try await fixture.applyHook(binding, eventName: .toolActivity, signal: .toolActivity(toolName: "Read"))
             let epoch = try await fixture.epoch(writer: writer, stream: .line)
-            #expect(
-                await fixture.service.setLine(
-                    .init(
-                        paneId: fixture.paneId, writer: writer,
-                        line: .init(
-                            summary: "Watching checks", work: .monitoring("checks"), detail: nil, refs: [],
-                            lifetime: .untilReplaced), writeNumber: .init(epoch: epoch, counter: 1))) == .applied)
-            #expect(
-                try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .working(.monitoring)
-            )
-            let replacementLine: AgentLineInput? = work.map {
-                .init(summary: "Current work", work: $0, detail: nil, refs: [], lifetime: .untilReplaced)
+            for (counter, message) in [Optional("Watching checks"), clear ? nil : "Current message"].enumerated() {
+                let line = message.map { AgentLineInput(summary: $0, refs: []) }
+                #expect(
+                    await fixture.service.setLine(
+                        .init(
+                            paneId: fixture.paneId, writer: writer, line: line,
+                            writeNumber: .init(epoch: epoch, counter: UInt64(counter + 1)))) == .applied)
+                #expect(
+                    try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .working(.active)
+                )
+                #expect(try await fixture.detail().agentLine?.summary == message)
             }
-            #expect(
-                await fixture.service.setLine(
-                    .init(
-                        paneId: fixture.paneId, writer: writer, line: replacementLine,
-                        writeNumber: .init(epoch: epoch, counter: 2))) == .applied)
-            #expect(
-                try await fixture.ingestion.sessionSummary(paneId: fixture.paneId.uuid)?.status == .working(.active))
-            #expect(try await fixture.detail().agentLine?.work == work)
         }
     }
 

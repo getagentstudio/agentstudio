@@ -159,7 +159,6 @@ struct PaneContextPresentationServiceTests {
             let written = try await fixture.display()
             #expect(written.agentTitle == "Agent title")
             #expect(written.agentLine?.summary == "Working")
-            #expect(written.agentLine?.stale == false)
             #expect(written.revision.value > baseline.revision.value)
             let stale = try await fixture.withNoPublication {
                 await fixture.service.setLine(storage.line("Late", epoch: lineEpoch, counter: 1))
@@ -189,8 +188,8 @@ struct PaneContextPresentationServiceTests {
         }
     }
 
-    @Test("Session end stales the line while only caller disconnect settles its blocking ask")
-    func sessionEndPublishesStaleLineAndCounts() async throws {
+    @Test("Session end retains the message while only caller disconnect settles its blocking ask")
+    func sessionEndKeepsMessageAndCounts() async throws {
         try await withPaneContextPresentationService { fixture in
             let storage = fixture.storage
             _ = try await fixture.display()
@@ -199,10 +198,11 @@ struct PaneContextPresentationServiceTests {
                 await fixture.service.setLine(storage.line("Monitoring", epoch: epoch, counter: 1)) == .applied)
             let ask = storage.ask(blocking: true)
             try await storage.sendCreated(ask, to: fixture.service)
+            let beforeEnd = try await fixture.display()
             await fixture.service.sessionEnded(bindingGenerationId: try storage.bindingGenerationId)
             let display = try await fixture.display()
             #expect(display.agentLine?.summary == "Monitoring")
-            #expect(display.agentLine?.stale == true)
+            #expect(display.agentLine == beforeEnd.agentLine)
             #expect(display.includingDrawers.needsApprovalCount == 1)
             #expect(await fixture.latestPublished(storage.paneId) == .set(display))
             let disconnected = await fixture.service.settleAsk(
@@ -252,7 +252,7 @@ struct PaneContextPresentationServiceTests {
         }
     }
 
-    @Test("Controlled expiry publishes stale line and zero blocking asks without a new write")
+    @Test("Controlled ask expiry clears its count while preserving the message without a new write")
     func deadlinePublishesDerivedChanges() async throws {
         try await withPaneContextPresentationService { fixture in
             let storage = fixture.storage
@@ -261,19 +261,18 @@ struct PaneContextPresentationServiceTests {
             try #require(
                 await fixture.service.setLine(
                     storage.line(
-                        "Expires", epoch: epoch, counter: 1,
-                        lifetime: .expires(at: storage.time.now.addingTimeInterval(10)))) == .applied)
+                        "Expires", epoch: epoch, counter: 1)) == .applied)
             let ask = storage.ask(blocking: true, deadline: storage.time.now.addingTimeInterval(10))
             try await storage.sendCreated(ask, to: fixture.service)
             let before = try await fixture.display()
-            try #require(before.own.needsApprovalCount == 1 && before.agentLine?.stale == false)
+            try #require(before.own.needsApprovalCount == 1 && before.agentLine != nil)
             await storage.clock.waitForPendingSleepCount(exactly: 1)
             storage.clock.advance(by: .seconds(10))
             #expect(
                 await fixture.service.waitForAskOutcome(messageId: ask.messageId, paneId: storage.paneId) == .expired)
             let after = try await fixture.display()
             #expect(after.own.needsApprovalCount == 0)
-            #expect(after.agentLine?.stale == true)
+            #expect(after.agentLine == before.agentLine)
             #expect(await fixture.latestPublished(storage.paneId) == .set(after))
         }
     }

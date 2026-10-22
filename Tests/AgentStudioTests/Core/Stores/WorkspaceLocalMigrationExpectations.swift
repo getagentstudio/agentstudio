@@ -33,4 +33,5 @@ let expectedFullLocalMigrationIdentifiers =
         "019_create_pane_context_cli_outbox_cursor",
         "026_sessions_permission_handling",
         "027_sessions_hook_admission_cleanup",
+        "029_reset_agent_line_messages",
     ]

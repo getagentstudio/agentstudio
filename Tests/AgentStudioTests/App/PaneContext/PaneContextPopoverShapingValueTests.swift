@@ -107,49 +107,40 @@ struct PaneContextPopoverShapingValueTests {
         let paneId = PaneId.generateUUIDv7()
         let generation = UUIDv7.generate()
         let updatedAt = Date(timeIntervalSince1970: 2)
-        let expiry = Date(timeIntervalSince1970: 5)
         let identity = try ForgePullRequestIdentity(host: "github.com", owner: "org", repository: "repo", number: 7)
         let sender = AgentMessageSender.session(
             provider: try .init("codex"), sessionRef: try .init("session"), bindingGeneration: generation)
-        let works: [(AgentLineWork, AgentLineWorkModel)] = [
-            (.working(.indeterminate), .working(.indeterminate)),
-            (.working(.step(current: 2, total: 5)), .working(.step(current: 2, total: 5))),
-            (.monitoring("CI"), .monitoring("CI")),
-            (.blockedOnYou(action: "Reply"), .blockedOnYou(action: "Reply")),
-            (.done, .done),
-            (.failed(summary: "Failed"), .failed(summary: "Failed")),
-        ]
-        for (work, expectedWork) in works {
-            let shape = await PaneContextPopoverShaping.shape(
-                PaneContextPopoverShapingTests.detail(
-                    paneId: paneId,
-                    line: .init(
-                        summary: "Summary", work: work, detail: "Detail",
-                        refs: [.openFile(path: "file.swift", line: 3), .goToPane(paneId), .openPullRequest(identity)],
-                        writer: sender, updatedAt: updatedAt, lifetime: .expires(at: expiry), stale: true),
-                    session: .init(
-                        id: UUIDv7.generate(), provider: try .init("codex"), sessionRef: try .init("session"),
-                        bindingGeneration: generation, status: .needsYou(.question),
-                        providerPrompts: [
-                            .init(reason: .question, observedAt: updatedAt, summary: "Provider question")
-                        ],
-                        omittedPromptCount: 5)), sourceTitles: [:])
-            #expect(
-                shape.agentLine
-                    == .init(
-                        summary: "Summary", work: expectedWork, detail: "Detail",
-                        refs: [
-                            .openFile(path: "file.swift", line: 3), .goToPane(paneId.uuid),
-                            .openPullRequest(.init(host: "github.com", owner: "org", repository: "repo", number: 7)),
-                        ],
-                        writer: .session(provider: "codex", sessionRef: "session", bindingGeneration: generation),
-                        updatedAt: updatedAt, lifetime: .expires(at: expiry), stale: true))
-            #expect(
-                shape.providerPrompts
-                    == .init(
-                        prompts: [.init(reason: .question, observedAt: updatedAt, summary: "Provider question")],
-                        omittedPromptCount: 5))
-        }
+
+        let shape = await PaneContextPopoverShaping.shape(
+            PaneContextPopoverShapingTests.detail(
+                paneId: paneId,
+                line: .init(
+                    summary: "Summary",
+                    refs: [.openFile(path: "file.swift", line: 3), .goToPane(paneId), .openPullRequest(identity)],
+                    writer: sender, updatedAt: updatedAt),
+                session: .init(
+                    id: UUIDv7.generate(), provider: try .init("codex"), sessionRef: try .init("session"),
+                    bindingGeneration: generation, status: .needsYou(.question),
+                    providerPrompts: [
+                        .init(reason: .question, observedAt: updatedAt, summary: "Provider question")
+                    ],
+                    omittedPromptCount: 5)), sourceTitles: [:])
+        #expect(
+            shape.agentLine
+                == .init(
+                    summary: "Summary",
+                    refs: [
+                        .openFile(path: "file.swift", line: 3), .goToPane(paneId.uuid),
+                        .openPullRequest(.init(host: "github.com", owner: "org", repository: "repo", number: 7)),
+                    ],
+                    writer: .session(provider: "codex", sessionRef: "session", bindingGeneration: generation),
+                    updatedAt: updatedAt))
+        #expect(
+            shape.providerPrompts
+                == .init(
+                    prompts: [.init(reason: .question, observedAt: updatedAt, summary: "Provider question")],
+                    omittedPromptCount: 5))
+
     }
 
 }

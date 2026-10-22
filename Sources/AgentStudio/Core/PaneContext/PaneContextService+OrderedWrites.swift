@@ -75,10 +75,6 @@ extension PaneContextService {
                 return .applied
             }
             if result == .applied {
-                if case .session(_, _, let generation) = request.writer {
-                    await agentLineSink(request.line?.work, generation)
-                }
-                await refreshDeadline()
                 await publishAffectedSources([request.paneId])
             }
             return result

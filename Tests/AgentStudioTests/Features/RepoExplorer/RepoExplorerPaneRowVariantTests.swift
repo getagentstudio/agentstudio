@@ -24,8 +24,7 @@ struct RepoExplorerPaneRowVariantTests {
             note: "Review the diff",
             isDrawer: true,
             branchStatus: branchStatus,
-            isActive: true
-        )
+            isActive: true, now: .distantPast)
 
         let expectedLines: [RepoExplorerPaneRowLine] = [
             .title("build pane"),
@@ -48,8 +47,7 @@ struct RepoExplorerPaneRowVariantTests {
             note: nil,
             isDrawer: false,
             branchStatus: nil,
-            isActive: false
-        )
+            isActive: false, now: .distantPast)
 
         #expect(variants.compact.lines == [.title("quiet pane")])
         #expect(variants.compact.chips == [.clock])

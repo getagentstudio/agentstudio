@@ -85,18 +85,17 @@ package enum CodexPackageInstaller {
         guard props.fileManager.isReadableFile(atPath: scriptURL.path) else {
             throw AgentPackageInstallationError.packageResourcesUnavailable
         }
-        let skillSource = props.locator.skillSourceDirectory.appending(path: "SKILL.md")
-        guard let skillContents = props.fileManager.contents(atPath: skillSource.path) else {
-            throw AgentPackageInstallationError.packageResourcesUnavailable
-        }
-
-        // Everything is decided and validated before any byte is written, so a
-        // rejected input leaves the Codex home exactly as it was.
+        // Validate provider inputs and prepare the complete skill before any
+        // configuration or installed skill is replaced.
         let features = try plannedConfiguration(props)
         let roots = try CodexWritableRootsEditor.updating(
             features.contents, directory: props.ipcDirectory.path, configurationPath: props.configurationURL.path)
         var notices: [String] = []
         let hooks = try plannedHooks(props, scriptURL: scriptURL, notices: &notices)
+        let skill = try PreparedAgentSkillDirectory(
+            source: props.locator.skillSourceDirectory, providerHome: props.codexHome,
+            marker: Data("\(version)\n".utf8), fileManager: props.fileManager)
+        defer { skill.discardStaging() }
 
         var output = notices
         try AtomicFileWriter.write(
@@ -110,15 +109,7 @@ package enum CodexPackageInstaller {
         try AtomicFileWriter.write(hooks, to: props.hooksURL, fileManager: props.fileManager)
         output.append(
             "wrote \(CodexHookEventName.installedEvents.count) hook entries to \(props.hooksURL.path)")
-        try props.fileManager.createDirectory(
-            at: props.skillDirectory, withIntermediateDirectories: true)
-        try AtomicFileWriter.write(
-            skillContents, to: props.skillDirectory.appending(path: "SKILL.md"),
-            fileManager: props.fileManager)
-        try AtomicFileWriter.write(
-            Data("\(version)\n".utf8),
-            to: props.skillDirectory.appending(path: installationMarkerName),
-            fileManager: props.fileManager)
+        try skill.publish(to: props.skillDirectory)
         output.append("installed the agentstudio skill in \(props.skillDirectory.path)")
         output.append(
             "start Codex and trust the agentstudio hooks in its hook review prompt; "

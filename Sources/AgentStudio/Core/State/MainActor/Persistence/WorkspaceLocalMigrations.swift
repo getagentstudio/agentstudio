@@ -24,6 +24,7 @@ package enum WorkspaceLocalMigrations {
         registerCLIOutboxCursor(in: &migrator)
         registerSessionsPermissionHandling(in: &migrator)
         registerSessionsHookCleanup(in: &migrator)
+        registerAgentLineMessageCutover(in: &migrator)
         return migrator
     }
 
