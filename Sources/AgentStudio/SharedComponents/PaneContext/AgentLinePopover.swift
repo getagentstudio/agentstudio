@@ -19,15 +19,6 @@ package struct AgentLinePopover: View {
     package var body: some View {
         PopoverPanel {
             Text(model.summary).font(.headline)
-            switch model.work {
-            case .working(.indeterminate): Text("Working")
-            case .working(.step(let current, let total)): Text("Working · step \(current) of \(total)")
-            case .monitoring(let subject): Text("Monitoring · \(subject)")
-            case .blockedOnYou(let action): Text("Blocked on you · \(action)")
-            case .done: Text("Done")
-            case .failed(let summary): Text("Failed · \(summary)")
-            }
-            if let detail = model.detail { Text(detail).textSelection(.enabled) }
             ForEach(model.refs.indices, id: \.self) { index in
                 switch model.refs[index] {
                 case .openFile(let path, let line):
@@ -40,16 +31,8 @@ package struct AgentLinePopover: View {
             }
             MessageSenderLabel(sender: model.writer)
             Text(model.updatedAt, style: .relative).font(.caption)
-            if model.stale { Text("Stale").foregroundStyle(.secondary) }
-            if case .expires(let expiry) = model.lifetime {
-                HStack {
-                    Text("Expires")
-                    Text(expiry, format: .dateTime)
-                }.font(.caption)
-            }
             if let providerPrompts { ProviderPromptRows(model: providerPrompts) }
             PaneContextActionButton(goToPaneControl, action: onGoToPane)
         }
-        .opacity(model.stale ? AppStyles.General.Foreground.secondary : 1)
     }
 }

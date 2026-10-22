@@ -98,6 +98,7 @@ package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
     case starFill = "star.fill"
     case terminal = "terminal"
     case terminalFill = "terminal.fill"
+    case textBubble = "text.bubble"
     case textPageBadgeMagnifyingglass = "text.page.badge.magnifyingglass"
     case trash = "trash"
     case trashFill = "trash.fill"

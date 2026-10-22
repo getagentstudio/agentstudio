@@ -171,11 +171,11 @@ final class PaneContextServiceFixture: Sendable {
             writeNumber: WriteNumber(epoch: epoch, counter: counter))
     }
 
-    func line(_ summary: String?, epoch: UInt64, counter: UInt64, lifetime: AgentLineLifetime = .untilReplaced)
+    func line(_ summary: String?, epoch: UInt64, counter: UInt64)
         -> PaneLineWriteRequest
     {
         let line = summary.map {
-            AgentLineInput(summary: $0, work: .working(.indeterminate), detail: nil, refs: [], lifetime: lifetime)
+            AgentLineInput(summary: $0, refs: [])
         }
         return PaneLineWriteRequest(
             paneId: paneId, writer: sender, line: line, writeNumber: WriteNumber(epoch: epoch, counter: counter))

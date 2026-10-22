@@ -210,13 +210,6 @@ struct IPCPaneContextWireContractTests {
     @Test("Line, ordering, sender, session, PR and page unions preserve their tagged cases")
     func detailUnionRoundTrips() throws {
         let identifier = UUIDv7.generate()
-        let works: [IPCPaneAgentLineWork] = [
-            .working(progress: .indeterminate), .working(progress: .step(current: 1, total: 2)),
-            .monitoring(target: "CI"), .blockedOnYou(action: "approve"), .done, .failed(summary: "compile"),
-        ]
-        for work in works { try expectRoundTrip(work) }
-        try expectRoundTrip(IPCPaneAgentLineLifetime.untilReplaced)
-        try expectRoundTrip(IPCPaneAgentLineLifetime.expires(at: Date(timeIntervalSinceReferenceDate: 1)))
         let stale: [IPCPaneWriteStaleness] = [
             .lastAccepted(writeNumber: IPCPaneWriteNumber(epoch: 1, counter: 2)), .epochSuperseded, .writerReplaced,
         ]

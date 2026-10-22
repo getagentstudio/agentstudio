@@ -330,7 +330,7 @@ struct PaneContextDetailPagingTests {
                 try await fixture.sendCreated(ask, to: service)
                 let dismissed = await service.dismiss(messageId: ask.messageId, paneId: ask.paneId)
                 #expect(dismissed == .done)
-                try await seedExpiringCaptureLine(fixture, service: service, paneId: ask.paneId)
+                try await seedCaptureMessage(fixture, service: service, paneId: ask.paneId)
             }
             let live = fixture.message(body: "Still outstanding")
             try await fixture.sendCreated(live, to: service)
@@ -355,7 +355,7 @@ struct PaneContextDetailPagingTests {
                 fixture.time.shiftWallTime(by: AppPolicies.PaneContext.settledMessageLifetime)
                 let captured = try await fixture.detail(service)
                 #expect(captured.messages.map(\.id) == [live.messageId])
-                #expect(captured.agentLine?.stale == true)
+                #expect(captured.agentLine?.summary == "Message retained across maintenance")
                 #expect(captured.drawerMessages.isEmpty)
                 // Pure capture doesn't persist retention. An explicit write-path
                 // display computation persists its scoped maintenance before these
@@ -365,11 +365,11 @@ struct PaneContextDetailPagingTests {
                 let otherFlags = try await captureRetentionFlags(fixture, ask: otherAsk)
                 let retiredFlags = try await captureRetentionFlags(fixture, ask: retiredAsk)
                 #expect(ownFlags.hidden == true)
-                #expect(ownFlags.lineStale == true)
+                #expect(ownFlags.line == captured.agentLine)
                 #expect(otherFlags.hidden == false)
-                #expect(otherFlags.lineStale == false)
+                #expect(otherFlags.line?.summary == "Message retained across maintenance")
                 #expect(retiredFlags.hidden == false)
-                #expect(retiredFlags.lineStale == false)
+                #expect(retiredFlags.line?.summary == "Message retained across maintenance")
 
                 let nextDeadlineSleepGeneration = fixture.clock.scheduledSleepGeneration
                 await fixture.sqliteAccess.observeNextCommit(swept)
@@ -378,9 +378,9 @@ struct PaneContextDetailPagingTests {
                 let globallySwept = try await captureRetentionFlags(fixture, ask: otherAsk)
                 let retiredAfterDeadline = try await captureRetentionFlags(fixture, ask: retiredAsk)
                 #expect(globallySwept.hidden == true)
-                #expect(globallySwept.lineStale == true)
+                #expect(globallySwept.line == otherFlags.line)
                 #expect(retiredAfterDeadline.hidden == false)
-                #expect(retiredAfterDeadline.lineStale == false)
+                #expect(retiredAfterDeadline.line == retiredFlags.line)
                 swept.release()
                 await fixture.clock.waitForPendingSleepCount(atLeast: 1, fromGeneration: nextDeadlineSleepGeneration)
                 let remaining =
@@ -457,7 +457,7 @@ private func flatMessages(_ detail: PaneContextDetail) -> [AgentMessageDetail] {
     detail.messages + detail.drawerMessages.flatMap(\.messages)
 }
 
-private func seedExpiringCaptureLine(
+private func seedCaptureMessage(
     _ fixture: PaneContextServiceFixture, service: PaneContextService, paneId: PaneId
 ) async throws {
     let claimed = await service.claimEpoch(
@@ -469,23 +469,18 @@ private func seedExpiringCaptureLine(
         .init(
             paneId: paneId, writer: fixture.sender,
             line: .init(
-                summary: "Expiry scoped to this pane", work: .working(.indeterminate), detail: nil, refs: [],
-                lifetime: .expires(
-                    at: fixture.time.now.addingTimeInterval(AppPolicies.PaneContext.settledMessageLifetime))),
+                summary: "Message retained across maintenance", refs: []),
             writeNumber: .init(epoch: acceptedEpoch, counter: 1)))
     #expect(result == .applied)
 }
 
 private func captureRetentionFlags(
     _ fixture: PaneContextServiceFixture, ask: PaneMessageSendRequest
-) async throws -> (hidden: Bool?, lineStale: Bool?) {
+) async throws -> (hidden: Bool?, line: AgentLineDetail?) {
     try await fixture.databasePool.read { database in
         let hidden = try Bool.fetchOne(
             database, sql: "SELECT display_hidden FROM pane_request WHERE pane_id = ? AND message_id = ?",
             arguments: [ask.paneId.uuidString, ask.messageId.uuid.uuidString])
-        let lineStale = try Bool.fetchOne(
-            database, sql: "SELECT stale FROM pane_state WHERE pane_id = ? AND kind = 'agentLine'",
-            arguments: [ask.paneId.uuidString])
-        return (hidden, lineStale)
+        return (hidden, try PaneContextStorage.line(database, paneId: ask.paneId))
     }
 }

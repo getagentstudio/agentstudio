@@ -317,7 +317,9 @@ struct CompositionFactoryFixture: Sendable {
     }
 
     @concurrent static func make(
-        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        ownerId: PaneId = .generateUUIDv7(),
+        wallNow: (@Sendable () -> Date)? = nil
     ) async throws -> Self {
         let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
@@ -352,7 +354,6 @@ struct CompositionFactoryFixture: Sendable {
             preparationReceipt: .init(core: .uninitialized, local: .available(recovery: nil)),
             preparedApplicationLocalRepository: WorkspaceLocalRepository(
                 workspaceId: workspaceId, databaseWriter: localPool))
-        let ownerId = PaneId.generateUUIDv7()
         let drawerId = PaneId.generateUUIDv7()
         let directory = PaneContextMembershipDirectory()
         // Recorded graph installation is a stand-in for S3b's canonical publisher.
@@ -370,7 +371,7 @@ struct CompositionFactoryFixture: Sendable {
         let composition = SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
-                wallNow: { now },
+                wallNow: wallNow ?? { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
                 performanceTraceRecorder: performanceTraceRecorder))

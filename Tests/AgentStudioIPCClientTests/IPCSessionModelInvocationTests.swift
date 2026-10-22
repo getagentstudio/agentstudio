@@ -38,10 +38,10 @@ struct IPCSessionModelInvocationTests {
         #expect(question.timeout == nil)
     }
 
-    @Test("missing text, a timeout without wait and conflicting work declarations are refused")
+    @Test("missing text, a timeout without wait and conflicting clear or reset forms are refused")
     func omittedRequiredArgumentsAreRefused() {
         for arguments in [
-            ["notify"], ["ask", "Q", "--timeout", "30"], ["line", "X", "--done", "--working"],
+            ["notify"], ["ask", "Q", "--timeout", "30"], ["line", "X", "--clear"],
             ["title", "X", "--reset"],
         ] {
             #expect(throws: AgentStudioIPCClientError.self) {

@@ -32,12 +32,6 @@ final class PaneContextSessionsBridge: SessionOpenAskReading, Sendable {
         await ingestion.receiveOpenAskSummary(Self.sessionsOpenAskUpdate(update))
     }
 
-    func receiveAgentLine(work: AgentStudioCore.AgentLineWork?, bindingGenerationId: UUID) async {
-        guard let ingestion = endpoints.withLock({ $0.ingestion }) else { return }
-        await ingestion.receiveAgentLine(
-            work: work.flatMap(Self.sessionsLineWork), bindingGenerationId: bindingGenerationId)
-    }
-
     func sessionEnded(bindingGenerationId: UUID) async {
         guard let service = endpoints.withLock({ $0.service }) else { return }
         await service.sessionEnded(bindingGenerationId: bindingGenerationId)
@@ -61,11 +55,4 @@ final class PaneContextSessionsBridge: SessionOpenAskReading, Sendable {
                 blocked: update.blocked))
     }
 
-    // Sessions owns the turn outcome; only monitoring refines an already-working turn.
-    private static func sessionsLineWork(_ work: AgentStudioCore.AgentLineWork) -> AgentStudioSessions.AgentLineWork? {
-        switch work {
-        case .monitoring: return .monitoring
-        case .working, .blockedOnYou, .done, .failed: return nil
-        }
-    }
 }

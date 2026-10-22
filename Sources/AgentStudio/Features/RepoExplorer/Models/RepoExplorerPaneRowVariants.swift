@@ -44,17 +44,19 @@ package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
 
     package static func informationLines(
         title: String, note: String?, agentLine: AgentLineDetail?,
-        sessionStatus: AgentSessionStatus?, connectionIssue: AgentConnectionRefusalReason?
+        sessionStatus: AgentSessionStatus?, connectionIssue: AgentConnectionRefusalReason?,
+        now: Date
     ) -> [RepoExplorerPaneRowLine] {
-        make(
-            title: title, branchContext: nil, note: note, isDrawer: false, branchStatus: nil, isActive: false,
-            agentLine: agentLine, sessionStatus: sessionStatus, connectionIssue: connectionIssue
-        ).expanded.lines
+        RepoExplorerPaneLineVisibilityTable.lines(
+            lineCandidates(
+                title: title, branchContext: nil, note: note, agentLine: agentLine,
+                sessionStatus: sessionStatus, connectionIssue: connectionIssue, now: now),
+            selected: true, surface: .informationCard)
     }
 
     static func make(
         title: String,
-        branchContext: String?,
+        branchContext: String? = nil,
         note: String?,
         isDrawer: Bool,
         branchStatus: GitBranchStatus?,
@@ -62,21 +64,16 @@ package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
         agentLine: AgentLineDetail? = nil,
         sessionStatus: AgentSessionStatus? = nil,
         connectionIssue: AgentConnectionRefusalReason? = nil,
-        messageCount: Int = 0
+        messageCount: Int = 0,
+        now: Date
     ) -> Self {
-        let candidates: [RepoExplorerPaneLineKind: RepoExplorerPaneRowLine?] = [
-            .title: .title(title),
-            .worktreeBranch: branchContext.map(RepoExplorerPaneRowLine.worktreeBranch),
-            .note: note.map(RepoExplorerPaneRowLine.note),
-            .agentLine: agentLine.map { .agentLine(RepoExplorerPaneContextLine.agent($0)) },
-            .connectionIssue: connectionIssue.map { .connectionIssue(RepoExplorerPaneContextLine.connection($0)) },
-            .sessionStatus: sessionStatus.flatMap(RepoExplorerPaneContextLine.session).map(
-                RepoExplorerPaneRowLine.sessionStatus),
-        ]
+        let candidates = lineCandidates(
+            title: title, branchContext: branchContext, note: note, agentLine: agentLine,
+            sessionStatus: sessionStatus, connectionIssue: connectionIssue, now: now)
         let compactLines = RepoExplorerPaneLineVisibilityTable.lines(
-            candidates.compactMapValues { $0 }, selected: false)
+            candidates, selected: false)
         let expandedLines = RepoExplorerPaneLineVisibilityTable.lines(
-            candidates.compactMapValues { $0 }, selected: true)
+            candidates, selected: true)
 
         var compactChips: [RepoExplorerPaneChipKind] = []
         if isDrawer { compactChips.append(.drawer) }
@@ -124,4 +121,20 @@ package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
             )
         )
     }
+    private static func lineCandidates(
+        title: String, branchContext: String? = nil, note: String?, agentLine: AgentLineDetail?,
+        sessionStatus: AgentSessionStatus?, connectionIssue: AgentConnectionRefusalReason?, now: Date
+    ) -> [RepoExplorerPaneLineKind: RepoExplorerPaneRowLine] {
+        let candidates: [RepoExplorerPaneLineKind: RepoExplorerPaneRowLine?] = [
+            .title: .title(title),
+            .worktreeBranch: branchContext.map(RepoExplorerPaneRowLine.worktreeBranch),
+            .note: note.map(RepoExplorerPaneRowLine.note),
+            .agentLine: agentLine.map { .agentLine(RepoExplorerPaneContextLine.agent($0, now: now)) },
+            .connectionIssue: connectionIssue.map { .connectionIssue(RepoExplorerPaneContextLine.connection($0)) },
+            .sessionStatus: sessionStatus.flatMap(RepoExplorerPaneContextLine.session).map(
+                RepoExplorerPaneRowLine.sessionStatus),
+        ]
+        return candidates.compactMapValues { $0 }
+    }
+
 }

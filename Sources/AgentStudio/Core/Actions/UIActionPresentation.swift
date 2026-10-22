@@ -76,7 +76,7 @@ extension KeyBinding {
 
 package enum LocalActionSpec {
     case goToMessagePane
-    case showPaneAgentLine(AgentLineWork)
+    case showPaneAgentLine
     case paneSessionStatus(AgentSessionStatus)
     case paneAgentConnectionIssue(AgentConnectionRefusalReason)
     case countInformationalPaneMessages
@@ -105,6 +105,8 @@ package enum LocalActionSpec {
     case openInVSCode
     case revealInFinder
     case copyPath
+    case copyPaneId
+    case copySessionId
     case revealDataLocationInFinder
     case clearFilter
     case refreshWorktrees
@@ -153,8 +155,8 @@ package enum LocalActionSpec {
 
     package var actionSpec: ActionSpec {
         switch self {
-        case .showPaneAgentLine(let work):
-            return PaneContextLineActionSpecs.agentLine(work)
+        case .showPaneAgentLine:
+            return PaneContextLineActionSpecs.agentLine
         case .paneAgentConnectionIssue(let reason):
             return PaneContextLineActionSpecs.connectionIssue(reason)
         case .paneSessionStatus(let status):
@@ -247,6 +249,12 @@ package enum LocalActionSpec {
         case .revealInFinder:
             return ActionSpec(
                 label: "Reveal in Finder", helpText: "Reveal this path in Finder", icon: .system(.folder))
+        case .copyPaneId:
+            return ActionSpec(
+                label: "Copy Pane ID", helpText: "Copy the full pane ID", icon: .system(.documentOnDocument))
+        case .copySessionId:
+            return ActionSpec(
+                label: "Copy Session ID", helpText: "Copy the full session ID", icon: .system(.documentOnDocument))
         case .copyPath:
             return ActionSpec(
                 label: "Copy Path", helpText: "Copy this path to the clipboard", icon: .system(.documentOnDocument))

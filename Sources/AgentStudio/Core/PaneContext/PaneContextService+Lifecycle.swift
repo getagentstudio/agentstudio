@@ -84,7 +84,6 @@ extension PaneContextService {
                     sql: """
                         SELECT MIN(deadline) FROM (
                             SELECT deadline FROM pane_request WHERE state = 'open' AND waiting = 'blocking'
-                            UNION ALL SELECT expires_at FROM pane_state WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
                             UNION ALL SELECT purge_after FROM pane_retirement
                             UNION ALL SELECT settled_at + ? FROM pane_request WHERE display_hidden = 0 AND settled_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
                             UNION ALL SELECT settled_at + ? FROM pane_event WHERE kind = 'notice' AND display_hidden = 0 AND settled_at IS NOT NULL AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)
@@ -135,7 +134,6 @@ extension PaneContextService {
                             currentBindingGeneration: binding)
                     )
                 }
-                try PaneContextStorage.expireLines(database, now: instant)
                 try PaneContextStorage.hideSettled(database, now: instant)
                 try PaneContextStorage.purgeRetired(database, now: instant)
                 return PaneContextLifecycleCommit(
@@ -155,18 +153,6 @@ extension PaneContextService {
             try await ensureOpen()
             let commit = try await sqliteAccess.write { database in
                 let before = try PaneContextStorage.presentationRevisions(database)
-                let lines = try Row.fetchAll(
-                    database,
-                    sql:
-                        "SELECT pane_id FROM pane_state WHERE kind = 'agentLine' AND writer_binding_generation = ? AND stale = 0 AND summary IS NOT NULL",
-                    arguments: [bindingGenerationId.uuidString])
-                try database.execute(
-                    sql: "UPDATE pane_state SET stale = 1 WHERE kind = 'agentLine' AND writer_binding_generation = ?",
-                    arguments: [bindingGenerationId.uuidString])
-                for row in lines {
-                    try PaneContextStorage.bumpRevision(
-                        database, paneId: PaneId(existingUUID: PaneContextStorage.uuid(row, "pane_id")))
-                }
                 let receipts = try Row.fetchAll(
                     database,
                     sql:
@@ -182,7 +168,6 @@ extension PaneContextService {
                 }
                 return try PaneContextStorage.changedPresentationSources(database, since: before)
             }
-            await agentLineSink(nil, bindingGenerationId)
             await publishAffectedSources(commit)
             await refreshDeadline()
         } catch {
@@ -253,38 +238,6 @@ private func makePaneContextDeadlineScheduler<SourceClock: Clock & Sendable>(
 }
 
 extension PaneContextStorage {
-    static func expireLines(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
-        if let sources, sources.isEmpty { return }
-        let scope =
-            sources.map {
-                " AND pane_id IN (\(Array(repeating: "?", count: $0.count).joined(separator: ",")))"
-            } ?? ""
-        let arguments = StatementArguments(sources?.map(\.uuidString) ?? [])
-        let statement = try database.cachedStatement(
-            sql: """
-                SELECT id, pane_id, expires_at FROM pane_state
-                WHERE kind = 'agentLine' AND stale = 0 AND expires_at IS NOT NULL
-                AND pane_id NOT IN (SELECT pane_id FROM pane_retirement)\(scope)
-                """)
-        let rows = try Row.fetchAll(statement, arguments: arguments)
-        let update = try database.cachedStatement(sql: "UPDATE pane_state SET stale = 1 WHERE id = ?")
-        for row in rows {
-            let rawExpiry: DatabaseValue = row[2]
-            guard let micros = Int64.fromDatabaseValue(rawExpiry) else {
-                throw PaneContextStorageFailure.decode("expires_at")
-            }
-            let expiry = Date(timeIntervalSince1970: Double(micros) / 1_000_000)
-            guard lineIsExpired(expiresAt: expiry, now: now) else { continue }
-            let rawId: DatabaseValue = row[0]
-            let rawPane: DatabaseValue = row[1]
-            guard let rowId = String.fromDatabaseValue(rawId) else { throw PaneContextStorageFailure.decode("id") }
-            guard let paneText = String.fromDatabaseValue(rawPane), let paneUUID = UUID(uuidString: paneText) else {
-                throw PaneContextStorageFailure.decode("pane_id")
-            }
-            try update.execute(arguments: [rowId])
-            try bumpRevision(database, paneId: PaneId(existingUUID: paneUUID))
-        }
-    }
 
     static func hideSettled(_ database: Database, now: Date, sources: [PaneId]? = nil) throws {
         let panes: [String]

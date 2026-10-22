@@ -127,28 +127,56 @@ struct RepoExplorerTabGroupFacts: Equatable, Sendable {
 }
 
 enum RepoExplorerPaneRecencyText {
+    struct Age: Equatable, Sendable {
+        enum Unit: Sendable { case minute, hour, day }
+        let unitCount: Int
+        let unit: Unit
+        let nextChangeDate: Date
+
+        var compactText: String {
+            switch unit {
+            case .minute: unitCount == 0 ? "Now" : "\(unitCount)m"
+            case .hour: "\(unitCount)h"
+            case .day: "\(unitCount)d"
+            }
+        }
+
+        var messageText: String {
+            switch unit {
+            case .minute: unitCount == 0 ? "just now" : "\(unitCount) min ago"
+            case .hour: "\(unitCount) hr ago"
+            case .day: "\(unitCount) days ago"
+            }
+        }
+    }
+
+    static func age(referenceDate: Date, now: Date) -> Age {
+        let elapsed = max(0, now.timeIntervalSince(referenceDate))
+        let unit: Age.Unit
+        let secondsPerUnit: Double
+        if elapsed < 3600 {
+            unit = .minute
+            secondsPerUnit = 60
+        } else if elapsed < 86_400 {
+            unit = .hour
+            secondsPerUnit = 3600
+        } else {
+            unit = .day
+            secondsPerUnit = 86_400
+        }
+        let unitCount = Int(elapsed / secondsPerUnit)
+        return Age(
+            unitCount: unitCount, unit: unit,
+            nextChangeDate: referenceDate.addingTimeInterval(Double(unitCount + 1) * secondsPerUnit))
+    }
+
     static func display(lastInteractedAt: Date, now: Date) -> String {
-        let elapsedSeconds = max(0, now.timeIntervalSince(lastInteractedAt))
-        let elapsedMinutes = Int(elapsedSeconds / 60)
-        if elapsedMinutes < 1 { return "Now" }
-        if elapsedMinutes < 60 { return "\(elapsedMinutes)m" }
-        let elapsedHours = elapsedMinutes / 60
-        if elapsedHours < 24 { return "\(elapsedHours)h" }
-        return "\(elapsedHours / 24)d"
+        age(referenceDate: lastInteractedAt, now: now).compactText
     }
 
     static func nextPresentationChangeDate(referenceDate: Date, now: Date) -> Date {
         let elapsedSeconds = max(0, now.timeIntervalSince(referenceDate))
-        let nextTextBoundary: TimeInterval
-        if elapsedSeconds < 60 {
-            nextTextBoundary = 60
-        } else if elapsedSeconds < 60 * 60 {
-            nextTextBoundary = (floor(elapsedSeconds / 60) + 1) * 60
-        } else if elapsedSeconds < 24 * 60 * 60 {
-            nextTextBoundary = (floor(elapsedSeconds / (60 * 60)) + 1) * 60 * 60
-        } else {
-            nextTextBoundary = (floor(elapsedSeconds / (24 * 60 * 60)) + 1) * 24 * 60 * 60
-        }
+        let nextTextDate = age(referenceDate: referenceDate, now: now).nextChangeDate
 
         let tierBoundaries = [
             AppPolicies.EntityRecency.strongBlueDuration,
@@ -157,7 +185,7 @@ enum RepoExplorerPaneRecencyText {
             AppPolicies.EntityRecency.faintBlueDuration,
         ]
         let nextTierBoundary = tierBoundaries.first { $0 > elapsedSeconds }
-        return referenceDate.addingTimeInterval(min(nextTextBoundary, nextTierBoundary ?? nextTextBoundary))
+        return min(nextTextDate, nextTierBoundary.map { referenceDate.addingTimeInterval($0) } ?? nextTextDate)
     }
 }
 
