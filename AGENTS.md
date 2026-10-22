@@ -362,11 +362,12 @@ mise run verify-debug-observability
 ```
 
 Launch identity, already-running refusal, IPC escrow, beta LaunchServices, and
-OTLP scrub live in
+OTLP export rules live in
 [Observability — Local proof launch](docs/architecture/observability/observability_and_traceability.md#local-proof-launch).
 Collector absence or exporter failure must be fail-open for normal app startup
-and must not prevent JSONL writes. OTLP output is source-scrubbed: raw paths,
-raw UUIDs, prompts, payload text, errors, and tool output must not be exported.
+and must not prevent JSONL writes. OTLP exports every recorded attribute to the
+configured loopback endpoint.
+Agent message text must never be recorded in telemetry.
 
 Native UI: prefer headless proof first. When visual proof is required, run a
 debug or beta app and use Peekaboo with **PID targeting**. Never target debug
