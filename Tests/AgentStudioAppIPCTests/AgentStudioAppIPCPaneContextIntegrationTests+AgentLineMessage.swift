@@ -40,13 +40,18 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
     }
 
     @Test(
-        "real IPC refuses each retired line key without changing an accepted message",
+        "real IPC refuses retired line shapes without changing an accepted message",
         arguments: [
-            ("work", JSONValue.object(["kind": .string("done")])),
-            ("detail", JSONValue.string("Obsolete detail")),
-            ("lifetime", JSONValue.object(["kind": .string("untilReplaced")])),
+            ["work": JSONValue.object(["kind": .string("done")])],
+            ["detail": JSONValue.string("Obsolete detail")],
+            ["lifetime": JSONValue.object(["kind": .string("untilReplaced")])],
+            [
+                "work": JSONValue.object(["kind": .string("done")]),
+                "detail": .string("Obsolete detail"),
+                "lifetime": .object(["kind": .string("untilReplaced")]),
+            ],
         ])
-    func agentLineMessageRefusesLegacyWireShape(key: String, value: JSONValue) async throws {
+    func agentLineMessageRefusesLegacyWireShape(retiredFields: [String: JSONValue]) async throws {
         try await withPaneContextIPCDomain { domain in
             try await withPaneContextWire(domain: domain) { _, client in
                 let claim = try await client.response(
@@ -65,7 +70,9 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
                 try #require(try paneContextWireResult(IPCPaneOrderedWriteResult.self, from: accepted) == .applied)
                 let before = try #require(try await client.detail().agentLine)
                 var obsolete: [String: JSONValue] = ["summary": .string("Rejected message"), "refs": .array([])]
-                obsolete[key] = value
+                for (key, value) in retiredFields {
+                    obsolete[key] = value
+                }
 
                 let reply = try await client.response(
                     method: "pane.line.set",
