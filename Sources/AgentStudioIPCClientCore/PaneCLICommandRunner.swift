@@ -19,12 +19,14 @@ struct PaneCLICommandRunner: Sendable {
             switch intent {
             case .title, .line: break
             case .notify, .ask, .withdraw, .answers, .pane:
-                if global.configuration.authToken == nil {
-                    reportCredentialRefusal(tokenOutcome: .absent)
-                } else if let failure = error as? IPCDescriptorClientFailure,
+                if let failure = error as? IPCDescriptorClientFailure,
                     failure.disposition == .authenticationRejected
                 {
                     reportCredentialRefusal(tokenOutcome: .rejected)
+                } else if global.configuration.authToken == nil,
+                    let failure = error as? IPCDescriptorRemoteFailure, failure.code == -32_001
+                {
+                    reportCredentialRefusal(tokenOutcome: .absent)
                 }
             }
             throw error
