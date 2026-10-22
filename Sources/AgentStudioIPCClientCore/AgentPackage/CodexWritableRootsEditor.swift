@@ -1,0 +1,120 @@
+import Foundation
+
+/// Adds the store directory without rewriting foreign writable roots.
+package enum CodexWritableRootsEditor {
+    package static func updating(
+        _ contents: String, directory: String, configurationPath: String
+    ) throws -> (contents: String, changed: Bool) {
+        do { return try edit(contents, directory: directory) } catch {
+            throw AgentPackageInstallationError.writableRootsNotLocatable(configurationPath)
+        }
+    }
+
+    private static func edit(
+        _ contents: String, directory: String
+    ) throws -> (contents: String, changed: Bool) {
+        let scanner = try CodexTOMLLineScanner(contents)
+        let newline = contents.contains("\r\n") ? "\r\n" : "\n"
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.withoutEscapingSlashes]
+        let quoted = CodexTOMLLineScanner.text(try encoder.encode(directory))
+        let assignmentText = "writable_roots = [\(quoted)]\(newline)"
+        guard let table = try scanner.table(named: "sandbox_workspace_write") else {
+            let separator = contents.isEmpty ? "" : (contents.hasSuffix("\n") ? newline : newline + newline)
+            return (contents + separator + "[sandbox_workspace_write]\(newline)" + assignmentText, true)
+        }
+        let assignments = try table.body.compactMap { line -> (CodexTOMLLineScanner.Line, Int)? in
+            guard let assignment = try scanner.assignment(in: line), assignment.key.first == "writable_roots" else {
+                return nil
+            }
+            guard assignment.key == ["writable_roots"] else { throw CodexTOMLLineScanner.Failure.ambiguous }
+            return (line, assignment.valueStart)
+        }
+        guard assignments.count <= 1 else { throw CodexTOMLLineScanner.Failure.ambiguous }
+        guard let (line, valueStart) = assignments.first else {
+            let position = table.header.range.upperBound
+            let prefix = position > 0 && scanner.bytes[position - 1] != 10 ? newline : ""
+            return (
+                CodexTOMLLineScanner.replacing(
+                    contents, edits: [(position..<position, prefix + assignmentText)]), true
+            )
+        }
+        let value = CodexTOMLLineScanner.text(scanner.bytes[valueStart..<line.range.upperBound])
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.hasPrefix("["),
+            let opening = scanner.mask[valueStart..<line.range.upperBound].firstIndex(of: 91),
+            let closing = scanner.mask[(opening + 1)...].firstIndex(of: 93),
+            !scanner.mask[(opening + 1)..<closing].contains(91)
+        else { throw CodexTOMLLineScanner.Failure.ambiguous }
+        let elements = scanner.quotedValues.filter { $0.range.lowerBound > opening && $0.range.upperBound <= closing }
+        guard elements.allSatisfy({ $0.value != nil }),
+            scanner.mask[(opening + 1)..<closing].allSatisfy({ [9, 10, 13, 32, 44].contains($0) })
+        else { throw CodexTOMLLineScanner.Failure.ambiguous }
+        try validateSeparators(scanner: scanner, elements: elements, opening: opening, closing: closing)
+        let matching = elements.filter { $0.value == directory }
+        guard matching.isEmpty else { return (contents, false) }
+        return (
+            addingElement(
+                quoted, to: contents, scanner: scanner, elements: elements, bounds: opening..<closing,
+                newline: newline), true
+        )
+    }
+
+    private static func validateSeparators(
+        scanner: CodexTOMLLineScanner, elements: [CodexTOMLLineScanner.QuotedValue], opening: Int, closing: Int
+    ) throws {
+        var previous = opening + 1
+        for (index, element) in elements.enumerated() {
+            let separators = scanner.mask[previous..<element.range.lowerBound].filter { ![9, 10, 13, 32].contains($0) }
+            guard separators == (index == 0 ? [] : [44]) else { throw CodexTOMLLineScanner.Failure.ambiguous }
+            previous = element.range.upperBound
+        }
+        let tail = scanner.mask[previous..<closing].filter { ![9, 10, 13, 32].contains($0) }
+        guard tail.isEmpty || (!elements.isEmpty && tail == [44]) else {
+            throw CodexTOMLLineScanner.Failure.ambiguous
+        }
+        let lineEnd = scanner.mask[closing...].firstIndex(of: 10) ?? scanner.mask.count
+        guard scanner.mask[(closing + 1)..<lineEnd].allSatisfy({ [9, 13, 32].contains($0) }) else {
+            throw CodexTOMLLineScanner.Failure.ambiguous
+        }
+    }
+
+    private static func addingElement(
+        _ quoted: String, to contents: String, scanner: CodexTOMLLineScanner,
+        elements: [CodexTOMLLineScanner.QuotedValue], bounds: Range<Int>, newline: String
+    ) -> String {
+        let opening = bounds.lowerBound
+        let closing = bounds.upperBound
+        let multiline = scanner.bytes[opening..<closing].contains(10)
+        let trailingComma = elements.last.map { scanner.mask[$0.range.upperBound..<closing].contains(44) } ?? false
+        if !multiline {
+            let prefix = elements.isEmpty ? "" : (trailingComma ? " " : ", ")
+            let suffix = trailingComma ? "," : ""
+            return CodexTOMLLineScanner.replacing(contents, edits: [(closing..<closing, prefix + quoted + suffix)])
+        }
+        let closingLineStart = (scanner.bytes[..<closing].lastIndex(of: 10).map { $0 + 1 }) ?? 0
+        let closingPrefix = scanner.bytes[closingLineStart..<closing]
+        let closingAlone = closingPrefix.allSatisfy { $0 == 32 || $0 == 9 }
+        let closingIndent = closingAlone ? CodexTOMLLineScanner.text(closingPrefix) : ""
+        let elementIndent: String
+        if let first = elements.first {
+            let start = scanner.bytes[..<first.range.lowerBound].lastIndex(of: 10).map { $0 + 1 } ?? 0
+            elementIndent = CodexTOMLLineScanner.text(
+                scanner.bytes[start..<first.range.lowerBound].prefix { $0 == 32 || $0 == 9 })
+        } else {
+            elementIndent = closingIndent + "    "
+        }
+        var edits: [(Range<Int>, String)] = []
+        if closingAlone {
+            if let last = elements.last, !trailingComma {
+                edits.append((last.range.upperBound..<last.range.upperBound, ","))
+            }
+            edits.append((closingLineStart..<closingLineStart, elementIndent + quoted + "," + newline))
+        } else {
+            let separator = !elements.isEmpty && !trailingComma ? "," : ""
+            edits.append(
+                (closing..<closing, separator + newline + elementIndent + quoted + "," + newline + closingIndent))
+        }
+        return CodexTOMLLineScanner.replacing(contents, edits: edits)
+    }
+}

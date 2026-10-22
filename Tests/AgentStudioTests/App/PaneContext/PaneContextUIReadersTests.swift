@@ -70,15 +70,5 @@ struct PaneContextUIReadersTests {
             #expect(readers.titleForPane(.generateUUIDv7()) == nil)
         }
     }
-    @Test("the pane renders Needs you together with the persistent refusal line")
-    func paneStatusAndConnectionIssue() async throws {
-        let lines = await PaneContextToolbarControls.shapeStatus(
-            .init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized))
-        #expect(lines.status?.text == "Needs you · approval")
-        #expect(lines.connection?.text == "agent not connected · credentialNotRecognized")
-        let verified = await PaneContextToolbarControls.shapeStatus(.init(status: .working(.active)))
-        #expect(verified.status?.text == "Working")
-        #expect(verified.connection == nil)
-    }
 
 }

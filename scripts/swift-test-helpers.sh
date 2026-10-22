@@ -934,6 +934,7 @@ large|CLIHookSilenceScriptTests|process-global
 large|CLIAgentHelpScriptTests|concurrent
 large|CLIPaneContextOrderingTests|process-global
 large|CLIPaneContextAvailabilityTests|process-global
+large|CLIBackgroundSessionTests|process-global
 large|CLIPaneContextAnswersTests|process-global
 large|CLIPaneContextDispatchTests|process-global
 large|AgentStudioOTLPBootstrapSmokeTests|process-global

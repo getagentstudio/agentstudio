@@ -15,7 +15,7 @@ import Testing
 struct CLIPaneContextStatusFallbackTests {
     @Test(
         "refused-token title and line allocate a pane epoch then reuse it", arguments: ["title", "line"],
-        ["claude", "codex"])
+        ["claude", "codex", "cursor"])
     func firstAndCachedEpochUsePaneWriter(verb: String, provider: String) async throws {
         try await withRefusedTokenPaneCLIContext(provider: provider) { context in
             let first = await runFallbackCLI(context, arguments: [verb, "first"])
@@ -49,11 +49,13 @@ struct CLIPaneContextStatusFallbackTests {
     }
 
     @Test(
-        "an unbound refused-token status write applies and publishes its credential refusal",
-        arguments: ["title", "line"])
-    func unboundWriteRetainsCredentialRefusal(verb: String) async throws {
+        "an unbound fallback status write applies without a credential warning",
+        arguments: ["title", "line"], [false, true])
+    func unboundWriteIsQuiet(verb: String, absentToken: Bool) async throws {
         try await withRefusedTokenPaneCLIContext(bindSession: false) { context in
-            let result = await runFallbackCLI(context, arguments: [verb, "visible status"])
+            var environment = context.callEnvironment(store: nil, useStore: true)
+            if absentToken { environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN") }
+            let result = await runFallbackCLI(context, arguments: [verb, "visible status"], environment: environment)
             #expect(result.exitCode == 0)
             let read = await context.domain.service.readDetail(
                 .init(paneId: PaneId(existingUUID: context.domain.paneId), page: .first))
@@ -68,12 +70,12 @@ struct CLIPaneContextStatusFallbackTests {
                 #expect(detail.agentLine?.summary == "visible status")
             }
             let refusal = await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId)
-            #expect(refusal?.reason == .credentialNotRecognized)
-            #expect(refusal?.intent == .status)
+            #expect(refusal == nil)
             let mailbox = await context.domain.ingestion.statusPublicationMailbox
             #expect(
-                mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
-                    == .set(.init(status: .unknown, connectionIssue: .credentialNotRecognized)))
+                mailbox.takeBatch().values.allSatisfy {
+                    $0 == .set(.init(status: .unknown))
+                })
         }
     }
 
@@ -128,10 +130,16 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "protected verbs remain refused and record E7 only through session.status",
-        arguments: ["notify", "ask", "answers", "pane"], [false, true])
+        arguments: ["notify", "ask", "blockingAsk", "withdraw", "answers", "pane"], [false, true])
     func protectedVerbsNeverFallBack(verb: String, absentToken: Bool) async throws {
         try await withRefusedTokenPaneCLIContext(bindSession: false) { context in
-            let arguments = ["notify", "ask"].contains(verb) ? [verb, "protected"] : [verb]
+            let arguments: [String]
+            switch verb {
+            case "notify", "ask": arguments = [verb, "protected"]
+            case "blockingAsk": arguments = ["ask", "protected", "--wait", "--timeout", "30"]
+            case "withdraw": arguments = [verb, UUIDv7.generate().uuidString]
+            default: arguments = [verb]
+            }
             var environment = context.callEnvironment(store: nil, useStore: true)
             if absentToken { environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN") }
             let output = await runFallbackCLI(context, arguments: arguments, environment: environment)
@@ -140,6 +148,8 @@ struct CLIPaneContextStatusFallbackTests {
             let protectedMethod: String
             switch verb {
             case "notify", "ask": protectedMethod = "pane.message.send"
+            case "blockingAsk": protectedMethod = "pane.message.ask"
+            case "withdraw": protectedMethod = "pane.message.withdraw"
             case "answers": protectedMethod = "pane.message.changes"
             default: protectedMethod = "pane.context.get"
             }
@@ -163,10 +173,72 @@ struct CLIPaneContextStatusFallbackTests {
             let refusal = await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId)
             #expect(refusal?.reason == .credentialNotRecognized)
             #expect(refusal?.count == 1)
+            let reason = try #require(refusal?.reason)
+            let warning = LocalActionSpec.paneAgentConnectionIssue(reason).actionSpec
+            #expect(warning.label == "Messages unavailable · restart this shell to reconnect")
+            #expect(warning.helpText == warning.label)
+            #expect(!warning.helpText.contains(reason.rawValue))
             let mailbox = await context.domain.ingestion.statusPublicationMailbox
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
                     == .set(.init(status: .unknown, connectionIssue: .credentialNotRecognized)))
+            context.domain.clock.advance(by: .seconds(1))
+            #expect(context.domain.time.now > (try #require(refusal?.at)))
+            let later = await runFallbackCLI(
+                context, arguments: ["hook", "claude", "UserPromptSubmit"], environment: environment,
+                standardInput: Data(#"{"session_id":"unverified-main","hook_event_name":"UserPromptSubmit"}"#.utf8))
+            #expect(later.exitCode == 0)
+            #expect(await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId) == refusal)
+            #expect(
+                mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
+                    == .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized)))
+            for verb in ["title", "line"] {
+                #expect(
+                    await runFallbackCLI(context, arguments: [verb, "still working"], environment: environment).exitCode
+                        == 0)
+                #expect(await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId) == refusal)
+                #expect(mailbox.takeBatch().isEmpty)
+            }
+        }
+    }
+
+    @Test("hook fallback applies Working without a credential warning", arguments: [false, true])
+    func unboundHookIsQuiet(absentToken: Bool) async throws {
+        try await withRefusedTokenPaneCLIContext(bindSession: false) { context in
+            var environment = context.callEnvironment(store: nil, useStore: true)
+            if absentToken { environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN") }
+            let output = await runFallbackCLI(
+                context, arguments: ["hook", "claude", "UserPromptSubmit"], environment: environment,
+                standardInput: Data(#"{"session_id":"unverified-main","hook_event_name":"UserPromptSubmit"}"#.utf8))
+            #expect(output.exitCode == 0)
+            #expect(context.port.wire.methods == (absentToken ? ["session.status"] : ["auth.login", "session.status"]))
+            #expect(await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId) == nil)
+            let mailbox = await context.domain.ingestion.statusPublicationMailbox
+            #expect(
+                mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
+                    == .set(.init(status: .working(.active))))
+        }
+    }
+
+    @Test("an unrelated no-token failure keeps its original error without attempting a refusal report")
+    func unrelatedFailureIsQuietWithReachableReporting() async throws {
+        try await withRefusedTokenPaneCLIContext(bindSession: false) { context in
+            var environment = context.callEnvironment(store: nil, useStore: true)
+            environment.removeValue(forKey: "AGENTSTUDIO_PANE_TOKEN")
+            let oversized = String(repeating: "x", count: IPCFramePolicy.maximumRequestFrameBytes)
+            let output = await runFallbackCLI(context, arguments: ["notify", oversized], environment: environment)
+            #expect(output.exitCode == 1)
+            #expect(output.standardError == "notSent(localRequestEncoding)")
+            #expect(output.standardOutput.isEmpty)
+            #expect(context.port.wire.methods.isEmpty)
+            #expect(await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId) == nil)
+            let mailbox = await context.domain.ingestion.statusPublicationMailbox
+            #expect(mailbox.takeBatch().isEmpty)
+            // The same claim, live server and unadvanced deadline can record a genuine failure.
+            let protected = await runFallbackCLI(context, arguments: ["notify", "small"], environment: environment)
+            #expect(protected.exitCode == 1)
+            #expect(context.port.wire.methods.suffix(2) == ["pane.message.send", "session.status"])
+            #expect(await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId)?.count == 1)
         }
     }
 
@@ -191,11 +263,11 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "missing, mismatched or unreadable runtime metadata refuses without an ordering mutation",
-        arguments: ["missing", "mismatched", "unreadable", "channelMismatch", "missingStore"])
+        arguments: ["missing", "mismatched", "unreadable", "channelMismatch", "missingStore", "mismatchedMissingStore"])
     func missingStoreIsLocalRefusal(metadataCase: String) async throws {
         try await withRefusedTokenPaneCLIContext { context in
             let directory = context.fixture.paths.socketURL.deletingLastPathComponent()
-            let hasStore = metadataCase != "missingStore"
+            let hasStore = metadataCase != "missingStore" && metadataCase != "mismatchedMissingStore"
             if hasStore {
                 var seedEnvironment = context.environment
                 seedEnvironment["AGENTSTUDIO_CLI_STORE"] = directory.appending(path: "cli.sqlite").path
@@ -210,7 +282,7 @@ struct CLIPaneContextStatusFallbackTests {
                 let metadataURL = directory.appending(path: "runtime.json")
                 switch metadataCase {
                 case "missing": try FileManager.default.removeItem(at: metadataURL)
-                case "mismatched":
+                case "mismatched", "mismatchedMissingStore":
                     try Data(#"{"socketPath":"/another/socket","channel":"debug"}"#.utf8).write(to: metadataURL)
                 case "unreadable": try Data("invalid metadata".utf8).write(to: metadataURL)
                 case "channelMismatch":
@@ -222,8 +294,8 @@ struct CLIPaneContextStatusFallbackTests {
             }
             let result = await runFallbackCLI(
                 context, arguments: ["title", "refused"], environment: context.environment)
-            #expect(result.exitCode != 0)
-            #expect(result.standardError.contains("orderingStoreUnavailable"))
+            #expect(result.exitCode == 1)
+            #expect(result.standardError == "unavailable(orderingStoreUnavailable)")
             #expect(context.port.wire.methods == methodsBefore)
             #expect(context.port.claims.count == claimsBefore)
             #expect(context.port.titles.count == titlesBefore)
@@ -248,8 +320,8 @@ struct CLIPaneContextStatusFallbackTests {
                 context, arguments: ["pane.title.set", "--json", json], environment: tokenless)
             #expect(competing.exitCode == 0)
             let refused = await runFallbackCLI(context, arguments: ["title", "lower"])
-            #expect(refused.exitCode != 0)
-            #expect(refused.standardError.contains("lastAccepted"))
+            #expect(refused.exitCode == 1)
+            #expect(refused.standardError == "stale(lastAccepted)")
             #expect(context.port.titles.filter { $0.text == "lower" }.count == 1)
             #expect(try await context.title() == "higher")
             #expect(await runFallbackCLI(context, arguments: ["title", "next"]).exitCode == 0)
@@ -259,7 +331,7 @@ struct CLIPaneContextStatusFallbackTests {
 
     @Test(
         "an older refused-token call cannot overwrite a newer title through an explicit or discovered store",
-        arguments: [false, true], ["claude", "codex"])
+        arguments: [false, true], ["claude", "codex", "cursor"])
     func heldOlderCallIsRejected(discoverStore: Bool, provider: String) async throws {
         try await withRefusedTokenPaneCLIContext(provider: provider) { context in
             var seedEnvironment = context.callEnvironment(store: nil, useStore: true)
@@ -307,9 +379,10 @@ private func withRefusedTokenPaneCLIContext<Output: Sendable>(
     try await withS5PaneCLIContext(bindSession: bindSession) { context in
         var environment = context.environment
         environment["AGENTSTUDIO_PANE_TOKEN"] = "unrecognized-pane-cli-fixture-token"
-        if provider == "codex" {
+        if provider == "codex" || provider == "cursor" {
             environment.removeValue(forKey: "CLAUDE_CODE_SESSION_ID")
-            environment["CODEX_THREAD_ID"] = context.writer.conversationId
+            environment[provider == "codex" ? "CODEX_THREAD_ID" : "CURSOR_CONVERSATION_ID"] =
+                context.writer.conversationId
         }
         return try await body(
             S5PaneCLIContext(
@@ -320,20 +393,34 @@ private func withRefusedTokenPaneCLIContext<Output: Sendable>(
 }
 
 private func runFallbackCLI(
-    _ context: S5PaneCLIContext, arguments: [String], environment: [String: String]? = nil
+    _ context: S5PaneCLIContext, arguments: [String], environment: [String: String]? = nil,
+    standardInput: Data = Data()
 ) async -> ClientCommandLineOutcome {
     let environment = environment ?? context.callEnvironment(store: nil, useStore: true)
     let driver = ControlledDeadlineDriver()
     defer { driver.close() }
     return await valueFromDedicatedThread {
+        let input = Pipe()
+        defer {
+            try? input.fileHandleForReading.close()
+            try? input.fileHandleForWriting.close()
+        }
+        do {
+            try input.fileHandleForWriting.write(contentsOf: standardInput)
+            try input.fileHandleForWriting.close()
+        } catch {
+            return ClientCommandLineOutcome(
+                exitCode: 1, standardOutput: "", standardError: "Fixture stdin failed: \(error)")
+        }
         let output = Mutex<[String]>([])
         let error = Mutex<[String]>([])
         let status = AgentStudioIPCClientCommandLineRunner.run(
             props: .init(
                 arguments: arguments, environment: environment, executablePath: context.executableURL.path,
-                bundleExecutableURL: nil, standardInput: { Data() }, identifierGenerator: { UUIDv7.generate() },
+                bundleExecutableURL: nil, standardInput: { standardInput }, identifierGenerator: { UUIDv7.generate() },
                 standardOutputSink: { line in output.withLock { $0.append(line) } },
-                standardErrorSink: { line in error.withLock { $0.append(line) } }, deadlineTiming: driver.timing))
+                standardErrorSink: { line in error.withLock { $0.append(line) } },
+                standardInputFileDescriptor: input.fileHandleForReading.fileDescriptor, deadlineTiming: driver.timing))
         return ClientCommandLineOutcome(
             exitCode: status, standardOutput: output.withLock { $0.joined(separator: "\n") },
             standardError: error.withLock { $0.joined(separator: "\n") })

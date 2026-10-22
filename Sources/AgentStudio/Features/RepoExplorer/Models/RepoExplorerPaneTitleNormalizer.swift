@@ -1,7 +1,7 @@
 import Foundation
 
-enum RepoExplorerPaneTitleNormalizer {
-    static func normalizedTitle(
+package enum RepoExplorerPaneTitleNormalizer {
+    package static func normalizedTitle(
         liveTitle: String,
         cwd: URL?,
         shellExecutablePath: String?,

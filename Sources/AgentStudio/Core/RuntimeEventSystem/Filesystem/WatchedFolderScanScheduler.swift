@@ -784,8 +784,14 @@ extension WatchedFolderScanScheduler {
                 stateBySourceID[selected.0] = .leasedResult(leased)
             case .pendingResultAndDirty(_, let dirty):
                 stateBySourceID[selected.0] = .leasedResultAndDirty(leased, dirty)
-            default:
-                preconditionFailure("selected result must remain pending until leased")
+            case let unexpected:
+                Self.failPendingResultLease(
+                    reread: unexpected,
+                    candidateCount: candidates.count,
+                    scheduledRootCount: stateBySourceID.scheduledRootCount,
+                    pendingCount: stateBySourceID.counts.pending,
+                    leasedCount: stateBySourceID.counts.leased
+                )
             }
             return WatchedFolderScanResultLease(
                 leaseID: leased.leaseID,

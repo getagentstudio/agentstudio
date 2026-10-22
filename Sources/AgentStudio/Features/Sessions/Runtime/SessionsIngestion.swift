@@ -35,6 +35,23 @@ package enum SessionsUnverifiedStatusOutcome: Sendable, Equatable {
 }
 
 package actor SessionsIngestion {
+    private enum ConnectionRefusalRecord {
+        case current(SessionsHookRefusal, recordedAt: ContinuousClock.Instant)
+        case historical(SessionsHookRefusal, recordedAt: ContinuousClock.Instant)
+
+        var refusal: SessionsHookRefusal {
+            switch self {
+            case .current(let refusal, _), .historical(let refusal, _): refusal
+            }
+        }
+
+        var recordedAt: ContinuousClock.Instant {
+            switch self {
+            case .current(_, let recordedAt), .historical(_, let recordedAt): recordedAt
+            }
+        }
+    }
+
     private struct PendingHook {
         let hook: SessionsHookAdmission
         let admittedAt: ContinuousClock.Instant
@@ -46,6 +63,7 @@ package actor SessionsIngestion {
         let hook: SessionsHookAdmission?
         let paneId: UUID
         let refusal: SessionsHookRefusal
+        let recordedAt: ContinuousClock.Instant
         let remainsPresent: @Sendable () -> Bool
         let continuation: CheckedContinuation<SessionsUnverifiedStatusOutcome, any Error>
     }
@@ -88,32 +106,36 @@ package actor SessionsIngestion {
     var statusIngressTask: Task<Void, Never>?
     var didLoadOpenAsks = false
     var isStatusClosed = false
-    private var lastRefusalByPane: [UUID: SessionsHookRefusal] = [:]
+    private var refusalByPane: [UUID: ConnectionRefusalRecord] = [:]
 
     package func recordRefusal(paneId: UUID, refusal: SessionsHookRefusal) async {
+        let recordedAt = ContinuousClock.now
         guard !isStatusClosed else { return }
         await startPaneViewedIngressIfNeeded()
         consumePaneViewedBatch()
         guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else { return }
-        storeRefusal(paneId: paneId, refusal: refusal)
+        storeRefusal(paneId: paneId, refusal: refusal, recordedAt: recordedAt)
         publishStatus(paneId: paneId)
     }
 
     package func lastRefusal(paneId: UUID) -> SessionsHookRefusal? {
         consumePaneViewedBatch()
-        return lastRefusalByPane[paneId]
+        return refusalByPane[paneId]?.refusal
     }
 
-    func storeRefusal(paneId: UUID, refusal: SessionsHookRefusal) {
-        lastRefusalByPane[paneId] = .init(
+    private func storeRefusal(paneId: UUID, refusal: SessionsHookRefusal, recordedAt: ContinuousClock.Instant) {
+        if let latest = refusalByPane[paneId], latest.recordedAt > recordedAt { return }
+        let counted = SessionsHookRefusal(
             reason: refusal.reason, event: refusal.event, at: refusal.at, intent: refusal.intent,
-            count: (lastRefusalByPane[paneId]?.count ?? 0) + 1)
+            count: (refusalByPane[paneId]?.refusal.count ?? 0) + 1)
+        refusalByPane[paneId] = .current(counted, recordedAt: recordedAt)
     }
 
     package func recordUnverifiedStatus(
         paneId: UUID, hook: SessionsHookAdmission?, refusal: SessionsHookRefusal,
         remainsPresent: @escaping @Sendable () -> Bool
     ) async throws -> SessionsUnverifiedStatusOutcome {
+        let recordedAt = hook?.admissionInstant ?? ContinuousClock.now
         guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
         guard remainsPresent() else { return .notAccepted }
         if let error = currentCapacityError(for: paneId) {
@@ -131,7 +153,8 @@ package actor SessionsIngestion {
             pendingMutations.append(
                 .unverifiedStatus(
                     .init(
-                        hook: hook, paneId: paneId, refusal: refusal, remainsPresent: remainsPresent,
+                        hook: hook, paneId: paneId, refusal: refusal, recordedAt: recordedAt,
+                        remainsPresent: remainsPresent,
                         continuation: continuation)))
             pendingCountByPane[paneId, default: 0] += 1
             outstandingCount += 1
@@ -140,12 +163,25 @@ package actor SessionsIngestion {
         }
     }
 
-    func lastRefusalReason(paneId: UUID) -> AgentConnectionRefusalReason? {
-        lastRefusalByPane[paneId]?.reason
+    func currentRefusalReason(paneId: UUID) -> AgentConnectionRefusalReason? {
+        guard case .current(let refusal, _)? = refusalByPane[paneId] else { return nil }
+        return refusal.reason
+    }
+
+    func retireRefusal(paneId: UUID, before exitInstant: ContinuousClock.Instant) {
+        guard case .current(let refusal, let recordedAt)? = refusalByPane[paneId] else { return }
+        guard recordedAt < exitInstant else { return }
+        refusalByPane[paneId] = .historical(refusal, recordedAt: recordedAt)
+    }
+
+    private func retireRefusal(paneId: UUID, through eventInstant: ContinuousClock.Instant) {
+        guard case .current(let refusal, let recordedAt)? = refusalByPane[paneId] else { return }
+        guard recordedAt <= eventInstant else { return }
+        refusalByPane[paneId] = .historical(refusal, recordedAt: recordedAt)
     }
 
     func clearRefusal(paneId: UUID) {
-        lastRefusalByPane.removeValue(forKey: paneId)
+        refusalByPane.removeValue(forKey: paneId)
     }
 
     package init(
@@ -245,11 +281,11 @@ package actor SessionsIngestion {
         let task = consumerTask
         await task?.value
         isStatusClosed = true
-        for paneId in Set(unverifiedStatusRuntime.panes.keys).union(lastRefusalByPane.keys) {
+        for paneId in Set(unverifiedStatusRuntime.panes.keys).union(refusalByPane.keys) {
             statusPublicationMailbox.retire(.init(existingUUID: paneId))
         }
         await statusPublicationLane?.publishPending()
-        lastRefusalByPane.removeAll()
+        refusalByPane.removeAll()
         unverifiedStatusRuntime.panes.removeAll()
         paneViewedMailbox.close()
         statusIngressTask?.cancel()
@@ -300,8 +336,8 @@ extension SessionsIngestion {
                         pending.continuation.resume(returning: .notAccepted)
                         break
                     }
-                    storeRefusal(paneId: paneId, refusal: pending.refusal)
                     guard let hook = pending.hook else {
+                        storeRefusal(paneId: paneId, refusal: pending.refusal, recordedAt: pending.recordedAt)
                         publishStatus(paneId: paneId)
                         pending.continuation.resume(returning: .refusalRecorded)
                         break
@@ -312,6 +348,9 @@ extension SessionsIngestion {
                         break
                     }
                     let applied = unverifiedStatusRuntime.apply(hook)
+                    if applied, hook.signal?.name == .sessionEnd {
+                        retireRefusal(paneId: paneId, through: pending.recordedAt)
+                    }
                     if let viewedAt = statusRuntime.latestViewedAt[paneId] {
                         unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
                     }

@@ -64,29 +64,6 @@ package struct CodexHooksDocument {
         return differs
     }
 
-    /// Removes the package's groups for `event` and reports how many went.
-    @discardableResult
-    package mutating func removeOwnedGroups(event: String, ownedCommandFragment: String) -> Int {
-        let existing = groups(event: event)
-        let remaining = existing.filter { !Self.isOwned($0, commandFragment: ownedCommandFragment) }
-        guard remaining.count != existing.count else { return 0 }
-        setGroups(event: event, to: remaining)
-        return existing.count - remaining.count
-    }
-
-    /// True when the document is exactly `{"hooks": {}}`, so the file would
-    /// only be debris if it stayed.
-    ///
-    /// The `hooks` value must really be an empty object. A non-object there is
-    /// something this package does not understand and therefore does not own,
-    /// and an event key that survived removal is still somebody's hook.
-    package var carriesNothingButAnEmptyHooksTable: Bool {
-        guard root.keys.count == 1, let hooks = root[Self.hooksKey] as? [String: Any] else {
-            return false
-        }
-        return hooks.isEmpty
-    }
-
     package func encoded() throws -> Data {
         try JSONSerialization.data(
             withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
@@ -95,11 +72,7 @@ package struct CodexHooksDocument {
 
     private mutating func setGroups(event: String, to groups: [[String: Any]]) {
         var hooks = root[Self.hooksKey] as? [String: Any] ?? [:]
-        if groups.isEmpty {
-            hooks.removeValue(forKey: event)
-        } else {
-            hooks[event] = groups
-        }
+        hooks[event] = groups
         root[Self.hooksKey] = hooks
     }
 

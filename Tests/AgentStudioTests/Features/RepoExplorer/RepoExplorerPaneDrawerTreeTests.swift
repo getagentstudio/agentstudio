@@ -17,7 +17,7 @@ struct RepoExplorerPaneDrawerTreeTests {
         #expect(RepoExplorerPaneRowContent.leadingContentInset(for: .drawer(isLast: true)) == iconColumnWidth)
     }
 
-    @Test("shown drawers follow their owner in activity order and hiding removes their rows")
+    @Test("shown drawers follow their owner in tab order and hiding removes their rows")
     func ownerChildrenAndHiddenState() throws {
         let referenceInstant = ContinuousClock.now
         let ownerID = UUIDv7.generate()
@@ -47,8 +47,8 @@ struct RepoExplorerPaneDrawerTreeTests {
         let shown = RepoExplorerProjection.project(snapshot, paneRowFactsByPaneId: prepared)
         let shownGroupID = try #require(shown.resolvedGroups.first?.id)
         let shownRows = try #require(shown.paneRowsByGroupId[shownGroupID])
-        #expect(shownRows.map(\.destination.paneId) == [ownerID, newerChildID, olderChildID])
-        #expect(shownRows.map(\.anchorIdentity) == [ownerID, newerChildID, olderChildID])
+        #expect(shownRows.map(\.destination.paneId) == [ownerID, olderChildID, newerChildID])
+        #expect(shownRows.map(\.anchorIdentity) == [ownerID, olderChildID, newerChildID])
         #expect(shownRows[1].drawerOwnerPaneID == ownerID)
         #expect(shownRows.map(\.drawerRail) == [.ownerWithDrawers, .drawer(isLast: false), .drawer(isLast: true)])
 

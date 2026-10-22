@@ -6,9 +6,10 @@ import Foundation
 package enum ProviderHookRefusalInvocation {
     static func reason(for error: any Error) -> IPCSessionRefusalReason {
         switch error {
-        case DecodingError.keyNotFound(let key, _) where key.stringValue == "session_id":
+        case DecodingError.keyNotFound(let key, _) where ["session_id", "conversation_id"].contains(key.stringValue):
             return .noSessionId
-        case DecodingError.valueNotFound(_, let context) where context.codingPath.last?.stringValue == "session_id":
+        case DecodingError.valueNotFound(_, let context)
+        where ["session_id", "conversation_id"].contains(context.codingPath.last?.stringValue ?? ""):
             return .noSessionId
         default: return .undecodablePayload
         }
