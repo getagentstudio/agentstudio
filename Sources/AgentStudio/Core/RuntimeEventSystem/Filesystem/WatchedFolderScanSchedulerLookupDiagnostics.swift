@@ -30,10 +30,36 @@ extension WatchedFolderScanScheduler {
 
     struct SchedulingTransition: Equatable, Sendable {
         let ordinal: UInt64
-        let sourceTag: String
-        let fromCase: String
-        let toCase: String
+        private let sourceHash: UInt32
+        private let fromState: SchedulingStateCase
+        private let toState: SchedulingStateCase
         let isNoOp: Bool
+
+        var sourceTag: String { String(sourceHash, radix: 16) }
+        var fromCase: String { fromState.rawValue }
+        var toCase: String { toState.rawValue }
+
+        init(
+            ordinal: UInt64, sourceHash: UInt32, fromState: SchedulingStateCase,
+            toState: SchedulingStateCase, isNoOp: Bool
+        ) {
+            self.ordinal = ordinal
+            self.sourceHash = sourceHash
+            self.fromState = fromState
+            self.toState = toState
+            self.isNoOp = isNoOp
+        }
+
+        // Value snapshots accept canonical diagnostic text; the live writer uses scalar values.
+        init(ordinal: UInt64, sourceTag: String, fromCase: String, toCase: String, isNoOp: Bool) {
+            guard let sourceHash = UInt32(sourceTag, radix: 16),
+                String(sourceHash, radix: 16) == sourceTag,
+                let fromState = SchedulingStateCase(rawValue: fromCase),
+                let toState = SchedulingStateCase(rawValue: toCase)
+            else { preconditionFailure("invalid scheduling transition diagnostic value") }
+            self.init(
+                ordinal: ordinal, sourceHash: sourceHash, fromState: fromState, toState: toState, isNoOp: isNoOp)
+        }
     }
 
     struct LeaseDiagnosticBuild: Equatable, Sendable {

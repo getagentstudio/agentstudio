@@ -40,19 +40,38 @@ extension WatchedFolderScanScheduler {
 }
 
 extension WatchedFolderScanScheduler.RootSchedulingState {
-    var diagnosticCaseName: String {
+    var diagnosticCaseName: String { diagnosticStateCase.rawValue }
+
+    var diagnosticStateCase: WatchedFolderScanScheduler.SchedulingStateCase {
         switch self {
-        case .queuedNew: "queuedNew"
-        case .queuedSuspended: "queuedSuspended"
-        case .queuedSuspendedAndDirty: "queuedSuspendedAndDirty"
-        case .running: "running"
-        case .runningAndDirty: "runningAndDirty"
-        case .awaitingValidation: "awaitingValidation"
-        case .awaitingValidationAndDirty: "awaitingValidationAndDirty"
-        case .pendingResult: "pendingResult"
-        case .pendingResultAndDirty: "pendingResultAndDirty"
-        case .leasedResult: "leasedResult"
-        case .leasedResultAndDirty: "leasedResultAndDirty"
+        case .queuedNew: .queuedNew
+        case .queuedSuspended: .queuedSuspended
+        case .queuedSuspendedAndDirty: .queuedSuspendedAndDirty
+        case .running: .running
+        case .runningAndDirty: .runningAndDirty
+        case .awaitingValidation: .awaitingValidation
+        case .awaitingValidationAndDirty: .awaitingValidationAndDirty
+        case .pendingResult: .pendingResult
+        case .pendingResultAndDirty: .pendingResultAndDirty
+        case .leasedResult: .leasedResult
+        case .leasedResultAndDirty: .leasedResultAndDirty
         }
+    }
+}
+
+extension WatchedFolderScanScheduler {
+    enum SchedulingStateCase: String, Sendable {
+        case absent
+        case queuedNew
+        case queuedSuspended
+        case queuedSuspendedAndDirty
+        case running
+        case runningAndDirty
+        case awaitingValidation
+        case awaitingValidationAndDirty
+        case pendingResult
+        case pendingResultAndDirty
+        case leasedResult
+        case leasedResultAndDirty
     }
 }

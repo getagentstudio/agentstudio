@@ -254,9 +254,9 @@ extension WatchedFolderScanScheduler {
         ) {
             transitionOrdinal = saturatingIncrement(transitionOrdinal)
             let transition = SchedulingTransition(
-                ordinal: transitionOrdinal, sourceTag: WatchedFolderScanScheduler.diagnosticTag(sourceID),
-                fromCase: previous?.diagnosticCaseName ?? "absent",
-                toCase: replacement?.diagnosticCaseName ?? "absent",
+                ordinal: transitionOrdinal, sourceHash: UInt32(truncatingIfNeeded: sourceID.hashValue),
+                fromState: previous?.diagnosticStateCase ?? .absent,
+                toState: replacement?.diagnosticStateCase ?? .absent,
                 // A same-case write may replace demand or result payload; only absent removal is a no-op.
                 isNoOp: previous == nil && replacement == nil)
             if transitionHistory.count < 32 {
