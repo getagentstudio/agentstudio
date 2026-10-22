@@ -6,22 +6,14 @@ extension WatchedFolderScanScheduler {
 
     /// Reports the lease trap's reread state to distinguish a missing entry from a different case.
     static func failPendingResultLease(
-        reread: RootSchedulingState?,
-        candidateCount: Int,
-        scheduledRootCount: Int,
-        pendingCount: Int,
-        leasedCount: Int
+        _ snapshot: LeaseLookupSnapshot
     ) -> Never {
-        let observed = reread?.diagnosticCaseName ?? "absent"
-        Self.logger.fault(
-            """
-            Selected result must remain pending until leased; reread state: \(observed, privacy: .public), \
-            candidates: \(candidateCount, privacy: .public), \
-            scheduled roots: \(scheduledRootCount, privacy: .public), \
-            pending: \(pendingCount, privacy: .public), \
-            leased: \(leasedCount, privacy: .public)
-            """
-        )
+        let observed = snapshot.checkpoints.afterLeaseCreation
+        // Keep each bounded entry in its own record instead of one large dynamic string.
+        for line in Self.formatLeaseLookup(snapshot).split(separator: "\n") {
+            Self.logger.fault(
+                "Lease lookup \(snapshot.selectedResult.reportText, privacy: .public): \(line, privacy: .public)")
+        }
         preconditionFailure("selected result must remain pending until leased; reread state: \(observed)")
     }
 
@@ -48,19 +40,38 @@ extension WatchedFolderScanScheduler {
 }
 
 extension WatchedFolderScanScheduler.RootSchedulingState {
-    var diagnosticCaseName: String {
+    var diagnosticCaseName: String { diagnosticStateCase.rawValue }
+
+    var diagnosticStateCase: WatchedFolderScanScheduler.SchedulingStateCase {
         switch self {
-        case .queuedNew: "queuedNew"
-        case .queuedSuspended: "queuedSuspended"
-        case .queuedSuspendedAndDirty: "queuedSuspendedAndDirty"
-        case .running: "running"
-        case .runningAndDirty: "runningAndDirty"
-        case .awaitingValidation: "awaitingValidation"
-        case .awaitingValidationAndDirty: "awaitingValidationAndDirty"
-        case .pendingResult: "pendingResult"
-        case .pendingResultAndDirty: "pendingResultAndDirty"
-        case .leasedResult: "leasedResult"
-        case .leasedResultAndDirty: "leasedResultAndDirty"
+        case .queuedNew: .queuedNew
+        case .queuedSuspended: .queuedSuspended
+        case .queuedSuspendedAndDirty: .queuedSuspendedAndDirty
+        case .running: .running
+        case .runningAndDirty: .runningAndDirty
+        case .awaitingValidation: .awaitingValidation
+        case .awaitingValidationAndDirty: .awaitingValidationAndDirty
+        case .pendingResult: .pendingResult
+        case .pendingResultAndDirty: .pendingResultAndDirty
+        case .leasedResult: .leasedResult
+        case .leasedResultAndDirty: .leasedResultAndDirty
         }
+    }
+}
+
+extension WatchedFolderScanScheduler {
+    enum SchedulingStateCase: String, Sendable {
+        case absent
+        case queuedNew
+        case queuedSuspended
+        case queuedSuspendedAndDirty
+        case running
+        case runningAndDirty
+        case awaitingValidation
+        case awaitingValidationAndDirty
+        case pendingResult
+        case pendingResultAndDirty
+        case leasedResult
+        case leasedResultAndDirty
     }
 }
