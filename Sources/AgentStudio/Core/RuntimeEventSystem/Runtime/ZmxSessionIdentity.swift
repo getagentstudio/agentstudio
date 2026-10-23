@@ -11,20 +11,32 @@ package protocol ZmxSessionControlling: Sendable {
 /// `package`: exposed on `ColdStartObserverSyscalls.observeSession(path:bootID:)`
 /// so a test can script the discovery-connect seam directly.
 package struct ZmxSessionIdentity: Codable, Equatable, Sendable {
-    let version: Int
-    let bootID: String
-    let daemon: ZmxProcessIncarnation
-    let terminalLeader: ZmxProcessIncarnation
-    let processGroupID: Int32
-    let sessionCreatedAt: UInt64
+    package let version: Int
+    package let bootID: String
+    package let daemon: ZmxProcessIncarnation
+    package let terminalLeader: ZmxProcessIncarnation
+    package let processGroupID: Int32
+    package let sessionCreatedAt: UInt64
 
-    func encoded() throws -> Data {
+    package init(
+        version: Int, bootID: String, daemon: ZmxProcessIncarnation,
+        terminalLeader: ZmxProcessIncarnation, processGroupID: Int32, sessionCreatedAt: UInt64
+    ) {
+        self.version = version
+        self.bootID = bootID
+        self.daemon = daemon
+        self.terminalLeader = terminalLeader
+        self.processGroupID = processGroupID
+        self.sessionCreatedAt = sessionCreatedAt
+    }
+
+    package func encoded() throws -> Data {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
         return try encoder.encode(self)
     }
 
-    static func decode(_ data: Data) throws -> Self {
+    package static func decode(_ data: Data) throws -> Self {
         let identity = try JSONDecoder().decode(Self.self, from: data)
         guard identity.version == 1, !identity.bootID.isEmpty,
             identity.daemon.pid > 1, identity.terminalLeader.pid > 1,
@@ -38,9 +50,15 @@ package struct ZmxSessionIdentity: Codable, Equatable, Sendable {
 }
 
 package struct ZmxProcessIncarnation: Codable, Equatable, Sendable {
-    let pid: Int32
-    let startSeconds: UInt64
-    let startMicroseconds: UInt64
+    package let pid: Int32
+    package let startSeconds: UInt64
+    package let startMicroseconds: UInt64
+
+    package init(pid: Int32, startSeconds: UInt64, startMicroseconds: UInt64) {
+        self.pid = pid
+        self.startSeconds = startSeconds
+        self.startMicroseconds = startMicroseconds
+    }
 }
 
 package enum ZmxSessionCleanupStatus: Equatable, Sendable {

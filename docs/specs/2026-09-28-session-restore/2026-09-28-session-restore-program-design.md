@@ -1,5 +1,7 @@
 # Session restore after a reboot: how it is built
 
+28.1 (2026-10-22): `ColdEndedMain` carries the binding's raw provider identifier and conversation id; the resolver validates them (implementation finding I1).
+
 Date: 2026-10-22, revision 28 (R3 rebuilt on Sessions as pane-context rev 36/37 left it). R1, R2 and the restore phase (item 13) are unchanged. Revision 28 replaces R3's items 5–10, "R3 interfaces", and R3's parts of "What exists", "Entity binding", "What runs where", "Where the code lives" and "Proof". It goes with [Specification revision 11](2026-09-28-session-restore-specification.md).
 
 The owner's 2026-10-05 inventory (pane-context Program Design rev 36, sharpened by rev 37 on 10-06) removed four things revision 27's R3 relied on:
@@ -677,8 +679,8 @@ package protocol SessionResumeResolving: Sendable { func resumeEvidence(for inpu
 // Sessions (Features/Sessions): three new entry points
 package struct ColdEndedMain: Sendable, Equatable {
     let bindingGenerationId: UUID
-    let provider: ResumeProvider
-    let conversationId: ProviderSessionId
+    let providerIdentifier: String
+    let providerConversationId: String
 }
 func endLiveMainForColdRestore(paneId: UUID) async throws -> ColdEndedMain?
 

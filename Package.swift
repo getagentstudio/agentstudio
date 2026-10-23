@@ -250,6 +250,7 @@ let package = Package(
                 "AgentStudioInfrastructure",
                 "AgentStudioSharedComponents",
                 "GhosttyKit",
+                .product(name: "GRDB", package: "GRDB.swift"),
             ],
             path: "Sources/AgentStudio/Features/Terminal",
             swiftSettings: [
@@ -574,6 +575,7 @@ let package = Package(
                 "AgentStudioTerminal",
                 "AgentStudioTestSupport",
                 "GhosttyKit",
+                .product(name: "GRDB", package: "GRDB.swift"),
             ],
             path: "Tests/AgentStudioTests/Features/Terminal",
             swiftSettings: [
