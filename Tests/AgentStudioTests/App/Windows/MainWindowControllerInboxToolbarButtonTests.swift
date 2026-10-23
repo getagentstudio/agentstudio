@@ -237,6 +237,8 @@ struct MainWindowControllerInboxToolbarButtonTests {
         await withMainWindowControllerHarness { harness in
             let frame = NSRect(x: 40, y: 60, width: 900, height: 650)
             harness.window.setFrame(frame, display: false)
+            // AppKit can constrain the applied frame differently from the request.
+            let appliedFrame = harness.window.frame
             harness.atoms.core.workspaceWindowMemory.setWindowFrame(nil)
             UserDefaults.standard.removeObject(forKey: legacyWindowFrameKey)
 
@@ -244,7 +246,7 @@ struct MainWindowControllerInboxToolbarButtonTests {
                 Notification(name: NSWindow.didMoveNotification, object: harness.window)
             )
 
-            #expect(harness.atoms.core.workspaceWindowMemory.windowFrame == frame)
+            #expect(harness.atoms.core.workspaceWindowMemory.windowFrame == appliedFrame)
             #expect(UserDefaults.standard.object(forKey: legacyWindowFrameKey) == nil)
         }
     }
