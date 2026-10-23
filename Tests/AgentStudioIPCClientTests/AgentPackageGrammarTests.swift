@@ -22,12 +22,8 @@ struct PackageGrammarCase: Sendable {
             guard case .install(let installation) = row.expected else { continue }
             cases.append(
                 .init(arguments: ["snippet"] + row.arguments.dropFirst(), expected: .snippet(installation.target)))
-            if !row.arguments.contains("--provider-version") {
-                cases.append(
-                    .init(
-                        arguments: ["uninstall"] + row.arguments.dropFirst(), expected: .uninstall(installation.target))
-                )
-            }
+            cases.append(
+                .init(arguments: ["uninstall"] + row.arguments.dropFirst(), expected: .uninstall(installation.target)))
         }
         cases.append(.init(arguments: ["status"], expected: .status(.init(selection: .all, json: false))))
         cases.append(.init(arguments: ["status", "--json"], expected: .status(.init(selection: .all, json: true))))
@@ -53,7 +49,7 @@ struct PackageGrammarCase: Sendable {
     private static func providerCases(_ provider: String) -> [Self] {
         let prefix = ["install", provider]
         let options =
-            provider == "claude" ? ["--config-dir", "--provider-version"] : ["--codex-home", "--provider-home"]
+            provider == "claude" ? ["--config-dir"] : ["--codex-home", "--provider-home"]
         var cases: [Self] = [
             .init(arguments: prefix, expected: .install(installation(provider))),
             .init(arguments: prefix + ["extra"], expected: .usageError("unexpected argument extra")),
@@ -86,14 +82,7 @@ struct PackageGrammarCase: Sendable {
                     arguments: prefix + [option, "/x", "--unknown"],
                     expected: .usageError("unknown option --unknown for \(provider)")))
         }
-        if provider == "claude" {
-            let expected = AgentPackageInvocation.install(
-                .claude(.init(configurationDirectoryPath: "/x", providerVersion: "X")))
-            cases.append(
-                .init(arguments: prefix + ["--config-dir", "/x", "--provider-version", "X"], expected: expected))
-            cases.append(
-                .init(arguments: prefix + ["--provider-version", "X", "--config-dir", "/x"], expected: expected))
-        } else {
+        if provider != "claude" {
             for aliases in [options, options.reversed().map { $0 }] {
                 cases.append(
                     .init(
@@ -109,8 +98,7 @@ struct PackageGrammarCase: Sendable {
         case "claude":
             return .claude(
                 .init(
-                    configurationDirectoryPath: option == "--config-dir" ? "/x" : nil,
-                    providerVersion: option == "--provider-version" ? "/x" : nil))
+                    configurationDirectoryPath: option == "--config-dir" ? "/x" : nil))
         case "codex": return .codex(providerHomePath: option == nil ? nil : "/x")
         default: return .cursor(providerHomePath: option == nil ? nil : "/x")
         }

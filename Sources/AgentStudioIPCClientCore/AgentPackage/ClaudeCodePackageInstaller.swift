@@ -17,6 +17,7 @@ package struct ClaudeCodePackageInstallation: Sendable {
 
     package let configurationDirectory: URL
     package let packageRoot: URL
+    /// Existing skill-marker metadata only; hook releases come from the running process.
     package let providerVersion: String
 
     package init(configurationDirectory: URL, packageRoot: URL, providerVersion: String) {

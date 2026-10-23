@@ -2,11 +2,9 @@ import Foundation
 
 package struct ClaudeCodePackageOptions: Equatable, Sendable {
     package let configurationDirectoryPath: String?
-    package let providerVersion: String?
 
-    package init(configurationDirectoryPath: String? = nil, providerVersion: String? = nil) {
+    package init(configurationDirectoryPath: String? = nil) {
         self.configurationDirectoryPath = configurationDirectoryPath
-        self.providerVersion = providerVersion
     }
 }
 
@@ -28,7 +26,7 @@ package enum AgentPackageInvocation: Equatable, Sendable {
 /// Pure package syntax; provider reads and writes begin only after parsing.
 package enum AgentPackageGrammar {
     package static let usage = """
-        Usage: agentstudio package install claude [--config-dir PATH] [--provider-version VERSION]
+        Usage: agentstudio package install claude [--config-dir PATH]
                agentstudio package install codex [--codex-home PATH | --provider-home PATH]
                agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
                agentstudio package snippet claude|codex|cursor [OPTIONS]
@@ -45,9 +43,6 @@ package enum AgentPackageGrammar {
         let rest = arguments.filter { $0 != "--json" }
         let json = arguments.contains("--json")
         if rest.isEmpty { return .status(.init(selection: .all, json: json)) }
-        guard !rest.contains("--provider-version") else {
-            return .usageError("unknown option --provider-version for status")
-        }
         switch parse(["install"] + rest) {
         case .install(let installation): return .status(.init(selection: .provider(installation.target), json: json))
         case .usageError(let reason): return .usageError(reason)
@@ -68,7 +63,7 @@ package enum AgentPackageGrammar {
         let acceptedOptions: [String]
         switch provider {
         case "claude":
-            acceptedOptions = subcommand == "uninstall" ? ["--config-dir"] : ["--config-dir", "--provider-version"]
+            acceptedOptions = ["--config-dir"]
         case "codex", "cursor": acceptedOptions = ["--codex-home", "--provider-home"]
         default: return .usageError("unknown provider \(provider)")
         }
@@ -94,7 +89,7 @@ package enum AgentPackageGrammar {
         switch provider {
         case "claude":
             installation = .claude(
-                .init(configurationDirectoryPath: values["--config-dir"], providerVersion: values["--provider-version"])
+                .init(configurationDirectoryPath: values["--config-dir"])
             )
         case "codex": installation = .codex(providerHomePath: values["--codex-home"] ?? values["--provider-home"])
         default: installation = .cursor(providerHomePath: values["--provider-home"] ?? values["--codex-home"])

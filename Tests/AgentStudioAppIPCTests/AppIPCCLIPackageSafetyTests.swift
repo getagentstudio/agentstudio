@@ -6,7 +6,7 @@ import Testing
 
 /// Literal contract from brief revision 3, independent of the grammar renderer.
 let expectedPackageUsage = """
-    Usage: agentstudio package install claude [--config-dir PATH] [--provider-version VERSION]
+    Usage: agentstudio package install claude [--config-dir PATH]
            agentstudio package install codex [--codex-home PATH | --provider-home PATH]
            agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
            agentstudio package snippet claude|codex|cursor [OPTIONS]
@@ -23,7 +23,7 @@ struct AppIPCCLIPackageSafetyTests {
             ["package", "--help"],
             ["package", "install", "claude", "--help"],
             ["package", "install", "codex", "--codex-hom", "/x"],
-            ["package", "install", "claude", "--config-dir", "--provider-version", "X"],
+            ["package", "install", "claude", "--config-dir", "--unknown", "X"],
         ])
     func packageRefusalLeavesHomesUnchanged(arguments: [String]) async throws {
         let fixture = try PackageSubprocessFixture()

@@ -16,7 +16,7 @@ struct AgentPackageDispatchTests {
     }
 
     private static let usage = """
-        Usage: agentstudio package install claude [--config-dir PATH] [--provider-version VERSION]
+        Usage: agentstudio package install claude [--config-dir PATH]
                agentstudio package install codex [--codex-home PATH | --provider-home PATH]
                agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
                agentstudio package snippet claude|codex|cursor [OPTIONS]
