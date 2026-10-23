@@ -4,8 +4,6 @@ import AgentStudioPrimitives
 import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
 import Foundation
-import GRDB
-import SQLite3
 import Synchronization
 import Testing
 
@@ -57,73 +55,51 @@ struct ProviderLifecycleBudgetTests {
 
     }
 
-    @Test("a real busy SQLite writer exhausts the controlled hook budget without a row")
-    func busyWriterExhaustsBudget() async throws {
+    @Test("a lifecycle writer exhausting the deadline fails open without a row or socket wait")
+    func failedLifecycleWriterExhaustsBudget() async throws {
         let observed = try await valueFromDedicatedThread {
             let fixture = try LifecycleHookFileFixture()
             defer { fixture.remove() }
-            let lockOwner = try CLIStore.openWriter(url: fixture.storeURL, channel: .debug).get()
-            defer { try? lockOwner.close() }
+            let store = try CLIStore.openWriter(url: fixture.storeURL, channel: .debug).get()
+            defer { try? store.close() }
             let timing = LifecycleDeadlineTiming()
             let deadline = CallDeadline(limit: .milliseconds(250), timing: timing)
-            let writer = try CLIStore.openWriter(
-                url: fixture.storeURL, channel: .debug, migrationLockWaitBudget: { deadline.remainingBudget },
-                prepareConnection: { database in
-                    let connection = database.sqliteConnection
-                    database.trace { event in
-                        guard case .statement(let statement) = event, statement.sql.hasPrefix("BEGIN IMMEDIATE") else {
-                            return
-                        }
-                        sqlite3_busy_handler(
-                            connection, lifecycleBudgetBusyCallback, Unmanaged.passUnretained(timing).toOpaque())
-                    }
-                }
-            ).get()
-            defer { try? writer.close() }
-            let blocker = try DatabaseQueue(path: fixture.storeURL.path)
-            defer { try? blocker.close() }
             let diagnostics = Mutex<[String]>([])
-            let codes = Mutex<Int32?>(nil)
-            try blocker.writeWithoutTransaction { database in
-                try database.inTransaction(.immediate) {
-                    let code = ProviderHookInvocation.runCodexHook(
-                        .init(
-                            eventName: "SessionEnd", environment: fixture.environment,
-                            standardInput: { fixture.payload(eventName: "SessionEnd") },
-                            correlationIdProvider: UUIDv7.generate,
-                            delivery: .init(
-                                deliver: { _, _, _ in
-                                    throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .commandWrite)
-                                },
-                                recordRefusal: { _, _, _ in }, reportStatus: { _, _, _ in }),
-                            standardErrorSink: { label in diagnostics.withLock { $0.append(label) } },
-                            deadline: deadline,
-                            lifecycleWriter: .init { params, capturedAt, _ in
-                                guard let payload = String(data: try JSONEncoder().encode(params), encoding: .utf8)
-                                else { throw LifecycleFixtureFailure.invalidUTF8 }
-                                _ = try writer.appendSessionLifecycle(
-                                    paneID: fixture.paneID, messageID: UUIDv7.generate(),
-                                    payloadJSON: payload, reportedAt: capturedAt
-                                ).get()
-                            }))
-                    codes.withLock { $0 = code }
-                    return .rollback
-                }
-            }
-            guard let code = codes.withLock({ $0 }) else { throw LifecycleFixtureFailure.hookDidNotReturn }
-            return LifecycleBudgetObservation(
-                exitCode: code, storeExists: true,
-                entryCount: try lockOwner.readOutbox(after: 0).get().entries.count,
-                diagnostics: diagnostics.withLock { $0 }, remainingBudget: deadline.remainingBudget,
-                unexpectedWaitCount: timing.unexpectedWaitCount)
+            let writerCalls = Mutex(0)
+            let code = ProviderHookInvocation.runCodexHook(
+                .init(
+                    eventName: "SessionEnd", environment: fixture.environment,
+                    standardInput: { fixture.payload(eventName: "SessionEnd") },
+                    correlationIdProvider: UUIDv7.generate,
+                    delivery: .init(
+                        deliver: { _, _, _ in
+                            throw IPCDescriptorClientFailure(disposition: .notSubmitted, reason: .commandWrite)
+                        }, recordRefusal: { _, _, _ in }, reportStatus: { _, _, _ in }),
+                    standardErrorSink: { line in diagnostics.withLock { $0.append(line) } },
+                    deadline: deadline,
+                    lifecycleWriter: .init { _, _, _ in
+                        writerCalls.withLock { $0 += 1 }
+                        timing.advance(by: .milliseconds(250))
+                        // SQLite busy (5), pinned by the real held-lock test in the store target.
+                        throw CLIStoreFailure.busy(extendedResultCode: 5, stage: .append)
+                    }))
+            return (
+                result: LifecycleBudgetObservation(
+                    exitCode: code, storeExists: true,
+                    entryCount: try store.readOutbox(after: 0).get().entries.count,
+                    diagnostics: diagnostics.withLock { $0 }, remainingBudget: deadline.remainingBudget,
+                    unexpectedWaitCount: timing.unexpectedWaitCount),
+                writerCalls: writerCalls.withLock { $0 }
+            )
         }
-        #expect(observed.exitCode == 0)
-        #expect(observed.unexpectedWaitCount == 0)
-        #expect(observed.remainingBudget == .zero)
-        #expect(observed.diagnostics.contains("deadlineExceeded"))
-        #expect(observed.entryCount == 0)
-
+        #expect(observed.writerCalls == 1)
+        #expect(observed.result.exitCode == 0)
+        #expect(observed.result.unexpectedWaitCount == 0)
+        #expect(observed.result.remainingBudget == .zero)
+        #expect(observed.result.diagnostics.contains("deadlineExceeded"))
+        #expect(observed.result.entryCount == 0)
     }
+
 }
 
 final class LifecycleDeadlineTiming: CallDeadlineTiming, Sendable {
@@ -137,12 +113,6 @@ final class LifecycleDeadlineTiming: CallDeadlineTiming, Sendable {
         unexpectedWaits.withLock { $0 += 1 }
         throw LifecycleDeadlineFailure.unexpectedSocketWait
     }
-}
-
-private func lifecycleBudgetBusyCallback(context: UnsafeMutableRawPointer?, attempts: Int32) -> Int32 {
-    guard let context else { return 0 }
-    Unmanaged<LifecycleDeadlineTiming>.fromOpaque(context).takeUnretainedValue().advance(by: .milliseconds(250))
-    return 0
 }
 
 private enum LifecycleDeadlineFailure: Error { case unexpectedSocketWait }
