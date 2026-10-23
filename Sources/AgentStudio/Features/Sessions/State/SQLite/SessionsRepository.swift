@@ -8,7 +8,8 @@ package struct SessionsRepository: Sendable {
     package func applyHook(
         _ hook: SessionsHookAdmission,
         commitParticipant: (any SessionsCommitParticipant)? = nil,
-        confirmedLiveBindingIds: Set<UUID>? = nil
+        confirmedLiveBindingIds: Set<UUID>? = nil,
+        eligibility: MainEligibility
     )
         async throws -> SessionsHookOutcome
     {
@@ -25,7 +26,7 @@ package struct SessionsRepository: Sendable {
                 confirmedLiveMain = false
             }
             let (reduction, decision) = SessionsEvidenceReducer.reduceHook(
-                hook, context: context, confirmedLiveMain: confirmedLiveMain)
+                hook, context: context, confirmedLiveMain: confirmedLiveMain, eligibility: eligibility)
             guard let reduction,
                 case .accepted(let decisionBinding, let disposition, let supersededBinding) = decision
             else { return .ignored }

@@ -34,7 +34,7 @@ struct SessionsUnverifiedStatusTests {
                 if statistics.paneId == pane, statistics.event == .depthChanged, statistics.pendingForPane == 1 {
                     facts.sink(pane, .queued)
                 }
-            })
+            }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let mailbox = await ingestion.statusPublicationMailbox
         var predecessor: Task<SessionsHookOutcome, any Error>?
         var ending: Task<SessionsUnverifiedStatusOutcome, any Error>?
@@ -246,7 +246,7 @@ struct SessionsUnverifiedStatusTests {
             repository: .init(sqliteAccess: access), limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8),
             probe: { statistics in
                 if statistics.paneId == pane { depth.sink(pane, statistics.pendingForPane) }
-            })
+            }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let statusMailbox = await ingestion.statusPublicationMailbox
         let predecessor = Task { try await ingestion.submitHook(makeHookAdmission(paneId: other)) }
         var status: Task<SessionsUnverifiedStatusOutcome, any Error>?
@@ -330,7 +330,8 @@ struct SessionsUnverifiedStatusTests {
         let pane = UUIDv7.generate()
         let ingestion = SessionsIngestion(
             repository: fixture.makeRepository(),
-            limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8), probe: { _ in })
+            limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         do {
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart)
             await ingestion.finish()
@@ -355,7 +356,8 @@ struct SessionsUnverifiedStatusTests {
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: HeldUnverifiedStatusSQLiteAccess(base: fixture.sqliteAccess, held: held)),
             limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8),
-            probe: { statistics in if statistics.paneId == pane { depth.sink(pane, statistics.pendingForPane) } })
+            probe: { statistics in if statistics.paneId == pane { depth.sink(pane, statistics.pendingForPane) } },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let statusMailbox = await ingestion.statusPublicationMailbox
         let binding = Task {
             try await ingestion.submitHook(
@@ -402,7 +404,8 @@ struct SessionsUnverifiedStatusTests {
         let other = UUIDv7.generate()
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: HeldUnverifiedStatusSQLiteAccess(base: fixture.sqliteAccess, held: held)),
-            limits: .init(maximumPendingPerPane: 1, maximumPendingGlobal: 1), probe: { _ in })
+            limits: .init(maximumPendingPerPane: 1, maximumPendingGlobal: 1), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let statusMailbox = await ingestion.statusPublicationMailbox
         let binding = Task { try await ingestion.submitHook(makeHookAdmission(paneId: other)) }
         do {

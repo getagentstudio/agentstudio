@@ -30,7 +30,8 @@ extension AgentStudioIPCSessionsAdapter {
             hook = SessionsHookAdmission(
                 paneId: paneId, providerIdentifier: provider.identifier, providerVersion: provider.version,
                 sessionId: providerSessionId, eventName: signal.name, turnId: event.turnId,
-                signal: signal, recordId: UUIDv7.generate(), admissionInstant: instant, admittedAt: at)
+                signal: signal, recordId: UUIDv7.generate(), admissionInstant: instant, admittedAt: at,
+                chain: .unknown(.peerUnbound))
             reason = .credentialNotRecognized
             eventName = event.name.rawValue
         }

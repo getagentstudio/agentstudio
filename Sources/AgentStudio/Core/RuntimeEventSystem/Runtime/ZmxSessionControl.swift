@@ -4,7 +4,7 @@ import Foundation
 
 /// Bounded control requests to the existing zmx daemon. All callers run off MainActor.
 /// The connection used to inspect an incarnation is also the connection used to request Kill.
-enum ZmxSessionControl {
+package enum ZmxSessionControl {
     static func endpointIsAbsent(path: String) throws -> Bool {
         var information = stat()
         if lstat(path, &information) == 0 { return false }
@@ -34,7 +34,7 @@ enum ZmxSessionControl {
         let createdAt: UInt64
     }
 
-    static func observe(path: String, bootID: String) throws -> ZmxSessionIdentity {
+    package static func observe(path: String, bootID: String) throws -> ZmxSessionIdentity {
         do {
             return try observeConnected(path: path, bootID: bootID)
         } catch let pending as PendingSetsidSignal {

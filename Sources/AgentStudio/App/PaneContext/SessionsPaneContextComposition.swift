@@ -22,6 +22,7 @@ struct SessionsPaneContextComposition: Sendable {
         var statusApplyMeasurement: SessionStatusApplyMeasurement = .init()
         var statusApplyProbe: @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
         var activityClock: PaneActivityClock?
+        var terminalLeaderReader: (any PaneTerminalLeaderReading)?
     }
 
     let ingestion: SessionsIngestion
@@ -40,7 +41,9 @@ struct SessionsPaneContextComposition: Sendable {
             limits: inputs.limits, probe: inputs.ingestionProbe, paneViewedMailbox: inputs.paneViewedMailbox,
             statusSink: inputs.statusSink, openAskSource: bridge,
             sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) },
-            statusApplyMeasurement: inputs.statusApplyMeasurement, statusApplyProbe: inputs.statusApplyProbe)
+            statusApplyMeasurement: inputs.statusApplyMeasurement, statusApplyProbe: inputs.statusApplyProbe,
+            terminalLeaderReader: inputs.terminalLeaderReader
+                ?? AppPaneTerminalLeaderReader(datastore: inputs.datastore))
         let service = PaneContextService(
             sqliteAccess: WorkspacePaneContextSQLiteAccess(datastore: inputs.datastore), clock: inputs.clock,
             wallNow: inputs.wallNow, membership: inputs.directory,

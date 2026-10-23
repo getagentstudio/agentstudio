@@ -190,6 +190,6 @@ struct PaneManagementIdentityCaptureTests {
         .init(
             paneId: paneId, providerIdentifier: "codex", providerVersion: "0.160.0",
             sessionId: sessionId, eventName: signal.name, turnId: nil, signal: signal,
-            recordId: UUIDv7.generate(), admittedAt: .distantPast)
+            recordId: UUIDv7.generate(), admittedAt: .distantPast, chain: TestMainAgentChain.observation)
     }
 }

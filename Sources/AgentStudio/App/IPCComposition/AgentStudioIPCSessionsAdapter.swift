@@ -56,7 +56,8 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
             admittedAt: Date(timeIntervalSince1970: now().timeIntervalSince1970),
             ownerPaneId: ownerPaneLookup(.init(existingUUID: paneId))?.uuid,
             resumeHint: params.event.providerFields.resumeHint
-                ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId))
+                ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId),
+            chain: .unknown(.peerUnbound))
         do {
             let outcome = try await ingestion.submitHook(hook)
             if case .committed(let committed) = outcome,

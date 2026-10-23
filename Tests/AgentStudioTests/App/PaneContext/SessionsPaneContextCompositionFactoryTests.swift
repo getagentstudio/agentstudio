@@ -280,7 +280,7 @@ struct SessionsPaneContextCompositionFactoryTests {
                         paneId: fixture.ownerId.uuid,
                         providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
                         eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                        recordId: UUIDv7.generate(), admittedAt: fixture.now))
+                        recordId: UUIDv7.generate(), admittedAt: fixture.now, chain: TestMainAgentChain.observation))
             }
             await fixture.composition.shutdown()
         }

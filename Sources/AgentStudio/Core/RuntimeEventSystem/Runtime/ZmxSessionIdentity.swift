@@ -14,7 +14,7 @@ package struct ZmxSessionIdentity: Codable, Equatable, Sendable {
     let version: Int
     let bootID: String
     let daemon: ZmxProcessIncarnation
-    let terminalLeader: ZmxProcessIncarnation
+    package let terminalLeader: ZmxProcessIncarnation
     let processGroupID: Int32
     let sessionCreatedAt: UInt64
 
@@ -38,9 +38,15 @@ package struct ZmxSessionIdentity: Codable, Equatable, Sendable {
 }
 
 package struct ZmxProcessIncarnation: Codable, Equatable, Sendable {
-    let pid: Int32
-    let startSeconds: UInt64
-    let startMicroseconds: UInt64
+    package let pid: Int32
+    package let startSeconds: UInt64
+    package let startMicroseconds: UInt64
+
+    package init(pid: Int32, startSeconds: UInt64, startMicroseconds: UInt64) {
+        self.pid = pid
+        self.startSeconds = startSeconds
+        self.startMicroseconds = startMicroseconds
+    }
 }
 
 package enum ZmxSessionCleanupStatus: Equatable, Sendable {

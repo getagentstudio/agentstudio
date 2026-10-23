@@ -17,7 +17,7 @@ struct UnverifiedPaneStatusRuntime: Sendable {
     }
     var panes: [UUID: PaneState] = [:]
 
-    mutating func apply(_ hook: SessionsHookAdmission) -> Bool {
+    mutating func apply(_ hook: SessionsHookAdmission, eligibility: MainEligibility) -> Bool {
         guard let signal = hook.signal else { return false }
         let candidate = MainIdentity(provider: hook.providerIdentifier, sessionId: hook.sessionId)
         var pane: PaneState
@@ -25,11 +25,12 @@ struct UnverifiedPaneStatusRuntime: Sendable {
             pane = previous
             let cursorPrompt = candidate.provider == "cursor" && signal.name == .turnStart
             if let main = pane.main, main != candidate {
-                guard cursorPrompt, main.provider == "cursor" else { return false }
+                guard eligibility == .eligible, cursorPrompt, main.provider == "cursor" else { return false }
                 pane.released.insert(main)
                 pane.main = nil
             }
             if pane.main == nil {
+                guard eligibility == .eligible else { return false }
                 guard !pane.released.contains(candidate) || signal.name == .sessionStart || cursorPrompt else {
                     return false
                 }
@@ -38,6 +39,7 @@ struct UnverifiedPaneStatusRuntime: Sendable {
                 pane.status = SessionStatusState(binding: .bound(UUIDv7.generate()))
             }
         } else {
+            guard eligibility == .eligible else { return false }
             pane = PaneState(
                 main: candidate, establishedAt: hook.admissionInstant,
                 status: SessionStatusState(binding: .bound(UUIDv7.generate())))
@@ -55,6 +57,17 @@ struct UnverifiedPaneStatusRuntime: Sendable {
         }
         panes[hook.paneId] = pane
         return true
+    }
+
+    func predictsElection(for hook: SessionsHookAdmission) -> Bool {
+        guard let signal = hook.signal else { return false }
+        let candidate = MainIdentity(provider: hook.providerIdentifier, sessionId: hook.sessionId)
+        let previous = panes[hook.paneId]
+        let cursorPrompt = candidate.provider == "cursor" && signal.name == .turnStart
+        if let main = previous?.main {
+            return main != candidate && cursorPrompt && main.provider == "cursor"
+        }
+        return !(previous?.released.contains(candidate) ?? false) || signal.name == .sessionStart || cursorPrompt
     }
 
     @discardableResult
