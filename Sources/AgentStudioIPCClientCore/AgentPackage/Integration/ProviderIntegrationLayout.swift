@@ -14,7 +14,7 @@ package struct ProviderIntegrationLayout: Equatable, Sendable {
 }
 
 package enum ProviderIntegrationVersion {
-    package static func current(for provider: AgentPackageProvider) -> Int { 1 }
+    package static func current(for provider: AgentPackageProvider) -> Int { provider == .cursor ? 2 : 1 }
 }
 
 package enum ProviderHookScript {

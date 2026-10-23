@@ -12,8 +12,10 @@ struct IntegrationStatusFixture {
         fixture = try CodexHomeFixture()
         layout = .init(provider: provider, home: fixture.codexHome)
         try FileManager.default.createDirectory(at: layout.directoryURL, withIntermediateDirectories: true)
-        try Data(ProviderHookScript.body(provider: provider, version: 1).utf8).write(to: layout.scriptURL)
-        try Data("1\n".utf8).write(to: layout.versionURL)
+        try Data(
+            ProviderHookScript.body(provider: provider, version: ProviderIntegrationVersion.current(for: provider)).utf8
+        ).write(to: layout.scriptURL)
+        try Data("\(ProviderIntegrationVersion.current(for: provider))\n".utf8).write(to: layout.versionURL)
         try Data(ProviderExpectedEntries.snippet(layout: layout).utf8).write(to: layout.hookFileURL)
         if provider == .codex { try fixture.writeConfiguration("[features]\nhooks = true\n") }
     }

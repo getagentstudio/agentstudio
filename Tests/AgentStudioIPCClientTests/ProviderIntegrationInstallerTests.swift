@@ -23,7 +23,7 @@ struct ProviderIntegrationInstallerTests {
         #expect(
             try String(
                 contentsOf: script.deletingLastPathComponent().appending(path: "integration-version"), encoding: .utf8)
-                == "1\n")
+                == (provider == "cursor" ? "2\n" : "1\n"))
         let hookFile = fixture.codexHome.appending(path: provider == "claude" ? "settings.json" : "hooks.json")
         let text = try String(contentsOf: hookFile, encoding: .utf8)
         #expect(text.contains(script.path))
@@ -143,7 +143,11 @@ struct ProviderIntegrationInstallerTests {
             Data(try ProviderExpectedEntries.snippet(layout: layout).utf8) == (try Data(contentsOf: layout.hookFileURL))
         )
         #expect(
-            try Data(contentsOf: layout.scriptURL) == Data(ProviderHookScript.body(provider: provider, version: 1).utf8)
+            try Data(contentsOf: layout.scriptURL)
+                == Data(
+                    ProviderHookScript.body(
+                        provider: provider, version: ProviderIntegrationVersion.current(for: provider)
+                    ).utf8)
         )
     }
 
