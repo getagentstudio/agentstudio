@@ -6,6 +6,26 @@ import Testing
 @Suite(.serialized)
 struct AppDataPathsTests {
 
+    @Test("scrollback lives under the configured application data root")
+    func scrollbackDirectoryFollowsDataRoot() {
+        let root = AppDataPaths.scrollbackDirectory(
+            environment: ["AGENTSTUDIO_DATA_DIR": "/tmp/scrollback-root"], isDebugBuild: false)
+        #expect(root.path == "/tmp/scrollback-root/scrollback")
+    }
+
+    @Test("scrollback honors stable, beta and debug data roots")
+    func scrollbackDirectoryUsesChannelRoots() {
+        for releaseChannel in [AppDataPaths.ReleaseChannel.stable, .beta] {
+            for isDebugBuild in [false, true] {
+                let dataRoot = AppDataPaths.rootDirectory(
+                    environment: [:], releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
+                let scrollbackRoot = AppDataPaths.scrollbackDirectory(
+                    environment: [:], releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
+                #expect(scrollbackRoot == dataRoot.appending(path: "scrollback"))
+            }
+        }
+    }
+
     @Test
     func test_rootDirectory_defaultsToReleaseLocation() {
         let root = AppDataPaths.rootDirectory(

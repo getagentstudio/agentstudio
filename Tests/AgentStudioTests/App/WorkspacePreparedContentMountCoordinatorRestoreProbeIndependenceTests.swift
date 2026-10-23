@@ -37,6 +37,9 @@ struct MountCoordinatorRestoreProbeIndependenceTests {
         let resolver = TerminalRestoreKindResolver(
             sessionConfiguration: restoreProbeIndependenceEnabledConfiguration,
             probe: probe,
+            scrollbackStore: ScrollbackStore(
+                directoryURL: FileManager.default.temporaryDirectory.appending(
+                    path: "restore-probe-scrollback-\(UUIDv7.generate().uuidString)")),
             repositoryMainFolder: { _ in nil }
         )
         let coordinator = WorkspacePreparedContentMountCoordinator(

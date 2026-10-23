@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
@@ -10,7 +11,7 @@ import Testing
 @Suite
 struct TerminalColdRestorePlanBuilderTests {
     @Test("the folder fallback chain is saved, then repository main, then home, in that order")
-    func fallbackChainOrder() throws {
+    func fallbackChainOrder() async throws {
         // Arrange
         let savedFolder = URL(fileURLWithPath: "/tmp/saved-folder")
         let repoMainFolder = URL(fileURLWithPath: "/tmp/repo-main-folder")
@@ -20,13 +21,14 @@ struct TerminalColdRestorePlanBuilderTests {
         )
 
         // Act
-        let plan = TerminalColdRestorePlanBuilder.buildPlan(
+        let plan = await TerminalColdRestorePlanBuilder.buildPlan(
             pane: pane,
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-fallback"),
-            zmxExecutablePath: "/usr/local/bin/zmx",
-            zmxDirectoryPath: "/tmp/zmx-dir",
-            loginShellPath: "/bin/zsh",
-            repositoryMainFolder: repoMainFolder
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: "/usr/local/bin/zmx",
+                zmxDirectoryPath: "/tmp/zmx-dir",
+                loginShellPath: "/bin/zsh"),
+            repositoryMainFolder: repoMainFolder, scrollbackStore: emptyScrollbackStore()
         )
 
         // Assert — saved, repository main, then home last
@@ -38,7 +40,7 @@ struct TerminalColdRestorePlanBuilderTests {
     }
 
     @Test("a missing saved folder skips straight to the repository main folder, then home")
-    func skipsMissingSavedFolder() throws {
+    func skipsMissingSavedFolder() async throws {
         // Arrange
         let pane = makeTerminalPane(
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-no-saved"),
@@ -47,13 +49,14 @@ struct TerminalColdRestorePlanBuilderTests {
         let repoMainFolder = URL(fileURLWithPath: "/tmp/repo-main-only")
 
         // Act
-        let plan = TerminalColdRestorePlanBuilder.buildPlan(
+        let plan = await TerminalColdRestorePlanBuilder.buildPlan(
             pane: pane,
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-no-saved"),
-            zmxExecutablePath: "/usr/local/bin/zmx",
-            zmxDirectoryPath: "/tmp/zmx-dir",
-            loginShellPath: "/bin/zsh",
-            repositoryMainFolder: repoMainFolder
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: "/usr/local/bin/zmx",
+                zmxDirectoryPath: "/tmp/zmx-dir",
+                loginShellPath: "/bin/zsh"),
+            repositoryMainFolder: repoMainFolder, scrollbackStore: emptyScrollbackStore()
         )
 
         // Assert
@@ -61,7 +64,7 @@ struct TerminalColdRestorePlanBuilderTests {
     }
 
     @Test("no saved folder and no repository main folder leaves only home")
-    func fallsAllTheWayToHomeAlone() throws {
+    func fallsAllTheWayToHomeAlone() async throws {
         // Arrange
         let pane = makeTerminalPane(
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-home-only"),
@@ -69,13 +72,14 @@ struct TerminalColdRestorePlanBuilderTests {
         )
 
         // Act
-        let plan = TerminalColdRestorePlanBuilder.buildPlan(
+        let plan = await TerminalColdRestorePlanBuilder.buildPlan(
             pane: pane,
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-home-only"),
-            zmxExecutablePath: "/usr/local/bin/zmx",
-            zmxDirectoryPath: "/tmp/zmx-dir",
-            loginShellPath: "/bin/zsh",
-            repositoryMainFolder: nil
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: "/usr/local/bin/zmx",
+                zmxDirectoryPath: "/tmp/zmx-dir",
+                loginShellPath: "/bin/zsh"),
+            repositoryMainFolder: nil, scrollbackStore: emptyScrollbackStore()
         )
 
         // Assert
@@ -84,33 +88,41 @@ struct TerminalColdRestorePlanBuilderTests {
     }
 
     @Test("two panes each get their own, distinct stored attempt id")
-    func twoPanesProduceTwoDistinctAttemptIDs() throws {
+    func twoPanesProduceTwoDistinctAttemptIDs() async throws {
         // Arrange
         let firstPane = makeTerminalPane(sessionID: try makeRestoredZmxSessionID("as-plan-builder-pane-one"))
         let secondPane = makeTerminalPane(sessionID: try makeRestoredZmxSessionID("as-plan-builder-pane-two"))
 
         // Act
-        let firstPlan = TerminalColdRestorePlanBuilder.buildPlan(
+        let firstPlan = await TerminalColdRestorePlanBuilder.buildPlan(
             pane: firstPane,
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-pane-one"),
-            zmxExecutablePath: "/usr/local/bin/zmx",
-            zmxDirectoryPath: "/tmp/zmx-dir",
-            loginShellPath: "/bin/zsh",
-            repositoryMainFolder: nil
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: "/usr/local/bin/zmx",
+                zmxDirectoryPath: "/tmp/zmx-dir",
+                loginShellPath: "/bin/zsh"),
+            repositoryMainFolder: nil, scrollbackStore: emptyScrollbackStore()
         )
-        let secondPlan = TerminalColdRestorePlanBuilder.buildPlan(
+        let secondPlan = await TerminalColdRestorePlanBuilder.buildPlan(
             pane: secondPane,
             sessionID: try makeRestoredZmxSessionID("as-plan-builder-pane-two"),
-            zmxExecutablePath: "/usr/local/bin/zmx",
-            zmxDirectoryPath: "/tmp/zmx-dir",
-            loginShellPath: "/bin/zsh",
-            repositoryMainFolder: nil
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: "/usr/local/bin/zmx",
+                zmxDirectoryPath: "/tmp/zmx-dir",
+                loginShellPath: "/bin/zsh"),
+            repositoryMainFolder: nil, scrollbackStore: emptyScrollbackStore()
         )
 
         // Assert — each pane keeps its own stored session id, and each
         // attempt mints its own fresh, distinct attempt id.
         #expect(firstPlan.sessionID != secondPlan.sessionID)
         #expect(firstPlan.attemptID != secondPlan.attemptID)
+    }
+
+    private func emptyScrollbackStore() -> ScrollbackStore {
+        ScrollbackStore(
+            directoryURL: FileManager.default.temporaryDirectory.appending(
+                path: "cold-plan-empty-\(UUIDv7.generate().uuidString)"))
     }
 
     private func makeTerminalPane(

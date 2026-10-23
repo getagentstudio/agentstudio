@@ -186,6 +186,22 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessio
 
     // MARK: - Pane Session Lifecycle
 
+    /// Raw VT capture has its own absolute deadline and bounded byte contract
+    /// (SR7–SR8); ProcessExecutor intentionally retains its trimmed strings.
+    @concurrent
+    nonisolated
+        package func captureHistory(
+            _ sessionID: ZmxSessionID,
+            clock: any Clock<Duration> = ContinuousClock(),
+            deadline: Duration = AppPolicies.Restore.captureDeadline,
+            byteCeiling: Int = AppPolicies.Restore.captureByteCeiling
+        ) async -> ScrollbackCaptureResult
+    {
+        let capture = ScrollbackHistoryCapture(
+            executablePath: zmxPath, zmxDirectory: zmxDir, sessionID: sessionID, byteCeiling: byteCeiling)
+        return await capture.run(clock: clock, deadline: deadline)
+    }
+
     /// Build a handle for a zmx session. No CLI call — zmx auto-creates on first attach.
     func createPaneSession(sessionID: ZmxSessionID) async throws -> PaneSessionHandle {
         // Ensure the zmx directory exists for socket isolation
@@ -229,7 +245,7 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessio
     ///
     ///   1. unsets every inherited `CLAUDE_CODE_*` marker;
     ///   2. `cd`s to the first existing folder in `plan.folderCandidates`,
-    ///      printing that candidate's notice line as it lands (R1 never
+    ///      retaining that candidate's composed notice until after replay (R1 never
     ///      leaves this unresolved: the last candidate is always attempted
     ///      even if every `cd` above it failed);
     ///   3. replays `plan.replayFile` and prints a marker, when present (R2;
@@ -254,11 +270,11 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessio
             + "/bin/sh -c \(shellEscape(script)) \(shellEscape(plan.attemptID.startupToken))"
     }
 
-    private static func coldRestoreScript(for plan: TerminalColdRestorePlan) -> String {
+    static func coldRestoreScript(for plan: TerminalColdRestorePlan) -> String {
         precondition(!plan.folderCandidates.isEmpty, "a cold restore plan must carry at least one folder candidate")
         precondition(
             plan.notice.linesByCandidateIndex.count == plan.folderCandidates.count,
-            "a cold restore notice must carry exactly one line per folder candidate"
+            "a cold restore notice must carry exactly one entry per folder candidate"
         )
 
         var lines: [String] = [
@@ -267,12 +283,28 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessio
             "for _agentstudio_restore_var in $(env | awk -F= '/^CLAUDE_CODE_/{print $1}'); do "
                 + "unset \"$_agentstudio_restore_var\"; done"
         ]
-        lines.append(contentsOf: folderFallbackLines(plan: plan))
+        lines.append(contentsOf: folderFallbackLines(plan: plan, deferNotice: plan.replayFile != nil))
         if let replayFile = plan.replayFile {
-            // R2 finalizes this marker's exact copy; R1 never populates
-            // replayFile, so this branch never runs today.
-            lines.append("cat \(shellEscape(replayFile.path)) 2>/dev/null")
-            lines.append("echo \(shellEscape("--- restored after restart ---"))")
+            // Folder choice comes first, but RIS in the saved file must not
+            // erase the composed notice. Failed replay never earns a marker.
+            lines.append("if cat \(shellEscape(replayFile.path)) 2>/dev/null; then")
+            lines.append("  _agentstudio_restore_replayed=1")
+            lines.append("else")
+            lines.append("  _agentstudio_restore_replayed=0")
+            lines.append("fi")
+            lines.append("printf '%s' \(shellEscape(ScrollbackReplayFrame.normalization))")
+            lines.append("if [ \"$_agentstudio_restore_replayed\" -eq 1 ]; then")
+            lines.append("  printf '\\n'")
+            lines.append("  echo \(shellEscape("--- restored after restart ---"))")
+            lines.append("fi")
+            lines.append("case \"$_agentstudio_restore_folder_index\" in")
+            for (index, notice) in plan.notice.linesByCandidateIndex.enumerated() {
+                lines.append("  \(index)) echo \(shellEscape(notice)) ;;")
+            }
+            lines.append("esac")
+            lines.append("if [ \"$_agentstudio_restore_replayed\" -eq 0 ]; then")
+            lines.append("  echo \(shellEscape("no saved output"))")
+            lines.append("fi")
         }
         let loginShellInvocation = "\(shellEscape(plan.loginShell.path)) -i -l"
         if let resume = plan.resume {
@@ -286,19 +318,25 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessio
         return lines.joined(separator: "\n")
     }
 
-    private static func folderFallbackLines(plan: TerminalColdRestorePlan) -> [String] {
+    private static func folderFallbackLines(plan: TerminalColdRestorePlan, deferNotice: Bool) -> [String] {
         var lines: [String] = []
         for (index, candidate) in plan.folderCandidates.enumerated() {
             let branchKeyword = index == 0 ? "if" : "elif"
             lines.append("\(branchKeyword) cd \(shellEscape(candidate.path)) 2>/dev/null; then")
-            lines.append("  echo \(shellEscape(plan.notice.linesByCandidateIndex[index]))")
+            lines.append(
+                deferNotice
+                    ? "  _agentstudio_restore_folder_index=\(index)"
+                    : "  echo \(shellEscape(plan.notice.linesByCandidateIndex[index]))")
         }
         // The home folder (the last candidate) is assumed to always exist;
         // this `else` is reached only if even that `cd` failed, in which case
         // the script stays wherever it already is rather than aborting.
         let finalNoticeLine = plan.notice.linesByCandidateIndex[plan.notice.linesByCandidateIndex.count - 1]
         lines.append("else")
-        lines.append("  echo \(shellEscape(finalNoticeLine))")
+        lines.append(
+            deferNotice
+                ? "  _agentstudio_restore_folder_index=\(plan.folderCandidates.count - 1)"
+                : "  echo \(shellEscape(finalNoticeLine))")
         lines.append("fi")
         return lines
     }

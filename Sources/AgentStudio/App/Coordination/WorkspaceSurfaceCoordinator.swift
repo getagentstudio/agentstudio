@@ -73,6 +73,9 @@ final class WorkspaceSurfaceCoordinator {
     var terminalActivityRouter: TerminalActivityRouter?
     let coldStartAttachExitBinding = ColdStartAttachExitBinding()
     var paneActivityClock: PaneActivityClock?
+    var scrollbackStore: ScrollbackStore?
+    var scrollbackSnapshotter: ScrollbackSnapshotter?
+    var scrollbackRetirementTasksByID: [UUID: Task<Void, Never>] = [:]
     var sessionsPaneViewedMailbox: SessionsPaneViewedMailbox?
     var sessionsIngestion: SessionsIngestion?
     weak var paneContextService: PaneContextService?
@@ -418,6 +421,10 @@ final class WorkspaceSurfaceCoordinator {
         undoDeadlineTask?.cancel()
         await undoDeadlineTask?.value
         undoDeadlineTask = nil
+        // Undo expiry can submit retirement forwards until its task joins.
+        for task in scrollbackRetirementTasksByID.values { await task.value }
+        scrollbackRetirementTasksByID.removeAll()
+        await scrollbackSnapshotter?.shutdown()
         retireAllZoomCompanions()
         closeAllBridgePaneActivityAuthorities()
         bridgePaneActivityObservationGeneration &+= 1
@@ -561,6 +568,7 @@ final class WorkspaceSurfaceCoordinator {
     /// .markUnseenActivityObserved`'s existing fire-and-forget pattern for
     /// posting a terminal-activity fact from a synchronous call site.
     func retirePanesPermanently(_ paneIDs: Set<UUID>) {
+        submitScrollbackRetirement(paneIDs)
         for paneID in paneIDs {
             Task { @MainActor [terminalActivityRouter] in
                 await terminalActivityRouter?.retirePanePermanently(paneID: paneID)

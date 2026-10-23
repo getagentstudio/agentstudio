@@ -257,6 +257,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
         appendRepoExplorerInstrumentDimensions(record: record, dimensions: &dimensions)
         appendRepoExplorerNativeTablePilotDimensions(record: record, dimensions: &dimensions)
         appendStageOutcomeDimensions(record: record, dimensions: &dimensions)
+        appendScrollbackPassDimensions(record: record, dimensions: &dimensions)
         appendGitDimensions(record: record, dimensions: &dimensions)
         if record.body == "performance.terminal.accumulator_drain",
             case .string(let drainClass) = record.attributes[
@@ -628,6 +629,7 @@ package struct AgentStudioOTLPPerformanceMetricEvent: Equatable, Sendable {
 
     private static func isCounterMetricLabel(_ label: String) -> Bool {
         counterMetricLabels.contains(label)
+            || isScrollbackCounterMetricLabel(label)
             || (label.hasPrefix("agentstudio_performance_renderer_") && label.hasSuffix("_delta"))
             || (label.hasPrefix("agentstudio_performance_filesystem_ingress_")
                 && label.hasSuffix("_count"))

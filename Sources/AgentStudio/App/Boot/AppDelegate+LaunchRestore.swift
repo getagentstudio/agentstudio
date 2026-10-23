@@ -62,7 +62,8 @@ extension AppDelegate {
         )
         await preparedMountOwners.coordinator.holdTerminalActivationUntilReleased()
         async let deferredSettlement = preparedMountOwners.coordinator.mount()
-        let firstFrameDeferralOutcome = await windowLifecycleStore.waitUntilFirstInteractiveFramePublished()
+        let firstFrameDeferralOutcome = await startScrollbackAfterFirstFrame(
+            windowLifecycleStore: windowLifecycleStore, snapshotter: workspaceSurfaceCoordinator.scrollbackSnapshotter)
         performanceTraceRecorder?.recordStartupDeferral(
             gate: "first_interactive_frame",
             outcome: firstFrameDeferralOutcome
