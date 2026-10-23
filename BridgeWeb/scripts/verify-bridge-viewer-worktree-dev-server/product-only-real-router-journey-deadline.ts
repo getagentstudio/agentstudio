@@ -56,8 +56,10 @@ async function closeOwnedProductJourneyBrowser(props: {
 	readonly page: Pick<Page, 'close'>;
 	readonly reason: string;
 }): Promise<void> {
-	await Promise.allSettled([
-		props.page.close({ reason: props.reason }),
-		props.browser.close({ reason: props.reason }),
-	]);
+	await props.page.close({ reason: props.reason }).catch((error: unknown): void => {
+		console.info(`Deadline page closure incomplete: ${String(error)}`);
+	});
+	await props.browser.close({ reason: props.reason }).catch((error: unknown): void => {
+		console.info(`Deadline browser closure incomplete: ${String(error)}`);
+	});
 }

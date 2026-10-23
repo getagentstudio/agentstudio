@@ -352,7 +352,7 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 			routeObserver,
 		});
 	} finally {
-		await Promise.allSettled([page.close(), browser.close()]);
+		await closeBridgeViewerProductJourneyBrowser({ page, browser });
 		await ownedJourneyDeadline
 			.waitFor(Promise.all(observedWorkerClosePromises), 'observed-worker-closure')
 			.then(
@@ -391,6 +391,19 @@ export async function runBridgeViewerProductOnlyJourney(props: {
 		legacyRouteTranscript: routeObserver.legacyRouteTranscript(),
 		productRouteTranscript: routeObserver.productRouteTranscript(),
 	};
+}
+
+// Keep the protocol alive until page/worker retirement has settled.
+export async function closeBridgeViewerProductJourneyBrowser(props: {
+	readonly page: Pick<Page, 'close'>;
+	readonly browser: Pick<Browser, 'close'>;
+}): Promise<void> {
+	await props.page.close().catch((error: unknown): void => {
+		console.info(`Page closure incomplete: ${String(error)}`);
+	});
+	await props.browser.close().catch((error: unknown): void => {
+		console.info(`Browser closure incomplete: ${String(error)}`);
+	});
 }
 
 async function installMainWindowProductRouteObserver(page: Page): Promise<void> {
