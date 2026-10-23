@@ -25,7 +25,10 @@ struct CaptureRegionMarkerTests {
         #expect(plain.host.bounds == marked.host.bounds)
         let plainBitmap = try bitmap(plain.host)
         let markedBitmap = try bitmap(marked.host)
-        let ink = try #require(plainBitmap.colorAt(x: 10, y: 10))
+        // Normalize the CGImage before reading channels; colorAt can wrap them
+        // in NSCalibratedRGB, whose further conversion reinterprets the values.
+        let inkBitmap = try srgbBitmap(from: plainBitmap)
+        let ink = try #require(inkBitmap.colorAt(x: 10, y: 10))
         #expect(ink.redComponent > 0.95 && ink.greenComponent < 0.05)
         #expect(plainBitmap.pixelsWide == markedBitmap.pixelsWide)
         #expect(plainBitmap.pixelsHigh == markedBitmap.pixelsHigh)
@@ -67,6 +70,18 @@ struct CaptureRegionMarkerTests {
         let bitmap = try #require(view.bitmapImageRepForCachingDisplay(in: view.bounds))
         view.cacheDisplay(in: view.bounds, to: bitmap)
         return bitmap
+    }
+
+    private func srgbBitmap(from bitmap: NSBitmapImageRep) throws -> NSBitmapImageRep {
+        let image = try #require(bitmap.cgImage)
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let context = try #require(
+            CGContext(
+                data: nil, width: image.width, height: image.height, bitsPerComponent: 8,
+                bytesPerRow: image.width * 4, space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        return NSBitmapImageRep(cgImage: try #require(context.makeImage()))
     }
 
     private func findMarker(_ view: NSView) -> CaptureRegionMarkerView? {
