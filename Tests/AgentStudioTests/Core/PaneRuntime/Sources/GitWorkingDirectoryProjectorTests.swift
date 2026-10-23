@@ -3662,6 +3662,8 @@ struct GitWorkingDirectoryProjectorTests {
                     event: .worktreeRegistered(worktreeId: worktreeId, repoId: worktreeId, rootPath: rootPath)
                 )
             )
+            let registrationDisposition = try await facts.expectHandledEnvelope(seq: 1)
+            try #require(registrationDisposition == .routed, "registration envelope 1 was \(registrationDisposition)")
             let warmOutcome = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
             guard case .completed = warmOutcome else {
                 Issue.record("registration did not accept a warm cache: \(warmOutcome)")
@@ -3683,13 +3685,19 @@ struct GitWorkingDirectoryProjectorTests {
                     paths: ["Sources/App/File.swift"]
                 )
             )
+            let changeDisposition = try await facts.expectHandledEnvelope(seq: 2)
+            try #require(changeDisposition == .routed, "changed-path envelope 2 was \(changeDisposition)")
             _ = try await source.expectNextRefreshClosed(facts: facts, worktreeId: worktreeId)
             let scopedCalls = await recorder.calls
             #expect(scopedCalls.count == 2)
             #expect(scopedCalls.last == .some(["Sources/App/File.swift"]))
         } catch {
             await actor.shutdown()
-            try await collectionTask.finish()
+            do {
+                try await collectionTask.finish()
+            } catch {
+                Issue.record(error, "Output collector teardown failed after the primary test error")
+            }
             throw error
         }
         await actor.shutdown()

@@ -160,7 +160,7 @@ private struct UnexpectedProjectorEnvelopeSequence: Error {
     let actual: UInt64
 }
 
-/// Adapts the projector's fact sink to the local recorder.
+/// Adapts one projector lifetime to the local recorder. Restart tests use LocalFactSource directly.
 package final class GitProjectorFactSource: Sendable {
     package init() {}
 
@@ -168,7 +168,12 @@ package final class GitProjectorFactSource: Sendable {
         vocabulary: FactVocabulary<GitProjectorScope, GitProjectorFact>.gitProjector)
 
     package var sink: GitProjectorFactSink {
-        localSource.sink
+        { [localSource] scope, fact in
+            localSource.sink(scope, fact)
+            if case (.lifetime(_), .shutdownCompleted) = (scope, fact) {
+                localSource.end()
+            }
+        }
     }
 
     package func attach() throws -> FactRecorder<GitProjectorScope, GitProjectorFact> {
