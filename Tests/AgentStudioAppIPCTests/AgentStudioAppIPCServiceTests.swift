@@ -31,6 +31,7 @@ struct AgentStudioAppIPCServiceTests {
                 bridgePort: FakeBridgePort(),
                 commandPort: FakeCommandPort(),
                 uiPresentationPort: FakeUIPresentationPort(),
+                windowRenderPort: FakeWindowRenderPort(),
                 sidebarPort: FakeSidebarPort(),
                 sessionsPort: RecordingSessionsPort(),
                 permissionApprovalPort: FakePermissionApprovalPort(),

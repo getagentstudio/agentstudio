@@ -25,7 +25,7 @@ struct IPCCompiledInvocationResolverTests {
     func indexMetadataDoesNotConstructDescriptors() throws {
         let observation = ResolverFactoryObservation()
         let index = recordingIndex(observation)
-        #expect(index.entries.count == 55)
+        #expect(index.entries.count == 57)
         #expect(index.entry(named: "session.event")?.name == "session.event")
         #expect(observation.descriptorNames.isEmpty)
         #expect(observation.helpSchemaNames.isEmpty)
@@ -128,6 +128,48 @@ struct IPCCompiledInvocationResolverTests {
         #expect(observation.descriptorNames == ["terminal.send"])
         #expect(observation.helpSchemaNames == ["terminal.send"])
         #expect(help.contains("Example: agentstudio terminal.send --json"))
+    }
+
+    @Test("window tooling resolves its exact target and size JSON, generates resize correlation and retains help")
+    func windowToolingResolvesJSONAndHelp() throws {
+        let resolver = IPCCompiledInvocationResolver()
+        let overview = try #require(try resolver.localHelp(arguments: ["help"], inputs: inputs))
+        let windowId = UUIDv7.generate()
+        let correlationId = UUIDv7.generate()
+        for name in ["window.render", "window.resize"] {
+            let descriptors = try resolver.resolve(arguments: [name], authenticated: true, inputs: inputs)
+            #expect(Set(descriptors.map { $0.metadata.name }) == Set(["auth.login", name]))
+            let json: String
+            if name == "window.render" {
+                json = "{\"workspaceWindowId\":\"\(windowId.uuidString)\"}"
+            } else {
+                json = "{\"workspaceWindowId\":\"\(windowId.uuidString)\",\"contentWidth\":520.5,\"contentHeight\":600}"
+            }
+            let invocation = try IPCDescriptorInvocationParser.parse(
+                [name, "--json", json], descriptors: descriptors, correlationIDGenerator: { correlationId })
+            if name == "window.render" {
+                let parameters = try JSONDecoder().decode(
+                    IPCWindowRenderParams.self, from: invocation.normalizedParameters.data)
+                #expect(parameters.workspaceWindowId == windowId)
+            } else {
+                let parameters = try JSONDecoder().decode(
+                    IPCWindowResizeParams.self, from: invocation.normalizedParameters.data)
+                #expect(parameters.workspaceWindowId == windowId)
+                #expect(parameters.contentWidth == 520.5)
+                #expect(parameters.contentHeight == 600)
+                #expect(parameters.correlationId == correlationId)
+            }
+            let help = try #require(try resolver.localHelp(arguments: [name, "--help"], inputs: inputs))
+            #expect(help.contains(name))
+            #expect(help.contains("workspaceWindowId"))
+            let overviewLine = try #require(overview.split(separator: "\n").first { $0.hasPrefix("  \(name) — ") })
+            #expect(overviewLine.contains("[agent: not yet allowed]"))
+            if name == "window.resize" {
+                #expect(help.contains("contentWidth"))
+                #expect(help.contains("contentHeight"))
+                #expect(help.contains("correlationId is generated when omitted"))
+            }
+        }
     }
 
     private var inputs: IPCBuiltInMethodCatalogInputs {

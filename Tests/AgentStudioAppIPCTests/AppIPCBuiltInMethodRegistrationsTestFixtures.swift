@@ -63,6 +63,7 @@ struct BuiltInMethodRegistrationsFixture {
         runtimePort: any AppIPCRuntimePort = FakeRuntimePort(),
         bridgePort: (any AppIPCBridgePort)? = nil,
         uiPresentationPort: (any AppIPCUIPresentationPort)? = nil,
+        windowRenderPort: any AppIPCWindowRenderPort = FakeWindowRenderPort(),
         sessionsPort: (any AppIPCSessionsPort)? = nil,
         eventBroker: IPCEventBroker = IPCEventBroker(),
         paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
@@ -84,6 +85,7 @@ struct BuiltInMethodRegistrationsFixture {
                             arrangementTabId: tabId,
                             arrangementContextPaneId: paneId
                         ),
+                    windowRenderPort: windowRenderPort,
                     sidebarPort: FakeSidebarPort(),
                     sessionsPort: sessionsPort ?? RecordingSessionsPort(),
                     permissionApprovalPort: FakePermissionApprovalPort(),
