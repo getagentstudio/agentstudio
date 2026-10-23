@@ -81,11 +81,24 @@ package actor SessionsIngestion {
         let continuation: CheckedContinuation<ClosedAppOutboxOutcome, any Error>
     }
 
+    private struct PendingColdEnd {
+        let paneId: UUID
+        let continuation: CheckedContinuation<ColdEndedMain?, any Error>
+    }
+
+    private struct PendingColdResume {
+        let paneId: UUID
+        let bindingGenerationId: UUID
+        let continuation: CheckedContinuation<Bool, any Error>
+    }
+
     private enum PendingMutation {
         case hook(PendingHook)
         case unverifiedStatus(PendingUnverifiedStatus)
         case commandFinished(PendingCommandFinished)
         case closedApp(PendingClosedApp)
+        case coldEnd(PendingColdEnd)
+        case coldResume(PendingColdResume)
 
         var paneId: UUID? {
             switch self {
@@ -93,6 +106,8 @@ package actor SessionsIngestion {
             case .unverifiedStatus(let pending): return pending.paneId
             case .commandFinished(let pending): return pending.paneId
             case .closedApp(let pending): return pending.item.paneId
+            case .coldEnd(let pending): return pending.paneId
+            case .coldResume(let pending): return pending.paneId
             }
         }
     }
@@ -110,6 +125,7 @@ package actor SessionsIngestion {
     let statusPublicationLane: SessionStatusPublicationLane?
     let openAskSource: any SessionOpenAskReading
     let sessionEnded: @Sendable (UUID) async -> Void
+    var coldResumeCutoffs: [UUID: ColdResumeCutoff] = [:]
     var statusRuntime = SessionsStatusRuntime()
     var unverifiedStatusRuntime = UnverifiedPaneStatusRuntime()
     var statusIngressTask: Task<Void, Never>?
@@ -303,11 +319,37 @@ package actor SessionsIngestion {
         }
     }
 
+    package func endLiveMainForColdRestore(paneId: UUID) async throws -> ColdEndedMain? {
+        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingMutations.append(.coldEnd(.init(paneId: paneId, continuation: continuation)))
+            pendingCountByPane[paneId, default: 0] += 1
+            outstandingCount += 1
+            emitStatistics(for: paneId, event: .depthChanged)
+            startConsumerIfNeeded()
+        }
+    }
+
+    package func commitColdResume(paneId: UUID, bindingGenerationId: UUID) async throws -> Bool {
+        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingMutations.append(
+                .coldResume(
+                    .init(
+                        paneId: paneId, bindingGenerationId: bindingGenerationId, continuation: continuation)))
+            pendingCountByPane[paneId, default: 0] += 1
+            outstandingCount += 1
+            emitStatistics(for: paneId, event: .depthChanged)
+            startConsumerIfNeeded()
+        }
+    }
+
     package func finish() async {
         acceptsSubmissions = false
         emitStatistics(for: nil, event: .finishing)
         let task = consumerTask
         await task?.value
+        coldResumeCutoffs.removeAll()
         isStatusClosed = true
         for paneId in Set(unverifiedStatusRuntime.panes.keys).union(refusalByPane.keys) {
             statusPublicationMailbox.retire(.init(existingUUID: paneId))
@@ -344,6 +386,7 @@ extension SessionsIngestion {
                         commitParticipant: hook.commitParticipant,
                         confirmedLiveBindingIds: statusRuntime.confirmedLiveBindingIds)
                     if case .committed(let committed) = outcome {
+                        invalidateColdResumeIfNeeded(committed)
                         try await applyCommittedHook(committed, admittedAt: hook.admittedAt)
                     }
                     clearRefusal(paneId: paneId)
@@ -394,6 +437,12 @@ extension SessionsIngestion {
                     let outcome = try await applyClosedAppOutboxItem(
                         pending.item, restoreEvidence: pending.restoreEvidence, participants: pending.participants)
                     pending.continuation.resume(returning: outcome)
+                case .coldEnd(let pending):
+                    pending.continuation.resume(returning: try await applyColdEnd(paneId: pending.paneId))
+                case .coldResume(let pending):
+                    pending.continuation.resume(
+                        returning: try await applyColdResumeDecision(
+                            paneId: pending.paneId, bindingGenerationId: pending.bindingGenerationId))
                 }
             } catch {
                 switch pending {
@@ -401,6 +450,8 @@ extension SessionsIngestion {
                 case .unverifiedStatus(let pending): pending.continuation.resume(throwing: error)
                 case .commandFinished(let commandFinished): commandFinished.continuation.resume(throwing: error)
                 case .closedApp(let pending): pending.continuation.resume(throwing: error)
+                case .coldEnd(let pending): pending.continuation.resume(throwing: error)
+                case .coldResume(let pending): pending.continuation.resume(throwing: error)
                 }
             }
             if let paneId {

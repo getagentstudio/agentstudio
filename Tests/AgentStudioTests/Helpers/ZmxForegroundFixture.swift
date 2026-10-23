@@ -40,7 +40,7 @@ struct ZmxForegroundFixture: Sendable {
     static func make(
         ownership: ResumeEvidenceZmxEnvironment, provider: String, successorProgram: Bool = false,
         bindingContext: ZmxForegroundBindingContext? = nil, exitWatcher: (any ProcessExitWatching)? = nil,
-        controlledJobStop: Bool = false
+        controlledJobStop: Bool = false, restoredSessionId: ZmxSessionID? = nil
     )
         async throws -> Self
     {
@@ -48,7 +48,7 @@ struct ZmxForegroundFixture: Sendable {
         let backend = ownership.backend
         if let bindingContext { try #require(bindingContext.ownership === ownership) }
         let root = URL(fileURLWithPath: harness.zmxDir)
-        let sessionId = ZmxSessionID.generateUUIDv7()
+        let sessionId = restoredSessionId ?? ZmxSessionID.generateUUIDv7()
         let paneId = bindingContext?.paneID ?? UUIDv7.generate()
         let generationId: UUID
         let launchId = UUIDv7.generate()

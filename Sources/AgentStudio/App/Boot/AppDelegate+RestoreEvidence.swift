@@ -31,7 +31,10 @@ extension AppDelegate {
         restoreForegroundLifecycleStream = stream
         restoreForegroundLifecycleContinuation = continuation
         restoreForegroundTriggerSink = { continuation.yield($0) }
-        workspaceSurfaceCoordinator.restorePaneRetirementSink = { paneId in await observer.retire(paneId: paneId) }
+        workspaceSurfaceCoordinator.restorePaneRetirementSink = { [weak self] paneId in
+            await observer.retire(paneId: paneId)
+            await self?.retireColdResumePane(paneId)
+        }
     }
 
     /// Optional local schema is prepared after the first frame. Retain early

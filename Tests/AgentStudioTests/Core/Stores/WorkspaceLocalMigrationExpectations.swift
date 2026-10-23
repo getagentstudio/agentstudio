@@ -15,6 +15,7 @@ let expectedBootRequiredLocalMigrationIdentifiers = [
     "015_add_panes_drawer_visibility",
     "015_create_local_drawer_presentation",
     "028_add_local_pane_activity",
+    "031_create_terminal_restore_launch_boot",
 ]
 
 let expectedFullLocalMigrationIdentifiers =

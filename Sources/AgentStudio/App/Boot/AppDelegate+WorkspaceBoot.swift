@@ -134,7 +134,7 @@ extension AppDelegate {
         workspaceSQLiteDatastore = sqliteDatastore
         switch await sqliteDatastore.prepareDatabasesForBoot() {
         case .prepared:
-            break
+            restoreLaunchBoot = try? await TerminalRestoreLaunchBootPreparation.prepare(datastore: sqliteDatastore)
         case .failed(let failure):
             let diagnosticCode: WorkspaceStartupFailureDiagnosticCode
             switch failure.kind {
@@ -629,7 +629,11 @@ extension AppDelegate {
             },
             resolveTerminalRestoreKinds: { descriptors in
                 await terminalRestoreKindResolver.resolveRestoreKinds(for: descriptors)
-            }
+            },
+            classifyTerminalRestoreKinds: { descriptors, publish in
+                await terminalRestoreKindResolver.classifyRestoreKinds(for: descriptors, publish: publish)
+            },
+            resolveColdResumePlan: makeColdResumePlanResolution()
         )
         installWorkspacePreparedContentMountOwners(
             InstalledWorkspacePreparedContentMountOwners(

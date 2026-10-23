@@ -185,6 +185,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     let scrollbackStore = ScrollbackStore()
     var restoreForegroundObserver: PaneForegroundObserver<ContinuousClock>?
     var restoreForegroundExitWatcher: DarwinProcessExitWatcher?
+    var restoreLaunchBoot: TerminalRestoreLaunchBoot?
     var restoreForegroundEvidenceRepository: SQLitePaneForegroundEvidenceRepository?
     var restoreForegroundLifecycleStream: AsyncStream<ForegroundLookTrigger>?
     var restoreForegroundLifecycleContinuation: AsyncStream<ForegroundLookTrigger>.Continuation?
