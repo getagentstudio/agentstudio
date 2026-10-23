@@ -257,7 +257,8 @@ package struct ProviderIntegrationProblemPresentation {
     }
 
     package var human: String {
-        let location = (path ?? key ?? event).map { " (\($0))" } ?? ""
+        let locationParts = [event, path ?? key].compactMap { $0 }
+        let location = locationParts.isEmpty ? "" : " (\(locationParts.joined(separator: ", ")))"
         let explanation = detail.map { "\($0); " } ?? ""
         return "  \(kind)\(location): \(explanation)\(recovery)"
     }

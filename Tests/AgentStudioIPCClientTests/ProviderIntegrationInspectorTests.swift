@@ -237,6 +237,22 @@ struct ProviderIntegrationInspectorTests {
         #expect(results.count == 3)
     }
 
+    @Test("human status distinguishes missing events in the same hook file")
+    func humanStatusPreservesEventAndPath() {
+        let hookPath = "/scratch/provider/settings.json"
+        let status = ProviderIntegrationStatus(
+            provider: .claude,
+            problems: [
+                .entryMissing(event: "Stop", path: hookPath),
+                .entryMissing(event: "PreToolUse", path: hookPath),
+            ], notes: [])
+
+        let lines = ProviderIntegrationStatusRenderer.human([status]).components(separatedBy: "\n")
+
+        #expect(lines.contains("  entryMissing (Stop, \(hookPath)): agentstudio package install claude"))
+        #expect(lines.contains("  entryMissing (PreToolUse, \(hookPath)): agentstudio package install claude"))
+    }
+
     @Test("version parser and failed private-directory creation never fall back to a provider home")
     func versionProbeFailure() throws {
         let fixture = try CodexHomeFixture()
