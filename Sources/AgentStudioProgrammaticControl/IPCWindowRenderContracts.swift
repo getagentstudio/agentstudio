@@ -38,11 +38,16 @@ package struct IPCWindowRenderResult: Codable, Equatable, Sendable {
     package let workspaceWindowId: UUID
     package let image: IPCWindowRenderedImage
     package let contentSize: IPCWindowContentSize
+    package let surfaces: [IPCWindowRenderSurface]
 
-    package init(workspaceWindowId: UUID, image: IPCWindowRenderedImage, contentSize: IPCWindowContentSize) {
+    package init(
+        workspaceWindowId: UUID, image: IPCWindowRenderedImage, contentSize: IPCWindowContentSize,
+        surfaces: [IPCWindowRenderSurface]
+    ) {
         self.workspaceWindowId = workspaceWindowId
         self.image = image
         self.contentSize = contentSize
+        self.surfaces = surfaces
     }
 }
 

@@ -143,7 +143,7 @@ package struct IPCPresentationAndSidebarMethodDescriptors: Sendable {
                     image: .init(
                         path: "/private/debug/renders/frame.png", pixelWidth: 1440, pixelHeight: 1200,
                         scale: 2, imagePointSize: .init(width: 720, height: 600)),
-                    contentSize: .init(width: 720, height: 600)),
+                    contentSize: .init(width: 720, height: 600), surfaces: []),
                 privilege: .workspaceRead, dataScope: .uiSurface, targetKinds: [.window],
                 errors: Self.renderErrors, agentEligibility: eligibility)
         })

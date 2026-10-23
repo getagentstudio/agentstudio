@@ -80,7 +80,7 @@ struct IPCWindowRenderContractTests {
             image: .init(
                 path: "/fixture/renders/result.png", pixelWidth: 1040, pixelHeight: 1200,
                 scale: 2, imagePointSize: .init(width: 520, height: 600)),
-            contentSize: .init(width: 520, height: 600))
+            contentSize: .init(width: 520, height: 600), surfaces: [])
         let schema = try IPCWindowRenderResult.ipcSchema()
         let bytes = try JSONEncoder().encode(result)
         #expect(try schema.decode(IPCWindowRenderResult.self, from: bytes) == result)

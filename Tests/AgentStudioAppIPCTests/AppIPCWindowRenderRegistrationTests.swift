@@ -150,7 +150,7 @@ private final class RecordingWindowRenderPort: AppIPCWindowRenderPort {
             image: .init(
                 path: "/fixture/renders/example.png", pixelWidth: 642, pixelHeight: 468,
                 scale: 2, imagePointSize: .init(width: 321, height: 234)),
-            contentSize: .init(width: 321, height: 234))
+            contentSize: .init(width: 321, height: 234), surfaces: [])
     }
 
     func render(_ params: IPCWindowRenderParams) throws -> IPCWindowRenderResult {

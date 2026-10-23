@@ -35,6 +35,9 @@ extension IPCWindowRenderResult: IPCSchemaProviding {
             windowIdentityField(),
             .init(name: "image", description: "Content-only PNG", schema: try IPCWindowRenderedImage.ipcSchema()),
             try windowContentSizeField(),
+            .init(
+                name: "surfaces", description: "Visible crop locators",
+                schema: .array(items: try IPCWindowRenderSurface.ipcSchema())),
         ])
     }
 }

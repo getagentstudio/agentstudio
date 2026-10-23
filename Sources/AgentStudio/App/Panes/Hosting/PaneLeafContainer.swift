@@ -524,6 +524,7 @@ struct PaneLeafContainer: View {
                 .accessibilityHidden(true)
 
             }
+            .background { CaptureRegionMarker(kind: "paneLeaf", id: paneHost.id.uuidString) }
             .overlayPreferenceValue(ManagementPaneIdentityCardBoundsPreferenceKey.self) { identityCardBounds in
                 GeometryReader { overlayGeometry in
                     if managementLayer.isActive,

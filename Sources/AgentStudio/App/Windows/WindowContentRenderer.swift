@@ -23,6 +23,7 @@ enum WindowContentRenderer {
         let pointSize = bitmap.size
         guard pointSize.width > 0, pointSize.height > 0 else { throw AppIPCWindowRenderError.bitmapCreationFailed }
         let contentSize = IPCWindowContentSize(width: contentView.bounds.width, height: contentView.bounds.height)
+        let surfaces = WindowRenderSurfaceCollector.collect(window: window, contentView: contentView)
         // The bitmap is never reused or mutated after extracting its immutable image.
         let path = try await writePNG(image: image, directory: rendersDirectory, renderId: UUIDv7.generate())
         return IPCWindowRenderResult(
@@ -31,7 +32,7 @@ enum WindowContentRenderer {
                 path: path.path, pixelWidth: image.width, pixelHeight: image.height,
                 scale: Double(image.width) / pointSize.width,
                 imagePointSize: .init(width: pointSize.width, height: pointSize.height)),
-            contentSize: contentSize)
+            contentSize: contentSize, surfaces: surfaces)
     }
 
     @concurrent nonisolated static func writePNG(
