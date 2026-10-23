@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -28,14 +29,14 @@ package enum IPCSessionEventProvenance: Sendable, Equatable {
 /// sees a domain mutation or a SQLite row.
 package protocol AppIPCSessionsPort: Sendable {
     func recordUnverifiedStatus(
-        paneId: UUID, params: IPCSessionStatusParams,
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess?,
         revalidateClaim: @escaping @Sendable () throws -> Void
     ) async throws -> IPCSessionEventResult
 
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
-        provenance: IPCSessionEventProvenance
+        provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess?
     ) async throws -> IPCSessionEventResult
 
     func recordRefusal(
@@ -78,9 +79,10 @@ extension AppIPCBuiltInMethodRegistrations {
                         canonicalHandle: IPCHandle(kind: .pane, reference: .canonicalUUID(claim.paneId)),
                         target: .pane(claim.paneId.uuidString))
                 },
-                connectionHandler: { parameters, _, target in
+                connectionHandler: { parameters, context, target in
                     try await port.recordUnverifiedStatus(
                         paneId: AppIPCSessionTargetSupport.paneId(from: target), params: parameters,
+                        peerProcess: context.peerProcess,
                         revalidateClaim: { try inputs.ports.paneClaimAdmission.validate(parameters.paneClaim) })
                 }
             ).erase(),
@@ -114,7 +116,7 @@ extension AppIPCBuiltInMethodRegistrations {
                         provenance: AppIPCSessionTargetSupport.provenance(
                             principal: context.principal,
                             paneId: paneId
-                        )
+                        ), peerProcess: context.peerProcess
                     )
                 }
             ).erase(),

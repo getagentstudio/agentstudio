@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
@@ -7,7 +8,7 @@ import Foundation
 
 extension AgentStudioIPCSessionsAdapter {
     func recordUnverifiedStatus(
-        paneId: UUID, params: IPCSessionStatusParams,
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess? = nil,
         revalidateClaim: @escaping @Sendable () throws -> Void
     ) async throws -> IPCSessionEventResult {
         try revalidateClaim()

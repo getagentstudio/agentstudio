@@ -128,6 +128,7 @@ struct LiveServerFixture: Sendable {
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
         paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
         eventBroker: IPCEventBroker = IPCEventBroker(),
+        peerCredentialProvider: any PeerCredentialProviding = DarwinPeerCredentialProvider(),
         makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
         makeConnectionWriter: @escaping @Sendable (AppIPCConnectionIO, Int) -> AgentStudioAppIPCConnectionWriter = {
             AgentStudioAppIPCConnectionWriter(io: $0, maxFrameBytes: $1)
@@ -223,6 +224,7 @@ struct LiveServerFixture: Sendable {
                     principalRegistry: principalRegistry,
                     credentialContinuityPort: credentialContinuityPort,
                     cliStoreReadThroughPort: cliStoreReadThroughPort,
+                    peerCredentialProvider: peerCredentialProvider,
                     makeConnectionIO: makeConnectionIO,
                     makeConnectionWriter: makeConnectionWriter
                 )

@@ -283,7 +283,8 @@ let package = Package(
             path: "Sources/AgentStudioIPCTransport",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
-            ]
+            ],
+            linkerSettings: [.linkedLibrary("bsm", .when(platforms: [.macOS]))]
         ),
         .target(
             name: "AgentStudioProgrammaticControl",

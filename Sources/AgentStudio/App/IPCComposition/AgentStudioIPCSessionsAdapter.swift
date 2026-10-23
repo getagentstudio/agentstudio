@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
@@ -31,7 +32,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
 
     func recordProviderEvent(
         paneId: UUID, params: IPCSessionEventParams,
-        provenance: IPCSessionEventProvenance
+        provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess? = nil
     ) async throws -> IPCSessionEventResult {
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
         guard !params.event.conversationId.isEmpty else { throw AppIPCSessionsError(reason: .validationRejected) }
