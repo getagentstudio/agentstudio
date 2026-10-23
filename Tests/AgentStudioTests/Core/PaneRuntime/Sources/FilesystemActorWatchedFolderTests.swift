@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
 import Testing
@@ -235,56 +236,65 @@ struct FilesystemActorWatchedFolderTests {
         let fixture = try await WatchedFolderActorFixture()
         defer { fixture.removeTemporaryRoot() }
 
-        let clone = fixture.watchedFolder.appending(path: "app")
-        let retainedClone = fixture.watchedFolder.appending(path: "retained")
-        let linkedA = fixture.watchedFolder.appending(path: "app-a")
-        let linkedB = fixture.watchedFolder.appending(path: "app-b")
-        let linkedC = fixture.watchedFolder.appending(path: "app-c")
-        _ = await fixture.performInitialRefresh(
-            result: completeResult(entries: [
-                cloneEntry(clone),
-                linkedEntry(linkedA, parentClone: clone),
-                cloneEntry(retainedClone),
-            ])
-        )
+        do {
+            let clone = fixture.watchedFolder.appending(path: "app")
+            let retainedClone = fixture.watchedFolder.appending(path: "retained")
+            let linkedA = fixture.watchedFolder.appending(path: "app-a")
+            let linkedB = fixture.watchedFolder.appending(path: "app-b")
+            let linkedC = fixture.watchedFolder.appending(path: "app-c")
+            _ = await fixture.performInitialRefresh(
+                result: completeResult(entries: [
+                    cloneEntry(clone),
+                    linkedEntry(linkedA, parentClone: clone),
+                    cloneEntry(retainedClone),
+                ])
+            )
 
-        let partialSummary = await fixture.performRefresh(
-            result: partialResult(entries: [
-                cloneEntry(clone),
-                linkedEntry(linkedB, parentClone: clone),
-            ])
-        )
-        #expect(
-            Set(partialSummary.repoPaths(in: fixture.watchedFolder))
-                == Set([canonicalURL(clone), canonicalURL(retainedClone)])
-        )
+            try await fixture.consumeLatestTopologyObservation()
 
-        let cancelledSummary = await fixture.performRefresh(
-            result: cancelledResult(entries: [
-                cloneEntry(clone),
-                linkedEntry(linkedC, parentClone: clone),
-            ])
-        )
-        #expect(
-            Set(cancelledSummary.repoPaths(in: fixture.watchedFolder))
-                == Set([canonicalURL(clone), canonicalURL(retainedClone)])
-        )
+            let partialSummary = await fixture.performRefresh(
+                result: partialResult(entries: [
+                    cloneEntry(clone),
+                    linkedEntry(linkedB, parentClone: clone),
+                ])
+            )
+            try await fixture.consumeLatestTopologyObservation()
+            #expect(
+                Set(partialSummary.repoPaths(in: fixture.watchedFolder))
+                    == Set([canonicalURL(clone), canonicalURL(retainedClone)])
+            )
 
-        let events = await fixture.topologyEvents()
-        #expect(
-            events.discovered.contains(
-                RepoDiscoveryEvent(
-                    repoPath: canonicalURL(clone),
-                    linkedWorktrees: .scanned([
-                        canonicalURL(linkedA),
-                        canonicalURL(linkedB),
-                        canonicalURL(linkedC),
-                    ])
+            let cancelledSummary = await fixture.performRefresh(
+                result: cancelledResult(entries: [
+                    cloneEntry(clone),
+                    linkedEntry(linkedC, parentClone: clone),
+                ])
+            )
+            #expect(
+                Set(cancelledSummary.repoPaths(in: fixture.watchedFolder))
+                    == Set([canonicalURL(clone), canonicalURL(retainedClone)])
+            )
+
+            try await fixture.consumeLatestTopologyObservation()
+            let events = await fixture.consumedTopologyEvents()
+            #expect(
+                events.discovered.contains(
+                    RepoDiscoveryEvent(
+                        repoPath: canonicalURL(clone),
+                        linkedWorktrees: .scanned([
+                            canonicalURL(linkedA),
+                            canonicalURL(linkedB),
+                            canonicalURL(linkedC),
+                        ])
+                    )
                 )
             )
-        )
-        #expect(events.removed.isEmpty)
-        await fixture.actor.shutdown()
+            #expect(events.removed.isEmpty)
+        } catch {
+            await fixture.shutdown()
+            throw error
+        }
+        await fixture.shutdown()
     }
 
     @Test("concurrent manual refreshes serialize into distinct tracked scans")
@@ -324,25 +334,32 @@ struct FilesystemActorWatchedFolderTests {
         let fixture = try await WatchedFolderActorFixture()
         defer { fixture.removeTemporaryRoot() }
 
-        let removedClone = fixture.watchedFolder.appending(path: "removed")
-        let retainedClone = fixture.watchedFolder.appending(path: "retained")
-        _ = await fixture.performInitialRefresh(
-            result: completeResult(entries: [
-                cloneEntry(removedClone),
-                cloneEntry(retainedClone),
-            ])
-        )
-        await fixture.resetTopologyEventRecording()
+        do {
+            let removedClone = fixture.watchedFolder.appending(path: "removed")
+            let retainedClone = fixture.watchedFolder.appending(path: "retained")
+            _ = await fixture.performInitialRefresh(
+                result: completeResult(entries: [
+                    cloneEntry(removedClone),
+                    cloneEntry(retainedClone),
+                ])
+            )
+            try await fixture.consumeLatestTopologyObservation()
+            await fixture.resetConsumedTopologyEvents()
 
-        let summary = await fixture.performRefresh(
-            result: completeResult(entries: [cloneEntry(retainedClone)])
-        )
-        let events = await fixture.topologyEvents()
+            let summary = await fixture.performRefresh(
+                result: completeResult(entries: [cloneEntry(retainedClone)])
+            )
+            try await fixture.consumeLatestTopologyObservation()
+            let events = await fixture.consumedTopologyEvents()
 
-        #expect(summary.repoPaths(in: fixture.watchedFolder) == [canonicalURL(retainedClone)])
-        #expect(events.discovered.isEmpty)
-        #expect(events.removed == Set([canonicalURL(removedClone)]))
-        await fixture.actor.shutdown()
+            #expect(summary.repoPaths(in: fixture.watchedFolder) == [canonicalURL(retainedClone)])
+            #expect(events.discovered.isEmpty)
+            #expect(events.removed == Set([canonicalURL(removedClone)]))
+        } catch {
+            await fixture.shutdown()
+            throw error
+        }
+        await fixture.shutdown()
     }
 
     @Test("refresh summary fingerprints repository and linked-worktree identities")
@@ -704,6 +721,7 @@ struct WatchedFolderActorFixture {
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
     private let eventRecorder: TopologyEventRecorder
+    private let consumedObservations: FactRecorder<UInt64, WatchedFolderTopologyObservation>
     private let eventCollectionTask: Task<Void, Never>
 
     init(
@@ -770,6 +788,12 @@ struct WatchedFolderActorFixture {
             performanceTraceRecorder: performanceTraceRecorder
         )
         let eventRecorder = TopologyEventRecorder()
+        let consumedObservations = FactRecorder<UInt64, WatchedFolderTopologyObservation>(
+            vocabulary: FactVocabulary(
+                describeScope: { "observation sequence \($0)" },
+                describeFact: { String(describing: $0.demandCoverage) },
+                isClosing: { _, _ in true }
+            ))
         let stream = await bus.subscribe(policy: .criticalUnbounded, subscriberName: #function)
 
         self.watchedFolder = watchedFolder
@@ -780,10 +804,17 @@ struct WatchedFolderActorFixture {
         self.actor = actor
         self.performanceTraceRecorder = performanceTraceRecorder
         self.eventRecorder = eventRecorder
+        self.consumedObservations = consumedObservations
         eventCollectionTask = Task {
             for await envelope in stream {
                 await eventRecorder.record(envelope)
+                if case .system(let system) = envelope,
+                    case .topology(.watchedFolderReconciled(let observation)) = system.event
+                {
+                    consumedObservations.append(scope: system.seq, fact: observation)
+                }
             }
+            consumedObservations.receive(.ended)
         }
     }
 
@@ -813,6 +844,25 @@ struct WatchedFolderActorFixture {
         let start = await scanner.nextStart()
         await scanner.finish(start, with: result)
         return await refresh.value
+    }
+
+    func consumeLatestTopologyObservation() async throws {
+        let receipts = await actor.currentWatchedFolderObservationReceipts()
+        let receipt = try #require(receipts.first { $0.observation.root == watchedFolder })
+        let coverage = try #require(receipt.observation.demandCoverage)
+        _ = try await consumedObservations.expectNext(
+            in: receipt.sequence,
+            where: { $0.root == receipt.observation.root && $0.demandCoverage == coverage },
+            "collector consumed the refresh's covered observation"
+        )
+    }
+
+    func resetConsumedTopologyEvents() async {
+        await eventRecorder.reset()
+    }
+
+    func consumedTopologyEvents() async -> TopologyEventSet {
+        await eventRecorder.snapshot()
     }
 
     func resetTopologyEventRecording() async {
