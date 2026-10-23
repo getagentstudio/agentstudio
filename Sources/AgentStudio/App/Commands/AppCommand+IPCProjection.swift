@@ -68,6 +68,7 @@ struct AppCommandIPCSpec: Sendable {
 extension AppCommand {
     private var ipcArgumentVariants: [IPCCommandArgumentVariant] {
         switch self {
+        case .copyAgentSetupPrompt: [.noArguments]
         case .newWindow,
             .showInboxNotifications, .toggleInboxNotificationSort,
             .clearReadInboxNotifications, .clearAllInboxNotifications,
@@ -173,6 +174,7 @@ extension AppCommand {
     }
     private var ipcExposure: IPCMethodExposure {
         switch self {
+        case .copyAgentSetupPrompt: .notExposed
         case .focusSidebar:
             .allChannels
         // Own-pane commands reach pane agents on every channel.
@@ -240,6 +242,7 @@ extension AppCommand {
     }
     private var ipcExecutionMode: IPCCommandExecutionMode {
         switch self {
+        case .copyAgentSetupPrompt: .headless
         case .focusSidebar:
             .uiPresentation
         case .openPaneLocationInEditorMenu, .editPaneNote,
@@ -302,6 +305,7 @@ extension AppCommand {
     }
     private var ipcRequiredPrivilege: IPCPrivilegeClass {
         switch self {
+        case .copyAgentSetupPrompt: .uiPresent
         case .focusSidebar:
             .uiPresent
         case .showCommandBarEverything, .showCommandBarCommands,
@@ -373,6 +377,7 @@ extension AppCommand {
     }
     private var ipcAllowedTargetKinds: Set<IPCHandleKind> {
         switch self {
+        case .copyAgentSetupPrompt: []
         case .focusSidebar:
             []
         case .newWindow,
@@ -447,6 +452,7 @@ extension AppCommand {
     }
     private var ipcResultVariants: [IPCCommandResultVariant] {
         switch self {
+        case .copyAgentSetupPrompt: [.applied]
         case .focusSidebar:
             [.applied]
         case .showInboxNotifications, .toggleInboxNotificationSort,
@@ -518,6 +524,7 @@ extension AppCommand {
     /// its own drawer child. Every other command is not yet allowed.
     private var ipcAgentEligibility: IPCAgentEligibility {
         switch self {
+        case .copyAgentSetupPrompt: .notYetAllowed
         case .scrollToBottom, .scrollPageUp, .scrollPageDown,
             .scrollSmallStepUp, .scrollSmallStepDown,
             .jumpToPreviousPrompt, .jumpToNextPrompt, .closeDrawerPane:

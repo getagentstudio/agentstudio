@@ -1,4 +1,3 @@
-import AgentStudioProgrammaticControl
 import Foundation
 
 /// Everything `agentstudio package install claude` needs from its process.
@@ -8,22 +7,19 @@ package struct ClaudeCodePackageCommandInputs {
     package let executableURL: URL
     package let noticeSink: (String) -> Void
     package let errorSink: (String) -> Void
-    package let installedVersionReader: () -> String?
 
     package init(
         options: ClaudeCodePackageOptions,
         environment: [String: String],
         executableURL: URL,
         noticeSink: @escaping (String) -> Void,
-        errorSink: @escaping (String) -> Void,
-        installedVersionReader: @escaping () -> String? = ClaudeCodeInstalledVersion.read
+        errorSink: @escaping (String) -> Void
     ) {
         self.options = options
         self.environment = environment
         self.executableURL = executableURL
         self.noticeSink = noticeSink
         self.errorSink = errorSink
-        self.installedVersionReader = installedVersionReader
     }
 }
 
@@ -40,7 +36,7 @@ package enum ClaudeCodePackageCommand {
         let installation = ClaudeCodePackageInstallation(
             configurationDirectory: configurationDirectory,
             packageRoot: resolvedPackageRoot(inputs: inputs),
-            providerVersion: resolvedProviderVersion(inputs: inputs)
+            providerVersion: "unknown"
         )
         do {
             try installation.install(notice: inputs.noticeSink)
@@ -79,72 +75,10 @@ package enum ClaudeCodePackageCommand {
             .appending(path: "Resources/AgentPackage")
     }
 
-    /// The installed release is written into every hook command, so a Claude
-    /// Code upgrade reports the new version and the app refuses it as
-    /// unqualified instead of admitting capabilities nobody verified.
-    private static func resolvedProviderVersion(inputs: ClaudeCodePackageCommandInputs) -> String {
-        if let explicit = inputs.options.providerVersion, !explicit.isEmpty {
-            return explicit
-        }
-        if let installed = inputs.installedVersionReader() { return installed }
-        inputs.noticeSink(
-            "notice: claude --version unavailable; recording \(ClaudeCodeProviderIdentity.supportedExactVersion)"
-        )
-        return ClaudeCodeProviderIdentity.supportedExactVersion
-    }
-
     private static func describe(_ error: any Error) -> String {
-        switch error {
-        case ClaudeCodePackageInstallerError.configurationDirectoryUnavailable(let path):
-            "configuration directory is missing or not writable: \(path)"
-        case ClaudeCodePackageInstallerError.packageResourcesUnavailable(let path):
-            "agent package resources are missing: \(path)"
-        case ClaudeCodePackageInstallerError.settingsUnreadable(let path):
-            "settings.json is not readable JSON: \(path)"
-        case ClaudeCodePackageInstallerError.settingsNotAnObject(let path):
-            "settings.json is not a JSON object: \(path)"
-        case ClaudeCodePackageInstallerError.hooksValueNotAnObject(let path):
-            "\(path) has a non-object \"hooks\" value; not modified"
-        default:
-            "unexpected failure"
+        if let installationError = error as? AgentPackageInstallationError {
+            return installationError.description
         }
-    }
-}
-
-/// Reads the release of the `claude` executable on PATH. Absence is an ordinary
-/// outcome: the user may install the hooks before Claude Code.
-package enum ClaudeCodeInstalledVersion {
-    package static func read() -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = ["claude", "--version"]
-        let output = Pipe()
-        process.standardOutput = output
-        process.standardError = FileHandle.nullDevice
-        do {
-            try process.run()
-        } catch {
-            return nil
-        }
-        let data = output.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        guard process.terminationStatus == 0,
-            let text = String(data: data, encoding: .utf8)
-        else {
-            return nil
-        }
-        return parsedVersion(text)
-    }
-
-    /// `claude --version` prints `2.1.274 (Claude Code)`.
-    package static func parsedVersion(_ text: String) -> String? {
-        let candidate = text.split(separator: " ").first.map(String.init)?
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let candidate, !candidate.isEmpty,
-            candidate.allSatisfy({ $0.isNumber || $0 == "." || $0 == "-" })
-        else {
-            return nil
-        }
-        return candidate
+        return "unexpected failure"
     }
 }

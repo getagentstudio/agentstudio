@@ -139,7 +139,7 @@ struct CodexPackageInstallerTests {
         let command = try #require(home.ownedCommand(event: .sessionStart))
         #expect(command.hasPrefix("\""))
         #expect(command.hasSuffix("\" SessionStart"))
-        #expect(command.contains("Agent Studio Beta Package"))
+        #expect(command.contains(home.codexHome.appending(path: "agentstudio/agentstudio-codex-hook.sh").path))
         #expect(command.contains(CodexPackageInstaller.ownedCommandFragment))
     }
 

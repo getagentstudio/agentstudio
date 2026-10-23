@@ -128,7 +128,7 @@ struct CursorHookInvocationTests {
             reportStatus: { _, _, _ in calls.withLock { $0 += 1 } })
         let result = ProviderHookInvocation.runCursorHook(
             .init(
-                eventName: unknown ? "subagentStop" : "beforeSubmitPrompt", environment: Self.environment,
+                eventName: unknown ? "futureHook" : "beforeSubmitPrompt", environment: Self.environment,
                 standardInput: {
                     if unknown { Issue.record("Unregistered hook must not read input") }
                     return Data(#"{"conversation_id":"session"}"#.utf8)
@@ -159,5 +159,39 @@ private final class CursorHookTiming: CallDeadlineTiming, Sendable {
     func waitForReadiness(fileDescriptor: Int32, events: Int16, timeout: Duration) -> CallDeadlineReadiness {
         Issue.record("The injected delivery must not wait on a socket")
         return .timedOut
+    }
+}
+
+extension CursorHookInvocationTests {
+    @Test(
+        "all six observer payloads cross the real invocation decoder",
+        arguments: ["sessionStart", "preToolUse", "postToolUse", "postToolUseFailure", "subagentStart", "subagentStop"])
+    func observerInvocation(eventName: String) {
+        let events = Mutex<[IPCSessionEventParams]>([])
+        let delivery = ProviderHookDelivery(
+            deliver: { params, _, _ in events.withLock { $0.append(params) } },
+            recordRefusal: { _, _, _ in Issue.record("Valid observer payload was refused") },
+            reportStatus: { _, _, _ in Issue.record("Authenticated delivery must not fall back") })
+        let result = ProviderHookInvocation.runCursorHook(
+            .init(
+                eventName: eventName, environment: Self.environment,
+                standardInput: {
+                    Data(
+                        #"{"conversation_id":"parent","generation_id":"turn","tool_use_id":"tool-A","tool_name":"Shell","subagent_id":"child-A","status":"error"}"#
+                            .utf8)
+                },
+                correlationIdProvider: { UUIDv7.generate() }, delivery: delivery, standardErrorSink: { _ in }))
+        #expect(result == 0)
+        let delivered = events.withLock { $0 }
+        #expect(delivered.count == 1)
+        let expected: IPCSessionEventName
+        switch eventName {
+        case "sessionStart": expected = .sessionStart
+        case "preToolUse": expected = .toolActivity
+        case "postToolUse": expected = .toolCompleted
+        case "postToolUseFailure": expected = .toolFailed
+        default: expected = .subagentActivity
+        }
+        #expect(delivered.first?.event.name == expected)
     }
 }

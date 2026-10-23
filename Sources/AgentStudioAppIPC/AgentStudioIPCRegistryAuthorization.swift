@@ -30,7 +30,7 @@ package struct AppIPCMethodRegistry: Sendable {
             }
         }
         let available = registrations.filter {
-            $0.descriptor.metadata.exposure == .allChannels || channel == .debug
+            AppIPCRecognizedEntry(metadata: $0.descriptor.metadata).isExposed(on: channel)
         }
         let availableNames = Set(available.map(\.descriptor.metadata.name))
         let recognizedUnexposedMethods = registrations.map(\.descriptor.metadata)
@@ -141,7 +141,11 @@ package struct AppIPCRecognizedEntry: Equatable, Sendable {
     }
 
     func isExposed(on channel: AgentStudioIPCChannel) -> Bool {
-        exposure == .allChannels || channel == .debug
+        switch exposure {
+        case .allChannels: true
+        case .debugTesting: channel == .debug
+        case .notExposed: false
+        }
     }
 }
 

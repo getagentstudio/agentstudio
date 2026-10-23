@@ -282,7 +282,7 @@ struct ClaudeCodeHookInvocationTests {
         // Arrange
         var diagnostics: [String] = []
         let unreachable = inputs(
-            arguments: ["hook", "claude", "SessionStart", "--provider-version", "2.1.274"],
+            arguments: ["hook", "claude", "SessionStart"],
             environment: [
                 "AGENTSTUDIO_CLI": "/tmp/agentstudio",
                 "AGENTSTUDIO_PANE_TOKEN": "token",

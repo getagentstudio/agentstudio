@@ -114,7 +114,7 @@ package enum AppShortcutDispatchPolicy {
             .showCommandBarPanes, .showCommandBarRepos, .openWebview, .reloadBridgeWebView,
             .showViewer,
             .showBridgeReview, .showBridgeFiles,
-            .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle,
+            .openBridgeReviewInNewTab, .openBridgeFilesInNewTab, .signInGitHub, .signInGoogle, .copyAgentSetupPrompt,
             .filterSidebar, .openNewTerminalInTab:
             return false
         }

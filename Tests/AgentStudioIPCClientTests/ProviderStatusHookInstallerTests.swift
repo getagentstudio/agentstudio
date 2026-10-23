@@ -22,6 +22,7 @@ struct ProviderStatusHookInstallerTests {
         try ClaudeCodePackageInstallation(
             configurationDirectory: config, packageRoot: packageRoot, providerVersion: "2.1.286"
         ).install(notice: { _ in })
+        let layout = ProviderIntegrationLayout(provider: .claude, home: config)
         let settings = try JSONDecoder().decode(
             JSONValue.self, from: Data(contentsOf: config.appending(path: "settings.json")))
         guard case .object(let fields) = settings, case .object(let hooks)? = fields["hooks"] else {
@@ -44,15 +45,14 @@ struct ProviderStatusHookInstallerTests {
                 Issue.record("Captured status event \(event) is not installed")
                 continue
             }
-            #expect(command.hasSuffix(" \(event) 2.1.286"))
+            let expectedCommand = "\"\(ProviderExpectedEntries.shellQuotedPath(layout.scriptURL.path))\" \(event)"
+            #expect(command == expectedCommand)
             #expect(!command.contains("ask --wait"))
             #expect(entry["async"] == .bool(true))
         }
         #expect(hooks["Notification"] == nil)
         // PR B deliberately keeps permissions as session.event reports.
-        let script = try String(
-            contentsOf: packageRoot.appending(path: "providers/claude/hooks/agentstudio-claude-hook.sh"),
-            encoding: .utf8)
+        let script = try String(contentsOf: layout.scriptURL, encoding: .utf8)
         #expect(script.contains("hook claude"))
         #expect(!script.contains("pane.message.ask"))
         #expect(!script.contains("--wait"))

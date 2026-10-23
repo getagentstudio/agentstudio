@@ -26,12 +26,17 @@ struct IPCMethodDescriptorTests {
 
     @Test("an agent-eligible method cannot be debug-only; a not-yet-allowed one can")
     func agentEligibleMethodMustReachEveryChannel() throws {
-        for eligibility in [IPCAgentEligibility.ownPane, .anyTarget] {
-            #expect(throws: IPCMethodDescriptorError.agentEligibleMethodMustBeExposedOnAllChannels) {
-                try makeDescriptor(
-                    correlationId: UUIDv7.generate(), exposure: .debugTesting, agentEligibility: eligibility)
+        for exposure in [IPCMethodExposure.debugTesting, .notExposed] {
+            for eligibility in [IPCAgentEligibility.ownPane, .anyTarget] {
+                #expect(throws: IPCMethodDescriptorError.agentEligibleMethodMustBeExposedOnAllChannels) {
+                    try makeDescriptor(
+                        correlationId: UUIDv7.generate(), exposure: exposure, agentEligibility: eligibility)
+                }
             }
         }
+        #expect(
+            try JSONDecoder().decode(IPCMethodExposure.self, from: JSONEncoder().encode(IPCMethodExposure.notExposed))
+                == .notExposed)
         let refused = try makeDescriptor(
             correlationId: UUIDv7.generate(), exposure: .debugTesting, agentEligibility: .notYetAllowed)
         let established = try makeDescriptor(correlationId: UUIDv7.generate(), exposure: .debugTesting)

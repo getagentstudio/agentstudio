@@ -470,6 +470,29 @@ struct AppIPCTypedMethodRegistrationTests {
         }
     }
 
+    @Test(
+        "notExposed methods refuse before target resolution or a handler on every channel",
+        arguments: [AgentStudioIPCChannel.debug, .stable, .beta])
+    func neverExposedRegistrationCannotInvoke(channel: AgentStudioIPCChannel) async throws {
+        let fixture = TypedRegistrationFixture(channel: channel)
+        let recorder = TypedRegistrationRecorder()
+        let registration = try makeRegistration(
+            recorder: recorder, descriptor: TypedRegistrationFixture.descriptor(exposure: .notExposed)
+        ).erase()
+        await #expect(throws: AppIPCTypedMethodRegistrationError.methodNotExposed) {
+            try await registration.invoke(
+                parameters: fixture.parameters(handle: "pane:1", correlationId: UUIDv7.generate()),
+                connectionContext: fixture.connectionContext, targetResolutionTools: fixture.targetResolutionTools,
+                authorize: { _, _ in await recorder.record(.authorize) })
+        }
+        #expect(await recorder.snapshot().isEmpty)
+        let registry = try makeTestAppIPCMethodRegistry(
+            registrations: BuiltInMethodRegistrationsFixture().registrations() + [registration],
+            recognizedCommands: [], channel: channel)
+        #expect(registry.registration(named: "fixture.typedMutation") == nil)
+        #expect(!registry.capabilities.methods.contains { $0.name == "fixture.typedMutation" })
+    }
+
     private func makeRegistration(
         recorder: TypedRegistrationRecorder,
         correlation: AppIPCCorrelation<TypedRegistrationParameters> = .required(\.correlationId),
@@ -524,6 +547,8 @@ struct AppIPCTypedMethodRegistrationTests {
 }
 
 private struct TypedRegistrationFixture {
+    let channel: AgentStudioIPCChannel
+    init(channel: AgentStudioIPCChannel = .stable) { self.channel = channel }
     let principal = IPCPrincipal(
         principalId: UUIDv7.generate(),
         runtimeId: UUIDv7.generate(),
@@ -535,7 +560,7 @@ private struct TypedRegistrationFixture {
     var connectionContext: AppIPCConnectionContext {
         AppIPCConnectionContext(
             contextId: UUIDv7.generate(),
-            channel: .stable,
+            channel: channel,
             authenticatedContext: AgentStudioIPCAuthenticatedContext(
                 principal: principal,
                 credentialIdentity: .pane(recordID: UUIDv7.generate())
@@ -548,7 +573,8 @@ private struct TypedRegistrationFixture {
 
     static func descriptor(
         name: String = "fixture.typedMutation",
-        allowedTargetKinds: Set<IPCHandleKind> = [.pane]
+        allowedTargetKinds: Set<IPCHandleKind> = [.pane],
+        exposure: IPCMethodExposure = .allChannels
     ) throws
         -> IPCMethodDescriptor<TypedRegistrationParameters, TypedRegistrationResult>
     {
@@ -556,7 +582,7 @@ private struct TypedRegistrationFixture {
             name: name,
             description: "Exercise the typed request registration boundary.",
             examples: [],
-            exposure: .allChannels,
+            exposure: exposure,
             requiredPrivileges: [.layoutMutate],
             dataScope: .paneContext,
             allowedTargetKinds: allowedTargetKinds,
