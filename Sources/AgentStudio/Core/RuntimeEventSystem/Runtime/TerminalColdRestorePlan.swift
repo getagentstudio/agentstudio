@@ -31,7 +31,7 @@ package struct ColdRestoreAttemptID: Equatable, Hashable, Sendable {
     }
 }
 
-/// The one-line notice a cold restore prints before its fresh shell starts
+/// The candidate notice a cold restore prints before its fresh shell starts
 /// (SR3: "Restored after restart", plus the reason for any fallback folder).
 ///
 /// Which folder actually exists is a fact the generated script discovers at
@@ -45,7 +45,8 @@ package struct ColdRestoreNotice: Equatable, Sendable {
     /// in `folderCandidates[i]`. Must have the same count as
     /// `folderCandidates`; index 0 (the saved folder) never needs a fallback
     /// explanation, but still carries its own headline text so the script
-    /// has exactly one line to print for every candidate, uniformly.
+    /// has exactly one entry to print for every candidate, uniformly. Each
+    /// entry preserves the R1 line, with added outcomes on subsequent lines.
     package let linesByCandidateIndex: [String]
 
     package init(linesByCandidateIndex: [String]) {
@@ -72,8 +73,8 @@ package struct TerminalColdRestorePlan: Equatable, Sendable {
     /// folder, then the home folder (SR3). Never empty.
     package let folderCandidates: [URL]
     package let notice: ColdRestoreNotice
-    /// Prior scrollback to replay before the fresh prompt (SR10, R2). Always
-    /// `nil` in R1 — no scrollback capture exists yet.
+    /// Validated prior scrollback to replay before the restart marker and
+    /// fresh prompt (SR10, R2). Nil for absent or unreadable saved output.
     package let replayFile: URL?
     /// The provider resume to run once the shell is ready (SR11, R3). Always
     /// `nil` in R1 — auto-resume is not built until R3.

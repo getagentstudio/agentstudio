@@ -80,6 +80,9 @@ final class ZmxTestHarness: @unchecked Sendable {
         /// teardown point, once the kill signal above it has already been
         /// sent.
         let standardOutputPipe: Pipe?
+        /// Owned duplicate for tee output; callers may close their handle
+        /// after spawn, just as when Process itself owned their stdout.
+        let forwardingStandardOutput: ForwardingStandardOutput?
     }
 
     let zmxDir: String
@@ -399,7 +402,8 @@ final class ZmxTestHarness: @unchecked Sendable {
     func spawnZmxSession(
         zmxPath: String,
         sessionId: String,
-        commandArgs: [String]
+        commandArgs: [String],
+        standardOutput: FileHandle = .nullDevice
     ) async throws -> Process {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: zmxPath)
@@ -409,16 +413,21 @@ final class ZmxTestHarness: @unchecked Sendable {
         process.standardError = FileHandle.nullDevice
         process.standardInput = Pipe()
         process.environment = Self.hermeticChildEnvironment(zmxDir: zmxDir, scratchHomeDirectory: scratchHomeDirectory)
-        try process.run()
+        let forwardingOutput = try duplicateForwardingOutput(standardOutput)
+        do { try process.run() } catch {
+            forwardingOutput?.close()
+            throw error
+        }
 
         let processID = process.processIdentifier
         let sessionCreatedStep = beginDrainingStandardOutput(
-            standardOutputPipe, awaitingSessionCreatedLineFor: sessionId)
+            standardOutputPipe, awaitingSessionCreatedLineFor: sessionId, forwardingTo: forwardingOutput)
         spawnedProcesses.append(
             SpawnedProcess(
                 process: process,
                 processID: processID,
-                standardOutputPipe: standardOutputPipe
+                standardOutputPipe: standardOutputPipe,
+                forwardingStandardOutput: forwardingOutput
             ))
 
         try await waitUntilSessionSettled(
@@ -511,12 +520,13 @@ final class ZmxTestHarness: @unchecked Sendable {
 
         let processID = process.processIdentifier
         let sessionCreatedStep = beginDrainingStandardOutput(
-            standardOutputPipe, awaitingSessionCreatedLineFor: sessionId)
+            standardOutputPipe, awaitingSessionCreatedLineFor: sessionId, forwardingTo: nil)
         spawnedProcesses.append(
             SpawnedProcess(
                 process: process,
                 processID: processID,
-                standardOutputPipe: standardOutputPipe
+                standardOutputPipe: standardOutputPipe,
+                forwardingStandardOutput: nil
             ))
 
         return (process, sessionCreatedStep)
@@ -528,6 +538,67 @@ final class ZmxTestHarness: @unchecked Sendable {
     private struct SessionCreatedLineScan {
         var accumulated = Data()
         var markerAlreadySettled = false
+    }
+
+    /// Serializes tee writes and terminal closure so a failed or retired
+    /// descriptor cannot be reused by a later readability callback.
+    private final class ForwardingStandardOutput: Sendable {
+        private let descriptor: Mutex<Int32?>
+
+        init(descriptor: Int32) {
+            self.descriptor = Mutex(descriptor)
+        }
+
+        deinit { close() }
+
+        func forward(_ chunk: Data) {
+            descriptor.withLock { currentDescriptor in
+                guard let outputDescriptor = currentDescriptor else { return }
+                chunk.withUnsafeBytes { buffer in
+                    var offset = 0
+                    while offset < buffer.count {
+                        let count = Darwin.write(
+                            outputDescriptor, buffer.baseAddress?.advanced(by: offset), buffer.count - offset)
+                        if count < 0, errno == EINTR { continue }
+                        guard count > 0 else {
+                            // EAGAIN, EPIPE and other errors retire only the
+                            // tee. An unread sink never holds settlement hostage.
+                            currentDescriptor = nil
+                            _ = Darwin.close(outputDescriptor)
+                            return
+                        }
+                        offset += count
+                    }
+                }
+            }
+        }
+
+        func close() {
+            descriptor.withLock { currentDescriptor in
+                guard let outputDescriptor = currentDescriptor else { return }
+                currentDescriptor = nil
+                _ = Darwin.close(outputDescriptor)
+            }
+        }
+    }
+
+    private func duplicateForwardingOutput(_ sink: FileHandle) throws -> ForwardingStandardOutput? {
+        guard sink !== FileHandle.nullDevice else { return nil }
+        let descriptor = dup(sink.fileDescriptor)
+        guard descriptor >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        // The harness owns this writer, not the spawned process. Do not let
+        // an exec inherit it and keep the caller's EOF artificially open.
+        let outputFlags = fcntl(descriptor, F_GETFL)
+        guard outputFlags >= 0,
+            fcntl(descriptor, F_SETFL, outputFlags | O_NONBLOCK) == 0,
+            fcntl(descriptor, F_SETNOSIGPIPE, 1) == 0,
+            fcntl(descriptor, F_SETFD, FD_CLOEXEC) == 0
+        else {
+            let failure = POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+            _ = close(descriptor)
+            throw failure
+        }
+        return ForwardingStandardOutput(descriptor: descriptor)
     }
 
     /// R1 gate 4, F7 fix (Lead decision 2026-10-02): arms a persistent
@@ -548,10 +619,13 @@ final class ZmxTestHarness: @unchecked Sendable {
     /// absence, only ever a success, by design: EOF before the marker
     /// means the launcher is gone, and that is the exit watch's fact to
     /// report, not a race between two different tellings of the same
-    /// event.
+    /// event. An optional tee forwards each chunk before this unchanged
+    /// scan, including chunks after the marker. A tee write failure retires
+    /// only the forwarding sink; draining and settlement remain independent.
     private func beginDrainingStandardOutput(
         _ pipe: Pipe,
-        awaitingSessionCreatedLineFor sessionId: String
+        awaitingSessionCreatedLineFor sessionId: String,
+        forwardingTo sink: ForwardingStandardOutput?
     ) -> HeldStep<Result<Void, any Error>> {
         let step = HeldStep<Result<Void, any Error>>("session created line")
         // Gate 5 fix (Lead 2026-10-02): pre-released the moment the reader
@@ -581,8 +655,10 @@ final class ZmxTestHarness: @unchecked Sendable {
             let chunk = handle.availableData
             if chunk.isEmpty {
                 pipe.fileHandleForReading.readabilityHandler = nil
+                sink?.close()
                 return
             }
+            sink?.forward(chunk)
             let markerJustFound = scan.withLock { state -> Bool in
                 guard !state.markerAlreadySettled else { return false }
                 state.accumulated.append(chunk)
@@ -660,6 +736,7 @@ final class ZmxTestHarness: @unchecked Sendable {
             // harmless no-op then, and the only teardown for one still
             // running right up to this kill.
             entry.standardOutputPipe?.fileHandleForReading.readabilityHandler = nil
+            entry.forwardingStandardOutput?.close()
         }
 
         spawnedProcesses.removeAll()

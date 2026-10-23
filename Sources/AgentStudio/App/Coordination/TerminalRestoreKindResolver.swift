@@ -35,15 +35,18 @@ struct TerminalRestoreKindResolver: Sendable {
     /// resolver were never wired in (matching `TerminalRestoreRuntime
     /// .startupCommand`'s existing `nil`-kind fallback).
     private let probe: (any ZmxSessionRestoreProbing)?
+    private let scrollbackStore: ScrollbackStore
     private let repositoryMainFolder: @MainActor (Pane) -> URL?
 
     init(
         sessionConfiguration: SessionConfiguration,
         probe: (any ZmxSessionRestoreProbing)?,
+        scrollbackStore: ScrollbackStore,
         repositoryMainFolder: @escaping @MainActor (Pane) -> URL?
     ) {
         self.sessionConfiguration = sessionConfiguration
         self.probe = probe
+        self.scrollbackStore = scrollbackStore
         self.repositoryMainFolder = repositoryMainFolder
     }
 
@@ -123,7 +126,7 @@ struct TerminalRestoreKindResolver: Sendable {
         observeDerivationExecutionContext()
         var restoreKindsByPaneID: [PaneId: TerminalRestoreKind] = [:]
         for capture in zmxPaneCaptures {
-            restoreKindsByPaneID[capture.paneID] = resolveKind(
+            restoreKindsByPaneID[capture.paneID] = await resolveKind(
                 pane: capture.pane,
                 sessionID: capture.sessionID,
                 inventory: inventory,
@@ -188,41 +191,25 @@ struct TerminalRestoreKindResolver: Sendable {
         zmxPath: String,
         repositoryMainFolder: URL?,
         observedIdentity: Data?
-    ) -> TerminalRestoreKind {
+    ) async -> TerminalRestoreKind {
+        let plan = await buildColdPlan(
+            pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder)
         switch inventory {
         case .unavailable(let failure):
-            return .unverified(
-                .inventoryUnavailable(failure),
-                fallback: buildColdPlan(
-                    pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder))
+            return .unverified(.inventoryUnavailable(failure), fallback: plan)
         case .complete(let entriesBySessionID):
             switch entriesBySessionID[sessionID] {
             case .alive:
                 guard let observedIdentity else {
-                    return .unverified(
-                        .warmIdentityUnobservable,
-                        fallback: buildColdPlan(
-                            pane: pane, sessionID: sessionID, zmxPath: zmxPath,
-                            repositoryMainFolder: repositoryMainFolder))
+                    return .unverified(.warmIdentityUnobservable, fallback: plan)
                 }
-                return .warm(
-                    identity: observedIdentity,
-                    fallback: buildColdPlan(
-                        pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder)
-                )
+                return .warm(identity: observedIdentity, fallback: plan)
             case .refused, nil:
                 // Absent from a complete inventory, or refused: both are
                 // proof of death (SR2), never merely unseen.
-                return .cold(
-                    buildColdPlan(
-                        pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder)
-                )
+                return .cold(plan)
             case .unresponsive:
-                return .unverified(
-                    .sessionUnresponsive,
-                    fallback: buildColdPlan(
-                        pane: pane, sessionID: sessionID, zmxPath: zmxPath, repositoryMainFolder: repositoryMainFolder)
-                )
+                return .unverified(.sessionUnresponsive, fallback: plan)
             }
         }
     }
@@ -230,14 +217,16 @@ struct TerminalRestoreKindResolver: Sendable {
     /// A1: no longer `@MainActor` — see `resolveKind`'s own note.
     private func buildColdPlan(
         pane: Pane, sessionID: ZmxSessionID, zmxPath: String, repositoryMainFolder: URL?
-    ) -> TerminalColdRestorePlan {
-        TerminalColdRestorePlanBuilder.buildPlan(
+    ) async -> TerminalColdRestorePlan {
+        await TerminalColdRestorePlanBuilder.buildPlan(
             pane: pane,
             sessionID: sessionID,
-            zmxExecutablePath: zmxPath,
-            zmxDirectoryPath: sessionConfiguration.zmxDir,
-            loginShellPath: SessionConfiguration.defaultShell(),
-            repositoryMainFolder: repositoryMainFolder
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: zmxPath,
+                zmxDirectoryPath: sessionConfiguration.zmxDir,
+                loginShellPath: SessionConfiguration.defaultShell()),
+            repositoryMainFolder: repositoryMainFolder,
+            scrollbackStore: scrollbackStore
         )
     }
 }

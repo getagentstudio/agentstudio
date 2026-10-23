@@ -1,19 +1,18 @@
 extension AgentStudioOTLPTraceProjection {
+    private static let controlledStringFamilyPredicates: [@Sendable (String, String) -> Bool?] = [
+        { key, value in BridgeTelemetryWireSchema.allowedStringValues(for: key).map { $0.contains(value) } },
+        AgentStudioOTLPAttributionProjectionKeys.isAllowedValue,
+        AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue,
+        AgentStudioOTLPPaneDropTaxonomy.isAllowedValue,
+        RendererLifecycleOTLPProjectionKeys.isAllowedStringValue,
+        isAllowedScrollbackControlledStringValue,
+    ]
+
     static func isAllowedControlledStringValue(key: String, value: String) -> Bool {
-        if let allowedValues = BridgeTelemetryWireSchema.allowedStringValues(for: key) {
-            return allowedValues.contains(value)
-        }
-        if let isAllowed = AgentStudioOTLPAttributionProjectionKeys.isAllowedValue(key: key, value: value) {
-            return isAllowed
-        }
-        if let isAllowed = AgentStudioOTLPRepoExplorerTaxonomy.isAllowedValue(key: key, value: value) {
-            return isAllowed
-        }
-        if let isAllowed = AgentStudioOTLPPaneDropTaxonomy.isAllowedValue(key: key, value: value) {
-            return isAllowed
-        }
-        if let isAllowed = RendererLifecycleOTLPProjectionKeys.isAllowedStringValue(key: key, value: value) {
-            return isAllowed
+        for predicate in controlledStringFamilyPredicates {
+            if let isAllowed = predicate(key, value) {
+                return isAllowed
+            }
         }
         if let isAllowed = isAllowedIPCControlledStringValue(key: key, value: value) {
             return isAllowed

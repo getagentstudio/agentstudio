@@ -1,25 +1,38 @@
 import AgentStudioCore
 import Foundation
 
-/// Builds a `TerminalColdRestorePlan` from a pane and configuration
-/// (SR3, SR6a; Program Design item 2: "`TerminalRestoreRuntime` builds the
-/// plan from the pane and configuration it already reads, and passes it to
-/// the builder"). Pure and actor-independent — unlike `TerminalRestoreRuntime`
-/// (`@MainActor`), this has no MainActor dependency, so the off-main restore
-/// decision (`TerminalRestoreKindResolver`, App) can call it directly.
+/// The zmx executable, session directory and login shell paths resolved for a terminal launch.
+package struct TerminalColdRestoreLaunchPaths: Sendable, Equatable {
+    let zmxExecutablePath: String
+    let zmxDirectoryPath: String
+    let loginShellPath: String
+
+    package init(zmxExecutablePath: String, zmxDirectoryPath: String, loginShellPath: String) {
+        self.zmxExecutablePath = zmxExecutablePath
+        self.zmxDirectoryPath = zmxDirectoryPath
+        self.loginShellPath = loginShellPath
+    }
+}
+
+/// Validates saved output before constructing a cold or fallback plan.
+/// File work stays in ScrollbackStore; folder/notice derivation escapes
+/// the caller's executor so App forwards only its existing input values.
 package enum TerminalColdRestorePlanBuilder {
-    /// `zmxExecutablePath`, `zmxDirectoryPath` and `loginShellPath` are the
-    /// same values `TerminalRestoreRuntime` already resolves for today's warm
-    /// attach — passed in rather than re-resolved, so this stays a pure
-    /// function of its arguments.
-    package static func buildPlan(
+    @concurrent nonisolated package static func buildPlan(
         pane: Pane,
         sessionID: ZmxSessionID,
-        zmxExecutablePath: String,
-        zmxDirectoryPath: String,
-        loginShellPath: String,
-        repositoryMainFolder: URL?
-    ) -> TerminalColdRestorePlan {
+        launchPaths: TerminalColdRestoreLaunchPaths,
+        repositoryMainFolder: URL?,
+        scrollbackStore: ScrollbackStore
+    ) async -> TerminalColdRestorePlan {
+        let paneID = PaneId(existingUUID: pane.id)
+        let replayFile: URL?
+        switch await scrollbackStore.load(paneId: paneID) {
+        case .present:
+            replayFile = scrollbackStore.snapshotURL(for: paneID)
+        case .absent, .unreadable:
+            replayFile = nil
+        }
         let savedFolder = pane.metadata.cwd ?? pane.metadata.launchDirectory
         let homeFolder = FileManager.default.homeDirectoryForCurrentUser
 
@@ -42,14 +55,20 @@ package enum TerminalColdRestorePlanBuilder {
                 : "Restored after restart (saved and repository folders missing; using the home folder)"
         )
 
+        // Candidate text is composed, never replaced: R1's exact headline
+        // and fallback reason remain first; R2 adds a separate line.
+        if replayFile == nil {
+            noticeLines = noticeLines.map { $0 + "\nno saved output" }
+        }
+
         return TerminalColdRestorePlan(
-            zmxExecutable: URL(fileURLWithPath: zmxExecutablePath),
-            zmxDirectory: URL(fileURLWithPath: zmxDirectoryPath),
+            zmxExecutable: URL(fileURLWithPath: launchPaths.zmxExecutablePath),
+            zmxDirectory: URL(fileURLWithPath: launchPaths.zmxDirectoryPath),
             sessionID: sessionID,
-            loginShell: URL(fileURLWithPath: loginShellPath),
+            loginShell: URL(fileURLWithPath: launchPaths.loginShellPath),
             folderCandidates: folderCandidates,
             notice: ColdRestoreNotice(linesByCandidateIndex: noticeLines),
-            replayFile: nil,
+            replayFile: replayFile,
             resume: nil,
             attemptID: .generate()
         )
