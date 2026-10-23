@@ -22,6 +22,18 @@ struct WorkspaceLiveZmxMembershipTests {
         #expect(membership == [expectedPane: expectedSession])
     }
 
+    @Test("closed-app intake reads persisted pane membership, including non-zmx terminals")
+    func closedAppPaneMembershipUsesPersistedGraph() async throws {
+        let fixture = try LiveZmxMembershipFixture()
+        let first = try fixture.addTerminal(provider: .zmx, sessionId: .generateUUIDv7())
+        let second = try fixture.addTerminal(provider: .ghostty, sessionId: .generateUUIDv7())
+        #expect(try await fixture.repository.persistedPaneIds(workspaceId: fixture.workspaceId) == [first, second])
+        var graph = try fixture.repository.fetchPaneGraph(workspaceId: fixture.workspaceId)
+        graph.panes.removeAll { $0.id == first }
+        try fixture.repository.replacePaneGraph(workspaceId: fixture.workspaceId, graph: graph)
+        #expect(try await fixture.repository.persistedPaneIds(workspaceId: fixture.workspaceId) == [second])
+    }
+
     @Test("an invalid stored identifier fails the whole membership read instead of silently skipping a pane")
     func malformedStoredIdentityFailsMembershipRead() async throws {
         let fixture = try LiveZmxMembershipFixture()

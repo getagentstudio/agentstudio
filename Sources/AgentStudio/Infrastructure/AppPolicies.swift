@@ -402,6 +402,7 @@ package enum AppPolicies {
         package static let lookMaxDelay: Duration = .seconds(60)
         package static let quitLookDeadline: Duration = .seconds(1)
         package static let resumeReadinessDeadline: Duration = .seconds(2)
+        package static let closedAppReadRetryDelay: Duration = .milliseconds(50)
         /// Bounds the one `zmx list` inventory probe `mount()` runs, off-main,
         /// before the terminal lane activates (SR1, SR4; Program Design item
         /// 1). The probe never retries: a probe that exceeds this becomes

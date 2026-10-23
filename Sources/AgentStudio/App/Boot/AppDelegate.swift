@@ -221,7 +221,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var paneIPCIdentityOwner: PaneIPCIdentityOwner!
     var appIPCSessionsPaneContextComposition: SessionsPaneContextComposition?
     var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
-    var paneCLIOutboxDrainTask: Task<Void, Never>?
+    var paneCLIOutboxDrainTask: Task<PaneCLIOutboxDrain?, Never>?
+    let restoreResumeReadiness = RestoreResumeReadiness(
+        clock: ContinuousClock(), deadline: AppPolicies.Restore.resumeReadinessDeadline)
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!
     var applicationLifecycleMonitor: ApplicationLifecycleMonitor!

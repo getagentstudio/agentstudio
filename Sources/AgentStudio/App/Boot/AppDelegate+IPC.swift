@@ -294,6 +294,11 @@ extension AppDelegate {
         let noticeAdmission = sessionsComposition.paneContextIPCAdapter
         let sqliteAccess = WorkspaceSessionsSQLiteAccess(datastore: datastore)
         let channel = cliStoreChannel
+        let readiness = restoreResumeReadiness
+        let ingestion = sessionsComposition.ingestion
+        let workspaceId = store.identityAtom.workspaceId
+        guard let evidenceRepository = restoreForegroundEvidenceRepository else { return }
+        let restoreEvidence = ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
         let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceTraceRecorder)
         // Intake and catalog construction run off MainActor; the app only reads
         // the CLI file and its cursor uses the existing application-local writer.
@@ -302,16 +307,25 @@ extension AppDelegate {
             do {
                 let drain = try PaneCLIOutboxDrain(
                     admission: noticeAdmission, sqliteAccess: sqliteAccess,
-                    expectedChannel: channel,
+                    expectedChannel: channel, ingestion: ingestion, restoreEvidence: restoreEvidence,
+                    paneExists: { try await datastore.persistedPaneIds(workspaceId: workspaceId).contains($0) },
                     refusalProbe: { reason in
                         telemetry.recordOfflineNoticeRefusal(reason: reason)
                     })
-                let report = await drain.drain(storeURL: storeURL)
-                guard report.hasWork else { return }
-                appLogger.info(
-                    "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
-                )
-            } catch { appLogger.warning("Offline outbox intake unavailable") }
+                await drain.drainForLaunch(
+                    storeURL: storeURL, readiness: readiness, clock: ContinuousClock(),
+                    reportSink: { report in
+                        guard report.hasWork else { return }
+                        appLogger.info(
+                            "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
+                        )
+                    })
+                return drain
+            } catch {
+                appLogger.warning("Offline outbox intake unavailable")
+                await readiness.record(.unreadable(.localDatabase))
+                return nil
+            }
         }
     }
 
@@ -422,7 +436,7 @@ extension AppDelegate {
         let outboxDrainTask = paneCLIOutboxDrainTask
         outboxDrainTask?.cancel()
         paneCLIOutboxDrainTask = nil
-        await outboxDrainTask?.value
+        _ = await outboxDrainTask?.value
         guard let server = appIPCServer else {
             appIPCPrincipalRegistry?.shutdown()
             await finishAppIPCSessionsPaneContext()

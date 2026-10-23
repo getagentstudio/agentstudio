@@ -5,7 +5,13 @@ import Foundation
 import GRDB
 
 struct WorkspaceForegroundEvidenceSQLiteAccess: ForegroundEvidenceSQLiteAccess {
-    let datastore: WorkspaceSQLiteDatastoreActor
+    let sqliteAccess: any SessionsSQLiteAccess
+
+    init(datastore: WorkspaceSQLiteDatastoreActor) {
+        sqliteAccess = WorkspaceSessionsSQLiteAccess(datastore: datastore)
+    }
+
+    init(sqliteAccess: any SessionsSQLiteAccess) { self.sqliteAccess = sqliteAccess }
     let latestBinding: @Sendable (Database, UUID) throws -> ForegroundLatestBinding? = { database, paneId in
         guard let binding = try SessionsRepositoryStorage.loadBindings(database: database, paneId: paneId).first else {
             return nil
@@ -14,10 +20,10 @@ struct WorkspaceForegroundEvidenceSQLiteAccess: ForegroundEvidenceSQLiteAccess {
     }
 
     func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
-        try await datastore.performApplicationLocalRead(operation)
+        try await sqliteAccess.read(operation)
     }
 
     func write<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
-        try await datastore.performApplicationLocalWrite(operation)
+        try await sqliteAccess.write(operation)
     }
 }

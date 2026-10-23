@@ -4,6 +4,7 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
@@ -39,6 +40,7 @@ final class PaneCLIOutboxDrainHarness {
     let writer: CLIStore
     let sqliteAccess: FailableOutboxSessionsSQLiteAccess
     let repository: SessionsRepository
+    let statusAtom: SessionStatusAtom
     let ingestion: SessionsIngestion
     let admission: AgentStudioIPCPaneContextAdapter
     let sessionAdmission: AgentStudioIPCSessionsAdapter
@@ -46,7 +48,9 @@ final class PaneCLIOutboxDrainHarness {
     let membership = TestPaneContextMembership()
     let clock = TestPushClock()
     let refusalRecorder = OutboxRefusalRecorder()
-    private let drainOwner: PaneCLIOutboxDrain
+    let evidenceRepository: SQLitePaneForegroundEvidenceRepository
+    let restoreEvidence: AgentStudio.ClosedAppRestoreEvidenceParticipant
+    let drainOwner: PaneCLIOutboxDrain
     private let additionalRefusalProbe: @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void
 
     static let testProvider = IPCSessionProviderIdentity(
@@ -68,9 +72,12 @@ final class PaneCLIOutboxDrainHarness {
         let sqliteAccess = FailableOutboxSessionsSQLiteAccess(base: WorkspaceSessionsSQLiteAccess(datastore: datastore))
         self.sqliteAccess = sqliteAccess
         repository = SessionsRepository(sqliteAccess: sqliteAccess)
+        let statusAtom = SessionStatusAtom()
+        self.statusAtom = statusAtom
         let ingestion = SessionsIngestion(
             repository: repository,
-            limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
+            limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
+            statusSink: { statusAtom.apply($0) })
         self.ingestion = ingestion
         let admission = AgentStudioIPCSessionsAdapter(ingestion: ingestion)
         sessionAdmission = admission
@@ -78,13 +85,25 @@ final class PaneCLIOutboxDrainHarness {
             sqliteAccess: sqliteAccess, clock: clock, wallNow: { Date(timeIntervalSince1970: 1_700_000_000) },
             membership: membership, currentBindingGeneration: PaneContextSessionsBridge.currentBindingGeneration)
         self.admission = AgentStudioIPCPaneContextAdapter(service: paneService, ingestion: ingestion)
+        let evidenceRepository = SQLitePaneForegroundEvidenceRepository(
+            access: WorkspaceForegroundEvidenceSQLiteAccess(sqliteAccess: sqliteAccess),
+            observerLaunchId: UUIDv7.generate())
+        self.evidenceRepository = evidenceRepository
+        restoreEvidence = AgentStudio.ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
+        let membership = membership
         let recorder = refusalRecorder
         drainOwner = try PaneCLIOutboxDrain(
             admission: self.admission, sqliteAccess: sqliteAccess, expectedChannel: .debug,
+            ingestion: ingestion, restoreEvidence: restoreEvidence,
+            paneExists: { membership.sources(for: PaneId(existingUUID: $0)) != nil },
             refusalProbe: {
                 recorder.record($0)
                 refusalProbe($0)
             })
+    }
+
+    func drain(at url: URL) async -> PaneCLIOutboxDrain.DrainReport {
+        await drainOwner.drain(storeURL: url, legacySpoolDirectory: legacyDirectory)
     }
 
     func drain() async -> PaneCLIOutboxDrain.DrainReport {
@@ -94,8 +113,11 @@ final class PaneCLIOutboxDrainHarness {
     func restartedDrain() async throws -> PaneCLIOutboxDrain.DrainReport {
         let recorder = refusalRecorder
         let refusalProbe = additionalRefusalProbe
+        let membership = membership
         let restarted = try PaneCLIOutboxDrain(
             admission: admission, sqliteAccess: sqliteAccess, expectedChannel: .debug,
+            ingestion: ingestion, restoreEvidence: restoreEvidence,
+            paneExists: { membership.sources(for: PaneId(existingUUID: $0)) != nil },
             refusalProbe: {
                 recorder.record($0)
                 refusalProbe($0)

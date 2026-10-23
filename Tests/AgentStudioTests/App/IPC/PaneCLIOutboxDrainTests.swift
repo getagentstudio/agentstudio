@@ -142,6 +142,7 @@ struct PaneCLIOutboxDrainTests {
     func malformedEnvelopeIsSkipped() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
+            try await harness.bindPane(paneID: paneID)
             _ = try await harness.append(paneID: paneID, line: #"{"not":"a json-rpc request"}"#)
             let survivor = try await harness.append(paneID: paneID, line: harness.messageLine(text: "survivor"))
 
@@ -152,6 +153,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(try await harness.cursor() == survivor.id)
             #expect(try await harness.rows().count == 2)
             #expect(try await harness.paneMessages(paneID: paneID).map(\.body) == ["survivor"])
+            #expect(try await harness.evidenceRepository.loadEvidence(paneId: paneID) == nil)
         }
     }
 
@@ -512,6 +514,7 @@ struct PaneCLIOutboxDrainTests {
     func unknownStoredKindAdvancesTheRefusedPrefix() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
+            try await harness.bindPane(paneID: paneID)
             let entry = try await harness.append(paneID: paneID, line: harness.messageLine(text: "future kind"))
             let writer = harness.writer
             try await valueFromDedicatedThread {
@@ -531,6 +534,9 @@ struct PaneCLIOutboxDrainTests {
                 try writer.databaseQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM cli_outbox") }
             }
             #expect(storedCount == 1)
+            #expect(
+                try await harness.evidenceRepository.loadEvidence(paneId: paneID)?.value
+                    == .reportsUnreadable(.rowRefused))
         }
     }
 

@@ -11,6 +11,7 @@ package struct ClaudeCodeHookInvocationInputs {
     package let identifierGenerator: () -> UUID
     package let diagnosticSink: (String) -> Void
     package let deadline: CallDeadline?
+    package let wallNow: @Sendable () -> Date
 
     package init(
         arguments: [String],
@@ -18,7 +19,8 @@ package struct ClaudeCodeHookInvocationInputs {
         standardInput: @escaping () throws -> Data,
         identifierGenerator: @escaping () -> UUID,
         diagnosticSink: @escaping (String) -> Void,
-        deadline: CallDeadline? = nil
+        deadline: CallDeadline? = nil,
+        wallNow: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.arguments = arguments
         self.environment = environment
@@ -26,6 +28,7 @@ package struct ClaudeCodeHookInvocationInputs {
         self.identifierGenerator = identifierGenerator
         self.diagnosticSink = diagnosticSink
         self.deadline = deadline
+        self.wallNow = wallNow
     }
 }
 
@@ -43,6 +46,7 @@ package enum ClaudeCodeHookInvocation {
     /// - Returns: the process exit code when `arguments` address this command,
     ///   and `nil` when they belong to another command.
     package static func handle(_ inputs: ClaudeCodeHookInvocationInputs) -> Int32? {
+        let reportedAt = inputs.wallNow()
         guard Array(inputs.arguments.prefix(commandPrefix.count)) == commandPrefix else {
             return nil
         }
@@ -61,7 +65,9 @@ package enum ClaudeCodeHookInvocation {
         else {
             return 0
         }
-        submit(announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs, deadline: deadline)
+        submit(
+            announcedEvent: announcedEvent, providerVersion: providerVersion, inputs: inputs, deadline: deadline,
+            reportedAt: reportedAt)
         return 0
     }
 
@@ -69,7 +75,7 @@ package enum ClaudeCodeHookInvocation {
         announcedEvent: String,
         providerVersion: String,
         inputs: ClaudeCodeHookInvocationInputs,
-        deadline: CallDeadline
+        deadline: CallDeadline, reportedAt: Date
     ) {
         let payload: ClaudeCodeHookPayload
         do {
@@ -99,7 +105,7 @@ package enum ClaudeCodeHookInvocation {
         ProviderHookStatusReporting(
             environment: inputs.environment, configuration: configuration, delivery: delivery,
             deadline: deadline, diagnosticSink: inputs.diagnosticSink
-        ).event(params)
+        ).event(params, reportedAt: reportedAt)
     }
 
     private static func reportPayloadRefusal(

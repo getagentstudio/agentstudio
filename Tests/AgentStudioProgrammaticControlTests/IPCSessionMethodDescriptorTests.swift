@@ -77,7 +77,7 @@ struct IPCSessionMethodDescriptorTests {
     func offlineEligibilityMatchesSettledScope() throws {
         let sessions = try makeCatalog().sessions
 
-        #expect(sessions.sessionEvent.offlineEligibility == .never)
+        #expect(sessions.sessionEvent.offlineEligibility == .sessionLifecycleOnly)
         #expect(sessions.sessionQuery.offlineEligibility == .never)
     }
 

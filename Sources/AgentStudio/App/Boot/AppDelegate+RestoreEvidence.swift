@@ -5,13 +5,16 @@ import Foundation
 
 extension AppDelegate {
     func installRestoreEvidenceOwners(datastore: WorkspaceSQLiteDatastoreActor, sessionDirectory: String) async {
-        guard restoreForegroundObserver == nil, let bootId = try? await WorkspaceUndoJournalClock.current().bootID
-        else { return }
+        guard restoreForegroundObserver == nil else { return }
         let launchId = UUIDv7.generate()
         let workspaceId = store.identityAtom.workspaceId
-        let repository = SQLitePaneForegroundEvidenceRepository(
-            access: WorkspaceForegroundEvidenceSQLiteAccess(datastore: datastore), observerLaunchId: launchId,
-            paneSessions: { try await datastore.liveZmxSessionsByPane(workspaceId: workspaceId) })
+        let repository =
+            restoreForegroundEvidenceRepository
+            ?? SQLitePaneForegroundEvidenceRepository(
+                access: WorkspaceForegroundEvidenceSQLiteAccess(datastore: datastore), observerLaunchId: launchId,
+                paneSessions: { try await datastore.liveZmxSessionsByPane(workspaceId: workspaceId) })
+        restoreForegroundEvidenceRepository = repository
+        guard let bootId = try? await WorkspaceUndoJournalClock.current().bootID else { return }
         let watcher = DarwinProcessExitWatcher()
         let observer = PaneForegroundObserver(
             clock: ContinuousClock(),
@@ -21,7 +24,6 @@ extension AppDelegate {
             repository: repository,
             probe: DarwinTerminalForegroundProbe(sessionDirectory: sessionDirectory, bootId: bootId),
             exitWatcher: watcher, observerLaunchId: launchId)
-        restoreForegroundEvidenceRepository = repository
         restoreForegroundExitWatcher = watcher
         restoreForegroundObserver = observer
         let (stream, continuation) = AsyncStream.makeStream(
@@ -47,6 +49,7 @@ extension AppDelegate {
     }
 
     func shutdownRestoreEvidenceOwners() async {
+        await restoreResumeReadiness.shutdown()
         restoreForegroundLifecycleContinuation?.finish()
         restoreForegroundLifecycleTask?.cancel()
         await restoreForegroundLifecycleTask?.value

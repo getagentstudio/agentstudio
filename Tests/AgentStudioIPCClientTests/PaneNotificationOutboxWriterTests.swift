@@ -149,9 +149,10 @@ struct PaneNotificationOutboxWriterTests {
         let expectedCount = acknowledged.count
         let payloads = try await valueFromDedicatedThread {
             let entries = try fixture.entries()
-            return entries.map { entry in
+            return try entries.map { entry in
                 switch entry {
                 case .notice(let notice): notice.payloadJSON
+                case .sessionLifecycle: throw CLIStoreFailure.unavailable
                 }
             }
         }
@@ -258,14 +259,14 @@ private struct QueuedVariantsObservation: Sendable {
     let entryCount: Int
 }
 
-private struct BoundSocketObservation: Sendable {
+struct BoundSocketObservation: Sendable {
     let path: String
     let descriptor: Int32
     let pathBytes: [UInt8]
     let bound: Int32?
 }
 
-private func makeBoundButUnlistenedSocketPath() -> BoundSocketObservation {
+func makeBoundButUnlistenedSocketPath() -> BoundSocketObservation {
     let path = temporaryIPCDescriptorClientSocketPath()
     let pathBytes = Array(path.utf8)
     let descriptor = socket(AF_UNIX, SOCK_STREAM, 0)

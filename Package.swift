@@ -377,7 +377,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "AgentStudioCLIStoreProcessFixture",
-            dependencies: ["AgentStudioCLIStore", "AgentStudioPrimitives"],
+            dependencies: [
+                "AgentStudioCLIStore", "AgentStudioPrimitives", "AgentStudioProgrammaticControl",
+                "AgentStudioIPCClientCore", "AgentStudioIPCTransport",
+            ],
             path: "Tests/AgentStudioCLIStoreProcessFixture",
             swiftSettings: [.swiftLanguageMode(.v6)]
         ),
@@ -628,6 +631,7 @@ let package = Package(
                 "AgentStudioAppIPC",
                 "AgentStudioCLIStore",
                 "AgentStudioCore",
+                "AgentStudioTerminal",
                 "AgentStudioIPCClientCore",
                 "AgentStudioIPCTransport",
                 "AgentStudioProgrammaticControl",
@@ -662,6 +666,7 @@ let package = Package(
                 "AgentStudioPrimitives",
                 "AgentStudioProgrammaticControl",
                 "AgentStudioTestHarness",
+                .product(name: "GRDB", package: "GRDB.swift"),
             ],
             path: "Tests/AgentStudioIPCClientTests",
             resources: [
@@ -677,6 +682,7 @@ let package = Package(
                 "AgentStudio",
                 "AgentStudioAppIPC",
                 "AgentStudioCLIStore",
+                "AgentStudioCLIStoreProcessFixture",
                 "AgentStudioBridge",
                 "AgentStudioCodeViewer",
                 "AgentStudioCommandBar",

@@ -74,16 +74,25 @@ package actor SessionsIngestion {
         let continuation: CheckedContinuation<SessionsBindingEndCommit?, any Error>
     }
 
+    private struct PendingClosedApp {
+        let item: ClosedAppOutboxItem
+        let restoreEvidence: any ClosedAppRestoreEvidenceParticipant
+        let participants: [any SessionsCommitParticipant]
+        let continuation: CheckedContinuation<ClosedAppOutboxOutcome, any Error>
+    }
+
     private enum PendingMutation {
         case hook(PendingHook)
         case unverifiedStatus(PendingUnverifiedStatus)
         case commandFinished(PendingCommandFinished)
+        case closedApp(PendingClosedApp)
 
-        var paneId: UUID {
+        var paneId: UUID? {
             switch self {
             case .hook(let pending): return pending.hook.paneId
             case .unverifiedStatus(let pending): return pending.paneId
             case .commandFinished(let pending): return pending.paneId
+            case .closedApp(let pending): return pending.item.paneId
             }
         }
     }
@@ -275,6 +284,25 @@ package actor SessionsIngestion {
         )
     }
 
+    package func admitClosedAppOutboxItem(
+        _ item: ClosedAppOutboxItem, restoreEvidence: any ClosedAppRestoreEvidenceParticipant,
+        participants: [any SessionsCommitParticipant]
+    ) async throws -> ClosedAppOutboxOutcome {
+        guard acceptsSubmissions else { throw SessionsRepositoryError.ingestionFinished }
+        if let error = currentCapacityError(for: item.paneId) { throw error }
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingMutations.append(
+                .closedApp(
+                    .init(
+                        item: item, restoreEvidence: restoreEvidence, participants: participants,
+                        continuation: continuation)))
+            if let paneId = item.paneId { pendingCountByPane[paneId, default: 0] += 1 }
+            outstandingCount += 1
+            emitStatistics(for: item.paneId, event: .depthChanged)
+            startConsumerIfNeeded()
+        }
+    }
+
     package func finish() async {
         acceptsSubmissions = false
         emitStatistics(for: nil, event: .finishing)
@@ -309,6 +337,7 @@ extension SessionsIngestion {
             do {
                 switch pending {
                 case .hook(let hook):
+                    let paneId = hook.hook.paneId
                     try await restoreStatusIfNeeded(paneId: paneId)
                     let outcome = try await repository.applyHook(
                         hook.hook,
@@ -321,6 +350,7 @@ extension SessionsIngestion {
                     publishStatus(paneId: paneId)
                     hook.continuation.resume(returning: outcome)
                 case .unverifiedStatus(let pending):
+                    let paneId = pending.paneId
                     consumePaneViewedBatch()
                     guard pending.remainsPresent(), !isStatusClosed,
                         !statusRuntime.retiredPaneIds.contains(paneId)
@@ -358,21 +388,28 @@ extension SessionsIngestion {
                     pending.continuation.resume(returning: applied ? .hookApplied : .hookAcceptedWithoutStatus)
                 case .commandFinished(let commandFinished):
                     let committed = try await closeLiveBindingForCommandExit(
-                        paneId: paneId, reportedAt: commandFinished.reportedAt)
+                        paneId: commandFinished.paneId, reportedAt: commandFinished.reportedAt)
                     commandFinished.continuation.resume(returning: committed)
+                case .closedApp(let pending):
+                    let outcome = try await applyClosedAppOutboxItem(
+                        pending.item, restoreEvidence: pending.restoreEvidence, participants: pending.participants)
+                    pending.continuation.resume(returning: outcome)
                 }
             } catch {
                 switch pending {
                 case .hook(let hook): hook.continuation.resume(throwing: error)
                 case .unverifiedStatus(let pending): pending.continuation.resume(throwing: error)
                 case .commandFinished(let commandFinished): commandFinished.continuation.resume(throwing: error)
+                case .closedApp(let pending): pending.continuation.resume(throwing: error)
                 }
             }
-            let remaining = pendingCountByPane[paneId, default: 1] - 1
-            if remaining == 0 {
-                pendingCountByPane.removeValue(forKey: paneId)
-            } else {
-                pendingCountByPane[paneId] = remaining
+            if let paneId {
+                let remaining = pendingCountByPane[paneId, default: 1] - 1
+                if remaining == 0 {
+                    pendingCountByPane.removeValue(forKey: paneId)
+                } else {
+                    pendingCountByPane[paneId] = remaining
+                }
             }
             outstandingCount -= 1
             emitStatistics(for: paneId, event: .depthChanged)
