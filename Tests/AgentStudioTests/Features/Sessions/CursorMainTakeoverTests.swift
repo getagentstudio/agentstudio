@@ -15,16 +15,18 @@ struct CursorMainTakeoverTests {
         let first = try #require(
             committedHookCommit(
                 from: try await repository.applyHook(
-                    admission(pane: pane, provider: provider, session: "A", signal: .turnStart))))
-        _ = try await repository.applyHook(admission(pane: pane, provider: provider, session: "A", signal: .turnDone))
+                    admission(pane: pane, provider: provider, session: "A", signal: .turnStart), eligibility: .eligible)
+            ))
+        _ = try await repository.applyHook(
+            admission(pane: pane, provider: provider, session: "A", signal: .turnDone), eligibility: .eligible)
         let second = try await repository.applyHook(
-            admission(pane: pane, provider: provider, session: "B", signal: .turnStart))
+            admission(pane: pane, provider: provider, session: "B", signal: .turnStart), eligibility: .eligible)
         if provider == "cursor" {
             let takeover = try #require(committedHookCommit(from: second))
             #expect(takeover.supersededBinding?.bindingGenerationId == first.binding.bindingGenerationId)
             #expect(takeover.binding.bindingGenerationId != first.binding.bindingGenerationId)
             _ = try await repository.applyHook(
-                admission(pane: pane, provider: provider, session: "A", signal: .sessionEnd))
+                admission(pane: pane, provider: provider, session: "A", signal: .sessionEnd), eligibility: .eligible)
             let context = try await repository.statusContext(paneId: pane)
             #expect(context.currentBinding?.providerConversationId == "B")
             #expect(context.bindings.first { $0.providerConversationId == "A" }?.status == .ended)
@@ -45,11 +47,12 @@ struct CursorMainTakeoverTests {
     func unverifiedElection(provider: String) {
         let pane = UUIDv7.generate()
         var runtime = UnverifiedPaneStatusRuntime()
-        func admits(_ hook: SessionsHookAdmission) -> Bool { runtime.apply(hook) }
+        func admits(_ hook: SessionsHookAdmission) -> Bool { runtime.apply(hook, eligibility: .eligible) }
         #expect(admits(admission(pane: pane, provider: provider, session: "A", signal: .turnStart)))
         #expect(admits(admission(pane: pane, provider: provider, session: "A", signal: .turnDone)))
         #expect(!admits(admission(pane: pane, provider: provider, session: "B", signal: .turnDone)))
-        let applied = runtime.apply(admission(pane: pane, provider: provider, session: "B", signal: .turnStart))
+        let applied = runtime.apply(
+            admission(pane: pane, provider: provider, session: "B", signal: .turnStart), eligibility: .eligible)
         #expect(applied == (provider == "cursor"))
         if provider == "cursor" {
             #expect(runtime.panes[pane]?.main?.sessionId == "B")
@@ -71,14 +74,14 @@ struct CursorMainTakeoverTests {
         let main = admission(pane: pane, provider: "claude-code", session: "A", signal: .turnStart)
         let cursor = admission(pane: pane, provider: "cursor", session: "B", signal: .turnStart)
         var runtime = UnverifiedPaneStatusRuntime()
-        let mainApplied = runtime.apply(main)
-        let cursorApplied = runtime.apply(cursor)
+        let mainApplied = runtime.apply(main, eligibility: .eligible)
+        let cursorApplied = runtime.apply(cursor, eligibility: .eligible)
         #expect(mainApplied)
         #expect(!cursorApplied)
         let fixture = try SessionsDatabaseFixture()
         let repository = fixture.makeRepository()
-        _ = try await repository.applyHook(main)
-        #expect(try await repository.applyHook(cursor) == .ignored)
+        _ = try await repository.applyHook(main, eligibility: .eligible)
+        #expect(try await repository.applyHook(cursor, eligibility: .eligible) == .ignored)
     }
 
     private func admission(pane: UUID, provider: String, session: String, signal: SessionProviderSignal)

@@ -163,7 +163,7 @@ struct AppIPCProductionLifecycleIntegrationTests {
                         paneId: shutdownOnlyPane.id,
                         providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
                         eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                        recordId: UUIDv7.generate(), admittedAt: Date()))
+                        recordId: UUIDv7.generate(), admittedAt: Date(), chain: TestMainAgentChain.observation))
             }
             let closed = await composition.paneContextService.readDetail(
                 .init(paneId: PaneId(existingUUID: shutdownOnlyPane.id), page: .first))
@@ -212,6 +212,8 @@ func makeServerCapableAppIPCTestHarness(
     let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
     let workspaceID = core.workspaceIdentity.workspaceId
     let appDelegate = suppliedDelegate ?? AppDelegate()
+    appDelegate.appIPCProcessChainReader = EligibleTestProcessChainReader()
+    appDelegate.appIPCTerminalLeaderReader = MatchingTestPaneTerminalLeaderReader()
     appDelegate.store = store
     appDelegate.workspaceSQLiteDatastore = datastore
     appDelegate.windowLifecycleStore = windowLifecycleStore

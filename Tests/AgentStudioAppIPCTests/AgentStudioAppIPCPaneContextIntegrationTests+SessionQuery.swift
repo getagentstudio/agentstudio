@@ -112,6 +112,6 @@ extension AgentStudioAppIPCPaneContextIntegrationTests {
     private static func sessionAdapter(_ domain: PaneContextIPCDomainCompanion) -> AgentStudioIPCSessionsAdapter {
         AgentStudioIPCSessionsAdapter(
             ingestion: domain.ingestion,
-            now: { domain.time.now })
+            now: { domain.time.now }, processChainReader: EligibleTestProcessChainReader())
     }
 }

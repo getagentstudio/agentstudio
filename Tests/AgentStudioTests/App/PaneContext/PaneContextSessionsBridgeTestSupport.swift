@@ -86,7 +86,8 @@ final class PaneContextSessionsBridgeFixture: Sendable {
         SessionsIngestion(
             repository: .init(sqliteAccess: BridgeSessionsSQLiteAccess(access: access)),
             limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: probe, openAskSource: bridge,
-            sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) })
+            sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
     }
 
     /// Ends are explicit at callers: a successive main must follow a committed SessionEnd.
@@ -95,7 +96,7 @@ final class PaneContextSessionsBridgeFixture: Sendable {
             .init(
                 paneId: paneId.uuid, providerIdentifier: provider.identifier, providerVersion: provider.version,
                 sessionId: conversation, eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                recordId: UUIDv7.generate(), admittedAt: time.now))
+                recordId: UUIDv7.generate(), admittedAt: time.now, chain: TestMainAgentChain.observation))
         let committed: SessionsHookCommit?
         if case .committed(let value) = outcome { committed = value } else { committed = nil }
         let hookCommit = try #require(committed, "Expected session start to commit, got \(outcome)")
@@ -114,7 +115,8 @@ final class PaneContextSessionsBridgeFixture: Sendable {
             .init(
                 paneId: paneId.uuid, providerIdentifier: provider.identifier,
                 providerVersion: provider.version, sessionId: binding.providerConversationId, eventName: eventName,
-                turnId: turnId, signal: signal, recordId: UUIDv7.generate(), admittedAt: time.now))
+                turnId: turnId, signal: signal, recordId: UUIDv7.generate(), admittedAt: time.now,
+                chain: TestMainAgentChain.observation))
         let committed: SessionsHookCommit?
         if case .committed(let value) = outcome { committed = value } else { committed = nil }
         _ = try #require(committed, "Expected \(eventName) to commit for the current main, got \(outcome)")

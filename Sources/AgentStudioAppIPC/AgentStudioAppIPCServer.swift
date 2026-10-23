@@ -134,7 +134,9 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         setRunning(true)
         do {
             try listener.start { [self] connection in
-                guard self.registerConnectionAndTrackHandler(connection) else {
+                let credentials = try connection.peerCredentials(using: peerCredentialProvider)
+                try peerCredentialGate.validate(credentials)
+                guard self.registerConnectionAndTrackHandler(connection, peerProcess: credentials.peerProcess) else {
                     connection.close()
                     return
                 }
@@ -234,6 +236,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
 
     private func handleRegisteredConnection(
         _ connection: UnixSocketConnection,
+        peerProcess: AppIPCPeerProcess?,
         io: AppIPCConnectionIO,
         writer: AgentStudioAppIPCConnectionWriter
     ) async {
@@ -243,25 +246,19 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
         }
 
         let connectionId = UUIDv7.generate()
-        await handleConnectionRequests(connection, connectionId: connectionId, io: io, writer: writer)
+        await handleConnectionRequests(
+            connection, connectionId: connectionId, peerProcess: peerProcess, io: io, writer: writer)
         await service.eventBroker.removeSubscriptions(connectionId: connectionId)
         await writer.finishAcceptedOutput()
     }
 
     private func handleConnectionRequests(
-        _ connection: UnixSocketConnection, connectionId: UUID,
+        _ connection: UnixSocketConnection, connectionId: UUID, peerProcess: AppIPCPeerProcess?,
         io: AppIPCConnectionIO, writer: AgentStudioAppIPCConnectionWriter
     ) async {
 
-        do {
-            let credentials = try connection.peerCredentials(using: peerCredentialProvider)
-            try peerCredentialGate.validate(credentials)
-        } catch {
-            return
-        }
-
         let socketSubscriber = AgentStudioAppIPCSocketEventSubscriber(writer: writer)
-        let connectionState = AgentStudioAppIPCConnectionState()
+        let connectionState = AgentStudioAppIPCConnectionState(peerProcess: peerProcess)
 
         let reader = AgentStudioAppIPCConnectionReader(
             methodRegistry: methodRegistry, connection: connection, io: io, writer: writer,
@@ -351,7 +348,8 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
                 connectionState.endCause ?? (serverIsStopping() ? .stopping : .eof)
             },
             replyEnvelopeOverheadBytes: replyEnvelopeOverheadBytes,
-            paneClaimAdmission: service.ports.paneClaimAdmission, runtimeId: service.configuration.runtimeId
+            paneClaimAdmission: service.ports.paneClaimAdmission, runtimeId: service.configuration.runtimeId,
+            peerProcess: connectionState.peerProcess
         )
         let tools = AppIPCTargetResolutionTools { [self] rawHandle in
             try await canonicalHandle(fromRawHandle: rawHandle, principal: context.principal)
@@ -527,7 +525,9 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
     /// Registers the connection and spawns its handler `Task` in the same
     /// locked section that records it, so a handler that finishes
     /// immediately can never remove an entry before this call inserted it.
-    private func registerConnectionAndTrackHandler(_ connection: UnixSocketConnection) -> Bool {
+    private func registerConnectionAndTrackHandler(
+        _ connection: UnixSocketConnection, peerProcess: AppIPCPeerProcess?
+    ) -> Bool {
         guard serverIsRunning() else { return false }
         // The listener invokes acceptance on its own GCD queue. Construct
         // connection I/O there, outside the lifecycle lock and cooperative pool.
@@ -540,7 +540,7 @@ public final class AgentStudioAppIPCServer: @unchecked Sendable {
             let connectionIdentifier = ObjectIdentifier(connection)
             activeConnections[connectionIdentifier] = connection
             connectionHandlerTasks[connectionIdentifier] = Task { [self] in
-                await handleRegisteredConnection(connection, io: io, writer: writer)
+                await handleRegisteredConnection(connection, peerProcess: peerProcess, io: io, writer: writer)
             }
             return true
         }

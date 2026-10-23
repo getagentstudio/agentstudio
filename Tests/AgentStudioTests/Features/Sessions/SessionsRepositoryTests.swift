@@ -15,7 +15,7 @@ struct SessionsRepositoryTests {
         let firstOutcome = try await repository.applyHook(
             makeHookAdmission(
                 paneId: pane, eventName: .toolActivity,
-                signal: .toolActivity(toolName: "Read"), providerVersion: version))
+                signal: .toolActivity(toolName: "Read"), providerVersion: version), eligibility: .eligible)
         let first = try #require(committedHookCommit(from: firstOutcome))
         #expect(first.disposition == .bound)
         #expect(first.evidence.statusEffect == .applied)
@@ -32,8 +32,8 @@ struct SessionsRepositoryTests {
         let pane = UUIDv7.generate()
         let first = makeHookAdmission(paneId: pane, eventName: .toolActivity, signal: .toolActivity(toolName: "Read"))
         let second = makeHookAdmission(paneId: pane, eventName: .toolActivity, signal: .toolActivity(toolName: "Read"))
-        let committedOutcome = try await repository.applyHook(first)
-        let laterOutcome = try await repository.applyHook(second)
+        let committedOutcome = try await repository.applyHook(first, eligibility: .eligible)
+        let laterOutcome = try await repository.applyHook(second, eligibility: .eligible)
         let committed = try #require(committedHookCommit(from: committedOutcome))
         let later = try #require(committedHookCommit(from: laterOutcome))
         #expect(later.disposition == .applied)
@@ -50,7 +50,7 @@ struct SessionsRepositoryTests {
         let fixture = try SessionsDatabaseFixture()
         let repository = fixture.makeRepository()
         let pane = UUIDv7.generate()
-        let resultOutcome = try await repository.applyHook(makeHookAdmission(paneId: pane))
+        let resultOutcome = try await repository.applyHook(makeHookAdmission(paneId: pane), eligibility: .eligible)
         let result = try #require(committedHookCommit(from: resultOutcome))
         #expect(result.binding.sourceGenerationId == result.binding.bindingGenerationId)
         let counts = try await fixture.sqliteAccess.read { database in
