@@ -27,7 +27,7 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(!text.contains(recordedCLILiveCommandID.rawValue))
         #expect(
             text.components(separatedBy: "\n").contains(
-                "  agentstudio package install|snippet claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+                "  agentstudio package install|snippet|status claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
             ))
     }
 

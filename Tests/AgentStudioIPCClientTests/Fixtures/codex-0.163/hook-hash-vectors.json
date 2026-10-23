@@ -1,0 +1,300 @@
+{
+  "producer": "Codex CLI 0.163.0; rust-v0.163.0 commit 83086188ae0614bd882818ff1aa23f3194962012",
+  "command": "python3 tmp/research/provider-hook-38/produce_vectors.py; scratch codex app-server --stdio initialize + hooks/list",
+  "cases": [
+    {
+      "name": "installed-SessionStart",
+      "event": "SessionStart",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" SessionStart",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:36cf05c955057e817be0889052eec6b77b0d49e364e2da30c36f7ce752907679"
+    },
+    {
+      "name": "installed-UserPromptSubmit",
+      "event": "UserPromptSubmit",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" UserPromptSubmit",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:e588b313377124833bbc7c6757650d2a540d8ff189ab2722b1158f26eaf14c8c"
+    },
+    {
+      "name": "installed-Stop",
+      "event": "Stop",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" Stop",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:09f7af69cf8733586269f2636cec0c425d5b0dee76c4f1c45564abd2ef7dd5a3"
+    },
+    {
+      "name": "installed-Interrupt",
+      "event": "Interrupt",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" Interrupt",
+            "timeout": 1,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:418201de5981f1b7aaaf762e80c08629ffd38c03cfa0e30afada43dcf0b843c5"
+    },
+    {
+      "name": "installed-PermissionRequest",
+      "event": "PermissionRequest",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" PermissionRequest",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:d27a2ff764b65c8c51dd46e36ef56932703b0e1a17976002d8b80f1c6293ed21"
+    },
+    {
+      "name": "installed-PreToolUse",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" PreToolUse",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:8a2bea01dce074e66fe5aeb97a7f5c2c9ef110d645652c514bb4450cc7f7dadb"
+    },
+    {
+      "name": "installed-SubagentStart",
+      "event": "SubagentStart",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" SubagentStart",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:fa60a020720f840aa0ce3a0b6519550757ff21f8953dd023b08ecc9e13c65a78"
+    },
+    {
+      "name": "installed-SubagentStop",
+      "event": "SubagentStop",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" SubagentStop",
+            "timeout": 5,
+            "async": true
+          }
+        ]
+      },
+      "expectedHash": "sha256:057b783bdcbb1fea2b234fa6f899ab7c3b18888b2d80b6e362d7721fdbf6723b"
+    },
+    {
+      "name": "installed-SessionEnd",
+      "event": "SessionEnd",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"/scratch/.codex/agentstudio/agentstudio-codex-hook.sh\" SessionEnd",
+            "timeout": 1
+          }
+        ]
+      },
+      "expectedHash": "sha256:bed6bf9c9e392d471aa4c0b57aad3ce5c2f1314ea31b3ca2af53eae54d1cc4eb"
+    },
+    {
+      "name": "raw-session-end-async",
+      "event": "SessionEnd",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "async": true,
+            "timeout": 99
+          }
+        ]
+      },
+      "expectedHash": "sha256:7c95cf3e35728acda22ff820c6979b3a04f1a1091d6f944146095cf4eb88645c"
+    },
+    {
+      "name": "clamped-session-end",
+      "event": "SessionEnd",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "async": true,
+            "timeout": 3
+          }
+        ]
+      },
+      "expectedHash": "sha256:7c95cf3e35728acda22ff820c6979b3a04f1a1091d6f944146095cf4eb88645c"
+    },
+    {
+      "name": "default-timeout",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe"
+          }
+        ]
+      },
+      "expectedHash": "sha256:8e4fe199d809da5e1f2d8b85bf31f49659bd39907a113a45622d243d7db5e48f"
+    },
+    {
+      "name": "explicit-default-timeout",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "timeout": 600
+          }
+        ]
+      },
+      "expectedHash": "sha256:8e4fe199d809da5e1f2d8b85bf31f49659bd39907a113a45622d243d7db5e48f"
+    },
+    {
+      "name": "ignored-windows-command",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "commandWindows": "ignored",
+            "timeout": 600,
+            "additionalContextLimit": 2500
+          }
+        ]
+      },
+      "expectedHash": "sha256:8e4fe199d809da5e1f2d8b85bf31f49659bd39907a113a45622d243d7db5e48f"
+    },
+    {
+      "name": "ignored-stop-matcher",
+      "event": "Stop",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "timeout": 5
+          }
+        ],
+        "matcher": "ignored"
+      },
+      "expectedHash": "sha256:e1eb1588f57709c5d0b503ad74166be932ae30985d707043fa86aabbeb93325a"
+    },
+    {
+      "name": "absent-stop-matcher",
+      "event": "Stop",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "timeout": 5
+          }
+        ]
+      },
+      "expectedHash": "sha256:e1eb1588f57709c5d0b503ad74166be932ae30985d707043fa86aabbeb93325a"
+    },
+    {
+      "name": "matcher-tool-a",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "timeout": 5
+          }
+        ],
+        "matcher": "A"
+      },
+      "expectedHash": "sha256:4a604006c73786aa944959364f087c7c24911c384438198d09a57c778d52343a"
+    },
+    {
+      "name": "matcher-tool-b",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "timeout": 5
+          }
+        ],
+        "matcher": "B"
+      },
+      "expectedHash": "sha256:d53b1da7d662d696fc11abdd8446d72b53b7a15a2e9cc3c704b5a6ed841aee6f"
+    },
+    {
+      "name": "changed-command",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "changed",
+            "timeout": 600
+          }
+        ]
+      },
+      "expectedHash": "sha256:db9d040ba825fc3d8d125b869373e365a2ade632625aaf920e5c8c99a6d92c45"
+    },
+    {
+      "name": "changed-timeout",
+      "event": "PreToolUse",
+      "group": {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "probe",
+            "timeout": 601
+          }
+        ]
+      },
+      "expectedHash": "sha256:80b7e56c7c01b82bd7ea31a9756011e7f3ce16fd3aa701d7684771d8e06062b8"
+    }
+  ]
+}

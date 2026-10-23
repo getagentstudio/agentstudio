@@ -7,6 +7,7 @@ import Testing
 @Suite("Package dispatch refuses before calling any provider installer")
 struct AgentPackageDispatchTests {
     private struct DispatchReceipt: Sendable {
+        var statuses: [AgentPackageStatusRequest] = []
         var snippets: [AgentPackageTarget] = []
         var installations: [AgentPackageInstallation] = []
         var output: [String] = []
@@ -18,6 +19,7 @@ struct AgentPackageDispatchTests {
                agentstudio package install codex [--codex-home PATH | --provider-home PATH]
                agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
                agentstudio package snippet claude|codex|cursor [OPTIONS]
+               agentstudio package status [claude|codex|cursor] [--json] [OPTIONS]
         Installs Agent Studio's hooks and skill for one provider. Without a path it uses the provider's default home.
         """
 
@@ -42,6 +44,10 @@ struct AgentPackageDispatchTests {
                 packageSnippet: { target in
                     receipt.withLock { $0.snippets.append(target) }
                     return "fixture snippet"
+                },
+                packageStatus: { request in
+                    receipt.withLock { $0.statuses.append(request) }
+                    return 19
                 }))
         let observed = receipt.withLock { $0 }
         switch row.expected {
@@ -49,14 +55,23 @@ struct AgentPackageDispatchTests {
             #expect(exitCode == 0)
             #expect(observed.installations.isEmpty)
             #expect(observed.snippets.isEmpty)
+            #expect(observed.statuses.isEmpty)
             #expect(observed.output == [Self.usage])
             #expect(observed.errors.isEmpty)
         case .usageError(let reason):
             #expect(exitCode == 64)
             #expect(observed.installations.isEmpty)
             #expect(observed.snippets.isEmpty)
+            #expect(observed.statuses.isEmpty)
             #expect(observed.output.isEmpty)
             #expect(observed.errors == ["agentstudio package: \(reason)\n\(Self.usage)"])
+        case .status(let request):
+            #expect(exitCode == 19)
+            #expect(observed.statuses == [request])
+            #expect(observed.installations.isEmpty)
+            #expect(observed.snippets.isEmpty)
+            #expect(observed.output.isEmpty)
+            #expect(observed.errors.isEmpty)
         case .snippet(let target):
             #expect(exitCode == 0)
             #expect(observed.snippets == [target])

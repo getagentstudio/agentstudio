@@ -21,6 +21,7 @@ package enum AgentPackageInvocation: Equatable, Sendable {
     case usageError(String)
     case install(AgentPackageInstallation)
     case snippet(AgentPackageTarget)
+    case status(AgentPackageStatusRequest)
 }
 
 /// Pure package syntax; provider files belong exclusively to installation.
@@ -30,15 +31,33 @@ package enum AgentPackageGrammar {
                agentstudio package install codex [--codex-home PATH | --provider-home PATH]
                agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
                agentstudio package snippet claude|codex|cursor [OPTIONS]
+               agentstudio package status [claude|codex|cursor] [--json] [OPTIONS]
         Installs Agent Studio's hooks and skill for one provider. Without a path it uses the provider's default home.
         """
 
     package static let rootHelpLine =
-        "  agentstudio package install|snippet claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+        "  agentstudio package install|snippet|status claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+
+    private static func status(_ arguments: [String]) -> AgentPackageInvocation {
+        guard arguments.filter({ $0 == "--json" }).count <= 1 else { return .usageError("--json given more than once") }
+        let rest = arguments.filter { $0 != "--json" }
+        let json = arguments.contains("--json")
+        if rest.isEmpty { return .status(.init(selection: .all, json: json)) }
+        guard !rest.contains("--provider-version") else {
+            return .usageError("unknown option --provider-version for status")
+        }
+        switch parse(["install"] + rest) {
+        case .install(let installation): return .status(.init(selection: .provider(installation.target), json: json))
+        case .usageError(let reason): return .usageError(reason)
+        case .help: return .help
+        case .snippet, .status: return .usageError("invalid status target")
+        }
+    }
 
     package static func parse(_ arguments: [String]) -> AgentPackageInvocation {
         if arguments.contains("--help") { return .help }
         guard let subcommand = arguments.first else { return .usageError("missing subcommand") }
+        if subcommand == "status" { return status(Array(arguments.dropFirst())) }
         guard subcommand == "install" || subcommand == "snippet" else {
             return .usageError("unknown subcommand \(subcommand)")
         }
@@ -84,6 +103,11 @@ package enum AgentPackageGrammar {
 package struct AgentPackageTarget: Equatable, Sendable {
     package let provider: AgentPackageProvider
     package let homePath: String?
+
+    package init(provider: AgentPackageProvider, homePath: String?) {
+        self.provider = provider
+        self.homePath = homePath
+    }
 }
 
 extension AgentPackageInstallation {

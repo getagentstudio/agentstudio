@@ -24,6 +24,7 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         package let now: @Sendable () -> Date
         package let standardInputFileDescriptor: Int32
         package let deadlineTiming: (any CallDeadlineTiming)?
+        package let packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)?
         package let packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)?
         package let installPackage: (@Sendable (AgentPackageInstallation) -> Int32)?
 
@@ -40,7 +41,8 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             standardInputFileDescriptor: Int32 = FileHandle.standardInput.fileDescriptor,
             deadlineTiming: (any CallDeadlineTiming)? = nil,
             installPackage: (@Sendable (AgentPackageInstallation) -> Int32)? = nil,
-            packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)? = nil
+            packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)? = nil,
+            packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)? = nil
         ) {
             self.arguments = arguments
             self.environment = environment
@@ -53,6 +55,7 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             self.now = now
             self.standardInputFileDescriptor = standardInputFileDescriptor
             self.deadlineTiming = deadlineTiming
+            self.packageStatus = packageStatus
             self.packageSnippet = packageSnippet
             self.installPackage = installPackage
         }
@@ -314,6 +317,11 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             case .usageError(let reason):
                 props.standardErrorSink("agentstudio package: \(reason)\n\(AgentPackageGrammar.usage)")
                 return 64
+            case .status(let request):
+                if let packageStatus = props.packageStatus { return packageStatus(request) }
+                return AgentPackageStatusCommand.run(
+                    request: request, environment: props.environment,
+                    output: props.standardOutputSink, error: props.standardErrorSink)
             case .snippet(let target):
                 do {
                     let snippet: String

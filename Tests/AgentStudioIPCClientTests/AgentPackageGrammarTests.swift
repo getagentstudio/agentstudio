@@ -23,6 +23,15 @@ struct PackageGrammarCase: Sendable {
             cases.append(
                 .init(arguments: ["snippet"] + row.arguments.dropFirst(), expected: .snippet(installation.target)))
         }
+        cases.append(.init(arguments: ["status"], expected: .status(.init(selection: .all, json: false))))
+        cases.append(.init(arguments: ["status", "--json"], expected: .status(.init(selection: .all, json: true))))
+        for provider in AgentPackageProvider.allCases {
+            cases.append(
+                .init(
+                    arguments: ["status", provider.rawValue, "--json"],
+                    expected: .status(.init(selection: .provider(.init(provider: provider, homePath: nil)), json: true))
+                ))
+        }
         // Help wins at every position, including an option value and beside errors.
         let ordinaryCases = cases
         for row in ordinaryCases {
