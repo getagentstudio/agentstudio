@@ -44,7 +44,7 @@ struct AgentStudioAppIPCServiceTests {
 
         #expect(service.configuration.runtimeId == runtimeId)
         #expect(service.configuration.accessMode == .agentStudioOnly)
-        #expect(service.methodRegistry.capabilities.methods.count == 56)
+        #expect(service.methodRegistry.capabilities.methods.count == 58)
         #expect(
             service.methodRegistry.capabilities.methods.filter { $0.name == "system.capabilities" }.count == 1
         )

@@ -14,7 +14,18 @@ struct IPCCallIntentTests {
             .read: [
                 "pane.list", "pane.current", "pane.snapshot", "terminal.status", "terminal.snapshot", "terminal.wait",
                 "pane.message.changes", "pane.context.get", "session.query", "bridge.diff.getPackage",
-                "bridge.diff.renderState", "bridge.fileView.getContent",
+                "bridge.diff.renderState", "bridge.fileView.getContent", "window.render",
+            ],
+            .control: [
+                "auth.login", "auth.status", "bridge.diff.collapseFile", "bridge.diff.expandFile", "bridge.diff.load",
+                "bridge.diff.refresh", "bridge.diff.scrollToFile", "bridge.diff.selectFile",
+                "bridge.fileTree.revealPath",
+                "bridge.fileTree.search", "bridge.fileTree.setFilter", "bridge.fileView.open",
+                "bridge.fileView.showMarkdownPreview", "bridge.telemetry.flush", "bridge.telemetry.snapshot",
+                "drawer.addPane", "drawer.toggle", "events.subscribe", "events.unsubscribe", "pane.close", "pane.focus",
+                "pane.split", "sidebar.grouping.get", "sidebar.surface.get", "system.identify", "system.ping",
+                "system.version", "terminal.send", "ui.arrangements.open", "ui.commandBar.open", "window.current",
+                "window.list", "window.resize", "workspace.current", "workspace.list",
             ],
         ]
         for (intent, names) in expected {
@@ -23,9 +34,7 @@ struct IPCCallIntentTests {
             )
         }
         let classified = expected.values.reduce(into: Set<String>()) { $0.formUnion($1) }
-        for descriptor in catalog.erasedDescriptors where !classified.contains(descriptor.metadata.name) {
-            #expect(descriptor.metadata.callIntent == .control)
-        }
+        #expect(classified == Set(catalog.erasedDescriptors.map(\.metadata.name)))
         #expect(IPCCallIntent.status.effective(hasSessionWriter: true) == .identity)
         #expect(IPCCallIntent.status.effective(hasSessionWriter: false) == .status)
     }
