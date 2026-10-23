@@ -14,7 +14,9 @@ struct AgentStudioIPCCursorObserverTests {
         arguments: ["completed", "error"])
     func cursorObserversReachReducer(childStatus: String) async throws {
         try await withPaneContextSessionsBridge { fixture in
-            let adapter = AgentStudioIPCSessionsAdapter(ingestion: fixture.ingestion, now: { fixture.time.now })
+            let adapter = AgentStudioIPCSessionsAdapter(
+                ingestion: fixture.ingestion, now: { fixture.time.now },
+                processChainReader: EligibleTestProcessChainReader())
             let paneId = fixture.paneId.uuid
             func admit(_ event: String, extra: [String: String] = [:]) async throws {
                 var fields = [
