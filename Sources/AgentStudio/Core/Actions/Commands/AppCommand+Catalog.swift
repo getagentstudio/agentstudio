@@ -938,7 +938,7 @@ extension AppCommand {
                 surfacePolicy: .exposed([.commandBar]),
                 targeting: .contextual,
                 commandBarGroupName: "Agent",
-                commandBarGroupPriority: CommandBarGroupPriority.miscellaneous)
+                commandBarGroupPriority: CommandBarGroupPriority.agent)
         case .signInGitHub:
             return authenticationDefinition(providerName: "GitHub")
         case .signInGoogle:
