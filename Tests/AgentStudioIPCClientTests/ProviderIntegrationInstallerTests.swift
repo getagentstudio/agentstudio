@@ -8,6 +8,22 @@ import Testing
 
 @Suite("Provider integration copy and preservation")
 struct ProviderIntegrationInstallerTests {
+    @Test(
+        "bundled hooks match the current generated body for existing installs",
+        arguments: AgentPackageProvider.allCases)
+    func bundledHooksMatchCurrentGeneratedBody(provider: AgentPackageProvider) throws {
+        let script = shippedPackageRoot.appending(
+            path: "providers/\(provider.rawValue)/hooks/agentstudio-\(provider.rawValue)-hook.sh")
+
+        #expect(
+            try Data(contentsOf: script)
+                == Data(
+                    ProviderHookScript.body(
+                        provider: provider, version: ProviderIntegrationVersion.current(for: provider)
+                    ).utf8)
+        )
+    }
+
     @Test("install copies a versioned script into the provider home", arguments: ["claude", "codex", "cursor"])
     func installsCopiedVersionedScript(provider: String) throws {
         let fixture = try CodexHomeFixture()
