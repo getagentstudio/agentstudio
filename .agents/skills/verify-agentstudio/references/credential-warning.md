@@ -36,7 +36,12 @@ input is not completion: retain actual CLI stdout/stderr/exit, correlated title
 completion fact and public/service readback. One foreground holder stays alive
 across the sequence; no outer command exit, SessionEnd, pane retirement or verified
 binding may legitimately clear the refusal between states. The operator waits
-for capture acknowledgment before advancing. No automatic retry or auth bypass.
+for capture acknowledgment before advancing. Line updates use shared setup's
+fixture-shell or commissioned foreground-holder child CLI, never operator-escrow
+identity substitution. Confirm each phase's owner facts, then use the wrapper's
+3 s consumer settle and one app render, including while locked. Match the same
+pane's session/refusal facts immediately before capture; locators do not prove
+warning ink. No automatic retry or auth bypass.
 
 Use the exact whole lastRefusal object, including reason, count, at and any
 remaining intent fields. Live before/after receipts must show actual time advanced
@@ -50,8 +55,9 @@ reader is denied, keep that denial and the permitted write/public-reader route;
 never broaden authentication or infer hidden values from AX.
 
 Return each phase's data and visible PASS/FAIL/UNKNOWN separately, including
-crop-only limits and native cases not run. A locked GUI leaves uncaptured
-surfaces UNKNOWN; never infer a card or toolbar from a row crop. Retire the
+crop-only limits and native cases not run. A missing/unread image leaves that
+surface UNKNOWN; a blank/stale/in-flight render after the settle is a failure.
+Never infer a card or toolbar from a row crop. Retire the
 exact owned identity before a new launch, then
 recheck source/build/CLI/PID/window. Hold existing fixtures until the Lead/operator
 owns cleanup. Missing real-path test coverage, if offered, is a separate gap for the Lead.

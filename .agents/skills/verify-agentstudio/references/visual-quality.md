@@ -20,7 +20,7 @@ The live commission must name the operator, capture owner and permitted route.
    Rows and toolbars need the declared supported narrow/typical/wide
    widths and layout variants; obtain their bounds from the target's source or
    live size receipt. If a required width cannot be reached, keep that cell
-   UNKNOWN with its reason; do not quietly omit it or substitute a mock render.
+   UNKNOWN with its reason; do not quietly omit it or substitute a simulated image.
 2. Hold content, pane identity, font/scale and sibling fixtures stable when
    comparing widths. Capture different-width panes side by side to judge shared
    alignment, plus every card state including no-message, long-message, warning,
@@ -28,8 +28,13 @@ The live commission must name the operator, capture owner and permitted route.
    only when all required surfaces are actually visible. Repeat obscured ones.
 3. Preserve each full original PNG with commit/binary, PID/start/window, pane,
    state/setup, actual surface width in points, PNG dimensions, scale, and capture
-   UTC bounds/owner. Crops keep original-pixel origins and point conversions.
-   Resized screenshots cannot establish a width or hide a clipped edge.
+   UTC/monotonic bounds and capture owner/method. App renders also retain
+   response metadata, original `image.path`, moved evidence path, owner facts
+   and before/after lock probes. Use shared setup's 3 s consumer settle and one
+   render after each state change, including while locked. Crops keep original
+   pixel origins and point conversions: surface point coordinates × image.scale.
+   `surfaces[]` locates the region; measure its actual ink/edges in the PNG.
+   Resized images cannot establish a width or hide a clipped edge.
 4. For a J2 burst, judge taste on frame 0 and frames at the glyph's extremes,
    including clipping/overlap there. Inspect the others and record "same as
    frame 0 outside the glyph region" within the declared surface only when true;
@@ -39,6 +44,16 @@ The live commission must name the operator, capture owner and permitted route.
    J5's continuously open minute observation needs its own valid time bounds at
    each width. Resize/setup **before** that timed pair; do not reopen or resize
    between its fresh and aged frames. One width's clock proof covers only it.
+
+App renders draw the live AppKit content hierarchy, including any animation in
+flight. They support static layout/text/taste judgments but omit native tab bar,
+titlebar, shadow, background vibrancy, outside-subtree tooltip/popover/menu and
+pasteboard payloads. Exact Metal terminal/WKWebView pixels are unverified and may
+be blank/stale. A stale/in-flight frame after the settle fails that observation;
+no longer wait or retry. J2 motion and final native appearance still require an
+already unlocked, separately granted Peekaboo route. No run unlocks the screen.
+Match asynchronous SESSION/status fields with the same pane's owner facts taken
+immediately before capture; metadata or expected producer values are not ink.
 
 ## Judge each frame
 
