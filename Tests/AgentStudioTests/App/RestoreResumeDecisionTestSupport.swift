@@ -25,7 +25,8 @@ struct ColdResumeTestPane: Sendable {
             .init(
                 paneId: paneId, providerIdentifier: provider, providerVersion: "1", sessionId: sessionId,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 10)))
+                recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 10),
+                chain: TestMainAgentChain.observation))
         guard case .committed(let commit) = admitted, commit.binding.providerConversationId == sessionId else {
             throw ColdResumeFixtureFailure.bindingNotAdmitted
         }

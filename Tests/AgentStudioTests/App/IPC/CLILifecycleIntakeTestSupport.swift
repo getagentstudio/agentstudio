@@ -26,7 +26,8 @@ extension PaneCLIOutboxDrainHarness {
             .init(
                 paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: session,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart, recordId: UUIDv7.generate(),
-                admittedAt: Date(timeIntervalSince1970: at)))
+                admittedAt: Date(timeIntervalSince1970: at), chain: TestMainAgentChain.observation),
+            eligibility: .eligible)
     }
 
     func bindLifecycleMain(pane: UUID, session: String, at: TimeInterval = 1) async throws {
@@ -35,7 +36,8 @@ extension PaneCLIOutboxDrainHarness {
             .init(
                 paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: session,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: at)))
+                recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: at),
+                chain: TestMainAgentChain.observation))
     }
 
     @discardableResult

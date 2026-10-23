@@ -58,7 +58,8 @@ struct RestoreResumeSameBootTests {
                 .init(
                     paneId: pane.paneId, providerIdentifier: "codex", providerVersion: "1", sessionId: pane.sessionId,
                     eventName: .sessionEnd, turnId: nil, signal: .sessionEnd,
-                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 20)))
+                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 20),
+                    chain: TestMainAgentChain.observation))
             guard case .committed(let committed) = end else {
                 Issue.record("live end not admitted")
                 return
@@ -82,6 +83,7 @@ struct RestoreResumeSameBootTests {
             .init(
                 paneId: pane.paneId, providerIdentifier: "codex", providerVersion: "1", sessionId: pane.sessionId,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 25)))
+                recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 25),
+                chain: TestMainAgentChain.observation))
     }
 }

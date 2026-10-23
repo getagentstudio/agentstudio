@@ -66,7 +66,8 @@ struct RestoreResumeDecisionBoundaryTests {
                         paneId: pane.paneId, providerIdentifier: "codex", providerVersion: "1",
                         sessionId: pane.sessionId,
                         eventName: .sessionEnd, turnId: nil, signal: .sessionEnd,
-                        recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 20)))
+                        recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 20),
+                        chain: TestMainAgentChain.observation))
                 hold.release()
                 #expect(await operation.value.evidence == .unknown(.changedWhileClosed))
             } catch {

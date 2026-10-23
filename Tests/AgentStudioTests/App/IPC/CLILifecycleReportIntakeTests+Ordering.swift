@@ -35,7 +35,8 @@ extension CLILifecycleReportIntakeTests {
                 .init(
                     paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: liveSession,
                     eventName: .turnStart, turnId: "new-live-turn", signal: .turnStart,
-                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 4)))
+                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 4),
+                    chain: TestMainAgentChain.observation))
             #expect(
                 try await harness.lifecycleContext(pane: pane).currentBinding?.providerConversationId == liveSession)
             try await assertReloadedLifecycleQuery(harness, pane: pane, health: .live)
@@ -142,9 +143,10 @@ func assertReloadedLifecycleQuery(
 ) async throws {
     let ingestion = SessionsIngestion(
         repository: harness.repository, limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
-        probe: { _ in })
+        probe: { _ in }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
     do {
-        let adapter = AgentStudioIPCSessionsAdapter(ingestion: ingestion)
+        let adapter = AgentStudioIPCSessionsAdapter(
+            ingestion: ingestion, processChainReader: EligibleTestProcessChainReader())
         let query = try await adapter.readSessionState(paneId: pane, params: .init(handle: "self"))
         #expect(query.sourceHealth == health)
         await ingestion.finish()

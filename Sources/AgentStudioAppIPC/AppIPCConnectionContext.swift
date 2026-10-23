@@ -1,3 +1,4 @@
+import AgentStudioIPCTransport
 import AgentStudioProgrammaticControl
 import Foundation
 
@@ -9,6 +10,7 @@ package enum AppIPCConnectionEndCause: Equatable, Sendable {
 
 package struct AppIPCConnectionContext: Sendable {
     package let contextId: UUID
+    package let peerProcess: AppIPCPeerProcess?
     package let channel: AgentStudioIPCChannel
     package let authenticatedContext: AgentStudioIPCAuthenticatedContext?
     package var principal: IPCPrincipal? { requestPrincipal ?? authenticatedContext?.principal }
@@ -34,9 +36,11 @@ package struct AppIPCConnectionContext: Sendable {
         replyEnvelopeOverheadBytes: Int = 0,
         paneClaimAdmission: AppIPCPaneClaimAdmission? = nil,
         runtimeId: UUID? = nil,
-        requestPrincipal: IPCPrincipal? = nil
+        requestPrincipal: IPCPrincipal? = nil,
+        peerProcess: AppIPCPeerProcess? = nil
     ) {
         self.requestPrincipal = requestPrincipal
+        self.peerProcess = peerProcess
         self.paneClaimAdmission = paneClaimAdmission
         self.runtimeId = runtimeId
         self.contextId = contextId
@@ -61,7 +65,8 @@ package struct AppIPCConnectionContext: Sendable {
             authenticate: authenticateConnection, authenticationStatus: readAuthenticationStatus,
             eventSubscriber: eventSubscriber, connectionEndCause: readConnectionEndCause,
             replyEnvelopeOverheadBytes: replyEnvelopeOverheadBytes,
-            paneClaimAdmission: paneClaimAdmission, runtimeId: runtimeId, requestPrincipal: principal)
+            paneClaimAdmission: paneClaimAdmission, runtimeId: runtimeId, requestPrincipal: principal,
+            peerProcess: peerProcess)
     }
 
     package func revalidatePaneClaim() throws {

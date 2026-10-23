@@ -59,7 +59,8 @@ extension RestoreResumeDecisionBoundaryTests {
                 .init(
                     paneId: pane.paneId, providerIdentifier: "codex", providerVersion: "1", sessionId: pane.sessionId,
                     eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 25)))
+                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 25),
+                    chain: TestMainAgentChain.observation))
             try await pane.repository.clearReportedEvidenceForChangedBinding(paneId: pane.paneId)
             let later = PaneForegroundLook(
                 paneId: pane.paneId, zmxSessionId: pane.look.zmxSessionId, sessionIdentity: pane.look.sessionIdentity,

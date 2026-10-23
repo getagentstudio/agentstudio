@@ -117,7 +117,8 @@ struct RestoreResumeObservationHandoffTests {
             .init(
                 paneId: paneId, providerIdentifier: "codex", providerVersion: "fixture",
                 sessionId: UUIDv7.generate().uuidString, eventName: .sessionStart, turnId: nil,
-                signal: .sessionStart, recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 1)))
+                signal: .sessionStart, recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 1),
+                chain: TestMainAgentChain.observation), eligibility: .eligible)
         guard case .committed(let commit) = bound else { throw HandoffDecisionFailure.notBound }
         let generation = commit.binding.bindingGenerationId
         let oldLaunch = UUIDv7.generate()

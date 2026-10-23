@@ -43,7 +43,11 @@ func makeTestIPCSystemCapabilitiesComposition(
     channel: AgentStudioIPCChannel
 ) throws -> IPCSystemCapabilitiesComposition {
     let available = registrations.filter {
-        $0.descriptor.metadata.exposure == .allChannels || channel == .debug
+        switch $0.descriptor.metadata.exposure {
+        case .allChannels: true
+        case .debugTesting: channel == .debug
+        case .notExposed: false
+        }
     }
     let availableNames = Set(available.map(\.descriptor.metadata.name))
     let recognizedUnexposedMethods = registrations.map(\.descriptor.metadata)
@@ -128,6 +132,7 @@ struct LiveServerFixture: Sendable {
         additionalRegistrations: [AnyAppIPCMethodRegistration] = [],
         paneClaimAdmission: AppIPCPaneClaimAdmission = .init(membershipRefusal: { _ in .appUnavailable }),
         eventBroker: IPCEventBroker = IPCEventBroker(),
+        peerCredentialProvider: any PeerCredentialProviding = DarwinPeerCredentialProvider(),
         makeConnectionIO: @escaping @Sendable (UnixSocketConnection) -> AppIPCConnectionIO = AppIPCConnectionIO.live,
         makeConnectionWriter: @escaping @Sendable (AppIPCConnectionIO, Int) -> AgentStudioAppIPCConnectionWriter = {
             AgentStudioAppIPCConnectionWriter(io: $0, maxFrameBytes: $1)
@@ -223,6 +228,7 @@ struct LiveServerFixture: Sendable {
                     principalRegistry: principalRegistry,
                     credentialContinuityPort: credentialContinuityPort,
                     cliStoreReadThroughPort: cliStoreReadThroughPort,
+                    peerCredentialProvider: peerCredentialProvider,
                     makeConnectionIO: makeConnectionIO,
                     makeConnectionWriter: makeConnectionWriter
                 )

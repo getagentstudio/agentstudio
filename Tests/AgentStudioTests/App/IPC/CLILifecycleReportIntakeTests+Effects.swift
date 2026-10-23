@@ -49,7 +49,8 @@ extension CLILifecycleReportIntakeTests {
                 .init(
                     paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: session,
                     eventName: .sessionStart, turnId: nil, signal: .sessionStart, recordId: UUIDv7.generate(),
-                    admittedAt: Date(timeIntervalSince1970: 1)))
+                    admittedAt: Date(timeIntervalSince1970: 1), chain: TestMainAgentChain.observation),
+                eligibility: .eligible)
             let original = try await harness.lifecycleContext(pane: pane).currentBinding
             let other = UUIDv7.generate().uuidString
             try await harness.appendLifecycle(pane: pane, session: other, event: event, at: 2.0006)

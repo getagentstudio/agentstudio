@@ -9,7 +9,7 @@ import Testing
 @testable import AgentStudioCore
 @testable import AgentStudioTestSupport
 
-/// S7 exhaustiveness against the real owners: every `AppCommand` has a typed
+/// Exhaustiveness against real owners: every IPC-exposed AppCommand has a typed
 /// routing case in the App shell or the workspace controller. An owner that
 /// reports `.unsupportedCommand` for both means the command has no delivery
 /// path at all, which is the failure this suite exists to catch.
@@ -25,7 +25,7 @@ struct AgentStudioIPCCommandRealOwnerCoverageTests {
     /// recording-owner dispatch coverage suite instead.
     static let commandsExcludedFromLiveOwnerExecution: Set<AppCommand> = [.newWindow]
 
-    @Test("every AppCommand has a typed routing case in a real owner")
+    @Test("every IPC-exposed AppCommand has a typed routing case in a real owner")
     func everyAppCommandHasARealOwnerRoutingCase() async throws {
         let windowId = UUIDv7.generate()
         let harness = makeHarness(workspaceWindowId: windowId)
@@ -34,7 +34,7 @@ struct AgentStudioIPCCommandRealOwnerCoverageTests {
         delegate.atomStore = AtomRegistry()
 
         var unrouted: [String] = []
-        for command in AppCommand.allCases {
+        for command in AppCommand.allCases where command.ipcSpec.exposure != .notExposed {
             guard !Self.commandsExcludedFromLiveOwnerExecution.contains(command) else { continue }
             for variant in command.ipcSpec.argumentVariants {
                 let arguments = try Self.liveArguments(
@@ -63,7 +63,7 @@ struct AgentStudioIPCCommandRealOwnerCoverageTests {
         let windowId = UUIDv7.generate()
 
         var shellOwned: Set<AppCommand> = []
-        for command in AppCommand.allCases {
+        for command in AppCommand.allCases where command.ipcSpec.exposure != .notExposed {
             guard !Self.commandsExcludedFromLiveOwnerExecution.contains(command) else {
                 shellOwned.insert(command)
                 continue

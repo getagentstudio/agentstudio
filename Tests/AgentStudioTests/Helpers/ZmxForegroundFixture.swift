@@ -476,7 +476,8 @@ private func seedZmxForegroundBinding(
         .init(
             paneId: paneId, providerIdentifier: providerIdentifier, providerVersion: "fixture",
             sessionId: UUIDv7.generate().uuidString, eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-            recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 1)))
+            recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 1),
+            chain: TestMainAgentChain.observation), eligibility: .eligible)
     guard case .committed(let commit) = outcome else { throw POSIXError(.EINVAL) }
     return commit.binding.bindingGenerationId
 }

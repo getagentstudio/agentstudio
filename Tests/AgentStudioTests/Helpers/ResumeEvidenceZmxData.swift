@@ -70,8 +70,8 @@ final class ResumeEvidenceZmxData {
         let access = ResumeEvidenceSQLiteAccess(database: database)
         let repository = SessionsRepository(sqliteAccess: access)
         let ingestion = SessionsIngestion(
-            repository: repository, limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in }
-        )
+            repository: repository, limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
+            probe: { _ in }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let membership = TestPaneContextMembership()
         let service = PaneContextService(
             sqliteAccess: access, clock: TestPushClock(), wallNow: { Date(timeIntervalSince1970: 10) },
@@ -100,7 +100,7 @@ final class ResumeEvidenceZmxData {
                 paneId: pane, providerIdentifier: provider, providerVersion: "proof", sessionId: session,
                 eventName: end ? .sessionEnd : .sessionStart, turnId: nil,
                 signal: end ? .sessionEnd : .sessionStart, recordId: UUIDv7.generate(),
-                admittedAt: Date(timeIntervalSince1970: at ?? (end ? 20 : 10))))
+                admittedAt: Date(timeIntervalSince1970: at ?? (end ? 20 : 10)), chain: TestMainAgentChain.observation))
     }
 
     func append(pane: UUID, session: String, provider: String, start: Bool = false, at: TimeInterval = 30) async throws

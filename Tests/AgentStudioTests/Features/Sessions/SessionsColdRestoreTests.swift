@@ -14,7 +14,7 @@ struct SessionsColdRestoreTests {
         let pane = UUIDv7.generate()
         let session = UUIDv7.generate().uuidString
         let hook = makeHookAdmission(paneId: pane, sessionId: session)
-        if !confirmed { _ = try await repository.applyHook(hook) }
+        if !confirmed { _ = try await repository.applyHook(hook, eligibility: .eligible) }
         try await withSessionsIngestion(repository: repository) { ingestion in
             if confirmed { _ = try await ingestion.submitHook(hook) }
             let before = try #require(try await repository.statusContext(paneId: pane).currentBinding)
@@ -34,13 +34,41 @@ struct SessionsColdRestoreTests {
         }
     }
 
+    @Test(arguments: [false, true], [false, true])
+    func coldRestorePreservesMainEligibility(eligible: Bool, sameSession: Bool) async throws {
+        let fixture = try SessionsDatabaseFixture()
+        let repository = fixture.makeRepository()
+        let pane = UUIDv7.generate()
+        let session = UUIDv7.generate().uuidString
+        let incomingSession = sameSession ? session : UUIDv7.generate().uuidString
+        try await withSessionsIngestion(repository: repository) { ingestion in
+            _ = try await ingestion.submitHook(makeHookAdmission(paneId: pane, sessionId: session))
+            let ended = try #require(try await ingestion.endLiveMainForColdRestore(paneId: pane))
+            let incoming = SessionsHookAdmission(
+                paneId: pane, providerIdentifier: "codex", providerVersion: "9.9.9", sessionId: incomingSession,
+                eventName: .sessionStart, turnId: nil, signal: .sessionStart, recordId: UUIDv7.generate(),
+                admittedAt: Date(timeIntervalSince1970: 1_800_000_001),
+                chain: eligible ? TestMainAgentChain.observation : .unknown(.peerUnbound))
+            let outcome = try await ingestion.submitHook(incoming)
+            let expectedDisposition: SessionsHookDisposition? = eligible ? .bound : sameSession ? .recordedOnly : nil
+            #expect(committedHookCommit(from: outcome)?.disposition == expectedDisposition)
+            let stored = try await repository.statusContext(paneId: pane)
+            #expect(stored.currentBinding?.status == (eligible ? .active : .ended))
+            #expect(stored.currentBinding?.providerConversationId == (eligible ? incomingSession : session))
+            #expect(stored.bindings.count == (eligible && !sameSession ? 2 : 1))
+            #expect(
+                try await ingestion.commitColdResume(paneId: pane, bindingGenerationId: ended.bindingGenerationId)
+                    == (!eligible && !sameSession))
+        }
+    }
+
     @Test("a crash after cold end has no main to return on the next launch")
     func crashAfterColdEndMissesResume() async throws {
         let fixture = try SessionsDatabaseFixture()
         let repository = fixture.makeRepository()
         let pane = UUIDv7.generate()
         let session = UUIDv7.generate().uuidString
-        _ = try await repository.applyHook(makeHookAdmission(paneId: pane, sessionId: session))
+        _ = try await repository.applyHook(makeHookAdmission(paneId: pane, sessionId: session), eligibility: .eligible)
         try await withSessionsIngestion(repository: repository) { ingestion in
             let ended = try await ingestion.endLiveMainForColdRestore(paneId: pane)
             #expect(ended != nil)

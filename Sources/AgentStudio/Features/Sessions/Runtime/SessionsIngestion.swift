@@ -113,6 +113,7 @@ package actor SessionsIngestion {
     }
 
     let repository: SessionsRepository
+    let terminalLeaderReader: any PaneTerminalLeaderReading
     private let limits: SessionsIngestionLimits
     private let probe: SessionsIngestionProbe
     private var acceptsSubmissions = true
@@ -218,9 +219,11 @@ package actor SessionsIngestion {
         openAskSource: any SessionOpenAskReading = EmptySessionOpenAskSource(),
         sessionEnded: @escaping @Sendable (UUID) async -> Void = { _ in },
         statusApplyMeasurement: SessionStatusApplyMeasurement = .init(),
-        statusApplyProbe: @escaping @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
+        statusApplyProbe: @escaping @Sendable (SessionStatusApplySnapshot) -> Void = { _ in },
+        terminalLeaderReader: any PaneTerminalLeaderReading
     ) {
         self.repository = repository
+        self.terminalLeaderReader = terminalLeaderReader
         self.limits = limits
         self.probe = probe
         self.paneViewedMailbox = paneViewedMailbox
@@ -378,57 +381,8 @@ extension SessionsIngestion {
             let paneId = pending.paneId
             do {
                 switch pending {
-                case .hook(let hook):
-                    let paneId = hook.hook.paneId
-                    try await restoreStatusIfNeeded(paneId: paneId)
-                    let outcome = try await repository.applyHook(
-                        hook.hook,
-                        commitParticipant: hook.commitParticipant,
-                        confirmedLiveBindingIds: statusRuntime.confirmedLiveBindingIds)
-                    if case .committed(let committed) = outcome {
-                        invalidateColdResumeIfNeeded(committed)
-                        try await applyCommittedHook(committed, admittedAt: hook.admittedAt)
-                    }
-                    clearRefusal(paneId: paneId)
-                    publishStatus(paneId: paneId)
-                    hook.continuation.resume(returning: outcome)
-                case .unverifiedStatus(let pending):
-                    let paneId = pending.paneId
-                    consumePaneViewedBatch()
-                    guard pending.remainsPresent(), !isStatusClosed,
-                        !statusRuntime.retiredPaneIds.contains(paneId)
-                    else {
-                        pending.continuation.resume(returning: .notAccepted)
-                        break
-                    }
-                    try await restoreStatusIfNeeded(paneId: paneId, remainsPresent: pending.remainsPresent)
-                    consumePaneViewedBatch()
-                    guard pending.remainsPresent(), !isStatusClosed,
-                        !statusRuntime.retiredPaneIds.contains(paneId)
-                    else {
-                        pending.continuation.resume(returning: .notAccepted)
-                        break
-                    }
-                    guard let hook = pending.hook else {
-                        storeRefusal(paneId: paneId, refusal: pending.refusal, recordedAt: pending.recordedAt)
-                        publishStatus(paneId: paneId)
-                        pending.continuation.resume(returning: .refusalRecorded)
-                        break
-                    }
-                    guard !hasActiveBinding(paneId: paneId) else {
-                        publishStatus(paneId: paneId)
-                        pending.continuation.resume(returning: .hookAcceptedWithoutStatus)
-                        break
-                    }
-                    let applied = unverifiedStatusRuntime.apply(hook)
-                    if applied, hook.signal?.name == .sessionEnd {
-                        retireRefusal(paneId: paneId, through: pending.recordedAt)
-                    }
-                    if let viewedAt = statusRuntime.latestViewedAt[paneId] {
-                        unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
-                    }
-                    publishStatus(paneId: paneId)
-                    pending.continuation.resume(returning: applied ? .hookApplied : .hookAcceptedWithoutStatus)
+                case .hook(let hook): try await consumeVerifiedHook(hook)
+                case .unverifiedStatus(let pending): try await consumeUnverifiedStatus(pending)
                 case .commandFinished(let commandFinished):
                     let committed = try await closeLiveBindingForCommandExit(
                         paneId: commandFinished.paneId, reportedAt: commandFinished.reportedAt)
@@ -466,6 +420,73 @@ extension SessionsIngestion {
             emitStatistics(for: paneId, event: .depthChanged)
         }
         consumerTask = nil
+    }
+
+    private func consumeVerifiedHook(_ pending: PendingHook) async throws {
+        let paneId = pending.hook.paneId
+        try await restoreStatusIfNeeded(paneId: paneId)
+        let eligibility = await mainEligibility(for: pending.hook, claimOnly: false)
+        consumePaneViewedBatch()
+        guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else {
+            pending.continuation.resume(returning: .ignored)
+            return
+        }
+        let outcome = try await repository.applyHook(
+            pending.hook, commitParticipant: pending.commitParticipant,
+            confirmedLiveBindingIds: statusRuntime.confirmedLiveBindingIds, eligibility: eligibility)
+        if case .committed(let committed) = outcome {
+            invalidateColdResumeIfNeeded(committed)
+            try await applyCommittedHook(committed, admittedAt: pending.admittedAt)
+        }
+        clearRefusal(paneId: paneId)
+        publishStatus(paneId: paneId)
+        pending.continuation.resume(returning: outcome)
+    }
+
+    private func consumeUnverifiedStatus(_ pending: PendingUnverifiedStatus) async throws {
+        let paneId = pending.paneId
+        consumePaneViewedBatch()
+        guard pending.remainsPresent(), !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else {
+            pending.continuation.resume(returning: .notAccepted)
+            return
+        }
+        try await restoreStatusIfNeeded(paneId: paneId, remainsPresent: pending.remainsPresent)
+        consumePaneViewedBatch()
+        guard pending.remainsPresent(), !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else {
+            pending.continuation.resume(returning: .notAccepted)
+            return
+        }
+        guard let hook = pending.hook else {
+            storeRefusal(paneId: paneId, refusal: pending.refusal, recordedAt: pending.recordedAt)
+            publishStatus(paneId: paneId)
+            pending.continuation.resume(returning: .refusalRecorded)
+            return
+        }
+        guard !hasActiveBinding(paneId: paneId) else {
+            publishStatus(paneId: paneId)
+            pending.continuation.resume(returning: .hookAcceptedWithoutStatus)
+            return
+        }
+        let eligibility = await mainEligibility(for: hook, claimOnly: true)
+        consumePaneViewedBatch()
+        guard pending.remainsPresent(), !isStatusClosed, !statusRuntime.retiredPaneIds.contains(paneId) else {
+            pending.continuation.resume(returning: .notAccepted)
+            return
+        }
+        guard !hasActiveBinding(paneId: paneId) else {
+            publishStatus(paneId: paneId)
+            pending.continuation.resume(returning: .hookAcceptedWithoutStatus)
+            return
+        }
+        let applied = unverifiedStatusRuntime.apply(hook, eligibility: eligibility)
+        if applied, hook.signal?.name == .sessionEnd {
+            retireRefusal(paneId: paneId, through: pending.recordedAt)
+        }
+        if let viewedAt = statusRuntime.latestViewedAt[paneId] {
+            unverifiedStatusRuntime.viewed(paneId: paneId, at: viewedAt)
+        }
+        publishStatus(paneId: paneId)
+        pending.continuation.resume(returning: applied ? .hookApplied : .hookAcceptedWithoutStatus)
     }
 
     fileprivate func emitStatistics(for paneId: UUID?, event: SessionsIngestionStatistics.Event) {

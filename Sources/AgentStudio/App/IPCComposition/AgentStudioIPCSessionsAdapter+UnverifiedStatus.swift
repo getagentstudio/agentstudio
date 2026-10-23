@@ -1,5 +1,6 @@
 import AgentStudioAppIPC
 import AgentStudioCore
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
@@ -7,29 +8,20 @@ import Foundation
 
 extension AgentStudioIPCSessionsAdapter {
     func recordUnverifiedStatus(
-        paneId: UUID, params: IPCSessionStatusParams,
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess? = nil,
         revalidateClaim: @escaping @Sendable () throws -> Void
     ) async throws -> IPCSessionEventResult {
-        try revalidateClaim()
-        let instant = continuousNow()
-        let at = now()
-        let hook: SessionsHookAdmission?
+        let hook = try observedUnverifiedHook(
+            paneId: paneId, params: params, peerProcess: peerProcess, revalidateClaim: revalidateClaim)
+        let instant = hook?.admissionInstant ?? continuousNow()
+        let at = hook?.admittedAt ?? now()
         let reason: AgentConnectionRefusalReason
         let eventName: String?
         switch params.report {
         case .refusal(let refusal):
-            hook = nil
             reason = Self.domainRefusal(refusal)
             eventName = nil
-        case .hook(let event, let provider, let providerSessionId):
-            guard !providerSessionId.isEmpty, event.conversationId == providerSessionId else {
-                throw AppIPCSessionsError(reason: .validationRejected)
-            }
-            let signal = try Self.providerSignal(for: event)
-            hook = SessionsHookAdmission(
-                paneId: paneId, providerIdentifier: provider.identifier, providerVersion: provider.version,
-                sessionId: providerSessionId, eventName: signal.name, turnId: event.turnId,
-                signal: signal, recordId: UUIDv7.generate(), admissionInstant: instant, admittedAt: at)
+        case .hook(let event, _, _):
             reason = .credentialNotRecognized
             eventName = event.name.rawValue
         }
@@ -47,6 +39,30 @@ extension AgentStudioIPCSessionsAdapter {
             }
         } catch { throw Self.portError(from: error) }
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
+    }
+
+    private func observedUnverifiedHook(
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess?,
+        revalidateClaim: @Sendable () throws -> Void
+    ) throws -> SessionsHookAdmission? {
+        switch params.report {
+        case .refusal:
+            try revalidateClaim()
+            return nil
+        case .hook(let event, let provider, let providerSessionId):
+            let chain = observeProcessChain(peerProcess: peerProcess, providerIdentifier: provider.identifier)
+            try revalidateClaim()
+            guard !providerSessionId.isEmpty, event.conversationId == providerSessionId else {
+                throw AppIPCSessionsError(reason: .validationRejected)
+            }
+            let signal = try Self.providerSignal(for: event)
+            let instant = continuousNow()
+            let at = now()
+            return .init(
+                paneId: paneId, providerIdentifier: provider.identifier, providerVersion: provider.version,
+                sessionId: providerSessionId, eventName: signal.name, turnId: event.turnId,
+                signal: signal, recordId: UUIDv7.generate(), admissionInstant: instant, admittedAt: at, chain: chain)
+        }
     }
 
     static func domainRefusal(_ reason: IPCAgentConnectionRefusalReason) -> AgentConnectionRefusalReason {

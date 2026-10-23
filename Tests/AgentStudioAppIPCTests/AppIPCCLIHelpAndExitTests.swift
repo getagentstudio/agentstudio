@@ -27,7 +27,7 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(!text.contains(recordedCLILiveCommandID.rawValue))
         #expect(
             text.components(separatedBy: "\n").contains(
-                "  agentstudio package install claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+                "  agentstudio package install|snippet|status|uninstall claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
             ))
     }
 
@@ -118,17 +118,35 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(output.standardOutput.isEmpty)
     }
 
-    @Test("removed package commands reject locally", arguments: ["claude", "codex", "cursor"])
-    func removedPackageCommandsRejectLocally(provider: String) async throws {
+    @Test(
+        "package uninstall stays confined and keeps skills and owner files", arguments: ["claude", "codex", "cursor"])
+    func packageUninstallConfined(provider: String) async throws {
+        let fixture = try PackageSubprocessFixture()
+        defer { fixture.dispose() }
+        let executable = try cliExecutableURL()
+        let installed = try await runCLI(
+            executableURL: executable,
+            arguments: fixture.preflight(arguments: ["package", "install", provider]),
+            environment: fixture.environment, currentDirectoryURL: fixture.root)
+        try #require(installed.exitCode == 0)
+        let home = fixture.root.appending(path: "home/.\(provider)")
+        let integration = home.appending(path: "agentstudio")
+        let ownerFile = integration.appending(path: "owner.txt")
+        try Data("owner file\n".utf8).write(to: ownerFile)
+        let skill = home.appending(path: "skills/agentstudio/SKILL.md")
+        let skillBefore = try Data(contentsOf: skill)
         let output = try await runCLI(
-            executableURL: cliExecutableURL(), arguments: ["package", "uninstall", provider],
-            environment: offlineEnvironment())
-
-        #expect(output.exitCode == 64)
-        #expect(output.standardOutput.isEmpty)
+            executableURL: executable,
+            arguments: fixture.preflight(arguments: ["package", "uninstall", provider]),
+            environment: fixture.environment, currentDirectoryURL: fixture.root)
+        #expect(output.exitCode == 0)
+        #expect(output.standardError.isEmpty)
         #expect(
-            String(bytes: output.standardError, encoding: .utf8)
-                == "agentstudio package: unknown subcommand uninstall\n\(expectedPackageUsage)\n")
+            !FileManager.default.fileExists(atPath: integration.appending(path: "agentstudio-\(provider)-hook.sh").path)
+        )
+        #expect(!FileManager.default.fileExists(atPath: integration.appending(path: "integration-version").path))
+        #expect(try Data(contentsOf: ownerFile) == Data("owner file\n".utf8))
+        #expect(try Data(contentsOf: skill) == skillBefore)
     }
 
     @Test("a real server refusal exits nonzero in the CLI process")

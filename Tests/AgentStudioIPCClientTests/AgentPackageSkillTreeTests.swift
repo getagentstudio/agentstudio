@@ -6,6 +6,31 @@ import Testing
 
 @Suite("Provider skill tree installation")
 struct AgentPackageSkillTreeTests {
+    @Test("the shipped setup guidance is published intact for every provider", arguments: AgentPackageProvider.allCases)
+    func shippedSkillContainsSetupContract(provider: AgentPackageProvider) throws {
+        let fixture = try CodexHomeFixture()
+        defer { fixture.tearDown() }
+        let package = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appending(path: "Sources/AgentStudio/Resources/AgentPackage")
+        let canonical = try Data(contentsOf: package.appending(path: "skills/agentstudio/SKILL.md"))
+        _ = try ProviderIntegrationInstaller.install(
+            .init(
+                layout: .init(provider: provider, home: fixture.codexHome), locator: .init(packageRoot: package)))
+        let installed = try Data(contentsOf: fixture.codexHome.appending(path: "skills/agentstudio/SKILL.md"))
+        #expect(installed == canonical)
+        let source = try #require(String(bytes: installed, encoding: .utf8))
+        let beginning = try #require(source.range(of: "## Set up hooks"))
+        let routing = try #require(source.range(of: "## Load the detail for the requested work"))
+        try #require(beginning.lowerBound < routing.lowerBound)
+        let setup = String(source[beginning.upperBound..<routing.lowerBound])
+        for verb in ["status", "snippet", "install", "uninstall"] {
+            #expect(setup.contains("\"$AS_CLI\" package \(verb)"))
+        }
+        #expect(setup.contains("go-ahead"))
+        #expect(setup.contains("chezmoi"))
+        #expect(setup.contains("never hand-edit provider files"))
+    }
+
     @Test("every provider installs and replaces the complete skill tree", arguments: SkillTreeProvider.allCases)
     func completeTreeReplacesStaleFiles(provider: SkillTreeProvider) throws {
         // Arrange: independent nested files, including an empty directory.

@@ -23,7 +23,8 @@ struct CLILifecycleReportIntakeTests {
                 .init(
                     paneId: pane, providerIdentifier: "codex", providerVersion: "1.0",
                     sessionId: session, eventName: .sessionStart, turnId: nil,
-                    signal: .sessionStart, recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 1)))
+                    signal: .sessionStart, recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 1),
+                    chain: TestMainAgentChain.observation))
             let params = lifecycleIntakeParams(pane: pane, session: session, event: .sessionEnd)
             let payload = try #require(String(data: JSONEncoder().encode(params), encoding: .utf8))
             let writer = harness.writer

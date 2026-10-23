@@ -37,7 +37,7 @@ extension CLILifecycleReportIntakeTests {
                 .init(
                     paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: session,
                     eventName: signal.name, turnId: "turn", kind: kind, signal: signal, recordId: UUIDv7.generate(),
-                    admittedAt: Date(timeIntervalSince1970: 2)))
+                    admittedAt: Date(timeIntervalSince1970: 2), chain: TestMainAgentChain.observation))
             #expect(try await harness.ingestion.sessionSummary(paneId: pane)?.status == expected)
             try await harness.appendLifecycle(pane: pane, session: session, event: .sessionStart, at: 3.0006)
             _ = await harness.drain()
@@ -45,10 +45,13 @@ extension CLILifecycleReportIntakeTests {
             #expect(harness.statusAtom.value(for: PaneId(existingUUID: pane))?.status == expected)
             let reloaded = SessionsIngestion(
                 repository: harness.repository,
-                limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
+                limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
+                terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
             do {
                 #expect(try await reloaded.sessionSummary(paneId: pane)?.status == expected)
-                let query = try await AgentStudioIPCSessionsAdapter(ingestion: reloaded).readSessionState(
+                let query = try await AgentStudioIPCSessionsAdapter(
+                    ingestion: reloaded, processChainReader: EligibleTestProcessChainReader()
+                ).readSessionState(
                     paneId: pane, params: .init(handle: "self"))
                 #expect(query.sourceHealth == (state == "ended" ? .ended : .live))
                 await reloaded.finish()

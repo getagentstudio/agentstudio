@@ -1,6 +1,20 @@
 #!/bin/bash
 set -euo pipefail
 
+# These shell-owned fixtures run outside TestToolResolver. Keep their Git
+# children, including the tap updater's commits, under the same test policy.
+test_git_config_count="${GIT_CONFIG_COUNT-0}"
+case "$test_git_config_count" in
+  *[!0-9]*|'') echo "Invalid test Git GIT_CONFIG_COUNT" >&2; exit 1 ;;
+esac
+test_git_config_count=$((10#$test_git_config_count))
+for test_git_policy in maintenance.auto=false gc.auto=0; do
+  export "GIT_CONFIG_KEY_${test_git_config_count}=${test_git_policy%%=*}"
+  export "GIT_CONFIG_VALUE_${test_git_config_count}=${test_git_policy#*=}"
+  test_git_config_count=$((test_git_config_count + 1))
+done
+export GIT_CONFIG_COUNT="$test_git_config_count"
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SHA="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 

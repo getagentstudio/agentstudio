@@ -76,7 +76,8 @@ struct CLILifecycleReadinessTests {
                 .init(
                     paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: session,
                     eventName: .sessionEnd, turnId: nil, kind: .completed, signal: .sessionEnd,
-                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 4)))
+                    recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 4),
+                    chain: TestMainAgentChain.observation))
             let newer = UUIDv7.generate().uuidString
             try await harness.bindLifecycleMain(pane: pane, session: newer, at: 5)
             #expect(try await harness.evidenceRepository.loadEvidence(paneId: pane) == nil)

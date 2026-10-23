@@ -46,8 +46,8 @@ struct AppResumeSessionsFixture: Sendable {
 
     func makeIngestion() -> SessionsIngestion {
         SessionsIngestion(
-            repository: repository, limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in }
-        )
+            repository: repository, limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
+            probe: { _ in }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
     }
 
     func context() async throws -> SessionsRepositoryContext {
@@ -104,5 +104,5 @@ func resumeProducerAdapter(
         ingestion: ingestion, now: { Date(timeIntervalSince1970: 3) },
         foregroundLookSink: { trigger, pane in
             await ledger.record(trigger, paneId: pane, repository: fixture.repository)
-        })
+        }, processChainReader: EligibleTestProcessChainReader())
 }

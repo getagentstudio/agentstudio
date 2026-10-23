@@ -12,7 +12,7 @@ extension SessionsRepositoryTests {
         let fixture = try SessionsDatabaseFixture()
         let pane = UUIDv7.generate()
         let baseRepository = fixture.makeRepository()
-        let initialOutcome = try await baseRepository.applyHook(makeHookAdmission(paneId: pane))
+        let initialOutcome = try await baseRepository.applyHook(makeHookAdmission(paneId: pane), eligibility: .eligible)
         _ = try #require(committedHookCommit(from: initialOutcome))
         let questionOutcome = try await baseRepository.applyHook(
             makeHookAdmission(
@@ -23,7 +23,7 @@ extension SessionsRepositoryTests {
                         SessionQuestion(
                             question: "Continue?", header: "Approval", options: [], multiSelect: false)
                     ]),
-                kind: .needsYouOpened))
+                kind: .needsYouOpened), eligibility: .eligible)
         _ = try #require(committedHookCommit(from: questionOutcome))
 
         let recorder = SessionsRepositorySQLStatementRecorder()

@@ -15,7 +15,8 @@ extension SessionsEvidenceReducer {
     static func decideBinding(
         for hook: SessionsHookAdmission,
         context: SessionsRepositoryContext,
-        confirmedLiveMain: Bool
+        confirmedLiveMain: Bool,
+        eligibility: MainEligibility
     ) -> BindingDecision {
         let ownBindings = context.bindings.filter { $0.paneId == hook.paneId }
         let ownMatching = ownBindings.first {
@@ -31,6 +32,7 @@ extension SessionsEvidenceReducer {
         if hook.providerIdentifier == "cursor", hook.eventName == .turnStart,
             liveMain == nil || liveMain?.providerIdentifier == "cursor"
         {
+            guard eligibility == .eligible else { return .ignored }
             return .accepted(
                 binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
                 disposition: .bound, supersededBinding: liveMain)
@@ -39,6 +41,12 @@ extension SessionsEvidenceReducer {
             return .accepted(binding: ownMatching, disposition: .recordedOnly, supersededBinding: nil)
         }
         if hook.eventName == .sessionStart, liveMain == nil || !confirmedLiveMain {
+            guard eligibility == .eligible else {
+                if let ownMatching, ownMatching.status == .ended {
+                    return .accepted(binding: ownMatching, disposition: .recordedOnly, supersededBinding: nil)
+                }
+                return .ignored
+            }
             return .accepted(
                 binding: makeBinding(
                     hook,
@@ -48,6 +56,7 @@ extension SessionsEvidenceReducer {
                 supersededBinding: liveMain)
         }
         if let liveMain, !confirmedLiveMain {
+            guard eligibility == .eligible else { return .ignored }
             return .accepted(
                 binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
                 disposition: .bound,
@@ -56,24 +65,43 @@ extension SessionsEvidenceReducer {
         if liveMain != nil {
             return .ignored
         }
+        guard eligibility == .eligible else { return .ignored }
         return .accepted(
             binding: makeBinding(hook, conversationId: context.matchingConversation?.id),
             disposition: .bound,
             supersededBinding: nil)
     }
 
-    static func reduceHook(_ hook: SessionsHookAdmission, context: SessionsRepositoryContext)
+    static func predictsElection(
+        for hook: SessionsHookAdmission, liveMain: SessionsBindingRecord?,
+        ownMatching: SessionsBindingRecord?, confirmedLiveMain: Bool
+    ) -> Bool {
+        if let liveMain, liveMain.bindingGenerationId == ownMatching?.bindingGenerationId { return false }
+        if hook.providerIdentifier == "cursor", hook.eventName == .turnStart,
+            liveMain == nil || liveMain?.providerIdentifier == "cursor"
+        {
+            return true
+        }
+        if ownMatching?.status == .ended, hook.eventName != .sessionStart { return false }
+        return liveMain == nil || !confirmedLiveMain
+    }
+
+    static func reduceHook(
+        _ hook: SessionsHookAdmission, context: SessionsRepositoryContext, eligibility: MainEligibility
+    )
         -> (SessionsRepositoryReduction?, BindingDecision)
     {
-        reduceHook(hook, context: context, confirmedLiveMain: true)
+        reduceHook(hook, context: context, confirmedLiveMain: true, eligibility: eligibility)
     }
 
     static func reduceHook(
         _ hook: SessionsHookAdmission,
         context: SessionsRepositoryContext,
-        confirmedLiveMain: Bool
+        confirmedLiveMain: Bool,
+        eligibility: MainEligibility
     ) -> (SessionsRepositoryReduction?, BindingDecision) {
-        let decision = decideBinding(for: hook, context: context, confirmedLiveMain: confirmedLiveMain)
+        let decision = decideBinding(
+            for: hook, context: context, confirmedLiveMain: confirmedLiveMain, eligibility: eligibility)
         guard case .accepted(let binding, let disposition, let supersededBinding) = decision
         else { return (nil, decision) }
         let effect: SessionsEvidenceStatusEffect = disposition == .recordedOnly ? .recordedOnly : .applied

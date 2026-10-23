@@ -164,7 +164,8 @@ let package = Package(
             path: "Sources/AgentStudio/Core",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
-            ]
+            ],
+            linkerSettings: [.linkedLibrary("bsm", .when(platforms: [.macOS]))]
         ),
         .target(
             name: "AgentStudioBridge",
@@ -284,7 +285,8 @@ let package = Package(
             path: "Sources/AgentStudioIPCTransport",
             swiftSettings: [
                 .swiftLanguageMode(.v6)
-            ]
+            ],
+            linkerSettings: [.linkedLibrary("bsm", .when(platforms: [.macOS]))]
         ),
         .target(
             name: "AgentStudioProgrammaticControl",

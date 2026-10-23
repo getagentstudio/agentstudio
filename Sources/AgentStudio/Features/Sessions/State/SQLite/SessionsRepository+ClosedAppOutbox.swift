@@ -87,7 +87,8 @@ extension SessionsRepositoryStorage {
         let hook = SessionsHookAdmission(
             paneId: report.paneId, providerIdentifier: report.providerIdentifier, providerVersion: "",
             sessionId: report.providerConversationId, eventName: .sessionStart, turnId: nil,
-            signal: .sessionStart, recordId: report.reportId, admittedAt: report.reportedAt)
+            signal: .sessionStart, recordId: report.reportId, admittedAt: report.reportedAt,
+            chain: .unknown(.peerUnbound))
         let revision = try insertHookOperation(
             database: database, hook: hook, disposition: .recordedOnly, binding: binding)
         let fact = SessionsEvidenceRecord(

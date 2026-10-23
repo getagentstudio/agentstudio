@@ -41,13 +41,25 @@ public struct UnixSocketTransportError: Error, Equatable, Sendable {
     }
 }
 
+public struct AppIPCPeerProcess: Equatable, Sendable {
+    public let pid: Int32
+    public let pidVersion: UInt32
+
+    public init(pid: Int32, pidVersion: UInt32) {
+        self.pid = pid
+        self.pidVersion = pidVersion
+    }
+}
+
 public struct PeerCredentials: Equatable, Sendable {
     public let userIdentifier: uid_t
     public let groupIdentifier: gid_t
+    public let peerProcess: AppIPCPeerProcess?
 
-    public init(userIdentifier: uid_t, groupIdentifier: gid_t) {
+    public init(userIdentifier: uid_t, groupIdentifier: gid_t, peerProcess: AppIPCPeerProcess?) {
         self.userIdentifier = userIdentifier
         self.groupIdentifier = groupIdentifier
+        self.peerProcess = peerProcess
     }
 }
 
@@ -56,19 +68,44 @@ public protocol PeerCredentialProviding: Sendable {
 }
 
 public struct DarwinPeerCredentialProvider: PeerCredentialProviding {
-    public init() {}
+    private let readPeerProcess: @Sendable (Int32) -> AppIPCPeerProcess?
+
+    public init() { readPeerProcess = Self.peerProcess(forAcceptedSocket:) }
+
+    package init(readPeerProcess: @escaping @Sendable (Int32) -> AppIPCPeerProcess?) {
+        self.readPeerProcess = readPeerProcess
+    }
 
     public func credentials(forAcceptedSocket fileDescriptor: Int32) throws -> PeerCredentials {
         #if canImport(Darwin)
+            // Query-time identity: capture it before any other peer inspection.
+            let peerProcess = readPeerProcess(fileDescriptor)
             var userIdentifier: uid_t = 0
             var groupIdentifier: gid_t = 0
             guard getpeereid(fileDescriptor, &userIdentifier, &groupIdentifier) == 0 else {
                 throw UnixSocketTransportError(reason: .peerCredentialsUnavailable, errnoCode: errno)
             }
 
-            return PeerCredentials(userIdentifier: userIdentifier, groupIdentifier: groupIdentifier)
+            return PeerCredentials(
+                userIdentifier: userIdentifier, groupIdentifier: groupIdentifier,
+                peerProcess: peerProcess)
         #else
             throw UnixSocketTransportError(reason: .unsupportedPlatform)
+        #endif
+    }
+
+    package static func peerProcess(forAcceptedSocket descriptor: Int32) -> AppIPCPeerProcess? {
+        #if canImport(Darwin)
+            var token = audit_token_t()
+            var length = socklen_t(MemoryLayout<audit_token_t>.size)
+            guard getsockopt(descriptor, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &length) == 0,
+                length == MemoryLayout<audit_token_t>.size
+            else { return nil }
+            let pid = audit_token_to_pid(token)
+            guard pid > 0 else { return nil }
+            return .init(pid: pid, pidVersion: UInt32(bitPattern: audit_token_to_pidversion(token)))
+        #else
+            return nil
         #endif
     }
 }

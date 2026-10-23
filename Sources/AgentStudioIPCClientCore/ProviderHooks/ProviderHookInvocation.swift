@@ -84,7 +84,11 @@ package struct ProviderHookDelivery: Sendable {
     /// Only Codex SessionEnd is provider-forced synchronous. Interrupt stays
     /// async despite sharing the provider's lifecycle timeout cap.
     package static func codexCallLimit(for event: CodexHookEventName) -> Duration {
-        event == .sessionEnd ? CLIPolicy.synchronousLifecycleHookLimit : CLIPolicy.hookCallLimit
+        switch event {
+        case .sessionEnd: CLIPolicy.synchronousLifecycleHookLimit
+        case .interrupt: CLIPolicy.asyncLifecycleHookLimit
+        default: CLIPolicy.hookCallLimit
+        }
     }
 }
 

@@ -17,7 +17,8 @@ struct ClosedAppOutboxTests {
             .init(
                 paneId: pane, providerIdentifier: provider, providerVersion: "1.0", sessionId: session,
                 eventName: .sessionStart, turnId: nil, signal: .sessionStart, recordId: UUIDv7.generate(),
-                admittedAt: Date(timeIntervalSince1970: 1)))
+                admittedAt: Date(timeIntervalSince1970: 1), chain: TestMainAgentChain.observation),
+            eligibility: .eligible)
         let original = try await repository.statusContext(paneId: pane).currentBinding
         let report = ClosedAppLifecycleReport(
             reportId: UUIDv7.generate(), paneId: pane,
@@ -43,7 +44,8 @@ struct ClosedAppOutboxTests {
                 .init(
                     paneId: pane, providerIdentifier: "codex", providerVersion: "1.0", sessionId: ownSession,
                     eventName: .sessionStart, turnId: nil, signal: .sessionStart, recordId: UUIDv7.generate(),
-                    admittedAt: Date(timeIntervalSince1970: input.evidenceTime)))
+                    admittedAt: Date(timeIntervalSince1970: input.evidenceTime), chain: TestMainAgentChain.observation),
+                eligibility: .eligible)
             if input.binding == .ended {
                 let binding = try #require(try await repository.statusContext(paneId: pane).currentBinding)
                 _ = try await repository.endLiveBinding(

@@ -53,12 +53,12 @@ struct CodexHomeFixture {
         (try? String(contentsOf: codexHome.appending(path: "hooks.json"), encoding: .utf8)) ?? ""
     }
 
-    func hooksDocument() throws -> CodexHooksDocument {
+    func hooksDocument() throws -> InstalledCodexHookSnapshot {
         let path = codexHome.appending(path: "hooks.json").path
         guard let data = fileManager.contents(atPath: path) else {
             throw AgentPackageInstallationError.configurationUnreadable(path)
         }
-        return try CodexHooksDocument(data: data, path: path)
+        return try InstalledCodexHookSnapshot(data: data)
     }
 
     func ownedGroup(event: CodexHookEventName) -> [String: Any]? {
@@ -129,5 +129,26 @@ struct CodexHomeFixture {
         let cursorScript = cursorHooks.appending(path: "agentstudio-cursor-hook.sh")
         try Data("#!/bin/sh\nexit 0\n".utf8).write(to: cursorScript)
         try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: cursorScript.path)
+    }
+}
+
+/// Independent on-disk oracle; deliberately does not use the product decoder.
+struct InstalledCodexHookSnapshot {
+    private let root: [String: Any]
+
+    init(data: Data) throws {
+        root = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+    }
+
+    func groups(event: String) -> [[String: Any]] {
+        (root["hooks"] as? [String: Any])?[event] as? [[String: Any]] ?? []
+    }
+
+    func ownedGroups(event: String, ownedCommandFragment: String) -> [[String: Any]] {
+        groups(event: event).filter { group in
+            (group["hooks"] as? [[String: Any]])?.contains {
+                ($0["command"] as? String)?.contains(ownedCommandFragment) == true
+            } == true
+        }
     }
 }

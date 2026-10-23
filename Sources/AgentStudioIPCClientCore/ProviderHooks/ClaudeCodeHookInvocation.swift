@@ -53,12 +53,11 @@ package enum ClaudeCodeHookInvocation {
         guard !PaneSessionReportingPolicy.isBackgroundSession(environment: inputs.environment) else { return 0 }
         let deadline = inputs.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit)
         let remainder = Array(inputs.arguments.dropFirst(commandPrefix.count))
-        guard let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {
+        guard remainder.count == 1, let announcedEvent = remainder.first, !announcedEvent.hasPrefix("--") else {
             inputs.diagnosticSink(IPCAgentConnectionRefusalReason.undecodablePayload.rawValue)
             return 0
         }
-        let providerVersion =
-            parsedProviderVersion(Array(remainder.dropFirst())) ?? ClaudeCodeProviderIdentity.supportedExactVersion
+        let providerVersion = ClaudeSessionRelease.current(environment: inputs.environment)
         guard
             inputs.environment["AGENTSTUDIO_PANE_TOKEN"].map({ !$0.isEmpty }) == true
                 || ProviderHookStatusReporting.configuration(environment: inputs.environment) != nil
@@ -123,16 +122,6 @@ package enum ClaudeCodeHookInvocation {
         ).refusal(.init(handle: "self", reason: reason, event: event, correlationId: correlationID))
     }
 
-    private static func parsedProviderVersion(_ arguments: [String]) -> String? {
-        guard let flagIndex = arguments.firstIndex(of: "--provider-version"),
-            case let valueIndex = arguments.index(after: flagIndex),
-            valueIndex < arguments.count
-        else {
-            return nil
-        }
-        let value = arguments[valueIndex]
-        return value.isEmpty ? nil : value
-    }
 }
 
 package enum ClaudeCodeHookInvocationError: Error, Equatable, Sendable {

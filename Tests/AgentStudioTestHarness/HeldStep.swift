@@ -58,15 +58,23 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     /// `retire`. When the arriving task is cancelled first, the cancellation
     /// policy decides: resume it as cancelled, or keep it held until a terminal
     /// call. Either way ``cancellationObserved()`` completes.
-    package func arrive(_ arrival: Arrival) async throws {
-        let admission = admitArrival(arrival, parking: .async)
-        if let terminal = admission.terminal {
-            try terminal.resolveArrival()
-            return
-        }
-        let parkingID = admission.parkingID
+    ///
+    /// `onArrivalPublished` drives a synchronous interleaving after publication,
+    /// before the arrival checks its terminal outcome or parks.
+    package func arrive(
+        _ arrival: Arrival, onArrivalPublished: @Sendable () -> Void = {}
+    ) async throws {
+        let parkingID = state.withLock { $0.allocateID() }
         let resumesOnCancellation = cancellationPolicy == .resumeOnCancellation
         try await withTaskCancellationHandler {
+            // Publication must not let a first-arrival waiter cancel this task
+            // before its cancellation handler is installed.
+            let admission = admitArrival(arrival, parking: .async)
+            onArrivalPublished()
+            if let terminal = admission.terminal {
+                try terminal.resolveArrival()
+                return
+            }
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 let terminal = state.withLock { state -> HeldStepTerminal? in
                     if let terminal = state.terminal {
@@ -124,6 +132,7 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     }
 
     /// The first arrival's value, once the work reaches the step.
+    /// Async arrivals have installed their cancellation handler before publishing.
     ///
     /// Has no deadline. When the step is never reached, the runner's hang bound
     /// cancels the waiting test and this throws ``HeldStepNeverReached`` naming
@@ -322,7 +331,6 @@ private enum HeldStepParking {
 
 private struct HeldStepAdmission<Arrival: Sendable> {
     let isFirstArrival: Bool
-    let parkingID: UInt64
     let terminal: HeldStepTerminal?
     let firstArrivalWaiters: [CheckedContinuation<Arrival, any Error>]
 }
@@ -368,18 +376,16 @@ private struct HeldStepState<Arrival: Sendable> {
         if let terminal {
             return HeldStepAdmission(
                 isFirstArrival: arrivals.count == 1,
-                parkingID: 0,
                 terminal: terminal,
                 firstArrivalWaiters: waiters
             )
         }
-        let parkingID = allocateID()
         if case .blocking(let semaphore) = parking {
+            let parkingID = allocateID()
             parkedBlockingArrivals[parkingID] = semaphore
         }
         return HeldStepAdmission(
             isFirstArrival: arrivals.count == 1,
-            parkingID: parkingID,
             terminal: nil,
             firstArrivalWaiters: waiters
         )

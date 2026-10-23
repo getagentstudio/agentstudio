@@ -24,6 +24,8 @@ struct SessionsPaneContextComposition: Sendable {
         var statusApplyProbe: @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
         var activityClock: PaneActivityClock?
         var foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
+        var terminalLeaderReader: (any PaneTerminalLeaderReading)?
+        var processChainReader: (any ProcessChainReading)?
     }
 
     let ingestion: SessionsIngestion
@@ -42,7 +44,9 @@ struct SessionsPaneContextComposition: Sendable {
             limits: inputs.limits, probe: inputs.ingestionProbe, paneViewedMailbox: inputs.paneViewedMailbox,
             statusSink: inputs.statusSink, openAskSource: bridge,
             sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) },
-            statusApplyMeasurement: inputs.statusApplyMeasurement, statusApplyProbe: inputs.statusApplyProbe)
+            statusApplyMeasurement: inputs.statusApplyMeasurement, statusApplyProbe: inputs.statusApplyProbe,
+            terminalLeaderReader: inputs.terminalLeaderReader
+                ?? AppPaneTerminalLeaderReader(datastore: inputs.datastore))
         let service = PaneContextService(
             sqliteAccess: WorkspacePaneContextSQLiteAccess(datastore: inputs.datastore), clock: inputs.clock,
             wallNow: inputs.wallNow, membership: inputs.directory,
@@ -57,7 +61,8 @@ struct SessionsPaneContextComposition: Sendable {
                 ingestion: ingestion, now: inputs.wallNow,
                 activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup,
                 performanceTraceRecorder: inputs.performanceTraceRecorder,
-                foregroundLookSink: inputs.foregroundLookSink),
+                foregroundLookSink: inputs.foregroundLookSink,
+                processChainReader: inputs.processChainReader ?? DarwinProcessChainReader()),
             paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(
                 service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder,
                 foregroundLookSink: inputs.foregroundLookSink),
