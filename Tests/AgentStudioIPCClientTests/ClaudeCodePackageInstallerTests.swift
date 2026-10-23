@@ -99,7 +99,7 @@ struct ClaudeCodePackageInstallerTests {
         for event in ClaudeCodeHookEvent.allCases {
             let commands = ownedCommands(try fixture.hookGroups(for: event.rawValue))
             #expect(commands.count == 1)
-            #expect(commands.first?.hasSuffix(" \(event.rawValue) 2.1.274") == true)
+            #expect(commands.first?.hasSuffix(" \(event.rawValue)") == true)
         }
         let skill = fixture.configurationDirectory.appending(path: "skills/agentstudio/SKILL.md")
         let marker = fixture.configurationDirectory.appending(path: "skills/agentstudio/.agentstudio-package")
@@ -126,13 +126,17 @@ struct ClaudeCodePackageInstallerTests {
             let process = Process()
             process.executableURL = URL(fileURLWithPath: "/bin/sh")
             process.arguments = ["-c", command]
-            process.environment = ["AGENTSTUDIO_CLI": cli.path, "HOOK_CAPTURE_FILE": capture.path]
+            process.environment = [
+                "AGENTSTUDIO_CLI": cli.path, "HOOK_CAPTURE_FILE": capture.path, "HOME": fixture.root.path,
+                "CLAUDE_CONFIG_DIR": fixture.configurationDirectory.path,
+                "CODEX_HOME": fixture.root.appending(path: "codex").path,
+            ]
             process.standardOutput = sink
             process.standardError = sink
             let status = try await awaitProcessExit(process)
             #expect(status == 0)
             let received = try String(contentsOf: capture, encoding: .utf8).split(separator: "\n").map(String.init)
-            #expect(received == ["hook", "claude", event.rawValue, "--provider-version", "2.1.274"])
+            #expect(received == ["hook", "claude", event.rawValue])
         }
     }
 
@@ -191,7 +195,10 @@ struct ClaudeCodePackageInstallerTests {
             #expect(groups.count == 2)
             #expect(groups.first == userHook)
             let commands = ownedCommands(groups)
-            #expect(commands == ["\"\(fixture.installation.hookScriptURL.path)\" \(event.rawValue) 2.1.274"])
+            #expect(
+                commands == [
+                    "\"\(fixture.configurationDirectory.appending(path: "agentstudio/agentstudio-claude-hook.sh").path)\" \(event.rawValue)"
+                ])
             let handler = try #require(Self.ownedHandler(groups))
             #expect(handler["async"] == .bool(true))
             #expect(handler["timeout"] == .number(ClaudeCodePackageInstallation.hookTimeoutSeconds))
@@ -304,7 +311,9 @@ struct ClaudeCodePackageInstallerTests {
 
         // Assert
         #expect(notices == ["notice: replacing modified agentstudio entry Stop"])
-        #expect(try Data(contentsOf: fixture.settingsURL) == expected)
+        #expect(
+            try JSONDecoder().decode(JSONValue.self, from: Data(contentsOf: fixture.settingsURL))
+                == JSONDecoder().decode(JSONValue.self, from: expected))
     }
 
     @Test("A missing configuration directory fails without writing anything")
@@ -320,7 +329,7 @@ struct ClaudeCodePackageInstallerTests {
         )
 
         // Act / Assert
-        #expect(throws: ClaudeCodePackageInstallerError.configurationDirectoryUnavailable(absent.path)) {
+        #expect(throws: AgentPackageInstallationError.providerHomeUnavailable(absent.path)) {
             try installation.install(notice: { _ in })
         }
         #expect(!FileManager.default.fileExists(atPath: absent.path))
@@ -338,7 +347,7 @@ struct ClaudeCodePackageInstallerTests {
         let original = try Data(contentsOf: fixture.settingsURL)
 
         // Act / Assert
-        #expect(throws: ClaudeCodePackageInstallerError.hooksValueNotAnObject(fixture.settingsURL.path)) {
+        #expect(throws: AgentPackageInstallationError.configurationUnreadable(fixture.settingsURL.path)) {
             try fixture.installation.install(notice: { _ in })
         }
         #expect(try Data(contentsOf: fixture.settingsURL) == original)
@@ -358,7 +367,7 @@ struct ClaudeCodePackageInstallerTests {
         )
 
         // Act / Assert
-        #expect(throws: ClaudeCodePackageInstallerError.self) {
+        #expect(throws: AgentPackageInstallationError.self) {
             try installation.install(notice: { _ in })
         }
         #expect(!FileManager.default.fileExists(atPath: fixture.settingsURL.path))
@@ -417,7 +426,7 @@ struct ClaudeCodePackageCommandTests {
         // Assert
         #expect(exitCode == 1)
         #expect(errors.count == 1)
-        #expect(errors.first?.contains("configuration directory is missing or not writable") == true)
+        #expect(errors.first?.contains("no provider home at /nonexistent/agentstudio") == true)
     }
 
     @Test("The installed Claude Code release is parsed from its version line")

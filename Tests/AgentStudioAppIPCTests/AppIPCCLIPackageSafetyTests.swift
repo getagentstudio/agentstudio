@@ -9,6 +9,7 @@ let expectedPackageUsage = """
     Usage: agentstudio package install claude [--config-dir PATH] [--provider-version VERSION]
            agentstudio package install codex [--codex-home PATH | --provider-home PATH]
            agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
+           agentstudio package snippet claude|codex|cursor [OPTIONS]
     Installs Agent Studio's hooks and skill for one provider. Without a path it uses the provider's default home.
     """
 

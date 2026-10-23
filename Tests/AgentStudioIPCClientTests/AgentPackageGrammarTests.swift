@@ -17,6 +17,12 @@ struct PackageGrammarCase: Sendable {
         for provider in ["claude", "codex", "cursor"] {
             cases += providerCases(provider)
         }
+        let installs = cases
+        for row in installs where row.arguments.first == "install" {
+            guard case .install(let installation) = row.expected else { continue }
+            cases.append(
+                .init(arguments: ["snippet"] + row.arguments.dropFirst(), expected: .snippet(installation.target)))
+        }
         // Help wins at every position, including an option value and beside errors.
         let ordinaryCases = cases
         for row in ordinaryCases {

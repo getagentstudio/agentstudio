@@ -94,20 +94,10 @@ package enum ClaudeCodePackageCommand {
     }
 
     private static func describe(_ error: any Error) -> String {
-        switch error {
-        case ClaudeCodePackageInstallerError.configurationDirectoryUnavailable(let path):
-            "configuration directory is missing or not writable: \(path)"
-        case ClaudeCodePackageInstallerError.packageResourcesUnavailable(let path):
-            "agent package resources are missing: \(path)"
-        case ClaudeCodePackageInstallerError.settingsUnreadable(let path):
-            "settings.json is not readable JSON: \(path)"
-        case ClaudeCodePackageInstallerError.settingsNotAnObject(let path):
-            "settings.json is not a JSON object: \(path)"
-        case ClaudeCodePackageInstallerError.hooksValueNotAnObject(let path):
-            "\(path) has a non-object \"hooks\" value; not modified"
-        default:
-            "unexpected failure"
+        if let installationError = error as? AgentPackageInstallationError {
+            return installationError.description
         }
+        return "unexpected failure"
     }
 }
 
