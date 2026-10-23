@@ -103,8 +103,8 @@ struct ForegroundProjectorProducerTests {
     }
 
     @Test(
-        "surface replacement, close and reset each close the real open window",
-        arguments: ["replace", "close", "reset"])
+        "replacement, close, reset, restore arm and retirement close the real open window",
+        arguments: ["replace", "close", "reset", "restoreArm", "retire"])
     func discardsCloseWindow(discard: String) async throws {
         try await withForegroundProjectorFixture { fixture in
             let window = try await fixture.grow(first: 100, latest: 140)
@@ -114,8 +114,15 @@ struct ForegroundProjectorProducerTests {
             case "replace": await fixture.ingest(first: 200, latest: 200, surface: UUIDv7.generate())
             case "close":
                 await fixture.projector.closeSurface(surfaceID: fixture.surfaceId, paneID: fixture.foreground.paneId)
+            case "restoreArm":
+                await fixture.projector.armRestorePhase(
+                    paneID: fixture.foreground.paneId, generation: .init(rawValue: 1))
+            case "retire": await fixture.projector.retirePanePermanently(paneID: fixture.foreground.paneId)
             default: await fixture.projector.reset()
             }
+            // The source operation has returned: a missing delivered edge
+            // fails here instead of waiting for a fact whose producer ended.
+            try #require(fixture.edges.closed() == [window])
             try await fixture.edges.expectClose(window)
             try await fixture.foreground.expectScheduled()
             await fixture.foreground.clock.waitForPendingSleepCount(atLeast: 1)

@@ -140,7 +140,7 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             let generation = allocateRestoreGeneration()
             let acknowledgment = await terminalActivityRouter?.armRestorePhase(
                 paneID: pane.id,
-                restoreGeneration: generation
+                restoreGeneration: generation, resumeInvocation: plan.resume
             )
             guard acknowledgment == .armed else {
                 return .failed(

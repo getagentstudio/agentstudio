@@ -248,14 +248,22 @@ package final class TerminalActivityRouter {
         for waiter in waiters.values { waiter.resume() }
     }
 
+    package var resumedSessionStartSink: @Sendable (UUID, String, String) async -> Void {
+        Self.makeResumedSessionStartSink(
+            projector: projector, surfaceIDForPaneID: surfaceIDForPaneID,
+            callbackHandlingAccess: callbackHandlingAccess)
+    }
+
     package func armRestorePhase(
         paneID: UUID,
         restoreGeneration: RestoreGeneration,
+        resumeInvocation: ResumeInvocation? = nil,
         onWaiterRegistered: (@Sendable () -> Void)? = nil
     ) async -> RestorePhaseArmAcknowledgment {
         await awaitSourceInputReady(onWaiterRegistered: onWaiterRegistered)
         guard acceptsSourceInput, !Task.isCancelled else { return .projectorUnbound }
-        await projector.armRestorePhase(paneID: paneID, generation: restoreGeneration)
+        await projector.armRestorePhase(
+            paneID: paneID, generation: restoreGeneration, resumeInvocation: resumeInvocation)
         return .armed
     }
 
@@ -295,8 +303,9 @@ package final class TerminalActivityRouter {
                 precedingAggregate: precedingAggregate,
                 control: control
             )
-        case .restorePhaseArmed(let paneID, let restoreGeneration):
-            await projector.armRestorePhase(paneID: paneID, generation: restoreGeneration)
+        case .restorePhaseArmed(let paneID, let restoreGeneration, let resumeInvocation):
+            await projector.armRestorePhase(
+                paneID: paneID, generation: restoreGeneration, resumeInvocation: resumeInvocation)
         case .restorePhaseEnded(let paneID, let restoreGeneration):
             await projector.endRestorePhase(paneID: paneID, generation: restoreGeneration)
         case .paneRetiredPermanently(let paneID):

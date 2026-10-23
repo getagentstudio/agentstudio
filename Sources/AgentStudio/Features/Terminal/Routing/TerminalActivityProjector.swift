@@ -66,11 +66,11 @@ enum TerminalActivitySourceInput: Sendable, Equatable {
     /// SR6b: terminal activation arms a cold pane's restore phase before
     /// `createSurface` (Program Design item 13). Pane-keyed, not
     /// surface-keyed: no surface exists yet at arm time.
-    case restorePhaseArmed(paneID: UUID, restoreGeneration: RestoreGeneration)
+    case restorePhaseArmed(paneID: UUID, restoreGeneration: RestoreGeneration, resumeInvocation: ResumeInvocation?)
     /// SR6b, the no-surface route: a resumed agent's SessionStart fact can
     /// end the phase (R3) without going through a surface's ordered ingress.
-    /// Always unused in R1, which never auto-resumes; the case exists now so
-    /// the vocabulary is complete ahead of R3.
+    /// The live resumed-start adapter uses this fallback only when there is
+    /// no current surface to carry the accumulator-ordered end.
     case restorePhaseEnded(paneID: UUID, restoreGeneration: RestoreGeneration)
     /// SR6b: permanent pane retirement — `WorkspaceSurfaceCoordinator
     /// .retirePanesPermanently`, "the shared final-retirement edge for undo
@@ -137,7 +137,13 @@ package actor TerminalActivityProjector {
     /// and `retirePanePermanently` (permanent close) clear an entry; a plain
     /// `.surfaceClosed` never does. The map drives the Panes-owned consumer
     /// gating inside `consumeAggregateState`.
-    private var restorePhaseByPane: [UUID: RestoreGeneration] = [:]
+    private struct RestorePhaseArm {
+        let generation: RestoreGeneration
+        var pendingResume: ResumeInvocation?
+        let validity = RestorePhaseArmValidity()
+    }
+
+    private var restorePhaseByPane: [UUID: RestorePhaseArm] = [:]
     var unseenCloseTasks: [UUID: Task<Void, Never>] = [:]
     var agentCloseTasks: [UUID: Task<Void, Never>] = [:]
     var unseenRetirementTasks: [UUID: Task<Void, Never>] = [:]
@@ -411,19 +417,34 @@ package actor TerminalActivityProjector {
             closeSurfaceState(surfaceID: surfaceID, paneID: paneID)
             outcomes.append(.surfaceClosed(surfaceID: surfaceID, paneID: paneID))
         case .restorePhaseEnded(let generation):
-            endRestorePhase(paneID: paneID, generation: generation)
+            await endRestorePhase(paneID: paneID, generation: generation)
         }
         await emit(outcomes)
     }
 
     // The restore-phase extension owns the consumer operations. These narrow
     // module-local helpers keep the restore-generation map private to this source file.
-    func recordRestorePhaseGeneration(_ generation: RestoreGeneration, for paneID: UUID) {
-        restorePhaseByPane[paneID] = generation
+    func recordRestorePhaseGeneration(
+        _ generation: RestoreGeneration, for paneID: UUID, resumeInvocation: ResumeInvocation?
+    ) {
+        restorePhaseByPane[paneID]?.validity.invalidate()
+        restorePhaseByPane[paneID] = .init(generation: generation, pendingResume: resumeInvocation)
     }
 
     func restorePhaseGeneration(for paneID: UUID) -> RestoreGeneration? {
-        restorePhaseByPane[paneID]
+        restorePhaseByPane[paneID]?.generation
+    }
+
+    func pendingResumeInvocation(for paneID: UUID) -> ResumeInvocation? {
+        restorePhaseByPane[paneID]?.pendingResume
+    }
+
+    func restorePhaseGenerationClaim(for paneID: UUID) -> RestorePhaseGenerationClaim? {
+        restorePhaseByPane[paneID].map { .init(generation: $0.generation, validity: $0.validity) }
+    }
+
+    func consumePendingResumeInvocation(for paneID: UUID) {
+        restorePhaseByPane[paneID]?.pendingResume = nil
     }
 
     @discardableResult
@@ -431,12 +452,14 @@ package actor TerminalActivityProjector {
         paneID: UUID,
         generation: RestoreGeneration
     ) -> Bool {
-        guard restorePhaseByPane[paneID] == generation else { return false }
+        guard restorePhaseByPane[paneID]?.generation == generation else { return false }
+        restorePhaseByPane[paneID]?.validity.invalidate()
         restorePhaseByPane.removeValue(forKey: paneID)
         return true
     }
 
     func clearRestorePhaseGeneration(for paneID: UUID) {
+        restorePhaseByPane[paneID]?.validity.invalidate()
         restorePhaseByPane.removeValue(forKey: paneID)
     }
 
@@ -469,7 +492,7 @@ package actor TerminalActivityProjector {
 
     /// Test-only snapshot of the restore map; production reads it through
     /// `isRestorePhaseActive`.
-    var restorePhaseGenerationsByPane: [UUID: RestoreGeneration] { restorePhaseByPane }
+    var restorePhaseGenerationsByPane: [UUID: RestoreGeneration] { restorePhaseByPane.mapValues(\.generation) }
 
     func retirePaneStatePermanently(for paneID: UUID) {
         queueForegroundClose(paneStates[paneID]?.activityWindow)
@@ -547,6 +570,7 @@ package actor TerminalActivityProjector {
         // forever — this actor is reused across a later start() rather than
         // recreated, so nothing else ever clears it. No `.restorePhaseEnded`
         // is coming for a router that isn't running.
+        for arm in restorePhaseByPane.values { arm.validity.invalidate() }
         restorePhaseByPane.removeAll()
         await deliverForegroundEdges()
         outcomeSink = nil

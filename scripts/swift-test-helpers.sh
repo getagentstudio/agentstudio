@@ -968,6 +968,7 @@ large|CIFirstAttemptGateWorkflowTests|concurrent
 large|CISwiftBuildCachePublishScriptTests|concurrent
 large|CISwiftBuildInputsScriptTests|concurrent
 benchmark|CommandBarSearchBenchmarkTests|process-global
+benchmark|GhosttyRestoreInputBenchmarkTests|process-global
 large|CrossTabMoveRendererIntegrationTests|process-global
 large|DarwinCompositeFSEventContinuityTests|process-global
 large|DarwinFSEventStreamClientTests|process-global

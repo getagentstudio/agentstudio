@@ -377,6 +377,7 @@ extension AppDelegate {
                 },
                 activityClock: paneActivityClock,
                 foregroundLookSink: makeRestoreForegroundLookSink(),
+                resumedSessionStartSink: terminalActivityRouter?.resumedSessionStartSink,
                 terminalLeaderReader: appIPCTerminalLeaderReader,
                 processChainReader: appIPCProcessChainReader)
         )

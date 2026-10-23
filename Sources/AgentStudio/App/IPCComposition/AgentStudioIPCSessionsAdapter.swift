@@ -16,6 +16,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     let processChainReader: any ProcessChainReading
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    private let resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
     private let foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
 
     init(
@@ -25,6 +26,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil,
+        resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)? = nil,
         processChainReader: any ProcessChainReading
     ) {
         self.ingestion = ingestion
@@ -33,6 +35,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         self.activityClock = activityClock
         self.ownerPaneLookup = ownerPaneLookup
         self.performanceTraceRecorder = performanceTraceRecorder
+        self.resumedSessionStartSink = resumedSessionStartSink
         self.foregroundLookSink = foregroundLookSink
         self.processChainReader = processChainReader
     }
@@ -78,6 +81,9 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                 let trigger: ForegroundLookTrigger =
                     committed.disposition == .bound || hook.eventName == .sessionStart || hook.eventName == .sessionEnd
                     ? .bindingChanged : .agentMessage
+                if hook.eventName == .sessionStart {
+                    await resumedSessionStartSink?(paneId, hook.providerIdentifier, hook.sessionId)
+                }
                 await foregroundLookSink?(trigger, paneId)
             }
         } catch {
