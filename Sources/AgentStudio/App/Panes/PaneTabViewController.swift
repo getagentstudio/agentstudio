@@ -3787,7 +3787,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
             .setPanesSortFieldName, .setPanesSortFieldActivity,
             .toggleReposSortDirection, .togglePanesSortDirection,
             .toggleReposShowsPinned, .togglePanesShowsPinned, .togglePanesShowsDrawers,
-            .signInGitHub, .signInGoogle:
+            .signInGitHub, .signInGoogle, .copyAgentSetupPrompt:
             break
         case .enterDrawer:
             enterDrawerFromActivePane()
@@ -5153,7 +5153,7 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
         .setPanesSortFieldName, .setPanesSortFieldActivity,
         .toggleReposSortDirection, .togglePanesSortDirection,
         .toggleReposShowsPinned, .togglePanesShowsPinned, .togglePanesShowsDrawers,
-        .signInGitHub, .signInGoogle,
+        .signInGitHub, .signInGoogle, .copyAgentSetupPrompt,
     ]
 
     func canExecute(_ command: AppCommand) -> Bool {

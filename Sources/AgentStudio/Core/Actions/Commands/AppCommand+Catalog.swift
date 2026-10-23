@@ -929,6 +929,16 @@ extension AppCommand {
                 icon: .system(.folder),
                 helpText: "Open an independent worktree file viewer in a new tab"
             )
+        case .copyAgentSetupPrompt:
+            return AppCommandSpec(
+                command: self,
+                label: "Copy Agent Setup Prompt",
+                icon: .system(.documentOnDocument),
+                helpText: "Copy a prompt for an agent to set up Agent Studio provider hooks",
+                surfacePolicy: .exposed([.commandBar]),
+                targeting: .contextual,
+                commandBarGroupName: "Agent",
+                commandBarGroupPriority: CommandBarGroupPriority.miscellaneous)
         case .signInGitHub:
             return authenticationDefinition(providerName: "GitHub")
         case .signInGoogle:

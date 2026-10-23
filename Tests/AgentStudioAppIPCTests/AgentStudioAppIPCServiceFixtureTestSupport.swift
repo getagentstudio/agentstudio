@@ -43,7 +43,11 @@ func makeTestIPCSystemCapabilitiesComposition(
     channel: AgentStudioIPCChannel
 ) throws -> IPCSystemCapabilitiesComposition {
     let available = registrations.filter {
-        $0.descriptor.metadata.exposure == .allChannels || channel == .debug
+        switch $0.descriptor.metadata.exposure {
+        case .allChannels: true
+        case .debugTesting: channel == .debug
+        case .notExposed: false
+        }
     }
     let availableNames = Set(available.map(\.descriptor.metadata.name))
     let recognizedUnexposedMethods = registrations.map(\.descriptor.metadata)
