@@ -33,15 +33,19 @@ struct AgentSetupPromptCommandTests {
     }
     @Test("interactive dispatch copies exactly the shared setup prompt through the App shell")
     func interactiveCopyUsesShellOwner() throws {
-        let saved = Self.savedPasteboard()
-        defer { Self.restorePasteboard(saved) }
-        NSPasteboard.general.clearContents()
-        let pasteboardReady = NSPasteboard.general.setString("setup-prompt-positive-sentinel", forType: .string)
-        try #require(pasteboardReady, "general pasteboard service unavailable before product execution")
         let delegate = AppDelegate()
         let dispatcher = CommandDispatcherFixtureConfiguration(shellOwner: delegate).makeDispatcher()
+        let saved = Self.savedPasteboard()
+        var ownedRevision = NSPasteboard.general.changeCount
+        defer { Self.restorePasteboard(saved, ownedRevision: ownedRevision) }
+        NSPasteboard.general.clearContents()
+        let pasteboardReady = NSPasteboard.general.setString("setup-prompt-positive-sentinel", forType: .string)
+        ownedRevision = NSPasteboard.general.changeCount
+        try #require(pasteboardReady, "general pasteboard service unavailable before product execution")
         #expect(dispatcher.canDispatch(.copyAgentSetupPrompt))
-        #expect(dispatcher.dispatch(.copyAgentSetupPrompt))
+        let dispatched = dispatcher.dispatch(.copyAgentSetupPrompt)
+        ownedRevision = NSPasteboard.general.changeCount
+        #expect(dispatched)
         let promptMatches = NSPasteboard.general.string(forType: .string) == AgentSetupPrompt.text
         #expect(promptMatches)
         for verb in ["status", "snippet", "install", "uninstall"] {
@@ -55,15 +59,16 @@ struct AgentSetupPromptCommandTests {
         "explicit command ids and direct headless dispatch cannot copy on any channel",
         arguments: [AgentStudioIPCChannel.debug, .stable, .beta])
     func ipcCannotCopySetupPrompt(channel: AgentStudioIPCChannel) async throws {
-        let saved = Self.savedPasteboard()
-        defer { Self.restorePasteboard(saved) }
-        NSPasteboard.general.clearContents()
-        let pasteboardReady = NSPasteboard.general.setString("setup-prompt-refusal-sentinel", forType: .string)
-        try #require(pasteboardReady, "general pasteboard service unavailable before IPC refusal proof")
         let owner = RecordingWorkspaceIPCCommandHandler(currentWindowId: UUIDv7.generate())
         let harness = CommandAdapterHarness(channel: channel, workspaceCommandHandler: owner)
         let catalog = try await makeIPCCommandCatalogOffMain(from: harness.adapter, channel: channel)
         #expect(!catalog.commands.contains { $0.id.rawValue == "copyAgentSetupPrompt" })
+        let saved = Self.savedPasteboard()
+        NSPasteboard.general.clearContents()
+        let pasteboardReady = NSPasteboard.general.setString("setup-prompt-refusal-sentinel", forType: .string)
+        let ownedRevision = NSPasteboard.general.changeCount
+        defer { Self.restorePasteboard(saved, ownedRevision: ownedRevision) }
+        try #require(pasteboardReady, "general pasteboard service unavailable before IPC refusal proof")
         let request = IPCCommandExecutionRequest(
             commandId: .init(rawValue: "copyAgentSetupPrompt"), correlationId: UUIDv7.generate(),
             arguments: .noArguments)
@@ -91,7 +96,9 @@ struct AgentSetupPromptCommandTests {
         }
     }
 
-    private static func restorePasteboard(_ items: [NSPasteboardItem]) {
+    private static func restorePasteboard(_ items: [NSPasteboardItem], ownedRevision: Int) {
+        // A later user copy owns its new revision; cleanup must not replace it.
+        guard NSPasteboard.general.changeCount == ownedRevision else { return }
         NSPasteboard.general.clearContents()
         if !items.isEmpty { NSPasteboard.general.writeObjects(items) }
     }
