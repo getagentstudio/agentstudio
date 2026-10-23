@@ -75,6 +75,50 @@ struct ObservabilityDebugBundleSigningTests {
         #expect(FileManager.default.fileExists(atPath: fixture.url("open-args").path))
     }
 
+    @Test("debug launcher accepts an Info.plist source without URL handlers")
+    func debugLauncherAcceptsSourcePlistWithoutURLHandlers() async throws {
+        let fixture = try LauncherScriptFixture()
+        defer { fixture.cleanup() }
+        let debugCode = try await fixture.worktreeDebugCode()
+        let sourceData = try Data(contentsOf: URL(fileURLWithPath: "Sources/AgentStudio/Resources/Info.plist"))
+        var sourcePlist = try #require(
+            PropertyListSerialization.propertyList(from: sourceData, options: [], format: nil) as? [String: Any])
+        sourcePlist.removeValue(forKey: "CFBundleURLTypes")
+        let sourceURL = fixture.url("source-without-url-handlers.plist")
+        try PropertyListSerialization.data(fromPropertyList: sourcePlist, format: .xml, options: 0).write(to: sourceURL)
+        var environment = try signingEnvironment(fixture: fixture, failedItem: "none")
+        environment["AGENTSTUDIO_DITTO_BIN"] = try fixture.executable(
+            "ditto-without-url-handlers",
+            """
+            #!/bin/bash
+            if [ "$1" = "Sources/AgentStudio/Resources/Info.plist" ]; then
+              cp "\(sourceURL.path)" "$2"
+            else
+              cp -R "$1" "$2"
+            fi
+            """
+        ).path
+
+        let result = try await fixture.runScript(
+            "scripts/run-debug-observability.sh",
+            arguments: ["--skip-build", "--detach"], environment: environment)
+
+        let assembledData = try Data(
+            contentsOf: fixture.url("debug-app-artifacts/AgentStudio Debug \(debugCode).app/Contents/Info.plist"))
+        let assembledPlist = try #require(
+            PropertyListSerialization.propertyList(from: assembledData, options: [], format: nil) as? [String: Any])
+        #expect(assembledPlist["CFBundleURLTypes"] == nil)
+        #expect(assembledPlist["CFBundleDisplayName"] as? String == "Agent Studio Debug \(debugCode)")
+        try #require(result.exitCode == 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        let invocations = try String(contentsOf: fixture.url("codesign-argv"), encoding: .utf8)
+            .split(separator: "\n").map { $0.split(separator: "\t").map(String.init) }
+        #expect(invocations.filter { $0.contains("--sign") }.count == 3)
+        #expect(invocations.last?.contains("--verify") == true)
+        #expect(FileManager.default.fileExists(atPath: fixture.url("open-args").path))
+        let state = try String(contentsOf: fixture.url("latest.env"), encoding: .utf8)
+        #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_LAUNCH_METHOD=launchservices"))
+    }
+
     private func signingEnvironment(fixture: LauncherScriptFixture, failedItem: String) throws -> [String: String] {
         let buildPath = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
         try FileManager.default.copyItem(

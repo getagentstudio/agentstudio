@@ -745,7 +745,7 @@ copy_debug_bundle() {
   set_plist_string "$plist_path" CFBundleIdentifier "com.agentstudio.app.debug.d$code" || return 1
   set_plist_string "$plist_path" CFBundleName "AgentStudio Debug $code" || return 1
   set_plist_string "$plist_path" CFBundleDisplayName "Agent Studio Debug $code" || return 1
-  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist_path" >/dev/null 2>&1 || return 1
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist_path" >/dev/null 2>&1 || true
   set_plist_string "$plist_path" UTExportedTypeDeclarations:0:UTTypeIdentifier "com.agentstudio.debug.d$code.tab" || return 1
   set_plist_string "$plist_path" UTExportedTypeDeclarations:1:UTTypeIdentifier "com.agentstudio.debug.d$code.newtab" || return 1
   set_plist_string "$plist_path" UTExportedTypeDeclarations:2:UTTypeIdentifier "com.agentstudio.debug.d$code.pane" || return 1
