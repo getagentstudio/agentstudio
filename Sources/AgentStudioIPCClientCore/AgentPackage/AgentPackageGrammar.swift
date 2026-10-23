@@ -22,9 +22,10 @@ package enum AgentPackageInvocation: Equatable, Sendable {
     case install(AgentPackageInstallation)
     case snippet(AgentPackageTarget)
     case status(AgentPackageStatusRequest)
+    case uninstall(AgentPackageTarget)
 }
 
-/// Pure package syntax; provider files belong exclusively to installation.
+/// Pure package syntax; provider reads and writes begin only after parsing.
 package enum AgentPackageGrammar {
     package static let usage = """
         Usage: agentstudio package install claude [--config-dir PATH] [--provider-version VERSION]
@@ -32,11 +33,12 @@ package enum AgentPackageGrammar {
                agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
                agentstudio package snippet claude|codex|cursor [OPTIONS]
                agentstudio package status [claude|codex|cursor] [--json] [OPTIONS]
+               agentstudio package uninstall claude|codex|cursor [OPTIONS]
         Installs Agent Studio's hooks and skill for one provider. Without a path it uses the provider's default home.
         """
 
     package static let rootHelpLine =
-        "  agentstudio package install|snippet|status claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+        "  agentstudio package install|snippet|status|uninstall claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
 
     private static func status(_ arguments: [String]) -> AgentPackageInvocation {
         guard arguments.filter({ $0 == "--json" }).count <= 1 else { return .usageError("--json given more than once") }
@@ -50,7 +52,7 @@ package enum AgentPackageGrammar {
         case .install(let installation): return .status(.init(selection: .provider(installation.target), json: json))
         case .usageError(let reason): return .usageError(reason)
         case .help: return .help
-        case .snippet, .status: return .usageError("invalid status target")
+        case .snippet, .status, .uninstall: return .usageError("invalid status target")
         }
     }
 
@@ -58,14 +60,15 @@ package enum AgentPackageGrammar {
         if arguments.contains("--help") { return .help }
         guard let subcommand = arguments.first else { return .usageError("missing subcommand") }
         if subcommand == "status" { return status(Array(arguments.dropFirst())) }
-        guard subcommand == "install" || subcommand == "snippet" else {
+        guard ["install", "snippet", "uninstall"].contains(subcommand) else {
             return .usageError("unknown subcommand \(subcommand)")
         }
         guard arguments.count > 1 else { return .usageError("missing provider") }
         let provider = arguments[1]
         let acceptedOptions: [String]
         switch provider {
-        case "claude": acceptedOptions = ["--config-dir", "--provider-version"]
+        case "claude":
+            acceptedOptions = subcommand == "uninstall" ? ["--config-dir"] : ["--config-dir", "--provider-version"]
         case "codex", "cursor": acceptedOptions = ["--codex-home", "--provider-home"]
         default: return .usageError("unknown provider \(provider)")
         }
@@ -96,7 +99,11 @@ package enum AgentPackageGrammar {
         case "codex": installation = .codex(providerHomePath: values["--codex-home"] ?? values["--provider-home"])
         default: installation = .cursor(providerHomePath: values["--provider-home"] ?? values["--codex-home"])
         }
-        return subcommand == "snippet" ? .snippet(installation.target) : .install(installation)
+        switch subcommand {
+        case "snippet": return .snippet(installation.target)
+        case "uninstall": return .uninstall(installation.target)
+        default: return .install(installation)
+        }
     }
 }
 

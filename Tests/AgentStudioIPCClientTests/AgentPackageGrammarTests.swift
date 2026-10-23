@@ -8,7 +8,7 @@ struct PackageGrammarCase: Sendable {
     static var all: [Self] {
         var cases: [Self] = [
             .init(arguments: [], expected: .usageError("missing subcommand")),
-            .init(arguments: ["uninstall"], expected: .usageError("unknown subcommand uninstall")),
+            .init(arguments: ["uninstall"], expected: .usageError("missing provider")),
             .init(arguments: ["--unknown"], expected: .usageError("unknown subcommand --unknown")),
             .init(arguments: ["install"], expected: .usageError("missing provider")),
             .init(arguments: ["install", "other"], expected: .usageError("unknown provider other")),
@@ -22,6 +22,12 @@ struct PackageGrammarCase: Sendable {
             guard case .install(let installation) = row.expected else { continue }
             cases.append(
                 .init(arguments: ["snippet"] + row.arguments.dropFirst(), expected: .snippet(installation.target)))
+            if !row.arguments.contains("--provider-version") {
+                cases.append(
+                    .init(
+                        arguments: ["uninstall"] + row.arguments.dropFirst(), expected: .uninstall(installation.target))
+                )
+            }
         }
         cases.append(.init(arguments: ["status"], expected: .status(.init(selection: .all, json: false))))
         cases.append(.init(arguments: ["status", "--json"], expected: .status(.init(selection: .all, json: true))))

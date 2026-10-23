@@ -24,6 +24,7 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
         package let now: @Sendable () -> Date
         package let standardInputFileDescriptor: Int32
         package let deadlineTiming: (any CallDeadlineTiming)?
+        package let uninstallPackage: (@Sendable (AgentPackageTarget) -> Int32)?
         package let packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)?
         package let packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)?
         package let installPackage: (@Sendable (AgentPackageInstallation) -> Int32)?
@@ -42,7 +43,8 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             deadlineTiming: (any CallDeadlineTiming)? = nil,
             installPackage: (@Sendable (AgentPackageInstallation) -> Int32)? = nil,
             packageSnippet: (@Sendable (AgentPackageTarget) throws -> String)? = nil,
-            packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)? = nil
+            packageStatus: (@Sendable (AgentPackageStatusRequest) -> Int32)? = nil,
+            uninstallPackage: (@Sendable (AgentPackageTarget) -> Int32)? = nil
         ) {
             self.arguments = arguments
             self.environment = environment
@@ -55,6 +57,7 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             self.now = now
             self.standardInputFileDescriptor = standardInputFileDescriptor
             self.deadlineTiming = deadlineTiming
+            self.uninstallPackage = uninstallPackage
             self.packageStatus = packageStatus
             self.packageSnippet = packageSnippet
             self.installPackage = installPackage
@@ -317,6 +320,17 @@ package struct AgentStudioIPCClientCommandLineRunner: Sendable {
             case .usageError(let reason):
                 props.standardErrorSink("agentstudio package: \(reason)\n\(AgentPackageGrammar.usage)")
                 return 64
+            case .uninstall(let target):
+                if let uninstallPackage = props.uninstallPackage { return uninstallPackage(target) }
+                do {
+                    let lines = try ProviderIntegrationUninstaller.uninstall(
+                        layout: .resolve(target: target, environment: props.environment))
+                    for line in lines { props.standardOutputSink(line) }
+                    return 0
+                } catch {
+                    props.standardErrorSink("agentstudio package uninstall: \(error)")
+                    return 1
+                }
             case .status(let request):
                 if let packageStatus = props.packageStatus { return packageStatus(request) }
                 return AgentPackageStatusCommand.run(

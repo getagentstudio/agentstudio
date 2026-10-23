@@ -11,6 +11,7 @@ let expectedPackageUsage = """
            agentstudio package install cursor [--provider-home PATH | --codex-home PATH]
            agentstudio package snippet claude|codex|cursor [OPTIONS]
            agentstudio package status [claude|codex|cursor] [--json] [OPTIONS]
+           agentstudio package uninstall claude|codex|cursor [OPTIONS]
     Installs Agent Studio's hooks and skill for one provider. Without a path it uses the provider's default home.
     """
 
