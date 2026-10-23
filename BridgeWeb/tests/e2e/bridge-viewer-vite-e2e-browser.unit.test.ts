@@ -2,6 +2,7 @@ import type { Browser } from 'playwright';
 import { chromium } from 'playwright';
 import { afterEach, expect, test, vi } from 'vitest';
 
+import type { OwnedBridgeDevelopmentServerCleanup } from '../../scripts/dev-server/bridge-development-server-process.ts';
 import { BridgeWebTestLaunch } from '../../scripts/dev-server/bridge-web-test-launch.ts';
 import { handleLaunchPromise } from '../../scripts/dev-server/handled-launch-promise.ts';
 import {
@@ -99,13 +100,43 @@ test.each(['completed', 'failed'] as const)(
 	},
 );
 
+vi.mock('../../scripts/dev-server/owned-bridge-web-browser-host.ts', () => ({
+	startOwnedBridgeWebBrowserHost: async (props: { readonly onSpawn?: (host: unknown) => void }) => {
+		let resolveStopped: (cleanup: OwnedBridgeDevelopmentServerCleanup) => void = (): void => {};
+		const whenStopped = new Promise<OwnedBridgeDevelopmentServerCleanup>((resolve): void => {
+			resolveStopped = resolve;
+		});
+		const host = {
+			whenStopped,
+			pid: 0,
+			wsEndpoint: 'ws://controlled-browser',
+			whenExited: Promise.resolve(),
+			stdoutTail: (): string => '',
+			stderrTail: (): string => '',
+			stop: async () => {
+				const cleanup = {
+					exitCode: 0,
+					exitSignal: null,
+					forcedTerminationRequired: false,
+					ownedProcessAliveAfterStop: false,
+					browserGroups: [],
+				};
+				resolveStopped(cleanup);
+				return cleanup;
+			},
+		};
+		props.onSpawn?.(host);
+		return host;
+	},
+}));
+
 test('V1 resumed aborted A cannot acquire a browser while B is active', async (): Promise<void> => {
 	const ownerA = new AbortController();
 	const ownerB = new AbortController();
 	const browserA = makeControlledBrowser();
 	const browserB = makeControlledBrowser();
 	const launchChromium = vi
-		.spyOn(chromium, 'launch')
+		.spyOn(chromium, 'connect')
 		.mockResolvedValueOnce(browserB.browser)
 		.mockResolvedValueOnce(browserA.browser);
 	ownerA.abort();
@@ -132,7 +163,7 @@ test('V2a finished cleanup joins a held launch and its held browser closure', as
 		closeEntered.resolve();
 		await heldClose.promise;
 	});
-	const launchChromium = vi.spyOn(chromium, 'launch').mockReturnValue(heldLaunch.promise);
+	const launchChromium = vi.spyOn(chromium, 'connect').mockReturnValue(heldLaunch.promise);
 	const acquisitionStarted = createControlledPromise<void>();
 	launchChromium.mockImplementation(() => {
 		acquisitionStarted.resolve();
@@ -174,7 +205,7 @@ test('aborted browser retirement names its launch and records close start before
 		closeEntered.resolve();
 		await closeRelease.promise;
 	});
-	vi.spyOn(chromium, 'launch').mockResolvedValue(browser.browser);
+	vi.spyOn(chromium, 'connect').mockResolvedValue(browser.browser);
 	const stderr = vi.spyOn(process.stderr, 'write').mockReturnValue(true);
 	await launchBridgeViewerE2EChromium({ testSignal: owner.signal });
 	let finish: Promise<void> | undefined;
