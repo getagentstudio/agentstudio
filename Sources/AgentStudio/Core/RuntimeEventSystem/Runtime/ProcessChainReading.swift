@@ -90,6 +90,8 @@ package struct DarwinProcessChainReader: ProcessChainReading {
     }
 }
 
+/// CLI → optional hook-script sh → Cursor's zsh if applicable → first provider → shell → shell parent.
+/// The skipped hook shell uses the same hop continuity checks and read budget as every other edge.
 private struct ProcessChainWalk {
     let facts: any ProcessChainFactsReading
     var remainingReads: Int
@@ -106,6 +108,9 @@ private struct ProcessChainWalk {
         }
         try requirePeerVersion(peer)
         var agent = try parent(of: peer.pid, expected: nil)
+        if agent.executableName == "sh" {
+            agent = try parent(of: agent.incarnation.pid, expected: agent)
+        }
         if provider == "cursor" {
             guard agent.executableName == "zsh" else { throw .unrecognizedChain }
             agent = try parent(of: agent.incarnation.pid, expected: agent)

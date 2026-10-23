@@ -63,8 +63,9 @@ package enum AppPolicies {
     }
 
     package enum Sessions {
-        /// The longest accepted chain needs fourteen reads, including hop validation and both tokens.
-        package static let mainEligibilityReadLimit = 16
+        /// Cursor through the hook-script sh needs seventeen reads; twenty leaves a three-read margin.
+        /// Includes every hop validation reread and both peer-token lookups.
+        package static let mainEligibilityReadLimit = 20
         package static let maximumPromptSummaryBytes = 1024
         package static let maximumListedOpenPrompts = 16
         package static let maximumFailureSummaryBytes = 2048

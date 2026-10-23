@@ -51,9 +51,107 @@ struct ProcessChainReadingTests {
             DarwinProcessChainReader(facts: fixture.facts, readLimit: 16).observe(peer: nil, provider: "claude-code")
                 == .unknown(.peerUnbound))
     }
+
+    @Test("one hook-script sh preserves every existing chain classification", arguments: ChainCase.allCases)
+    func hookScriptChains(chainCase: ChainCase) throws {
+        let fixture = ChainTableFixture(chainCase: chainCase)
+        var table = try hookScriptTable(fixture)
+        if chainCase == .nestedCodex {
+            table[35] = chainFact(35, parent: 30, name: "bash")
+        }
+        let facts = ScriptedChainFacts(table: table)
+        let observation = DarwinProcessChainReader(facts: facts, readLimit: 32)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+        #expect(observation == fixture.expectedObservation)
+        #expect(observation.isMainEligible(terminalLeader: fixture.leader) == fixture.expectedEligible)
+    }
+
+    @Test("a second or misplaced sh is not another skippable hook", arguments: ExtraHookShellCase.allCases)
+    func onlyOneHookScriptShell(extraShell: ExtraHookShellCase) throws {
+        let fixture = ChainTableFixture(chainCase: extraShell == .secondImmediateShell ? .directClaude : .directCursor)
+        var table = try hookScriptTable(fixture)
+        switch extraShell {
+        case .secondImmediateShell:
+            table[50] = chainFact(50, parent: 45, name: "sh")
+            table[45] = chainFact(45, parent: 40, name: "sh")
+        case .afterCursorLauncher:
+            table[45] = chainFact(45, parent: 43, name: "zsh")
+            table[43] = chainFact(43, parent: 40, name: "sh")
+        }
+        let observation = DarwinProcessChainReader(facts: ScriptedChainFacts(table: table), readLimit: 32)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+        #expect(observation == .unknown(.unrecognizedChain))
+        #expect(!observation.isMainEligible(terminalLeader: fixture.leader))
+    }
+
+    @Test("the skipped sh keeps every hop continuity check", arguments: HookScriptContinuityCase.allCases)
+    func hookScriptContinuity(failure: HookScriptContinuityCase) throws {
+        let fixture = ChainTableFixture(chainCase: .directClaude)
+        let table = try hookScriptTable(fixture)
+        var overrides: [ChainReadKey: ChainReadResult] = [:]
+        var reason = ChainUnknownReason.incarnationChanged
+        switch failure {
+        case .replacedBetweenHops:
+            overrides[.init(pid: 50, ordinal: 2)] = .available(chainFact(50, parent: 40, name: "sh", started: 51))
+        case .replacedDuringHop:
+            overrides[.init(pid: 50, ordinal: 3)] = .available(chainFact(50, parent: 40, name: "sh", started: 51))
+        case .reparentedBetweenHops:
+            overrides[.init(pid: 50, ordinal: 2)] = .available(chainFact(50, parent: 1, name: "sh"))
+        case .parentExitedDuringHop:
+            overrides[.init(pid: 50, ordinal: 3)] = .available(chainFact(50, parent: 1, name: "sh"))
+        case .parentUnavailable:
+            overrides[.init(pid: 40, ordinal: 1)] = .unavailable
+            reason = .processUnavailable
+        }
+        let facts = ScriptedChainFacts(table: table, overrides: overrides)
+        let observation = DarwinProcessChainReader(facts: facts, readLimit: 32)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+        #expect(observation == .unknown(reason))
+        #expect(!observation.isMainEligible(terminalLeader: fixture.leader))
+    }
+
+    @Test("the longest hook-script Cursor chain uses seventeen bounded reads", arguments: HookScriptBudgetCase.allCases)
+    func hookScriptReadBudget(budget: HookScriptBudgetCase) throws {
+        let fixture = ChainTableFixture(chainCase: .directCursor)
+        let facts = ScriptedChainFacts(table: try hookScriptTable(fixture))
+        let observation = DarwinProcessChainReader(facts: facts, readLimit: budget.readLimit)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+        #expect(observation == (budget == .insufficient ? .unknown(.readLimit) : fixture.expectedObservation))
+        #expect(observation.isMainEligible(terminalLeader: fixture.leader) == (budget != .insufficient))
+        #expect(facts.totalReads == (budget == .insufficient ? 16 : 17))
+        #expect(facts.totalReads <= budget.readLimit)
+        if budget == .policy { #expect(budget.readLimit > 17) }
+    }
 }
 
 extension ProcessChainReadingTests {
+    enum ExtraHookShellCase: CaseIterable, Sendable {
+        case secondImmediateShell
+        case afterCursorLauncher
+    }
+
+    enum HookScriptContinuityCase: CaseIterable, Sendable {
+        case replacedBetweenHops
+        case replacedDuringHop
+        case reparentedBetweenHops
+        case parentExitedDuringHop
+        case parentUnavailable
+    }
+
+    enum HookScriptBudgetCase: CaseIterable, Sendable {
+        case insufficient
+        case exact
+        case policy
+
+        var readLimit: Int {
+            switch self {
+            case .insufficient: 16
+            case .exact: 17
+            case .policy: AppPolicies.Sessions.mainEligibilityReadLimit
+            }
+        }
+    }
+
     enum ChainCase: CaseIterable, Sendable {
         case directClaude, directCodex, directCursor, cursorAgentAlias
         case claudeTmux, codexTmux, cursorTmux, claudeHerdr, codexHerdr, cursorHerdr
@@ -107,6 +205,14 @@ extension ProcessChainReadingTests {
             return scenario
         }
     }
+}
+
+private func hookScriptTable(_ fixture: ChainTableFixture) throws -> [Int32: ProcessChainProcessFacts] {
+    var table = fixture.table
+    let originalCLI = try #require(table[50])
+    table[50] = chainFact(50, parent: originalCLI.parentPID, name: "sh")
+    table[60] = chainFact(60, parent: 50, name: "agentstudio-cli")
+    return table
 }
 
 private struct ContinuityScenario {
