@@ -224,6 +224,23 @@ public protocol AppIPCSidebarPort: Sendable {
     func getSurface(_ params: IPCSidebarSurfaceGetParams) throws -> IPCSidebarSurfaceResult
 }
 
+package enum AppIPCWindowRenderError: String, Error, Equatable, Sendable {
+    case targetNotFound
+    case noContentView
+    case bitmapCreationFailed
+    case imageCreationFailed
+    case untrustedRenderDirectory
+    case encodingFailed
+    case writeFailed
+    case invalidSize
+}
+
+@MainActor
+package protocol AppIPCWindowRenderPort: Sendable {
+    func render(_ params: IPCWindowRenderParams) async throws -> IPCWindowRenderResult
+    func resize(_ params: IPCWindowResizeParams) async throws -> IPCWindowResizeResult
+}
+
 package struct AgentStudioAppIPCPorts: Sendable {
     package let queryPort: any AppIPCQueryPort
     package let layoutPort: any AppIPCLayoutPort
@@ -231,6 +248,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
     package let bridgePort: any AppIPCBridgePort
     package let commandPort: any AppIPCCommandPort
     package let uiPresentationPort: any AppIPCUIPresentationPort
+    package let windowRenderPort: any AppIPCWindowRenderPort
     package let sidebarPort: any AppIPCSidebarPort
     package let sessionsPort: any AppIPCSessionsPort
     package let paneContextPort: any AppIPCPaneContextPort
@@ -246,6 +264,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
         bridgePort: any AppIPCBridgePort,
         commandPort: any AppIPCCommandPort,
         uiPresentationPort: any AppIPCUIPresentationPort,
+        windowRenderPort: any AppIPCWindowRenderPort,
         sidebarPort: any AppIPCSidebarPort,
         sessionsPort: any AppIPCSessionsPort,
         permissionApprovalPort: any AppIPCPermissionApprovalPort,
@@ -260,6 +279,7 @@ package struct AgentStudioAppIPCPorts: Sendable {
         self.bridgePort = bridgePort
         self.commandPort = commandPort
         self.uiPresentationPort = uiPresentationPort
+        self.windowRenderPort = windowRenderPort
         self.sidebarPort = sidebarPort
         self.sessionsPort = sessionsPort
         self.paneContextPort = paneContextPort

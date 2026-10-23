@@ -8,15 +8,26 @@ older image.
 
 Inputs: shared target receipt, held pane/readbacks, Working hook status, original
 row/card/toolbar frames, an unverified failed-action fixture and a verified-live
-identity positive. Require an unlocked GUI and the native observation grant
-defined in shared setup. `focusPane` selects the proof pane and the
+identity positive. Require shared setup's observation grant; static app-rendered
+layout/age works while locked. Actual copy/pasteboard observation still needs a
+separately granted interaction route and stays UNKNOWN when unavailable.
+`focusPane` selects the proof pane and the
 window-scoped `toggleManagementLayer` opens its card. Retain the applied receipt
 and verify it is open. Close only when allowed with `managementLayerExit`.
 
 ## Current card: same order and shape at every width
 
-Use the shared quality procedure at its required widths and tolerance, with
-side-by-side different-width panes.
+Use the shared quality procedure at its required widths and tolerance.
+Headless split/equalize produces equal widths; there is no ratio verb for
+different-width siblings. Their side-by-side comparison needs a separately
+granted native divider drag on an already unlocked screen. Without that route,
+Sibling spacing and Same shape stay UNKNOWN. Sequential single-pane frames,
+normalized to each card's origin, can still judge local alignment.
+Keep off-target layout frames as calibration, labelled with measured width;
+further layout attempts are allowed, and only a frame within ±2 pt fills a cell.
+A frame showing a product defect keeps its verdict and is never replaced or
+hidden.
+
 Use J4's no-message, fresh-message, same-message-aged and 200-byte long-message
 states; also cover note, real warning, verified/unverified session, no-repo,
 long-title and long-branch fixtures. Preserve the real producer's icons and
@@ -63,8 +74,10 @@ On every original, also verify:
   require the retained refusal data and the positive card warning through J6.
   No raw credentialNotRecognized text or “?” placeholder chip is user-facing.
 - Normal pane ID always paints completely. Session ID requires actual verified-live
-  `session.query`/reader evidence; Working alone does not establish it. Test an
-  unverified negative and a verified positive. Read full IDs, including middle
+  `session.query`/reader evidence taken immediately before capture for that same
+  pane. Compare the full rendered SESSION to that verified-live owner fact;
+  Working alone does not establish it. Test an unverified negative and a
+  verified positive. Read full IDs, including middle
   characters, at all five required widths. AX full values can
   hide truncation. Include lineless and long-message layouts and a comparator.
 - Activity recency/active chips match the same sidebar row at the same instant.
@@ -95,8 +108,13 @@ Bind the declared binary to the actual copyValue producer/handler before use.
 This message-age observation uses the successful message write as t0, never
 the hook/activity time.
 
-1. In the owned pane, establish Working first. Record high-precision UTC directly
-   before the **line CLI subprocess** and after its exit-0/applied completion.
+1. Finish all resizing/setup, establish Working and open the card once **before**
+   the message write. Keep row/card/toolbar visible. Use shared setup's actual
+   fixture-shell or commissioned foreground-hold route. Record high-precision UTC
+   directly before the **line CLI subprocess** and after its exit-0/applied
+   completion. With the foreground holder, retain the matching exit-0 `hold.line`
+   and its `t_before`/`t_after` plus `mono_before`/`mono_after`; the holder stays
+   foreground and alive throughout the pair.
    These bound message.updatedAt as **t0=[earliest,latest]**: the owning service
    takes wall time inside the admitted SQLite write. An outer `terminal.send`
    receipt, provider hook time or first screenshot is not this interval.
@@ -108,13 +126,16 @@ the hook/activity time.
    wall-clock/codec mapping; if it is not established, return UNKNOWN rather
    than assume it. No denied pane.context.get or authentication bypass is needed.
    A permitted exact persisted updatedAt read can tighten the same interval.
-3. Open the card once and leave all three surfaces visible. Capture the fresh
-   state with start/end UTC bounds. Accept **just now** only when the entire
-   computed message-age window is below 60s. Keep the line text and write receipt.
+3. Leave the already open card and all three surfaces unchanged. After the write,
+   the consumer waits 3 s and takes one `window.render` with start/end UTC bounds.
+   This settle does not supply t0 or a timer oracle. Accept **just now** only when
+   the entire computed message-age window is below 60s. Keep the line text and
+   write receipt.
 4. Send no new hook, terminal input, line/title, focus, toggle or reopen command.
-   Capture the same message in the **1 min ago** bucket, [t0+60s,t0+120s).
-   Aim safely inside it; t0 is not the first screenshot. A fresh frame at 59.5s
-   followed 61s later legitimately has age 120.5s and reads 2 min ago.
+   Schedule one settled render of the same message in the **1 min ago** bucket,
+   [t0+60s,t0+120s), with no intermediate renders. Aim safely inside it; t0 is not
+   the first screenshot. A fresh frame at 59.5s followed 61s later legitimately
+   has age 120.5s and reads 2 min ago.
 5. Verify no message replacement/clear or timestamp reset and no card close.
    Compute **[capture-start − latest t0, capture-end − earliest t0]** for every
    frame. Every point in that interval must belong to the asserted label bucket.
@@ -130,16 +151,19 @@ age or mutate its updatedAt; changing age alone must not reorder pane activity.
 
 If the interval straddles a boundary, lies outside the asserted bucket, or has
 unknown clock mapping, the timing attempt is **INVALID/UNKNOWN**, not a product
-failure. Retake only when authorized and still in the planned bucket, otherwise
-request fresh operator setup. In a valid 1-minute interval, a retained just now,
-missing suffix or cross-surface mismatch is **FAIL**; do not call a visible
+failure. Stop this attempt and report its bounds; do not automatically retake,
+write a new line or request input to repair the missed bucket. In a valid
+1-minute interval, a retained just now, missing suffix or cross-surface mismatch
+is **FAIL**; do not call a visible
 product mismatch a timing error. No extra timer/input/reopen repairs the proof.
 
 If only later buckets were captured, a valid later transition may support that
-narrow advancement claim; it does not create the missing fresh baseline. A locked
-GUI attempt cannot become valid by waiting longer. After unlock, obtain a fresh
-write interval and owned setup. A row-only crop adds row coverage only; never
-infer card, toolbar, PID, geometry or exact timing from it.
+narrow advancement claim; it does not create the missing fresh baseline.
+A locked run is eligible through the app-render route when state, clocks and
+lock probes are established. A stale/in-flight/blank result after the observed
+3 s settle fails; a longer wait, retry or unlock does not repair that attempt.
+A row-only crop adds row coverage only; never infer card, toolbar, PID, geometry
+or exact timing from it.
 
 ## Keep the activity clock separate
 

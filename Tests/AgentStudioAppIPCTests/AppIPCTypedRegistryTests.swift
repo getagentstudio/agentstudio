@@ -14,7 +14,7 @@ struct AppIPCTypedRegistryTests {
         let registry = try makeTestAppIPCMethodRegistry(
             registrations: registrations, recognizedCommands: [], channel: .debug)
         let names = registry.capabilities.methods.map(\.name)
-        #expect(names.count == 56)
+        #expect(names.count == 58)
         #expect(names == names.sorted())
         #expect(Set(names).count == names.count)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
@@ -61,6 +61,13 @@ struct AppIPCTypedRegistryTests {
         #expect(registry.registration(named: "pane.snapshot") != nil)
         #expect(registry.registration(named: "ui.commandBar.open") == nil)
         #expect(registry.registration(named: "pane.focus") == nil)
+        for name in ["window.render", "window.resize"] {
+            #expect(registry.registration(named: name) == nil)
+            #expect(
+                registry.capabilities.recognizedUnexposedMethods.contains {
+                    $0.name == name && $0.agentEligibility == .notYetAllowed
+                })
+        }
     }
 
     @Test("duplicate registration identities reject composition")

@@ -162,6 +162,7 @@ struct LiveServerFixture: Sendable {
                 bridgePort: bridgePort ?? FakeBridgePort(paneId: panes.first?.id ?? boundPaneId),
                 commandPort: commandPort,
                 uiPresentationPort: uiPresentationPort,
+                windowRenderPort: FakeWindowRenderPort(),
                 sidebarPort: sidebarPort,
                 sessionsPort: sessionsPort,
                 permissionApprovalPort: FakePermissionApprovalPort(),

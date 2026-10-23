@@ -87,6 +87,8 @@ package struct IPCBuiltInMethodIndex: Sendable {
             IPCPresentationAndSidebarMethodDescriptors.uiCommandBarOpenEntry.erased,
             IPCWorkspaceQueryMethodDescriptors.windowCurrentEntry.erased,
             IPCWorkspaceQueryMethodDescriptors.windowListEntry.erased,
+            IPCPresentationAndSidebarMethodDescriptors.windowRenderEntry.erased,
+            IPCPresentationAndSidebarMethodDescriptors.windowResizeEntry.erased,
             IPCWorkspaceQueryMethodDescriptors.workspaceCurrentEntry.erased,
             IPCWorkspaceQueryMethodDescriptors.workspaceListEntry.erased,
         ]

@@ -77,7 +77,7 @@ struct IPCSystemCapabilitiesCompositionTests {
         let names = composition.result.methods.map(\.name)
 
         #expect(names == names.sorted())
-        #expect(names.count == 56)
+        #expect(names.count == 58)
         #expect(names.filter { $0 == "system.capabilities" }.count == 1)
         #expect(composition.erasedDescriptor.metadata.name == "system.capabilities")
         #expect(composition.erasedDescriptor.metadata.callIntent == .control)
