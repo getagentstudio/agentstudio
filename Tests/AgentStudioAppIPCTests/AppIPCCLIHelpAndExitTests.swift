@@ -120,9 +120,12 @@ struct AppIPCCLIHelpAndExitTests {
 
     @Test("removed package commands reject locally", arguments: ["claude", "codex", "cursor"])
     func removedPackageCommandsRejectLocally(provider: String) async throws {
+        let fixture = try PackageSubprocessFixture()
+        defer { fixture.dispose() }
+        let arguments = try fixture.preflight(arguments: ["package", "uninstall", provider])
         let output = try await runCLI(
-            executableURL: cliExecutableURL(), arguments: ["package", "uninstall", provider],
-            environment: offlineEnvironment())
+            executableURL: cliExecutableURL(), arguments: arguments,
+            environment: fixture.environment, currentDirectoryURL: fixture.root)
 
         #expect(output.exitCode == 64)
         #expect(output.standardOutput.isEmpty)
