@@ -44,7 +44,10 @@ struct CursorPackageInstallerTests {
         let document = try #require(JSONSerialization.jsonObject(with: installed) as? [String: Any])
         #expect(document["version"] as? Int == 1)
         let hooks = try #require(document["hooks"] as? [String: Any])
-        let ownedEvents: Set<String> = ["beforeSubmitPrompt", "stop", "sessionEnd"]
+        let ownedEvents: Set<String> = [
+            "beforeSubmitPrompt", "stop", "sessionEnd", "sessionStart", "preToolUse", "postToolUse",
+            "postToolUseFailure", "subagentStart", "subagentStop",
+        ]
         for event in ownedEvents {
             let entries = try #require(hooks[event] as? [[String: Any]])
             let ours = entries.filter {
@@ -55,9 +58,6 @@ struct CursorPackageInstallerTests {
             #expect((ours.first?["command"] as? String)?.hasPrefix("\"") == true)
             #expect((ours.first?["command"] as? String)?.hasSuffix("\" \(event)") == true)
         }
-        #expect(hooks["sessionStart"] == nil)
-        #expect(hooks["subagentStart"] == nil)
-        #expect(hooks["subagentStop"] == nil)
         if versionOnly {
             #expect(Set(hooks.keys) == ownedEvents)
         } else {
@@ -67,7 +67,10 @@ struct CursorPackageInstallerTests {
             #expect(
                 try JSONSerialization.data(withJSONObject: foreignEntries, options: [.sortedKeys])
                     == JSONSerialization.data(withJSONObject: [foreign], options: [.sortedKeys]))
-            #expect((hooks["preToolUse"] as? [[String: String]]) == [["command": "unrelated"]])
+            #expect(
+                (hooks["preToolUse"] as? [[String: String]])?.filter { $0["command"] == "unrelated" } == [
+                    ["command": "unrelated"]
+                ])
         }
     }
 

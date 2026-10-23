@@ -1,8 +1,9 @@
-import AgentStudioAppIPC
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
 import Testing
+
+@testable import AgentStudioAppIPC
 
 @Suite("AgentStudio IPC typed registry and authorization")
 struct AgentStudioIPCRegistryAuthorizationTests {
@@ -59,6 +60,19 @@ struct AgentStudioIPCRegistryAuthorizationTests {
         #expect(registry.registration(named: "pane.snapshot") != nil)
         #expect(registry.registration(named: "pane.focus") == nil)
         #expect(registry.registration(named: "bridge.diff.load") == nil)
+    }
+
+    @Test(
+        "notExposed recognized commands remain unavailable even on debug",
+        arguments: [AgentStudioIPCChannel.debug, .stable, .beta])
+    func neverExposedCommandIsNotAgentEligible(channel: AgentStudioIPCChannel) throws {
+        let fixture = BuiltInMethodRegistrationsFixture()
+        let command = AppIPCRecognizedEntry(
+            name: "copyAgentSetupPrompt", exposure: .notExposed, agentEligibility: .notYetAllowed)
+        #expect(!command.isExposed(on: channel))
+        let registry = try makeTestAppIPCMethodRegistry(
+            registrations: fixture.registrations(), recognizedCommands: [command], channel: channel)
+        #expect(registry.commandAgentEligibility("copyAgentSetupPrompt") == .notYetAllowed)
     }
 
     @Test("registry rejects duplicate names")

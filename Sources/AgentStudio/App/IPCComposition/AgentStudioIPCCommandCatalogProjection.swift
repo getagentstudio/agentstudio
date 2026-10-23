@@ -12,6 +12,8 @@ enum AgentStudioIPCCommandCatalogProjection {
     /// `debugTesting` command.
     static func admitsCommand(_ command: AppCommand, on channel: AgentStudioIPCChannel) -> Bool {
         switch command.ipcSpec.exposure {
+        case .notExposed:
+            false
         case .allChannels:
             true
         case .debugTesting:

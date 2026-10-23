@@ -235,6 +235,12 @@ package struct AppIPCTypedMethodRegistration<
     }
 
     private func validateConnectionAccess(_ context: AppIPCConnectionContext) throws {
+        let requiresDiagnosticProvenance: Bool
+        switch descriptor.exposure {
+        case .notExposed: throw AppIPCTypedMethodRegistrationError.methodNotExposed
+        case .allChannels: requiresDiagnosticProvenance = false
+        case .debugTesting: requiresDiagnosticProvenance = true
+        }
         if descriptor.principalAvailability == .authenticated, context.principal == nil,
             !(descriptor.callIntent == .status && context.paneClaimAdmission != nil)
         {
@@ -242,7 +248,7 @@ package struct AppIPCTypedMethodRegistration<
             throw AppIPCTypedMethodRegistrationError.authenticationRequired
         }
 
-        guard descriptor.exposure == .debugTesting else {
+        guard requiresDiagnosticProvenance else {
             return
         }
         guard context.channel == .debug,

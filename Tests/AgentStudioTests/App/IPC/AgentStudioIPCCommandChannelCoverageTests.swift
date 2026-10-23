@@ -8,9 +8,9 @@ import Testing
 @testable import AgentStudio
 @testable import AgentStudioCore
 
-/// S7: every `AppCommand` is callable through typed `command.execute` on the
-/// debug channel, while stable and beta keep exactly today's admitted headless
-/// surface.
+/// Every IPC-exposed AppCommand is callable through typed command.execute
+/// on debug; permanent exclusions stay unavailable on all channels. Stable
+/// and beta retain the admitted headless surface.
 @MainActor
 @Suite("AgentStudio IPC command channel coverage", .serialized)
 struct AgentStudioIPCCommandChannelCoverageTests {
@@ -85,7 +85,7 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         await harness.tearDown()
     }
 
-    @Test("debug discovery exposes every AppCommand and labels the debug-only ones")
+    @Test("debug discovery exposes every allowed AppCommand and classifies the permanent exclusion")
     func debugCatalogExposesEveryAppCommand() async throws {
         let harness = CommandAdapterHarness(channel: .debug)
         let catalog = try await makeIPCCommandCatalogOffMain(
@@ -94,9 +94,11 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         )
         let ids = Set(catalog.commands.map(\.id.rawValue))
 
-        #expect(catalog.commands.count == AppCommand.allCases.count)
-        #expect(AppCommand.allCases.count == 154)
-        for command in AppCommand.allCases {
+        let excluded = AppCommand.allCases.filter { $0.ipcSpec.exposure == .notExposed }
+        #expect(excluded == [.copyAgentSetupPrompt])
+        #expect(catalog.commands.count == AppCommand.allCases.count - excluded.count)
+        #expect(AppCommand.allCases.count == 155)
+        for command in AppCommand.allCases where command.ipcSpec.exposure != .notExposed {
             #expect(ids.contains(command.rawValue), "\(command.rawValue) missing from the debug catalog")
         }
         for descriptor in catalog.commands {
@@ -107,7 +109,7 @@ struct AgentStudioIPCCommandChannelCoverageTests {
             #expect(!descriptor.examples.isEmpty)
         }
         let debugOnly = catalog.commands.filter { $0.exposure == .debugTesting }
-        #expect(debugOnly.count == AppCommand.allCases.count - Self.admittedHeadlessCommands.count)
+        #expect(debugOnly.count == AppCommand.allCases.count - excluded.count - Self.admittedHeadlessCommands.count)
     }
 
     @Test(
@@ -127,7 +129,7 @@ struct AgentStudioIPCCommandChannelCoverageTests {
         #expect(catalog.commands.allSatisfy { $0.exposure == .allChannels })
     }
 
-    @Test("every AppCommand reaches an owner through the typed debug dispatch path")
+    @Test("every IPC-exposed AppCommand reaches an owner through typed debug dispatch")
     func everyAppCommandReachesAnOwnerOnDebug() async throws {
         let windowId = AgentStudioIPCCommandCatalogProjection.ExampleIdentities.window
         let shell = RecordingShellCommandHandler(
@@ -144,7 +146,7 @@ struct AgentStudioIPCCommandChannelCoverageTests {
 
         var unreached: [String] = []
         var mismatchedResults: [String] = []
-        for command in AppCommand.allCases {
+        for command in AppCommand.allCases where command.ipcSpec.exposure != .notExposed {
             let variants = command.ipcSpec.argumentVariants
             try #require(!variants.isEmpty, "Missing debug IPC argument variants for \(command.rawValue)")
             for variant in variants {

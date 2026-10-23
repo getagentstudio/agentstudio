@@ -21,7 +21,7 @@ Select the diagnostic that answers the missing question; do not run every probe.
 | `background session: not attached to a pane` | Report in chat from this worker. Keep markers intact; raw reporting is refused too. |
 | `credentialNotRecognized` on a protected call | Ask the owner to restart THIS pane's shell. Then read `"$AS_CLI" pane`. Only make a fresh intended call when safe and still needed; never blindly replay the notice/ask. Context does not establish ask binding or permission. |
 | `bindingRequired` on an ask | Report missing tracking. Provider setup and agent restart belong to a separately authorized workflow; use chat for the decision meanwhile. Keep existing session claims. |
-| `No agent session is bound to this pane; install the Agent Studio hooks for your provider.` | This is the CLI's bindingRequired model reply. Report the setup gap to the owner; this skill does not authorize installing/configuring hooks. |
+| `No agent session is bound to this pane; install the Agent Studio hooks for your provider.` | This is the CLI's bindingRequired model reply. Report the setup gap and follow [Set up hooks](../SKILL.md#set-up-hooks). Status is inspection; install or uninstall requires the user's go-ahead. |
 | `stale(lastAccepted)`, `stale(epochSuperseded)`, `stale(writerReplaced)` | Final for that ordered line/title payload. Inspect `"$AS_CLI" pane` BEFORE a distinct next intent may write. Never renumber/re-epoch the old payload. |
 | `unavailable(orderingStoreUnavailable)` | Leave the store intact; ask the owner to restart the app, then send a fresh intended line. Notices/asks bypass this allocator but keep token rules; asks also need a known session. A credentialed shell with no session claim can notify. |
 | `notify queued` (possibly with `(notSent(REASON))`) | Retained locally, not sent. Inspect pane context when reachable; do not count delivery or resend it yourself. |
@@ -42,7 +42,7 @@ Read `reason` plus any `fieldPath`, `expected`, `requiredScope`, `refusedName`, 
 | Reason(s) | Safe next action |
 | --- | --- |
 | `invalidParams`, `invalidArguments`, `invalidField` | Read that method's local help and named field/expectation; correct only inputs within the intended action. Nested objects/arrays use JSON/stdin. |
-| `unknownMethod` | Use root or known-method help; use live capabilities when a runtime connection is intended. Never invent a verb. `help --help` is unsupported. |
+| `unknownMethod` | Use `"$AS_CLI" help --help` for local root help or a known method's help. Use `"$AS_CLI" package --help` for provider hook verbs, and live capabilities when a runtime connection is intended. Never invent a verb. |
 | `unknownCommand`, `unsupportedCommand` | Read `command.list` and verify actual ID/arguments/availability. Suggested closest matches are candidates, not permission to execute. |
 | `missingGrant`, `unauthorized`, `unauthenticated` | Preserve identity and report the required access/credential gap to its owner. Do not manufacture grants or switch tokens/runtimes to bypass it. |
 | `notYetAllowed`, `refusedForAgent` | Return the named agent eligibility boundary. Another raw method or command.execute is not a bypass. |
