@@ -47,7 +47,9 @@ struct AgentStudioIPCCatalogFrameTransportTests {
     func appCatalogPreservesWindowChannelInventory(channel: AgentStudioIPCChannel) async throws {
         let harness = try await SessionsVerticalHarness.make(channel: channel)
         do {
-            let response = try await harness.response(method: "system.capabilities", params: .object([:]))
+            let response = try await harness.response(
+                method: "system.capabilities", params: .object([:]),
+                authentication: channel == .debug ? .diagnostic : .boundPane)
             #expect(response.error == nil)
             let result = try #require(response.result)
             let catalog = try JSONDecoder().decode(IPCMethodCatalogResult.self, from: JSONEncoder().encode(result))
