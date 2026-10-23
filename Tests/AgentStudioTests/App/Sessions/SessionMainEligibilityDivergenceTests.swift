@@ -40,7 +40,9 @@ extension SessionMainEligibilityTests {
             #expect(!context.evidence.contains { $0.recordId == candidate.recordId })
             let restored = fixture.makeIngestion(reader: reader)
             do {
-                let query = try await AgentStudioIPCSessionsAdapter(ingestion: restored).readSessionState(
+                let query = try await AgentStudioIPCSessionsAdapter(
+                    ingestion: restored, processChainReader: EligibleTestProcessChainReader()
+                ).readSessionState(
                     paneId: pane, params: .init(handle: pane.uuidString))
                 #expect(query.sourceHealth == .ended)
                 #expect(query.session?.conversationId == "A")

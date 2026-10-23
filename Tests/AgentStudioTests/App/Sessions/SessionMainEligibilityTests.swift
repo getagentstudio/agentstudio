@@ -39,7 +39,9 @@ struct SessionMainEligibilityTests {
             #expect(reader.readCount - readsBefore == (eligible && scenario.elects ? 1 : 0))
             let restored = fixture.makeIngestion(reader: reader)
             do {
-                let query = try await AgentStudioIPCSessionsAdapter(ingestion: restored).readSessionState(
+                let query = try await AgentStudioIPCSessionsAdapter(
+                    ingestion: restored, processChainReader: EligibleTestProcessChainReader()
+                ).readSessionState(
                     paneId: pane, params: .init(handle: pane.uuidString))
                 #expect(query.sourceHealth == expected.sourceHealth)
                 #expect(query.session?.conversationId == expected.session)

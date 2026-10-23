@@ -170,7 +170,8 @@ struct RecordedStatusDatabase: Sendable {
             limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
             sessionEnded: sessionEnded, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let adapter = AgentStudioIPCSessionsAdapter(
-            ingestion: ingestion, continuousNow: continuousNow, activityClock: activityClock)
+            ingestion: ingestion, continuousNow: continuousNow, activityClock: activityClock,
+            processChainReader: EligibleTestProcessChainReader())
         do {
             let result = try await operation(ingestion, adapter)
             await ingestion.finish()

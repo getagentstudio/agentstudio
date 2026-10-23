@@ -15,3 +15,9 @@ struct MatchingTestPaneTerminalLeaderReader: PaneTerminalLeaderReading {
         sessionID == self.sessionID ? TestMainAgentChain.shell : nil
     }
 }
+
+struct EligibleTestProcessChainReader: ProcessChainReading {
+    func observe(peer: ProcessChainPeer?, provider: String) -> ProcessChainObservation {
+        TestMainAgentChain.observation
+    }
+}

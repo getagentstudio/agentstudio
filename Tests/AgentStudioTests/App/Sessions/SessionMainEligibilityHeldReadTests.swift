@@ -166,7 +166,9 @@ private func assertHeldEligibilityState(
     #expect(context.evidence.count == (hasVerifiedMain ? 1 : 0))
     let claimMain = await ingestion.unverifiedStatusRuntime.panes[pane]?.main?.sessionId
     #expect(claimMain == (scenario == .competing && route == .claim ? "A" : nil))
-    let query = try await AgentStudioIPCSessionsAdapter(ingestion: ingestion).readSessionState(
+    let query = try await AgentStudioIPCSessionsAdapter(
+        ingestion: ingestion, processChainReader: EligibleTestProcessChainReader()
+    ).readSessionState(
         paneId: pane, params: .init(handle: pane.uuidString))
     #expect(query.sourceHealth == (hasVerifiedMain ? .live : .unbound))
     #expect(query.session?.conversationId == (hasVerifiedMain ? "A" : nil))

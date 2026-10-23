@@ -24,7 +24,9 @@ extension SessionMainEligibilityTests {
             let stored = try await fixture.repository.statusContext(paneId: pane)
             #expect(stored.bindings.isEmpty)
             #expect(stored.evidence.isEmpty)
-            let query = try await AgentStudioIPCSessionsAdapter(ingestion: ingestion).readSessionState(
+            let query = try await AgentStudioIPCSessionsAdapter(
+                ingestion: ingestion, processChainReader: EligibleTestProcessChainReader()
+            ).readSessionState(
                 paneId: pane, params: .init(handle: pane.uuidString))
             #expect(query.sourceHealth == .unbound)
             #expect(query.session == nil)

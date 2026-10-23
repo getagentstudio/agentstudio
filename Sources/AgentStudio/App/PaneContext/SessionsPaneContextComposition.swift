@@ -23,6 +23,7 @@ struct SessionsPaneContextComposition: Sendable {
         var statusApplyProbe: @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
         var activityClock: PaneActivityClock?
         var terminalLeaderReader: (any PaneTerminalLeaderReading)?
+        var processChainReader: (any ProcessChainReading)?
     }
 
     let ingestion: SessionsIngestion
@@ -57,7 +58,8 @@ struct SessionsPaneContextComposition: Sendable {
             liveSessionsAdapter: AgentStudioIPCSessionsAdapter(
                 ingestion: ingestion, now: inputs.wallNow,
                 activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup,
-                performanceTraceRecorder: inputs.performanceTraceRecorder),
+                performanceTraceRecorder: inputs.performanceTraceRecorder,
+                processChainReader: inputs.processChainReader ?? DarwinProcessChainReader()),
             paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(
                 service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder),
             presentationLane: presentationLane, bridge: bridge)

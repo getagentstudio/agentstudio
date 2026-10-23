@@ -12,6 +12,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     let now: @Sendable () -> Date
     let continuousNow: @Sendable () -> ContinuousClock.Instant
     let activityClock: PaneActivityClock?
+    let processChainReader: any ProcessChainReading
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
@@ -20,7 +21,8 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         activityClock: PaneActivityClock? = nil,
         ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
-        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        processChainReader: any ProcessChainReading
     ) {
         self.ingestion = ingestion
         self.now = now
@@ -28,12 +30,14 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         self.activityClock = activityClock
         self.ownerPaneLookup = ownerPaneLookup
         self.performanceTraceRecorder = performanceTraceRecorder
+        self.processChainReader = processChainReader
     }
 
     func recordProviderEvent(
         paneId: UUID, params: IPCSessionEventParams,
         provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess? = nil
     ) async throws -> IPCSessionEventResult {
+        let chain = observeProcessChain(peerProcess: peerProcess, providerIdentifier: params.provider.identifier)
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
         guard !params.event.conversationId.isEmpty else { throw AppIPCSessionsError(reason: .validationRejected) }
         let began = performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
@@ -57,7 +61,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
             ownerPaneId: ownerPaneLookup(.init(existingUUID: paneId))?.uuid,
             resumeHint: params.event.providerFields.resumeHint
                 ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId),
-            chain: .unknown(.peerUnbound))
+            chain: chain)
         do {
             let outcome = try await ingestion.submitHook(hook)
             if case .committed(let committed) = outcome,
@@ -81,6 +85,11 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
             throw Self.portError(from: error)
         }
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
+    }
+
+    func observeProcessChain(peerProcess: AppIPCPeerProcess?, providerIdentifier: String) -> ProcessChainObservation {
+        let peer = peerProcess.map { ProcessChainPeer(pid: $0.pid, pidVersion: $0.pidVersion) }
+        return processChainReader.observe(peer: peer, provider: providerIdentifier)
     }
 
     func recordRefusal(

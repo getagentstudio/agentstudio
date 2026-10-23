@@ -40,7 +40,9 @@ extension SessionMainEligibilityTests {
             #expect(
                 await ingestion.unverifiedStatusRuntime.panes[pane]?.main?.sessionId
                     == scenario.expectedMain(eligible: eligible))
-            let query = try await AgentStudioIPCSessionsAdapter(ingestion: ingestion).readSessionState(
+            let query = try await AgentStudioIPCSessionsAdapter(
+                ingestion: ingestion, processChainReader: EligibleTestProcessChainReader()
+            ).readSessionState(
                 paneId: pane, params: .init(handle: pane.uuidString))
             #expect(query.sourceHealth == .unbound)
             #expect(query.session == nil)

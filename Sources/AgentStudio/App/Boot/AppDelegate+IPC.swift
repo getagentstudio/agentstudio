@@ -359,7 +359,10 @@ extension AppDelegate {
                             "agentstudio.sessions.main_actor_max_ms": .double(
                                 AgentStudioPerformanceTraceRecorder.milliseconds(from: snapshot.maximumHeldDuration)),
                         ])
-                }, activityClock: paneActivityClock)
+                },
+                activityClock: paneActivityClock,
+                terminalLeaderReader: appIPCTerminalLeaderReader,
+                processChainReader: appIPCProcessChainReader)
         )
         guard !Task.isCancelled else {
             await composition.shutdown()
