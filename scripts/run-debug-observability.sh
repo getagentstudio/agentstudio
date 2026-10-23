@@ -473,10 +473,10 @@ codesign_debug_item() {
 
   if [ -n "$signing_identity" ]; then
     if [ -n "$entitlements" ]; then
-      "$CODESIGN_BIN" --force --sign "$signing_identity" --options runtime \
+      "$CODESIGN_BIN" --force --sign "$signing_identity" --options runtime --timestamp=none \
         --entitlements "$entitlements" "$item_path" >/dev/null
     else
-      "$CODESIGN_BIN" --force --sign "$signing_identity" --options runtime "$item_path" >/dev/null
+      "$CODESIGN_BIN" --force --sign "$signing_identity" --options runtime --timestamp=none "$item_path" >/dev/null
     fi
     return
   fi
@@ -716,14 +716,17 @@ copy_debug_bundle() {
   local entitlements="Sources/AgentStudio/Resources/AgentStudio.entitlements"
   local signing_identity
   local marketing_version="${APP_MARKETING_VERSION:-0.0.1-debug+$code}"
-  local build_version="${APP_BUILD_VERSION:-$(git rev-list --count HEAD)}"
+  local build_version
+  build_version="${APP_BUILD_VERSION:-$(git rev-list --count HEAD)}" || return 1
 
-  mkdir -p "$app_dir/MacOS" "$app_dir/Resources" "$app_dir/Helpers"
-  chmod 755 "$app_dir/Helpers"
-  "$DITTO_BIN" "$source_binary" "$app_dir/MacOS/AgentStudio"
+  # Bash 3.2 disables errexit inside command substitutions. Every failed
+  # assembly/signing step must return before callers can publish this bundle.
+  mkdir -p "$app_dir/MacOS" "$app_dir/Resources" "$app_dir/Helpers" || return 1
+  chmod 755 "$app_dir/Helpers" || return 1
+  "$DITTO_BIN" "$source_binary" "$app_dir/MacOS/AgentStudio" || return 1
 
   if [ -f "vendor/zmx/zig-out/bin/zmx" ]; then
-    "$DITTO_BIN" "vendor/zmx/zig-out/bin/zmx" "$app_dir/MacOS/zmx"
+    "$DITTO_BIN" "vendor/zmx/zig-out/bin/zmx" "$app_dir/MacOS/zmx" || return 1
   fi
 
   # agentstudio CLI — bundled as Contents/Helpers/agentstudio because
@@ -731,33 +734,35 @@ copy_debug_bundle() {
   # case-insensitive volumes. The pane environment advertises this exact path.
   local cli_source_binary="$build_root/debug/agentstudio-cli"
   if [ -f "$cli_source_binary" ]; then
-    "$DITTO_BIN" "$cli_source_binary" "$app_dir/Helpers/agentstudio"
-    chmod 755 "$app_dir/Helpers/agentstudio"
+    "$DITTO_BIN" "$cli_source_binary" "$app_dir/Helpers/agentstudio" || return 1
+    chmod 755 "$app_dir/Helpers/agentstudio" || return 1
   fi
 
-  "$DITTO_BIN" "Sources/AgentStudio/Resources/Info.plist" "$plist_path"
-  set_plist_string "$plist_path" CFBundleShortVersionString "$marketing_version"
-  set_plist_string "$plist_path" CFBundleVersion "$build_version"
-  set_plist_string "$plist_path" AgentStudioReleaseChannel stable
-  set_plist_string "$plist_path" CFBundleIdentifier "com.agentstudio.app.debug.d$code"
-  set_plist_string "$plist_path" CFBundleName "AgentStudio Debug $code"
-  set_plist_string "$plist_path" CFBundleDisplayName "Agent Studio Debug $code"
-  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist_path" >/dev/null 2>&1 || true
-  set_plist_string "$plist_path" UTExportedTypeDeclarations:0:UTTypeIdentifier "com.agentstudio.debug.d$code.tab"
-  set_plist_string "$plist_path" UTExportedTypeDeclarations:1:UTTypeIdentifier "com.agentstudio.debug.d$code.newtab"
-  set_plist_string "$plist_path" UTExportedTypeDeclarations:2:UTTypeIdentifier "com.agentstudio.debug.d$code.pane"
+  "$DITTO_BIN" "Sources/AgentStudio/Resources/Info.plist" "$plist_path" || return 1
+  set_plist_string "$plist_path" CFBundleShortVersionString "$marketing_version" || return 1
+  set_plist_string "$plist_path" CFBundleVersion "$build_version" || return 1
+  set_plist_string "$plist_path" AgentStudioReleaseChannel stable || return 1
+  set_plist_string "$plist_path" CFBundleIdentifier "com.agentstudio.app.debug.d$code" || return 1
+  set_plist_string "$plist_path" CFBundleName "AgentStudio Debug $code" || return 1
+  set_plist_string "$plist_path" CFBundleDisplayName "Agent Studio Debug $code" || return 1
+  /usr/libexec/PlistBuddy -c "Delete :CFBundleURLTypes" "$plist_path" >/dev/null 2>&1 || return 1
+  set_plist_string "$plist_path" UTExportedTypeDeclarations:0:UTTypeIdentifier "com.agentstudio.debug.d$code.tab" || return 1
+  set_plist_string "$plist_path" UTExportedTypeDeclarations:1:UTTypeIdentifier "com.agentstudio.debug.d$code.newtab" || return 1
+  set_plist_string "$plist_path" UTExportedTypeDeclarations:2:UTTypeIdentifier "com.agentstudio.debug.d$code.pane" || return 1
 
-  "$DITTO_BIN" "Sources/AgentStudio/Resources/AppIcon.icns" "$app_dir/Resources/AppIcon.icns"
-  [ -d "Sources/AgentStudio/Resources/terminfo" ] &&
-    "$DITTO_BIN" "Sources/AgentStudio/Resources/terminfo" "$app_dir/Resources/terminfo"
-  [ -d "Sources/AgentStudio/Resources/ghostty" ] &&
-    "$DITTO_BIN" "Sources/AgentStudio/Resources/ghostty" "$app_dir/Resources/ghostty"
+  "$DITTO_BIN" "Sources/AgentStudio/Resources/AppIcon.icns" "$app_dir/Resources/AppIcon.icns" || return 1
+  if [ -d "Sources/AgentStudio/Resources/terminfo" ]; then
+    "$DITTO_BIN" "Sources/AgentStudio/Resources/terminfo" "$app_dir/Resources/terminfo" || return 1
+  fi
+  if [ -d "Sources/AgentStudio/Resources/ghostty" ]; then
+    "$DITTO_BIN" "Sources/AgentStudio/Resources/ghostty" "$app_dir/Resources/ghostty" || return 1
+  fi
   # AgentPackage — provider hooks, installer resources and the model skill. The
   # installer resolves this tree from Contents/Helpers/agentstudio, so the path
   # Contents/Resources/AgentPackage is load-bearing.
   if [ -d "Sources/AgentStudio/Resources/AgentPackage" ]; then
-    "$DITTO_BIN" "Sources/AgentStudio/Resources/AgentPackage" "$app_dir/Resources/AgentPackage"
-    find "$app_dir/Resources/AgentPackage" -name '*.sh' -exec chmod 755 {} +
+    "$DITTO_BIN" "Sources/AgentStudio/Resources/AgentPackage" "$app_dir/Resources/AgentPackage" || return 1
+    find "$app_dir/Resources/AgentPackage" -name '*.sh' -exec chmod 755 {} + || return 1
   fi
 
   # SwiftPM resource bundle. $build_root/debug is the engine's own symlink
@@ -769,24 +774,24 @@ copy_debug_bundle() {
     echo "missing SwiftPM resource bundle: $resource_bundle" >&2
     return 1
   fi
-  "$DITTO_BIN" "$resource_bundle" "$app_dir/Resources/AgentStudio_AgentStudio.bundle"
+  "$DITTO_BIN" "$resource_bundle" "$app_dir/Resources/AgentStudio_AgentStudio.bundle" || return 1
 
-  signing_identity="$(debug_signing_identity)"
+  signing_identity="$(debug_signing_identity)" || return 1
   if [ -n "$signing_identity" ]; then
-    echo "debug signing identity: $signing_identity" >&2
+    echo "debug signing identity: $signing_identity" >&2 || return 1
   else
-    echo "debug signing identity: ad-hoc" >&2
+    echo "debug signing identity: ad-hoc" >&2 || return 1
   fi
   if [ -f "$app_dir/MacOS/zmx" ]; then
-    codesign_debug_item "$app_dir/MacOS/zmx" "$signing_identity" "$entitlements"
+    codesign_debug_item "$app_dir/MacOS/zmx" "$signing_identity" "$entitlements" || return 1
   fi
   if [ -f "$app_dir/Helpers/agentstudio" ]; then
-    codesign_debug_item "$app_dir/Helpers/agentstudio" "$signing_identity" "$entitlements"
+    codesign_debug_item "$app_dir/Helpers/agentstudio" "$signing_identity" "$entitlements" || return 1
   fi
-  codesign_debug_item "$app_path" "$signing_identity" "$entitlements"
-  "$CODESIGN_BIN" --verify --deep --strict "$app_path"
+  codesign_debug_item "$app_path" "$signing_identity" "$entitlements" || return 1
+  "$CODESIGN_BIN" --verify --deep --strict "$app_path" || return 1
 
-  printf '%s\n' "$app_path"
+  printf '%s\n' "$app_path" || return 1
 }
 
 atomically_swap_paths() {
@@ -834,15 +839,15 @@ publish_debug_bundle() (
   }
   trap cleanup_publish_staging EXIT
 
-  mkdir -p "$published_root"
-  staging_root="$(mktemp -d "$published_root/.staging.XXXXXX")"
+  mkdir -p "$published_root" || exit 1
+  staging_root="$(mktemp -d "$published_root/.staging.XXXXXX")" || exit 1
 
   local staged_app
-  staged_app="$(copy_debug_bundle "$source_binary" "$build_root" "$code" "$staging_root")"
+  staged_app="$(copy_debug_bundle "$source_binary" "$build_root" "$code" "$staging_root")" || exit 1
   if [ -e "$published_app" ]; then
-    atomically_swap_paths "$staged_app" "$published_app"
+    atomically_swap_paths "$staged_app" "$published_app" || exit 1
   else
-    /bin/mv "$staged_app" "$published_app"
+    /bin/mv "$staged_app" "$published_app" || exit 1
   fi
 
   printf '%s\n' "$published_app"
@@ -1140,9 +1145,9 @@ if ! trace_name_is_safe_path_component "$trace_name"; then
 fi
 
 if [ -n "${AGENTSTUDIO_DEBUG_ARTIFACT_DIR:-}" ]; then
-  app_path="$(copy_debug_bundle "$binary_path" "$build_path" "$debug_code" "$debug_artifact_root")"
+  app_path="$(copy_debug_bundle "$binary_path" "$build_path" "$debug_code" "$debug_artifact_root")" || exit 1
 else
-  app_path="$(publish_debug_bundle "$binary_path" "$build_path" "$debug_code" "$debug_artifact_root")"
+  app_path="$(publish_debug_bundle "$binary_path" "$build_path" "$debug_code" "$debug_artifact_root")" || exit 1
 fi
 app_binary_path="$app_path/Contents/MacOS/AgentStudio"
 
