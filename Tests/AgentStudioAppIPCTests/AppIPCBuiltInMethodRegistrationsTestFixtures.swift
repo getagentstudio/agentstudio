@@ -106,7 +106,8 @@ struct BuiltInMethodRegistrationsFixture {
             .unauthenticated
         },
         subscriber: any IPCEventSubscriber = BuiltInRecordingEventSubscriber(),
-        paneClaimAdmission: AppIPCPaneClaimAdmission? = nil
+        paneClaimAdmission: AppIPCPaneClaimAdmission? = nil,
+        peerProcess: AppIPCPeerProcess? = nil
     ) -> AppIPCConnectionContext {
         AppIPCConnectionContext(
             contextId: connectionId,
@@ -119,7 +120,8 @@ struct BuiltInMethodRegistrationsFixture {
             },
             authenticate: authenticate,
             authenticationStatus: authenticationStatus,
-            eventSubscriber: subscriber, paneClaimAdmission: paneClaimAdmission, runtimeId: runtimeId
+            eventSubscriber: subscriber, paneClaimAdmission: paneClaimAdmission, runtimeId: runtimeId,
+            peerProcess: peerProcess
         )
     }
 

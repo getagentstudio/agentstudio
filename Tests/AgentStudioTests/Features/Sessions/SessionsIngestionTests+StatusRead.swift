@@ -29,7 +29,7 @@ extension SessionsIngestionTests {
                 facts.sink(cleanupScope, .cleanupEntered(generation))
                 do { try await held.arrive(()) } catch { facts.sink(cleanupScope, .cleanupFailed) }
                 facts.sink(cleanupScope, .cleanupCompleted)
-            })
+            }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let firstInstant = ContinuousClock.now
         let nextMainInstant = firstInstant + .milliseconds(1)
         let newMainGate = HeldStep<Void>("new main submitted behind SessionEnd callback")

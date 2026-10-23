@@ -213,7 +213,9 @@ func withS5PaneCLIContext<Output: Sendable>(
             makeFixture: {
                 try LiveServerFixture(
                     channel: .debug, panes: [makePaneSummary(id: domain.paneId, ordinal: 1)],
-                    sessionsPort: AgentStudioIPCSessionsAdapter(ingestion: domain.ingestion, now: { domain.time.now }),
+                    sessionsPort: AgentStudioIPCSessionsAdapter(
+                        ingestion: domain.ingestion, now: { domain.time.now },
+                        processChainReader: EligibleTestProcessChainReader()),
                     paneContextPort: port,
                     paneClaimAdmission: .init(membershipRefusal: { claim in
                         claim.paneId == domain.paneId && claim.workspaceId == claimWorkspaceID ? nil : .otherWorkspace

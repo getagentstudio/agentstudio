@@ -2,6 +2,7 @@ import AgentStudioAppIPC
 import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
+import AgentStudioSessions
 import CryptoKit
 import Foundation
 import Testing
@@ -19,6 +20,7 @@ struct SessionsVerticalHarness {
         case diagnostic
         case boundPane
         case pane(UUID)
+        case unauthenticated
     }
 
     static let testProvider = IPCSessionProviderIdentity(
@@ -49,10 +51,14 @@ struct SessionsVerticalHarness {
         prepareRuntimePaths: @Sendable (AgentStudioIPCPaths) throws -> Void = { _ in },
         installActivityClock: Bool = false,
         activitySubmissionObserver: @escaping @Sendable (PaneActivityOccurrence) -> Void = { _ in },
-        activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in }
+        activityPublicationObserver: @escaping @MainActor @Sendable ([PaneActivityTimeMutation]) -> Void = { _ in },
+        processChainReader: any ProcessChainReading = EligibleTestProcessChainReader(),
+        terminalLeaderReader: any PaneTerminalLeaderReading = MatchingTestPaneTerminalLeaderReader()
     ) async throws -> Self {
         let workspaceWindowId = UUIDv7.generate()
         let appDelegate = makeSessionFixtureAppDelegate()
+        appDelegate.appIPCProcessChainReader = processChainReader
+        appDelegate.appIPCTerminalLeaderReader = terminalLeaderReader
         appDelegate.appIPCServerChannel = channel
         let (commandHarness, datastore) = try await makeCanonicalIPCWorkspaceCommandHarness(
             workspaceWindowId: workspaceWindowId, commandDispatcher: appDelegate.commandDispatcherForBoot())
@@ -349,8 +355,10 @@ struct SessionsVerticalHarness {
         params: JSONValue,
         authentication: Authentication = .diagnostic
     ) async throws -> String {
-        let authenticationToken: AgentStudioIPCSubjectToken
+        let authenticationToken: AgentStudioIPCSubjectToken?
         switch authentication {
+        case .unauthenticated:
+            authenticationToken = nil
         case .diagnostic:
             authenticationToken = token
         case .pane(let paneId):
@@ -370,16 +378,18 @@ struct SessionsVerticalHarness {
         let connection = try await withoutBlockingCooperativePool { try UnixSocketClient.connect(endpoint: endpoint) }
         defer { connection.close() }
         var reader = SessionsVerticalFrameReader()
-        try await send(
-            connection: connection,
-            request: try JSONRPCClientRequest(
-                id: .number(1),
-                method: "auth.login",
-                params: .object(["token": .string(authenticationToken.rawValue)])
+        if let authenticationToken {
+            try await send(
+                connection: connection,
+                request: try JSONRPCClientRequest(
+                    id: .number(1),
+                    method: "auth.login",
+                    params: .object(["token": .string(authenticationToken.rawValue)])
+                )
             )
-        )
-        let loginResponse = try await reader.receiveResponse(connection: connection)
-        try #require(loginResponse.error == nil)
+            let loginResponse = try await reader.receiveResponse(connection: connection)
+            try #require(loginResponse.error == nil)
+        }
         try await send(
             connection: connection,
             request: try JSONRPCClientRequest(id: .number(2), method: method, params: params)

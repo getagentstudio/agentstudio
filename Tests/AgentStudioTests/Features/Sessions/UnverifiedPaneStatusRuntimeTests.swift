@@ -10,7 +10,7 @@ struct UnverifiedPaneStatusRuntimeTests {
     @Test("a live main excludes child sessions, releases, and fences late ordinary predecessor facts")
     func mainElectionAndResume() {
         var runtime = UnverifiedPaneStatusRuntime()
-        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission) }
+        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission, eligibility: .eligible) }
         let pane = UUIDv7.generate()
         let origin = ContinuousClock.now
         func hook(_ session: String, _ signal: SessionProviderSignal, _ offset: Int) -> SessionsHookAdmission {
@@ -38,7 +38,7 @@ struct UnverifiedPaneStatusRuntimeTests {
     @Test("exit source instant must follow establishment and cannot end a newer main")
     func commandExitFence() {
         var runtime = UnverifiedPaneStatusRuntime()
-        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission) }
+        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission, eligibility: .eligible) }
         let pane = UUIDv7.generate()
         let origin = ContinuousClock.now
         let first = makeHookAdmission(
@@ -61,7 +61,7 @@ struct UnverifiedPaneStatusRuntimeTests {
     @Test("done and viewed status use the shared transition rules without binding records")
     func viewedAfterDone() {
         var runtime = UnverifiedPaneStatusRuntime()
-        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission) }
+        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission, eligibility: .eligible) }
         let pane = UUIDv7.generate()
         let origin = ContinuousClock.now
         #expect(
@@ -77,7 +77,7 @@ struct UnverifiedPaneStatusRuntimeTests {
     @Test("a first SessionEnd reports ended without electing a live predecessor")
     func firstEndIsAppliedAndReleased() {
         var runtime = UnverifiedPaneStatusRuntime()
-        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission) }
+        func admits(_ admission: SessionsHookAdmission) -> Bool { runtime.apply(admission, eligibility: .eligible) }
         let pane = UUIDv7.generate()
         #expect(admits(makeHookAdmission(paneId: pane, eventName: .sessionEnd, signal: .sessionEnd)))
         #expect(runtime.status(paneId: pane) == .idle(.ended))

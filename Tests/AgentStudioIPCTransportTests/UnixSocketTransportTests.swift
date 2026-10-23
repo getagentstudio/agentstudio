@@ -159,7 +159,10 @@ struct UnixSocketTransportTests {
         let client = try await valueFromDedicatedThread { try UnixSocketClient.connect(endpoint: fixture.endpoint) }
         defer { client.close() }
 
-        #expect(try await handledConnection.firstArrival()?.userIdentifier == getuid())
+        let credentials = try #require(try await handledConnection.firstArrival())
+        #expect(credentials.userIdentifier == getuid())
+        #expect(credentials.peerProcess?.pid == getpid())
+        #expect(credentials.peerProcess?.pidVersion != nil)
     }
 
     /// The normal wake-and-join branch must retain the listening descriptor
@@ -480,7 +483,7 @@ private final class RecordingPeerCredentialProvider: PeerCredentialProviding, @u
         lock.withLock {
             storedInvocationCount += 1
         }
-        return PeerCredentials(userIdentifier: getuid(), groupIdentifier: getgid())
+        return PeerCredentials(userIdentifier: getuid(), groupIdentifier: getgid(), peerProcess: nil)
     }
 }
 

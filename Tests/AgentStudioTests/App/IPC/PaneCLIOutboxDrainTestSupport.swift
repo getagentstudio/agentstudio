@@ -70,9 +70,11 @@ final class PaneCLIOutboxDrainHarness {
         repository = SessionsRepository(sqliteAccess: sqliteAccess)
         let ingestion = SessionsIngestion(
             repository: repository,
-            limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in })
+            limits: SessionsIngestionLimits(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         self.ingestion = ingestion
-        let admission = AgentStudioIPCSessionsAdapter(ingestion: ingestion)
+        let admission = AgentStudioIPCSessionsAdapter(
+            ingestion: ingestion, processChainReader: EligibleTestProcessChainReader())
         sessionAdmission = admission
         paneService = PaneContextService(
             sqliteAccess: sqliteAccess, clock: clock, wallNow: { Date(timeIntervalSince1970: 1_700_000_000) },

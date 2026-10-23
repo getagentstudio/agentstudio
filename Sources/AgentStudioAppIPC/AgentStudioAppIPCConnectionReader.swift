@@ -137,11 +137,16 @@ struct AgentStudioAppIPCConnectionReader: Sendable {
 }
 
 final class AgentStudioAppIPCConnectionState: @unchecked Sendable {
+    let peerProcess: AppIPCPeerProcess?
     private let lock = NSLock()
     private var storedAuthenticatedContext: AgentStudioIPCAuthenticatedContext?
     private var storedAuthenticationFailed = false
     private var storedHasWaitingRequest = false
     private var storedEndCause: AppIPCConnectionEndCause?
+
+    init(peerProcess: AppIPCPeerProcess?) {
+        self.peerProcess = peerProcess
+    }
 
     var authenticatedContext: AgentStudioIPCAuthenticatedContext? { lock.withLock { storedAuthenticatedContext } }
     var principal: IPCPrincipal? { authenticatedContext?.principal }

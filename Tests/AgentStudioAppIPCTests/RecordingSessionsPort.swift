@@ -1,4 +1,5 @@
 import AgentStudioAppIPC
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import Foundation
@@ -7,12 +8,15 @@ import Foundation
 /// registration tests can prove targeting without a Sessions database.
 actor RecordingSessionsPort: AppIPCSessionsPort {
     private(set) var statusPaneIds: [UUID] = []
+    private(set) var statusPeers: [AppIPCPeerProcess?] = []
+    private(set) var eventPeers: [AppIPCPeerProcess?] = []
     func recordUnverifiedStatus(
-        paneId: UUID, params: IPCSessionStatusParams,
+        paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess?,
         revalidateClaim: @escaping @Sendable () throws -> Void
     ) async throws -> IPCSessionEventResult {
         try revalidateClaim()
         statusPaneIds.append(paneId)
+        statusPeers.append(peerProcess)
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
     }
 
@@ -23,9 +27,10 @@ actor RecordingSessionsPort: AppIPCSessionsPort {
     func recordProviderEvent(
         paneId: UUID,
         params: IPCSessionEventParams,
-        provenance: IPCSessionEventProvenance
+        provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess?
     ) async throws -> IPCSessionEventResult {
         eventPaneIds.append(paneId)
+        eventPeers.append(peerProcess)
         eventProvenances.append(provenance)
         return IPCSessionEventResult(
             paneId: paneId,
