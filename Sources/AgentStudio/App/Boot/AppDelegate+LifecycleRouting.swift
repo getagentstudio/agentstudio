@@ -8,6 +8,7 @@ private let appDelegateLifecycleLogger = Logger(subsystem: "com.agentstudio", ca
 @MainActor
 extension AppDelegate {
     func applicationDidBecomeActive(_ notification: Notification) {
+        restoreForegroundTriggerSink?(.relaunched)
         guard let applicationLifecycleMonitor else {
             appDelegateLifecycleLogger.info("Skipping applicationDidBecomeActive before lifecycle monitor is ready")
             RestoreTrace.log("applicationDidBecomeActive skipped monitor=nil")
@@ -58,6 +59,7 @@ extension AppDelegate {
             "synchronizeApplicationLifecycleStateAfterWorkspaceBoot isActive=\(isApplicationActive)"
         )
         if isApplicationActive {
+            restoreForegroundTriggerSink?(.relaunched)
             applicationLifecycleMonitor.handleApplicationDidBecomeActive()
         } else {
             applicationLifecycleMonitor.handleApplicationDidResignActive()

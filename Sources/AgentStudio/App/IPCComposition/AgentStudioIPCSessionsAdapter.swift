@@ -3,6 +3,7 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import Foundation
 
 /// Wire mapping only. Sessions owns the serialized binding and status decisions.
@@ -13,13 +14,15 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     let activityClock: PaneActivityClock?
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    private let foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
 
     init(
         ingestion: SessionsIngestion, now: @escaping @Sendable () -> Date = { Date() },
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         activityClock: PaneActivityClock? = nil,
         ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
-        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil
     ) {
         self.ingestion = ingestion
         self.now = now
@@ -27,6 +30,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         self.activityClock = activityClock
         self.ownerPaneLookup = ownerPaneLookup
         self.performanceTraceRecorder = performanceTraceRecorder
+        self.foregroundLookSink = foregroundLookSink
     }
 
     func recordProviderEvent(
@@ -65,6 +69,10 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                     .init(
                         paneId: paneId, source: .hook,
                         orderingInstant: admissionInstant, wallTime: now()))
+                let trigger: ForegroundLookTrigger =
+                    committed.disposition == .bound || hook.eventName == .sessionStart || hook.eventName == .sessionEnd
+                    ? .bindingChanged : .agentMessage
+                await foregroundLookSink?(trigger, paneId)
             }
         } catch {
             if let capacityError = error as? SessionsRepositoryError {

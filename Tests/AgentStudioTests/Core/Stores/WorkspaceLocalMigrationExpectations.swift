@@ -34,4 +34,5 @@ let expectedFullLocalMigrationIdentifiers =
         "026_sessions_permission_handling",
         "027_sessions_hook_admission_cleanup",
         "029_reset_agent_line_messages",
+        "030_create_terminal_pane_foreground_evidence",
     ]

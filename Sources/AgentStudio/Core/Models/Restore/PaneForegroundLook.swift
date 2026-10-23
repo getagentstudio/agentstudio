@@ -16,6 +16,12 @@ package struct PaneForegroundLook: Equatable, Sendable {
     package let sequence: UInt64
     package let observedAt: Date
 
+    package var evidence: PaneForegroundEvidence {
+        .init(
+            paneId: paneId, bindingGenerationId: bindingGenerationId, observerLaunchId: observerLaunchId,
+            sequence: sequence, observedAt: observedAt, value: .look(program, sessionIdentity: sessionIdentity))
+    }
+
     package init(
         paneId: UUID, zmxSessionId: ZmxSessionID, sessionIdentity: Data,
         bindingGenerationId: UUID?, program: ForegroundProgram,

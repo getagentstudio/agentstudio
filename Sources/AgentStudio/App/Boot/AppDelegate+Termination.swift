@@ -106,9 +106,13 @@ func runFirstPersistenceFlushAfterWorkspaceCacheShutdown(
 @MainActor
 func drainPerformanceTraceAfterScrollbackCapture(
     scrollbackCapture: @MainActor () async -> Void,
+    foregroundLook: @MainActor () async -> Void,
     performanceTraceDrain: @MainActor () async -> Void
 ) async {
-    await scrollbackCapture()
+    async let capture: Void = scrollbackCapture()
+    async let look: Void = foregroundLook()
+    await capture
+    await look
     await performanceTraceDrain()
 }
 
@@ -193,20 +197,12 @@ extension AppDelegate {
                 }
             },
             ipcDrain: { [weak self] in
-                self?.startupTraceRecorder.recordAppStartup(
-                    "app.termination.ipc_drain", phase: "started", outcome: "started"
-                )
-                await self?.drainAppIPCCredentialPersistence()
-                self?.startupTraceRecorder.recordAppStartup(
-                    "app.termination.ipc_drain", phase: "completed", outcome: "completed"
-                )
+                await self?.captureRestoreEvidenceAndFinishIPCForTermination()
             }
         )
         if ipcDrainOutcome == .timedOut {
             appLogger.warning("IPC drain timed out at termination; continuing shutdown")
         }
-
-        await captureScrollbackAndDrainPerformanceTraceForTermination()
 
         await runTerminationDrain("trace flush") { [weak self] in
             do {
@@ -225,10 +221,20 @@ extension AppDelegate {
         }
     }
 
-    private func captureScrollbackAndDrainPerformanceTraceForTermination() async {
+    private func captureRestoreEvidenceAndFinishIPCForTermination() async {
+        let foregroundObserver = restoreForegroundObserver
         await drainPerformanceTraceAfterScrollbackCapture(
             scrollbackCapture: { await self.captureScrollbackForTermination() },
+            foregroundLook: {
+                await foregroundObserver?.finishQuitLooks()
+                await self.shutdownRestoreEvidenceOwners()
+            },
             performanceTraceDrain: {
+                self.startupTraceRecorder.recordAppStartup(
+                    "app.termination.ipc_drain", phase: "started", outcome: "started")
+                await self.drainAppIPCCredentialPersistence()
+                self.startupTraceRecorder.recordAppStartup(
+                    "app.termination.ipc_drain", phase: "completed", outcome: "completed")
                 await self.runTerminationDrain("performance trace") { [weak self] in
                     try? await self?.performanceTraceRecorder?.drain()
                 }

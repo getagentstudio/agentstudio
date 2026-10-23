@@ -25,6 +25,7 @@ package enum WorkspaceLocalMigrations {
         registerSessionsPermissionHandling(in: &migrator)
         registerSessionsHookCleanup(in: &migrator)
         registerAgentLineMessageCutover(in: &migrator)
+        registerForegroundEvidence(in: &migrator)
         return migrator
     }
 

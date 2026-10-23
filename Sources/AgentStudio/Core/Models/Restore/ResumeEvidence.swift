@@ -15,14 +15,14 @@ package struct ResumeEvidenceInput: Sendable {
     package let paneId: UUID
     package let zmxSessionId: ZmxSessionID
     package let coldEndedMain: ColdEndedMain?
-    package let evidence: ForegroundEvidence?
+    package let evidence: PaneForegroundEvidence?
     package let preRestoreLook: PaneForegroundLook?
     package let launchBootId: String
     package let inventory: ZmxSessionInventory
 
     package init(
         paneId: UUID, zmxSessionId: ZmxSessionID, coldEndedMain: ColdEndedMain?,
-        evidence: ForegroundEvidence?, preRestoreLook: PaneForegroundLook?,
+        evidence: PaneForegroundEvidence?, preRestoreLook: PaneForegroundLook?,
         launchBootId: String, inventory: ZmxSessionInventory
     ) {
         self.paneId = paneId

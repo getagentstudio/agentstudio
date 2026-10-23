@@ -182,6 +182,7 @@ extension AppDelegate {
             }
             return .initializationCancelled
         }
+        startRestoreForegroundLifecycleConsumption()
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
         else {
@@ -359,7 +360,7 @@ extension AppDelegate {
                             "agentstudio.sessions.main_actor_max_ms": .double(
                                 AgentStudioPerformanceTraceRecorder.milliseconds(from: snapshot.maximumHeldDuration)),
                         ])
-                }, activityClock: paneActivityClock)
+                }, activityClock: paneActivityClock, foregroundLookSink: makeRestoreForegroundLookSink())
         )
         guard !Task.isCancelled else {
             await composition.shutdown()

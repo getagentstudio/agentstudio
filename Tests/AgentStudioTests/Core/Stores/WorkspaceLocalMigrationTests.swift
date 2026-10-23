@@ -153,6 +153,7 @@ struct WorkspaceLocalMigrationTests {
             "sessions_provider_question",
             "sessions_provider_question_option",
             "local_drawer_presentation",
+            "terminal_pane_foreground_evidence",
         ]
 
         #expect(tableNames == expectedTableNames)

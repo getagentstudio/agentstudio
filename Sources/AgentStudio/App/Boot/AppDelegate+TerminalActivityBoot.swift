@@ -50,7 +50,7 @@ extension AppDelegate {
             },
             closeReadDurationSink: { [performanceTraceRecorder] duration in
                 performanceTraceRecorder?.recordTerminalActivityCloseRead(duration)
-            }
+            }, foregroundLookSink: makeRestoreForegroundLookSink()
         )
         workspaceSurfaceCoordinator?.terminalActivityRouter = terminalActivityRouter
         workspaceSurfaceCoordinator?.coldStartAttachExitBinding.bindAttachClientExitedHandler { [weak self] paneID in
