@@ -195,13 +195,17 @@ source/evidence path and unresolved transfer in the handback.
 ## Reach the declared card widths
 
 The observation grant must name the layout route and five owned pane layouts
-for 420/520/640/780/1000pt cards (simultaneous when the screen permits, otherwise
-successive held layouts plus a side-by-side sibling comparison). Read the
-declared `command.list` for `splitRight`/`splitLeft` pane arguments and
-`equalizePanes` tab arguments. These create/equalize splits; don't invent a
-ratio-setting IPC verb. For an owned window, use `window.resize` through the
-same wrapper and escrow CLI, with finite positive content dimensions and a
-fresh UUIDv7 correlation from the repository's generator:
+for 420/520/640/780/1000pt cards, which can use successive held single-pane frames.
+Read the declared `command.list` for `splitRight`/`splitLeft` pane arguments and
+`equalizePanes` tab arguments. These give equal split widths; there is no
+headless route to unequal sibling widths and no ratio-setting IPC verb.
+Different-width side-by-side siblings need a separately granted native divider
+drag on an already unlocked screen. Without that route, Sibling spacing and
+Same shape stay UNKNOWN. Sequential single-pane frames normalized to each
+card's origin still judge local alignment.
+For an owned window, use `window.resize` through the same wrapper and escrow CLI,
+with finite positive content dimensions and a fresh UUIDv7 correlation from the
+repository's generator:
 
 ```bash
 /bin/bash .agents/skills/verify-agentstudio/scripts/window-frame.sh \
@@ -214,15 +218,17 @@ fresh UUIDv7 correlation from the repository's generator:
 Resize reports the **actual applied content size**, including constraint
 clamping. It does not render; the separate render performs the 3 s consumer
 settle and one capture. Existing permitted split/equalize state changes follow
-the same owner-fact → settle → render sequence. A separately granted native
-divider drag remains available only on an already unlocked screen.
+the same owner-fact → settle → render sequence.
 
 Read actual card bounds after layout: outer window width is **not** card width.
-Use measured delta for the next planned layout, retaining the applied size
-receipt and full frame for each state. A clamped/unreachable required width or
-denied/ungranted route leaves that cell UNKNOWN; do not claim requested size as
-measured size or retake away a failed attempt. The shared quality reference owns
-measurement/tolerance. Finish layout before J5's timed pair and hold it fixed.
+An off-target layout attempt is a **calibration frame**: retain the applied size
+receipt and full original, label it with the measured width, and use the measured
+delta for further layout attempts. Only a frame within ±2pt fills the cell.
+The no-retake rule covers product verdicts: never replace or hide a frame showing
+a defect, including one that also misses the target width. A clamped/unreachable
+required width or denied/ungranted route leaves that cell UNKNOWN; requested
+size is not measured size. The shared quality reference owns measurement/tolerance.
+Finish layout before J5's timed pair and hold it fixed.
 
 Complete when identity, health, fixture ownership, capture access and the real
 entry/result route are established. Leave the app and existing sessions intact

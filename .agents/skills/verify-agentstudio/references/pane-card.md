@@ -17,8 +17,17 @@ and verify it is open. Close only when allowed with `managementLayerExit`.
 
 ## Current card: same order and shape at every width
 
-Use the shared quality procedure at its required widths and tolerance, with
-side-by-side different-width panes.
+Use the shared quality procedure at its required widths and tolerance.
+Headless split/equalize produces equal widths; there is no ratio verb for
+different-width siblings. Their side-by-side comparison needs a separately
+granted native divider drag on an already unlocked screen. Without that route,
+Sibling spacing and Same shape stay UNKNOWN. Sequential single-pane frames,
+normalized to each card's origin, can still judge local alignment.
+Keep off-target layout frames as calibration, labelled with measured width;
+further layout attempts are allowed, and only a frame within ±2 pt fills a cell.
+A frame showing a product defect keeps its verdict and is never replaced or
+hidden.
+
 Use J4's no-message, fresh-message, same-message-aged and 200-byte long-message
 states; also cover note, real warning, verified/unverified session, no-repo,
 long-title and long-branch fixtures. Preserve the real producer's icons and
