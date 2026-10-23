@@ -48,6 +48,8 @@ package protocol ProcessChainReading: Sendable {
 package struct ProcessChainProcessFacts: Equatable, Sendable {
     package let incarnation: ZmxProcessIncarnation
     package let parentPID: Int32
+    /// Basename of invoked argv[0], as measured by the probe's `ps -o comm`.
+    /// Version-named and argv0-rewriting launchers require it; unreadable arguments use the kernel name.
     package let executableName: String
 
     package init(incarnation: ZmxProcessIncarnation, parentPID: Int32, executableName: String) {

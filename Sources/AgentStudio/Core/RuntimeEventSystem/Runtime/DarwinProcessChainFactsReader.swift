@@ -1,7 +1,9 @@
 import Darwin
 import Foundation
 
-/// Public, query-time process facts only. No history survives a caller's observation.
+/// Public, query-time process facts only. Names follow the probe's `ps -o comm`
+/// measurement: argv[0] preserves version-named and argv0-rewriting launchers.
+/// Unreadable arguments fall back to the kernel name; no observation history is kept.
 package struct DarwinProcessChainFactsReader: ProcessChainFactsReading {
     package init() {}
 
@@ -34,7 +36,8 @@ package struct DarwinProcessChainFactsReader: ProcessChainFactsReading {
         let commandName = withUnsafeBytes(of: information.pbi_comm) {
             String(bytes: $0.prefix(while: { $0 != 0 }), encoding: .utf8)
         }
-        guard let processName = executableName?.isEmpty == false ? executableName : commandName,
+        let kernelName = executableName?.isEmpty == false ? executableName : commandName
+        guard let processName = invokedCommandName(of: pid) ?? kernelName,
             !processName.isEmpty
         else { return nil }
         let basename = URL(fileURLWithPath: processName).lastPathComponent
@@ -43,5 +46,17 @@ package struct DarwinProcessChainFactsReader: ProcessChainFactsReading {
             incarnation: .init(
                 pid: pid, startSeconds: information.pbi_start_tvsec, startMicroseconds: information.pbi_start_tvusec),
             parentPID: Int32(information.pbi_ppid), executableName: basename)
+    }
+
+    private func invokedCommandName(of pid: Int32) -> String? {
+        var query: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
+        var buffer = [UInt8](repeating: 0, count: Int(ARG_MAX))
+        var size = buffer.count
+        let result = buffer.withUnsafeMutableBytes { sysctl(&query, 3, $0.baseAddress, &size, nil, 0) }
+        guard result == 0, size <= buffer.count,
+            let command = ProcessArgumentsBufferParser.argumentVector(in: Array(buffer.prefix(size)))?.first,
+            !command.isEmpty
+        else { return nil }
+        return command
     }
 }
