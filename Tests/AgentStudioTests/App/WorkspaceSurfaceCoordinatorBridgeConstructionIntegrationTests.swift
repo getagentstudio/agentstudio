@@ -422,6 +422,10 @@ extension WebKitSerializedTests {
         @Test("one worktree freshness advance precedes invalidation fan-out to both panes")
         func freshnessAdvancesOnceBeforePaneFanOut() async throws {
             // Arrange
+            // Complete fixture writes before the live harness can watch this root.
+            let repositoryURL = try await FilesystemTestGitRepo.create(named: "bridge-freshness-fan-out")
+            defer { FilesystemTestGitRepo.destroy(repositoryURL) }
+            try await initializeBridgeReviewGitFixture(at: repositoryURL)
             let terminalExpectation = BridgeProductWebKitCatchUpTerminalExpectation(
                 lanes: [.file, .review], batchSequence: 1)
             let traceSink = BridgeNativeCatchUpTraceSink(expectation: terminalExpectation)
@@ -433,10 +437,7 @@ extension WebKitSerializedTests {
                 traceRuntime: traceSink.makeRuntime(),
                 worktreeProductConstructionCoordinator: constructionCoordinator
             )
-            let setup = try makeTwoPaneWorktreeSetup(in: harness)
-            // The real factory selects a Git Review provider; a directory alone
-            // fails that provider after reservation and leaves the dirty fact.
-            try await initializeBridgeReviewGitFixture(at: setup.worktree.path)
+            let setup = try makeTwoPaneWorktreeSetup(in: harness, repositoryURL: repositoryURL)
             enterForegroundNativeEnvironment(harness)
             let firstView = harness.coordinator.createBridgePaneView(
                 for: setup.firstPane,
@@ -715,9 +716,10 @@ private struct TwoPaneWorktreeSetup {
 
 @MainActor
 private func makeTwoPaneWorktreeSetup(
-    in harness: BridgePaneActivityTestHarness
+    in harness: BridgePaneActivityTestHarness,
+    repositoryURL preparedRepositoryURL: URL? = nil
 ) throws -> TwoPaneWorktreeSetup {
-    let repositoryURL = harness.tempDirectory.appending(path: "shared-construction-repo")
+    let repositoryURL = preparedRepositoryURL ?? harness.tempDirectory.appending(path: "shared-construction-repo")
     // C2 validates File roots before minting source authority; this fixture owns a healthy root.
     try FileManager.default.createDirectory(at: repositoryURL, withIntermediateDirectories: true)
     let repo = harness.store.addRepo(at: repositoryURL)
