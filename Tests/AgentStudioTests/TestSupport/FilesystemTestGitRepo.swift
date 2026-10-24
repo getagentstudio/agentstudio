@@ -2,6 +2,23 @@ import AgentStudioTestHarness
 import Foundation
 
 package enum FilesystemTestGitRepo {
+    package static func createBareRemote(at remoteURL: URL, cloning sourceRepository: URL? = nil) async throws {
+        let parentDirectory = remoteURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: parentDirectory, withIntermediateDirectories: true)
+        if let sourceRepository {
+            try await runGit(
+                at: parentDirectory, args: ["clone", "--bare", sourceRepository.path, remoteURL.path])
+        } else {
+            try await runGit(at: parentDirectory, args: ["init", "--bare", remoteURL.path])
+        }
+
+        // Local push transport clears client config overlays before receive-pack.
+        // Keep the policy in the bare remote before any caller can push into it.
+        for (key, value) in [("receive.autogc", "false"), ("gc.auto", "0"), ("maintenance.auto", "false")] {
+            try await runGit(at: remoteURL, args: ["config", "--local", key, value])
+        }
+    }
+
     package static func create(named prefix: String) async throws -> URL {
         let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
             .appending(path: "tmp")

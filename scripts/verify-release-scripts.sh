@@ -241,6 +241,10 @@ make_tap_push_fixture() {
   local fixture_dir="$1"
   mkdir -p "$fixture_dir"
   git init --bare --initial-branch=main -q "$fixture_dir/origin.git"
+  # Local receive-pack does not inherit the client config overlay above.
+  git -C "$fixture_dir/origin.git" config --local receive.autogc false
+  git -C "$fixture_dir/origin.git" config --local gc.auto 0
+  git -C "$fixture_dir/origin.git" config --local maintenance.auto false
   git -C "$fixture_dir/origin.git" config receive.denyNonFastForwards true
   git clone -q "$fixture_dir/origin.git" "$fixture_dir/writer"
   git -C "$fixture_dir/writer" config user.name "AgentStudio Release Tests"
