@@ -1,3 +1,4 @@
+import AgentStudioTestHarness
 import Foundation
 import Testing
 
@@ -6,6 +7,7 @@ extension ObservabilityDebugLaunchScriptsTests {
     func debugLauncherRecognizesExpiredDeadlineAcrossProcesses() async throws {
         let fixture = try LauncherScriptFixture()
         defer { fixture.cleanup() }
+        let referencePython = try await TestToolResolver.resolved().python3
         let source = try String(contentsOfFile: "scripts/run-debug-observability.sh", encoding: .utf8)
         let clockStart = try #require(source.range(of: "launch_wait_time() {"))
         let clockEnd = try #require(source.range(of: "wait_for_app_ipc() {"))
@@ -19,13 +21,15 @@ extension ObservabilityDebugLaunchScriptsTests {
             set -euo pipefail
             \(clockFunctions)
             unset AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN
-            launch_wait_deadline=$(/usr/bin/python3 -c 'import time; print(time.clock_gettime(time.CLOCK_MONOTONIC) - 1)')
+            launch_wait_deadline=$("$LAUNCH_CLOCK_REFERENCE_PYTHON" -c 'import time; print(time.clock_gettime(time.CLOCK_MONOTONIC) - 1)')
             if launch_wait_has_time; then exit 0; fi
             printf 'deadline_expired\\n'
             exit 1
             """
         )
-        let result = try await fixture.runScript(command.path, arguments: [], environment: [:])
+        let result = try await fixture.runScript(
+            command.path, arguments: [], environment: ["LAUNCH_CLOCK_REFERENCE_PYTHON": referencePython.path]
+        )
         #expect(result.exitCode == 1, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
         #expect(result.stdout == "deadline_expired\n")
     }
