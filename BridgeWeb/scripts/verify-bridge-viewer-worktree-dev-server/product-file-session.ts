@@ -106,6 +106,7 @@ export class BridgeVerifierProductFileSession {
 	readonly #descriptorByPath = new Map<string, FileDescriptorOutcome>();
 	#scopeRevision = 0;
 	#batchReceiver: BridgeProductViewBatchReceiver | null = null;
+	#resnapshotPending = false;
 	#installedFileView: BridgeProductInstalledFileView | null = null;
 	readonly #installations: BridgeProductViewInstallation[] = [];
 	#metadataStream: BridgeVerifierMetadataStream | null = null;
@@ -619,11 +620,29 @@ export class BridgeVerifierProductFileSession {
 	async #acceptFileBatchFrame(frame: BridgeProductBatchFrame): Promise<void> {
 		// Retirement is local before cancel: buffered parts no longer owe credits.
 		if (this.#state === 'closing' || this.#state === 'closed') return;
+		// A rejected sealed batch's tail cannot repair its missing side bank.
+		// Keep the installed view and await the replacement snapshot barrier.
+		if (this.#resnapshotPending) {
+			if (frame.kind !== 'subscription.batchBegin' || frame.mode !== 'snapshot') return;
+		}
 		const acceptance = this.#requireBatchReceiver().accept(frame);
+		if (frame.kind === 'subscription.batchBegin' && acceptance.kind === 'staged')
+			this.#resnapshotPending = false;
 		if (acceptance.kind === 'resnapshot') {
-			throw new Error(
-				`File batch ${frame.batchId} requires a resnapshot for ${acceptance.domain}.`,
-			);
+			this.#resnapshotPending = true;
+			process.stderr.write(`[product-file-resnapshot] rejection=${acceptance.rejection}\n`);
+			const response = await this.#postControl({
+				domain: acceptance.domain,
+				handle: this.#viewHandle,
+				incarnation: this.#viewIncarnation,
+				kind: 'subscription.resnapshot',
+				scopeRevision: this.#scopeRevision,
+				subscriptionId: this.#subscriptionId,
+				subscriptionKind: 'file.metadata',
+			});
+			if (response.kind !== 'subscription.resnapshotAccepted')
+				throw new Error(`Expected File resnapshot acceptance, received ${response.kind}.`);
+			return;
 		}
 		if (acceptance.kind === 'staged' && acceptance.receivedThroughDeliverySequence !== undefined) {
 			await this.#acknowledgeFileBatchParts(acceptance.receivedThroughDeliverySequence);
