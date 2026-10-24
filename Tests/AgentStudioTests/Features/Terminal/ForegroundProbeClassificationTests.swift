@@ -49,7 +49,7 @@ struct ForegroundProbeClassificationTests {
                 leader: shell, samples: samples, incompleteLeaders: [], leadersWithVanishedRows: []) == .other)
     }
 
-    @Test("incomplete or empty ps is unknown, never shell", arguments: [false, true])
+    @Test("incomplete or empty discovery is unknown, never shell", arguments: [false, true])
     func incompletePassIsUnknown(empty: Bool) {
         let shell = foregroundTestProcess(pid: 4100)
         let samples =
@@ -168,7 +168,7 @@ struct ForegroundProbeClassificationTests {
         #expect(resultB == .codex)
     }
 
-    @Test("a requested leader missing from ps makes only that pane incomplete")
+    @Test("a requested leader missing from discovery makes only that pane incomplete")
     func missingLeaderDoesNotInvalidatePresentPane() throws {
         let leaderA = foregroundTestProcess(pid: 4100)
         let leaderB = foregroundTestProcess(pid: 5100)
@@ -206,7 +206,7 @@ struct ForegroundProbeClassificationTests {
             process: foregroundTestProcess(pid: pid), group: row.group, foregroundGroup: row.foreground, argv0: argv0)
     }
 
-    @Test("one ps pass serves every requested pane and retains only typed process identity")
+    @Test("one probe pass serves every requested pane and retains only typed process identity")
     func onePassClassifiesSeveralSessions() async throws {
         let firstId = ZmxSessionID.generateUUIDv7()
         let secondId = ZmxSessionID.generateUUIDv7()

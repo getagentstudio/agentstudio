@@ -1,9 +1,8 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
-import Darwin
 import Foundation
 
-/// Ephemeral ps input. argv0 must never enter the durable observation row.
+/// Ephemeral kernel input. argv0 must never enter the durable observation row.
 package struct ForegroundProcessSample: Sendable {
     package let incarnation: ProcessIncarnation
     package let processGroupId: Int32
@@ -20,16 +19,19 @@ package struct ForegroundPsPass: Sendable {
 package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let sessionControl: any ZmxSessionControlling
+    private let kernelReader: any TerminalForegroundKernelReading
     private let readSamples: (@Sendable () async throws -> ForegroundPsPass)?
     package init(
         sessionDirectory: String, bootId: String,
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         sessionControl: (any ZmxSessionControlling)? = nil,
-        readSamples: (@Sendable () async throws -> ForegroundPsPass)? = nil
+        readSamples: (@Sendable () async throws -> ForegroundPsPass)? = nil,
+        kernelReader: any TerminalForegroundKernelReading = DarwinTerminalForegroundKernelReader()
     ) {
         self.performanceTraceRecorder = performanceTraceRecorder
         self.sessionControl = sessionControl ?? ForegroundZmxSessionControl(directory: sessionDirectory, bootId: bootId)
         self.readSamples = readSamples
+        self.kernelReader = kernelReader
     }
 
     @concurrent nonisolated package func probeForeground(of sessions: [ZmxSessionID]) async throws
@@ -51,12 +53,12 @@ package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
         } else {
             pass = try await Self.readNativeSamples(
                 leaders: identities.values.map { $0.1.terminalLeader },
-                performanceTraceRecorder: performanceTraceRecorder)
+                performanceTraceRecorder: performanceTraceRecorder, kernelReader: kernelReader)
         }
         var snapshots: [ZmxSessionID: ForegroundSnapshot] = [:]
         for (sessionId, captured) in identities {
             let (data, identity) = captured
-            // The socket may have disappeared or been replaced during ps.
+            // The socket may have disappeared or been replaced during kernel reads.
             // Only a positively unchanged session may contribute a record.
             guard let current = try? await sessionControl.observeSessionIdentity(sessionId), current == data else {
                 continue
@@ -111,46 +113,96 @@ package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
         }
     }
 
-    /// Only metadata comes from ps. argv is read solely for the requested
-    /// terminal leaders' foreground groups and discarded with this pass.
-    @concurrent nonisolated private static func readNativeSamples(
-        leaders: [ProcessIncarnation], performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    /// Discover only requested leaders and their foreground groups. Re-read selected
+    /// rows during attribution so regrouping and disappearing processes remain unknown.
+    @concurrent nonisolated package static func readNativeSamples(
+        leaders: [ProcessIncarnation], performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
+        kernelReader: any TerminalForegroundKernelReading = DarwinTerminalForegroundKernelReader()
     ) async throws -> ForegroundPsPass {
         let leaderIds = Set(leaders.map(\.pid))
-        let result: ProcessResult
-        do {
-            result = try await AgentStudioPerformanceTraceRecorder.withRestorePhaseScope(.restoreForegroundProbe) {
-                try await DefaultProcessExecutor(performanceTraceRecorder: performanceTraceRecorder).execute(
-                    command: "/bin/ps", args: ["-axo", "pid=,pgid=,tpgid="], cwd: nil, environment: nil)
-            }
-        } catch is CancellationError { throw CancellationError() } catch {
-            return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
-        }
         return try AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
             .restoreForegroundProbe, recorder: performanceTraceRecorder
         ) {
-            guard result.succeeded else {
-                return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
-            }
-            let lines = result.stdout.split(separator: "\n")
-            let rows = lines.compactMap { line -> (pid: Int32, group: Int32, foreground: Int32)? in
-                let fields = line.split(whereSeparator: { $0.isWhitespace })
-                guard fields.count == 3, let pid = Int32(fields[0]), let group = Int32(fields[1]),
-                    let foreground = Int32(fields[2])
-                else { return nil }
-                return (pid, group, foreground)
-            }
-            guard rows.count == lines.count else {
-                return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
-            }
-            return try attributeSamples(rows: rows, requestedLeaderPids: leaderIds) { pid, readArguments in
+            try Task.checkCancellation()
+            var rows: [(pid: Int32, group: Int32, foreground: Int32)] = []
+            for leader in leaders where !rows.contains(where: { $0.pid == leader.pid }) {
                 try Task.checkCancellation()
-                return readNativeSample(pid: pid, readArguments: readArguments)
+                guard case .sample(let sample) = kernelReader.readNativeSample(pid: leader.pid, readArguments: false),
+                    sample.incarnation == leader
+                else { continue }
+                rows.append((leader.pid, sample.processGroupId, sample.foregroundGroupId))
             }
+            let foregroundGroups = Set(rows.map(\.foreground).filter { $0 > 0 })
+            var incompleteLeaders: Set<Int32> = []
+            var failedMemberReads: [Int32: NativeSampleReadResult] = [:]
+            for groupId in foregroundGroups {
+                let affectedLeaders = rows.filter { leaderIds.contains($0.pid) && $0.foreground == groupId }.map(\.pid)
+                guard let members = try readGroupMembers(groupId, kernelReader: kernelReader) else {
+                    incompleteLeaders.formUnion(affectedLeaders)
+                    continue
+                }
+                for pid in Set(members) where pid > 0 {
+                    try Task.checkCancellation()
+                    if let existing = rows.first(where: { $0.pid == pid }) {
+                        if existing.group != groupId { incompleteLeaders.formUnion(affectedLeaders) }
+                        continue
+                    }
+                    let read = kernelReader.readNativeSample(pid: pid, readArguments: false)
+                    switch read {
+                    case .sample(let sample):
+                        guard sample.processGroupId == groupId else {
+                            incompleteLeaders.formUnion(affectedLeaders)
+                            continue
+                        }
+                        rows.append((pid, sample.processGroupId, sample.foregroundGroupId))
+                    case .vanished, .unreadable:
+                        // Retain the enumerated membership for the existing per-leader
+                        // failure attribution, even when BSD metadata has disappeared.
+                        rows.append((pid, groupId, 0))
+                        failedMemberReads[pid] = read
+                    }
+                }
+            }
+            let pass = try attributeSamples(rows: rows, requestedLeaderPids: leaderIds) { pid, readArguments in
+                try Task.checkCancellation()
+                return failedMemberReads[pid] ?? kernelReader.readNativeSample(pid: pid, readArguments: readArguments)
+            }
+            try Task.checkCancellation()
+            return .init(
+                samples: pass.samples, incompleteLeaders: pass.incompleteLeaders.union(incompleteLeaders),
+                leadersWithVanishedRows: pass.leadersWithVanishedRows)
         }
     }
 
-    /// Attributes one parsed pass's native read outcomes to only the leaders that own each row.
+    /// A full buffer may be truncated. Retry once with greater capacity, then
+    /// report the group unreadable rather than classify a partial membership list.
+    package static func readGroupMembers(
+        _ groupId: Int32, kernelReader: any TerminalForegroundKernelReading
+    ) throws -> [Int32]? {
+        let stride = MemoryLayout<Int32>.stride
+        var previousCapacity = 0
+        for _ in 0..<2 {
+            try Task.checkCancellation()
+            let estimatedBytes = kernelReader.listProcessGroup(groupId, buffer: nil, bufferSize: 0)
+            guard estimatedBytes >= 0, Int(estimatedBytes).isMultiple(of: stride) else { return nil }
+            let capacity = max(Int(estimatedBytes), previousCapacity * 2) + stride
+            guard let bufferSize = Int32(exactly: capacity) else { return nil }
+            var members = [Int32](repeating: 0, count: capacity / stride)
+            try Task.checkCancellation()
+            let fetchedBytes = members.withUnsafeMutableBytes {
+                kernelReader.listProcessGroup(groupId, buffer: $0.baseAddress, bufferSize: bufferSize)
+            }
+            try Task.checkCancellation()
+            guard fetchedBytes >= 0, fetchedBytes <= bufferSize, Int(fetchedBytes).isMultiple(of: stride) else {
+                return nil
+            }
+            if fetchedBytes < bufferSize { return Array(members.prefix(Int(fetchedBytes) / stride)) }
+            previousCapacity = capacity
+        }
+        return nil
+    }
+
+    /// Attributes one scoped pass's native read outcomes to only the leaders that own each row.
     package static func attributeSamples(
         rows: [(pid: Int32, group: Int32, foreground: Int32)], requestedLeaderPids leaderIds: Set<Int32>,
         readSample: (Int32, Bool) throws -> NativeSampleReadResult
@@ -194,29 +246,6 @@ package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
         case unreadable
     }
 
-    private static func readNativeSample(pid: Int32, readArguments: Bool) -> NativeSampleReadResult {
-        var information = proc_bsdinfo()
-        let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-        errno = 0
-        guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &information, size) == size else {
-            return errno == ESRCH ? .vanished : .unreadable
-        }
-        guard information.pbi_uid == geteuid(), information.pbi_pid == UInt32(pid) else { return .unreadable }
-        let incarnation = ProcessIncarnation(
-            pid: pid, startSeconds: information.pbi_start_tvsec, startMicroseconds: information.pbi_start_tvusec)
-        var argv0 = ""
-        if readArguments {
-            guard case .success(let buffer) = DarwinColdStartObserverSyscalls().readProcessArgumentsBuffer(pid: pid),
-                let argument = ProcessArgumentsBufferParser.argumentVector(in: buffer)?.first,
-                DarwinColdStartObserverSyscalls().leaderState(of: incarnation) == .sameIncarnationAlive
-            else { return .unreadable }
-            argv0 = argument
-        }
-        return .sample(
-            ForegroundProcessSample(
-                incarnation: incarnation, processGroupId: Int32(information.pbi_pgid),
-                foregroundGroupId: Int32(information.e_tpgid), argv0: argv0))
-    }
 }
 
 private struct ForegroundZmxSessionControl: ZmxSessionControlling {
