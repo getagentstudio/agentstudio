@@ -74,10 +74,13 @@ observations, and its functional/taste verdicts:
 | actual held state | measured width | absolute original path | judgment + evidence | judgment + evidence | judgment + evidence | judgment + evidence | judgment + evidence | judgment + evidence | judgment + sibling comparison | defect or none | PASS/FAIL/UNKNOWN | PASS/FAIL/UNKNOWN |
 
 - **Clipping or truncation:** can the user read the required title, status,
-  message, warning, caption, ID and age? Normal card IDs/names must fit at 420pt
-  and above. Adopted limits remain allowed: two-line title/message with tail
-  ellipsis for oversized text, middle-truncated oversized field values with the
-  full tooltip, and J4's truncatable message with a **complete separate age**.
+  message, warning, caption, ID and age? Normal card names must fit at 420pt and
+  above. SESSION and PANE IDs may middle-truncate wherever the full ID does not
+  fit, under J5's checks for readable prefix and suffix, full tooltip and
+  always-visible inline copy icon. Adopted limits remain allowed: two-line
+  title/message with tail ellipsis for oversized text, middle-truncated oversized
+  field values with the full tooltip, and J4's truncatable message with a
+  **complete separate age**.
   Cite that boundary rather than excusing clipped ordinary content. Tooltips/AX
   full text do not prove the pixels painted or make a hidden age acceptable.
 - **Alignment:** compare local leading/trailing edges and baselines across panes

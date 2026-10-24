@@ -55,12 +55,17 @@ that card, so all values share the same local x. No width-based switch to an
 HStack/two-column card; the Grid is only the three-column field-line alignment.
 
 Check natural heights and matching sibling gaps. Copy buttons follow their
-values at the same small gap, not at the card's trailing edge. Normal repo,
-branch and 36-character pane/session IDs must be fully readable at 420pt and
-wider. Oversized path/branch/ID values may use the adopted **middle truncation**
-with full tooltip; don't confuse that boundary with clipped normal IDs. A long
-title/message follows its separate two-line tail boundary. Every element stays
-inside the card's inner bounds; no abandoned column or empty reserved row.
+values at the same small gap, not at the card's trailing edge. Normal repo and
+branch must be fully readable at 420pt and wider. SESSION and PANE IDs may
+middle-truncate at any width where the full ID does not fit. Keep a readable
+prefix and suffix around the ellipsis, the full ID in the tooltip, and a small
+inline copy icon right after the value at the same small gap, always visible.
+An ID cut off at the edge without an ellipsis, a copy icon pushed to the card's
+trailing edge, a hidden or hover-only copy icon, or truncation of a normal repo
+or branch at 420pt is **FAIL**. Oversized path/branch values may use the adopted
+**middle truncation** with full tooltip. A long title/message follows its
+separate two-line tail boundary. Every element stays inside the card's inner
+bounds; no abandoned column or empty reserved row.
 
 On every original, also verify:
 
@@ -73,13 +78,17 @@ On every original, also verify:
   have **no warning/error line** after #57. A matching empty row is insufficient:
   require the retained refusal data and the positive card warning through J6.
   No raw credentialNotRecognized text or “?” placeholder chip is user-facing.
-- Normal pane ID always paints completely. Session ID requires actual verified-live
+- PANE always appears. SESSION appears only for a verified-live binding, with
   `session.query`/reader evidence taken immediately before capture for that same
-  pane. Compare the full rendered SESSION to that verified-live owner fact;
-  Working alone does not establish it. Test an unverified negative and a
-  verified positive. Read full IDs, including middle
-  characters, at all five required widths. AX full values can
-  hide truncation. Include lineless and long-message layouts and a comparator.
+  pane. Compare SESSION to that verified-live owner fact; Working alone does
+  not establish it. Test an unverified negative and a verified positive.
+  At all five required widths, read every character where an
+  ID paints completely. Where it middle-truncates, compare its visible prefix
+  and suffix to the verified-live owner fact and take the full value from
+  **Copy Session ID / Copy Pane ID** under "Copy SESSION means only the session
+  ID" below, and from the tooltip. Compare PANE to that same pane's owner ID.
+  AX full values can hide truncation; judge the painted frame. Include lineless
+  and long-message layouts and a comparator.
 - Activity recency/active chips match the same sidebar row at the same instant.
   **Message age uses message.updatedAt; activity chips use pane activity.** Their
   unit transitions share the adopted pure projection, not a common timestamp.

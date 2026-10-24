@@ -54,7 +54,7 @@ restore_select() {
   [ ! -e "$VERIFY_RUN_DIR/selected-session.env" ] ||
     { verify_fail "Selection already exists; do not replace journey evidence"; return 1; }
   query="SELECT zmx_session_id FROM pane_content_terminal WHERE upper(pane_id)=upper('$pane_id');"
-  verify_logged selected-pane sqlite3 -readonly "$VERIFY_DATA_ROOT/local.sqlite" "$query" || return
+  verify_logged selected-pane sqlite3 -readonly "$VERIFY_DATA_ROOT/core.sqlite" "$query" || return
   stored_session="$(< "$VERIFY_LAST_LOG.stdout")"
   verify_validate_uuid "$stored_session" ||
     { verify_fail "Need one exact stored UUID session for the newly created pane; no derived/ambiguous id"; return 1; }
