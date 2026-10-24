@@ -401,7 +401,8 @@ struct ApplicationEntrypointArchitectureTests {
         let surfaceCoordinatorIndex = try #require(
             workspaceBootSource.range(of: "workspaceSurfaceCoordinator = WorkspaceSurfaceCoordinator(")?.lowerBound)
         let undoRecoveryIndex = try #require(
-            workspaceBootSource.range(of: "workspaceSurfaceCoordinator.installUndoJournalRecovery(")?.lowerBound)
+            workspaceBootSource.range(of: "workspaceSurfaceCoordinator.installUndoJournalRecovery(undoRecovery)")?
+                .lowerBound)
 
         #expect(appDelegateSource.contains("import AgentStudioAppIPC"))
         #expect(appDelegateSource.contains("var appIPCServer: AgentStudioAppIPCServer?"))

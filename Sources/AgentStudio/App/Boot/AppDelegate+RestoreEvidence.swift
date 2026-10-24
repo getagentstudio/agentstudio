@@ -4,20 +4,9 @@ import AgentStudioTerminal
 import Foundation
 
 extension AppDelegate {
-    func installBootUndoJournalRecovery(_ recovery: WorkspaceUndoJournalRecovery) {
-        pendingBootRestoreRetirementPaneIDs.formUnion(recovery.retiredCloses.flatMap(\.unownedPaneIDs))
-        workspaceSurfaceCoordinator.installUndoJournalRecovery(recovery)
-    }
-
-    /// Recovery precedes both restore owners. Replay only at the deferred
-    /// optional-schema boundary, through the same owned retirement task route.
+    /// Called only after optional schema preparation; sink installation alone is insufficient.
     func replayBootRestoreRetirements() {
-        guard !pendingBootRestoreRetirementPaneIDs.isEmpty,
-            workspaceSurfaceCoordinator.restorePaneRetirementSink != nil
-        else { return }
-        let paneIDs = pendingBootRestoreRetirementPaneIDs
-        pendingBootRestoreRetirementPaneIDs.removeAll()
-        workspaceSurfaceCoordinator.submitRestoreRetirement(paneIDs)
+        workspaceSurfaceCoordinator.markRestoreForegroundRetirementReady()
     }
 
     func installRestoreEvidenceOwners(datastore: WorkspaceSQLiteDatastoreActor, sessionDirectory: String) async {

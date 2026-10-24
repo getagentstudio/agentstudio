@@ -74,6 +74,7 @@ final class WorkspaceSurfaceCoordinator {
     let coldStartAttachExitBinding = ColdStartAttachExitBinding()
     var paneActivityClock: PaneActivityClock?
     var scrollbackStore: ScrollbackStore?
+    var restoreForegroundRetirementRoute: ForegroundRetirementRoute = .awaitingReady(pendingPaneIDs: [])
     var restorePaneRetirementSink: (@Sendable (UUID) async -> Void)?
     var scrollbackSnapshotter: ScrollbackSnapshotter?
     var restoreRetirementTasksByID: [UUID: Task<Void, Never>] = [:]

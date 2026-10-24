@@ -106,7 +106,7 @@ struct ScrollbackWorkspaceLifecycleTests {
             delegate.workspaceSQLiteDatastore = fixture.datastore
             delegate.restoreForegroundEvidenceRepository = repository
             // These are the production boot calls, in their actual installation order.
-            delegate.installBootUndoJournalRecovery(recovery)
+            delegate.workspaceSurfaceCoordinator.installUndoJournalRecovery(recovery)
             await delegate.installRestoreEvidenceOwners(
                 datastore: fixture.datastore, sessionDirectory: fixture.root.path)
             try #require(delegate.restoreForegroundObserver != nil)
@@ -266,7 +266,7 @@ struct ScrollbackWorkspaceLifecycleTests {
         }
     }
 
-    private func expectRetirement(_ fixture: ScrollbackWorkspaceFixture, paneIDs: Set<PaneId>) async throws {
+    func expectRetirement(_ fixture: ScrollbackWorkspaceFixture, paneIDs: Set<PaneId>) async throws {
         let scope = try await fixture.recorder.expectNextOperation(
             matching: { if case .retirement = $0 { true } else { false } },
             opening: { $0 == .retirementStarted(paneIDs) }, "permanent retirement of the expected panes")
@@ -274,18 +274,21 @@ struct ScrollbackWorkspaceLifecycleTests {
         try await fixture.recorder.expectNext(in: scope, .retirementFinished)
     }
 
-    private func withWorkspace(
+    func withWorkspace(
         expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil,
+        clock: AgentStudioTestSupport.TestPushClock = .init(),
         installsSnapshotter: Bool = true,
         includesOptionalSchema: Bool = true,
         _ body: (ScrollbackWorkspaceFixture) async throws -> Void
     ) async throws {
         let fixture = try ScrollbackWorkspaceFixture(
-            expiryHold: expiryHold, installsSnapshotter: installsSnapshotter,
+            expiryHold: expiryHold, clock: clock, installsSnapshotter: installsSnapshotter,
             includesOptionalSchema: includesOptionalSchema)
         var bodyError: (any Error)?
         do { try await body(fixture) } catch { bodyError = error }
+        fixture.undoDeadlineLifetimeTask?.cancel()
         await fixture.coordinator.shutdown()
+        await fixture.undoDeadlineLifetimeTask?.value
         await fixture.bootDelegate?.shutdownRestoreEvidenceOwners()
         await fixture.cacheCoordinator.shutdown()
         await fixture.snapshotter.shutdown()
@@ -301,15 +304,16 @@ struct ScrollbackWorkspaceLifecycleTests {
 }
 
 @MainActor
-private final class ScrollbackWorkspaceFixture {
+final class ScrollbackWorkspaceFixture {
     let workspaceID = UUIDv7.generate()
     let root = FileManager.default.temporaryDirectory.appending(
         path: "scrollback-workspace-\(UUIDv7.generate().uuidString)")
-    let clock = AgentStudioTestSupport.TestPushClock()
+    let clock: AgentStudioTestSupport.TestPushClock
     let store: WorkspaceStore
     let datastore: WorkspaceSQLiteDatastoreActor
     let coordinator: WorkspaceSurfaceCoordinator
     var bootDelegate: AppDelegate?
+    var undoDeadlineLifetimeTask: Task<Void, Never>?
     let cacheCoordinator: WorkspaceCacheCoordinator
     let scrollback: ScrollbackStore
     let snapshotter: ScrollbackSnapshotter
@@ -318,9 +322,11 @@ private final class ScrollbackWorkspaceFixture {
     let lifecycleFacts = ScrollbackLifecycleRecorder()
 
     init(
-        expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil, installsSnapshotter: Bool = true,
+        expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil,
+        clock: AgentStudioTestSupport.TestPushClock = .init(), installsSnapshotter: Bool = true,
         includesOptionalSchema: Bool = true
     ) throws {
+        self.clock = clock
         let sqliteFixture =
             try includesOptionalSchema
             ? makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
@@ -402,7 +408,7 @@ private func makeBootRequiredScrollbackWorkspaceFixture(workspaceId: UUID) throw
         localQueue: localQueue, coreRepository: coreRepository, localRepository: localRepository, backend: backend)
 }
 
-private final class ScrollbackLifecycleRecorder: Sendable {
+final class ScrollbackLifecycleRecorder: Sendable {
     private let recorded = Mutex<[ScrollbackSnapshotterFact]>([])
 
     func append(_ fact: ScrollbackSnapshotterFact) {

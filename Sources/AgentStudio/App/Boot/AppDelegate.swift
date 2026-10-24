@@ -191,7 +191,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var restoreForegroundLifecycleContinuation: AsyncStream<ForegroundLookTrigger>.Continuation?
     var restoreForegroundLifecycleTask: Task<Void, Never>?
     var restoreForegroundTriggerSink: (@Sendable (ForegroundLookTrigger) -> Void)?
-    var pendingBootRestoreRetirementPaneIDs: Set<UUID> = []
     private var didForwardRestoreQuit = false
     var bridgeGitReadScheduler: BridgeGitReadScheduler!
     var bridgeWorktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator!

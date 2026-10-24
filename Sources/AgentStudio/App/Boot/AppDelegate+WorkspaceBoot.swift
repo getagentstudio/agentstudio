@@ -470,7 +470,7 @@ extension AppDelegate {
         if let backend = scrollbackBackend {
             installScrollbackSnapshotter(using: backend)
         }
-        installBootUndoJournalRecovery(undoRecovery)
+        workspaceSurfaceCoordinator.installUndoJournalRecovery(undoRecovery)
         if let backend = scrollbackBackend {
             workspaceSurfaceCoordinator.startTerminalSessionCleanup(
                 using: backend,

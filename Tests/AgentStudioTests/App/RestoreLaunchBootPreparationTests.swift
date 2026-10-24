@@ -16,7 +16,8 @@ struct RestoreLaunchBootPreparationTests {
         let boot = try String(
             contentsOf: root.appending(path: "Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift"),
             encoding: .utf8)
-        let recovery = try #require(boot.range(of: "installBootUndoJournalRecovery(undoRecovery)"))
+        let recovery = try #require(
+            boot.range(of: "workspaceSurfaceCoordinator.installUndoJournalRecovery(undoRecovery)"))
         let cleanup = try #require(boot.range(of: "workspaceSurfaceCoordinator.startTerminalSessionCleanup("))
         let evidence = try #require(boot.range(of: "await installRestoreEvidenceOwners("))
         let mounts = try #require(
