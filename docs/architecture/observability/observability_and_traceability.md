@@ -80,13 +80,14 @@ launcher family may grow feature-specific trace switches.
 `AGENTSTUDIO_TRACE_TAGS` selects emitters. Debug and beta app startup has a safe
 default baseline when the variable is unset. The strict
 `run-debug-observability` and `run-beta-observability` proof helpers set
-`AGENTSTUDIO_TRACE_TAGS=*` unless the caller explicitly overrides it, so full
-local proof can include high-volume lanes with a fresh marker.
+`AGENTSTUDIO_TRACE_TAGS=*` unless the caller explicitly overrides it. The
+wildcard excludes opt-in lanes such as atoms; name those tags explicitly when
+the proof needs them.
 
 The standard git-refresh performance workload is different: it uses the narrow
 `performance,app.startup,terminal.startup` tag set by default so the measured
 hot path is not perturbed by high-volume atom tracing. Dedicated atom telemetry
-proof can opt into `AGENTSTUDIO_TRACE_TAGS=atoms` or `*`.
+proof can opt into `AGENTSTUDIO_TRACE_TAGS=atoms`.
 
 High-volume or domain-sensitive lanes remain explicit opt-in for ordinary app
 startup. This includes `atoms`, `eventbus`, `terminal.activity`,
@@ -96,23 +97,23 @@ startup. This includes `atoms`, `eventbus`, `terminal.activity`,
 Terminal signal instrumentation is controlled by the `terminal.signal` tag. It
 captures low-volume Ghostty action/control facts such as desktop notification,
 command-finished, progress, and routing outcomes. Terminal output growth and
-debounced unseen-activity windows remain under `terminal.activity`. Keep raw
-terminal payloads, pane ids, surface ids, and notification ids JSONL-only; OTLP
-may export only controlled signal class, action name, route result, reason, and
-safe aggregate counters.
+debounced unseen-activity windows remain under `terminal.activity`. The recorder
+stores the payload name rather than its associated values, so
+notification message text is never recorded. Recorded pane, surface and
+notification identifiers reach both JSONL and OTLP when their tags are selected.
 
 TCC upgrade diagnostics are controlled by the `terminal.tcc` tag and the
 explicit startup diagnostic action `tcc-upgrade-probe`. The probe records bundle
 identity classification and shell-child access classification for protected
 folders so beta/debug proof can distinguish grant loss from ordinary startup
-failure. Raw bundle paths, probe paths, responsible executable paths, and TCC
-database client strings must stay JSONL-only; OTLP may export only controlled
-classification enums, booleans, and counts.
+failure. Recorded bundle paths, probe paths, responsible executable paths and TCC
+database client strings reach OTLP alongside classification enums, booleans and
+counts.
 Repeating `tcc-upgrade-probe` runs also emit an app identity snapshot for each
 probe sequence. The snapshot compares the current on-disk app executable
-identity to the startup baseline and exports only controlled classifications
-such as same/different/missing disk identity plus reachability. Raw executable
-paths remain JSONL-only.
+identity to the startup baseline and records classifications such as
+same/different/missing disk identity plus reachability. Recorded executable
+paths also reach OTLP.
 Use [`scripts/report-tcc-upgrade-probe-observability.sh`](../../../scripts/report-tcc-upgrade-probe-observability.sh) after a marker-scoped
 debug or beta launch to summarize the identity/access rows. The report helper
 is read-only and can require identity discontinuity or access denial, which is
@@ -132,12 +133,18 @@ selection boundary.
 
 ## OTLP Projection
 
-OTLP is a source-side trust boundary. The app projects trace records into a
-reduced safe shape before export. New OTLP fields must be explicit allowlist
-entries with tests proving they do not expose raw paths, UUIDs, prompts,
-payloads, errors, terminal output, tokens, or tool output.
+OTLP logs carry every attribute in the recorded event under the same name.
+Strings and string arrays keep their exact values. Numbers and booleans are
+encoded as text by the logging backend. There is no log attribute allowlist of
+names or values. Tag selection, resource-key selection, event-body normalization
+and structural trace/span validation remain separate contracts.
 
-Allowed OTLP atom fields are aggregate or controlled vocabulary only:
+Agent message text must never be recorded in telemetry. That obligation belongs
+to the upstream event recorder; the export projection does not remove recorded
+fields. Paths, identifiers and diagnostic values already recorded in an event
+also reach the configured loopback log endpoint.
+
+Atom recorders produce fields such as:
 
 ```text
 agentstudio.performance.atom.kind
@@ -150,24 +157,36 @@ agentstudio.performance.atom.accepted_change.count
 agentstudio.performance.atom.cache_hit
 ```
 
-Raw atom keys, repo paths, pane ids, workspace ids, object identifiers, and
-dictionary payloads must not be exported over OTLP. If an investigation needs a
-local forensic field, keep it JSONL-only unless a design update explicitly
-extends the OTLP allowlist.
+Numeric metric samples come only from the explicit
+`AgentStudioOTLPMeasurementList` and the permitted derived instruments: the
+admitted-event counter and instruments derived from listed durations, including
+the elapsed maximum. The list names source-backed durations, counts, sizes and
+occupancies. Flags, booleans, sequence numbers, configured bookkeeping and
+unlisted numeric attributes stay in logs and produce no metric sample. Adding
+a measurement requires a list entry with its emitter anchor.
 
 The atom `label` is a controlled lane identity such as
-`pane_graph_canonical`; it is not an atom key or entity identifier. Atom
-metrics retain the controlled `kind`, `operation`, and `label` dimensions plus
-aggregate slot/cache/input-revision/accepted-change counts and cache-hit state.
+`pane_graph_canonical`; it is not an atom key or entity identifier. Metric labels
+retain their existing picked names and value sets. Sidebar
+`panes` and grouping `activity` are admitted values. Atom metrics retain the
+controlled `kind`, `operation` and `label` dimensions and listed numeric counts;
+cache-hit flags stay in logs.
 
 `performance.runtime_delivery.snapshot` exports aggregate delivery health.
 Runtime-channel outbound pending/dropped/retired-undelivered counts remain
 separate from EventBus live drops, replay drops, retired-undelivered counts,
 active-subscriber count, and active delivery debt. Delivery debt means items
 already admitted but still owed to active subscribers; it is not a drop count.
-OTLP metrics use the equivalent scrubbed
-`agentstudio_performance_runtime_delivery_*` series and never export subscriber
-names or payloads.
+OTLP metrics use the corresponding
+`agentstudio_performance_runtime_delivery_*` series with their picked labels.
+
+Trace queue statistics use three process-level gauges from the real metrics
+provider: cumulative dropped records, current combined pending requests and the
+peak combined backlog. They carry resource labels only. Queue retirement removes
+its pending work while preserving its loss; provider attachment publishes retained
+totals immediately, and shutdown detaches reporting while keeping the totals.
+Per-event queue attribute copies remain in logs and never become event-labelled
+metric series.
 
 ## Proof Model
 
@@ -224,7 +243,7 @@ For atom or performance work, proof should include:
 ```text
 logs     current marker contains expected event names
 metrics  current marker contains expected metric series
-safety   OTLP projection contains only allowlisted fields
+safety   agent message text is absent from recorded and exported telemetry
 tests    trace config, projection, metric mapping, and emitter tests pass
 ```
 
@@ -465,17 +484,20 @@ baseline. Instrumentation selection remains `AGENTSTUDIO_TRACE_TAGS`; see
 [Control Plane](#control-plane) and [Tag Semantics](#tag-semantics).
 
 `AGENTSTUDIO_TRACE_BACKEND=jsonl|otlp|both` selects the sink.
-`OTEL_EXPORTER_OTLP_ENDPOINT` is accepted only for loopback HTTP endpoints
-and is treated as a collector base URL; AgentStudio sends logs to `/v1/logs`
-and metrics to `/v1/metrics`. Collector absence or exporter failure must be
+The configured endpoint for each signal must be loopback HTTP. This includes
+`OTEL_EXPORTER_OTLP_ENDPOINT` and the per-signal
+`OTEL_EXPORTER_OTLP_{LOGS,METRICS,TRACES}_ENDPOINT` overrides read by the SDK.
+A non-loopback override refuses OTLP and selects JSONL. The shared endpoint is
+a collector base URL; AgentStudio sends logs to `/v1/logs`, metrics to
+`/v1/metrics` and spans to `/v1/traces`. The check covers configured endpoints;
+the pinned SDK can follow HTTP redirects. Collector absence or exporter failure must be
 fail-open for normal app startup and must not prevent JSONL writes.
-AgentStudio currently exports OTLP logs and performance metrics. The shared
-stack also runs VictoriaTraces for other local producers, and its smoke gate
-exercises all three ingestion lanes. Allowed OTLP resource identity is limited
+AgentStudio exports OTLP logs, performance metrics and correlated spans. The
+shared stack smoke gate exercises all three ingestion lanes. Allowed OTLP resource identity is limited
 to safe runtime labels plus deterministic repo/worktree hashes and branch, for
 example `dev.repo.hash`, `dev.worktree.hash`, `dev.branch.name`,
-`dev.runtime.flavor`, and `dev.release.channel`. Field-level atom allowlists
-and forensic JSONL-only rules are in [OTLP Projection](#otlp-projection).
+`dev.runtime.flavor`, and `dev.release.channel`. Recorded attributes and metric
+selection are described in [OTLP Projection](#otlp-projection).
 
 ## Progressive Disclosure For Debugging
 

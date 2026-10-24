@@ -5,8 +5,9 @@ import Testing
 
 @Suite("Pane association OTLP projection")
 struct AgentStudioPaneAssociationOTLPTests {
-    @Test("pane association boot reconciliation exports only aggregate counts")
-    func paneAssociationBootReconciliationExportsScrubbedCounts() {
+    @Test("pane association boot reconciliation exports recorded aggregate counts")
+    func paneAssociationBootReconciliationExportsRecordedCounts() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:565: association emits typed outcome/counts, never message text.
         let countAttributes: [String: AgentStudioTraceValue] = [
             "agentstudio.performance.pane.association_boot.pane.count": .int(5),
             "agentstudio.performance.pane.association_boot.retained_known.count": .int(2),
@@ -30,17 +31,18 @@ struct AgentStudioPaneAssociationOTLPTests {
             attributes: inputAttributes
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         for (attributeName, expectedValue) in countAttributes {
             #expect(projection.attributes[attributeName] == expectedValue)
         }
-        #expect(projection.attributes["agentstudio.pane.id"] == nil)
-        #expect(projection.attributes["agentstudio.performance.pane.cwd_path"] == nil)
+        #expect(projection.attributes["agentstudio.pane.id"] != nil)
+        #expect(projection.attributes["agentstudio.performance.pane.cwd_path"] != nil)
     }
 
-    @Test("pane association runtime proof exports only its scrubbed boolean verdicts")
-    func paneAssociationRuntimeProofExportsScrubbedBooleans() {
+    @Test("pane association runtime proof exports its recorded boolean verdicts")
+    func paneAssociationRuntimeProofExportsRecordedBooleans() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:565: association emits typed outcome/counts, never message text.
         let proofKeys = [
             "agentstudio.startup_diagnostic.association.initial_succeeded",
             "agentstudio.startup_diagnostic.association.cwd_move_succeeded",
@@ -62,7 +64,7 @@ struct AgentStudioPaneAssociationOTLPTests {
             attributes: Dictionary(uniqueKeysWithValues: proofKeys.map { ($0, .bool(true)) })
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         var expectedAttributes: [String: AgentStudioTraceValue] = Dictionary(
             uniqueKeysWithValues: proofKeys.map { ($0, AgentStudioTraceValue.bool(true)) }
@@ -73,6 +75,7 @@ struct AgentStudioPaneAssociationOTLPTests {
 
     @Test("pane association outcome becomes an exact controlled metric dimension")
     func paneAssociationOutcomeBecomesControlledMetricDimension() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:565: association emits typed outcome/counts, never message text.
         let validRecord = projectedRecord(outcome: "topology_removed", timeUnixNano: 119)
         let invalidRecord = projectedRecord(outcome: "retry_scheduled", timeUnixNano: 120)
 
@@ -94,34 +97,36 @@ struct AgentStudioPaneAssociationOTLPTests {
 
     @Test("pane association projection and metrics keep only exact controlled outcomes")
     func paneAssociationProjectionKeepsControlledOutcomeOnly() throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:565: association emits typed outcome/counts, never message text.
         let controlledOutcomes = [
             "stamped_known", "resolved_changed", "resolved_equal", "cleared_no_match",
             "topology_removed", "deferred_uncertain", "free_nil",
         ]
 
         for outcome in controlledOutcomes {
-            let projection = AgentStudioOTLPTraceProjection.project(traceRecord(outcome: outcome))
+            let projection = OTLPProjectionAssertions.project(traceRecord(outcome: outcome))
             let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
             #expect(
                 projection.attributes["agentstudio.performance.pane.association_outcome"]
                     == .string(outcome)
             )
-            #expect(projection.attributes["agentstudio.pane.id"] == nil)
-            #expect(projection.attributes["agentstudio.performance.pane.cwd_path"] == nil)
+            #expect(projection.attributes["agentstudio.pane.id"] != nil)
+            #expect(projection.attributes["agentstudio.performance.pane.cwd_path"] != nil)
             #expect(metricEvent.dimensionTuples.contains { $0 == ("association_outcome", outcome) })
         }
 
         for rejectedOutcome in ["retry_scheduled", "private_outcome"] {
-            let projection = AgentStudioOTLPTraceProjection.project(traceRecord(outcome: rejectedOutcome))
+            let projection = OTLPProjectionAssertions.project(traceRecord(outcome: rejectedOutcome))
             let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
 
-            #expect(projection.attributes["agentstudio.performance.pane.association_outcome"] == nil)
+            #expect(projection.attributes["agentstudio.performance.pane.association_outcome"] != nil)
             #expect(!metricEvent.dimensionTuples.contains { $0.0 == "association_outcome" })
         }
     }
 
     private func projectedRecord(outcome: String, timeUnixNano: UInt64) -> AgentStudioOTLPProjectedLogRecord {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:565: association emits typed outcome/counts, never message text.
         AgentStudioOTLPProjectedLogRecord(
             timeUnixNano: timeUnixNano,
             severityText: .info,
@@ -136,6 +141,7 @@ struct AgentStudioPaneAssociationOTLPTests {
     }
 
     private func traceRecord(outcome: String) -> AgentStudioTraceRecord {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:565: association emits typed outcome/counts, never message text.
         AgentStudioTraceRecord(
             timeUnixNano: 89,
             severityText: .info,

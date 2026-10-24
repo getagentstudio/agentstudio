@@ -82,6 +82,11 @@ The system is legacy-ownership-bound, not greenfield:
 - `RepositoryTopologyAtom` already owns stable-key indexes, but `RepoPresentationItem.init(repo:)` recomputes path-derived keys during hot capture.
 - OTLP projection and taxonomy allowlisting remain source-scrubbed. App imports `AgentStudioRepoExplorer`, whose adapter/worker/host/envelopes/child/applier remain internal. The first S6 experiment proved synchronous MainActor RunLoop pumping starved Eager's MainActor continuation (30.004 seconds, generation zero, no measurements). Two subsequent async runs proved 440 full projections cannot finish within the fixed 30 seconds and exposed unsafe cancellation teardown: crash reports `swiftpm-testing-helper-2026-08-22-152405.ips` and `...152545.ips` show main-thread `objc_release`/autorelease `EXC_BAD_ACCESS` while a user-initiated Eager detached attempt still executed `GitBranchStatus.status/merge` through `RepoExplorerProjectionWorker:451`. Current `stop` cancels but has no awaitable task-drain receipt, so fixture/work release raced the worker.
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 The AppKit/SwiftUI architecture recommends SwiftUI for dynamic lists as the ordinary implementation default, while explicitly supporting persistent `NSHostingView` instances for custom cells. The measured Repo Explorer path is the justified exception: the generic SwiftUI outline coordinator is the dominant remaining CPU owner, and the selected table retains the existing SwiftUI row components inside reused native cells rather than replacing their product presentation. This exception is feature-local and does not change the repository-wide UI default.
 
 Changed behavior is limited to admission, state-transition order, capture shape, execution overlap, UI materialization ownership, viewport-demand publication, and proof. Existing feature presentation, commands, focus behavior, accessibility, scrolling, and domain authority remain authoritative.
@@ -891,6 +896,11 @@ Each often/heavy domain owns a non-observable fixed-state accumulator before the
 | S16 | DEBUG App-owned proof session, existing command dispatch, debug-only native search driver, semantic/table readiness observation | separate search/grouping/visibility/tab markers; one outstanding token; 100-action and 200-sample floors; boundary attribution; nearest-rank p95; whole-population invalidation |
 | S17 | immutable versioned `AppPolicies.SidebarPerformanceProof` descriptor and verifier | exact watched-root roles/fingerprint, tags/pacing/timeout/process identity/PTY bounds/perturbation; debug-descendant, topology-drift, and sampler-gap rejection; no unrelated-host gate or process-name proxy; historical comparison without threshold substitution |
 | S18-S20 | owning emitters and OTLP safe projection | outcome-matrix tests, binding-to-visible-update ratios, perturbation comparison, zero-drop verifier, sensitive canary and allowlist tests |
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 The S13-S14 protocol proof covers inseparable candidate/plan transport into the sole production applier; initial empty R0; exact empty→content and content→every empty kind; changed/equal empty; A/B/C; equal-before-delta; pre-apply supersession; rejected plan/presentation mismatch before child entry with R retained and bounded recovery; accepted/rejected/late-duplicate settlement; demand revoke, family remove, stop, same/new-host reentry; Tab Bar current/equal/changed-only/no-partial-list; and a randomized plan oracle. Acknowledged revision advances iff one changed host presentation completes through its exact plan and is acknowledged.
 

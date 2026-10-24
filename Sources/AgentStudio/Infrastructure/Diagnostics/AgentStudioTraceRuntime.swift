@@ -16,6 +16,8 @@ package struct AgentStudioTraceRuntime: Sendable {
     private let scopeVersion: String
     private let timeUnixNano: @Sendable () -> UInt64
 
+    let queueStatistics: AgentStudioTraceQueueStatistics
+
     package let outputFileURL: URL?
 
     package var isEnabled: Bool {
@@ -89,11 +91,14 @@ package struct AgentStudioTraceRuntime: Sendable {
         self.identityStore = identityStore
         self.scopeVersion = scopeVersion
         self.timeUnixNano = timeUnixNano
+        let queueStatistics = AgentStudioTraceQueueStatistics()
+        self.queueStatistics = queueStatistics
         let sinkBundle = Self.sinkBundle(
             configuration: configuration,
             processIdentifier: processIdentifier,
             writerRetainedLineLimit: writerRetainedLineLimit,
             sinkFactory: sinkFactory,
+            queueStatistics: queueStatistics,
             timeUnixNano: timeUnixNano
         )
         self.sinks = sinkBundle.sinks
@@ -314,6 +319,7 @@ package struct AgentStudioTraceRuntime: Sendable {
         processIdentifier: Int32,
         writerRetainedLineLimit: Int,
         sinkFactory: AgentStudioTraceSinkFactory,
+        queueStatistics: AgentStudioTraceQueueStatistics,
         timeUnixNano: @escaping @Sendable () -> UInt64
     ) -> (sinks: [any AgentStudioTraceSink], outputFileURL: URL?) {
         guard configuration.isEnabled else {
@@ -341,7 +347,8 @@ package struct AgentStudioTraceRuntime: Sendable {
                 sinkFactory.makeOTLPSink(
                     AgentStudioOTLPTraceSinkContext(
                         endpoint: endpoint,
-                        otlpProtocol: configuration.otlpProtocol
+                        otlpProtocol: configuration.otlpProtocol,
+                        queueStatistics: queueStatistics
                     )
                 )
             )

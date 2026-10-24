@@ -1702,7 +1702,8 @@ strict_sidebar_quiescence_vector_json() {
   forge_sample_time="$(metric_value_at_observation \
     "max(timestamp(agentstudio_performance_forge_settlement_physical_active_current{agent.proof.marker=\"$marker_selector\",event=\"performance.forge.refresh\"}))" \
     "$observation_time")"
-  export_metric_selector='agentstudio_performance_trace_queue_pending_request_count{agent.proof.marker="'"$marker_selector"'",event="performance.runtime_delivery.snapshot"}'
+  # The runtime aggregate publishes queue occupancy independently of log events.
+  export_metric_selector='agentstudio_performance_trace_queue_pending_request_count{agent.proof.marker="'"$marker_selector"'"}'
   export_backlog="$(metric_value_at_observation \
     "max($export_metric_selector)" \
     "$observation_time")"
@@ -3193,6 +3194,23 @@ wait_for_debug_observability() {
     "$PROJECT_ROOT/scripts/verify-debug-observability.sh"
 }
 
+# The app writes its debug IPC escrow after its first telemetry records reach
+# VictoriaLogs (observed ~8 s later on 2026-10-22), so readiness of logs does not
+# imply readiness of the escrow. Same bounded cadence as the observability wait.
+wait_for_debug_ipc_escrow() {
+  local attempt
+  for attempt in $(seq 1 45); do
+    if [ -s "$IPC_DEBUG_ESCROW_PATH" ]; then
+      return 0
+    fi
+    if [ -n "${APP_PID:-}" ] && ! kill -0 "$APP_PID" 2>/dev/null; then
+      return 1
+    fi
+    /bin/sleep 2
+  done
+  [ -s "$IPC_DEBUG_ESCROW_PATH" ]
+}
+
 wait_for_sidebar_metric_count() {
   local attempt
   local metrics_response
@@ -3560,7 +3578,7 @@ fi
 
 state_data_dir="$(decode_env_file_value "$STATE_FILE" AGENTSTUDIO_OBSERVABILITY_DATA_DIR)"
 ipc_metadata_path="${AGENTSTUDIO_OBSERVABILITY_IPC_METADATA:-$state_data_dir/ipc/runtime.json}"
-if [ ! -s "$IPC_DEBUG_ESCROW_PATH" ]; then
+if ! wait_for_debug_ipc_escrow; then
   echo "missing debug IPC escrow: AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=$IPC_DEBUG_ESCROW_PATH" >&2
   exit 1
 fi

@@ -21,7 +21,7 @@ enum AgentStudioOTLPScrollbackTaxonomy {
     ]).union(outcomeKinds.map { "agentstudio_performance_scrollback_pass_outcome_\($0)_count" })
 }
 
-extension AgentStudioOTLPTraceProjection {
+extension AgentStudioOTLPPerformanceMetricEvent {
     static func isAllowedScrollbackControlledStringValue(key: String, value: String) -> Bool? {
         switch key {
         case "\(AgentStudioOTLPScrollbackTaxonomy.attributePrefix).phase": ["started", "finished"].contains(value)
@@ -40,7 +40,7 @@ extension AgentStudioOTLPPerformanceMetricEvent {
         for name in ["phase", "reason"] {
             let attributeKey = "\(AgentStudioOTLPScrollbackTaxonomy.attributePrefix).\(name)"
             guard case .string(let value) = record.attributes[attributeKey],
-                AgentStudioOTLPTraceProjection.isAllowedScrollbackControlledStringValue(
+                isAllowedScrollbackControlledStringValue(
                     key: attributeKey, value: value) == true
             else { continue }
             dimensions.append(AgentStudioOTLPPerformanceMetricDimension(name: name, value: value))

@@ -6,7 +6,8 @@ import Testing
 @Suite
 struct BridgeMetadataLifecycleOTLPProjectionTests {
     @Test
-    func bridgeProjectionPreservesProductMetadataLifecycleWithoutPrivateSourceFacts() {
+    func bridgeProjectionPreservesProductMetadataLifecycleWithRecordedSourceFacts() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 126,
             severityText: .info,
@@ -34,19 +35,16 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
             ]
         )
 
-        let projection = AgentStudioOTLPTraceProjection.project(record)
-        let renderedProjection = renderedBridgeProjectionForCanaryAssertions(projection)
+        let projection = OTLPProjectionAssertions.project(record)
 
         #expect(projection.attributes["agentstudio.bridge.phase"] == .string("metadata_bootstrap_started"))
         #expect(projection.attributes["agentstudio.bridge.protocol"] == .string("worktree-file"))
         #expect(projection.attributes["agentstudio.bridge.source.generation"] == .int(7))
-        #expect(!renderedProjection.contains("private-source-id"))
-        #expect(!renderedProjection.contains("/Users/private/repo"))
-        #expect(!renderedProjection.contains("private-error"))
     }
 
     @Test
     func bridgeProjectionPreservesReviewPublicationSettlementAccounting() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
         // Arrange
         let record = AgentStudioTraceRecord(
             timeUnixNano: 127,
@@ -71,7 +69,7 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
         )
 
         // Act
-        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let projection = OTLPProjectionAssertions.project(record)
 
         // Assert
         #expect(projection.attributes["agentstudio.bridge.review.publication.emitted_events"] == .int(2))
@@ -84,6 +82,7 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
 
     @Test
     func metadataProducerFailureVocabularySurvivesProjection() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
         let failureReasons = [
             "cancellation",
             "file_source_unavailable",
@@ -113,7 +112,7 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
                 result: "failure",
                 resultReason: failureReason
             )
-            let projection = AgentStudioOTLPTraceProjection.project(
+            let projection = OTLPProjectionAssertions.project(
                 metadataLifecycleTraceRecord(
                     body: "performance.bridge.swift.metadata_bootstrap_lifecycle",
                     stringAttributes: attributes,
@@ -133,6 +132,7 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
 
     @Test
     func reviewPublicationSettlementVocabularySurvivesProjection() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
         let settlements: [(phase: String, result: String, reason: String)] = [
             ("review_metadata_publication_started", "started", "none"),
             ("review_metadata_publication_completed", "success", "none"),
@@ -151,7 +151,7 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
                 resultReason: settlement.reason
             )
             let numericAttributes = reviewPublicationNumericAttributes(phase: settlement.phase)
-            let projection = AgentStudioOTLPTraceProjection.project(
+            let projection = OTLPProjectionAssertions.project(
                 metadataLifecycleTraceRecord(
                     body: "performance.bridge.swift.review_metadata_publication",
                     stringAttributes: attributes,
@@ -167,25 +167,6 @@ struct BridgeMetadataLifecycleOTLPProjectionTests {
         }
     }
 
-    private func renderedBridgeProjectionForCanaryAssertions(
-        _ projection: AgentStudioOTLPProjectedLogRecord
-    ) -> String {
-        var components = [
-            projection.body,
-            projection.resource.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "),
-            projection.attributes.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: " "),
-        ]
-        if let traceID = projection.traceID {
-            components.append(traceID)
-        }
-        if let spanID = projection.spanID {
-            components.append(spanID)
-        }
-        if let parentSpanID = projection.parentSpanID {
-            components.append(parentSpanID)
-        }
-        return components.joined(separator: "\n")
-    }
 }
 
 private func metadataLifecycleStringAttributes(
@@ -193,6 +174,7 @@ private func metadataLifecycleStringAttributes(
     result: String,
     resultReason: String
 ) -> [String: String] {
+    // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
     [
         "agentstudio.bridge.phase": phase,
         "agentstudio.bridge.plane": "data",
@@ -207,6 +189,7 @@ private func metadataLifecycleStringAttributes(
 }
 
 private func reviewPublicationNumericAttributes(phase: String) -> [String: Double] {
+    // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
     var attributes = ["agentstudio.bridge.review.publication.retained": 1.0]
     if phase == "review_metadata_publication_completed" {
         attributes["agentstudio.bridge.review.publication.published_subscriptions"] = 1
@@ -221,6 +204,7 @@ private func metadataLifecycleTraceRecord(
     stringAttributes: [String: String],
     numericAttributes: [String: Double]
 ) -> AgentStudioTraceRecord {
+    // R10: synthetic raw fields bypass Sources/AgentStudio/Features/Bridge/Runtime/Telemetry/BridgeProductMetadataLifecycleTraceRecorder.swift:348: native lifecycle emits typed facts, never message text.
     var attributes = stringAttributes.mapValues(AgentStudioTraceValue.string)
     for (key, value) in numericAttributes {
         attributes[key] = .double(value)

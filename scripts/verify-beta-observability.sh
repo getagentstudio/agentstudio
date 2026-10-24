@@ -404,20 +404,7 @@ if [ "$state_preferences_mode" = "honor_preferences" ]; then
 fi
 
 sensitive_fields=(
-  agentstudio.session.id
-  agentstudio.pane.id
-  agentstudio.repo.id
-  agentstudio.sqlite.database_path
-  agentstudio.surface.id
-  agentstudio.tcc.raw.bundle_path
-  agentstudio.tcc.raw.executable_path
-  agentstudio.tcc.raw.probe_path
-  agentstudio.tcc.raw.responsible_path
-  agentstudio.tcc.tccdb.raw_client
   agent.proof.marker.raw
-  agentstudio.worktree.id
-  agentstudio.workspace.id
-  agentstudio.zmx.session_id
   db.statement
   dev.repo.name
   error

@@ -5,9 +5,10 @@ import Testing
 
 extension AgentStudioOTLPPerformanceTraceProjectionTests {
     @Test(
-        "app IPC call spans retain only numeric durations and counts through OTLP projection",
+        "app IPC logs retain attributes while metrics accept numeric measurements",
         arguments: [AgentStudioPerformanceTraceRecorder.Event.ipcPaneContextRead, .ipcSessionEvent])
-    func ipcCallDurationProjectionIsScrubbed(event: AgentStudioPerformanceTraceRecorder.Event) throws {
+    func ipcCallDurationProjectionIsRecorded(event: AgentStudioPerformanceTraceRecorder.Event) throws {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/IPCComposition/AgentStudioIPCPaneContextAdapter.swift:190: IPC duration emits sizes/timings, never reply text.
         let elapsedKey = "agentstudio.performance.elapsed_ms"
         let detailKey = "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms"
         let sizeKey = "agentstudio.performance.ipc.pane_context_read.reply_bytes"
@@ -22,12 +23,12 @@ extension AgentStudioOTLPPerformanceTraceProjectionTests {
             "agentstudio.performance.ipc.payload", "agentstudio.performance.ipc.method_arguments",
         ]
         for key in identifyingKeys { attributes[key] = .string("PRIVATE-IDENTIFYING-CANARY") }
-        let projection = AgentStudioOTLPTraceProjection.project(
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 123, severityText: .info, body: event.rawValue,
                 traceID: nil, spanID: nil, parentSpanID: nil, resource: [:],
                 scope: .init(name: "agentstudio.performance", version: "0.1.0"), attributes: attributes))
-        var expected = numeric
+        var expected = attributes
         expected["agentstudio.event.time_unix_nano"] = .int(123)
         #expect(projection.body == event.rawValue)
         #expect(projection.attributes == expected)
@@ -35,7 +36,7 @@ extension AgentStudioOTLPPerformanceTraceProjectionTests {
         #expect(metric.eventName == event.rawValue)
         #expect(metric.elapsedMilliseconds == 125)
 
-        let stringsInNumericKeys = AgentStudioOTLPTraceProjection.project(
+        let stringsInNumericKeys = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 123, severityText: .info, body: event.rawValue,
                 traceID: nil, spanID: nil, parentSpanID: nil, resource: [:],
@@ -43,8 +44,10 @@ extension AgentStudioOTLPPerformanceTraceProjectionTests {
                 attributes: [
                     elapsedKey: .string("PRIVATE"), detailKey: .string("PRIVATE"), sizeKey: .string("PRIVATE"),
                 ]))
-        #expect(stringsInNumericKeys.attributes[elapsedKey] == nil)
-        #expect(stringsInNumericKeys.attributes[detailKey] == nil)
-        #expect(stringsInNumericKeys.attributes[sizeKey] == nil)
+        #expect(stringsInNumericKeys.attributes[elapsedKey] != nil)
+        #expect(stringsInNumericKeys.attributes[detailKey] != nil)
+        #expect(stringsInNumericKeys.attributes[sizeKey] != nil)
+        let stringMetric = try #require(AgentStudioOTLPPerformanceMetricEvent(record: stringsInNumericKeys))
+        #expect(stringMetric.measurements.isEmpty)
     }
 }
