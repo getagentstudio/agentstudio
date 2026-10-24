@@ -182,6 +182,8 @@ extension AppDelegate {
             }
             return .initializationCancelled
         }
+        replayBootRestoreRetirements()
+        startRestoreForegroundLifecycleConsumption()
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
         else {
@@ -293,7 +295,13 @@ extension AppDelegate {
         let noticeAdmission = sessionsComposition.paneContextIPCAdapter
         let sqliteAccess = WorkspaceSessionsSQLiteAccess(datastore: datastore)
         let channel = cliStoreChannel
-        let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceTraceRecorder)
+        let readiness = restoreResumeReadiness
+        let ingestion = sessionsComposition.ingestion
+        let workspaceId = store.identityAtom.workspaceId
+        guard let evidenceRepository = restoreForegroundEvidenceRepository else { return }
+        let restoreEvidence = ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
+        let performanceRecorder = performanceTraceRecorder
+        let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceRecorder)
         // Intake and catalog construction run off MainActor; the app only reads
         // the CLI file and its cursor uses the existing application-local writer.
         // swiftlint:disable:next no_task_detached
@@ -301,16 +309,26 @@ extension AppDelegate {
             do {
                 let drain = try PaneCLIOutboxDrain(
                     admission: noticeAdmission, sqliteAccess: sqliteAccess,
-                    expectedChannel: channel,
+                    expectedChannel: channel, performanceTraceRecorder: performanceRecorder, ingestion: ingestion,
+                    restoreEvidence: restoreEvidence,
+                    paneExists: { try await datastore.persistedPaneIds(workspaceId: workspaceId).contains($0) },
                     refusalProbe: { reason in
                         telemetry.recordOfflineNoticeRefusal(reason: reason)
                     })
-                let report = await drain.drain(storeURL: storeURL)
-                guard report.hasWork else { return }
-                appLogger.info(
-                    "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
-                )
-            } catch { appLogger.warning("Offline outbox intake unavailable") }
+                await drain.drainForLaunch(
+                    storeURL: storeURL, readiness: readiness, clock: ContinuousClock(),
+                    reportSink: { report in
+                        guard report.hasWork else { return }
+                        appLogger.info(
+                            "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
+                        )
+                    })
+                return drain
+            } catch {
+                appLogger.warning("Offline outbox intake unavailable")
+                await readiness.record(.unreadable(.localDatabase))
+                return nil
+            }
         }
     }
 
@@ -361,6 +379,8 @@ extension AppDelegate {
                         ])
                 },
                 activityClock: paneActivityClock,
+                foregroundLookSink: makeRestoreForegroundLookSink(),
+                resumedSessionStartSink: terminalActivityRouter?.resumedSessionStartSink,
                 terminalLeaderReader: appIPCTerminalLeaderReader,
                 processChainReader: appIPCProcessChainReader)
         )
@@ -424,7 +444,7 @@ extension AppDelegate {
         let outboxDrainTask = paneCLIOutboxDrainTask
         outboxDrainTask?.cancel()
         paneCLIOutboxDrainTask = nil
-        await outboxDrainTask?.value
+        _ = await outboxDrainTask?.value
         guard let server = appIPCServer else {
             appIPCPrincipalRegistry?.shutdown()
             await finishAppIPCSessionsPaneContext()

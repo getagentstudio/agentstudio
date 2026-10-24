@@ -276,6 +276,17 @@ if [ "${AGENTSTUDIO_OBSERVABILITY_ALLOW_COMPLETED_EXIT:-0}" = "1" ] &&
   allow_completed_diagnostic_exit=true
 fi
 
+# The quit allowance exists only after termination. Reuse the explicit
+# completed-trace mode, pinned to this launch; normal proof still requires a PID.
+if [ "${AGENTSTUDIO_RESTORE_R3_COST_PROOF:-0}" = "1" ] &&
+  [ "${AGENTSTUDIO_OBSERVABILITY_ALLOW_COMPLETED_EXIT:-0}" = "1" ]; then
+  if [ "$state_status" != "running" ] || [ -z "$state_proof_token" ]; then
+    echo "completed restore cost proof requires a running launch state with a proof token" >&2
+    exit 1
+  fi
+  allow_completed_diagnostic_exit=true
+fi
+
 if [ "$allow_completed_diagnostic_exit" = false ]; then
   require_live_debug_process
 fi
@@ -554,6 +565,77 @@ if [ "$state_preferences_mode" = "honor_preferences" ]; then
       echo "$preferences_response" >&2
       exit 1
     fi
+  done
+fi
+
+# R3 uses synchronous slices, never suspended lifetimes. Aggregate over every
+# matching record in the marker/launch window: an absent phase is not a zero,
+# and one valid sample cannot hide a later main-thread execution or missing field.
+if [ "${AGENTSTUDIO_RESTORE_R3_COST_PROOF:-0}" = "1" ]; then
+  restore_cost_phases=(
+    "performance.restore.foreground.gather"
+    "performance.restore.foreground.schedule"
+    "performance.restore.foreground.probe"
+    "performance.restore.foreground.watch"
+    "performance.restore.outbox.import"
+    "performance.restore.resume.decide"
+  )
+  restore_cost_allowances=(
+    "performance.restore.allowance.quit_forward"
+    "performance.restore.allowance.activation_forward"
+    "performance.restore.allowance.mount_apply"
+    "performance.restore.allowance.resumed_start_end"
+  )
+  for restore_cost_phase in "${restore_cost_phases[@]}" "${restore_cost_allowances[@]}"; do
+    restore_on_main=0
+    case "$restore_cost_phase" in performance.restore.allowance.*) restore_on_main=1 ;; esac
+    restore_valid_filter="agentstudio.performance.restore.execution.count:range[1,1] agentstudio.performance.restore.main_thread.execution.count:range[$restore_on_main,$restore_on_main] agentstudio.performance.elapsed_ms:range[0,Inf)"
+    if [ "$restore_on_main" = "0" ]; then
+      restore_valid_filter="$restore_valid_filter agentstudio.performance.restore.main_thread.elapsed_ms:range[0,0]"
+    else
+      restore_valid_filter="$restore_valid_filter agentstudio.performance.restore.main_thread.elapsed_ms:range[0,Inf)"
+    fi
+    restore_cost_phase_query="$query $(logsql_exact_filter "_msg" "$restore_cost_phase")"
+    restore_cost_response="$(query_logs "$restore_cost_phase_query | stats count() as restore_records, count() if ($restore_valid_filter) as restore_valid_records, sum(agentstudio.performance.elapsed_ms) as restore_elapsed_ms, sum(agentstudio.performance.restore.main_thread.elapsed_ms) as restore_main_thread_elapsed_ms")"
+    /usr/bin/python3 - "$restore_cost_phase" "$restore_on_main" "$restore_cost_response" <<'RESTORE_COST_PY'
+import json
+import math
+import sys
+
+class MissingRestorePhase(Exception):
+    pass
+
+phase, on_main, payload = sys.argv[1:]
+try:
+    rows = [json.loads(line) for line in payload.splitlines() if line.strip()]
+    if not rows:
+        raise MissingRestorePhase
+    if len(rows) != 1:
+        raise ValueError("expected one aggregate")
+    row = rows[0]
+    def scalar(key):
+        value = float(row[key])
+        if not math.isfinite(value) or value < 0:
+            raise ValueError(key)
+        return value
+    count = scalar("restore_records")
+    if count == 0:
+        raise MissingRestorePhase
+    valid = scalar("restore_valid_records")
+    elapsed = scalar("restore_elapsed_ms")
+    main_elapsed = scalar("restore_main_thread_elapsed_ms")
+    if not count.is_integer() or valid != count:
+        raise ValueError("a slice has missing/invalid counters or ran on the wrong thread")
+    if on_main == "0" and main_elapsed != 0:
+        raise ValueError("off-main phase contains main-thread time")
+    if on_main == "1" and not math.isclose(elapsed, main_elapsed, rel_tol=1e-12, abs_tol=1e-12):
+        raise ValueError("allowance elapsed time differs from its main-thread time")
+except MissingRestorePhase:
+    sys.exit("missing restore phase " + phase)
+except (ValueError, TypeError, KeyError) as error:
+    sys.exit("invalid restore phase " + phase + " cost telemetry: " + str(error))
+print(f"restore cost {phase} slices={int(count)} elapsed_ms={elapsed} main_thread_elapsed_ms={main_elapsed}")
+RESTORE_COST_PY
   done
 fi
 

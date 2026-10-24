@@ -13,7 +13,7 @@ package actor TerminalActivationScheduler {
         case settled(TerminalActivationSettlement)
     }
 
-    private enum MemberExecution {
+    enum MemberExecution {
         /// Held until `installGeometryEligibility` (pre-`activate()`) or
         /// `acceptLaterGeometry` (post-quiescence) names this pane. Not a
         /// `nextQueuedCandidate()` candidate and not promotable — priority is
@@ -25,9 +25,10 @@ package actor TerminalActivationScheduler {
         case terminal(TerminalActivationTerminalOutcome)
     }
 
-    private struct Member {
+    struct Member {
         let descriptor: TerminalActivationDescriptor
         let originalOrdinal: Int
+        var resumeEligibility: ResumeEligibility
         var execution: MemberExecution
         /// The rank assigned by the latest applied visibility snapshot,
         /// `nil` until the first snapshot is applied to this member. Once
@@ -37,76 +38,12 @@ package actor TerminalActivationScheduler {
         var promotedRank: QueueRank?
     }
 
-    /// Placement-aware admission order (SPEC R2 initial order, R3 promotion),
-    /// low value admitted first. Ranks 0-3 are the promoted tiers a complete
-    /// current visible queued set assigns; 4-9 are this scheduler's initial,
-    /// pre-observation order. Stays private: the public
-    /// `TerminalActivationMemberState.queued` case continues to expose only
-    /// `TerminalActivationVisibilityPriority`, per the program design's
-    /// selected queue-authority tradeoff.
-    private enum QueueRank: Int, Comparable {
-        case promotedActiveMain = 0
-        case promotedMainSibling = 1
-        case promotedActiveDrawer = 2
-        case promotedDrawerSibling = 3
-        case initialVisibleMainActive = 4
-        case initialVisibleMainSibling = 5
-        case initialVisibleDrawerActive = 6
-        case initialVisibleDrawerSibling = 7
-        case backgroundMain = 8
-        case backgroundDrawer = 9
-
-        static func < (lhs: Self, rhs: Self) -> Bool {
-            lhs.rawValue < rhs.rawValue
-        }
-
-        init(placement: TerminalHostPlacementIdentity, priority: TerminalActivationVisibilityPriority) {
-            let isDrawer: Bool
-            switch placement {
-            case .drawer:
-                isDrawer = true
-            case .tab:
-                isDrawer = false
-            }
-            switch (isDrawer, priority) {
-            case (false, .activeVisible):
-                self = .initialVisibleMainActive
-            case (false, .visible):
-                self = .initialVisibleMainSibling
-            case (false, .hidden):
-                self = .backgroundMain
-            case (true, .activeVisible):
-                self = .initialVisibleDrawerActive
-            case (true, .visible):
-                self = .initialVisibleDrawerSibling
-            case (true, .hidden):
-                self = .backgroundDrawer
-            }
-        }
-
-        static func backgroundRank(for placement: TerminalHostPlacementIdentity) -> QueueRank {
-            switch placement {
-            case .tab:
-                return .backgroundMain
-            case .drawer:
-                return .backgroundDrawer
-            }
-        }
-    }
-
-    private struct QueuedCandidate {
-        let paneID: PaneId
-        let priority: TerminalActivationVisibilityPriority
-        let rank: QueueRank
-        let attempt: Int
-        let originalOrdinal: Int
-    }
-
     private let cohort: TerminalActivationCohort
-    private let admissionPort: any TerminalActivationAdmissionPort
+    let admissionPort: any TerminalActivationAdmissionPort
     private let releaseSignal: any TerminalActivationReleaseSignal
     private var lifecycle = Lifecycle.idle
-    private var membersByPaneID: [PaneId: Member]
+    var membersByPaneID: [PaneId: Member]
+    var eligibilityWaiter: AsyncStream<Void>.Continuation?
     private var activationWaiters: [CheckedContinuation<TerminalActivationSettlement, Never>] = []
     private var currentSimultaneousAdmissions = 0
     private var maximumSimultaneousAdmissions = 0
@@ -137,6 +74,7 @@ package actor TerminalActivationScheduler {
     package init(
         cohort: TerminalActivationCohort,
         admissionPort: any TerminalActivationAdmissionPort,
+        requiresRestoreClassification: Set<PaneId> = [],
         releaseSignal: any TerminalActivationReleaseSignal = TerminalActivationReleaseGate(
             isReleased: true
         )
@@ -155,6 +93,8 @@ package actor TerminalActivationScheduler {
                     Member(
                         descriptor: descriptor,
                         originalOrdinal: ordinal,
+                        resumeEligibility: requiresRestoreClassification.contains(descriptor.paneID)
+                            ? .awaitingClassification : .ready,
                         execution: .waitingForGeometry,
                         promotedRank: nil
                     )
@@ -195,8 +135,16 @@ package actor TerminalActivationScheduler {
         // actually happens. Checking for a queued member immediately before
         // `makeSettlement()`, with no `await` between the check and the call,
         // is what makes "no unfinished members" a fact instead of a race.
-        while hasQueuedMember() {
-            await drainWithWorkerFleet(count: 1)
+        while hasQueuedMember() || hasPendingResumeEligibility() {
+            if hasQueuedMember() {
+                await drainWithWorkerFleet(count: 1)
+            } else {
+                let (stream, continuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+                eligibilityWaiter = continuation
+                for await _ in stream { break }
+                continuation.finish()
+                eligibilityWaiter = nil
+            }
         }
 
         let settlement = makeSettlement()
@@ -294,8 +242,16 @@ package actor TerminalActivationScheduler {
     }
 
     func memberState(for paneID: PaneId) -> TerminalActivationMemberState? {
-        guard let execution = membersByPaneID[paneID]?.execution else { return nil }
-        return publicState(for: execution)
+        guard let member = membersByPaneID[paneID] else { return nil }
+        if isTerminalExecution(member.execution), member.resumeEligibility != .retired {
+            return publicState(for: member.execution)
+        }
+        switch member.resumeEligibility {
+        case .awaitingClassification: return .awaitingClassification
+        case .awaitingResumeReadiness, .installing: return .awaitingResumeReadiness
+        case .retired: return .retired
+        case .ready: return publicState(for: member.execution)
+        }
     }
 
     func diagnostics() -> TerminalActivationSchedulerDiagnostics {
@@ -322,6 +278,7 @@ package actor TerminalActivationScheduler {
             }
         }
 
+        eligibilityWaiter?.yield(())
         if case .idle = lifecycle {
             lifecycle = .settled(makeSettlement())
         }
@@ -395,7 +352,7 @@ package actor TerminalActivationScheduler {
     /// go stale between the check and the settlement it gates.
     private func hasQueuedMember() -> Bool {
         membersByPaneID.values.contains { member in
-            if case .queued = member.execution { return true }
+            if case .queued = member.execution, member.resumeEligibility == .ready { return true }
             return false
         }
     }
@@ -405,7 +362,9 @@ package actor TerminalActivationScheduler {
     /// a claim was actually granted.
     private func nextQueuedCandidate() -> QueuedCandidate? {
         membersByPaneID.values.compactMap { member -> QueuedCandidate? in
-            guard case .queued(let priority, let attempt) = member.execution else { return nil }
+            guard member.resumeEligibility == .ready,
+                case .queued(let priority, let attempt) = member.execution
+            else { return nil }
             let rank = member.promotedRank ?? QueueRank(placement: member.descriptor.hostPlacement, priority: priority)
             return QueuedCandidate(
                 paneID: member.descriptor.paneID,

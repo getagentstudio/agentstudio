@@ -102,7 +102,7 @@ package struct IPCSessionMethodDescriptors: Sendable {
                 documentedErrors: Self.sessionErrors,
                 isMutating: true,
                 correlationPolicy: .required,
-                offlineEligibility: .never,
+                offlineEligibility: .sessionLifecycleOnly,
                 agentEligibility: entryEligibility
             )
         })

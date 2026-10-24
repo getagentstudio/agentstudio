@@ -207,7 +207,8 @@ struct ServerCapableAppIPCTestHarness {
 @MainActor
 func makeServerCapableAppIPCTestHarness(
     windowLifecycleStore: WindowLifecycleAtom = WindowLifecycleAtom(),
-    appDelegate suppliedDelegate: AppDelegate? = nil
+    appDelegate suppliedDelegate: AppDelegate? = nil,
+    performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
 ) async throws -> ServerCapableAppIPCTestHarness {
     let (core, store, datastore) = try await makeCanonicalIPCWorkspaceOwners()
     let workspaceID = core.workspaceIdentity.workspaceId
@@ -254,7 +255,8 @@ func makeServerCapableAppIPCTestHarness(
         runtimeRegistry: RuntimeRegistry(),
         windowLifecycleStore: windowLifecycleStore,
         ipcLifecycle: appDelegate.appIPCWorkspaceSurfaceLifecycle(),
-        bridgePaneAttendance: appDelegate.atomStore.bridgePaneAttendance
+        bridgePaneAttendance: appDelegate.atomStore.bridgePaneAttendance,
+        performanceTraceRecorder: performanceTraceRecorder
     )
     appDelegate.workspaceSurfaceCoordinator = coordinator
     appDelegate.executor = WorkspaceActionExecutor(coordinator: coordinator, store: store)

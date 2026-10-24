@@ -244,8 +244,8 @@ extension IPCMethodOfflineEligibility: IPCSchemaProviding {
     package static func ipcSchema() throws -> IPCJSONSchema {
         .object(fields: [
             .init(
-                name: "kind", description: "Only the notice shape may queue; asks never queue",
-                schema: .string(allowedValues: ["never", "noticeOnly"]))
+                name: "kind", description: "Only eligible notice or lifecycle reports may queue",
+                schema: .string(allowedValues: ["never", "noticeOnly", "sessionLifecycleOnly"]))
         ])
     }
 }

@@ -5,6 +5,7 @@ import AgentStudioIPCTransport
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
@@ -95,6 +96,7 @@ struct CLIPaneContextAvailabilityTests {
             #expect(entries.count == 1)
             let row = try #require(entries.first)
             switch row {
+            case .sessionLifecycle: Issue.record("A notice became a lifecycle report")
             case .notice(let notice):
                 let request = try JSONRPCCodec.decodeRequest(notice.payloadJSON)
                 #expect(request.method == "pane.message.send")
@@ -162,9 +164,15 @@ struct CLIPaneContextAvailabilityTests {
                 return (reader.identity.storeID, try reader.readOutbox(after: 0).get().entries)
             }
             let entry = try #require(stored.1.first)
+            let evidence = SQLitePaneForegroundEvidenceRepository(
+                access: WorkspaceForegroundEvidenceSQLiteAccess(sqliteAccess: context.domain.sessionsSQLiteAccess),
+                observerLaunchId: UUIDv7.generate())
+            let paneId = context.domain.paneId
             let drain = try PaneCLIOutboxDrain(
                 admission: context.domain.adapter(), sqliteAccess: context.domain.sessionsSQLiteAccess,
-                expectedChannel: .debug)
+                expectedChannel: .debug, ingestion: context.domain.ingestion,
+                restoreEvidence: ClosedAppRestoreEvidenceParticipant(repository: evidence),
+                paneExists: { $0 == paneId })
             let orderingCondition: S5OrderingStoreCondition? =
                 switch condition {
                 case .ready: nil
@@ -192,9 +200,10 @@ struct CLIPaneContextAvailabilityTests {
                     try String.fetchAll(database, sql: "SELECT payload_json FROM cli_outbox ORDER BY id")
                 }
             }
-            let originalPayloads = stored.1.map { row in
+            let originalPayloads = try stored.1.map { row in
                 switch row {
                 case .notice(let notice): return notice.payloadJSON
+                case .sessionLifecycle: throw CLIStoreFailure.unavailable
                 }
             }
             #expect(remainingPayloads == originalPayloads)
@@ -236,6 +245,7 @@ struct CLIPaneContextAvailabilityTests {
             #expect(rows.count == 1)
             let first = try #require(rows.first)
             switch first {
+            case .sessionLifecycle: Issue.record("A notice became a lifecycle report")
             case .notice(let notice):
                 #expect(notice.paneID == context.domain.paneId)
                 let request = try JSONRPCCodec.decodeRequest(notice.payloadJSON)

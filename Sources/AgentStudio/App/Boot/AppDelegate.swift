@@ -183,6 +183,15 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor!
     var workspaceCacheCoordinator: WorkspaceCacheCoordinator!
     let scrollbackStore = ScrollbackStore()
+    var restoreForegroundObserver: PaneForegroundObserver<ContinuousClock>?
+    var restoreForegroundExitWatcher: DarwinProcessExitWatcher?
+    var restoreLaunchBoot: TerminalRestoreLaunchBoot?
+    var restoreForegroundEvidenceRepository: SQLitePaneForegroundEvidenceRepository?
+    var restoreForegroundLifecycleStream: AsyncStream<ForegroundLookTrigger>?
+    var restoreForegroundLifecycleContinuation: AsyncStream<ForegroundLookTrigger>.Continuation?
+    var restoreForegroundLifecycleTask: Task<Void, Never>?
+    var restoreForegroundTriggerSink: (@Sendable (ForegroundLookTrigger) -> Void)?
+    private var didForwardRestoreQuit = false
     var bridgeGitReadScheduler: BridgeGitReadScheduler!
     var bridgeWorktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator!
     var watchedFolderCommands: (any WatchedFolderCommandHandling)!
@@ -215,7 +224,9 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var appIPCProcessChainReader: any ProcessChainReading = DarwinProcessChainReader()
     var appIPCTerminalLeaderReader: (any PaneTerminalLeaderReading)?
     var appIPCPaneContextUIAdapter: PaneContextUIAdapter?
-    var paneCLIOutboxDrainTask: Task<Void, Never>?
+    var paneCLIOutboxDrainTask: Task<PaneCLIOutboxDrain?, Never>?
+    let restoreResumeReadiness = RestoreResumeReadiness(
+        clock: ContinuousClock(), deadline: AppPolicies.Restore.resumeReadinessDeadline)
     var appLifecycleStore: AppLifecycleAtom!
     var windowLifecycleStore: WindowLifecycleAtom!
     var applicationLifecycleMonitor: ApplicationLifecycleMonitor!
@@ -404,6 +415,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if !didForwardRestoreQuit {
+            didForwardRestoreQuit = true
+            if let restoreForegroundTriggerSink {
+                AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+                    .restoreQuitForward, recorder: performanceTraceRecorder
+                ) {
+                    restoreForegroundTriggerSink(.appQuitting)
+                }
+            }
+        }
         #if DEBUG
             sidebarPerformanceProofSession?.completeIdlePopulationForTermination()
         #endif

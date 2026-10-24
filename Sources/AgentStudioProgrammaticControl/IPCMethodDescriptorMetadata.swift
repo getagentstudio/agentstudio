@@ -76,15 +76,17 @@ package enum IPCCommandRelationship: Codable, Equatable, Sendable {
 package enum IPCMethodOfflineEligibility: Codable, Equatable, Sendable {
     case never
     case noticeOnly
+    case sessionLifecycleOnly
 
     private enum CodingKeys: String, CodingKey { case kind }
-    private enum Kind: String, Codable { case never, noticeOnly }
+    private enum Kind: String, Codable { case never, noticeOnly, sessionLifecycleOnly }
 
     package init(from decoder: any Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         switch try container.decode(Kind.self, forKey: .kind) {
         case .never: self = .never
         case .noticeOnly: self = .noticeOnly
+        case .sessionLifecycleOnly: self = .sessionLifecycleOnly
         }
     }
 
@@ -93,6 +95,7 @@ package enum IPCMethodOfflineEligibility: Codable, Equatable, Sendable {
         switch self {
         case .never: try container.encode(Kind.never, forKey: .kind)
         case .noticeOnly: try container.encode(Kind.noticeOnly, forKey: .kind)
+        case .sessionLifecycleOnly: try container.encode(Kind.sessionLifecycleOnly, forKey: .kind)
         }
     }
 }

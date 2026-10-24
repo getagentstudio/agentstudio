@@ -1,5 +1,7 @@
 # Session restore after a reboot: how it is built
 
+28.1 (2026-10-22): `ColdEndedMain` carries the binding's raw provider identifier and conversation id; the resolver validates them (implementation finding I1).
+
 Date: 2026-10-22, revision 28 (R3 rebuilt on Sessions as pane-context rev 36/37 left it). R1, R2 and the restore phase (item 13) are unchanged. Revision 28 replaces R3's items 5–10, "R3 interfaces", and R3's parts of "What exists", "Entity binding", "What runs where", "Where the code lives" and "Proof". It goes with [Specification revision 11](2026-09-28-session-restore-specification.md).
 
 The owner's 2026-10-05 inventory (pane-context Program Design rev 36, sharpened by rev 37 on 10-06) removed four things revision 27's R3 relied on:
@@ -565,7 +567,7 @@ Sessions keeps one hook admission path. A stored report enters it through one na
       - `.knownExited`: a shell;
       - `.unknown`: a shell plus a notice naming the provider and short id.
 
-      R3's outcome line flows into R2's notice composer (`TerminalColdRestorePlanBuilder`), which already composes the R1 line, the fallback-folder reason and "any R3 outcome lines". Resume syntax (proven in the 2026-09-29 POC): `claude --resume <uuid>` and `codex resume <uuid>`. They run inside `exec <loginShell> -i -l -c '<argv>; exec <loginShell> -i -l'`, with the id as one quoted argument.
+      R3's outcome line flows into R2's notice composer (`TerminalColdRestorePlanBuilder`), which already composes the R1 line, the fallback-folder reason and "any R3 outcome lines". Resume syntax: `claude --resume <uuid>` and `codex resume --no-daemon <uuid>` (Claude form proven in the 2026-09-29 POC). Codex 0.163 turns on `daemon_auto_start` by default, so an unflagged resume reuses or starts a shared app-server daemon and runs the agent outside the pane. `--no-daemon` selects Codex's in-process app server and keeps a bound, pane-local session pane-local; home, config, auth and storage are unchanged. A Codex version without the flag fails the resume and falls through to the login shell (Lead, 2026-10-24). They run inside `exec <loginShell> -i -l -c '<argv>; exec <loginShell> -i -l'`, with the id as one quoted argument.
     - **The resumed start.** The resumed agent's SessionStart arrives live. The cold end ended the pane's binding for that session, and no confirmed main is live, so rev 36 row 3 reopens it ("reopen S's binding as P's main (a resume)"). It ends the matched restore phase (item 13). There's no new occurrence id and no new source generation. Reported evidence is **not** cleared by this (item 7, F7).
     - **A crash after the cold end and before the resume runs** loses that pane's resume: at the next launch, there's no live main to return. That's a missed resume, stated.
     - **SR13, stated by order.** A same-boot end still in flight from the old run follows B1's order above: before the resumed start it's recorded only and the start reopens the binding; after the resumed start it ends the resumed run's binding, so that pane isn't auto-resumed at a later restart; a stored late end is a plain shell at the next launch. No per-run correlation mechanism is added.
@@ -677,8 +679,8 @@ package protocol SessionResumeResolving: Sendable { func resumeEvidence(for inpu
 // Sessions (Features/Sessions): three new entry points
 package struct ColdEndedMain: Sendable, Equatable {
     let bindingGenerationId: UUID
-    let provider: ResumeProvider
-    let conversationId: ProviderSessionId
+    let providerIdentifier: String
+    let providerConversationId: String
 }
 func endLiveMainForColdRestore(paneId: UUID) async throws -> ColdEndedMain?
 

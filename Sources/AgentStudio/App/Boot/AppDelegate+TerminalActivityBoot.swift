@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioTerminal
 import Foundation
 
@@ -22,6 +23,7 @@ extension AppDelegate {
             attendedPane: atomStore.core.attendedPane,
             traceRuntime: traceRuntime,
             startupTraceRecorder: startupTraceRecorder,
+            performanceTraceRecorder: performanceTraceRecorder,
             onFirstRender: { [weak self] paneID in
                 self?.workspaceSurfaceCoordinator?.receivePostAttachFirstRender(paneID: paneID)
             },
@@ -50,7 +52,7 @@ extension AppDelegate {
             },
             closeReadDurationSink: { [performanceTraceRecorder] duration in
                 performanceTraceRecorder?.recordTerminalActivityCloseRead(duration)
-            }
+            }, foregroundLookSink: makeRestoreForegroundLookSink()
         )
         workspaceSurfaceCoordinator?.terminalActivityRouter = terminalActivityRouter
         workspaceSurfaceCoordinator?.coldStartAttachExitBinding.bindAttachClientExitedHandler { [weak self] paneID in
