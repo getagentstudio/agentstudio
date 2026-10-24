@@ -332,6 +332,22 @@ root, zmx root, build directory, trace marker, or process-discovery scheme.
 
 ### IPC escrow and startup diagnostics
 
+The launcher writes `AGENTSTUDIO_OBSERVABILITY_STATUS=running` and reports
+success only after the published bundle's `Contents/Helpers/agentstudio`
+answers `system.ping`. PID discovery and IPC health share the existing launch
+wait bound (`AGENTSTUDIO_PID_WAIT_ATTEMPTS`, default 200 × 0.1 seconds); a slow
+health call is bounded by the time remaining. If IPC never answers, it exits 1
+with `STATUS=launch_failed` and `REASON=ipc_health_timeout` in the state file.
+The app is left available for diagnosis; a failed launch does not authorize
+retiring an unverified candidate.
+
+When escrow is requested, the readiness check uses that same escrow path with
+inherited pane credentials and socket overrides removed. The app publishes
+escrow only after its IPC listener starts. Without escrow, the check uses
+`system.ping`'s existing pre-authentication access on the isolated debug socket;
+it does not mint an automation credential. IPC reachability does not establish
+terminal attachment or completion of a startup diagnostic.
+
 Agent-driven write-capable debug automation must opt in explicitly:
 
 ```bash

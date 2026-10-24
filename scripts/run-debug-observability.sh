@@ -60,9 +60,10 @@ validate_observability_controls() {
     return
   fi
   if [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_CANDIDATE_IDENTITY:-}" ] ||
+    [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" ] ||
     [ "$NORMAL_QUIT_BIN" != "/usr/bin/osascript" ]
   then
-    echo "candidate identity and normal-quit overrides require AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES=1" >&2
+    echo "candidate identity, launch clock, and normal-quit overrides require AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES=1" >&2
     exit 2
   fi
   if [ "$(canonical_path "$STACK_HELPER")" != "$(canonical_path "$DEFAULT_STACK_HELPER")" ]; then
@@ -533,6 +534,65 @@ wait_for_app_pid() {
   done
 
   return 1
+}
+
+launch_wait_time() {
+  if [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" ]; then
+    "$AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN"
+  else
+    /usr/bin/python3 -c 'import time; print(time.monotonic())'
+  fi
+}
+
+wait_for_app_ipc() {
+  # Escrow is published only after the IPC listener starts. The CLI reads that
+  # signal and authenticates exactly as callers do; PID existence is not ready.
+  # Without an escrow grant, system.ping is the existing pre-authentication read.
+  /usr/bin/python3 - "$app_path/Contents/Helpers/agentstudio" \
+    "$launch_ipc_socket_dir/agentstudio.sock" "${AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW:-}" \
+    "$launch_wait_started_at" "${AGENTSTUDIO_PID_WAIT_ATTEMPTS:-200}" \
+    "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" <<'PY'
+import os
+import subprocess
+import sys
+import time
+
+cli_path, socket_path, escrow_path, started_at, attempts, clock_path = sys.argv[1:]
+
+def now() -> float:
+    if clock_path:
+        return float(subprocess.check_output([clock_path], text=True))
+    return time.monotonic()
+
+# Share the PID wait's 200 x 0.1s bound, including time spent inside the CLI.
+deadline = float(started_at) + int(attempts) * 0.1
+environment: dict[str, str] = {"HOME": os.environ["HOME"], "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+arguments: list[str] = [cli_path]
+if escrow_path:
+    environment["AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW"] = escrow_path
+else:
+    arguments += ["--socket", socket_path]
+arguments += ["system.ping"]
+while True:
+    remaining = deadline - now()
+    if remaining <= 0:
+        sys.exit(1)
+    try:
+        result = subprocess.run(
+            arguments, env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=remaining,
+        )
+    except subprocess.TimeoutExpired:
+        sys.exit(1)
+    except OSError:
+        sys.exit(1)
+    if result.returncode == 0 and now() < deadline:
+        sys.exit(0)
+    remaining = deadline - now()
+    if remaining <= 0:
+        sys.exit(1)
+    time.sleep(min(0.1, remaining))
+PY
 }
 
 open_app() {
@@ -1310,6 +1370,7 @@ if [ "$detach" = true ]; then
       exit 1
     fi
   fi
+  launch_wait_started_at="$(launch_wait_time)"
   if [ "$launched_with_direct" = false ] && ! pid="$(wait_for_app_pid "$app_binary_path")"; then
     write_launch_failed_state launchservices_pid_not_found
     echo "LaunchServices started but Agent Studio Debug PID was not found." >&2
@@ -1321,6 +1382,7 @@ else
   launch_activation_mode=foreground_wait
   open_app "$app_path" "$launch_log" "-W" "${open_env_args[@]}" &
   open_pid=$!
+  launch_wait_started_at="$(launch_wait_time)"
   if ! pid="$(wait_for_app_pid "$app_binary_path")"; then
     if kill -0 "$open_pid" >/dev/null 2>&1; then
       failure_reason=launchservices_pid_not_found
@@ -1345,6 +1407,13 @@ else
       exit 1
     fi
   fi
+fi
+
+if ! wait_for_app_ipc; then
+  write_launch_failed_state ipc_health_timeout
+  echo "Agent Studio Debug did not answer IPC health within the launch deadline." >&2
+  echo "observability state: $state_file" >&2
+  exit 1
 fi
 
 process_start_identity_value="$(process_start_identity "$pid" || true)"
