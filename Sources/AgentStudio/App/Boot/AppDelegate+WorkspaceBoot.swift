@@ -470,7 +470,7 @@ extension AppDelegate {
         if let backend = scrollbackBackend {
             installScrollbackSnapshotter(using: backend)
         }
-        workspaceSurfaceCoordinator.installUndoJournalRecovery(undoRecovery)
+        installBootUndoJournalRecovery(undoRecovery)
         if let backend = scrollbackBackend {
             workspaceSurfaceCoordinator.startTerminalSessionCleanup(
                 using: backend,
@@ -597,7 +597,7 @@ extension AppDelegate {
         }
     }
 
-    private func bootInstallPreparedContentMountOwners(coordinator: WorkspaceSurfaceCoordinator) {
+    func bootInstallPreparedContentMountOwners(coordinator: WorkspaceSurfaceCoordinator) {
         let contentMountCohort = acceptedWorkspacePreparedContentMountCohort
         coordinator.acceptedPreparedContentMountGeneration = contentMountCohort.generation
         let terminalAdmissionPort = PreparedTerminalMountAdmissionPort(

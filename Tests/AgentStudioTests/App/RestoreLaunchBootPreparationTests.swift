@@ -10,6 +10,31 @@ import Testing
 @MainActor
 @Suite("Launch-boot App entry and before-mount ordering", .serialized)
 struct RestoreLaunchBootPreparationTests {
+    @Test("recovered retirement keeps early cleanup ordering and replays only after optional schema preparation")
+    func recoveredRetirementFollowsBothInstallsAndOptionalSchema() throws {
+        let root = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
+        let boot = try String(
+            contentsOf: root.appending(path: "Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift"),
+            encoding: .utf8)
+        let recovery = try #require(boot.range(of: "installBootUndoJournalRecovery(undoRecovery)"))
+        let cleanup = try #require(boot.range(of: "workspaceSurfaceCoordinator.startTerminalSessionCleanup("))
+        let evidence = try #require(boot.range(of: "await installRestoreEvidenceOwners("))
+        let mounts = try #require(
+            boot.range(of: "bootInstallPreparedContentMountOwners(coordinator: workspaceSurfaceCoordinator)"))
+        #expect(recovery.lowerBound < cleanup.lowerBound)
+        #expect(cleanup.lowerBound < evidence.lowerBound)
+        #expect(evidence.lowerBound < mounts.lowerBound)
+        let ipc = try String(
+            contentsOf: root.appending(path: "Sources/AgentStudio/App/Boot/AppDelegate+IPC.swift"), encoding: .utf8)
+        let schema = try #require(
+            ipc.range(
+                of: "guard await AppIPCDeferredInitialization.prepareOptionalSchema(using: workspaceSQLiteDatastore)"))
+        let replay = try #require(ipc.range(of: "replayBootRestoreRetirements()"))
+        let lifecycle = try #require(ipc.range(of: "startRestoreForegroundLifecycleConsumption()"))
+        #expect(schema.lowerBound < replay.lowerBound)
+        #expect(replay.lowerBound < lifecycle.lowerBound)
+    }
+
     @Test("the App boot-id seam reads and replaces the real application-local row")
     func appBootIdSeamRecordsPreviousRun() async throws {
         let fixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: UUIDv7.generate())

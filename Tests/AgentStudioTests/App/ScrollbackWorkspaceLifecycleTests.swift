@@ -1,13 +1,14 @@
-import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
+import GRDB
 import Synchronization
 import Testing
 
 @testable import AgentStudio
 @testable import AgentStudioBridge
+@testable import AgentStudioCore
 @testable import AgentStudioTerminal
 
 @MainActor
@@ -57,6 +58,91 @@ struct ScrollbackWorkspaceLifecycleTests {
             await fixture.coordinator.shutdown()
 
             #expect(await withoutBlockingCooperativePool { !FileManager.default.fileExists(atPath: snapshotURL.path) })
+        }
+    }
+
+    @Test(
+        "boot-recovered retirement deletes foreground evidence and fences late reports",
+        arguments: BootRestoreRetirementCase.allCases)
+    func bootRecoveredRetirementReachesForegroundOwner(scenario: BootRestoreRetirementCase) async throws {
+        try await withWorkspace(
+            installsSnapshotter: scenario == .snapshotter, includesOptionalSchema: scenario != .upgrade
+        ) { fixture in
+            let pane = fixture.store.createPane(zmxSessionID: .generateUUIDv7())
+            let tab = Tab(paneId: pane.id)
+            fixture.store.appendTab(tab)
+            #expect(await fixture.store.flushAsync() == .persisted)
+            let paneID = PaneId(existingUUID: pane.id)
+            _ = try await fixture.scrollback.store(paneId: paneID, capture: Data("expired boot output".utf8))
+            let repository = SQLitePaneForegroundEvidenceRepository(
+                access: WorkspaceForegroundEvidenceSQLiteAccess(datastore: fixture.datastore),
+                observerLaunchId: UUIDv7.generate())
+            if scenario != .upgrade {
+                let initial = try await fixture.datastore.performApplicationLocalWrite { database in
+                    try repository.write(
+                        in: database, evidence: .reportsUnreadable(.rowRefused), paneId: pane.id,
+                        bindingGenerationId: nil, sequence: 1, observedAt: Date(timeIntervalSince1970: 1))
+                }
+                #expect(initial == .admitted)
+            }
+            try await fixture.coordinator.execute(.closeTab(tabId: tab.id))
+            let close = try #require(
+                try await fixture.datastore.fetchAvailableUndoCloses(workspaceID: fixture.workspaceID).first)
+            let recovery = try await fixture.store.recoverUndoJournal(
+                time: .init(
+                    utc: close.expiresAt.addingTimeInterval(1), bootID: close.deadlineBootID,
+                    uptimeNanoseconds: close.deadlineUptimeNanoseconds + 1))
+            #expect(Set(recovery.retiredCloses.flatMap(\.unownedPaneIDs)) == [pane.id])
+            if scenario == .deletionFailure {
+                try await withoutBlockingCooperativePool {
+                    try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: fixture.root.path)
+                }
+            }
+            let delegate = AppDelegate()
+            fixture.bootDelegate = delegate
+            delegate.store = fixture.store
+            delegate.viewRegistry = fixture.coordinator.viewRegistry
+            delegate.workspaceSurfaceCoordinator = fixture.coordinator
+            delegate.workspaceSQLiteDatastore = fixture.datastore
+            delegate.restoreForegroundEvidenceRepository = repository
+            // These are the production boot calls, in their actual installation order.
+            delegate.installBootUndoJournalRecovery(recovery)
+            await delegate.installRestoreEvidenceOwners(
+                datastore: fixture.datastore, sessionDirectory: fixture.root.path)
+            try #require(delegate.restoreForegroundObserver != nil)
+            delegate.acceptWorkspacePreparedContentMountCohort(
+                .init(
+                    generation: .init(), terminalActivationInput: .init(entries: []),
+                    nonterminalContentMountInput: .init(entries: [])))
+            delegate.bootInstallPreparedContentMountOwners(coordinator: fixture.coordinator)
+            if scenario == .upgrade {
+                let exists = try await fixture.datastore.performApplicationLocalRead {
+                    try $0.tableExists("terminal_pane_foreground_evidence")
+                }
+                #expect(!exists, "foreground retirement must not move optional migration before its boot boundary")
+            }
+            #expect(await AppIPCDeferredInitialization.prepareOptionalSchema(using: fixture.datastore))
+            delegate.replayBootRestoreRetirements()
+            delegate.startRestoreForegroundLifecycleConsumption()
+            await fixture.coordinator.shutdown()
+            await delegate.shutdownRestoreEvidenceOwners()
+            let remaining = try await fixture.datastore.performApplicationLocalRead {
+                try Int.fetchOne(
+                    $0, sql: "SELECT COUNT(*) FROM terminal_pane_foreground_evidence WHERE pane_id = ?",
+                    arguments: [pane.id.uuidString])
+            }
+            #expect(remaining == 0)
+            let late = try await fixture.datastore.performApplicationLocalWrite { database in
+                try repository.write(
+                    in: database, evidence: .reportsUnreadable(.rowRefused), paneId: pane.id,
+                    bindingGenerationId: nil, sequence: 2, observedAt: Date(timeIntervalSince1970: 2))
+            }
+            #expect(late == .retiredPane)
+            let snapshotURL = fixture.scrollback.snapshotURL(for: paneID)
+            let snapshotExists = await withoutBlockingCooperativePool {
+                FileManager.default.fileExists(atPath: snapshotURL.path)
+            }
+            #expect(snapshotExists == (scenario == .deletionFailure))
         }
     }
 
@@ -191,17 +277,22 @@ struct ScrollbackWorkspaceLifecycleTests {
     private func withWorkspace(
         expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil,
         installsSnapshotter: Bool = true,
+        includesOptionalSchema: Bool = true,
         _ body: (ScrollbackWorkspaceFixture) async throws -> Void
     ) async throws {
-        let fixture = try ScrollbackWorkspaceFixture(expiryHold: expiryHold, installsSnapshotter: installsSnapshotter)
+        let fixture = try ScrollbackWorkspaceFixture(
+            expiryHold: expiryHold, installsSnapshotter: installsSnapshotter,
+            includesOptionalSchema: includesOptionalSchema)
         var bodyError: (any Error)?
         do { try await body(fixture) } catch { bodyError = error }
         await fixture.coordinator.shutdown()
+        await fixture.bootDelegate?.shutdownRestoreEvidenceOwners()
         await fixture.cacheCoordinator.shutdown()
         await fixture.snapshotter.shutdown()
         do { try await fixture.recorder.finish() } catch { if bodyError == nil { bodyError = error } }
         try await withoutBlockingCooperativePool {
             if FileManager.default.fileExists(atPath: fixture.root.path) {
+                try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fixture.root.path)
                 try FileManager.default.removeItem(at: fixture.root)
             }
         }
@@ -218,6 +309,7 @@ private final class ScrollbackWorkspaceFixture {
     let store: WorkspaceStore
     let datastore: WorkspaceSQLiteDatastoreActor
     let coordinator: WorkspaceSurfaceCoordinator
+    var bootDelegate: AppDelegate?
     let cacheCoordinator: WorkspaceCacheCoordinator
     let scrollback: ScrollbackStore
     let snapshotter: ScrollbackSnapshotter
@@ -225,8 +317,14 @@ private final class ScrollbackWorkspaceFixture {
     let recorder: FactRecorder<ScrollbackSnapshotterScope, ScrollbackSnapshotterFact>
     let lifecycleFacts = ScrollbackLifecycleRecorder()
 
-    init(expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil, installsSnapshotter: Bool = true) throws {
-        let sqliteFixture = try makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
+    init(
+        expiryHold: HeldStep<WorkspaceUndoJournalTime>? = nil, installsSnapshotter: Bool = true,
+        includesOptionalSchema: Bool = true
+    ) throws {
+        let sqliteFixture =
+            try includesOptionalSchema
+            ? makeWorkspaceSQLiteBridgeFixture(workspaceId: workspaceID)
+            : makeBootRequiredScrollbackWorkspaceFixture(workspaceId: workspaceID)
         datastore = try preparedWorkspaceSQLiteDatastore(from: sqliteFixture.backend)
         store = WorkspaceStore(
             identityAtom: WorkspaceIdentityAtom(workspaceId: workspaceID), sqliteDatastore: datastore,
@@ -282,6 +380,26 @@ private final class ScrollbackWorkspaceFixture {
         coordinator.scrollbackStore = scrollback
         if installsSnapshotter { coordinator.scrollbackSnapshotter = snapshotter }
     }
+}
+
+enum BootRestoreRetirementCase: CaseIterable, Sendable {
+    case snapshotter, withoutSnapshotter, deletionFailure, upgrade
+}
+
+@MainActor
+private func makeBootRequiredScrollbackWorkspaceFixture(workspaceId: UUID) throws -> WorkspaceSQLiteBridgeFixture {
+    let coreQueue = try SQLiteDatabaseFactory.makeInMemoryQueue(label: "boot-retirement-core")
+    let localQueue = try SQLiteDatabaseFactory.makeInMemoryQueue(label: "boot-retirement-local")
+    try WorkspaceCoreMigrations.migrate(coreQueue)
+    try WorkspaceLocalMigrations.bootRequiredMigrator.migrate(localQueue)
+    let coreRepository = WorkspaceCoreRepository(databaseWriter: coreQueue)
+    let localRepository = WorkspaceLocalRepository(workspaceId: workspaceId, databaseWriter: localQueue)
+    let backend = WorkspaceSQLiteStoreBackend(
+        coreRepository: coreRepository,
+        makeLocalRepository: { WorkspaceLocalRepository(workspaceId: $0, databaseWriter: localQueue) },
+        coreDatabaseStartupProvenance: .createdDuringCurrentStartup)
+    return .init(
+        localQueue: localQueue, coreRepository: coreRepository, localRepository: localRepository, backend: backend)
 }
 
 private final class ScrollbackLifecycleRecorder: Sendable {

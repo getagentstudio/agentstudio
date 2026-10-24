@@ -182,6 +182,7 @@ extension AppDelegate {
             }
             return .initializationCancelled
         }
+        replayBootRestoreRetirements()
         startRestoreForegroundLifecycleConsumption()
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
