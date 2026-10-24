@@ -62,17 +62,17 @@ middle-truncate at any width where the full ID does not fit. Keep a readable
 prefix and suffix around the ellipsis, the full ID in the tooltip, and a small
 inline copy icon right after the value at the same small gap, always visible.
 An ID cut off at the edge without an ellipsis, a copy icon separated from the
-value's last painted glyph or ellipsis by more than the small gap used on the
-other copy rows, a hidden or hover-only copy icon, or truncation of a normal repo
-or branch at 420pt is **FAIL**. Judge always-visible from a frame with no pointer
-over the card (a locked or background render qualifies), and record that
-condition.
+value's last painted glyph or ellipsis by more than the gap the same field shows
+at a required width where its value fits (or the same field on a sibling card),
+a hidden or hover-only copy icon, or truncation of a normal repo or branch at
+420pt is **FAIL**. Judge always-visible from a frame with no pointer over the
+card, and record the pointer position outside the card's frame; if the pointer
+position can't be recorded, always-visible is UNKNOWN.
 A truncated ID fills its row, so its icon can sit at the value column's trailing
 edge; that is correct when the gap is the small gap. Oversized path/branch values
-may use the adopted
-**middle truncation** with full tooltip. A long title/message follows its
-separate two-line tail boundary. Every element stays inside the card's inner
-bounds; no abandoned column or empty reserved row.
+may use the adopted **middle truncation** with full tooltip. A long title/message
+follows its separate two-line tail boundary. Every element stays inside the
+card's inner bounds; no abandoned column or empty reserved row.
 
 On every original, also verify:
 
@@ -94,8 +94,10 @@ On every original, also verify:
   must match that owner fact; that decides identity. The full value is proved by
   the separate copy-payload check below, which stays UNKNOWN without its route.
   App renders omit tooltips: record the tooltip UNKNOWN unless the commission
-  grants a hover route on an unlocked screen. A tooltip never replaces the
-  copy-payload check. Compare PANE to that same pane's owner ID.
+  grants a hover route on an already-unlocked screen. The tooltip is its own
+  observation; its UNKNOWN does not change the layout/identity verdict.
+  A tooltip never replaces the copy-payload check. Compare PANE to that same
+  pane's owner ID.
   AX full values can hide truncation; judge the painted frame. Include lineless
   and long-message layouts and a comparator.
 - Activity recency/active chips match the same sidebar row at the same instant.
