@@ -353,14 +353,14 @@ struct RuleParityTests {
         let diagnostics = try lint(files: [pollingWaitFixture])
             .filter { $0.ruleID == "agentstudio_no_polling_wait_in_tests" }
 
-        #expect(diagnostics.map(\.line) == [7, 16, 25, 34, 46])
+        #expect(diagnostics.map(\.line) == [7, 16, 25, 34, 46, 54, 58])
         #expect(
             diagnostics.allSatisfy {
                 $0.message.contains("docs/architecture/testing/testing_architecture.md#how-a-test-may-wait")
             })
     }
 
-    @Test("polling wait rule leaves event-driven waits and ordinary loops alone")
+    @Test("polling wait rule leaves event-driven waits, single yield stimuli, and ordinary loops alone")
     func pollingWaitRuleLeavesEventDrivenWaitsAndOrdinaryLoopsAlone() throws {
         let eventDrivenFixture = fixtureRoot()
             .appendingPathComponent("Good")

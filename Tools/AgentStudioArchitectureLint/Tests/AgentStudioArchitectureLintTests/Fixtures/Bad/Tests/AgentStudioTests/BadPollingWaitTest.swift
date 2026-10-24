@@ -49,4 +49,14 @@ struct BadPollingWaitTest {
             }
         }
     }
+
+    func waitsForFixedTurnCount() async {
+        for _ in 0..<300 { await Task.yield() }
+    }
+
+    func waitsWithTurnBudget(maxTurns: Int, condition: () -> Bool) async {
+        for _ in 0..<maxTurns where !condition() {
+            await Task.yield()
+        }
+    }
 }

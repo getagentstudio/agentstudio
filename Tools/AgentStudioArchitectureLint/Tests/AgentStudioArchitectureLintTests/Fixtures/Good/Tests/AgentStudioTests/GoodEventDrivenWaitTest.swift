@@ -1,6 +1,10 @@
 import Foundation
 
 struct GoodEventDrivenWaitTest {
+    func yieldsOnceAsAStimulus() async {
+        await Task.yield()
+    }
+
     /// Awaits the specific element on the stream: the loop suspends on delivery,
     /// it does not re-read a condition.
     func awaitsFirstMatchingElement(stream: AsyncStream<Int>) async -> Int? {

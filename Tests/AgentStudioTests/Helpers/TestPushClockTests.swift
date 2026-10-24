@@ -107,13 +107,12 @@ struct TestPushClockTests {
     func cancelledBeforeSleepRegistrationTerminatesImmediately() async {
         let clock = TestPushClock()
         let sleepTask = Task {
-            while !Task.isCancelled {
-                await Task.yield()
+            // Enter sleep already cancelled, independently of caller scheduling.
+            withUnsafeCurrentTask { task in
+                task?.cancel()
             }
             try await clock.sleep(until: clock.now.advanced(by: .seconds(1)))
         }
-
-        sleepTask.cancel()
 
         await #expect(throws: CancellationError.self) {
             try await sleepTask.value
