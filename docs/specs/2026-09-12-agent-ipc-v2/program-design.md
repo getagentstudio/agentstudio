@@ -918,6 +918,11 @@ SDK/Rust CLI, remote transport and grant issuance remain outside the design.
 | R-24 | Boot, registry and package scope boundaries | C7; S9/V9 |
 | R-25 | App boot, terminal construction, Core migration phases, IPC-side initialization | C1/C6/C8; S10/V10 |
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 Pure parsing/reducer/normalization tests prove local decisions. Real IPC,
 SQLite, provider events and native effect readback prove their connections;
 a fake provider cannot qualify REPORTED evidence. Process-end checks straddle

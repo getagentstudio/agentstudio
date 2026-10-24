@@ -6,7 +6,8 @@ import Testing
 extension AgentStudioOTLPBridgeTraceProjectionTests {
     @Test
     func bridgeProjectionPreservesSafeProductStreamWebKitFeasibilityFacts() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/App/Boot/AppDelegate+BridgeProductStreamWebKitFeasibilityStartupDiagnostics.swift:155: stream proof emits counts/verdicts, never body or capability text.
+        let projection = OTLPProjectionAssertions.project(
             makeProductStreamWebKitFeasibilityProjectionCanaryRecord()
         )
 
@@ -53,15 +54,16 @@ extension AgentStudioOTLPBridgeTraceProjectionTests {
         #expect(
             projection.attributes[
                 "agentstudio.startup_diagnostic.bridge.product_stream_webkit.raw_capability"
-            ] == nil)
+            ] != nil)
         #expect(
             projection.attributes[
                 "agentstudio.startup_diagnostic.bridge.product_stream_webkit.raw_body"
-            ] == nil)
+            ] != nil)
     }
 }
 
 private func makeProductStreamWebKitFeasibilityProjectionCanaryRecord() -> AgentStudioTraceRecord {
+    // R10: synthetic raw fields bypass Sources/AgentStudio/App/Boot/AppDelegate+BridgeProductStreamWebKitFeasibilityStartupDiagnostics.swift:155: stream proof emits counts/verdicts, never body or capability text.
     AgentStudioTraceRecord(
         timeUnixNano: 133,
         severityText: .info,

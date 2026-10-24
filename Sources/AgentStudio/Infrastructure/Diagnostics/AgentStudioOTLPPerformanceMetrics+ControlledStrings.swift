@@ -1,4 +1,6 @@
-extension AgentStudioOTLPTraceProjection {
+import Foundation
+
+extension AgentStudioOTLPPerformanceMetricEvent {
     private static let controlledStringFamilyPredicates: [@Sendable (String, String) -> Bool?] = [
         { key, value in BridgeTelemetryWireSchema.allowedStringValues(for: key).map { $0.contains(value) } },
         AgentStudioOTLPAttributionProjectionKeys.isAllowedValue,
@@ -7,6 +9,29 @@ extension AgentStudioOTLPTraceProjection {
         RendererLifecycleOTLPProjectionKeys.isAllowedStringValue,
         isAllowedScrollbackControlledStringValue,
     ]
+
+    static func isAllowedMetricDimensionValue(key: String, value: String, resource: [String: String]) -> Bool {
+        guard isAllowedControlledStringValue(key: key, value: value) else { return false }
+        // The projection overlays resource markers after filtering attributes. Keep
+        // that resource boundary, including its 160-character limit, for metrics.
+        if key == "agent.proof.marker", resource[key] == value {
+            let normalizedValue = value.lowercased()
+            return !value.isEmpty && value.count <= 160
+                && !normalizedValue.hasPrefix("/") && !normalizedValue.contains("/users/")
+                && !normalizedValue.contains("://") && !normalizedValue.contains("\\")
+                && !normalizedValue.contains("\n") && !normalizedValue.contains("\r")
+        }
+        if AgentStudioOTLPRepoExplorerTaxonomy.structuredStringAttributeKeys.contains(key) {
+            return true
+        }
+        // This is the existing attribute string boundary, moved out of the log
+        // projection so deleting the log filter cannot widen metric dimensions.
+        guard !value.isEmpty, value.count <= 128 else { return false }
+        return value.unicodeScalars.allSatisfy { scalar in
+            CharacterSet.alphanumerics.contains(scalar)
+                || scalar == "." || scalar == "_" || scalar == "-" || scalar == ":"
+        }
+    }
 
     static func isAllowedControlledStringValue(key: String, value: String) -> Bool {
         for predicate in controlledStringFamilyPredicates {
@@ -19,7 +44,7 @@ extension AgentStudioOTLPTraceProjection {
         }
         switch key {
         case "agentstudio.performance.sidebar.surface":
-            return ["inbox", "repo"].contains(value)
+            return ["inbox", "repo", "panes"].contains(value)
         case "agentstudio.performance.sidebar.phase":
             return [
                 "request_build_mainactor", "projection_worker", "mainactor_apply", "row_index", "startup_diagnostic",
@@ -29,7 +54,7 @@ extension AgentStudioOTLPTraceProjection {
         case "agentstudio.performance.sidebar.query_state":
             return ["empty", "non_empty"].contains(value)
         case "agentstudio.performance.sidebar.group_mode":
-            return ["repo", "pane", "tab", "none", "not_applicable"].contains(value)
+            return ["repo", "pane", "tab", "none", "not_applicable", "activity"].contains(value)
         case "agentstudio.performance.sidebar.sort_order":
             return ["ascending", "descending"].contains(value)
         case "agentstudio.performance.sidebar.trigger":

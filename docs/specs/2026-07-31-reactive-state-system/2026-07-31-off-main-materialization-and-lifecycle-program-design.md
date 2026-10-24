@@ -677,6 +677,11 @@ Selected materialized nodes report through the existing trace-tag system:
 No request identity, key, UUID, path, title, terminal content, notification
 body, or error payload is exported. Attributes are allowlisted and bounded.
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 Each family member retains one current task handle. Successor admission cancels
 that handle before replacing it, although cancelled predecessors may remain
 temporarily unsettled while cooperative cancellation unwinds. Removal and
@@ -754,6 +759,11 @@ continuity, and final-state equivalence before comparing distributions. The
 existing OTLP allowlist and fail-open tests cover the new bounded fields; no
 parallel benchmark or telemetry framework is introduced.
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 The large watched-folder/open-source workload is reused so topology and
 enrichment pressure occur while Tab Bar remains interactive. The existing
 comparison rule that requires an arbitrary fixed fraction or universal 50%
@@ -789,6 +799,11 @@ not a permanent runtime compatibility branch.
 | Privacy | Allowlisted aggregate telemetry only | Exporter failure is fail-open |
 | Operability | Existing performance trace tags and debug identity | Missing event continuity invalidates comparison |
 | Platform safety | `Sendable` request/result/closure and strict Swift 6 checks | Compile-negative proof distinguishes compiler claims from lint |
+
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
 
 ## 17. Proof Architecture
 

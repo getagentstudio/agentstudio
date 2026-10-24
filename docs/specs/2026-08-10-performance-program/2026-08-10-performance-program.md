@@ -385,6 +385,11 @@ open/close, tab move, divider drag, Cmd+R, plus the slice-named lanes.
   stated — no new data classes are collected; interaction telemetry carries
   timings and outcome classes, never content.
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 ## Proof obligations
 
 | V | Evidence class | Proves | Boundary |

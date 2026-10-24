@@ -611,16 +611,8 @@ rpc_trace_response="$(
 )"
 
 for unsafe_field in \
-  agentstudio.bridge.item_id \
   "$historical_bridge_lane_field" \
-  agentstudio.bridge.tab_id \
-  agentstudio.bridge.session_id \
-  agentstudio.bridge.operation_id \
-  agentstudio.bridge.request_id \
-  agentstudio.bridge.content_hash \
-  agentstudio.bridge.checkpoint_id \
   agentstudio.bridge.dynamic_key \
-  agentstudio.bridge.path \
   agentstudio.bridge.prompt \
   agentstudio.bridge.raw_error \
   agentstudio.bridge.payload \

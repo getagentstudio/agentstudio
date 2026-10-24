@@ -151,6 +151,7 @@ package struct AgentStudioTraceConfiguration: Equatable, Sendable {
         let protocolSelection = AgentStudioOTLPProtocol.parse(environment["OTEL_EXPORTER_OTLP_PROTOCOL"])
         let endpointSelection = otlpEndpointSelection(
             environment["OTEL_EXPORTER_OTLP_ENDPOINT"] ?? preferenceLayer?.otlpEndpoint,
+            environment: environment,
             backend: backendSelection.backend,
             isTracingEnabled: !selection.tags.isEmpty,
             isProtocolSupported: protocolSelection.unsupportedSelector == nil
@@ -324,12 +325,22 @@ package struct AgentStudioTraceConfiguration: Equatable, Sendable {
 
     private static func otlpEndpointSelection(
         _ rawValue: String?,
+        environment: [String: String],
         backend: AgentStudioTraceBackend,
         isTracingEnabled: Bool,
         isProtocolSupported: Bool
     ) -> (url: URL?, rejectedSelector: String?) {
         guard isTracingEnabled, backend.includesOTLP, isProtocolSupported else {
             return (nil, nil)
+        }
+
+        // swift-otel 1.0.5 reapplies process-environment overrides when each
+        // backend is created. A signal override can replace the shared endpoint.
+        for signal in ["LOGS", "METRICS", "TRACES"] {
+            guard let signalEndpoint = environment["OTEL_EXPORTER_OTLP_\(signal)_ENDPOINT"] else { continue }
+            guard let url = URL(string: signalEndpoint), isLoopbackHTTPEndpoint(url) else {
+                return (nil, signalEndpoint)
+            }
         }
 
         let trimmedValue = rawValue?.trimmingCharacters(in: .whitespacesAndNewlines)

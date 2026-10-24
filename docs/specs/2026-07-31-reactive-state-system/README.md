@@ -97,5 +97,10 @@ dependency, task source, or proof obligation for PR 1 or PR 2.
 | Performance | Existing Victoria workload summaries and provenance-enforcing comparator, after the PR 2 measurement corrections make hot attributes lazy, report trace-queue completeness, and add interaction-to-visible/current-result boundaries |
 | Telemetry safety | Existing OTLP allowlist and fail-open suites |
 
+> #26 supersedes the export-filter contract in the historical passage above.
+> [The current OTLP contract](../../architecture/observability/observability_and_traceability.md#otlp-projection)
+> exports every recorded attribute under its recorded name and value. Upstream
+> message-text and credential restrictions, and Bridge ingress validation, still apply.
+
 Program designs define seams and obligations. A later implementation plan owns
 exact tasks, commands, ordering, and evidence locations.

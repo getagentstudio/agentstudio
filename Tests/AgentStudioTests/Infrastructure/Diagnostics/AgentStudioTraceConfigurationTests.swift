@@ -347,6 +347,42 @@ struct AgentStudioTraceConfigurationTests {
     }
 
     @Test
+    func perSignalRemoteEndpointRefusesAllOTLP() {
+        // Spec R2: the SDK reads these after the app supplies its shared endpoint.
+        for signal in ["LOGS", "METRICS", "TRACES"] {
+            let remoteEndpoint = "http://collector.example.com:4318/v1/\(signal.lowercased())"
+            let configuration = AgentStudioTraceConfiguration.from(environment: [
+                "AGENTSTUDIO_TRACE_BACKEND": "both",
+                "AGENTSTUDIO_TRACE_TAGS": "runtime",
+                "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+                "OTEL_EXPORTER_OTLP_\(signal)_ENDPOINT": remoteEndpoint,
+            ])
+
+            #expect(configuration.backend == .jsonl, "\(signal) must refuse OTLP and preserve JSONL")
+            #expect(configuration.otlpEndpoint == nil)
+            #expect(configuration.rejectedOTLPEndpointSelector == remoteEndpoint)
+        }
+    }
+
+    @Test
+    func perSignalLoopbackEndpointsKeepOTLPEnabled() {
+        for signal in ["LOGS", "METRICS", "TRACES"] {
+            for host in ["localhost", "127.0.0.1", "[::1]"] {
+                let configuration = AgentStudioTraceConfiguration.from(environment: [
+                    "AGENTSTUDIO_TRACE_BACKEND": "both",
+                    "AGENTSTUDIO_TRACE_TAGS": "runtime",
+                    "OTEL_EXPORTER_OTLP_ENDPOINT": "http://127.0.0.1:4318",
+                    "OTEL_EXPORTER_OTLP_\(signal)_ENDPOINT": "http://\(host):4319/v1/\(signal.lowercased())",
+                ])
+
+                #expect(configuration.backend == .both)
+                #expect(configuration.otlpEndpoint?.absoluteString == "http://127.0.0.1:4318")
+                #expect(configuration.rejectedOTLPEndpointSelector == nil)
+            }
+        }
+    }
+
+    @Test
     func unknownTagSelectorsAreReportedWithoutEnablingTracing() {
         let configuration = AgentStudioTraceConfiguration.from(environment: [
             "AGENTSTUDIO_TRACE_TAGS": "runtmie"

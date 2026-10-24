@@ -10,9 +10,11 @@ struct AgentStudioOTLPTraceSinkTests {
         let bootstrapper = RecordingOTLPBootstrapper()
         let context = AgentStudioOTLPTraceSinkContext(
             endpoint: URL(string: "http://127.0.0.1:4318")!,
-            otlpProtocol: .httpProtobuf
+            otlpProtocol: .httpProtobuf,
+            queueStatistics: AgentStudioTraceQueueStatistics()
         )
         let sink = AgentStudioOTLPTraceSink(context: context, bootstrapper: bootstrapper)
+        // R10: TerminalActivityRouter.swift:518 records runtime identity, never message text; this synthetic sink fixture bypasses it.
         let record = AgentStudioTraceRecord(
             timeUnixNano: 500,
             severityText: .info,
@@ -28,7 +30,7 @@ struct AgentStudioOTLPTraceSinkTests {
             attributes: [
                 "agentstudio.runtime.event": .string("state_changed"),
                 "agentstudio.trace.tag": .string("runtime"),
-                "agentstudio.workspace.id": .string(UUID().uuidString),
+                "agentstudio.workspace.id": .string(UUIDv7.generate().uuidString),
             ]
         )
 
@@ -45,7 +47,9 @@ struct AgentStudioOTLPTraceSinkTests {
         #expect(emittedRecords.first?.resource["service.name"] == "AgentStudio")
         #expect(emittedRecords.first?.resource["process.pid"] == nil)
         #expect(emittedRecords.first?.attributes["agentstudio.runtime.event"] == .string("state_changed"))
-        #expect(emittedRecords.first?.attributes["agentstudio.workspace.id"] == nil)
+        #expect(
+            emittedRecords.first?.attributes["agentstudio.workspace.id"]
+                == record.attributes["agentstudio.workspace.id"])
         #expect(emittedContexts.first?.endpoint.absoluteString == "http://127.0.0.1:4318")
         #expect(await bootstrapper.flushCount() == 1)
         #expect(await bootstrapper.shutdownCount() == 1)

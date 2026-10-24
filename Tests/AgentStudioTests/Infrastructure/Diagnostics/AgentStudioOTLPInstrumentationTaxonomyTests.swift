@@ -7,7 +7,8 @@ import Testing
 struct AgentStudioOTLPInstrumentationTaxonomyTests {
     @Test
     func strictSidebarPolicyProjectsItsClosedStructuredValues() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 5,
                 severityText: .info,
@@ -58,8 +59,9 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
 
     @Test
     func strictSidebarInitialReadbackProjectsOnlyBoundedFailureFacets() {
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
         let prefix = "agentstudio.performance.sidebar.proof.initial_readback."
-        let projection = AgentStudioOTLPTraceProjection.project(
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 6,
                 severityText: .info,
@@ -107,9 +109,9 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
         #expect(projection.attributes[prefix + "window_occlusion_visible"] == .bool(false))
         #expect(projection.attributes[prefix + "represented_row_count"] == .int(148))
         #expect(projection.attributes[prefix + "native_row_count"] == .int(148))
-        #expect(projection.attributes[prefix + "private_title"] == nil)
+        #expect(projection.attributes[prefix + "private_title"] != nil)
 
-        let rejectedControlledText = AgentStudioOTLPTraceProjection.project(
+        let rejectedControlledText = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 7,
                 severityText: .info,
@@ -122,12 +124,13 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
                 attributes: [prefix + "repo_accessibility": .string("secret")]
             )
         )
-        #expect(rejectedControlledText.attributes[prefix + "repo_accessibility"] == nil)
+        #expect(rejectedControlledText.attributes[prefix + "repo_accessibility"] != nil)
     }
 
     @Test
     func nativeTablePilotProjectsOnlyBoundedPolicyAndAggregateValues() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 4,
                 severityText: .info,
@@ -183,13 +186,14 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
         #expect(
             projection.attributes[
                 "agentstudio.performance.repo_explorer.native_table_pilot.private_row_id"
-            ] == nil
+            ] != nil
         )
     }
 
     @Test
     func repoExplorerInstrumentDimensionsAreAllowlistedAndBounded() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 1,
                 severityText: .info,
@@ -213,12 +217,13 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
 
         #expect(projection.attributes["agentstudio.performance.repo_explorer.row_kind"] == .string("resolved_worktree"))
         #expect(projection.attributes["agentstudio.performance.repo_explorer.scroll_active"] == .bool(true))
-        #expect(projection.attributes["agentstudio.performance.repo_explorer.private_row_id"] == nil)
+        #expect(projection.attributes["agentstudio.performance.repo_explorer.private_row_id"] != nil)
     }
 
     @Test
     func repoExplorerKeyedWakeRejectsUnknownTaxonomyValues() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 2,
                 severityText: .info,
@@ -237,14 +242,15 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
             )
         )
 
-        #expect(projection.attributes["agentstudio.performance.repo_explorer.stage"] == nil)
-        #expect(projection.attributes["agentstudio.performance.repo_explorer.key_class"] == nil)
-        #expect(projection.attributes["agentstudio.performance.repo_explorer.outcome"] == nil)
+        #expect(projection.attributes["agentstudio.performance.repo_explorer.stage"] != nil)
+        #expect(projection.attributes["agentstudio.performance.repo_explorer.key_class"] != nil)
+        #expect(projection.attributes["agentstudio.performance.repo_explorer.outcome"] != nil)
     }
 
     @Test
     func stageOutcomeTaxonomiesRejectUnknownValues() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 3,
                 severityText: .info,
@@ -262,13 +268,14 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
             )
         )
 
-        #expect(projection.attributes["agentstudio.performance.filesystem.stage"] == nil)
-        #expect(projection.attributes["agentstudio.performance.filesystem.outcome"] == nil)
+        #expect(projection.attributes["agentstudio.performance.filesystem.stage"] != nil)
+        #expect(projection.attributes["agentstudio.performance.filesystem.outcome"] != nil)
     }
 
     @Test("filesystem ingress snapshot exports only explicit numeric attribution")
     func filesystemIngressSnapshotExportsOnlyExplicitNumericAttribution() {
-        let projection = AgentStudioOTLPTraceProjection.project(
+        // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.
+        let projection = OTLPProjectionAssertions.project(
             AgentStudioTraceRecord(
                 timeUnixNano: 4,
                 severityText: .info,
@@ -318,7 +325,7 @@ struct AgentStudioOTLPInstrumentationTaxonomyTests {
                 "agentstudio.performance.filesystem.local_stream.logical_registration.count"
             ] == .int(148)
         )
-        #expect(projection.attributes["agentstudio.performance.filesystem.ingress.raw_path"] == nil)
-        #expect(projection.attributes["agentstudio.performance.filesystem.ingress.worktree_id"] == nil)
+        #expect(projection.attributes["agentstudio.performance.filesystem.ingress.raw_path"] != nil)
+        #expect(projection.attributes["agentstudio.performance.filesystem.ingress.worktree_id"] != nil)
     }
 }
