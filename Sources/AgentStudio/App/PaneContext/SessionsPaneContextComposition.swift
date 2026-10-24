@@ -41,7 +41,9 @@ struct SessionsPaneContextComposition: Sendable {
         let presentationLane = makePresentationLane(inputs: inputs)
         let bridge = PaneContextSessionsBridge()
         let ingestion = SessionsIngestion(
-            repository: SessionsRepository(sqliteAccess: WorkspaceSessionsSQLiteAccess(datastore: inputs.datastore)),
+            repository: SessionsRepository(
+                sqliteAccess: WorkspaceSessionsSQLiteAccess(datastore: inputs.datastore),
+                performanceTraceRecorder: inputs.performanceTraceRecorder),
             limits: inputs.limits, probe: inputs.ingestionProbe, paneViewedMailbox: inputs.paneViewedMailbox,
             statusSink: inputs.statusSink, openAskSource: bridge,
             sessionEnded: { generation in await bridge.sessionEnded(bindingGenerationId: generation) },

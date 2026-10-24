@@ -968,6 +968,7 @@ large|CIFastLaneWorkflowTests|concurrent
 large|CIFirstAttemptGateWorkflowTests|concurrent
 large|CISwiftBuildCachePublishScriptTests|concurrent
 large|CISwiftBuildInputsScriptTests|concurrent
+large|CLILifecycleReportProcessTests|process-global
 benchmark|CommandBarSearchBenchmarkTests|process-global
 benchmark|GhosttyRestoreInputBenchmarkTests|process-global
 large|CrossTabMoveRendererIntegrationTests|process-global
@@ -984,6 +985,7 @@ large|DrawerZoomFrameCurrencyIntegrationTests|process-global
 e2e|E2ESerializedTests|serial
 zmx|E2ESerializedTests/ColdRestoreRestorePhaseIntersectionTests|serial
 e2e|E2ESerializedTests/FilesystemSourceE2ETests|serial
+e2e|E2ESerializedTests/ProcessExitWatcherRealProcessTests|serial
 zmx|E2ESerializedTests/ScrollbackCaptureIntegrationTests|serial
 zmx|ScrollbackZmxConsoleFailureTests|serial
 zmx|E2ESerializedTests/TerminalRestoreZmxIntegrationTests|serial

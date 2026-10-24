@@ -64,6 +64,7 @@ package actor PaneForegroundObserver<ObserverClock: Clock> where ObserverClock.D
     private let probe: any TerminalForegroundProbing
     private let exitWatcher: any ProcessExitWatching
     private let observerLaunchId: UUID
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let factSink: (@Sendable (ForegroundObserverFactScope, ForegroundObserverFact) -> Void)?
     private var panes: [UUID: PaneState] = [:]
     private var retiredPanes: Set<UUID> = []
@@ -94,7 +95,7 @@ package actor PaneForegroundObserver<ObserverClock: Clock> where ObserverClock.D
         repository: any PaneForegroundEvidenceRepository,
         probe: any TerminalForegroundProbing,
         exitWatcher: any ProcessExitWatching,
-        observerLaunchId: UUID,
+        observerLaunchId: UUID, performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         factSink: (@Sendable (ForegroundObserverFactScope, ForegroundObserverFact) -> Void)? = nil
     ) {
         self.clock = clock
@@ -103,6 +104,7 @@ package actor PaneForegroundObserver<ObserverClock: Clock> where ObserverClock.D
         self.probe = probe
         self.exitWatcher = exitWatcher
         self.observerLaunchId = observerLaunchId
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.factSink = factSink
     }
 
@@ -111,34 +113,42 @@ package actor PaneForegroundObserver<ObserverClock: Clock> where ObserverClock.D
         if case .bindingChanged = trigger {
             try? await repository.clearReportedEvidenceForChangedBinding(paneId: pane)
         }
-        guard !stopped, !retiredPanes.contains(pane), panes[pane]?.settled != true else { return }
-        var state = panes[pane] ?? PaneState()
-        let now = clock.now
-        let due: ObserverClock.Instant
-        switch trigger {
-        case .outputBegan(let identifier):
-            state.outputActive = identifier
-            due = now.advanced(by: policy.lookMaxDelay)
-        case .outputSettled(let identifier):
-            guard state.outputActive == identifier else { return }
-            state.outputActive = nil
-            due = now.advanced(by: policy.lookSettleDelay)
-        case .agentMessage: due = now.advanced(by: policy.lookSettleDelay)
-        case .appQuitting:
-            state.quitDeadline = now.advanced(by: policy.quitLookDeadline)
-            due = now
-        case .bindingChanged, .relaunched: due = now
-        }
-        let quitting = state.quitDeadline != nil
-        mergeDemand(into: &state, due: due, identity: nil, quitting: quitting)
-        panes[pane] = state
-        if let factSink {
-            let scope = ForegroundObserverFactScope(paneId: pane, operationId: UUIDv7.generate())
-            factSink(scope, .scheduled)
-            factSink(scope, .closed(.scheduled))
-        }
-        rescheduleDeadline()
+        scheduleLook(trigger, pane: pane)
+    }
 
+    private func scheduleLook(_ trigger: ForegroundLookTrigger, pane: UUID) {
+        AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreForegroundSchedule, recorder: performanceTraceRecorder
+        ) {
+            guard !stopped, !retiredPanes.contains(pane), panes[pane]?.settled != true else { return }
+            var state = panes[pane] ?? PaneState()
+            let now = clock.now
+            let due: ObserverClock.Instant
+            switch trigger {
+            case .outputBegan(let identifier):
+                state.outputActive = identifier
+                due = now.advanced(by: policy.lookMaxDelay)
+            case .outputSettled(let identifier):
+                guard state.outputActive == identifier else { return }
+                state.outputActive = nil
+                due = now.advanced(by: policy.lookSettleDelay)
+            case .agentMessage: due = now.advanced(by: policy.lookSettleDelay)
+            case .appQuitting:
+                state.quitDeadline = now.advanced(by: policy.quitLookDeadline)
+                due = now
+            case .bindingChanged, .relaunched: due = now
+            }
+            let quitting = state.quitDeadline != nil
+            mergeDemand(into: &state, due: due, identity: nil, quitting: quitting)
+            panes[pane] = state
+            if let factSink {
+                let scope = ForegroundObserverFactScope(paneId: pane, operationId: UUIDv7.generate())
+                factSink(scope, .scheduled)
+                factSink(scope, .closed(.scheduled))
+            }
+            rescheduleDeadline()
+
+        }
     }
 
     private func mergeDemand(
@@ -183,37 +193,41 @@ package actor PaneForegroundObserver<ObserverClock: Clock> where ObserverClock.D
     }
 
     private func deadlineReached(_ identifier: UUID) {
-        guard deadlineTaskId == identifier, !stopped else { return }
-        deadlineTaskId = nil
-        let now = clock.now
-        for pane in Array(panes.keys) {
-            if let deadline = panes[pane]?.quitDeadline, deadline <= now { settleQuitDeadline(pane) }
-        }
-        var looks: [UUID: RunningLook] = [:]
-        let taskId = UUIDv7.generate()
-        for pane in Array(panes.keys) {
-            guard var state = panes[pane], !state.settled, state.running == nil,
-                let demand = state.pending, demand.dueAt <= now
-            else { continue }
-            sequence += 1
-            let look = RunningLook(
-                operation: newOperation(pane), sequence: sequence, taskId: taskId,
-                requiredIdentity: demand.requiredIdentity, quitting: demand.quitting)
-            state.pending = nil
-            state.running = look
-            panes[pane] = state
-            looks[pane] = look
-            recordFact(look.operation, .snapshotStarted(sequence: look.sequence))
-        }
-        if !looks.isEmpty {
-            let captured = looks
-            tasks[taskId] = Task { [weak self] in
-                await self?.executeLooks(captured)
-                await self?.taskFinished(taskId)
+        AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreForegroundSchedule, recorder: performanceTraceRecorder
+        ) {
+            guard deadlineTaskId == identifier, !stopped else { return }
+            deadlineTaskId = nil
+            let now = clock.now
+            for pane in Array(panes.keys) {
+                if let deadline = panes[pane]?.quitDeadline, deadline <= now { settleQuitDeadline(pane) }
             }
-        }
-        rescheduleDeadline()
+            var looks: [UUID: RunningLook] = [:]
+            let taskId = UUIDv7.generate()
+            for pane in Array(panes.keys) {
+                guard var state = panes[pane], !state.settled, state.running == nil,
+                    let demand = state.pending, demand.dueAt <= now
+                else { continue }
+                sequence += 1
+                let look = RunningLook(
+                    operation: newOperation(pane), sequence: sequence, taskId: taskId,
+                    requiredIdentity: demand.requiredIdentity, quitting: demand.quitting)
+                state.pending = nil
+                state.running = look
+                panes[pane] = state
+                looks[pane] = look
+                recordFact(look.operation, .snapshotStarted(sequence: look.sequence))
+            }
+            if !looks.isEmpty {
+                let captured = looks
+                tasks[taskId] = Task { [weak self] in
+                    await self?.executeLooks(captured)
+                    await self?.taskFinished(taskId)
+                }
+            }
+            rescheduleDeadline()
 
+        }
     }
 
     private func executeLooks(_ looks: [UUID: RunningLook]) async {

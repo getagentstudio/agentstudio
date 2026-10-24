@@ -18,13 +18,16 @@ package struct ForegroundPsPass: Sendable {
 }
 
 package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let sessionControl: any ZmxSessionControlling
     private let readSamples: (@Sendable () async throws -> ForegroundPsPass)?
     package init(
         sessionDirectory: String, bootId: String,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         sessionControl: (any ZmxSessionControlling)? = nil,
         readSamples: (@Sendable () async throws -> ForegroundPsPass)? = nil
     ) {
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.sessionControl = sessionControl ?? ForegroundZmxSessionControl(directory: sessionDirectory, bootId: bootId)
         self.readSamples = readSamples
     }
@@ -47,7 +50,8 @@ package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
             pass = try await readSamples()
         } else {
             pass = try await Self.readNativeSamples(
-                leaders: identities.values.map { $0.1.terminalLeader })
+                leaders: identities.values.map { $0.1.terminalLeader },
+                performanceTraceRecorder: performanceTraceRecorder)
         }
         var snapshots: [ZmxSessionID: ForegroundSnapshot] = [:]
         for (sessionId, captured) in identities {
@@ -110,33 +114,39 @@ package struct DarwinTerminalForegroundProbe: TerminalForegroundProbing {
     /// Only metadata comes from ps. argv is read solely for the requested
     /// terminal leaders' foreground groups and discarded with this pass.
     @concurrent nonisolated private static func readNativeSamples(
-        leaders: [ProcessIncarnation]
+        leaders: [ProcessIncarnation], performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     ) async throws -> ForegroundPsPass {
         let leaderIds = Set(leaders.map(\.pid))
         let result: ProcessResult
         do {
-            result = try await DefaultProcessExecutor().execute(
-                command: "/bin/ps", args: ["-axo", "pid=,pgid=,tpgid="], cwd: nil, environment: nil)
+            result = try await AgentStudioPerformanceTraceRecorder.withRestorePhaseScope(.restoreForegroundProbe) {
+                try await DefaultProcessExecutor(performanceTraceRecorder: performanceTraceRecorder).execute(
+                    command: "/bin/ps", args: ["-axo", "pid=,pgid=,tpgid="], cwd: nil, environment: nil)
+            }
         } catch is CancellationError { throw CancellationError() } catch {
             return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
         }
-        guard result.succeeded else {
-            return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
-        }
-        let lines = result.stdout.split(separator: "\n")
-        let rows = lines.compactMap { line -> (pid: Int32, group: Int32, foreground: Int32)? in
-            let fields = line.split(whereSeparator: { $0.isWhitespace })
-            guard fields.count == 3, let pid = Int32(fields[0]), let group = Int32(fields[1]),
-                let foreground = Int32(fields[2])
-            else { return nil }
-            return (pid, group, foreground)
-        }
-        guard rows.count == lines.count else {
-            return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
-        }
-        return try attributeSamples(rows: rows, requestedLeaderPids: leaderIds) { pid, readArguments in
-            try Task.checkCancellation()
-            return readNativeSample(pid: pid, readArguments: readArguments)
+        return try AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreForegroundProbe, recorder: performanceTraceRecorder
+        ) {
+            guard result.succeeded else {
+                return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
+            }
+            let lines = result.stdout.split(separator: "\n")
+            let rows = lines.compactMap { line -> (pid: Int32, group: Int32, foreground: Int32)? in
+                let fields = line.split(whereSeparator: { $0.isWhitespace })
+                guard fields.count == 3, let pid = Int32(fields[0]), let group = Int32(fields[1]),
+                    let foreground = Int32(fields[2])
+                else { return nil }
+                return (pid, group, foreground)
+            }
+            guard rows.count == lines.count else {
+                return .init(samples: [], incompleteLeaders: leaderIds, leadersWithVanishedRows: [])
+            }
+            return try attributeSamples(rows: rows, requestedLeaderPids: leaderIds) { pid, readArguments in
+                try Task.checkCancellation()
+                return readNativeSample(pid: pid, readArguments: readArguments)
+            }
         }
     }
 

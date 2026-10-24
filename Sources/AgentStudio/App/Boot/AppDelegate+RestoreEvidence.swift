@@ -8,22 +8,27 @@ extension AppDelegate {
         guard restoreForegroundObserver == nil else { return }
         let launchId = UUIDv7.generate()
         let workspaceId = store.identityAtom.workspaceId
+        let performanceRecorder = performanceTraceRecorder
         let repository =
             restoreForegroundEvidenceRepository
             ?? SQLitePaneForegroundEvidenceRepository(
                 access: WorkspaceForegroundEvidenceSQLiteAccess(datastore: datastore), observerLaunchId: launchId,
-                paneSessions: { try await datastore.liveZmxSessionsByPane(workspaceId: workspaceId) })
+                paneSessions: {
+                    try await datastore.liveZmxSessionsByPane(
+                        workspaceId: workspaceId, performanceTraceRecorder: performanceRecorder)
+                })
         restoreForegroundEvidenceRepository = repository
         guard let bootId = try? await WorkspaceUndoJournalClock.current().bootID else { return }
-        let watcher = DarwinProcessExitWatcher()
+        let watcher = DarwinProcessExitWatcher(performanceTraceRecorder: performanceRecorder)
         let observer = PaneForegroundObserver(
             clock: ContinuousClock(),
             policy: .init(
                 lookSettleDelay: AppPolicies.Restore.lookSettleDelay, lookMaxDelay: AppPolicies.Restore.lookMaxDelay,
                 quitLookDeadline: AppPolicies.Restore.quitLookDeadline),
             repository: repository,
-            probe: DarwinTerminalForegroundProbe(sessionDirectory: sessionDirectory, bootId: bootId),
-            exitWatcher: watcher, observerLaunchId: launchId)
+            probe: DarwinTerminalForegroundProbe(
+                sessionDirectory: sessionDirectory, bootId: bootId, performanceTraceRecorder: performanceRecorder),
+            exitWatcher: watcher, observerLaunchId: launchId, performanceTraceRecorder: performanceRecorder)
         restoreForegroundExitWatcher = watcher
         restoreForegroundObserver = observer
         let (stream, continuation) = AsyncStream.makeStream(
@@ -51,13 +56,19 @@ extension AppDelegate {
         return { trigger, paneId in await observer.note(trigger, pane: paneId) }
     }
 
+    @concurrent nonisolated private static func shutdownForegroundExitWatcher(_ watcher: DarwinProcessExitWatcher?)
+        async
+    {
+        watcher?.shutdown()
+    }
+
     func shutdownRestoreEvidenceOwners() async {
         await restoreResumeReadiness.shutdown()
         restoreForegroundLifecycleContinuation?.finish()
         restoreForegroundLifecycleTask?.cancel()
         await restoreForegroundLifecycleTask?.value
         await restoreForegroundObserver?.shutdown()
-        restoreForegroundExitWatcher?.shutdown()
+        await Self.shutdownForegroundExitWatcher(restoreForegroundExitWatcher)
         restoreForegroundLifecycleTask = nil
         restoreForegroundLifecycleContinuation = nil
         restoreForegroundLifecycleStream = nil

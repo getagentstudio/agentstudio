@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioTerminal
 import Foundation
@@ -32,6 +33,7 @@ struct ColdRestoreResumeDecision: Sendable {
     let foregroundRepository: any PaneForegroundEvidenceRepository
     let drain: PaneCLIOutboxDrain?
     let storeURL: URL?
+    var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
     @concurrent nonisolated func resolve(
         paneId: UUID, sessionId: ZmxSessionID, preRestoreLook: PaneForegroundLook?,
@@ -49,7 +51,7 @@ struct ColdRestoreResumeDecision: Sendable {
         guard readiness == .ready, let launchBoot else {
             return .init(evidence: .unknown(.reportsNotRead), endedMain: ended, foreground: foreground)
         }
-        let resolver = SessionsResumeResolver()
+        let resolver = SessionsResumeResolver(performanceTraceRecorder: performanceTraceRecorder)
         func input(_ evidence: PaneForegroundEvidence?) -> ResumeEvidenceInput {
             .init(
                 paneId: paneId, zmxSessionId: sessionId, coldEndedMain: ended, evidence: evidence,

@@ -1,5 +1,6 @@
 import AgentStudioCLIStore
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
 import Foundation
@@ -8,17 +9,21 @@ import GRDB
 extension PaneCLIOutboxDrain {
     /// Decode once before committing any row: ids order commits, times order runs.
     func lifecycleItems(in entries: [CLIOutboxEntry]) async throws -> [Int64: ClosedAppOutboxItem] {
-        let parsed = entries.compactMap { entry -> DecodedLifecycleEntry? in
-            guard case .sessionLifecycle(let report) = entry,
-                report.payloadJSON.utf8.count <= maximumPayloadBytes,
-                let descriptor = descriptors["session.event"],
-                let normalized = try? descriptor.normalizeParameters(Data(report.payloadJSON.utf8)),
-                let params = try? JSONDecoder().decode(IPCSessionEventParams.self, from: normalized.data),
-                ResumeProvider(providerIdentifier: params.provider.identifier) != nil,
-                params.event.name == .sessionStart || params.event.name == .sessionEnd,
-                params.handle == "self" || params.handle == report.paneID.uuidString
-            else { return nil }
-            return .init(entry: report, params: params)
+        let parsed = AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreOutboxImport, recorder: performanceTraceRecorder
+        ) {
+            entries.compactMap { entry -> DecodedLifecycleEntry? in
+                guard case .sessionLifecycle(let report) = entry,
+                    report.payloadJSON.utf8.count <= maximumPayloadBytes,
+                    let descriptor = descriptors["session.event"],
+                    let normalized = try? descriptor.normalizeParameters(Data(report.payloadJSON.utf8)),
+                    let params = try? JSONDecoder().decode(IPCSessionEventParams.self, from: normalized.data),
+                    ResumeProvider(providerIdentifier: params.provider.identifier) != nil,
+                    params.event.name == .sessionStart || params.event.name == .sessionEnd,
+                    params.handle == "self" || params.handle == report.paneID.uuidString
+                else { return nil }
+                return .init(entry: report, params: params)
+            }
         }
         var items: [Int64: ClosedAppOutboxItem] = [:]
         for case .sessionLifecycle(let entry) in entries {
@@ -27,22 +32,26 @@ extension PaneCLIOutboxDrain {
                 items[entry.id] = .refused(paneId: entry.paneID)
                 continue
             }
-            let sameSession = parsed.filter { current.sameSession(as: $0) }
-            let hasLaterStart = sameSession.contains {
-                $0.params.event.name == .sessionStart && $0.entry.reportedAt >= entry.reportedAt
+            items[entry.id] = AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+                .restoreOutboxImport, recorder: performanceTraceRecorder
+            ) {
+                let sameSession = parsed.filter { current.sameSession(as: $0) }
+                let hasLaterStart = sameSession.contains {
+                    $0.params.event.name == .sessionStart && $0.entry.reportedAt >= entry.reportedAt
+                }
+                let newest = !sameSession.contains {
+                    $0.entry.reportedAt > entry.reportedAt
+                        || ($0.entry.reportedAt == entry.reportedAt && $0.entry.id > entry.id)
+                }
+                return ClosedAppOutboxItem.report(
+                    .init(
+                        reportId: entry.messageID, paneId: entry.paneID,
+                        providerIdentifier: current.params.provider.identifier,
+                        providerConversationId: current.params.event.conversationId,
+                        event: current.params.event.name == .sessionStart ? .sessionStart : .sessionEnd,
+                        reportedAt: entry.reportedAt, newerOrEqualSameSessionStartInRead: hasLaterStart,
+                        isNewestInRead: newest))
             }
-            let newest = !sameSession.contains {
-                $0.entry.reportedAt > entry.reportedAt
-                    || ($0.entry.reportedAt == entry.reportedAt && $0.entry.id > entry.id)
-            }
-            items[entry.id] = .report(
-                .init(
-                    reportId: entry.messageID, paneId: entry.paneID,
-                    providerIdentifier: current.params.provider.identifier,
-                    providerConversationId: current.params.event.conversationId,
-                    event: current.params.event.name == .sessionStart ? .sessionStart : .sessionEnd,
-                    reportedAt: entry.reportedAt, newerOrEqualSameSessionStartInRead: hasLaterStart,
-                    isNewestInRead: newest))
         }
         return items
     }

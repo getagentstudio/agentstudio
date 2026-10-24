@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import GRDB
 
@@ -7,18 +8,22 @@ extension SessionsRepository {
         participants: [any SessionsCommitParticipant]
     ) async throws -> ClosedAppOutboxCommit {
         try await sqliteAccess.write { database in
-            let bindings = try SessionsRepositoryStorage.latestBindings(database: database, paneId: item.paneId)
-            let committed: ClosedAppOutboxCommit
-            switch item {
-            case .report(let report):
-                committed = try SessionsRepositoryStorage.applyClosedAppReport(
-                    report, binding: bindings.values.first, database: database)
-            case .refused: committed = .init(outcome: .unchanged(.refused), ended: nil)
-            case .historyLost: committed = .init(outcome: .unchanged(.historyLost), ended: nil)
+            try AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+                .restoreOutboxImport, recorder: performanceTraceRecorder
+            ) {
+                let bindings = try SessionsRepositoryStorage.latestBindings(database: database, paneId: item.paneId)
+                let committed: ClosedAppOutboxCommit
+                switch item {
+                case .report(let report):
+                    committed = try SessionsRepositoryStorage.applyClosedAppReport(
+                        report, binding: bindings.values.first, database: database)
+                case .refused: committed = .init(outcome: .unchanged(.refused), ended: nil)
+                case .historyLost: committed = .init(outcome: .unchanged(.historyLost), ended: nil)
+                }
+                try restoreEvidence.commit(in: database, item: item, latestBindings: bindings)
+                for participant in participants { try participant.commit(in: database) }
+                return committed
             }
-            try restoreEvidence.commit(in: database, item: item, latestBindings: bindings)
-            for participant in participants { try participant.commit(in: database) }
-            return committed
         }
     }
 }

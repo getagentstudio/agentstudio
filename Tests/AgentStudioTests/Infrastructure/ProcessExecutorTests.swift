@@ -441,6 +441,74 @@ final class ProcessExecutorTests {
         #expect(result.stderr.count == byteCount - 1)  // decodeAndTrim drops the single trailing newline
     }
 
+    // MARK: - Restore R3 Cost Telemetry (GREEN STOP resolution)
+
+    @Test
+    func test_execute_onlyEmitsRestoreTelemetryWhenAPhaseIsScoped() async throws {
+        // Arrange — one executor, one recorder, reused for both calls below:
+        // the negative (unscoped) and positive (scoped) assertions share the
+        // same wiring, so the negative cannot pass vacuously. If scoping
+        // were silently broken, the positive check after it would fail too.
+        let directory = FileManager.default.temporaryDirectory.appending(
+            path: "process-executor-restore-cost-\(UUIDv7.generate().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let runtime = AgentStudioTraceRuntime(
+            configuration: AgentStudioTraceConfiguration.from(environment: [
+                "AGENTSTUDIO_TRACE_BACKEND": "jsonl", "AGENTSTUDIO_TRACE_DIR": directory.path,
+                "AGENTSTUDIO_TRACE_NAME": "process-executor-restore-cost", "AGENTSTUDIO_TRACE_TAGS": "performance",
+            ]), processIdentifier: 920, timeUnixNano: { 120 })
+        let recorder = AgentStudioPerformanceTraceRecorder(traceRuntime: runtime)
+        do {
+            let probedExecutor = DefaultProcessExecutor(performanceTraceRecorder: recorder)
+            let output = try #require(runtime.outputFileURL)
+            let fileManager = FileManager.default
+
+            // Act — unscoped: no ServiceContext phase around this call.
+            let unscopedResult = try await probedExecutor.execute(command: "true", args: [], cwd: nil, environment: nil)
+            // `flush()` (unlike `drain()`) does not close the recorder's queue,
+            // so the same recorder keeps working for the scoped call below.
+            try await recorder.flush()
+
+            // Assert — negative. The buffered-write path never touches disk when
+            // nothing was ever buffered, so an absent file is also a pass: it is
+            // stronger evidence of "no restore events," not weaker.
+            let fileExistsAfterUnscopedCall = fileManager.fileExists(atPath: output.path)
+            let contentsAfterUnscopedCall =
+                fileExistsAfterUnscopedCall ? try String(contentsOf: output, encoding: .utf8) : ""
+            #expect(unscopedResult.succeeded)
+            #expect(
+                !contentsAfterUnscopedCall.contains("\"body\":\"performance.restore."),
+                "unscoped execute must emit no restore events, got: \(contentsAfterUnscopedCall)")
+
+            // Act — the same executor, now scoped to the probe phase.
+            let scopedResult = try await AgentStudioPerformanceTraceRecorder.withRestorePhaseScope(
+                .restoreForegroundProbe
+            ) {
+                try await probedExecutor.execute(command: "true", args: [], cwd: nil, environment: nil)
+            }
+            // `drain()` is the closing fact: it finishes the queue, waits for its
+            // worker to settle, and flushes the runtime one last time.
+            try await recorder.drain()
+
+            // Assert — positive: exactly the probe event, with its measured
+            // scalars, and no other restore phase's body.
+            let contentsAfterScopedCall = try String(contentsOf: output, encoding: .utf8)
+            #expect(scopedResult.succeeded)
+            #expect(contentsAfterScopedCall.contains("\"body\":\"performance.restore.foreground.probe\""))
+            #expect(contentsAfterScopedCall.contains("\"agentstudio.performance.restore.execution.count\":1"))
+            let otherRestorePhaseBodies = [
+                "performance.restore.foreground.gather", "performance.restore.foreground.schedule",
+                "performance.restore.foreground.watch", "performance.restore.resume.decide",
+            ]
+            for otherPhaseBody in otherRestorePhaseBodies {
+                #expect(!contentsAfterScopedCall.contains("\"body\":\"\(otherPhaseBody)\""))
+            }
+        } catch {
+            try? await recorder.drain()
+            throw error
+        }
+    }
+
     private func receiveProcessIdentifier(
         from reader: FileHandle,
         keepingOpenWith keepaliveWriter: FileHandle

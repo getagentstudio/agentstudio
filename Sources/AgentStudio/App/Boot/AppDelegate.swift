@@ -417,7 +417,13 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         if !didForwardRestoreQuit {
             didForwardRestoreQuit = true
-            restoreForegroundTriggerSink?(.appQuitting)
+            if let restoreForegroundTriggerSink {
+                AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+                    .restoreQuitForward, recorder: performanceTraceRecorder
+                ) {
+                    restoreForegroundTriggerSink(.appQuitting)
+                }
+            }
         }
         #if DEBUG
             sidebarPerformanceProofSession?.completeIdlePopulationForTermination()

@@ -168,7 +168,10 @@ struct ForegroundObserverFixture: Sendable {
     let recorder: FactRecorder<ForegroundObserverFactScope, ForegroundObserverFact>
     let observer: PaneForegroundObserver<TestPushClock>
 
-    init(program: ForegroundProgram = .claudeCode, exitWatcher: (any ProcessExitWatching)? = nil) throws {
+    init(
+        program: ForegroundProgram = .claudeCode, exitWatcher: (any ProcessExitWatching)? = nil,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+    ) throws {
         let source = LocalFactSource(
             vocabulary: FactVocabulary<ForegroundObserverFactScope, ForegroundObserverFact>(
                 describeScope: { "\($0.paneId)/\($0.operationId)" }, describeFact: { String(describing: $0) },
@@ -182,6 +185,7 @@ struct ForegroundObserverFixture: Sendable {
             clock: clock,
             policy: .init(lookSettleDelay: .seconds(5), lookMaxDelay: .seconds(60), quitLookDeadline: .seconds(1)),
             repository: repository, probe: probe, exitWatcher: recordingWatcher, observerLaunchId: launchId,
+            performanceTraceRecorder: performanceTraceRecorder,
             factSink: source.sink)
     }
 
@@ -241,9 +245,10 @@ struct ForegroundObserverFixture: Sendable {
 
 func withForegroundObserverFixture(
     program: ForegroundProgram = .claudeCode,
+    performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
     _ operation: @Sendable (ForegroundObserverFixture) async throws -> Void
 ) async throws {
-    let fixture = try ForegroundObserverFixture(program: program)
+    let fixture = try ForegroundObserverFixture(program: program, performanceTraceRecorder: performanceTraceRecorder)
     do {
         try await operation(fixture)
         try await fixture.close()

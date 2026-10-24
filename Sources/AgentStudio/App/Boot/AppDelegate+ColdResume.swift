@@ -50,6 +50,8 @@ extension AppDelegate {
         let storeURL = appIPCPaths?.cliStoreURL
         let task = paneCLIOutboxDrainTask
         let drain = needsFinalRead ? await task?.value : nil
-        return .init(ingestion: ingestion, foregroundRepository: foreground, drain: drain, storeURL: storeURL)
+        return .init(
+            ingestion: ingestion, foregroundRepository: foreground, drain: drain, storeURL: storeURL,
+            performanceTraceRecorder: performanceTraceRecorder)
     }
 }

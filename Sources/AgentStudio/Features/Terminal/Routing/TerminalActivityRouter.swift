@@ -30,6 +30,7 @@ package final class TerminalActivityRouter {
     private let attendedPane: AttendedPaneDerived?
     private let traceRuntime: AgentStudioTraceRuntime?
     private let startupTraceRecorder: AgentStudioStartupTraceRecorder?
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     /// A6 (advisor review 2026-10-01; PD rev 21 item 5, Lead decision: push,
     /// not pull): notified from `consumeProjectionOutcome`'s existing
     /// `.firstRender` arm -- the same raw fact, already unconditional for
@@ -72,6 +73,7 @@ package final class TerminalActivityRouter {
         attendedPane: AttendedPaneDerived? = nil,
         traceRuntime: AgentStudioTraceRuntime? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         onFirstRender: (@MainActor @Sendable (UUID) -> Void)? = nil,
         surfaceIDForPaneID: @escaping @MainActor (UUID) -> UUID?,
         isPaneCurrentlyAttended: (@MainActor (UUID) -> Bool)? = nil,
@@ -105,6 +107,7 @@ package final class TerminalActivityRouter {
         self.attendedPane = attendedPane
         self.traceRuntime = traceRuntime
         self.startupTraceRecorder = startupTraceRecorder
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.onFirstRender = onFirstRender
         self.surfaceIDForPaneID = surfaceIDForPaneID
         self.isPaneCurrentlyAttended =
@@ -251,7 +254,7 @@ package final class TerminalActivityRouter {
     package var resumedSessionStartSink: @Sendable (UUID, String, String) async -> Void {
         Self.makeResumedSessionStartSink(
             projector: projector, surfaceIDForPaneID: surfaceIDForPaneID,
-            callbackHandlingAccess: callbackHandlingAccess)
+            callbackHandlingAccess: callbackHandlingAccess, performanceTraceRecorder: performanceTraceRecorder)
     }
 
     package func armRestorePhase(

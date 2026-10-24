@@ -299,7 +299,8 @@ extension AppDelegate {
         let workspaceId = store.identityAtom.workspaceId
         guard let evidenceRepository = restoreForegroundEvidenceRepository else { return }
         let restoreEvidence = ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
-        let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceTraceRecorder)
+        let performanceRecorder = performanceTraceRecorder
+        let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceRecorder)
         // Intake and catalog construction run off MainActor; the app only reads
         // the CLI file and its cursor uses the existing application-local writer.
         // swiftlint:disable:next no_task_detached
@@ -307,7 +308,8 @@ extension AppDelegate {
             do {
                 let drain = try PaneCLIOutboxDrain(
                     admission: noticeAdmission, sqliteAccess: sqliteAccess,
-                    expectedChannel: channel, ingestion: ingestion, restoreEvidence: restoreEvidence,
+                    expectedChannel: channel, performanceTraceRecorder: performanceRecorder, ingestion: ingestion,
+                    restoreEvidence: restoreEvidence,
                     paneExists: { try await datastore.persistedPaneIds(workspaceId: workspaceId).contains($0) },
                     refusalProbe: { reason in
                         telemetry.recordOfflineNoticeRefusal(reason: reason)

@@ -160,38 +160,42 @@ extension WorkspaceSurfaceCoordinator: PreparedTerminalMountHandling {
             coldStartPlan = plan
         }
 
-        viewRegistry.ensureSlot(for: pane.id)
-        switch createTopologyIndependentTerminalView(
-            for: pane,
-            initialFrame: initialFrame,
-            treatAsRestoredSessionStart: true,
-            authority: authority,
-            restoreKind: admission.restoreKind,
-            armedRestoreGeneration: armedRestoreGeneration
+        return AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreMountApply, recorder: armedRestoreGeneration == nil ? nil : performanceTraceRecorder
         ) {
-        case .mounted(let mountedContent):
-            if let coldStartObserver, let coldStartPlan {
-                beginObservingColdStart(paneID: pane.id, plan: coldStartPlan, observer: coldStartObserver)
-            } else {
-                beginPostAttachRecreationCheckIfNeeded(pane: pane, restoreKind: admission.restoreKind)
+            viewRegistry.ensureSlot(for: pane.id)
+            switch createTopologyIndependentTerminalView(
+                for: pane,
+                initialFrame: initialFrame,
+                treatAsRestoredSessionStart: true,
+                authority: authority,
+                restoreKind: admission.restoreKind,
+                armedRestoreGeneration: armedRestoreGeneration
+            ) {
+            case .mounted(let mountedContent):
+                if let coldStartObserver, let coldStartPlan {
+                    beginObservingColdStart(paneID: pane.id, plan: coldStartPlan, observer: coldStartObserver)
+                } else {
+                    beginPostAttachRecreationCheckIfNeeded(pane: pane, restoreKind: admission.restoreKind)
+                }
+                return .ready(surfaceID: mountedContent.surfaceID)
+            case .failed(.surfaceAttachmentFailed):
+                if coldStartObserver != nil {
+                    coldStartAttachExitBinding.unregister(paneID: pane.id)
+                }
+                return .failed(
+                    failure: .surfaceAttachmentFailed(code: "prepared_surface_attachment_failed"),
+                    retry: .retry
+                )
+            case .failed:
+                if coldStartObserver != nil {
+                    coldStartAttachExitBinding.unregister(paneID: pane.id)
+                }
+                return .failed(
+                    failure: .surfaceCreationFailed(code: "prepared_mount_failed"),
+                    retry: .retry
+                )
             }
-            return .ready(surfaceID: mountedContent.surfaceID)
-        case .failed(.surfaceAttachmentFailed):
-            if coldStartObserver != nil {
-                coldStartAttachExitBinding.unregister(paneID: pane.id)
-            }
-            return .failed(
-                failure: .surfaceAttachmentFailed(code: "prepared_surface_attachment_failed"),
-                retry: .retry
-            )
-        case .failed:
-            if coldStartObserver != nil {
-                coldStartAttachExitBinding.unregister(paneID: pane.id)
-            }
-            return .failed(
-                failure: .surfaceCreationFailed(code: "prepared_mount_failed"),
-                retry: .retry
-            )
         }
     }
 

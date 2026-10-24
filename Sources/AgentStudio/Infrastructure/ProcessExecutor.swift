@@ -1,6 +1,7 @@
 import Darwin
 import Dispatch
 import Foundation
+import Tracing
 import os
 
 private let processLogger = Logger(subsystem: "com.agentstudio", category: "ProcessExecutor")
@@ -61,10 +62,19 @@ package struct DefaultProcessExecutor: ProcessExecutor {
     package let timeout: TimeInterval
     private let clock: any Clock<Duration>
     private let beforeLaunch: @Sendable () -> Void
+    /// Restore R3 cost telemetry only: every other caller passes nil and
+    /// pays nothing. The restore phase itself travels ambiently via
+    /// `ServiceContext.agentStudioRestorePerformancePhase` rather than a
+    /// parameter here, so `execute`'s public contract never changes.
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
-    package init(timeout: TimeInterval = 15, clock: any Clock<Duration> = ContinuousClock()) {
+    package init(
+        timeout: TimeInterval = 15, clock: any Clock<Duration> = ContinuousClock(),
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+    ) {
         self.timeout = timeout
         self.clock = clock
+        self.performanceTraceRecorder = performanceTraceRecorder
         beforeLaunch = {}
     }
 
@@ -73,10 +83,12 @@ package struct DefaultProcessExecutor: ProcessExecutor {
     init(
         timeout: TimeInterval,
         clock: any Clock<Duration> = ContinuousClock(),
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         beforeLaunch: @escaping @Sendable () -> Void
     ) {
         self.timeout = timeout
         self.clock = clock
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.beforeLaunch = beforeLaunch
     }
 
@@ -126,6 +138,10 @@ package struct DefaultProcessExecutor: ProcessExecutor {
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
+        // Captured now, synchronously, on the caller's own task: a later
+        // `queue.async` hop into ProcessExecution's Dispatch callbacks has
+        // no task-local context to read.
+        let restorePerformancePhase = ServiceContext.current?.agentStudioRestorePerformancePhase
         let execution = ProcessExecution(
             command: command,
             process: process,
@@ -133,7 +149,9 @@ package struct DefaultProcessExecutor: ProcessExecutor {
             stderrPipe: stderrPipe,
             timeoutSeconds: timeout,
             hardKillGraceSeconds: 0.2,
-            beforeLaunch: beforeLaunch
+            beforeLaunch: beforeLaunch,
+            restorePerformancePhase: restorePerformancePhase,
+            performanceTraceRecorder: performanceTraceRecorder
         )
         return try await execution.run(clock: clock)
     }
@@ -169,6 +187,12 @@ private final class ProcessExecution: @unchecked Sendable {
     private let beforeLaunch: @Sendable () -> Void
     private let queue: DispatchQueue
     private let launchDecision = ProcessLaunchDecision()
+    /// Restore R3 cost telemetry: set only when the caller scoped
+    /// `ServiceContext.agentStudioRestorePerformancePhase` around `execute`.
+    /// Captured once at construction; `nil` for every other
+    /// `ProcessExecutor` caller, who then pays no clock reads at all.
+    private let restorePerformancePhase: AgentStudioPerformanceTraceRecorder.Event?
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
     private var continuation: Continuation?
     private var stdoutData = Data()
@@ -183,6 +207,13 @@ private final class ProcessExecution: @unchecked Sendable {
     private var stdoutSource: DispatchSourceRead?
     private var stderrSource: DispatchSourceRead?
     private var timeoutTask: Task<Void, Never>?
+    /// Accumulated synchronous time across launch, pipe-read, exit, and
+    /// completion callbacks — never a suspension, since all of it runs on
+    /// `queue`. Disjoint spans only: a nested call (e.g. `complete` invoked
+    /// from inside a timed caller) is always timed outside the caller's own
+    /// span, so this sum is never inflated by double-counting.
+    private var restoreProbeSyncElapsed: Duration = .zero
+    private var restoreProbeRanOnMainThread = false
 
     init(
         command: String,
@@ -191,7 +222,9 @@ private final class ProcessExecution: @unchecked Sendable {
         stderrPipe: Pipe,
         timeoutSeconds: TimeInterval,
         hardKillGraceSeconds: TimeInterval,
-        beforeLaunch: @escaping @Sendable () -> Void
+        beforeLaunch: @escaping @Sendable () -> Void,
+        restorePerformancePhase: AgentStudioPerformanceTraceRecorder.Event? = nil,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
         self.command = command
         self.process = process
@@ -200,7 +233,29 @@ private final class ProcessExecution: @unchecked Sendable {
         self.timeoutSeconds = timeoutSeconds
         self.hardKillGraceSeconds = hardKillGraceSeconds
         self.beforeLaunch = beforeLaunch
+        self.restorePerformancePhase = restorePerformancePhase
+        self.performanceTraceRecorder = performanceTraceRecorder
         queue = DispatchQueue(label: "com.agentstudio.process-executor.\(UUID().uuidString)", qos: .userInitiated)
+    }
+
+    /// Runs `body` (always on `queue`) and, only when a restore phase is
+    /// scoped, folds its wall-clock cost into `restoreProbeSyncElapsed`.
+    /// Unscoped callers skip the clock entirely.
+    private func timedForRestoreProbe<T>(_ body: () -> T) -> T {
+        guard restorePerformancePhase != nil else { return body() }
+        let start = ContinuousClock.now
+        let executedOnMainThread = Thread.isMainThread
+        let result = body()
+        restoreProbeSyncElapsed += start.duration(to: .now)
+        restoreProbeRanOnMainThread = restoreProbeRanOnMainThread || executedOnMainThread
+        return result
+    }
+
+    private func recordRestoreProbeSliceIfScoped() {
+        guard let restorePerformancePhase else { return }
+        performanceTraceRecorder?.recordRestorePhaseDuration(
+            restorePerformancePhase, duration: restoreProbeSyncElapsed,
+            executedOnMainThread: restoreProbeRanOnMainThread)
     }
 
     func run(clock: any Clock<Duration>) async throws -> ProcessResult {
@@ -217,31 +272,39 @@ private final class ProcessExecution: @unchecked Sendable {
 
     private func start(_ continuation: Continuation, clock: any Clock<Duration>) {
         self.continuation = continuation
-        guard terminationCause != .cancellation else {
-            complete(.failure(CancellationError()))
-            return
-        }
-
-        configureTerminationHandler()
-        beforeLaunch()
-
-        do {
-            guard try launchDecision.runUnlessCancelled({ try process.run() }) else {
-                terminationCause = .cancellation
-                complete(.failure(CancellationError()))
+        // `complete` is called outside this timed span (never nested inside
+        // it) so launch and completion are disjoint, not double-counted.
+        var failure: Error?
+        timedForRestoreProbe {
+            guard terminationCause != .cancellation else {
+                failure = CancellationError()
                 return
             }
-        } catch {
-            complete(.failure(error))
-            return
-        }
 
-        configurePipeSources()
-        configureProcessSource()
-        configureTimeoutTask(using: clock)
-        stdoutSource?.resume()
-        stderrSource?.resume()
-        processSource?.resume()
+            configureTerminationHandler()
+            beforeLaunch()
+
+            do {
+                guard try launchDecision.runUnlessCancelled({ try process.run() }) else {
+                    terminationCause = .cancellation
+                    failure = CancellationError()
+                    return
+                }
+            } catch {
+                failure = error
+                return
+            }
+
+            configurePipeSources()
+            configureProcessSource()
+            configureTimeoutTask(using: clock)
+            stdoutSource?.resume()
+            stderrSource?.resume()
+            processSource?.resume()
+        }
+        if let failure {
+            complete(.failure(failure))
+        }
     }
 
     private func configurePipeSources() {
@@ -253,11 +316,19 @@ private final class ProcessExecution: @unchecked Sendable {
         let fileHandle = pipe.fileHandleForReading
         let source = DispatchSource.makeReadSource(fileDescriptor: fileHandle.fileDescriptor, queue: queue)
         source.setEventHandler { [self, fileHandle] in
-            let chunk = fileHandle.availableData
-            if chunk.isEmpty {
-                markPipeFinished(kind)
-            } else {
-                append(chunk, from: kind)
+            // `complete` (if ready) runs outside this timed span, mirroring
+            // `start` and `markProcessExited`.
+            var readyCompletion: Result<ProcessResult, Error>?
+            timedForRestoreProbe {
+                let chunk = fileHandle.availableData
+                if chunk.isEmpty {
+                    readyCompletion = markPipeFinished(kind)
+                } else {
+                    append(chunk, from: kind)
+                }
+            }
+            if let readyCompletion {
+                complete(readyCompletion)
             }
         }
         source.setCancelHandler { [fileHandle] in
@@ -271,7 +342,7 @@ private final class ProcessExecution: @unchecked Sendable {
             guard let execution = self else { return }
             let status = terminatedProcess.terminationStatus
             execution.queue.async {
-                execution.markProcessExited(status: status)
+                execution.completeIfExited(status: status)
             }
         }
     }
@@ -287,9 +358,21 @@ private final class ProcessExecution: @unchecked Sendable {
             // terminationHandler owns the status because terminationStatus can
             // still throw if the source fires before Process marks itself exited.
             guard !process.isRunning else { return }
-            markProcessExited(status: process.terminationStatus)
+            completeIfExited(status: process.terminationStatus)
         }
         processSource = source
+    }
+
+    /// Shared by both exit-detection paths above. `complete` (if ready) runs
+    /// outside the timed span, mirroring `start` and the pipe-read handler.
+    private func completeIfExited(status: Int32) {
+        var readyCompletion: Result<ProcessResult, Error>?
+        timedForRestoreProbe {
+            readyCompletion = markProcessExited(status: status)
+        }
+        if let readyCompletion {
+            complete(readyCompletion)
+        }
     }
 
     private func configureTimeoutTask<TimeoutClock: Clock>(using clock: TimeoutClock)
@@ -319,7 +402,9 @@ private final class ProcessExecution: @unchecked Sendable {
         }
     }
 
-    private func markPipeFinished(_ kind: PipeKind) {
+    /// Returns the completion once ready, instead of calling `complete`
+    /// itself, so the caller can finish timing its own span first.
+    private func markPipeFinished(_ kind: PipeKind) -> Result<ProcessResult, Error>? {
         switch kind {
         case .stdout:
             stdoutSource?.cancel()
@@ -333,19 +418,15 @@ private final class ProcessExecution: @unchecked Sendable {
         case .stderr:
             stderrFinished = true
         }
-        let completion = completionIfReady()
-        if let completion {
-            complete(completion)
-        }
+        return completionIfReady()
     }
 
-    private func markProcessExited(status: Int32) {
+    /// Returns the completion once ready, instead of calling `complete`
+    /// itself, so the caller can finish timing its own span first.
+    private func markProcessExited(status: Int32) -> Result<ProcessResult, Error>? {
         processExited = true
         terminationStatus = status
-        let completion = completionIfReady()
-        if let completion {
-            complete(completion)
-        }
+        return completionIfReady()
     }
 
     private func markTimedOut() {
@@ -422,12 +503,17 @@ private final class ProcessExecution: @unchecked Sendable {
         if completed {
             return
         }
-        completed = true
-        let continuationToResume = continuation
-        continuation = nil
+        timedForRestoreProbe {
+            completed = true
+            let continuationToResume = continuation
+            continuation = nil
 
-        cleanupSources()
-        continuationToResume?.resume(with: result)
+            cleanupSources()
+            continuationToResume?.resume(with: result)
+        }
+        // Reached exactly once per execution: every later `complete` call
+        // returns above, before any further timing or recording.
+        recordRestoreProbeSliceIfScoped()
     }
 
     private func cleanupSources() {

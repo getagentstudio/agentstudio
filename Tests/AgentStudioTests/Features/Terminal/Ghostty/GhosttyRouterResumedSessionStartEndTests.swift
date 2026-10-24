@@ -16,91 +16,105 @@ struct GhosttyRouterResumedSessionStartEndTests {
         "a matched start alone and racing person input follow the held restore drain",
         arguments: ResumedStartInputOrder.allCases)
     func matchedStartFollowsInFlightRestoreDrain(inputOrder: ResumedStartInputOrder) async throws {
-        let source = LocalFactSource<UUID, ResumedStartDrainFact>(
-            vocabulary: .init(
-                describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
-                isClosing: { _, fact in fact == .drainsJoined }))
-        let facts = try source.attach()
-        let hold = HeldStep<Void>("restore aggregate at the actual host's projector submission")
-        let projector = TerminalActivityProjector(clock: TestPushClock())
-        let forwarder = ResumedStartDrainForwarder(projector: projector, hold: hold, source: source)
-        var configuration = GhosttyActionRouterTestFixtureConfiguration()
-        configuration.registerRuntime = false
-        configuration.activityProjectionContext = .init(
-            isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
-        configuration.activityInputObserved = { [weak forwarder] input in await forwarder?.consume(input) }
-        try await withGhosttyActionRouterTestFixture(configuration: configuration) { fixture in
-            let lookups = Mutex(0)
-            let router = TerminalActivityRouter(
-                bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
-                callbackHandlingAccess: { [weak fixture] in fixture?.handler }, projector: projector,
-                surfaceIDForPaneID: { pane in
-                    lookups.withLock { $0 += 1 }
-                    return pane == fixture.paneUUID ? fixture.surfaceID : nil
-                }, lastOutputLineReader: { _ in .surfaceStale })
-            let generation = RestoreGeneration(rawValue: 21)
-            let session = UUIDv7.generate().uuidString
-            let invocation = ResumeInvocation(provider: .codex, sessionId: try .init(rawValue: session))
-            forwarder.router = router
-            await router.start()
-            _ = await router.armRestorePhase(
-                paneID: fixture.paneUUID, restoreGeneration: generation, resumeInvocation: invocation)
-            fixture.handler.localActionAccumulator.offer(
-                .scrollbar(.init(top: 0, bottom: 100, total: 100), observedAtMilliseconds: 1000),
-                for: fixture.surfaceID)
-            // Own the first drain's handle. The cancelled automatic claim is
-            // never allowed to race this forced, real host suspension point.
-            fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
-            let firstDrain = Task { @MainActor in
-                await fixture.handler.host.drainLocalActions(
-                    for: fixture.surfaceID, lane: .immediate, accumulator: fixture.handler.localActionAccumulator)
-            }
-            let completion = Task { @MainActor in
-                defer {
-                    source.end()
-                    hold.retire()
+        let costTrace = RestoreCostTraceTestFixture()
+        defer { costTrace.cleanup() }
+        do {
+            let source = LocalFactSource<UUID, ResumedStartDrainFact>(
+                vocabulary: .init(
+                    describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
+                    isClosing: { _, fact in fact == .drainsJoined }))
+            let facts = try source.attach()
+            let hold = HeldStep<Void>("restore aggregate at the actual host's projector submission")
+            let projector = TerminalActivityProjector(clock: TestPushClock())
+            let forwarder = ResumedStartDrainForwarder(projector: projector, hold: hold, source: source)
+            var configuration = GhosttyActionRouterTestFixtureConfiguration()
+            configuration.registerRuntime = false
+            configuration.activityProjectionContext = .init(
+                isAttended: false, isAgentClassified: false, outputBurstThreshold: 30)
+            configuration.activityInputObserved = { [weak forwarder] input in await forwarder?.consume(input) }
+            try await withGhosttyActionRouterTestFixture(configuration: configuration) { fixture in
+                let lookups = Mutex(0)
+                let router = TerminalActivityRouter(
+                    bus: EventBus<RuntimeEnvelope>(), activityAtom: TerminalActivityAtom(),
+                    callbackHandlingAccess: { [weak fixture] in fixture?.handler }, projector: projector,
+                    performanceTraceRecorder: costTrace.recorder,
+                    surfaceIDForPaneID: { pane in
+                        lookups.withLock { $0 += 1 }
+                        return pane == fixture.paneUUID ? fixture.surfaceID : nil
+                    }, lastOutputLineReader: { _ in .surfaceStale })
+                let generation = RestoreGeneration(rawValue: 21)
+                let session = UUIDv7.generate().uuidString
+                let invocation = ResumeInvocation(provider: .codex, sessionId: try .init(rawValue: session))
+                forwarder.router = router
+                await router.start()
+                _ = await router.armRestorePhase(
+                    paneID: fixture.paneUUID, restoreGeneration: generation, resumeInvocation: invocation)
+                fixture.handler.localActionAccumulator.offer(
+                    .scrollbar(.init(top: 0, bottom: 100, total: 100), observedAtMilliseconds: 1000),
+                    for: fixture.surfaceID)
+                // Own the first drain's handle. The cancelled automatic claim is
+                // never allowed to race this forced, real host suspension point.
+                fixture.handler.localActionDrainScheduler.cancel(for: fixture.surfaceID)
+                let firstDrain = Task { @MainActor in
+                    await fixture.handler.host.drainLocalActions(
+                        for: fixture.surfaceID, lane: .immediate, accumulator: fixture.handler.localActionAccumulator)
                 }
-                await firstDrain.value
-                // finishDrain schedules its real follow-up before returning.
-                // Close ingress, join every admitted drain, then announce the
-                // producer end even when the required follow-up was missing.
-                let snapshot = fixture.handler.taskOwner.closeAdmissionAndSnapshot()
-                await snapshot.joinAdmittedTasks()
-                source.sink(fixture.paneUUID, .drainsJoined)
+                let completion = Task { @MainActor in
+                    defer {
+                        source.end()
+                        hold.retire()
+                    }
+                    await firstDrain.value
+                    // finishDrain schedules its real follow-up before returning.
+                    // Close ingress, join every admitted drain, then announce the
+                    // producer end even when the required follow-up was missing.
+                    let snapshot = fixture.handler.taskOwner.closeAdmissionAndSnapshot()
+                    await snapshot.joinAdmittedTasks()
+                    source.sink(fixture.paneUUID, .drainsJoined)
+                }
+                do {
+                    _ = try await hold.firstArrival()
+                    let surface = Ghostty.SurfaceView(
+                        managedSurfaceID: fixture.surfaceID, appCommandDispatcher: ResumedStartCommandDispatcher(),
+                        callbackHandling: fixture.handler)
+                    surface.restorePhaseLatch = generation
+                    if inputOrder == .personFirst { surface.paste(nil) }
+                    let sink = router.resumedSessionStartSink
+                    await sink(fixture.paneUUID, "codex", session)
+                    await sink(fixture.paneUUID, "codex", session)
+                    if inputOrder == .startFirst { surface.paste(nil) }
+                    if inputOrder != .startOnly { #expect(surface.restorePhaseLatch == nil) }
+                    #expect(lookups.withLock { $0 } == 1)
+                    #expect(await projector.isRestorePhaseActive(paneID: fixture.paneUUID))
+                    hold.release()
+                    try await facts.expectNext(in: fixture.paneUUID, .aggregateApplied(whileRestoring: true))
+                    try await facts.expectNext(in: fixture.paneUUID, .phaseEnded(generation))
+                    try await facts.expectNext(in: fixture.paneUUID, .drainsJoined)
+                    await completion.value
+                    #expect(!(await projector.isRestorePhaseActive(paneID: fixture.paneUUID)))
+                    #expect(await projector.scheduledTimerCount == 0)
+                    try await facts.finish()
+                    await router.stop()
+                    await projector.reset()
+                } catch {
+                    hold.retire()
+                    await firstDrain.value
+                    await completion.value
+                    await router.stop()
+                    await projector.reset()
+                    throw error
+                }
+                forwarder.router = nil
+                let records = try await costTrace.finish()
+                #expect(records.count == 1)
+                let record = try #require(records.first)
+                #expect(record.body == "performance.restore.allowance.resumed_start_end")
+                #expect(record.attributes.mainThreadExecutions == 1)
+                #expect(record.attributes.mainThreadMilliseconds == record.attributes.elapsedMilliseconds)
             }
-            do {
-                _ = try await hold.firstArrival()
-                let surface = Ghostty.SurfaceView(
-                    managedSurfaceID: fixture.surfaceID, appCommandDispatcher: ResumedStartCommandDispatcher(),
-                    callbackHandling: fixture.handler)
-                surface.restorePhaseLatch = generation
-                if inputOrder == .personFirst { surface.paste(nil) }
-                let sink = router.resumedSessionStartSink
-                await sink(fixture.paneUUID, "codex", session)
-                await sink(fixture.paneUUID, "codex", session)
-                if inputOrder == .startFirst { surface.paste(nil) }
-                if inputOrder != .startOnly { #expect(surface.restorePhaseLatch == nil) }
-                #expect(lookups.withLock { $0 } == 1)
-                #expect(await projector.isRestorePhaseActive(paneID: fixture.paneUUID))
-                hold.release()
-                try await facts.expectNext(in: fixture.paneUUID, .aggregateApplied(whileRestoring: true))
-                try await facts.expectNext(in: fixture.paneUUID, .phaseEnded(generation))
-                try await facts.expectNext(in: fixture.paneUUID, .drainsJoined)
-                await completion.value
-                #expect(!(await projector.isRestorePhaseActive(paneID: fixture.paneUUID)))
-                #expect(await projector.scheduledTimerCount == 0)
-                try await facts.finish()
-                await router.stop()
-                await projector.reset()
-            } catch {
-                hold.retire()
-                await firstDrain.value
-                await completion.value
-                await router.stop()
-                await projector.reset()
-                throw error
-            }
-            forwarder.router = nil
+        } catch {
+            try? await costTrace.recorder.drain()
+            throw error
         }
     }
     @Test(

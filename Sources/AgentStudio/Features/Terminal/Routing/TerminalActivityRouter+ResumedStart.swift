@@ -1,26 +1,32 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import Foundation
 
 extension TerminalActivityRouter {
     nonisolated static func makeResumedSessionStartSink(
         projector: TerminalActivityProjector,
         surfaceIDForPaneID: @escaping @MainActor @Sendable (UUID) -> UUID?,
-        callbackHandlingAccess: @escaping @MainActor @Sendable () -> Ghostty.ActionRouter?
+        callbackHandlingAccess: @escaping @MainActor @Sendable () -> Ghostty.ActionRouter?,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) -> @Sendable (UUID, String, String) async -> Void {
         let recordEnd: @MainActor @Sendable (UUID, RestorePhaseGenerationClaim) -> RestoreGeneration? = { pane, claim in
-            guard
-                let fallback = claim.withCurrentGeneration({ generation -> RestoreGeneration? in
-                    guard let surfaceID = surfaceIDForPaneID(pane), let callbackHandling = callbackHandlingAccess()
-                    else {
-                        return generation
-                    }
-                    callbackHandling.localActionAccumulator.markRestorePhaseEnded(
-                        surfaceID: surfaceID, generation: generation,
-                        contextBeforeControl: callbackHandling.host.activityContext(pane))
-                    return nil
-                })
-            else { return nil }
-            return fallback
+            AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+                .restoreResumedStartEnd, recorder: performanceTraceRecorder
+            ) {
+                guard
+                    let fallback = claim.withCurrentGeneration({ generation -> RestoreGeneration? in
+                        guard let surfaceID = surfaceIDForPaneID(pane), let callbackHandling = callbackHandlingAccess()
+                        else {
+                            return generation
+                        }
+                        callbackHandling.localActionAccumulator.markRestorePhaseEnded(
+                            surfaceID: surfaceID, generation: generation,
+                            contextBeforeControl: callbackHandling.host.activityContext(pane))
+                        return nil
+                    })
+                else { return nil }
+                return fallback
+            }
         }
         return { paneID, providerIdentifier, providerSessionID in
             await deliverResumedSessionStart(

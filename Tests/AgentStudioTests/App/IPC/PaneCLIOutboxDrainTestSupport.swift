@@ -17,10 +17,12 @@ import Testing
 
 @MainActor
 func withPaneCLIOutboxDrainHarness(
+    performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
     refusalProbe: @escaping @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void = { _ in },
     _ body: @MainActor (PaneCLIOutboxDrainHarness) async throws -> Void
 ) async throws {
-    let harness = try await PaneCLIOutboxDrainHarness(refusalProbe: refusalProbe)
+    let harness = try await PaneCLIOutboxDrainHarness(
+        refusalProbe: refusalProbe, performanceTraceRecorder: performanceTraceRecorder)
     do {
         try await body(harness)
     } catch {
@@ -56,7 +58,10 @@ final class PaneCLIOutboxDrainHarness {
     static let testProvider = IPCSessionProviderIdentity(
         identifier: "outbox-drain-provider", version: "1.0.0", mode: "interactive")
 
-    init(refusalProbe: @escaping @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void) async throws {
+    init(
+        refusalProbe: @escaping @Sendable (PaneCLIOutboxDrain.RefusalReason) -> Void,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+    ) async throws {
         additionalRefusalProbe = refusalProbe
         let rootURL = FileManager.default.temporaryDirectory.appending(path: "cli-outbox-drain-\(UUIDv7.generate())")
         let storeURL = rootURL.appending(path: "ipc/cli.sqlite")
@@ -71,7 +76,7 @@ final class PaneCLIOutboxDrainHarness {
         }
         let sqliteAccess = FailableOutboxSessionsSQLiteAccess(base: WorkspaceSessionsSQLiteAccess(datastore: datastore))
         self.sqliteAccess = sqliteAccess
-        repository = SessionsRepository(sqliteAccess: sqliteAccess)
+        repository = SessionsRepository(sqliteAccess: sqliteAccess, performanceTraceRecorder: performanceTraceRecorder)
         let statusAtom = SessionStatusAtom()
         self.statusAtom = statusAtom
         let ingestion = SessionsIngestion(
@@ -96,6 +101,7 @@ final class PaneCLIOutboxDrainHarness {
         let recorder = refusalRecorder
         drainOwner = try PaneCLIOutboxDrain(
             admission: self.admission, sqliteAccess: sqliteAccess, expectedChannel: .debug,
+            performanceTraceRecorder: performanceTraceRecorder,
             ingestion: ingestion, restoreEvidence: restoreEvidence,
             paneExists: { membership.sources(for: PaneId(existingUUID: $0)) != nil },
             refusalProbe: {

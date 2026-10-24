@@ -45,18 +45,20 @@ actor PaneCLIOutboxDrain {
     let sqliteAccess: any SessionsSQLiteAccess
     private let expectedChannel: CLIStoreChannel
     let maximumPayloadBytes: Int
+    let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let refusalProbe: @Sendable (RefusalReason) -> Void
     let descriptors: [String: IPCAnyMethodDescriptor]
 
     init(
         admission: AgentStudioIPCPaneContextAdapter,
         sqliteAccess: any SessionsSQLiteAccess,
-        expectedChannel: CLIStoreChannel,
+        expectedChannel: CLIStoreChannel, performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         ingestion: SessionsIngestion, restoreEvidence: any AgentStudioSessions.ClosedAppRestoreEvidenceParticipant,
         paneExists: @escaping @Sendable (UUID) async throws -> Bool,
         maximumPayloadBytes: Int = AppPolicies.IPC.offlineNoticeMaximumPayloadBytes,
         refusalProbe: @escaping @Sendable (RefusalReason) -> Void = { _ in }
     ) throws {
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.ingestion = ingestion
         self.restoreEvidence = restoreEvidence
         self.paneExists = paneExists
@@ -84,7 +86,8 @@ actor PaneCLIOutboxDrain {
 
     private func prepareRead(storeURL: URL, report initialReport: DrainReport) async -> OutboxReadPreparation {
         var report = initialReport
-        let storeState = await Self.readStoreState(url: storeURL, channel: expectedChannel)
+        let storeState = await Self.readStoreState(
+            url: storeURL, channel: expectedChannel, performanceTraceRecorder: performanceTraceRecorder)
         let presentId: UUID?
         switch storeState {
         case .present(let identity): presentId = identity.storeID
@@ -129,7 +132,9 @@ actor PaneCLIOutboxDrain {
             return .finished(report)
         }
         let batch: OutboxIntakeBatch
-        switch await Self.readBatch(url: storeURL, channel: expectedChannel, after: cursor) {
+        switch await Self.readBatch(
+            url: storeURL, channel: expectedChannel, after: cursor, performanceTraceRecorder: performanceTraceRecorder)
+        {
         case .success(let value): batch = value
         case .failure(let failure):
             report.retryableEntryCount += 1
@@ -163,9 +168,12 @@ actor PaneCLIOutboxDrain {
         let storeID = read.storeID
         let lifecycle = read.lifecycle
         let historyLost = read.historyLost
-        let items =
+        let items = AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreOutboxImport, recorder: performanceTraceRecorder
+        ) {
             (batch.entries.map { OutboxIntakeItem.entry($0) }
-            + batch.issues.map { OutboxIntakeItem.invalid($0) }).sorted { $0.id < $1.id }
+                + batch.issues.map { OutboxIntakeItem.invalid($0) }).sorted { $0.id < $1.id }
+        }
         for item in items {
             guard !Task.isCancelled else { return report }
             let participant = CLIOutboxCursorCommitParticipant(storeID: storeID, lastHandledID: item.id)
@@ -275,33 +283,46 @@ actor PaneCLIOutboxDrain {
 
     private func matchesPane(_ handle: String, paneID: UUID) -> Bool { handle == "self" || handle == paneID.uuidString }
 
-    @concurrent private nonisolated static func readStoreState(url: URL, channel: CLIStoreChannel) async
+    @concurrent private nonisolated static func readStoreState(
+        url: URL, channel: CLIStoreChannel, performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    ) async
         -> OutboxStoreState
     {
-        var information = stat()
-        if lstat(url.path, &information) != 0 {
-            return errno == ENOENT ? .absent : .failed(.unavailable)
-        }
-        switch CLIStore.openReader(url: url, expectedChannel: channel) {
-        case .success(let reader):
-            defer { try? reader.close() }
-            return .present(reader.identity)
-        case .failure(let failure): return .failed(failure)
+        AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreOutboxImport, recorder: performanceTraceRecorder
+        ) {
+            var information = stat()
+            if lstat(url.path, &information) != 0 {
+                return errno == ENOENT ? .absent : .failed(.unavailable)
+            }
+            switch CLIStore.openReader(url: url, expectedChannel: channel) {
+            case .success(let reader):
+                defer { try? reader.close() }
+                return .present(reader.identity)
+            case .failure(let failure): return .failed(failure)
+            }
         }
     }
 
-    @concurrent private nonisolated static func readBatch(url: URL, channel: CLIStoreChannel, after cursor: Int64) async
+    @concurrent private nonisolated static func readBatch(
+        url: URL, channel: CLIStoreChannel, after cursor: Int64,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    ) async
         -> Result<OutboxIntakeBatch, CLIStoreFailure>
     {
-        let issues = OutboxDecodeIssueRecorder()
-        return CLIStore.openReader(
-            url: url, expectedChannel: channel, logDecodeIssue: { issues.record($0) }
-        ).flatMap { reader in
-            defer { try? reader.close() }
-            return reader.readOutbox(after: cursor).map { batch in
-                OutboxIntakeBatch(
-                    identity: reader.identity, entries: batch.entries, issues: issues.values,
-                    lastReadID: batch.lastReadID)
+        AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
+            .restoreOutboxImport, recorder: performanceTraceRecorder
+        ) {
+            let issues = OutboxDecodeIssueRecorder()
+            return CLIStore.openReader(
+                url: url, expectedChannel: channel, logDecodeIssue: { issues.record($0) }
+            ).flatMap { reader in
+                defer { try? reader.close() }
+                return reader.readOutbox(after: cursor).map { batch in
+                    OutboxIntakeBatch(
+                        identity: reader.identity, entries: batch.entries, issues: issues.values,
+                        lastReadID: batch.lastReadID)
+                }
             }
         }
     }
