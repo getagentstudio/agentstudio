@@ -48,6 +48,8 @@ actor PaneCLIOutboxDrain {
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let refusalProbe: @Sendable (RefusalReason) -> Void
     let descriptors: [String: IPCAnyMethodDescriptor]
+    var isDraining = false
+    var pendingDrains: [PendingDrainTurn] = []
 
     init(
         admission: AgentStudioIPCPaneContextAdapter,
@@ -74,6 +76,9 @@ actor PaneCLIOutboxDrain {
     }
 
     func drain(storeURL: URL, legacySpoolDirectory: URL? = nil) async -> DrainReport {
+        guard await acquireDrainTurn() else { return DrainReport() }
+        defer { releaseDrainTurn() }
+        guard !Task.isCancelled else { return DrainReport() }
         // This is a one-time import input, never an active spool transport.
         let legacyDirectory = legacySpoolDirectory ?? storeURL.deletingLastPathComponent().appending(path: "spool/v2")
         let report = await importLegacyFiles(in: legacyDirectory)
