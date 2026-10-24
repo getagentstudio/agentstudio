@@ -334,6 +334,7 @@ struct ObservabilityDebugLaunchScriptsTests {
             }
         }
         #expect(!state.contains("AGENTSTUDIO_OBSERVABILITY_STATUS=already_running"))
+        try fixture.expectIPCHealthChecked()
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_STATUS=running"))
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_LAUNCH_METHOD=direct_executable"))
     }
@@ -458,6 +459,7 @@ struct ObservabilityDebugLaunchScriptsTests {
             }
         }
         #expect(!state.contains("AGENTSTUDIO_OBSERVABILITY_STATUS=already_running"))
+        try fixture.expectIPCHealthChecked()
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_STATUS=running"))
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_LAUNCH_METHOD=direct_executable"))
     }
@@ -598,6 +600,7 @@ struct ObservabilityDebugLaunchScriptVerifierTests {
             buildExecutable: buildPath.appending(path: "debug/AgentStudio"),
             hostileDataRoot: hostileDataRoot
         )
+        try fixture.expectIPCHealthChecked()
         let launchedEnv = try await fixture.waitForFile(fixture.url("launched-env"), containing: "ipc_escrow=1")
         try expectDirectExecutableFallbackLaunchEnvironment(launchedEnv, hostileDataRoot: hostileDataRoot)
         #expect(!FileManager.default.fileExists(atPath: fixture.url("leaked-env").path))
@@ -630,6 +633,7 @@ struct ObservabilityDebugLaunchScriptVerifierTests {
 
         #expect(result.exitCode == 0)
         let state = try String(contentsOf: stateFile, encoding: .utf8)
+        try fixture.expectIPCHealthChecked()
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_STATUS=running"))
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_LAUNCH_METHOD=launchservices"))
         #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_PID=42424"))
@@ -693,6 +697,7 @@ struct ObservabilityDebugLaunchScriptVerifierTests {
         let openArguments = try String(contentsOf: openArgsURL, encoding: .utf8)
             .split(separator: "\n")
         #expect(!openArguments.contains("-g"))
+        try fixture.expectIPCHealthChecked()
     }
 
     @Test("debug observability verifier requires requested startup diagnostic telemetry")

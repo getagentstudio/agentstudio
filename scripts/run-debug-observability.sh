@@ -61,6 +61,7 @@ validate_observability_controls() {
   fi
   if [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_CANDIDATE_IDENTITY:-}" ] ||
     [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" ] ||
+    [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_ALIVE_BIN:-}" ] ||
     [ "$NORMAL_QUIT_BIN" != "/usr/bin/osascript" ]
   then
     echo "candidate identity, launch clock, and normal-quit overrides require AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES=1" >&2
@@ -521,10 +522,9 @@ running_debug_app_pids() {
 
 wait_for_app_pid() {
   local binary_path="${1:?missing binary path}"
-  local attempts="${2:-${AGENTSTUDIO_PID_WAIT_ATTEMPTS:-200}}"
   local pid=""
 
-  for _ in $(seq 1 "$attempts"); do
+  while launch_wait_has_time; do
     pid="$(app_pid_for_binary "$binary_path" || true)"
     if [ -n "$pid" ]; then
       printf '%s\n' "$pid"
@@ -540,8 +540,20 @@ launch_wait_time() {
   if [ -n "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" ]; then
     "$AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN"
   else
-    /usr/bin/python3 -c 'import time; print(time.monotonic())'
+    # macOS Python 3.9's monotonic() origin is process-local. CLOCK_MONOTONIC
+    # keeps a deadline comparable across the launcher's separate helpers.
+    /usr/bin/python3 -c 'import time; print(time.clock_gettime(time.CLOCK_MONOTONIC))'
   fi
+}
+
+launch_wait_deadline_value() {
+  /usr/bin/awk -v started="$(launch_wait_time)" -v attempts="${AGENTSTUDIO_PID_WAIT_ATTEMPTS:-200}" \
+    'BEGIN { printf "%.9f\n", started + attempts * 0.1 }'
+}
+
+launch_wait_has_time() {
+  /usr/bin/awk -v current="$(launch_wait_time)" -v deadline="$launch_wait_deadline" \
+    'BEGIN { exit !(current < deadline) }'
 }
 
 wait_for_app_ipc() {
@@ -550,23 +562,40 @@ wait_for_app_ipc() {
   # Without an escrow grant, system.ping is the existing pre-authentication read.
   /usr/bin/python3 - "$app_path/Contents/Helpers/agentstudio" \
     "$launch_ipc_socket_dir/agentstudio.sock" "${AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW:-}" \
-    "$launch_wait_started_at" "${AGENTSTUDIO_PID_WAIT_ATTEMPTS:-200}" \
-    "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" <<'PY'
+    "$launch_wait_deadline" "$pid" \
+    "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" \
+    "${AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_ALIVE_BIN:-}" <<'PY'
 import os
 import subprocess
 import sys
 import time
 
-cli_path, socket_path, escrow_path, started_at, attempts, clock_path = sys.argv[1:]
+cli_path, socket_path, escrow_path, deadline_text, process_id, clock_path, process_probe = sys.argv[1:]
 
 def now() -> float:
     if clock_path:
         return float(subprocess.check_output([clock_path], text=True))
-    return time.monotonic()
+    return time.clock_gettime(time.CLOCK_MONOTONIC)
 
-# Share the PID wait's 200 x 0.1s bound, including time spent inside the CLI.
-deadline = float(started_at) + int(attempts) * 0.1
+# PID discovery and health consume the same absolute deadline, never an attempt count.
+deadline = float(deadline_text)
 environment: dict[str, str] = {"HOME": os.environ["HOME"], "PATH": "/usr/bin:/bin:/usr/sbin:/sbin"}
+
+def process_is_alive() -> bool:
+    if process_probe:
+        return subprocess.run(
+            [process_probe, process_id], env=environment, stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        ).returncode == 0
+    try:
+        os.kill(int(process_id), 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Inspection denial does not prove absence; retain the bounded health check.
+        return True
+    return True
+
 arguments: list[str] = [cli_path]
 if escrow_path:
     environment["AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW"] = escrow_path
@@ -574,18 +603,25 @@ else:
     arguments += ["--socket", socket_path]
 arguments += ["system.ping"]
 while True:
+    if not process_is_alive():
+        sys.exit(3)
     remaining = deadline - now()
     if remaining <= 0:
         sys.exit(1)
     try:
         result = subprocess.run(
             arguments, env=environment, stdin=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=remaining,
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            # A controlled test clock owns elapsed time; only production uses a real
+            # per-call hang bound. One second keeps dead-process observation prompt.
+            timeout=None if clock_path else min(1.0, remaining),
         )
     except subprocess.TimeoutExpired:
-        sys.exit(1)
+        continue
     except OSError:
         sys.exit(1)
+    if not process_is_alive():
+        sys.exit(3)
     if result.returncode == 0 and now() < deadline:
         sys.exit(0)
     remaining = deadline - now()
@@ -1370,7 +1406,7 @@ if [ "$detach" = true ]; then
       exit 1
     fi
   fi
-  launch_wait_started_at="$(launch_wait_time)"
+  launch_wait_deadline="$(launch_wait_deadline_value)"
   if [ "$launched_with_direct" = false ] && ! pid="$(wait_for_app_pid "$app_binary_path")"; then
     write_launch_failed_state launchservices_pid_not_found
     echo "LaunchServices started but Agent Studio Debug PID was not found." >&2
@@ -1382,7 +1418,7 @@ else
   launch_activation_mode=foreground_wait
   open_app "$app_path" "$launch_log" "-W" "${open_env_args[@]}" &
   open_pid=$!
-  launch_wait_started_at="$(launch_wait_time)"
+  launch_wait_deadline="$(launch_wait_deadline_value)"
   if ! pid="$(wait_for_app_pid "$app_binary_path")"; then
     if kill -0 "$open_pid" >/dev/null 2>&1; then
       failure_reason=launchservices_pid_not_found
@@ -1409,9 +1445,17 @@ else
   fi
 fi
 
-if ! wait_for_app_ipc; then
-  write_launch_failed_state ipc_health_timeout
-  echo "Agent Studio Debug did not answer IPC health within the launch deadline." >&2
+if wait_for_app_ipc; then
+  :
+else
+  ipc_wait_status=$?
+  if [ "$ipc_wait_status" -eq 3 ]; then
+    write_launch_failed_state ipc_app_exited
+    echo "Agent Studio Debug exited before IPC became ready." >&2
+  else
+    write_launch_failed_state ipc_health_timeout
+    echo "Agent Studio Debug did not answer IPC health within the launch deadline." >&2
+  fi
   echo "observability state: $state_file" >&2
   exit 1
 fi

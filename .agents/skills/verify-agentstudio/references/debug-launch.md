@@ -51,6 +51,9 @@ mise run run-debug-observability -- --detach --skip-build --build-path "$BUILD_P
    existing launch deadline. `launch_failed` with `REASON=ipc_health_timeout`
    means IPC did not become usable within that deadline; retain the failure
    state and log. It does not prove that the process exited.
+   Health calls each have at most one second within that elapsed deadline.
+   `REASON=ipc_app_exited` records early failure when the launched PID disappears
+   before readiness. Bundle assembly and open retries precede the readiness window.
 3. A successful handoff must report `running`, flavor `debug`, matching code,
    build path, generated executable/bundle id, isolated data/zmx roots and
    `ACTIVATION_MODE=background`. Direct-executable fallback does not prove a

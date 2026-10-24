@@ -2,6 +2,7 @@ import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Darwin
 import Foundation
+import Testing
 
 struct LauncherScriptFixture {
     let root: URL
@@ -67,13 +68,25 @@ struct LauncherScriptFixture {
         let binaryURL = debugPath.appending(path: "AgentStudio")
         try contents.write(to: binaryURL, atomically: true, encoding: .utf8)
         chmod(binaryURL.path, 0o755)
-        try makeDebugBuildCLI("#!/bin/bash\nexit 0\n")
+        try makeDebugBuildCLI(
+            """
+            #!/bin/bash
+            printf '%s\\n' "$@" > '\(url("ipc-health-arguments").path)'
+            [ "${!#}" = system.ping ] || exit 64
+            exit 0
+            """
+        )
         return buildPath
     }
 
     @discardableResult
     func makeDebugBuildCLI(_ contents: String) throws -> URL {
         try executable("debug-build/debug/agentstudio-cli", contents)
+    }
+
+    func expectIPCHealthChecked() throws {
+        let arguments = try String(contentsOf: url("ipc-health-arguments"), encoding: .utf8)
+        #expect(arguments.split(separator: "\n").last == "system.ping")
     }
 
     func runScript(
@@ -98,6 +111,18 @@ struct LauncherScriptFixture {
             exit 0
             """
         )
+        let launchClock = try executable(
+            "default-launch-clock",
+            """
+            #!/bin/bash
+            count=0
+            [ ! -f '\(url("launch-clock-count").path)' ] || count=$(cat '\(url("launch-clock-count").path)')
+            count=$((count + 1))
+            printf '%s' "$count" > '\(url("launch-clock-count").path)'
+            awk -v count="$count" -v attempts="${AGENTSTUDIO_PID_WAIT_ATTEMPTS:-200}" 'BEGIN { print count * attempts * 0.1 / 16 }'
+            """
+        )
+        let processAlive = try executable("default-process-alive", "#!/bin/bash\nexit 0\n")
         var mergedEnvironment = testProcessEnvironmentWithoutLaneState()
         mergedEnvironment["HOME"] = root.path
         mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_ALLOW_TEST_OVERRIDES"] = "1"
@@ -106,6 +131,8 @@ struct LauncherScriptFixture {
         mergedEnvironment["AGENTSTUDIO_CURL_BIN"] = curl.path
         mergedEnvironment["AGENTSTUDIO_DEBUG_ARTIFACT_DIR"] = url("debug-app-artifacts").path
         mergedEnvironment["AGENTSTUDIO_DEBUG_BUILD_PATH"] = url("debug-build").path
+        mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN"] = launchClock.path
+        mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_ALIVE_BIN"] = processAlive.path
         for (key, value) in environment {
             mergedEnvironment[key] = value
         }

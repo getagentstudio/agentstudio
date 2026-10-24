@@ -2,6 +2,91 @@ import Foundation
 import Testing
 
 extension ObservabilityDebugLaunchScriptsTests {
+    @Test("launch deadlines remain expired across separate system Python processes")
+    func debugLauncherRecognizesExpiredDeadlineAcrossProcesses() async throws {
+        let fixture = try LauncherScriptFixture()
+        defer { fixture.cleanup() }
+        let source = try String(contentsOfFile: "scripts/run-debug-observability.sh", encoding: .utf8)
+        let clockStart = try #require(source.range(of: "launch_wait_time() {"))
+        let clockEnd = try #require(source.range(of: "wait_for_app_ipc() {"))
+        let clockFunctions = String(source[clockStart.lowerBound..<clockEnd.lowerBound])
+        // Controlled clocks cannot detect a process-local origin in the production clock.
+        // This deadline is already past before its consumer starts, independent of scheduling speed.
+        let command = try fixture.executable(
+            "expired-shared-clock",
+            """
+            #!/bin/bash
+            set -euo pipefail
+            \(clockFunctions)
+            unset AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN
+            launch_wait_deadline=$(/usr/bin/python3 -c 'import time; print(time.clock_gettime(time.CLOCK_MONOTONIC) - 1)')
+            if launch_wait_has_time; then exit 0; fi
+            printf 'deadline_expired\\n'
+            exit 1
+            """
+        )
+        let result = try await fixture.runScript(command.path, arguments: [], environment: [:])
+        #expect(result.exitCode == 1, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        #expect(result.stdout == "deadline_expired\n")
+    }
+
+    @Test("PID discovery stops at the elapsed launch deadline before another inventory")
+    func debugLauncherBoundsPIDDiscoveryByElapsedTime() async throws {
+        let fixture = try LauncherScriptFixture()
+        defer { fixture.cleanup() }
+        let stateFile = fixture.url("latest.env")
+        let launchedApp = fixture.url("launched-app")
+        let lateProbe = fixture.url("late-pid-probe")
+        let clockRead = fixture.url("clock-read")
+        let buildPath = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
+        var environment = try launchServicesDiagnosticEnvironment(
+            fixture: fixture, openArgsURL: fixture.url("open-args"), launchedAppURL: launchedApp, stateFile: stateFile
+        )
+        environment["AGENTSTUDIO_PID_WAIT_ATTEMPTS"] = "2"
+        environment["AGENTSTUDIO_PGREP_BIN"] = try fixture.executable(
+            "missing-pid", "#!/bin/bash\n[ ! -f '\(launchedApp.path)' ] || touch '\(lateProbe.path)'\nexit 1\n"
+        ).path
+        environment["AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN"] = try fixture.executable(
+            "expired-pid-clock",
+            "#!/bin/bash\nif [ -f '\(clockRead.path)' ]; then echo 1; else touch '\(clockRead.path)'; echo 0; fi\n"
+        ).path
+        let result = try await fixture.runScript(
+            "scripts/run-debug-observability.sh",
+            arguments: ["--build-path", buildPath.path, "--skip-build", "--detach"], environment: environment
+        )
+        #expect(result.exitCode == 1, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        #expect(!FileManager.default.fileExists(atPath: lateProbe.path))
+        let state = try String(contentsOf: stateFile, encoding: .utf8)
+        #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_REASON=launchservices_pid_not_found"))
+    }
+
+    @Test("IPC readiness fails when its launched process exits between health attempts")
+    func debugLauncherStopsWhenPIDExitsDuringIPCWait() async throws {
+        let fixture = try LauncherScriptFixture()
+        defer { fixture.cleanup() }
+        let stateFile = fixture.url("latest.env")
+        let healthCalls = fixture.url("health-calls-before-exit")
+        let buildPath = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
+        try fixture.makeDebugBuildCLI("#!/bin/bash\necho attempted >> '\(healthCalls.path)'\nexit 1\n")
+        var environment = try launchServicesDiagnosticEnvironment(
+            fixture: fixture, openArgsURL: fixture.url("open-args"),
+            launchedAppURL: fixture.url("launched-app"), stateFile: stateFile
+        )
+        environment["AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_ALIVE_BIN"] = try fixture.executable(
+            "process-exited", "#!/bin/bash\n[ ! -f '\(healthCalls.path)' ]\n"
+        ).path
+        let result = try await fixture.runScript(
+            "scripts/run-debug-observability.sh",
+            arguments: ["--build-path", buildPath.path, "--skip-build", "--detach"], environment: environment
+        )
+        #expect(result.exitCode == 1, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        let calls = try String(contentsOf: healthCalls, encoding: .utf8)
+        #expect(calls.split(separator: "\n").count == 1)
+        let state = try String(contentsOf: stateFile, encoding: .utf8)
+        #expect(state.contains("AGENTSTUDIO_OBSERVABILITY_REASON=ipc_app_exited"))
+        #expect(!state.contains("AGENTSTUDIO_OBSERVABILITY_STATUS=running"))
+    }
+
     @Test("manual launch health does not grant an automation credential")
     func debugLauncherChecksManualLaunchWithoutGrantingEscrow() async throws {
         let fixture = try LauncherScriptFixture()
