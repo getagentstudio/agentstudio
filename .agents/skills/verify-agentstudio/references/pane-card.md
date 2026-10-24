@@ -94,8 +94,9 @@ On every original, also verify:
   must match that owner fact; that decides identity. The full value is proved by
   the separate copy-payload check below, which stays UNKNOWN without its route.
   App renders omit tooltips: record the tooltip UNKNOWN unless the commission
-  grants a hover route on an already-unlocked screen. The tooltip is its own
-  observation; its UNKNOWN does not change the layout/identity verdict.
+  grants a hover route on an already-unlocked screen. The tooltip and
+  always-visible are their own observations; their UNKNOWN does not change the
+  layout/identity verdict.
   A tooltip never replaces the copy-payload check. Compare PANE to that same
   pane's owner ID.
   AX full values can hide truncation; judge the painted frame. Include lineless
