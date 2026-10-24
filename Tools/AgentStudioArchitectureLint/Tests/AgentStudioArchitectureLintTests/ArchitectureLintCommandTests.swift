@@ -248,8 +248,8 @@ struct ArchitectureLintCommandTests {
         let pollingFixture = "Tests/AgentStudioTests/BadPollingWaitTest.swift"
         let pollingRule = "agentstudio_no_polling_wait_in_tests"
 
-        let exactLedger = try writeLedger(rows: ["\(pollingRule)\t\(pollingFixture)\t5"])
-        let underLedger = try writeLedger(rows: ["\(pollingRule)\t\(pollingFixture)\t4"])
+        let exactLedger = try writeLedger(rows: ["\(pollingRule)\t\(pollingFixture)\t7"])
+        let underLedger = try writeLedger(rows: ["\(pollingRule)\t\(pollingFixture)\t6"])
         let exact = runCommand(
             arguments: [pollingFixture, "--ledger", exactLedger.path],
             workspaceRootPath: fixture
@@ -261,7 +261,7 @@ struct ArchitectureLintCommandTests {
 
         #expect(!exact.output.contains("[\(pollingRule)]"), Comment(rawValue: exact.output))
         #expect(over.exitCode == 1)
-        #expect(over.output.components(separatedBy: "count 5 exceeds 4 permitted").count - 1 == 5)
+        #expect(over.output.components(separatedBy: "count 7 exceeds 6 permitted").count - 1 == 7)
     }
 
     @Test("three Swift ledgers reconcile their own rule counts")
@@ -423,7 +423,7 @@ struct ArchitectureLintCommandTests {
         let fixture = fixturePath("Bad")
         let pollingFixture = "Tests/AgentStudioTests/BadPollingWaitTest.swift"
         let pollingRule = "agentstudio_no_polling_wait_in_tests"
-        let ledger = try writeLedger(rows: ["\(pollingRule)\t\(pollingFixture)\t7"])
+        let ledger = try writeLedger(rows: ["\(pollingRule)\t\(pollingFixture)\t9"])
 
         let before = runCommand(arguments: [pollingFixture, "--ledger", ledger.path], workspaceRootPath: fixture)
         let lowering = runCommand(
@@ -431,11 +431,11 @@ struct ArchitectureLintCommandTests {
             workspaceRootPath: fixture
         )
 
-        #expect(before.output.contains("lower the row to 5"))
+        #expect(before.output.contains("lower the row to 7"))
         #expect(!lowering.output.contains("[\(pollingRule)]"), Comment(rawValue: lowering.output))
         #expect(
             try String(contentsOf: ledger, encoding: .utf8)
-                == "rule_id\tpath\tcount\n\(pollingRule)\t\(pollingFixture)\t5\n")
+                == "rule_id\tpath\tcount\n\(pollingRule)\t\(pollingFixture)\t7\n")
     }
 
     @Test("a missing or malformed ledger fails closed")
