@@ -11,7 +11,14 @@ extension AgentStudioIPCSessionsAdapter {
         paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess? = nil,
         revalidateClaim: @escaping @Sendable () throws -> Void
     ) async throws -> IPCSessionEventResult {
-        let hook = try observedUnverifiedHook(
+        let began = performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
+        defer {
+            if let began {
+                performanceTraceRecorder?.recordDuration(
+                    .ipcSessionEvent, duration: began.duration(to: ContinuousClock.now))
+            }
+        }
+        let hook = try unverifiedHookAdmission(
             paneId: paneId, params: params, peerProcess: peerProcess, revalidateClaim: revalidateClaim)
         let instant = hook?.admissionInstant ?? continuousNow()
         let at = hook?.admittedAt ?? now()
@@ -41,7 +48,7 @@ extension AgentStudioIPCSessionsAdapter {
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
     }
 
-    private func observedUnverifiedHook(
+    private func unverifiedHookAdmission(
         paneId: UUID, params: IPCSessionStatusParams, peerProcess: AppIPCPeerProcess?,
         revalidateClaim: @Sendable () throws -> Void
     ) throws -> SessionsHookAdmission? {
@@ -50,7 +57,6 @@ extension AgentStudioIPCSessionsAdapter {
             try revalidateClaim()
             return nil
         case .hook(let event, let provider, let providerSessionId):
-            let chain = observeProcessChain(peerProcess: peerProcess, providerIdentifier: provider.identifier)
             try revalidateClaim()
             guard !providerSessionId.isEmpty, event.conversationId == providerSessionId else {
                 throw AppIPCSessionsError(reason: .validationRejected)
@@ -61,7 +67,9 @@ extension AgentStudioIPCSessionsAdapter {
             return .init(
                 paneId: paneId, providerIdentifier: provider.identifier, providerVersion: provider.version,
                 sessionId: providerSessionId, eventName: signal.name, turnId: event.turnId,
-                signal: signal, recordId: UUIDv7.generate(), admissionInstant: instant, admittedAt: at, chain: chain)
+                signal: signal, recordId: UUIDv7.generate(), admissionInstant: instant, admittedAt: at,
+                observeProcessChain: processChainObservation(
+                    peerProcess: peerProcess, providerIdentifier: provider.identifier))
         }
     }
 
