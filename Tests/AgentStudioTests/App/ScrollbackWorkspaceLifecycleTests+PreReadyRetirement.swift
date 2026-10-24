@@ -46,8 +46,8 @@ extension ScrollbackWorkspaceLifecycleTests {
                 try await fixture.coordinator.execute(.closeTab(tabId: tab.id))
                 let time = try await fixture.coordinator.undoClock()
                 let recovery = try await fixture.store.recoverUndoJournal(time: time)
-                #expect(recovery.retiredCloses.isEmpty)
-                #expect(recovery.availableCloses.count == 1)
+                try #require(recovery.retiredCloses.isEmpty)
+                try #require(recovery.availableCloses.count == 1)
                 let delegate = AppDelegate()
                 fixture.bootDelegate = delegate
                 delegate.store = fixture.store
@@ -56,7 +56,7 @@ extension ScrollbackWorkspaceLifecycleTests {
                 delegate.workspaceSQLiteDatastore = fixture.datastore
                 delegate.restoreForegroundEvidenceRepository = repository
                 delegate.workspaceSurfaceCoordinator.installUndoJournalRecovery(recovery)
-                #expect(fixture.coordinator.undoStack.count == 1)
+                try #require(fixture.coordinator.undoStack.count == 1)
                 if window == .afterSinkBeforeSchema {
                     try await installRetirementOwners(delegate, fixture: fixture)
                 }
