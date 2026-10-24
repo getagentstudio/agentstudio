@@ -35,10 +35,14 @@ struct PaneNotificationOutboxWriterTests {
         }
         #expect(observed.outcome == .queued(reply: "notify queued"))
         #expect(observed.entries.count == 1)
-        if let entry = observed.entries.first, case .notice(let notice) = entry {
+        let entry = try #require(observed.entries.first)
+        switch entry {
+        case .notice(let notice):
             #expect(notice.payloadJSON == observed.expectedLine)
             #expect(notice.messageID == observed.correlationID)
             #expect(notice.paneID == observed.paneID)
+        case .sessionLifecycle:
+            Issue.record("An eligible notice was stored as a session lifecycle entry")
         }
         #expect(observed.fileMode == 0o600)
         #expect(!observed.lineContainsToken)

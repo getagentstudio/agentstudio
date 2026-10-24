@@ -264,6 +264,10 @@ struct PaneCLIOutboxDrainTests {
     @Test("a one-shot admission write failure retains the pending prefix and retries each notice exactly once")
     func transientAdmissionFailureRetainsPendingPrefix() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
+            // Adopt the history before arming the one-shot notice admission failure.
+            let initial = await harness.drain()
+            #expect(initial.readOutcome == .complete(throughId: 0))
+            #expect(!initial.hasWork)
             let paneID = UUIDv7.generate()
             let firstMessageID = UUIDv7.generate()
             let laterMessageID = UUIDv7.generate()
@@ -277,6 +281,7 @@ struct PaneCLIOutboxDrainTests {
             // malformed path could incorrectly commit the cursor in this drain.
             let failed = await harness.drain()
 
+            #expect(failed.readOutcome == .incomplete(heldAtId: failedEntry.id))
             #expect(failed.retryableEntryCount == 1)
             #expect(failed.admittedEntryCount == 0)
             #expect(failed.malformedEntryCount == 0)
