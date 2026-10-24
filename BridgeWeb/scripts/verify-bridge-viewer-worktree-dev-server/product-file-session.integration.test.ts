@@ -9,11 +9,8 @@ import { promisify } from 'node:util';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 
 import { installBridgeProductFileBatch } from '../../src/core/comm-worker/bridge-product-file-batch-installer.js';
-import {
-	BridgeProductMetadataFrameDecoder,
-	encodeBridgeProductMetadataFrame,
-} from '../../src/core/comm-worker/bridge-product-metadata-frame-codec.js';
 import { BridgeWebTestLaunch } from '../dev-server/bridge-web-test-launch.ts';
+import { FileRecoveryWireFault } from './product-file-session-recovery.test-support.js';
 import { BridgeVerifierProductFileSession } from './product-file-session.js';
 
 const repoRootPath = fileURLToPath(new URL('../../..', import.meta.url));
@@ -43,7 +40,13 @@ describe('Bridge verifier product File session', () => {
 		}
 	});
 
-	test.for(['ordinary', 'missing-begin'] as const)(
+	test.for([
+		'ordinary',
+		'missing-begin',
+		'exhausted-replacements',
+		'certified-reset',
+		'wrong-acknowledgement',
+	] as const)(
 		'proves source, tree, descriptor, content, cancellation, and stream closure through the typed carrier: %s',
 		async (mode) => {
 			// Arrange
@@ -104,40 +107,32 @@ describe('Bridge verifier product File session', () => {
 				baseUrl: viteServer.startProof.origin,
 				scenarioName: 'current-worktree',
 			});
-			let droppedBegin = false;
-			if (mode === 'missing-begin') {
-				const realFetch = globalThis.fetch;
-				vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init): Promise<Response> => {
-					const response = await realFetch(input, init);
-					const url = new URL(input instanceof Request ? input.url : input);
-					if (url.pathname !== '/__bridge-product/stream' || response.body === null)
-						return response;
-					const decoder = new BridgeProductMetadataFrameDecoder();
-					return new Response(
-						response.body.pipeThrough(
-							new TransformStream<Uint8Array, Uint8Array>({
-								transform(chunk, controller): void {
-									for (const frame of decoder.push(chunk)) {
-										if (!droppedBegin && frame.kind === 'subscription.batchBegin') {
-											droppedBegin = true;
-											continue;
-										}
-										controller.enqueue(encodeBridgeProductMetadataFrame(frame));
-									}
-								},
-								flush(): void {
-									decoder.finish();
-								},
-							}),
-						),
-						{ status: response.status, headers: response.headers },
-					);
-				});
-			}
+			const fault = mode === 'ordinary' ? null : new FileRecoveryWireFault(mode);
 
 			// Act
 			currentPhase = 'source.opening';
+			if (mode === 'exhausted-replacements' || mode === 'wrong-acknowledgement') {
+				try {
+					await expect(session.open()).rejects.toThrow(
+						mode === 'exhausted-replacements'
+							? /File view recovery failedRetryable.*consecutive resnapshots/u
+							: /view resnapshot result does not match its request/u,
+					);
+					if (fault === null) throw new Error('Expected a recovery wire fault.');
+					expect(fault.requestCount).toBe(
+						mode === 'exhausted-replacements' ? fault.maximumResnapshots : 1,
+					);
+				} finally {
+					await session.abort(new Error('Expected recovery rejection observed.'));
+				}
+				return;
+			}
 			const source = await session.open();
+			if (mode === 'certified-reset') {
+				if (fault === null) throw new Error('Expected a recovery wire fault.');
+				expect(fault.requestCount).toBe(fault.maximumResnapshots);
+				fault.startNextRecoveryCycle();
+			}
 			const initialInstallation = source.installations.at(-1);
 			if (initialInstallation === undefined) throw new Error('Expected a certified File snapshot.');
 			const initialView = installBridgeProductFileBatch(initialInstallation);
@@ -193,7 +188,7 @@ describe('Bridge verifier product File session', () => {
 			expect(initialView.memberStatus.source.sourceId).toBe(source.sourceIdentity.sourceId);
 			expect(initialInstallation.begin.mode).toBe('snapshot');
 			if (mode === 'missing-begin') {
-				expect(droppedBegin).toBe(true);
+				expect(fault?.droppedBeginCount).toBe(1);
 				expect(initialInstallation.begin.snapshotCause).toBe('requested');
 			}
 			expect(initialView.displayTreeRows.length).toBeGreaterThan(0);
@@ -214,6 +209,11 @@ describe('Bridge verifier product File session', () => {
 				'Updated through the live development backend.',
 			);
 			expect(session.state).toBe('closed');
+			if (mode === 'certified-reset') {
+				if (fault === null) throw new Error('Expected a recovery wire fault.');
+				expect(fault.droppedBeginCount).toBe(2);
+				expect(fault.requestCount).toBe(2 * fault.maximumResnapshots);
+			}
 		},
 	);
 });
