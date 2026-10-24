@@ -78,7 +78,7 @@ struct RepoScannerValidationExecutorTests {
         )
         clock.advance(by: .seconds(1))
         await client.release(candidateURL: timedOut.candidateURL, outcome: authoritativeNegative)
-        await executor.waitUntilPhysicalJobCount(0)
+        #expect(await executor.waitUntilPhysicalJobCount(0) == .drained)
         #expect(await executor.snapshot().lateNativeReturnCount == 1)
 
     }
@@ -209,8 +209,65 @@ struct RepoScannerValidationExecutorTests {
                     )
                 )
         )
-        await executor.waitUntilPhysicalJobCount(0)
+        #expect(await executor.waitUntilPhysicalJobCount(0) == .drained)
         #expect(await executor.snapshot().lateNativeReturnCount == 2)
+    }
+
+    @Test("cancelling a physical drain wait releases only that waiter with outstanding native debt")
+    func physicalDrainCancellationRetiresOnlyCancelledWaiter() async throws {
+        // Arrange: both native jobs stay held until the cancelled waiter has ended.
+        let roots = try AuthorizedValidationRoots()
+        defer { roots.remove() }
+        let client = ControlledRepoDiscoveryReadClient()
+        let executor = try makeExecutor(client: client, physical: 2, logical: 8)
+        let first = try roots.request(name: "one", candidate: "one-repo")
+        let second = try roots.request(name: "two", candidate: "two-repo")
+        _ = await executor.submit(first)
+        _ = await executor.submit(second)
+        await client.waitUntilStarted(candidateURL: first.candidateURL)
+        await client.waitUntilStarted(candidateURL: second.candidateURL)
+        let cancelledWait = await startRegisteredPhysicalDrainWait(executor: executor)
+        let survivingWait = await startRegisteredPhysicalDrainWait(executor: executor)
+        #expect(await executor.snapshot().physicalDrainWaiterCount == 2)
+
+        // Act / Assert: cancellation releases the wait, not the native jobs or another waiter.
+        cancelledWait.cancel()
+        #expect(await cancelledWait.value == .cancelled(outstandingPhysicalJobs: 2))
+        let afterCancellation = await executor.snapshot()
+        #expect(afterCancellation.physicalDrainWaiterCount == 1)
+        #expect(afterCancellation.physicalJobCount == 2)
+
+        // Cleanup / Assert: a later real return still drains the surviving waiter exactly once.
+        await client.release(candidateURL: first.candidateURL, outcome: authoritativeNegative)
+        await client.release(candidateURL: second.candidateURL, outcome: authoritativeNegative)
+        #expect(await survivingWait.value == .drained)
+        #expect(await executor.snapshot().physicalDrainWaiterCount == 0)
+        _ = await executor.nextCompletion()
+        _ = await executor.nextCompletion()
+    }
+
+    @Test("a physical drain wait cancelled before registration retains no waiter")
+    func physicalDrainCancellationBeforeRegistrationRetainsNoWaiter() async throws {
+        // Arrange
+        let roots = try AuthorizedValidationRoots()
+        defer { roots.remove() }
+        let client = ControlledRepoDiscoveryReadClient()
+        let executor = try makeExecutor(client: client, physical: 1, logical: 8)
+        let running = try roots.request(name: "running", candidate: "running-repo")
+        _ = await executor.submit(running)
+        await client.waitUntilStarted(candidateURL: running.candidateURL)
+
+        // Act / Assert: cancellation is already set when registration enters the actor.
+        let cancelledWait = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await executor.waitUntilPhysicalJobCount(0)
+        }
+        #expect(await cancelledWait.value == .cancelled(outstandingPhysicalJobs: 1))
+        #expect(await executor.snapshot().physicalDrainWaiterCount == 0)
+
+        await client.release(candidateURL: running.candidateURL, outcome: authoritativeNegative)
+        #expect(await executor.waitUntilPhysicalJobCount(0) == .drained)
+        _ = await executor.nextCompletion()
     }
 
     @Test("queued cancellation emits once and never starts native work")
@@ -291,7 +348,7 @@ struct RepoScannerValidationExecutorTests {
                     )
                 )
         )
-        await executor.waitUntilPhysicalJobCount(0)
+        #expect(await executor.waitUntilPhysicalJobCount(0) == .drained)
         #expect(await executor.snapshot().lateNativeReturnCount == 2)
         #expect(await executor.snapshot().semanticCompletionCount == 3)
     }
@@ -336,7 +393,7 @@ struct RepoScannerValidationExecutorTests {
         await client.release(candidateURL: first.candidateURL, outcome: authoritativeNegative)
         await client.release(candidateURL: second.candidateURL, outcome: authoritativeNegative)
         await client.waitUntilReturnedCount(2)
-        await executor.waitUntilPhysicalJobCount(0)
+        #expect(await executor.waitUntilPhysicalJobCount(0) == .drained)
         #expect(
             await client.hasStartedExactly([first.candidateURL, second.candidateURL])
         )
@@ -383,7 +440,7 @@ struct RepoScannerValidationExecutorTests {
         await client.release(candidateURL: first.candidateURL, outcome: authoritativeNegative)
         await client.release(candidateURL: second.candidateURL, outcome: authoritativeNegative)
         await client.waitUntilReturnedCount(2)
-        await executor.waitUntilPhysicalJobCount(0)
+        #expect(await executor.waitUntilPhysicalJobCount(0) == .drained)
         #expect(await executor.nextCompletion() == .shutdown(.complete))
     }
 
@@ -533,6 +590,13 @@ struct RepoScannerValidationExecutorTests {
 private let authoritativeNegative = GitRepositoryDiscoveryOutcome.authoritativeNegative(
     .notAValidWorktree
 )
+
+private func startRegisteredPhysicalDrainWait(
+    executor: isolated RepoScannerValidationExecutor
+) -> Task<RepoDiscoveryPhysicalDrainWaitResult, Never> {
+    // Already on this actor: immediate execution reaches continuation registration before returning.
+    Task.immediate { await executor.waitUntilPhysicalJobCount(0) }
+}
 
 private func makeExecutor(
     client: ControlledRepoDiscoveryReadClient,
