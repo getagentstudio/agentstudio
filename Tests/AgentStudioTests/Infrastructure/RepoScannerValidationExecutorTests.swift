@@ -209,6 +209,7 @@ struct RepoScannerValidationExecutorTests {
                     )
                 )
         )
+        await executor.waitUntilPhysicalJobCount(0)
         #expect(await executor.snapshot().lateNativeReturnCount == 2)
     }
 
@@ -290,7 +291,7 @@ struct RepoScannerValidationExecutorTests {
                     )
                 )
         )
-        await client.waitUntilReturnedCount(3)
+        await executor.waitUntilPhysicalJobCount(0)
         #expect(await executor.snapshot().lateNativeReturnCount == 2)
         #expect(await executor.snapshot().semanticCompletionCount == 3)
     }
