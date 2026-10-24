@@ -234,6 +234,9 @@ prepare_strict_git_continuity_control() {
     -c user.email='performance-proof@invalid.local' \
     commit --quiet -m 'establish continuity control baseline'
   /usr/bin/git clone --quiet --bare "$control_root" "$origin_root"
+  /usr/bin/git -C "$origin_root" config --local receive.autogc false
+  /usr/bin/git -C "$origin_root" config --local gc.auto 0
+  /usr/bin/git -C "$origin_root" config --local maintenance.auto false
   /usr/bin/git -C "$control_root" remote add origin "$origin_root"
   /usr/bin/git -C "$control_root" push --quiet --set-upstream origin HEAD
   [ -z "$(/usr/bin/git -C "$control_root" status --porcelain=v1 --untracked-files=all)" ] || {
