@@ -1,10 +1,11 @@
 # Pane UI outcomes
 
 This is the portable oracle for J4–J7, transcribed from the owner's adopted
-2026-10-21 Agent Line/warning decisions and 2026-10-22 card/displaying-agent
-decisions. Use the run's declared applicability; old screenshots do not change
-these outcomes. A later owner decision must be supplied explicitly, not inferred
-from current rendering. The detailed measurements live in each journey.
+2026-10-21 Agent Line/warning decisions, 2026-10-22 card/displaying-agent decisions
+and 2026-10-23 ID truncation/copy decision. Use the run's declared applicability;
+old screenshots do not change these outcomes. A later owner decision must be
+supplied explicitly, not inferred from current rendering. The detailed
+measurements live in each journey.
 
 ## Drawer and Agent Line
 
@@ -32,9 +33,13 @@ Caption fields are REPO, BRANCH, WORKTREE (only if name differs from REPO), CWD
 (only if different from worktree root), SESSION (verified live binding only),
 PANE (always), with the real no-repo fallback where applicable. Every card uses
 one caption width sized for WORKTREE, so values align across panes. Copy buttons
-follow values inline. Normal names and IDs fit at 420pt and wider; oversized
-field values use middle truncation and full tooltip. No width-dependent card
-arrangement, duplicate repo/worktree/CWD values or reserved blank second line.
+follow values inline at the same small gap. Normal names fit at 420pt and wider.
+SESSION and PANE IDs may middle-truncate wherever the full ID does not fit, with
+a readable prefix and suffix, full-ID tooltip and always-visible small inline
+copy icon right after the value. Oversized path/branch values use
+middle truncation and full tooltip. J5 owns the painted-ID and copy checks.
+No width-dependent card arrangement, duplicate repo/worktree/CWD values or
+reserved blank second line.
 
 SESSION displays provider plus reference but **copies only sessionRef.value**.
 PANE copies the full pane UUID. An AX value/tooltip does not prove readable
