@@ -1,5 +1,6 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -688,7 +689,7 @@ struct WorktreeRemovalBranchIntegrationTests {
 
     private func configureMissingOriginTrackingRef(in repository: URL) async throws {
         let origin = repository.appending(path: "tmp/origin.git", directoryHint: .isDirectory)
-        try await removalGit(repository, "init", "--bare", origin.path)
+        try await FilesystemTestGitRepo.createBareRemote(at: origin)
         try await removalGit(repository, "remote", "add", "origin", origin.path)
         try await removalGit(repository, "config", "branch.main.remote", "origin")
         try await removalGit(repository, "config", "branch.main.merge", "refs/heads/main")

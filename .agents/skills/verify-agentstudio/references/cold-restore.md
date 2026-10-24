@@ -45,9 +45,10 @@ declared fixtures; they do not replace the J3 nonce/replay proof.
 
 The read-only SQL is
 `SELECT zmx_session_id FROM pane_content_terminal WHERE upper(pane_id)=upper('<validated UUID>');`
-against the launch state's debug `local.sqlite`. The driver rejects a pane in
-J1's baseline, an ambiguous result or a non-UUID new session. This records the
-selection; it lists/kills nothing.
+against the launch state's debug `core.sqlite`, owned by
+`WorkspaceCoreRepository` through `AppDataPaths.coreSQLiteURL`. The driver rejects
+a pane in J1's baseline, an ambiguous result or a non-UUID new session. This
+records the selection; it lists/kills nothing.
 
 ## Quit, then pin the zmx namespace
 

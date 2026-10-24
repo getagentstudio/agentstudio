@@ -238,10 +238,7 @@ struct FilesystemGitRemoteReferenceTests {
         )
         try await FilesystemTestGitRepo.runGit(at: sourceRepository, args: ["add", "tracked.txt"])
         try await FilesystemTestGitRepo.runGit(at: sourceRepository, args: ["commit", "-m", "Initial remote state"])
-        try await FilesystemTestGitRepo.runGit(
-            at: fixtureRoot,
-            args: ["clone", "--bare", sourceRepository.path, bareRemote.path]
-        )
+        try await FilesystemTestGitRepo.createBareRemote(at: bareRemote, cloning: sourceRepository)
         try await FilesystemTestGitRepo.runGit(at: fixtureRoot, args: ["clone", bareRemote.path, localClone.path])
         let initialCanonicalOID = try await FilesystemTestGitRepo.runGit(
             at: localClone,
@@ -326,10 +323,7 @@ struct FilesystemGitRemoteReferenceTests {
         )
         try await FilesystemTestGitRepo.runGit(at: sourceRepository, args: ["add", "tracked.txt"])
         try await FilesystemTestGitRepo.runGit(at: sourceRepository, args: ["commit", "-m", "Original remote state"])
-        try await FilesystemTestGitRepo.runGit(
-            at: fixtureRoot,
-            args: ["clone", "--bare", sourceRepository.path, originalBareRemote.path]
-        )
+        try await FilesystemTestGitRepo.createBareRemote(at: originalBareRemote, cloning: sourceRepository)
         try await FilesystemTestGitRepo.runGit(
             at: fixtureRoot,
             args: ["clone", originalBareRemote.path, localClone.path]
@@ -347,10 +341,7 @@ struct FilesystemGitRemoteReferenceTests {
         try await FilesystemTestGitRepo.runGit(at: sourceRepository, args: ["add", "tracked.txt"])
         try await FilesystemTestGitRepo.runGit(
             at: sourceRepository, args: ["commit", "-m", "Replacement remote state"])
-        try await FilesystemTestGitRepo.runGit(
-            at: fixtureRoot,
-            args: ["clone", "--bare", sourceRepository.path, replacementBareRemote.path]
-        )
+        try await FilesystemTestGitRepo.createBareRemote(at: replacementBareRemote, cloning: sourceRepository)
         let replacementOID = try await FilesystemTestGitRepo.runGit(
             at: sourceRepository,
             args: ["rev-parse", "HEAD"]

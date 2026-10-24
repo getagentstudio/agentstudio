@@ -1,5 +1,6 @@
 import AgentStudioGit
 import AgentStudioInfrastructure
+import AgentStudioTestSupport
 import AgentStudioWorktreeOperations
 import Foundation
 import Testing
@@ -31,7 +32,7 @@ struct WorktreeCreationRemoteFixture {
             let mainCommit = try await git(repository, "rev-parse", "HEAD")
 
             for remote in [origin, upstream] {
-                try await git(folder, "init", "--bare", remote.path)
+                try await FilesystemTestGitRepo.createBareRemote(at: remote)
                 try await git(folder, "--git-dir", remote.path, "symbolic-ref", "HEAD", "refs/heads/main")
             }
             try await git(repository, "remote", "add", "origin", origin.path)

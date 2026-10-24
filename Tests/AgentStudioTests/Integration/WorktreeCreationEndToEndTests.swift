@@ -338,7 +338,7 @@ private struct EndToEndFixture {
 
     func seedOriginDefaultAndAdvanceLocalMain() async throws {
         let originPath = fixtureRoot.appending(path: "origin.git")
-        try await FilesystemTestGitRepo.runGit(at: repositoryPath, args: ["init", "--bare", originPath.path])
+        try await FilesystemTestGitRepo.createBareRemote(at: originPath)
         try await FilesystemTestGitRepo.runGit(at: repositoryPath, args: ["remote", "add", "origin", originPath.path])
         try await FilesystemTestGitRepo.runGit(at: repositoryPath, args: ["push", "--set-upstream", "origin", "main"])
         try await FilesystemTestGitRepo.runGit(at: repositoryPath, args: ["remote", "set-head", "origin", "main"])
