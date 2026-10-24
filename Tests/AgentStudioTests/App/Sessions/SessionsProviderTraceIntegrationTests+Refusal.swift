@@ -84,9 +84,11 @@ extension SessionsProviderTraceIntegrationTests {
         let held = HeldStep<Void>("first hook write is held before SQLite")
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: RefusalQueueSQLiteAccess(queue: queue, held: held)),
-            limits: .init(maximumPendingPerPane: global ? 2 : 1, maximumPendingGlobal: global ? 1 : 2), probe: { _ in })
+            limits: .init(maximumPendingPerPane: global ? 2 : 1, maximumPendingGlobal: global ? 1 : 2), probe: { _ in },
+            terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let at = Date(timeIntervalSince1970: 1000)
-        let adapter = AgentStudioIPCSessionsAdapter(ingestion: ingestion, now: { at })
+        let adapter = AgentStudioIPCSessionsAdapter(
+            ingestion: ingestion, now: { at }, processChainReader: EligibleTestProcessChainReader())
         let pane = UUIDv7.generate()
         let params = IPCSessionEventParams(
             handle: "self", provider: .init(identifier: "codex", version: "0.160.0", mode: "cli"),

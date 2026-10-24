@@ -19,6 +19,35 @@ import Testing
 struct AppTerminationDrainDeadlineTests {
     init() { installTestCoreAtomsIfNeeded() }
 
+    @Test("quit capture completes before the performance trace drains")
+    func scrollbackCaptureCompletesBeforePerformanceTraceDrain() async throws {
+        let stages = TerminationStageRecorder()
+        let heldCapture = HeldStep<String>("scrollback quit capture before performance drain")
+        let termination = Task { @MainActor in
+            await drainPerformanceTraceAfterScrollbackCapture(
+                scrollbackCapture: {
+                    stages.record("captureStarted")
+                    try? await heldCapture.arrive("captureStarted")
+                    stages.record("captureCompleted")
+                },
+                performanceTraceDrain: { stages.record("performanceDrain") }
+            )
+        }
+
+        do {
+            let arrival = try await heldCapture.firstArrival()
+            #expect(arrival == "captureStarted")
+            #expect(stages.names == ["captureStarted"])
+            heldCapture.release()
+            await termination.value
+            #expect(stages.names == ["captureStarted", "captureCompleted", "performanceDrain"])
+        } catch {
+            heldCapture.release()
+            await termination.value
+            throw error
+        }
+    }
+
     @Test("callback retirement joins admitted work before the real activity router stops")
     func callbackRetirementPrecedesActivityStop() async throws {
         let delegate = AppDelegate()

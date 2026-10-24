@@ -1,4 +1,6 @@
 #!/bin/sh
-# Cursor hooks observe status and never request a provider decision.
+# Agent Studio hook for cursor, integration version 2. Installed by `agentstudio package install`.
+exec >/dev/null 2>&1
 [ -x "${AGENTSTUDIO_CLI:-}" ] || exit 0
-exec "$AGENTSTUDIO_CLI" hook cursor "$1"
+"$AGENTSTUDIO_CLI" hook cursor "$1"
+exit 0

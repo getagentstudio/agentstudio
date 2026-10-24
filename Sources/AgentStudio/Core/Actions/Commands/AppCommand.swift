@@ -88,6 +88,8 @@ package enum AppCommand: String, CaseIterable {
     case managementLayerCreateTerminal
     case managementLayerCreateBrowser
     case managementLayerExit
+    // Agent setup
+    case copyAgentSetupPrompt
     // Workspace commands
     case toggleSidebar
     case focusSidebar

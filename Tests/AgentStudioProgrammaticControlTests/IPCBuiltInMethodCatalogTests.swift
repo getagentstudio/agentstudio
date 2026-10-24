@@ -5,13 +5,13 @@ import Testing
 
 @Suite("IPC built-in typed method catalog")
 struct IPCBuiltInMethodCatalogTests {
-    @Test("catalog exposes exactly 55 unique static methods in name order")
+    @Test("catalog exposes exactly 57 unique static methods in name order")
     func catalogHasExactStaticSurface() throws {
         let catalog = try makeCatalog(waitMaximum: 9)
         let names = catalog.erasedDescriptors.map(\.metadata.name)
 
         #expect(names == expectedStaticMethodNames)
-        #expect(Set(names).count == 55)
+        #expect(Set(names).count == 57)
         #expect(names == names.sorted())
     }
 
@@ -422,6 +422,7 @@ struct IPCBuiltInMethodCatalogTests {
             "terminal.send",
             "ui.arrangements.open",
             "ui.commandBar.open",
+            "window.resize",
         ]
     }
 
@@ -480,6 +481,8 @@ struct IPCBuiltInMethodCatalogTests {
             "ui.commandBar.open",
             "window.current",
             "window.list",
+            "window.render",
+            "window.resize",
             "workspace.current",
             "workspace.list",
         ]

@@ -2,8 +2,8 @@ import Foundation
 
 /// Installs and removes the Agent Studio package inside a Codex home.
 ///
-/// Three things land: `features.hooks = true` in `config.toml`, the package's
-/// matcher groups in `hooks.json`, and the model skill under `skills/`.
+/// The shared installer copies the versioned script, enables `features.hooks`
+/// in `config.toml`, merges owned handlers in `hooks.json`, and installs the skill.
 /// `$CODEX_HOME/hooks.json` is a real discovery location — the user config
 /// layer's hooks folder is the parent of its `config.toml`
 /// (`codex-rs/config/src/state.rs:225`, `:239`), which `discover_handlers`
@@ -27,7 +27,7 @@ package enum CodexPackageInstaller {
     /// deliberately relative to the package tree rather than absolute, so an
     /// app that moved on disk still recognises its own previous entries.
     package static let ownedCommandFragment =
-        "/AgentPackage/providers/codex/hooks/\(hookScriptName)"
+        "/agentstudio/\(hookScriptName)"
 
     /// Not `Sendable`: it carries a `FileManager` and the installer runs to
     /// completion on the one thread the CLI invocation owns.
@@ -75,134 +75,10 @@ package enum CodexPackageInstaller {
             path: ".codex", directoryHint: .isDirectory)
     }
 
-    // MARK: - Install
-
     package static func install(_ props: Props) throws -> [String] {
-        try requireWritableHome(props)
-        let version = try props.locator.version(fileManager: props.fileManager)
-        let scriptURL = props.locator.hookScriptURL(
-            provider: providerIdentifier, scriptName: hookScriptName)
-        guard props.fileManager.isReadableFile(atPath: scriptURL.path) else {
-            throw AgentPackageInstallationError.packageResourcesUnavailable
-        }
-        // Validate provider inputs and prepare the complete skill before any
-        // configuration or installed skill is replaced.
-        let features = try plannedConfiguration(props)
-        let roots = try CodexWritableRootsEditor.updating(
-            features.contents, directory: props.ipcDirectory.path, configurationPath: props.configurationURL.path)
-        var notices: [String] = []
-        let hooks = try plannedHooks(props, scriptURL: scriptURL, notices: &notices)
-        let skill = try PreparedAgentSkillDirectory(
-            source: props.locator.skillSourceDirectory, providerHome: props.codexHome,
-            marker: Data("\(version)\n".utf8), fileManager: props.fileManager)
-        defer { skill.discardStaging() }
-
-        var output = notices
-        try AtomicFileWriter.write(
-            Data(roots.contents.utf8), to: props.configurationURL,
-            fileManager: props.fileManager)
-        output.append(configurationLine(features.outcome))
-        if roots.changed {
-            output.append("notice: added \(props.ipcDirectory.path) to sandbox_workspace_write.writable_roots")
-            output.append("dotfiles-managed configs need the same writable_roots entry")
-        }
-        try AtomicFileWriter.write(hooks, to: props.hooksURL, fileManager: props.fileManager)
-        output.append(
-            "wrote \(CodexHookEventName.installedEvents.count) hook entries to \(props.hooksURL.path)")
-        try skill.publish(to: props.skillDirectory)
-        output.append("installed the agentstudio skill in \(props.skillDirectory.path)")
-        output.append(
-            "start Codex and trust the agentstudio hooks in its hook review prompt; "
-                + "untrusted hooks never run")
-        return output
-    }
-
-    // MARK: - Planning
-
-    private static func plannedConfiguration(
-        _ props: Props
-    ) throws -> (contents: String, outcome: CodexFeatureTableEditor.Outcome) {
-        try CodexFeatureTableEditor.enablingHooks(
-            in: existingConfiguration(props), configurationPath: props.configurationURL.path)
-    }
-
-    private static func existingConfiguration(_ props: Props) throws -> String {
-        guard props.fileManager.fileExists(atPath: props.configurationURL.path) else { return "" }
-        guard let data = props.fileManager.contents(atPath: props.configurationURL.path),
-            let contents = String(data: data, encoding: .utf8)
-        else {
-            throw AgentPackageInstallationError.configurationUnreadable(props.configurationURL.path)
-        }
-        return contents
-    }
-
-    private static func plannedHooks(
-        _ props: Props,
-        scriptURL: URL,
-        notices: inout [String]
-    ) throws -> Data {
-        var document: CodexHooksDocument
-        if let data = props.fileManager.contents(atPath: props.hooksURL.path) {
-            document = try CodexHooksDocument(data: data, path: props.hooksURL.path)
-        } else {
-            document = CodexHooksDocument()
-        }
-        for event in CodexHookEventName.installedEvents {
-            let replacedModified = document.replaceOwnedGroup(
-                event: event.rawValue,
-                with: matcherGroup(event: event, scriptURL: scriptURL),
-                ownedCommandFragment: ownedCommandFragment
-            )
-            if replacedModified {
-                notices.append("notice: replacing modified agentstudio entry \(event.rawValue)")
-            }
-        }
-        return try document.encoded()
-    }
-
-    /// Codex runs a command hook through the user's shell, so the script path is
-    /// double-quoted: an app bundle name such as `AgentStudio Beta.app` contains
-    /// a space and would otherwise split into two words.
-    package static func matcherGroup(
-        event: CodexHookEventName,
-        scriptURL: URL
-    ) -> [String: Any] {
-        // SessionEnd is forced synchronous by Codex. Interrupt can run async,
-        // but both lifecycle events use the provider's one-second default.
-        var handler: [String: Any] = [
-            "type": "command",
-            CodexHooksDocument.commandKey: "\"\(scriptURL.path)\" \(event.rawValue)",
-            "timeout": event == .sessionEnd || event == .interrupt ? 1 : hookTimeoutSeconds,
-        ]
-        if event != .sessionEnd { handler["async"] = true }
-        return [CodexHooksDocument.hooksKey: [handler]]
-    }
-
-    private static func requireWritableHome(_ props: Props) throws {
-        var isDirectory: ObjCBool = false
-        guard props.fileManager.fileExists(atPath: props.codexHome.path, isDirectory: &isDirectory),
-            isDirectory.boolValue
-        else {
-            throw AgentPackageInstallationError.providerHomeUnavailable(props.codexHome.path)
-        }
-        guard props.fileManager.isWritableFile(atPath: props.codexHome.path) else {
-            throw AgentPackageInstallationError.providerHomeNotWritable(props.codexHome.path)
-        }
-    }
-
-    private static func configurationLine(_ outcome: CodexFeatureTableEditor.Outcome) -> String {
-        switch outcome {
-        case .alreadyEnabled: "features.hooks was already true"
-        case .enabledInExistingTable: "set features.hooks = true in the existing [features] table"
-        case .appendedFeaturesTable: "appended [features] with hooks = true"
-        }
-    }
-}
-
-/// Writes through an auxiliary file and renames, so a reader never sees a
-/// half-written configuration and a failed write leaves the original intact.
-package enum AtomicFileWriter {
-    package static func write(_ data: Data, to url: URL, fileManager: FileManager) throws {
-        try data.write(to: url, options: [.atomic])
+        try ProviderIntegrationInstaller.install(
+            .init(
+                layout: .init(provider: .codex, home: props.codexHome), locator: props.locator,
+                ipcDirectory: props.ipcDirectory))
     }
 }

@@ -1,3 +1,4 @@
+import AgentStudioInfrastructure
 import Foundation
 import Testing
 
@@ -342,6 +343,7 @@ struct TerminalRestoreKindResolverTests {
         let resolver = TerminalRestoreKindResolver(
             sessionConfiguration: enabledConfiguration,
             probe: nil,
+            scrollbackStore: isolatedScrollbackStore(),
             repositoryMainFolder: { _ in nil }
         )
 
@@ -360,8 +362,15 @@ struct TerminalRestoreKindResolverTests {
         TerminalRestoreKindResolver(
             sessionConfiguration: enabledConfiguration,
             probe: probe,
+            scrollbackStore: isolatedScrollbackStore(),
             repositoryMainFolder: { _ in nil }
         )
+    }
+
+    private func isolatedScrollbackStore() -> ScrollbackStore {
+        ScrollbackStore(
+            directoryURL: FileManager.default.temporaryDirectory.appending(
+                path: "resolver-scrollback-\(UUIDv7.generate().uuidString)"))
     }
 
     private func makePane(sessionID: ZmxSessionID) -> Pane {

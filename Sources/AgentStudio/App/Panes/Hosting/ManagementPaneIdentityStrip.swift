@@ -70,6 +70,9 @@ struct ManagementPaneIdentityStrip: View {
             transform: { $0 }
         )
         .background {
+            CaptureRegionMarker(kind: "paneCard", id: context.paneId.uuidString)
+        }
+        .background {
             AccessibilityLabelBridge(
                 identifier: "paneManagement.identityStrip",
                 label: informationAccessibilityLabels.joined(separator: ", ")

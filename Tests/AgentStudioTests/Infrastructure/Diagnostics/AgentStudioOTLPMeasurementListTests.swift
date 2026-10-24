@@ -9,7 +9,7 @@ struct AgentStudioOTLPMeasurementListTests {
     @Test
     func everyListedMeasurementHasAnEmitterAnchorAndProducesNumericSamples() async throws {
         let entries = try await valueFromDedicatedThread { try Self.readMeasurementAnchors() }
-        #expect(entries.count == 520)
+        #expect(entries.count == 536)
         #expect(Set(entries.map(\.name)) == AgentStudioOTLPMeasurementList.names)
         #expect(Set(entries.map(\.name)).count == entries.count)
         let numericValues: [(AgentStudioTraceValue, Double)] = [(.int(7), 7), (.double(2.5), 2.5)]
@@ -197,6 +197,12 @@ struct AgentStudioOTLPMeasurementListTests {
 
     private static func sourceLineContainsMeasurement(_ name: String, line: String, contents: String) -> Bool {
         if line.contains("\"\(name)\"") { return true }
+        let scrollbackOutcomePrefix = "agentstudio.performance.scrollback.pass.outcome."
+        if name.hasPrefix(scrollbackOutcomePrefix), name.hasSuffix(".count") {
+            let outcomeKind = name.dropFirst(scrollbackOutcomePrefix.count).dropLast(".count".count)
+            return line.contains("\"\(scrollbackOutcomePrefix)\\(kind).count\"")
+                && contents.contains(": \"\(outcomeKind)\"")
+        }
         let ingressPrefix = "agentstudio.performance.filesystem.ingress."
         if name.hasPrefix(ingressPrefix), line.contains("\\(prefix)") {
             let suffix = String(name.dropFirst(ingressPrefix.count))

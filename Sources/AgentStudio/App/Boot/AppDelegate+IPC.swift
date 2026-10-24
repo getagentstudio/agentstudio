@@ -359,7 +359,10 @@ extension AppDelegate {
                             "agentstudio.sessions.main_actor_max_ms": .double(
                                 AgentStudioPerformanceTraceRecorder.milliseconds(from: snapshot.maximumHeldDuration)),
                         ])
-                }, activityClock: paneActivityClock)
+                },
+                activityClock: paneActivityClock,
+                terminalLeaderReader: appIPCTerminalLeaderReader,
+                processChainReader: appIPCProcessChainReader)
         )
         guard !Task.isCancelled else {
             await composition.shutdown()
@@ -489,6 +492,8 @@ extension AppDelegate {
                 presenter: self,
                 targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store)
             ),
+            windowRenderPort: AgentStudioIPCWindowRenderAdapter(
+                owner: self, rendersDirectory: paths.rootDirectory.appendingPathComponent("renders", isDirectory: true)),
             sidebarPort: AgentStudioIPCSidebarAdapter(
                 repoPrefs: atomStore.repoExplorerSidebarPrefs,
                 sidebarState: atomStore.core.workspaceSidebarState

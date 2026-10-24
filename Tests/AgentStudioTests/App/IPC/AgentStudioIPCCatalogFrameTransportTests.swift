@@ -41,6 +41,37 @@ struct AgentStudioIPCCatalogFrameTransportTests {
         await harness.tearDown()
     }
 
+    @Test(
+        "the actual app catalog retains channel counts and recognizes unavailable window methods",
+        arguments: [AgentStudioIPCChannel.debug, .stable, .beta])
+    func appCatalogPreservesWindowChannelInventory(channel: AgentStudioIPCChannel) async throws {
+        let harness = try await SessionsVerticalHarness.make(channel: channel)
+        do {
+            let response = try await harness.response(
+                method: "system.capabilities", params: .object([:]),
+                authentication: channel == .debug ? .diagnostic : .boundPane)
+            #expect(response.error == nil)
+            let result = try #require(response.result)
+            let catalog = try JSONDecoder().decode(IPCMethodCatalogResult.self, from: JSONEncoder().encode(result))
+            #expect(catalog.methods.count == (channel == .debug ? 60 : 35))
+            for name in ["window.render", "window.resize"] {
+                if channel == .debug {
+                    #expect(catalog.methods.contains { $0.name == name && $0.agentEligibility == .notYetAllowed })
+                } else {
+                    #expect(!catalog.methods.contains { $0.name == name })
+                    #expect(
+                        catalog.recognizedUnexposedMethods.contains {
+                            $0.name == name && $0.agentEligibility == .notYetAllowed
+                        })
+                }
+            }
+        } catch {
+            await harness.tearDown()
+            throw error
+        }
+        await harness.tearDown()
+    }
+
     @Test("system.capabilities crosses the socket in one frame larger than the request bound")
     func systemCapabilitiesCrossesTheSocket() async throws {
         let harness = try await SessionsVerticalHarness.make()

@@ -4,6 +4,141 @@ import Testing
 
 @Suite
 struct AgentStudioOTLPDemandAdmissionPerformanceTests {
+    @Test(arguments: ["closed_for_undo", "private_unbounded_kind"])
+    func rendererStringAdmissionKeepsEveryLogValue(value: String) {
+        let attributeKey = "agentstudio.performance.renderer.event.kind"
+        let record = AgentStudioTraceRecord(
+            timeUnixNano: 129, severityText: .info, body: "performance.renderer.lifecycle",
+            traceID: nil, spanID: nil, parentSpanID: nil,
+            resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+            attributes: [attributeKey: .string(value)]
+        )
+
+        let projection = AgentStudioOTLPTraceProjection.project(record)
+
+        #expect(projection.attributes[attributeKey] == .string(value))
+        #expect(
+            AgentStudioOTLPPerformanceMetricEvent.isAllowedControlledStringValue(key: attributeKey, value: value)
+                == (value == "closed_for_undo")
+        )
+    }
+
+    @Test(arguments: ["started", "finished"], ["periodic", "quit"])
+    func scrollbackPassProjectsBoundedDimensionsAndMeasurements(phase: String, reason: String) throws {
+        let outcomeKinds = [
+            "written", "invalid_utf8", "keep_previous", "unchanged", "empty",
+            "deadline_exceeded", "exceeded_ceiling", "launch_failed", "read_failed",
+            "exited_nonzero", "retired", "cancelled", "write_failed",
+        ]
+        let prefix = "agentstudio.performance.scrollback.pass"
+        var attributes: [String: AgentStudioTraceValue] = [
+            "\(prefix).phase": .string(phase),
+            "\(prefix).reason": .string(reason),
+            "\(prefix).pane.count": .int(16),
+            "\(prefix).captured.bytes": .int(4096),
+            "\(prefix).written.bytes": .int(2048),
+            "agentstudio.performance.elapsed_ms": .double(184.3),
+            "\(prefix).private_payload": .string("recorded-value"),
+            "\(prefix).outcome.private_unbounded.count": .int(999),
+        ]
+        for (index, kind) in outcomeKinds.enumerated() {
+            attributes["\(prefix).outcome.\(kind).count"] = .int(index + 1)
+        }
+        let record = AgentStudioTraceRecord(
+            timeUnixNano: 129, severityText: .info, body: "performance.scrollback.pass",
+            traceID: nil, spanID: nil, parentSpanID: nil,
+            resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"), attributes: attributes
+        )
+
+        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
+
+        #expect(projection.attributes["\(prefix).phase"] == .string(phase))
+        #expect(projection.attributes["\(prefix).reason"] == .string(reason))
+        #expect(projection.attributes["\(prefix).pane.count"] == .int(16))
+        #expect(projection.attributes["\(prefix).captured.bytes"] == .int(4096))
+        #expect(projection.attributes["\(prefix).written.bytes"] == .int(2048))
+        #expect(projection.attributes["\(prefix).private_payload"] == .string("recorded-value"))
+        #expect(projection.attributes["\(prefix).outcome.private_unbounded.count"] == .int(999))
+        #expect(metricEvent.dimensionTuples.contains { $0 == ("phase", phase) })
+        #expect(metricEvent.dimensionTuples.contains { $0 == ("reason", reason) })
+        #expect(metricEvent.elapsedMilliseconds == 184.3)
+        #expect(metricEvent.measurements.count == outcomeKinds.count + 4)
+        for (index, kind) in outcomeKinds.enumerated() {
+            #expect(projection.attributes["\(prefix).outcome.\(kind).count"] == .int(index + 1))
+            #expect(
+                metricEvent.measurements.contains {
+                    guard case .counter(let sample) = $0 else { return false }
+                    return sample.label == "agentstudio_performance_scrollback_pass_outcome_\(kind)_count"
+                        && sample.value == Double(index + 1)
+                }
+            )
+        }
+        #expect(
+            metricEvent.measurements.contains {
+                guard case .counter(let sample) = $0 else { return false }
+                return sample.label == "agentstudio_performance_scrollback_pass_pane_count" && sample.value == 16
+            }
+        )
+        for (label, value) in [("captured", 4096.0), ("written", 2048.0)] {
+            #expect(
+                metricEvent.measurements.contains {
+                    guard case .gauge(let sample) = $0 else { return false }
+                    return sample.label == "agentstudio_performance_scrollback_pass_\(label)_bytes"
+                        && sample.value == value
+                }
+            )
+        }
+    }
+
+    @Test(arguments: ["private-unbounded-value", "/tmp/private", "", "finished", "quit"], ["phase", "reason"])
+    func scrollbackPassRejectsUnboundedDimensionValues(value: String, dimension: String) throws {
+        let prefix = "agentstudio.performance.scrollback.pass"
+        let otherDimension = dimension == "phase" ? "reason" : "phase"
+        let otherValue = dimension == "phase" ? "periodic" : "started"
+        let isAllowed = dimension == "phase" ? value == "finished" : value == "quit"
+        let record = AgentStudioTraceRecord(
+            timeUnixNano: 129, severityText: .info, body: "performance.scrollback.pass",
+            traceID: nil, spanID: nil, parentSpanID: nil,
+            resource: ["service.name": "AgentStudio"],
+            scope: .init(name: "agentstudio.performance", version: "0.1.0"),
+            attributes: [
+                "\(prefix).\(dimension)": .string(value),
+                "\(prefix).\(otherDimension)": .string(otherValue),
+                "\(prefix).pane.count": .int(3),
+                "agentstudio.performance.elapsed_ms": .double(2),
+            ]
+        )
+
+        let projection = AgentStudioOTLPTraceProjection.project(record)
+        let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
+
+        #expect(projection.attributes["\(prefix).\(dimension)"] == .string(value))
+        var expectedDimensions = [
+            AgentStudioOTLPPerformanceMetricDimension(name: "event", value: "performance.scrollback.pass"),
+            AgentStudioOTLPPerformanceMetricDimension(name: otherDimension, value: otherValue),
+        ]
+        if isAllowed { expectedDimensions.append(.init(name: dimension, value: value)) }
+        #expect(Set(metricEvent.dimensions) == Set(expectedDimensions))
+        #expect(metricEvent.measurements.count == 2)
+        #expect(
+            metricEvent.measurements.allSatisfy { measurement in
+                switch measurement {
+                case .counter(let sample), .distribution(let sample), .gauge(let sample):
+                    return Set(sample.dimensions) == Set(expectedDimensions)
+                }
+            })
+        let factory = OTLPRecordingMetricsFactory()
+        AgentStudioOTLPPerformanceMetrics(factory: factory).record(projection)
+        #expect(
+            factory.counter(
+                label: "agentstudio_performance_events_total", dimensions: expectedDimensions.map(\.tuple)
+            )?.totalValue == 1
+        )
+    }
+
     @Test
     func repoExplorerStageSnapshotProjectsOnlyBoundedDimensionsAndIntervalCounter() throws {
         // R10: synthetic raw fields bypass Sources/AgentStudio/Features/RepoExplorer/Models/RepoExplorerPerformanceTelemetry.swift:424: stage snapshot emits typed counts/outcomes, never message text.

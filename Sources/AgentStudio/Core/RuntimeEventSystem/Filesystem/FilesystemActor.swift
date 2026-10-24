@@ -91,6 +91,7 @@ package actor FilesystemActor {
     var nextEnvelopeSequence: UInt64 = 0
 
     var watchedFolderScanState = FilesystemWatchedFolderScanState()
+    var lastResultLeaseConsumerObservations: ResultLeaseConsumerObservations?
 
     private var ingressTask: Task<Void, Never>?
     private let ingressTerminalStream: AsyncStream<FSEventStreamRuntimeTerminal>

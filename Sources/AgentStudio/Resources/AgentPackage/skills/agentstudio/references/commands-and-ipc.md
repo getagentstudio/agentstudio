@@ -6,6 +6,8 @@ This reference owns selecting an available App contract and interpreting its rec
 
 ```sh
 "$AS_CLI" --help
+"$AS_CLI" help --help
+"$AS_CLI" package --help
 "$AS_CLI" command.execute --help
 "$AS_CLI" help --live
 "$AS_CLI" system.capabilities --json '{}'
@@ -13,7 +15,7 @@ This reference owns selecting an available App contract and interpreting its rec
 "$AS_CLI" system.identify --json '{}'
 ```
 
-`--help`, `help` and known `METHOD --help` read the compiled local contracts without connecting. `help --help` is not supported: use the root help. `help --live` shows live App commands; `system.capabilities` supplies compatibility/runtime identity and the available typed method catalog; `command.list` supplies available App commands and their own argument/eligibility/result contracts. Read those contracts before selecting a dynamic command ID.
+`--help`, `help` and known `METHOD --help` read the compiled local contracts without connecting. `help --help` displays root help, and `package --help` describes the local provider hook verbs. `help --live` shows live App commands; `system.capabilities` supplies compatibility/runtime identity and the available typed method catalog; `command.list` supplies available App commands and their own argument/eligibility/result contracts. Read those contracts before selecting a dynamic command ID.
 
 `system.identify` reads selected runtime/access mode/version. `system.version` reads the app version; `system.ping` checks reachability. These are app calls, and supplied-token authentication still happens: a stale inherited token can fail before the read. Do not remove credentials to manufacture a successful probe.
 

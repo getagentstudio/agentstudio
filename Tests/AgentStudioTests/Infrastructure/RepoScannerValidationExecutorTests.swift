@@ -78,7 +78,7 @@ struct RepoScannerValidationExecutorTests {
         )
         clock.advance(by: .seconds(1))
         await client.release(candidateURL: timedOut.candidateURL, outcome: authoritativeNegative)
-        await client.waitUntilReturnedCount(2)
+        await executor.waitUntilPhysicalJobCount(0)
         #expect(await executor.snapshot().lateNativeReturnCount == 1)
 
     }

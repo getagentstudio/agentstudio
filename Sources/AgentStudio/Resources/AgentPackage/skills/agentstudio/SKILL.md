@@ -5,7 +5,7 @@ description: Use when working with Agent Studio panes or its CLI, including work
 
 # Agent Studio
 
-Choose scope before action. Local `worktree` commands operate on Git and files without an app connection. App commands and pane operations use the selected runtime and supplied pane identity. A method appearing in help tells you it exists; its eligibility and the user's task decide whether you may use it.
+Choose scope before action. Local `worktree` and `package` commands operate on files without an app connection. App commands and pane operations use the selected runtime and supplied pane identity. A method appearing in help tells you it exists; its eligibility and the user's task decide whether you may use it.
 
 ## Find the helper and target
 
@@ -24,6 +24,28 @@ For pane work, `self` identifies the caller's pane. `pane.current` identifies th
 A Claude background session (`CLAUDE_CODE_SESSION_KIND=bg` or nonempty `CLAUDE_JOB_DIR`) can inherit pane variables without being attached. Keep those markers intact and report progress in chat. `notify`, `ask`, `line`, `title` and their raw reporting methods refuse with `background session: not attached to a pane`. Reads, answers and withdrawal retain their normal authentication/scope rules.
 
 Continue only when the intended local repository or app target and requested effect are identified. Discovery does not expand task authority. In particular, terminal input, closing a pane and worktree removal need authorization for their actual effects.
+
+## Set up hooks
+
+When the request concerns provider hooks or missing hook tracking, use this workflow and return the provider, selected home, status problems and supported next action. Choose `claude`, `codex` or `cursor` for `PROVIDER`. Preserve an explicitly selected custom home: use `--config-dir PATH` for Claude, `--codex-home PATH` for Codex or `--provider-home PATH` for Cursor on every package verb. Resolve an ambiguous provider or home before a write.
+
+Read configuration first with `"$AS_CLI" package status PROVIDER --json`. Explain every reported problem and its recovery in plain words, including simultaneous problems and informational notes:
+
+| Verdict | Explain to the user |
+| --- | --- |
+| `current` | The inspected integration matches the known configuration; no repair is needed. |
+| `unavailable` | A required provider home or file could not be inspected. Report the path and reason. |
+| `notInstalled` | The Agent Studio hook integration is not installed in this home. |
+| `outdated` | A copied script, version stamp or legacy entry needs refreshing. |
+| `entriesMissing` | Required entries or the Codex hooks feature setting are missing or differ. |
+| `notTrusted` | Codex needs native hook review or enabling; have the user review it in `/hooks`. |
+| `trustUnknown` | This Codex version or review state could not be verified. State the limit; do not guess trust. |
+
+Run `"$AS_CLI" package install PROVIDER` or `"$AS_CLI" package uninstall PROVIDER` only with the user's go-ahead for that provider and home. An explicit instruction to install or uninstall is already that go-ahead; do not ask again. Explain the proposed change before carrying it out. Uninstall leaves other hooks, owner files and the agentstudio skill in place.
+
+For chezmoi or another dotfiles workflow, offer `"$AS_CLI" package snippet PROVIDER`. It prints the desired configuration without writing files. Use the package verbs for Agent Studio's entries; never hand-edit provider files or write Codex trust state.
+
+After a requested install or uninstall, read status again and report the resulting verdict, every remaining problem and any native Codex review still needed. Configuration status does not establish that a running provider has loaded or sent hooks. For syntax, use `"$AS_CLI" package --help`.
 
 ## Load the detail for the requested work
 
@@ -45,4 +67,4 @@ The Agent Line is a message; hooks own status, and an ask owns a pending decisio
 
 Preserve work and evidence when a destructive action is refused. Do not turn a printed force/discard option into permission. After uncertain delivery, inspect relevant state before any new intent; never blindly replay. Ordered stale line/title payloads are final and cannot be retried with a new number or epoch.
 
-Complete when the supported, authorized action's actual outcome is known, relevant IDs/state are retained, and any missing result has an exact unresolved condition and safe next action. Use chat when reporting is unavailable and continue work already authorized. This skill does not authorize provider setup, plugin installation, permission changes or new CLI capabilities.
+Complete when the supported, authorized action's actual outcome is known, relevant IDs/state are retained, and any missing result has an exact unresolved condition and safe next action. Use chat when reporting is unavailable and continue work already authorized. This skill does not itself grant permission to write provider files, install plugins, change permissions or add CLI capabilities.

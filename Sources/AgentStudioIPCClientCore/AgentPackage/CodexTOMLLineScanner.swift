@@ -228,7 +228,7 @@ struct CodexTOMLLineScanner {
         return decoded
     }
 
-    private static func keyComponents(_ text: String) throws -> [String] {
+    static func keyComponents(_ text: String) throws -> [String] {
         var parts: [String] = []
         var current = ""
         var delimiter: Character?

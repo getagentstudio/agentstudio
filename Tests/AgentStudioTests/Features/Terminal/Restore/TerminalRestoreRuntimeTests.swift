@@ -80,12 +80,12 @@ struct TerminalRestoreRuntimeTests {
     }
 
     @Test("a cold kind builds the cold-restore command, not the plain attach command")
-    func coldKindBuildsColdRestoreCommand() throws {
+    func coldKindBuildsColdRestoreCommand() async throws {
         let storedText = "as-cold-startup-command"
         let storedSessionID = try makeRestoredZmxSessionID(storedText)
         let pane = makeTerminalPane(sessionID: storedSessionID)
         let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
-        let plan = try makeFallbackPlan(pane: pane, sessionID: storedSessionID)
+        let plan = try await makeFallbackPlan(pane: pane, sessionID: storedSessionID)
 
         let coldCommand = try #require(runtime.startupCommand(for: pane, kind: .cold(plan)))
 
@@ -102,12 +102,12 @@ struct TerminalRestoreRuntimeTests {
     /// recreating one that died between the liveness check and the
     /// reconnect.
     @Test("a warm kind builds its fallback cold-restore command, not the plain attach command")
-    func warmKindBuildsItsFallbackColdRestoreCommand() throws {
+    func warmKindBuildsItsFallbackColdRestoreCommand() async throws {
         let storedText = "as-warm-startup-command"
         let storedSessionID = try makeRestoredZmxSessionID(storedText)
         let pane = makeTerminalPane(sessionID: storedSessionID)
         let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
-        let plan = try makeFallbackPlan(pane: pane, sessionID: storedSessionID)
+        let plan = try await makeFallbackPlan(pane: pane, sessionID: storedSessionID)
 
         let warmCommand = try #require(
             runtime.startupCommand(for: pane, kind: .warm(identity: Data([1, 2, 3]), fallback: plan))
@@ -121,12 +121,12 @@ struct TerminalRestoreRuntimeTests {
     /// case -- an unverified pane also sends its fallback script rather
     /// than attaching plain.
     @Test("an unverified kind builds its fallback cold-restore command, not the plain attach command")
-    func unverifiedKindBuildsItsFallbackColdRestoreCommand() throws {
+    func unverifiedKindBuildsItsFallbackColdRestoreCommand() async throws {
         let storedText = "as-unverified-startup-command"
         let storedSessionID = try makeRestoredZmxSessionID(storedText)
         let pane = makeTerminalPane(sessionID: storedSessionID)
         let runtime = TerminalRestoreRuntime(sessionConfiguration: enabledConfiguration)
-        let plan = try makeFallbackPlan(pane: pane, sessionID: storedSessionID)
+        let plan = try await makeFallbackPlan(pane: pane, sessionID: storedSessionID)
 
         let unverifiedCommand = try #require(
             runtime.startupCommand(for: pane, kind: .unverified(.sessionUnresponsive, fallback: plan))
@@ -178,14 +178,18 @@ struct TerminalRestoreRuntimeTests {
         )
     }
 
-    private func makeFallbackPlan(pane: Pane, sessionID: ZmxSessionID) throws -> TerminalColdRestorePlan {
-        TerminalColdRestorePlanBuilder.buildPlan(
+    private func makeFallbackPlan(pane: Pane, sessionID: ZmxSessionID) async throws -> TerminalColdRestorePlan {
+        await TerminalColdRestorePlanBuilder.buildPlan(
             pane: pane,
             sessionID: sessionID,
-            zmxExecutablePath: try #require(enabledConfiguration.zmxPath),
-            zmxDirectoryPath: enabledConfiguration.zmxDir,
-            loginShellPath: "/bin/zsh",
-            repositoryMainFolder: nil
+            launchPaths: TerminalColdRestoreLaunchPaths(
+                zmxExecutablePath: try #require(enabledConfiguration.zmxPath),
+                zmxDirectoryPath: enabledConfiguration.zmxDir,
+                loginShellPath: "/bin/zsh"),
+            repositoryMainFolder: nil,
+            scrollbackStore: ScrollbackStore(
+                directoryURL: FileManager.default.temporaryDirectory.appending(
+                    path: "runtime-plan-empty-\(UUIDv7.generate().uuidString)"))
         )
     }
 }

@@ -5,7 +5,7 @@ import Testing
 
 @Suite("App IPC CLI help and exit codes", .serialized)
 struct AppIPCCLIHelpAndExitTests {
-    @Test("local help works in a real CLI process with no app", arguments: [["--help"], ["help"]])
+    @Test("local help works in a real CLI process with no app", arguments: [["--help"], ["help"], ["help", "--help"]])
     func localHelpNeedsNoApp(arguments: [String]) async throws {
         let output = try await runCLI(
             executableURL: cliExecutableURL(), arguments: arguments, environment: offlineEnvironment())
@@ -15,10 +15,20 @@ struct AppIPCCLIHelpAndExitTests {
             output.exitCode == 0,
             "stderr: \(String(bytes: output.standardError, encoding: .utf8) ?? "Invalid UTF-8 stderr")")
         #expect(output.standardError.isEmpty)
+        if arguments == ["help", "--help"] {
+            let root = try await runCLI(
+                executableURL: cliExecutableURL(), arguments: ["--help"], environment: offlineEnvironment())
+            #expect(root.exitCode == 0)
+            #expect(output.standardOutput == root.standardOutput)
+        }
         for name in ["system.identify", "terminal.send", "pane.close", "drawer.toggle", "session.query"] {
             #expect(text.contains(name), "missing compiled method: \(name)")
         }
         #expect(!text.contains(recordedCLILiveCommandID.rawValue))
+        #expect(
+            text.components(separatedBy: "\n").contains(
+                "  agentstudio package install|snippet|status|uninstall claude|codex|cursor [OPTIONS]  (provider hooks and skill; see agentstudio package --help)"
+            ))
     }
 
     @Test("method help comes from the compiled descriptor without an app")
@@ -38,6 +48,29 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(text.contains("handle"))
         #expect(text.contains("input"))
         #expect(text.contains("correlationId"))
+    }
+
+    @Test("auth.login help describes its credential and JSON stdin forms without argv credentials")
+    func authLoginHelpMatchesAcceptedSyntax() async throws {
+        let output = try await runCLI(
+            executableURL: cliExecutableURL(), arguments: ["auth.login", "--help"], environment: offlineEnvironment())
+        let text = try #require(String(bytes: output.standardOutput, encoding: .utf8))
+        let expected = """
+            auth.login — Authenticate this connection with the owning runtime credential.
+            Usage: agentstudio auth.login
+                   agentstudio auth.login --stdin
+            agentstudio auth.login uses the resolved credential: the pane's inherited token, or a raw token from agentstudio --token-stdin auth.login.
+            agentstudio auth.login --stdin reads the JSON parameter object from standard input.
+            --token-stdin and --stdin can't be combined.
+            JSON fields:
+              token (required) — Bearer credential supplied by the owning runtime
+            """
+        #expect(output.exitCode == 0)
+        #expect(output.standardError.isEmpty)
+        #expect(text == expected + "\n")
+        #expect(!text.contains("--token <value>"))
+        #expect(!text.contains("--json"))
+        #expect(!text.contains("example-runtime-credential"))
     }
 
     @Test("live help explicitly fetches commands and prints a real advertised command")
@@ -85,17 +118,35 @@ struct AppIPCCLIHelpAndExitTests {
         #expect(output.standardOutput.isEmpty)
     }
 
-    @Test("removed package commands reject locally", arguments: ["claude", "codex", "cursor"])
-    func removedPackageCommandsRejectLocally(provider: String) async throws {
+    @Test(
+        "package uninstall stays confined and keeps skills and owner files", arguments: ["claude", "codex", "cursor"])
+    func packageUninstallConfined(provider: String) async throws {
+        let fixture = try PackageSubprocessFixture()
+        defer { fixture.dispose() }
+        let executable = try cliExecutableURL()
+        let installed = try await runCLI(
+            executableURL: executable,
+            arguments: fixture.preflight(arguments: ["package", "install", provider]),
+            environment: fixture.environment, currentDirectoryURL: fixture.root)
+        try #require(installed.exitCode == 0)
+        let home = fixture.root.appending(path: "home/.\(provider)")
+        let integration = home.appending(path: "agentstudio")
+        let ownerFile = integration.appending(path: "owner.txt")
+        try Data("owner file\n".utf8).write(to: ownerFile)
+        let skill = home.appending(path: "skills/agentstudio/SKILL.md")
+        let skillBefore = try Data(contentsOf: skill)
         let output = try await runCLI(
-            executableURL: cliExecutableURL(), arguments: ["package", "uninstall", provider],
-            environment: offlineEnvironment())
-
-        #expect(output.exitCode == 1)
-        #expect(output.standardOutput.isEmpty)
+            executableURL: executable,
+            arguments: fixture.preflight(arguments: ["package", "uninstall", provider]),
+            environment: fixture.environment, currentDirectoryURL: fixture.root)
+        #expect(output.exitCode == 0)
+        #expect(output.standardError.isEmpty)
         #expect(
-            String(bytes: output.standardError, encoding: .utf8)
-                == "agentstudio package: unknown subcommand uninstall\n")
+            !FileManager.default.fileExists(atPath: integration.appending(path: "agentstudio-\(provider)-hook.sh").path)
+        )
+        #expect(!FileManager.default.fileExists(atPath: integration.appending(path: "integration-version").path))
+        #expect(try Data(contentsOf: ownerFile) == Data("owner file\n".utf8))
+        #expect(try Data(contentsOf: skill) == skillBefore)
     }
 
     @Test("a real server refusal exits nonzero in the CLI process")

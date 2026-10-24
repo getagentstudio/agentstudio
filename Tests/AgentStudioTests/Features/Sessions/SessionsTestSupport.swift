@@ -74,8 +74,7 @@ func withSessionsIngestion<Output: Sendable>(
             maximumPendingPerPane: 32,
             maximumPendingGlobal: 128
         ),
-        probe: { _ in }
-    )
+        probe: { _ in }, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
     do {
         let output = try await operation(ingestion)
         await ingestion.finish()
@@ -101,10 +100,23 @@ func makeHookAdmission(
         sessionId: sessionId, eventName: eventName, turnId: turnId, kind: kind,
         signal: signal, recordId: recordId, admissionInstant: admissionInstant,
         admittedAt: Date(timeIntervalSince1970: 1_800_000_000),
-        resumeHint: resumeHint)
+        resumeHint: resumeHint, chain: TestMainAgentChain.observation)
 }
 
 func committedHookCommit(from outcome: SessionsHookOutcome) -> SessionsHookCommit? {
     guard case .committed(let commit) = outcome else { return nil }
     return commit
+}
+enum TestMainAgentChain {
+    static let shell = ZmxProcessIncarnation(pid: 58, startSeconds: 1, startMicroseconds: 0)
+    static let observation = ProcessChainObservation.agentShell(shell: shell, shellParent: .other)
+}
+
+struct MatchingTestPaneTerminalLeaderReader: PaneTerminalLeaderReading {
+    let sessionID = ZmxSessionID.generateUUIDv7()
+
+    func terminalSessionID(for paneId: UUID) async -> ZmxSessionID? { sessionID }
+    func terminalLeader(for sessionID: ZmxSessionID) async -> ZmxProcessIncarnation? {
+        sessionID == self.sessionID ? TestMainAgentChain.shell : nil
+    }
 }

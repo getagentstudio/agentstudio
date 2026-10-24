@@ -16,6 +16,8 @@
 // occupancies, not sequence identities.
 // trace_queue statistics use process gauges; copies in log attributes never
 // become per-event measurements.
+// The Lead classified all 16 scrollback pass names as listed on 2026-10-23:
+// pane/outcome tallies are counts; captured/committed byte totals are sizes.
 // Generic Bridge entries name their ingress declaration; the recorder copies
 // those numeric members in BridgePerformanceTraceRecorder.swift:103.
 
@@ -97,13 +99,13 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.coordinator.unregistered.count",
         // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+FilesystemSource.swift:151; count
         "agentstudio.performance.coordinator.worktree.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:492; duration
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:493; duration
         "agentstudio.performance.elapsed_ms",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:701; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:702; count
         "agentstudio.performance.filesystem.affected_key_request.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:50; count
         "agentstudio.performance.filesystem.drain_task.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:699; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:700; count
         "agentstudio.performance.filesystem.full_reconciliation_request.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:209; count
         "agentstudio.performance.filesystem.ingress.local.accepted.batch.count",
@@ -181,9 +183,9 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.filesystem.ingress.shared_uncertainty.terminated.path.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:128; count
         "agentstudio.performance.filesystem.ingress.shared_uncertainty_subscriber.count",
-        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:581; count
+        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:586; count
         "agentstudio.performance.filesystem.local_stream.logical_registration.count",
-        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:578; count
+        // Sources/AgentStudio/App/Boot/AppDelegate+WorkspaceBoot.swift:583; count
         "agentstudio.performance.filesystem.local_stream.physical.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/FilesystemActor+LogicalDebt.swift:56; occupancy
         "agentstudio.performance.filesystem.logical_debt.count",
@@ -441,17 +443,17 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.management_layer.pane.count",
         // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:3275; count
         "agentstudio.performance.management_layer.tab.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:587; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:588; count
         "agentstudio.performance.pane.association_boot.backfilled.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:596; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:597; count
         "agentstudio.performance.pane.association_boot.changed.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:590; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:591; count
         "agentstudio.performance.pane.association_boot.dangling_cleared.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:593; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:594; count
         "agentstudio.performance.pane.association_boot.free_nil.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:581; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:582; count
         "agentstudio.performance.pane.association_boot.pane.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:584; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:585; count
         "agentstudio.performance.pane.association_boot.retained_known.count",
         // Sources/AgentStudio/App/Coordination/WorkspaceSurfaceCoordinator+ActionExecution.swift:153; count
         "agentstudio.performance.pane_action.pane.count",
@@ -659,11 +661,11 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.repository_lifecycle.observation.count",
         // Sources/AgentStudio/Core/State/MainActor/Coordination/RepositoryLifecycleReconciliation.swift:38; count
         "agentstudio.performance.repository_lifecycle.repository.count",
-        // Sources/AgentStudio/App/Boot/AppDelegate+ShellCommandHandling.swift:363; count
-        "agentstudio.performance.repository_update.applicable_source.count",
         // Sources/AgentStudio/App/Boot/AppDelegate+ShellCommandHandling.swift:367; count
+        "agentstudio.performance.repository_update.applicable_source.count",
+        // Sources/AgentStudio/App/Boot/AppDelegate+ShellCommandHandling.swift:371; count
         "agentstudio.performance.repository_update.terminal_source.count",
-        // Sources/AgentStudio/App/Boot/AppDelegate+ShellCommandHandling.swift:365; count
+        // Sources/AgentStudio/App/Boot/AppDelegate+ShellCommandHandling.swift:369; count
         "agentstudio.performance.repository_update.unsettled_source.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/RuntimeDeliveryPerformanceReporter.swift:41; count
         "agentstudio.performance.runtime_delivery.eventbus_active_delivery_debt.count",
@@ -683,6 +685,38 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.runtime_delivery.runtime_channel_retired_undelivered.count",
         // Sources/AgentStudio/Infrastructure/Diagnostics/RuntimeDeliveryPerformanceReporter.swift:43; count
         "agentstudio.performance.runtime_delivery.total_pending.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:38; size
+        "agentstudio.performance.scrollback.pass.captured.bytes",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; cancelled tally
+        "agentstudio.performance.scrollback.pass.outcome.cancelled.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; deadline tally
+        "agentstudio.performance.scrollback.pass.outcome.deadline_exceeded.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; empty tally
+        "agentstudio.performance.scrollback.pass.outcome.empty.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; ceiling tally
+        "agentstudio.performance.scrollback.pass.outcome.exceeded_ceiling.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; exit-status cases summed
+        "agentstudio.performance.scrollback.pass.outcome.exited_nonzero.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; invalid UTF-8 tally
+        "agentstudio.performance.scrollback.pass.outcome.invalid_utf8.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; previous retained tally
+        "agentstudio.performance.scrollback.pass.outcome.keep_previous.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; errno cases summed
+        "agentstudio.performance.scrollback.pass.outcome.launch_failed.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; read-failure tally
+        "agentstudio.performance.scrollback.pass.outcome.read_failed.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; retired tally
+        "agentstudio.performance.scrollback.pass.outcome.retired.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; unchanged tally
+        "agentstudio.performance.scrollback.pass.outcome.unchanged.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; write-failure tally
+        "agentstudio.performance.scrollback.pass.outcome.write_failed.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:48; count; committed tally
+        "agentstudio.performance.scrollback.pass.outcome.written.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:37; count
+        "agentstudio.performance.scrollback.pass.pane.count",
+        // Sources/AgentStudio/Features/Terminal/Restore/ScrollbackPerformanceRecording.swift:39; size; committed persisted form
+        "agentstudio.performance.scrollback.pass.written.bytes",
         // Sources/AgentStudio/Features/InboxNotification/Views/InboxNotificationSidebarView.swift:296; count
         "agentstudio.performance.sidebar.cancellation.count",
         // Sources/AgentStudio/Features/RepoExplorer/RepoExplorerView+ProjectionHelpers.swift:61; count
@@ -697,7 +731,7 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.sidebar.proof.initial_readback.native_row_count",
         // Sources/AgentStudio/App/Boot/SidebarPerformanceProofSession.swift:654; count
         "agentstudio.performance.sidebar.proof.initial_readback.represented_row_count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:455; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:456; count
         "agentstudio.performance.sidebar.proof.ordered_command.count",
         // Sources/AgentStudio/App/Boot/SidebarPerformanceProofSession.swift:312; count
         "agentstudio.performance.sidebar.proof.ordered_command_baseline",
@@ -709,13 +743,13 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.sidebar.proof.readback.suppressed_repository_fact_row.count",
         // Sources/AgentStudio/App/Boot/SidebarPerformanceProofSession.swift:751; count
         "agentstudio.performance.sidebar.proof.readback.updating_repository_header.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:451; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:452; count
         "agentstudio.performance.sidebar.proof.terminal_input.count",
         // Sources/AgentStudio/App/Boot/SidebarPerformanceProofSession.swift:310; count
         "agentstudio.performance.sidebar.proof.terminal_input_baseline",
         // Sources/AgentStudio/App/Boot/SidebarPerformanceProofSession.swift:770; count
         "agentstudio.performance.sidebar.proof.terminal_input_completion",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:453; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:454; count
         "agentstudio.performance.sidebar.proof.terminal_output.count",
         // Sources/AgentStudio/App/Boot/SidebarPerformanceProofSession.swift:311; count
         "agentstudio.performance.sidebar.proof.terminal_output_baseline",
@@ -739,7 +773,7 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.sidebar.total_worker_elapsed_ms",
         // Sources/AgentStudio/App/Windows/MainSplitViewController.swift:760; size
         "agentstudio.performance.sidebar.width",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:518; duration
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:519; duration
         "agentstudio.performance.startup.layout_settle_to_usable_elapsed_ms",
         // Sources/AgentStudio/App/Panes/TabBar/TabBarAdapter.swift:725; count
         "agentstudio.performance.tabbar.affected_item.count",
@@ -755,35 +789,35 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.tabbar.source_tab.count",
         // Sources/AgentStudio/App/Panes/TabBar/DraggableTabBarHostingView.swift:716; count
         "agentstudio.performance.tabbar.tab.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:617; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:618; count
         "agentstudio.performance.terminal.accumulator.equal_suppressed.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:621; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:622; count
         "agentstudio.performance.terminal.accumulator.follow_up_drain.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:623; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:624; count
         "agentstudio.performance.terminal.accumulator.mainactor_task.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:613; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:614; count
         "agentstudio.performance.terminal.accumulator.offered.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:615; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:616; count
         "agentstudio.performance.terminal.accumulator.replaced.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:629; occupancy
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:630; occupancy
         "agentstudio.performance.terminal.accumulator.retained_entry.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:631; size
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:632; size
         "agentstudio.performance.terminal.accumulator.retained_size_bytes",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:619; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:620; count
         "agentstudio.performance.terminal.accumulator.scheduled_drain.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:625; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:626; count
         "agentstudio.performance.terminal.activity_aggregate.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:688; duration
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:689; duration
         "agentstudio.performance.terminal.activity_projection.close_read_ms",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:673; duration
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:674; duration
         "agentstudio.performance.terminal.activity_projection.round_trip_ms",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:655; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:656; count
         "agentstudio.performance.terminal.equal_suppressed.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:665; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:666; count
         "agentstudio.performance.terminal.equal_write_suppressed.count",
         // Sources/AgentStudio/App/Panes/PaneTabViewController.swift:1783; count
         "agentstudio.performance.terminal.geometry.visible_terminal.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:627; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:628; count
         "agentstudio.performance.terminal.output_advancement.count",
         // Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:789; size
         "agentstudio.performance.terminal.surface.cell_height_px",
@@ -801,15 +835,15 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.terminal.surface.requested_width_px",
         // Sources/AgentStudio/Features/Terminal/Ghostty/GhosttySurfaceView.swift:786; count
         "agentstudio.performance.terminal.surface.row.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:559; count; tally, not ordinal
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:560; count; tally, not ordinal
         "agentstudio.performance.topology.index.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:713; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:714; count
         "agentstudio.performance.trace_identity.coalesced_request.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:717; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:718; count
         "agentstudio.performance.trace_identity.equal_snapshot_suppressed.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:715; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:716; count
         "agentstudio.performance.trace_identity.fleet_capture.count",
-        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:711; count
+        // Sources/AgentStudio/Infrastructure/Diagnostics/AgentStudioPerformanceTraceRecorder.swift:712; count
         "agentstudio.performance.trace_identity.refresh_request.count",
     ]
 }

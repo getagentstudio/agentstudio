@@ -137,6 +137,34 @@ struct HeldStepTests {
         try await cancelled.value
     }
 
+    @Test(
+        "cancellation is observable synchronously once an async arrival is published",
+        arguments: [HeldStepCancellationPolicy.resumeOnCancellation, .holdThroughCancellation])
+    func publishedArrivalCanObserveCancellation(cancellationPolicy: HeldStepCancellationPolicy) async throws {
+        // Arrange: cancel on the arriving task's stack at publication, so the
+        // assertion cannot race with later handler installation or task progress.
+        let step = HeldStep<Int>("cancellation at publication", cancellation: cancellationPolicy)
+        let arriving = Task {
+            try await step.arrive(7) {
+                #expect(step.recordedArrivals == [7])
+                #expect(!step.hasObservedCancellation)
+                withUnsafeCurrentTask { task in
+                    #expect(task != nil)
+                    task?.cancel()
+                }
+                #expect(step.hasObservedCancellation)
+                // Always settle, including on red, before this callback returns.
+                step.release()
+            }
+        }
+
+        // Act: joining also makes every assertion in the callback final.
+        try await arriving.value
+
+        // Assert
+        #expect(try await step.firstArrival() == 7)
+    }
+
     @Test("a blocking arrival from inside a task is rejected, naming the step, and does not park")
     func blockingArrivalInsideATaskIsRejected() async throws {
         // Arrange

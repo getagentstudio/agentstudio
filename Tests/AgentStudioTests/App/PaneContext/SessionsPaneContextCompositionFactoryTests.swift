@@ -280,7 +280,7 @@ struct SessionsPaneContextCompositionFactoryTests {
                         paneId: fixture.ownerId.uuid,
                         providerIdentifier: "claude-code", providerVersion: "9.9.9", sessionId: "closed",
                         eventName: .sessionStart, turnId: nil, signal: .sessionStart,
-                        recordId: UUIDv7.generate(), admittedAt: fixture.now))
+                        recordId: UUIDv7.generate(), admittedAt: fixture.now, chain: TestMainAgentChain.observation))
             }
             await fixture.composition.shutdown()
         }
@@ -313,7 +313,9 @@ struct CompositionFactoryFixture: Sendable {
                 datastore: datastore, directory: directory, workspaceId: workspaceId, clock: TestPushClock(),
                 wallNow: { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
-                paneViewedMailbox: .init(), presentationAtom: presentationAtom))
+                paneViewedMailbox: .init(), presentationAtom: presentationAtom,
+                terminalLeaderReader: MatchingTestPaneTerminalLeaderReader(),
+                processChainReader: EligibleTestProcessChainReader()))
     }
 
     @concurrent static func make(
@@ -374,7 +376,9 @@ struct CompositionFactoryFixture: Sendable {
                 wallNow: wallNow ?? { now },
                 limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128),
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
-                performanceTraceRecorder: performanceTraceRecorder))
+                performanceTraceRecorder: performanceTraceRecorder,
+                terminalLeaderReader: MatchingTestPaneTerminalLeaderReader(),
+                processChainReader: EligibleTestProcessChainReader()))
         return Self(
             root: root, corePool: corePool, localPool: localPool, statements: statements, composition: composition,
             directory: directory,

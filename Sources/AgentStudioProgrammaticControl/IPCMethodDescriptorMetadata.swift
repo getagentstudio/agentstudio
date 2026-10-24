@@ -3,6 +3,7 @@ import Foundation
 package enum IPCMethodExposure: String, Codable, CaseIterable, Equatable, Sendable {
     case allChannels
     case debugTesting
+    case notExposed
 }
 
 package enum IPCMethodResponseDelivery: String, Codable, CaseIterable, Equatable, Sendable {

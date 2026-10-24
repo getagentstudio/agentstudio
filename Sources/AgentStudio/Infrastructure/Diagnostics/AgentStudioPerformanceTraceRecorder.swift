@@ -250,6 +250,7 @@ package final class AgentStudioPerformanceTraceRecorder: @unchecked Sendable {
         case repoAndWorktreeLookup = "performance.topology.repo_and_worktree"
         case processMallocZone = "performance.process.malloc_zone"
         case rendererLifecycle = "performance.renderer.lifecycle"
+        case scrollbackPass = "performance.scrollback.pass"
         case runtimeDeliverySnapshot = "performance.runtime_delivery.snapshot"
         case sidebarFilterInput = "performance.sidebar.filter_input"
         case sidebarProofWorkloadChanged = "performance.sidebar.proof_workload_changed"

@@ -70,6 +70,38 @@ struct CLIPaneContextSkillTests {
         #expect(source.contains("report a version mismatch instead of reviving those forms"))
     }
 
+    @Test("the skill's setup branch follows helper resolution and precedes normal routing")
+    func skillTeachesHookSetup() throws {
+        let source = try skillSource()
+        let helper = try #require(source.range(of: "## Find the helper and target"))
+        let beginning = try #require(source.range(of: "## Set up hooks"))
+        let routing = try #require(source.range(of: "## Load the detail for the requested work"))
+        try #require(helper.lowerBound < beginning.lowerBound && beginning.lowerBound < routing.lowerBound)
+        let setup = String(source[beginning.upperBound..<routing.lowerBound])
+        for verb in ["status", "snippet", "install", "uninstall"] {
+            #expect(setup.contains("\"$AS_CLI\" package \(verb)"), "Missing setup verb \(verb)")
+        }
+        for state in [
+            "current", "unavailable", "notInstalled", "outdated", "entriesMissing", "notTrusted", "trustUnknown",
+        ] {
+            #expect(setup.contains(state), "Missing plain-language state \(state)")
+        }
+        #expect(setup.contains("go-ahead"))
+        #expect(setup.contains("already"))
+        #expect(setup.contains("chezmoi"))
+        #expect(setup.contains("never hand-edit provider files"))
+        #expect(setup.contains("/hooks"))
+    }
+
+    @Test("recovery teaches supported local root and package help")
+    func skillRecoversWithSupportedHelp() throws {
+        let source = try skillSource()
+        #expect(source.contains("\"$AS_CLI\" help --help"))
+        #expect(source.contains("\"$AS_CLI\" package --help"))
+        #expect(!source.contains("`help --help` is not supported"))
+        #expect(!source.contains("`help --help` is unsupported"))
+    }
+
     private func skillSource() throws -> String {
         let root = URL(fileURLWithPath: TestPathResolver.projectRoot(from: #filePath))
         let skill = root.appending(path: "Sources/AgentStudio/Resources/AgentPackage/skills/agentstudio")

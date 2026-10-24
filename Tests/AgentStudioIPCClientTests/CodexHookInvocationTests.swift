@@ -49,11 +49,16 @@ struct CodexHookInvocationTests {
     }
 
     @Test(
-        "Codex SessionEnd selects the synchronous short limit; every other installed hook keeps the async limit",
+        "Codex lifecycle hooks select their declared limits and ordinary events keep two seconds",
         arguments: CodexHookEventName.installedEvents)
     func hookDeliverySelectsProviderLimit(event: CodexHookEventName) throws {
         let selected = ProviderHookDelivery.codexCallLimit(for: event)
-        let expected: Duration = event == .sessionEnd ? .milliseconds(250) : .seconds(2)
+        let expected: Duration
+        switch event {
+        case .sessionEnd: expected = .milliseconds(250)
+        case .interrupt: expected = .milliseconds(750)
+        default: expected = .seconds(2)
+        }
         #expect(selected == expected)
         #expect(CLIPolicy.synchronousLifecycleHookLimit == .milliseconds(250))
     }
