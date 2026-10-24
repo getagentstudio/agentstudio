@@ -15,12 +15,20 @@ struct TerminalRestoreLaunchBootTests {
             try WorkspaceLocalMigrations.migrateBootRequired(database)
             return try database.read { connection in
                 (
+                    creationSQL: try String.fetchOne(
+                        connection,
+                        sql:
+                            "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'terminal_restore_launch_boot'"
+                    ),
                     launchBoot: try connection.tableExists("terminal_restore_launch_boot"),
                     sessions: try connection.tableExists("sessions_pane_binding"),
                     ids: try WorkspaceLocalMigrations.bootRequiredMigrator.appliedIdentifiers(connection)
                 )
             }
         }
+        let creationSQL = try #require(observed.creationSQL)
+        #expect(creationSQL.contains("singleton INTEGER PRIMARY KEY"))
+        #expect(!creationSQL.uppercased().contains("CHECK"), "031 has no non-boolean CHECK: \(creationSQL)")
         #expect(observed.launchBoot)
         #expect(!observed.sessions)
         #expect(observed.ids.contains("031_create_terminal_restore_launch_boot"))

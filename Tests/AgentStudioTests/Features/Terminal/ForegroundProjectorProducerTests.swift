@@ -143,6 +143,7 @@ struct ForegroundProjectorProducerTests {
             try await fixture.foreground.expectScheduled()
             fixture.edges.holdNextClose(held)
             let close = Task {
+                defer { held.retire() }
                 await fixture.projector.closeSurface(surfaceID: fixture.surfaceId, paneID: fixture.foreground.paneId)
             }
             do {

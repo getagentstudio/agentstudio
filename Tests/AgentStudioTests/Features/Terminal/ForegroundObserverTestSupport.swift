@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
 import Synchronization
+import Testing
 
 @testable import AgentStudioCore
 @testable import AgentStudioTerminal
@@ -155,6 +156,14 @@ final class ForegroundRecordingExitWatcher: ProcessExitWatching, Sendable {
     func isWatchOperation(_ operationId: UUID) -> Bool { watchIds.withLock { $0.contains(operationId) } }
 }
 
+private final class ForegroundSchedulingReceipts: Sendable {
+    private let scopes = Mutex<[ForegroundObserverFactScope]>([])
+    func append(_ scope: ForegroundObserverFactScope) { scopes.withLock { $0.append(scope) } }
+    func takeNext() -> ForegroundObserverFactScope? {
+        scopes.withLock { $0.isEmpty ? nil : $0.removeFirst() }
+    }
+}
+
 struct ForegroundObserverFixture: Sendable {
     let paneId = UUIDv7.generate()
     let sessionId = ZmxSessionID.generateUUIDv7()
@@ -167,6 +176,7 @@ struct ForegroundObserverFixture: Sendable {
     let recordingWatcher: ForegroundRecordingExitWatcher
     let recorder: FactRecorder<ForegroundObserverFactScope, ForegroundObserverFact>
     let observer: PaneForegroundObserver<TestPushClock>
+    private let schedulingReceipts: ForegroundSchedulingReceipts
 
     init(
         program: ForegroundProgram = .claudeCode, exitWatcher: (any ProcessExitWatching)? = nil,
@@ -177,6 +187,8 @@ struct ForegroundObserverFixture: Sendable {
                 describeScope: { "\($0.paneId)/\($0.operationId)" }, describeFact: { String(describing: $0) },
                 isClosing: { _, fact in if case .closed = fact { true } else { false } }))
         recorder = try source.attach()
+        let schedulingReceipts = ForegroundSchedulingReceipts()
+        self.schedulingReceipts = schedulingReceipts
         repository = ForegroundMemoryRepository(
             binding: .init(paneId: paneId, sessionId: sessionId, bindingGenerationId: generationId))
         probe = ForegroundScriptedProbe(snapshots: [sessionId: try Self.snapshot(program: program)])
@@ -186,7 +198,12 @@ struct ForegroundObserverFixture: Sendable {
             policy: .init(lookSettleDelay: .seconds(5), lookMaxDelay: .seconds(60), quitLookDeadline: .seconds(1)),
             repository: repository, probe: probe, exitWatcher: recordingWatcher, observerLaunchId: launchId,
             performanceTraceRecorder: performanceTraceRecorder,
-            factSink: source.sink)
+            factSink: { scope, fact in
+                source.sink(scope, fact)
+                if fact == .closed(.scheduled) {
+                    schedulingReceipts.append(scope)
+                }
+            })
     }
 
     static func snapshot(program: ForegroundProgram, leaderPid: Int32 = 4100) throws -> ForegroundSnapshot {
@@ -198,11 +215,13 @@ struct ForegroundObserverFixture: Sendable {
     }
 
     func expectScheduled() async throws {
-        let pane = paneId
-        let watches = recordingWatcher
-        let scope = try await recorder.expectNextOperation(
-            matching: { $0.paneId == pane && !watches.isWatchOperation($0.operationId) },
-            opening: { $0 == .scheduled }, "scheduled demand")
+        // note/ingest/edge delivery has returned before every caller gets here.
+        // A missing receipt is a completed producer failure, not future work.
+        let scope = try #require(
+            schedulingReceipts.takeNext(),
+            "foreground demand producer completed without its scheduling receipt")
+        _ = try await recorder.expectNextOperation(
+            matching: { $0 == scope }, opening: { $0 == .scheduled }, "scheduled demand")
         try await recorder.expectNext(in: scope, .scheduled)
         try await recorder.expectNext(in: scope, .closed(.scheduled))
     }

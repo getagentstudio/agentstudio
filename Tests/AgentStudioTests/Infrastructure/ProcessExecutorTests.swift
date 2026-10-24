@@ -14,6 +14,14 @@ final class ProcessExecutorTests {
         executor = DefaultProcessExecutor()
     }
 
+    // Subject construction stays with this suite's declared process-budget owner.
+    func makeRestoreCostExecutor(
+        recorder: AgentStudioPerformanceTraceRecorder, beforeLaunch: @escaping @Sendable () -> Void
+    ) -> DefaultProcessExecutor {
+        DefaultProcessExecutor(
+            timeout: executor.timeout, performanceTraceRecorder: recorder, beforeLaunch: beforeLaunch)
+    }
+
     // MARK: - Basic Execution
 
     @Test

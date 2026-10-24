@@ -503,17 +503,18 @@ private final class ProcessExecution: @unchecked Sendable {
         if completed {
             return
         }
-        timedForRestoreProbe {
+        let continuationToResume = timedForRestoreProbe {
             completed = true
-            let continuationToResume = continuation
+            let capturedContinuation = continuation
             continuation = nil
 
             cleanupSources()
-            continuationToResume?.resume(with: result)
+            return capturedContinuation
         }
-        // Reached exactly once per execution: every later `complete` call
-        // returns above, before any further timing or recording.
+        // Finish the disjoint completion slice and enqueue it before the caller
+        // can drain the recorder. Later completions return before this point.
         recordRestoreProbeSliceIfScoped()
+        continuationToResume?.resume(with: result)
     }
 
     private func cleanupSources() {

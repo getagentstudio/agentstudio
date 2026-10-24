@@ -6,7 +6,7 @@ extension WorkspaceLocalMigrations {
             try database.execute(
                 sql: """
                     CREATE TABLE terminal_restore_launch_boot (
-                        singleton INTEGER PRIMARY KEY CHECK (singleton = 1),
+                        singleton INTEGER PRIMARY KEY,
                         boot_id TEXT NOT NULL,
                         recorded_at TEXT NOT NULL
                     )

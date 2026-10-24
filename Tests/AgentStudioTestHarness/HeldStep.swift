@@ -134,6 +134,8 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
     /// The first arrival's value, once the work reaches the step.
     /// Async arrivals have installed their cancellation handler before publishing.
     ///
+    /// Retirement before an arrival throws `HeldStepRetiredBeforeArrival`. The
+    /// producer must retire its step when it ends, including failure/cancellation.
     /// Has no deadline. When the step is never reached, the runner's hang bound
     /// cancels the waiting test and this throws ``HeldStepNeverReached`` naming
     /// the step.
@@ -151,6 +153,9 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
                         }
                         if let firstArrival = state.arrivals.first {
                             return .success(firstArrival)
+                        }
+                        if case .retired = state.terminal {
+                            return .failure(HeldStepRetiredBeforeArrival(stepName: name))
                         }
                         if Task.isCancelled {
                             return .failure(HeldStepNeverReached(stepName: name))
@@ -252,12 +257,23 @@ package final class HeldStep<Arrival: Sendable>: Sendable {
 
     private func settle(_ terminal: HeldStepTerminal) {
         let settlement = state.withLock { $0.settle(terminal) }
+        for waiter in settlement.firstArrivalWaiters {
+            waiter.resume(throwing: HeldStepRetiredBeforeArrival(stepName: name))
+        }
         for continuation in settlement.parkedAsyncArrivals {
             terminal.resume(continuation)
         }
         for semaphore in settlement.parkedBlockingArrivals {
             semaphore.signal()
         }
+    }
+}
+
+/// The producing operation retired its step without ever delivering the expected arrival.
+package struct HeldStepRetiredBeforeArrival: Error, CustomStringConvertible {
+    package let stepName: String
+    package var description: String {
+        "HeldStep '\(stepName)' producer completed or retired before its first arrival"
     }
 }
 
@@ -337,7 +353,8 @@ private struct HeldStepAdmission<Arrival: Sendable> {
 
 /// The arrivals a terminal transition must resume, taken out of the state
 /// under the lock and resumed after it is released.
-private struct HeldStepSettlement {
+private struct HeldStepSettlement<Arrival: Sendable> {
+    var firstArrivalWaiters: [CheckedContinuation<Arrival, any Error>] = []
     var parkedAsyncArrivals: [CheckedContinuation<Void, any Error>] = []
     var parkedBlockingArrivals: [DispatchSemaphore] = []
 }
@@ -414,12 +431,20 @@ private struct HeldStepState<Arrival: Sendable> {
 
     /// Records the first terminal state and hands back every parked arrival.
     /// A later terminal call changes nothing and resumes nothing.
-    mutating func settle(_ newTerminal: HeldStepTerminal) -> HeldStepSettlement {
+    mutating func settle(_ newTerminal: HeldStepTerminal) -> HeldStepSettlement<Arrival> {
         guard terminal == nil else {
             return HeldStepSettlement()
         }
         terminal = newTerminal
+        let observers: [CheckedContinuation<Arrival, any Error>]
+        if case .retired = newTerminal {
+            observers = Array(firstArrivalWaiters.values)
+            firstArrivalWaiters.removeAll()
+        } else {
+            observers = []
+        }
         let settlement = HeldStepSettlement(
+            firstArrivalWaiters: observers,
             parkedAsyncArrivals: Array(parkedAsyncArrivals.values),
             parkedBlockingArrivals: Array(parkedBlockingArrivals.values)
         )
