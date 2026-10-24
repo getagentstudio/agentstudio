@@ -30,14 +30,15 @@ package enum ClaudeSessionRelease {
         return String(bytes: buffer.prefix { $0 != 0 }, encoding: .utf8)
     }
 
-    private static func regionExecutablePath(pid: Int32) -> String? {
+    package static func regionExecutablePath(
+        pid: Int32,
+        readRegion: (Int32, UInt64) -> proc_regionwithpathinfo? = readRegionInfo
+    ) -> String? {
         var address: UInt64 = 0
-        for _ in 0..<8 {
-            var region = proc_regionwithpathinfo()
-            let expectedSize = Int32(MemoryLayout<proc_regionwithpathinfo>.size)
-            guard proc_pidinfo(pid, PROC_PIDREGIONPATHINFO, address, &region, expectedSize) == expectedSize,
-                region.prp_prinfo.pri_address < 0x1_8000_0000
-            else { return nil }
+        // PROC_PIDREGIONPATHINFO finds the containing or next region, including across address gaps.
+        // Strict progress and overflow checks bound the walk by the process address space.
+        while let region = readRegion(pid, address) {
+            guard region.prp_prinfo.pri_size > 0 else { return nil }
             let path = withUnsafeBytes(of: region.prp_vip.vip_path) { bytes in
                 String(bytes: bytes.prefix { $0 != 0 }, encoding: .utf8)
             }
@@ -49,5 +50,14 @@ package enum ClaudeSessionRelease {
             address = next.partialValue
         }
         return nil
+    }
+
+    private static func readRegionInfo(pid: Int32, address: UInt64) -> proc_regionwithpathinfo? {
+        var region = proc_regionwithpathinfo()
+        let expectedSize = Int32(MemoryLayout<proc_regionwithpathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDREGIONPATHINFO, address, &region, expectedSize) == expectedSize else {
+            return nil
+        }
+        return region
     }
 }

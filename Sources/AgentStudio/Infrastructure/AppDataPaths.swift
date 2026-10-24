@@ -44,72 +44,88 @@ package enum AppDataPaths {
     package static func rootDirectory(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         releaseChannel: ReleaseChannel = .current,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
         if let override = environment[dataDirectoryEnvironmentKey]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
             !override.isEmpty
         {
-            return expandPath(override).standardizedFileURL
+            return expandPath(override, homeDirectory: homeDirectory).standardized
         }
 
         let baseName = rootDirectoryName(releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
-        return FileManager.default.homeDirectoryForCurrentUser
-            .appending(path: baseName)
-            .standardizedFileURL
+        // Keep normalization lexical: standardizedFileURL can infer directory-ness from disk.
+        return homeDirectory.appending(path: baseName, directoryHint: .isDirectory).standardized
     }
 
     package static func globalPreferencesURL(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         releaseChannel: ReleaseChannel = .current,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        rootDirectory(environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
-            .appending(path: "preferences.global.json")
-            .standardizedFileURL
+        rootDirectory(
+            environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild,
+            homeDirectory: homeDirectory
+        )
+        .appending(path: "preferences.global.json", directoryHint: .notDirectory)
+        .standardized
     }
 
     package static func coreSQLiteURL(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        rootDirectory(environment: environment, isDebugBuild: isDebugBuild)
-            .appending(path: "core.sqlite")
-            .standardizedFileURL
+        rootDirectory(environment: environment, isDebugBuild: isDebugBuild, homeDirectory: homeDirectory)
+            .appending(path: "core.sqlite", directoryHint: .notDirectory)
+            .standardized
     }
 
     package static func localSQLiteURL(
         environment: [String: String] = ProcessInfo.processInfo.environment,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        rootDirectory(environment: environment, isDebugBuild: isDebugBuild)
-            .appending(path: "local.sqlite")
-            .standardizedFileURL
+        rootDirectory(environment: environment, isDebugBuild: isDebugBuild, homeDirectory: homeDirectory)
+            .appending(path: "local.sqlite", directoryHint: .notDirectory)
+            .standardized
     }
 
     package static func zmxDirectory(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         releaseChannel: ReleaseChannel = .current,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        rootDirectory(environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
-            .appending(path: "z")
-            .standardizedFileURL
+        rootDirectory(
+            environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild,
+            homeDirectory: homeDirectory
+        )
+        .appending(path: "z", directoryHint: .isDirectory)
+        .standardized
     }
 
     package static func surfaceCheckpointURL(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         releaseChannel: ReleaseChannel = .current,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        rootDirectory(environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
-            .appending(path: "surface-checkpoint.json")
-            .standardizedFileURL
+        rootDirectory(
+            environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild,
+            homeDirectory: homeDirectory
+        )
+        .appending(path: "surface-checkpoint.json", directoryHint: .notDirectory)
+        .standardized
     }
 
-    package static func displayPath(for url: URL) -> String {
-        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
-        let standardizedPath = url.standardizedFileURL.path
+    package static func displayPath(
+        for url: URL, homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
+    ) -> String {
+        let homePath = homeDirectory.path
+        let standardizedPath = url.standardized.path
         guard standardizedPath.hasPrefix(homePath) else {
             return standardizedPath
         }
@@ -124,25 +140,28 @@ package enum AppDataPaths {
     package static func scrollbackDirectory(
         environment: [String: String] = ProcessInfo.processInfo.environment,
         releaseChannel: ReleaseChannel = .current,
-        isDebugBuild: Bool = Self.isDebugBuild
+        isDebugBuild: Bool = Self.isDebugBuild,
+        homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser
     ) -> URL {
-        rootDirectory(environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild)
-            .appending(path: "scrollback")
-            .standardizedFileURL
+        rootDirectory(
+            environment: environment, releaseChannel: releaseChannel, isDebugBuild: isDebugBuild,
+            homeDirectory: homeDirectory
+        )
+        .appending(path: "scrollback", directoryHint: .isDirectory)
+        .standardized
     }
 
-    private static func expandPath(_ rawPath: String) -> URL {
+    private static func expandPath(_ rawPath: String, homeDirectory: URL) -> URL {
         if rawPath == "~" {
-            return FileManager.default.homeDirectoryForCurrentUser
+            return homeDirectory
         }
 
         if rawPath.hasPrefix("~/") {
             let relativePath = String(rawPath.dropFirst(2))
-            return FileManager.default.homeDirectoryForCurrentUser
-                .appending(path: relativePath)
+            return homeDirectory.appending(path: relativePath, directoryHint: .isDirectory)
         }
 
-        return URL(fileURLWithPath: rawPath)
+        return URL(filePath: rawPath, directoryHint: .isDirectory)
     }
 
     private static func rootDirectoryName(releaseChannel: ReleaseChannel, isDebugBuild: Bool) -> String {
