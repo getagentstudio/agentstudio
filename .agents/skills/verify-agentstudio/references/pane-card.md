@@ -55,14 +55,21 @@ that card, so all values share the same local x. No width-based switch to an
 HStack/two-column card; the Grid is only the three-column field-line alignment.
 
 Check natural heights and matching sibling gaps. Copy buttons follow their
-values at the same small gap, not at the card's trailing edge. Normal repo and
+values at the same small gap. When a value fits, its icon sits right after the
+last character, and the row's spare space comes after the icon. Normal repo and
 branch must be fully readable at 420pt and wider. SESSION and PANE IDs may
 middle-truncate at any width where the full ID does not fit. Keep a readable
 prefix and suffix around the ellipsis, the full ID in the tooltip, and a small
 inline copy icon right after the value at the same small gap, always visible.
-An ID cut off at the edge without an ellipsis, a copy icon pushed to the card's
-trailing edge, a hidden or hover-only copy icon, or truncation of a normal repo
-or branch at 420pt is **FAIL**. Oversized path/branch values may use the adopted
+An ID cut off at the edge without an ellipsis, a copy icon separated from the
+value's last painted glyph or ellipsis by more than the small gap used on the
+other copy rows, a hidden or hover-only copy icon, or truncation of a normal repo
+or branch at 420pt is **FAIL**. Judge always-visible from a frame with no pointer
+over the card (a locked or background render qualifies), and record that
+condition.
+A truncated ID fills its row, so its icon can sit at the value column's trailing
+edge; that is correct when the gap is the small gap. Oversized path/branch values
+may use the adopted
 **middle truncation** with full tooltip. A long title/message follows its
 separate two-line tail boundary. Every element stays inside the card's inner
 bounds; no abandoned column or empty reserved row.
@@ -83,10 +90,12 @@ On every original, also verify:
   pane. Compare SESSION to that verified-live owner fact; Working alone does
   not establish it. Test an unverified negative and a verified positive.
   At all five required widths, read every character where an
-  ID paints completely. Where it middle-truncates, compare its visible prefix
-  and suffix to the verified-live owner fact and take the full value from
-  **Copy Session ID / Copy Pane ID** under "Copy SESSION means only the session
-  ID" below, and from the tooltip. Compare PANE to that same pane's owner ID.
+  ID paints completely. Where it middle-truncates, its visible prefix and suffix
+  must match that owner fact; that decides identity. The full value is proved by
+  the separate copy-payload check below, which stays UNKNOWN without its route.
+  App renders omit tooltips: record the tooltip UNKNOWN unless the commission
+  grants a hover route on an unlocked screen. A tooltip never replaces the
+  copy-payload check. Compare PANE to that same pane's owner ID.
   AX full values can hide truncation; judge the painted frame. Include lineless
   and long-message layouts and a comparator.
 - Activity recency/active chips match the same sidebar row at the same instant.
