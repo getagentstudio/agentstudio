@@ -138,13 +138,19 @@ extension AppDelegate {
     func scheduleAppIPCInitialization() {
         guard appIPCServer == nil, appIPCInitializationTask == nil else { return }
         let windowLifecycleStore = windowLifecycleStore!
+        let readiness = restoreResumeReadiness
         appIPCInitializationTask = Task { @MainActor [weak self] in
             let unavailability = await AppIPCDeferredInitialization.run(
                 windowLifecycleStore: windowLifecycleStore
             ) { [weak self] in
-                _ = await self?.startAppIPCServer()
+                guard let self else {
+                    await readiness.shutdown()
+                    return
+                }
+                _ = await self.startAppIPCServer()
             }
             if let unavailability {
+                await readiness.shutdown()
                 self?.recordAppIPCStart(unavailable: unavailability)
             }
         }
@@ -170,11 +176,13 @@ extension AppDelegate {
         guard appIPCServer == nil else { return nil }
         guard let workspaceSQLiteDatastore else {
             appLogger.warning("App IPC server skipped: local SQLite is unavailable")
+            await restoreResumeReadiness.shutdown()
             recordAppIPCStart(unavailable: .localStoreUnavailable)
             return .localStoreUnavailable
         }
         guard await AppIPCDeferredInitialization.prepareOptionalSchema(using: workspaceSQLiteDatastore) else {
             appLogger.warning("App IPC server skipped: optional local schema is unavailable")
+            await restoreResumeReadiness.shutdown()
             // A cancelled attempt is a shutdown, not an unavailable store.
             if !Task.isCancelled {
                 recordAppIPCStart(unavailable: .optionalSchemaUnavailable)
@@ -187,6 +195,7 @@ extension AppDelegate {
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
         else {
+            await restoreResumeReadiness.shutdown()
             return .initializationCancelled
         }
 
@@ -195,6 +204,7 @@ extension AppDelegate {
                 let composition = try await makeAppIPCServer(
                     sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
             else {
+                if appIPCServer == nil { await restoreResumeReadiness.shutdown() }
                 return Task.isCancelled ? .initializationCancelled : nil
             }
             try composition.server.start()
@@ -206,12 +216,13 @@ extension AppDelegate {
             }
             appLogger.info("App IPC server started at \(composition.socketURL.path, privacy: .private)")
             publishDebugCredentialEscrow(socketURL: composition.socketURL)
-            startPaneCLIOutboxDrain(sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
+            await startPaneCLIOutboxDrain(sessionsComposition: sessionsComposition, datastore: workspaceSQLiteDatastore)
             recordAppIPCStart()
             return nil
         } catch {
             appLogger.warning(
                 "App IPC server failed to start: \(error.localizedDescription, privacy: .private)")
+            await restoreResumeReadiness.shutdown()
             if !Task.isCancelled {
                 let reason = AppIPCStartUnavailability(serverStartError: error)
                 recordAppIPCStart(unavailable: reason)
@@ -286,10 +297,12 @@ extension AppDelegate {
     /// Notifications the CLI queued while this app was unreachable are admitted
     /// once IPC is listening and ingestion is prepared. The drain is detached and
     /// awaited nowhere, so no startup, terminal or zmx path waits on it.
-    private func startPaneCLIOutboxDrain(
+    func startPaneCLIOutboxDrain(
         sessionsComposition: SessionsPaneContextComposition, datastore: WorkspaceSQLiteDatastoreActor
-    ) {
-        guard paneCLIOutboxDrainTask == nil, let storeURL = appIPCPaths?.cliStoreURL else {
+    ) async {
+        guard paneCLIOutboxDrainTask == nil else { return }
+        guard let storeURL = appIPCPaths?.cliStoreURL else {
+            await restoreResumeReadiness.shutdown()
             return
         }
         let noticeAdmission = sessionsComposition.paneContextIPCAdapter
@@ -298,7 +311,10 @@ extension AppDelegate {
         let readiness = restoreResumeReadiness
         let ingestion = sessionsComposition.ingestion
         let workspaceId = store.identityAtom.workspaceId
-        guard let evidenceRepository = restoreForegroundEvidenceRepository else { return }
+        guard let evidenceRepository = restoreForegroundEvidenceRepository else {
+            await readiness.shutdown()
+            return
+        }
         let restoreEvidence = ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
         let performanceRecorder = performanceTraceRecorder
         let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceRecorder)
@@ -306,29 +322,27 @@ extension AppDelegate {
         // the CLI file and its cursor uses the existing application-local writer.
         // swiftlint:disable:next no_task_detached
         paneCLIOutboxDrainTask = Task.detached(priority: .utility) {
-            do {
-                let drain = try PaneCLIOutboxDrain(
-                    admission: noticeAdmission, sqliteAccess: sqliteAccess,
-                    expectedChannel: channel, performanceTraceRecorder: performanceRecorder, ingestion: ingestion,
-                    restoreEvidence: restoreEvidence,
-                    paneExists: { try await datastore.persistedPaneIds(workspaceId: workspaceId).contains($0) },
-                    refusalProbe: { reason in
-                        telemetry.recordOfflineNoticeRefusal(reason: reason)
-                    })
-                await drain.drainForLaunch(
-                    storeURL: storeURL, readiness: readiness, clock: ContinuousClock(),
-                    reportSink: { report in
-                        guard report.hasWork else { return }
-                        appLogger.info(
-                            "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
-                        )
-                    })
-                return drain
-            } catch {
-                appLogger.warning("Offline outbox intake unavailable")
-                await readiness.record(.unreadable(.localDatabase))
-                return nil
-            }
+            let drain = await PaneCLIOutboxDrain.makeAndDrainForLaunch(
+                storeURL: storeURL, readiness: readiness, clock: ContinuousClock(),
+                makeDrain: {
+                    let drain = try PaneCLIOutboxDrain(
+                        admission: noticeAdmission, sqliteAccess: sqliteAccess,
+                        expectedChannel: channel, performanceTraceRecorder: performanceRecorder, ingestion: ingestion,
+                        restoreEvidence: restoreEvidence,
+                        paneExists: { try await datastore.persistedPaneIds(workspaceId: workspaceId).contains($0) },
+                        refusalProbe: { reason in
+                            telemetry.recordOfflineNoticeRefusal(reason: reason)
+                        })
+                    return drain
+                },
+                reportSink: { report in
+                    guard report.hasWork else { return }
+                    appLogger.info(
+                        "Offline outbox admitted \(report.admittedEntryCount, privacy: .public) refused \(report.refusedEntryCount, privacy: .public) malformed \(report.malformedEntryCount, privacy: .public) retryable \(report.retryableEntryCount, privacy: .public)"
+                    )
+                })
+            if drain == nil { appLogger.warning("Offline outbox intake unavailable") }
+            return drain
         }
     }
 
@@ -411,6 +425,7 @@ extension AppDelegate {
     /// mutate state the flush has already written. The escrow file only names
     /// the socket, so it is retired here too.
     func stopAcceptingAppIPCConnections() async {
+        await restoreResumeReadiness.shutdown()
         if !launchRestoreObservationState.didComplete {
             recordAppIPCStart(unavailable: .restoreBoundsUnavailable)
         }

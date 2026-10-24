@@ -1,5 +1,7 @@
 import AgentStudioAppIPC
+import AgentStudioIPCTransport
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Foundation
 import GRDB
 import Testing
@@ -93,9 +95,11 @@ struct AppIPCStartOutcomeTraceTests {
         let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         appDelegate.windowLifecycleStore = WindowLifecycleAtom(deferralDelay: AsyncDelay { _ in })
 
-        appDelegate.scheduleAppIPCInitialization()
-        let initializationTask = try #require(appDelegate.appIPCInitializationTask)
-        await initializationTask.value
+        try await withPendingColdReadinessWait(appDelegate) {
+            appDelegate.scheduleAppIPCInitialization()
+            let initializationTask = try #require(appDelegate.appIPCInitializationTask)
+            await initializationTask.value
+        }
 
         #expect(try await trace.ipcStartRecords() == [.init(outcome: "unavailable", reason: "first_frame_timeout")])
         #expect(appDelegate.appIPCServer == nil)
@@ -108,7 +112,9 @@ struct AppIPCStartOutcomeTraceTests {
         let trace = StartupTraceCapture()
         let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
 
-        await appDelegate.startAppIPCServer()
+        try await withPendingColdReadinessWait(appDelegate) {
+            await appDelegate.startAppIPCServer()
+        }
 
         #expect(try await trace.ipcStartRecords() == [.init(outcome: "unavailable", reason: "local_store_unavailable")])
     }
@@ -130,7 +136,9 @@ struct AppIPCStartOutcomeTraceTests {
         let appDelegate = AppDelegate(traceRuntime: trace.runtime, startupTraceRecorder: trace.recorder)
         appDelegate.launchRestoreObservationState.prepareForObservation()
 
-        await appDelegate.stopAcceptingAppIPCConnections()
+        try await withPendingColdReadinessWait(appDelegate) {
+            await appDelegate.stopAcceptingAppIPCConnections()
+        }
 
         #expect(
             try await trace.ipcStartRecords()
@@ -168,7 +176,9 @@ struct AppIPCStartOutcomeTraceTests {
             preparedApplicationLocalRepository: nil
         )
 
-        await appDelegate.startAppIPCServer()
+        try await withPendingColdReadinessWait(appDelegate) {
+            await appDelegate.startAppIPCServer()
+        }
 
         #expect(
             try await trace.ipcStartRecords() == [.init(outcome: "unavailable", reason: "optional_schema_unavailable")])
@@ -191,6 +201,97 @@ struct AppIPCStartOutcomeTraceTests {
                 == .serverStartFailed)
     }
 
+    @Test("scheduled first-frame cancellation releases cold readiness without starting IPC")
+    func scheduledCancellationReleasesReadiness() async throws {
+        let firstFrame = HeldStep<Void>("deferred IPC first-frame wait")
+        let appDelegate = AppDelegate()
+        appDelegate.windowLifecycleStore = WindowLifecycleAtom(
+            deferralDelay: AsyncDelay { _ in try await firstFrame.arrive(()) })
+        try await withPendingColdReadinessWait(appDelegate) {
+            appDelegate.scheduleAppIPCInitialization()
+            let initializationTask = try #require(appDelegate.appIPCInitializationTask)
+            let completion = Task {
+                await initializationTask.value
+                firstFrame.retire()
+            }
+            do {
+                _ = try await firstFrame.firstArrival()
+                initializationTask.cancel()
+                await completion.value
+            } catch {
+                initializationTask.cancel()
+                firstFrame.retire()
+                await completion.value
+                throw error
+            }
+        }
+        #expect(appDelegate.appIPCServer == nil)
+        await appDelegate.stopAcceptingAppIPCConnections()
+        await appDelegate.drainAppIPCCredentialPersistence()
+    }
+
+    @Test("a real IPC composition failure releases cold readiness without a timer")
+    func serverStartFailureReleasesReadiness() async throws {
+        let harness = try await makeServerCapableAppIPCTestHarness()
+        harness.appDelegate.mainWindowController = nil
+        do {
+            try await withPendingColdReadinessWait(harness.appDelegate) {
+                #expect(await harness.appDelegate.startAppIPCServer() == .noActiveWindow)
+            }
+            #expect(harness.appDelegate.appIPCServer == nil)
+        } catch {
+            await harness.shutdown()
+            throw error
+        }
+        await harness.shutdown()
+    }
+
+    @Test("an occupied socket reaches server.start failure and releases cold readiness")
+    func socketStartFailureReleasesReadiness() async throws {
+        let harness = try await makeServerCapableAppIPCTestHarness()
+        let socketURL = harness.appDelegate.appIPCPaths.socketURL
+        let listener = UnixSocketListener(endpoint: UnixSocketEndpoint(path: socketURL.path))
+        do {
+            try FileManager.default.createDirectory(
+                at: socketURL.deletingLastPathComponent(), withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700])
+            try listener.start { $0.close() }
+            try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: socketURL.path)
+            try await withPendingColdReadinessWait(harness.appDelegate) {
+                #expect(await harness.appDelegate.startAppIPCServer() == .socketInUse)
+            }
+            #expect(harness.appDelegate.appIPCServer == nil)
+        } catch {
+            await valueFromDedicatedThread { listener.stop() }
+            await harness.shutdown()
+            throw error
+        }
+        await valueFromDedicatedThread { listener.stop() }
+        await harness.shutdown()
+    }
+
+    @Test("missing drain paths or evidence release cold readiness", arguments: [false, true])
+    func incompleteDrainConfigurationReleasesReadiness(missingPaths: Bool) async throws {
+        let harness = try await makeServerCapableAppIPCTestHarness()
+        do {
+            await harness.appDelegate.startAppIPCServer()
+            let composition = try #require(harness.appDelegate.appIPCSessionsPaneContextComposition)
+            let datastore = try #require(harness.appDelegate.workspaceSQLiteDatastore)
+            let pendingDelegate = AppDelegate()
+            pendingDelegate.store = harness.store
+            if !missingPaths { pendingDelegate.appIPCPaths = harness.appDelegate.appIPCPaths }
+            try await withPendingColdReadinessWait(pendingDelegate) {
+                await pendingDelegate.startPaneCLIOutboxDrain(
+                    sessionsComposition: composition, datastore: datastore)
+            }
+            #expect(pendingDelegate.paneCLIOutboxDrainTask == nil)
+        } catch {
+            await harness.shutdown()
+            throw error
+        }
+        await harness.shutdown()
+    }
+
     @Test("a server starts under a 0755 data root and records app.ipc.start started")
     func serverStartsUnderGroupReadableDataRoot() async throws {
         let trace = StartupTraceCapture()
@@ -202,11 +303,14 @@ struct AppIPCStartOutcomeTraceTests {
         )
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: harness.rootDirectory.path)
         do {
-            harness.appDelegate.scheduleAppIPCInitialization()
-            let initializationTask = try #require(harness.appDelegate.appIPCInitializationTask)
-            await initializationTask.value
+            try await withPendingColdReadinessWait(harness.appDelegate) {
+                harness.appDelegate.scheduleAppIPCInitialization()
+                let initializationTask = try #require(harness.appDelegate.appIPCInitializationTask)
+                await initializationTask.value
+            }
 
             #expect(harness.appDelegate.appIPCServer != nil)
+            #expect(harness.appDelegate.paneCLIOutboxDrainTask == nil)
             #expect(try await trace.ipcStartRecords() == [.init(outcome: "started", reason: nil)])
         } catch {
             await harness.shutdown()

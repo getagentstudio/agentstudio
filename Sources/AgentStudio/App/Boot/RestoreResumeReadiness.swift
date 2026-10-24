@@ -6,13 +6,15 @@ enum RestoreResumeReadinessResult: Equatable, Sendable { case ready, unavailable
 actor RestoreResumeReadiness<ReadinessClock: Clock> where ReadinessClock.Duration == Duration {
     private let clock: ReadinessClock
     private let deadlineDelay: Duration
+    private let waiterRegistered: (@Sendable (UUID) -> Void)?
     private var result: RestoreResumeReadinessResult?
     private var waiters: [UUID: AsyncStream<RestoreResumeReadinessResult>.Continuation] = [:]
-    private var deadlineTask: Task<Void, Never>?
+    private(set) var deadlineTask: Task<Void, Never>?
 
-    init(clock: ReadinessClock, deadline: Duration) {
+    init(clock: ReadinessClock, deadline: Duration, waiterRegistered: (@Sendable (UUID) -> Void)? = nil) {
         self.clock = clock
         deadlineDelay = deadline
+        self.waiterRegistered = waiterRegistered
     }
 
     var isPending: Bool { result == nil }
@@ -20,7 +22,6 @@ actor RestoreResumeReadiness<ReadinessClock: Clock> where ReadinessClock.Duratio
     func beginRead() { armDeadlineIfNeeded() }
 
     func record(_ outcome: ClosedAppReadOutcome) {
-        armDeadlineIfNeeded()
         switch outcome {
         case .complete, .verifiedEmpty, .historyLost: publish(.ready)
         case .unreadable: publish(.unavailable)
@@ -31,11 +32,11 @@ actor RestoreResumeReadiness<ReadinessClock: Clock> where ReadinessClock.Duratio
     func wait(paneId: UUID) async -> RestoreResumeReadinessResult {
         if let result { return result }
         guard !Task.isCancelled else { return .unavailable }
-        armDeadlineIfNeeded()
         let waiterId = UUIDv7.generate()
         let (stream, continuation) = AsyncStream.makeStream(
             of: RestoreResumeReadinessResult.self, bufferingPolicy: .bufferingNewest(1))
         waiters[waiterId] = continuation
+        waiterRegistered?(paneId)
         let value = await withTaskCancellationHandler {
             for await value in stream { return value }
             return RestoreResumeReadinessResult.unavailable

@@ -10,6 +10,21 @@ import Testing
 @testable import AgentStudio
 
 extension RestoreResumeDecisionBoundaryTests {
+    @Test("unavailable launch readiness leaves durable foreground evidence unchanged")
+    func unavailableReadinessDoesNotPersistUnknown() async throws {
+        try await withPaneCLIOutboxDrainHarness { harness in
+            let pane = try await ColdResumeTestPane.make(harness: harness)
+            let before = try await harness.evidenceRepository.loadEvidence(paneId: pane.paneId)
+            let verdict = await pane.decision(harness: harness).resolve(
+                paneId: pane.paneId, sessionId: pane.look.zmxSessionId, preRestoreLook: pane.look,
+                readiness: .unavailable, launchBoot: .init(previousBootId: "B", currentBootId: "B"),
+                inventory: .complete([:]))
+
+            #expect(verdict.evidence == .unknown(.reportsNotRead))
+            #expect(try await harness.evidenceRepository.loadEvidence(paneId: pane.paneId) == before)
+        }
+    }
+
     @Test("F4 names a stored other start even when cold end returns no main")
     func otherStartWithoutMainNamesItsOwnID() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in

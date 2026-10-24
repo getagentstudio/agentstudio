@@ -21,11 +21,10 @@ struct RestoreResumeReadinessOrderingTests {
                     isClosing: { _, fact in fact == .ownerEnded }))
             let facts = try source.attach()
             let scope = UUIDv7.generate()
-            let clock = TestPushClock(pendingSleepFactSink: { fact in
-                if case .registrationSettled = fact { source.sink(scope, .waiting) }
-            })
+            let clock = TestPushClock()
             let deadline = clock.now.advanced(by: .seconds(1))
-            let readiness = RestoreResumeReadiness(clock: clock, deadline: .seconds(1))
+            let readiness = RestoreResumeReadiness(
+                clock: clock, deadline: .seconds(1), waiterRegistered: { _ in source.sink(scope, .waiting) })
             let decision = pane.decision(harness: harness)
             let operation = Task {
                 defer { source.sink(scope, .ownerEnded) }
@@ -44,6 +43,7 @@ struct RestoreResumeReadinessOrderingTests {
                 try await facts.expectNext(in: scope, .waiting)
                 #expect(
                     try await harness.repository.statusContext(paneId: pane.paneId).currentBinding?.status == .active)
+                await readiness.beginRead()
                 if available { await readiness.record(.verifiedEmpty) } else { clock.advance(to: deadline) }
                 try await facts.expectNext(in: scope, .capabilities(available))
                 let plan = await operation.value

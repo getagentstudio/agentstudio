@@ -13,7 +13,7 @@ import Testing
 @MainActor
 @Suite("Closed-app read outcomes and history", .serialized)
 struct CLILifecycleReadinessTests {
-    @Test("readiness expiring before IPC is ready does not skip warm-pane import")
+    @Test("expired launch-read readiness does not skip warm-pane import")
     func expiredReadinessStillImportsWarmEnd() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let pane = UUIDv7.generate()
@@ -21,6 +21,7 @@ struct CLILifecycleReadinessTests {
             try await harness.bindLifecycleMain(pane: pane, session: session)
             try await harness.appendLifecycle(pane: pane, session: session, event: .sessionEnd, at: 2)
             let readiness = RestoreResumeReadiness(clock: harness.clock, deadline: .zero)
+            await readiness.beginRead()
             #expect(await readiness.wait(paneId: pane) == .unavailable)
             await harness.drainForLaunch(readiness: readiness, clock: harness.clock)
             #expect(try await harness.lifecycleContext(pane: pane).currentBinding?.status == .ended)
