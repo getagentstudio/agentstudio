@@ -17,7 +17,7 @@ struct ResumeInvocationContractTests {
         #expect(
             invocation.argv
                 == (providerIdentifier == "claude-code"
-                    ? ["claude", "--resume", identifier] : ["codex", "resume", identifier]))
+                    ? ["claude", "--resume", identifier] : ["codex", "resume", "--no-daemon", identifier]))
     }
 
     @Test(

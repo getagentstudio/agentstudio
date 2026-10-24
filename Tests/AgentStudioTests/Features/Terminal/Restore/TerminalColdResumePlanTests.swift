@@ -19,6 +19,10 @@ struct TerminalColdResumePlanTests {
         let label = providerIdentifier == "codex" ? "Codex" : "Claude Code"
         #expect(plan.resume == invocation)
         #expect(
+            plan.resume?.argv
+                == (providerIdentifier == "codex"
+                    ? ["codex", "resume", "--no-daemon", text] : ["claude", "--resume", text]))
+        #expect(
             plan.notice.linesByCandidateIndex
                 == base.notice.linesByCandidateIndex.map {
                     $0 + "\nResumed \(label) session \(text.prefix(8)) after restart"

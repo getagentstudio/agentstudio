@@ -18,5 +18,6 @@ extension ZmxBackendTests {
         let script = ZmxBackend.coldRestoreScript(for: plan)
         #expect(script.contains("exec '/bin/zsh' -i -l -c "))
         #expect(!script.contains("then :; else :; fi"))
+        #expect(script.contains("--no-daemon"))
     }
 }

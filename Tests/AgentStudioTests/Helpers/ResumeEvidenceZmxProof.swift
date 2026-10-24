@@ -142,7 +142,10 @@ struct ResumeEvidenceZmxProof {
             print("R3_RESUME_PROOF " + (String(data: encoded, encoding: .utf8) ?? "invalid receipt encoding"))
             #expect(result.evidence == expected)
             if case .interruptedCandidate = expected {
-                #expect(argv == ["2", provider == "codex" ? "resume" : "--resume", sessionId])
+                #expect(
+                    argv
+                        == (provider == "codex"
+                            ? ["3", "resume", "--no-daemon", sessionId] : ["2", "--resume", sessionId]))
                 #expect(calls == "called\n")
                 #expect(output.contains("Resumed"))
             } else {

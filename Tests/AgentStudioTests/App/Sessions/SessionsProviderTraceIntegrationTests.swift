@@ -15,6 +15,20 @@ import Testing
 @Suite("Sessions recorded provider trace integration")
 struct SessionsProviderTraceIntegrationTests {
 
+    @Test(arguments: ["claude-code", "codex", "cursor"])
+    func fallbackResumeHintMatchesPaneLocalCommand(providerIdentifier: String) {
+        let sessionId = UUIDv7.generate().uuidString
+        let expected: String?
+        switch providerIdentifier {
+        case "claude-code": expected = "claude --resume \(sessionId)"
+        case "codex": expected = "codex resume --no-daemon \(sessionId)"
+        default: expected = nil
+        }
+        #expect(
+            AgentStudioIPCSessionsAdapter.resumeHint(provider: providerIdentifier, conversationId: sessionId)
+                == expected)
+    }
+
     @Test(
         "supplied and fallback resume hints survive repository reopen and later SessionStart",
         arguments: [true, false])

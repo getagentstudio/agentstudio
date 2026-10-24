@@ -58,7 +58,7 @@ struct ResumeZmxFixture: Sendable {
         let cliScript = """
             #!/bin/sh
             printf 'called\n' >>\(quoteResumeFixturePath(callsURL.path))
-            printf '%s\n%s\n%s\n' "$#" "$1" "$2" >\(quoteResumeFixturePath(reportPath))
+            printf '%s\n' "$#" "$@" >\(quoteResumeFixturePath(reportPath))
             \(folderReport)
             \(providerMarker)
             \(providerHold)

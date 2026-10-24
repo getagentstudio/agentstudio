@@ -35,8 +35,10 @@ package struct ResumeInvocation: Equatable, Sendable {
     package init(provider: ResumeProvider, sessionId: ProviderSessionId) {
         self.provider = provider
         self.sessionId = sessionId
+        // Codex 0.163 defaults to a shared app-server daemon (daemon_auto_start on) running
+        // the agent outside the pane, so --no-daemon keeps a bound session's resume pane-local.
         argv =
             provider == .claudeCode
-            ? ["claude", "--resume", sessionId.rawValue] : ["codex", "resume", sessionId.rawValue]
+            ? ["claude", "--resume", sessionId.rawValue] : ["codex", "resume", "--no-daemon", sessionId.rawValue]
     }
 }

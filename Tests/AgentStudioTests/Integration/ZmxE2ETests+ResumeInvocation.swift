@@ -44,10 +44,10 @@ extension E2ESerializedTests.ZmxE2ETests {
                 _ = try await process.expectProviderInvocation()
                 let argv = try await fixture.receiveArgv()
                 #expect(
-                    argv == [
-                        "2", providerIdentifier == "codex" ? "resume" : "--resume",
-                        fixture.invocation.sessionId.rawValue,
-                    ])
+                    argv
+                        == (providerIdentifier == "codex"
+                            ? ["3", "resume", "--no-daemon", fixture.invocation.sessionId.rawValue]
+                            : ["2", "--resume", fixture.invocation.sessionId.rawValue]))
                 #expect(try String(contentsOf: fixture.profileURL, encoding: .utf8).contains("login"))
                 let output = try await process.expectInteractiveShell()
                 #expect(try String(contentsOf: fixture.callsURL, encoding: .utf8) == "called\n")

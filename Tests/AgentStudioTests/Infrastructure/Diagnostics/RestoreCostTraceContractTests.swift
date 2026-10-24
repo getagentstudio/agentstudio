@@ -50,9 +50,9 @@ extension AgentStudioPerformanceTraceRecorderTests {
 
 extension AgentStudioOTLPTraceProjectionTests {
     @Test(
-        "restore phase projection preserves measured scalars and proof scope while removing private payloads",
+        "restore projection preserves log attributes and admits only classified numeric measurements",
         arguments: RestoreCostTraceTestPhase.allCases)
-    func restorePhaseProjectionIsScalarOnly(phase: RestoreCostTraceTestPhase) {
+    func restorePhaseProjectionPreservesAttributesAndMeasuresScalars(phase: RestoreCostTraceTestPhase) throws {
         let record = AgentStudioTraceRecord(
             timeUnixNano: 90, severityText: .info, body: phase.rawValue,
             traceID: nil, spanID: nil, parentSpanID: nil,
@@ -70,6 +70,9 @@ extension AgentStudioOTLPTraceProjectionTests {
                 "agentstudio.performance.restore.argv": .string("claude --resume private-session"),
                 "agentstudio.performance.restore.prompt": .string("private restore prompt"),
                 "agentstudio.performance.restore.raw_path": .string("/private/restore-store"),
+                // Synthetic log-only identities and flags must never become metrics.
+                "agentstudio.performance.restore.generation": .int(7),
+                "agentstudio.performance.restore.is_restoring": .bool(true),
             ])
         let projection = AgentStudioOTLPTraceProjection.project(record)
         #expect(projection.body == phase.rawValue)
@@ -79,13 +82,18 @@ extension AgentStudioOTLPTraceProjectionTests {
         #expect(projection.attributes["agentstudio.performance.restore.execution.count"] == .int(1))
         #expect(projection.attributes["agentstudio.performance.restore.main_thread.execution.count"] == .int(1))
         #expect(projection.attributes["agentstudio.performance.restore.main_thread.elapsed_ms"] == .double(0.5))
-        let rendered = "\(projection.body)\n\(projection.resource)\n\(projection.attributes)"
-        for forbidden in [
-            "019be3be-7c00-7000-8000-000000000099", "claude --resume private-session",
-            "private restore prompt", "/private/restore-store",
-        ] {
-            #expect(!rendered.contains(forbidden))
+        for (key, value) in record.attributes {
+            #expect(projection.attributes[key] == value)
         }
+        let metricEvent = try #require(AgentStudioOTLPPerformanceMetricEvent(record: projection))
+        #expect(metricEvent.elapsedMilliseconds == 2)
+        #expect(metricEvent.measurements.count == 4)
+        #expect(
+            Set(metricEvent.samples.map(\.label)) == [
+                "agentstudio_performance_restore_execution_count",
+                "agentstudio_performance_restore_main_thread_execution_count",
+                "agentstudio_performance_restore_main_thread_elapsed_ms",
+            ])
     }
 }
 
