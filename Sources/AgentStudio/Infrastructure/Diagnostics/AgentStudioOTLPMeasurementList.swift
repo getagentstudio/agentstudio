@@ -161,6 +161,18 @@ enum AgentStudioOTLPMeasurementList {
         "agentstudio.performance.filesystem.ingress.shared_ancestor.unstable.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:146; count
         "agentstudio.performance.filesystem.ingress.shared_ancestor.unsupported.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:209; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.accepted.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:210; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.accepted.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:211; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.dropped.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:212; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.dropped.path.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:213; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.terminated.batch.count",
+        // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:214; count
+        "agentstudio.performance.filesystem.ingress.shared_exact.terminated.path.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:125; count
         "agentstudio.performance.filesystem.ingress.shared_exact_subscriber.count",
         // Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/DarwinFSEventIngressPerformanceAccumulator.swift:131; count

@@ -7,9 +7,44 @@ import Testing
 @Suite
 struct AgentStudioOTLPMeasurementListTests {
     @Test
+    func everyFilesystemIngressSourceHasAllDispositionCountsListed() async throws {
+        let emitter = try await valueFromDedicatedThread {
+            var root = URL(fileURLWithPath: #filePath)
+            for _ in 0..<5 { root.deleteLastPathComponent() }
+            let path =
+                "Sources/AgentStudio/Core/RuntimeEventSystem/Filesystem/"
+                + "DarwinFSEventIngressPerformanceAccumulator.swift"
+            let source = try String(contentsOf: root.appendingPathComponent(path), encoding: .utf8)
+            let sources = try Self.capturedEmitterValues(
+                #"Self\.appendIngressAttributes\(\s*\w+,\s*source:\s*"([^"]+)""#, in: source)
+            guard sources.count == source.components(separatedBy: "Self.appendIngressAttributes(").count - 1 else {
+                throw MeasurementAnchorError.malformedEntry("Not every ingress call has a captured source")
+            }
+            return (
+                sources: sources,
+                countSuffixes: Set(
+                    try Self.capturedEmitterValues(
+                        #"attributes\["\\\(prefix\)\.([^"]+\.count)"\]\s*=\s*\.int"#, in: source))
+            )
+        }
+        try #require(!emitter.sources.isEmpty, "No actual ingress source calls found")
+        #expect(
+            emitter.countSuffixes == [
+                "accepted.batch.count", "accepted.path.count", "dropped.batch.count",
+                "dropped.path.count", "terminated.batch.count", "terminated.path.count",
+            ])
+        for source in emitter.sources {
+            for suffix in emitter.countSuffixes {
+                let name = "agentstudio.performance.filesystem.ingress.\(source).\(suffix)"
+                #expect(AgentStudioOTLPMeasurementList.names.contains(name), "Missing emitted measurement: \(name)")
+            }
+        }
+    }
+
+    @Test
     func everyListedMeasurementHasAnEmitterAnchorAndProducesNumericSamples() async throws {
         let entries = try await valueFromDedicatedThread { try Self.readMeasurementAnchors() }
-        #expect(entries.count == 536)
+        #expect(entries.count == 542)
         #expect(Set(entries.map(\.name)) == AgentStudioOTLPMeasurementList.names)
         #expect(Set(entries.map(\.name)).count == entries.count)
         let numericValues: [(AgentStudioTraceValue, Double)] = [(.int(7), 7), (.double(2.5), 2.5)]
@@ -145,6 +180,15 @@ struct AgentStudioOTLPMeasurementListTests {
     private struct MeasurementSourceEntry: Sendable {
         let name: String
         let hasValidSource: Bool
+    }
+
+    private static func capturedEmitterValues(_ pattern: String, in source: String) throws -> [String] {
+        let expression = try NSRegularExpression(pattern: pattern)
+        let matches = expression.matches(in: source, range: NSRange(source.startIndex..., in: source))
+        return matches.compactMap { match in
+            guard let range = Range(match.range(at: 1), in: source) else { return nil }
+            return String(source[range])
+        }
     }
 
     private enum MeasurementAnchorError: Error {
