@@ -482,7 +482,20 @@ struct PaneContextToolbarRenderingTests {
         let region = rect ?? host.bounds
         let bitmap = try #require(host.bitmapImageRepForCachingDisplay(in: region))
         host.cacheDisplay(in: region, to: bitmap)
-        return try #require(bitmap.representation(using: .png, properties: [:]))
+        // PNGs embed the display ICC profile's creation time. Compare exact rendered pixels,
+        // normalized to sRGB RGBA, so crossing a wall-clock second cannot change equality.
+        let image = try #require(bitmap.cgImage)
+        let colorSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        var bytes = [UInt8](repeating: 0, count: image.width * image.height * 4)
+        try bytes.withUnsafeMutableBytes { buffer in
+            let context = try #require(
+                CGContext(
+                    data: buffer.baseAddress, width: image.width, height: image.height,
+                    bitsPerComponent: 8, bytesPerRow: image.width * 4, space: colorSpace,
+                    bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+            context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        }
+        return Data(bytes)
     }
 
     func buttonFrames(in host: NSView) -> [String: CGRect] {

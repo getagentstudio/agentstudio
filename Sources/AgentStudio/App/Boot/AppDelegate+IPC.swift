@@ -509,6 +509,8 @@ extension AppDelegate {
                 presenter: self,
                 targetAuthorizer: WorkspaceDurableTargetAuthorizationPort(workspaceStore: store)
             ),
+            windowRenderPort: AgentStudioIPCWindowRenderAdapter(
+                owner: self, rendersDirectory: paths.rootDirectory.appendingPathComponent("renders", isDirectory: true)),
             sidebarPort: AgentStudioIPCSidebarAdapter(
                 repoPrefs: atomStore.repoExplorerSidebarPrefs,
                 sidebarState: atomStore.core.workspaceSidebarState

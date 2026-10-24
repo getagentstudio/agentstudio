@@ -16,9 +16,13 @@ owned pane establishes the baseline without clearing a real agent's state.
 ## Post-#57 held states
 
 Use the pinned full CLI path in the owned fixture shell, with its declared pane
-environment. The two entries are `"$CLI" line "<message>"` and
-`"$CLI" line --clear`. Actual exit-0/applied receipts are required;
+environment, or shared setup's commissioned foreground-hold route. The shell
+entries are `"$CLI" line "<message>"` and `"$CLI" line --clear`; the foreground
+holder accepts only its declared fixture operations and retains its pane binding.
+Actual exit-0/applied receipts are required (`hold.line` for that fixture);
 `terminal.send` acceptance is not completion. Preserve a Working hook status.
+After each change, establish its owner fact, wait 3 s through `window-frame.sh`
+and render once. Keep the same pane attribution and open/read the PNG.
 
 | State | Real setup | Deciding visible observation |
 | --- | --- | --- |
@@ -30,9 +34,10 @@ environment. The two entries are `"$CLI" line "<message>"` and
 
 Verify bytes, not character count. Read exact text from authorized readback or
 from the original pixels plus its actual write receipt. No direct model injection
-stands in for the native CLI route. Native time collection requires an unlocked
-GUI and the native observation grant defined in shared setup. Do not add input
-to repair a missed age window.
+stands in for the actual pane-origin CLI route. App-rendered time collection
+can run while locked under shared setup's observation grant, with valid t0 and
+capture bounds. A native capture additionally needs its own granted route and
+an already unlocked screen. Do not add input to repair a missed age window.
 
 ## Historical pre-#57 matrix
 

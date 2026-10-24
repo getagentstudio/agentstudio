@@ -37,7 +37,7 @@ An independent observed failure still wins over an UNKNOWN sub-observation.
    sandbox error. Empty output alone proves neither absence nor ownership.
    Do not change transport or use a direct launch to bypass a denial.
 5. IF running J4–J7, load `references/pane-proof-setup.md` and return the current
-   binary/CLI provenance, process/window receipt, IPC route, surface permissions
+   binary/CLI provenance, process/window receipt, IPC route, observation grant
    and fixture ownership. A missing prerequisite leaves the journey UNKNOWN.
    One operator drives states, the capture owner saves originals, and the
    Verifier opens and measures them before acknowledging the next state.
@@ -54,10 +54,10 @@ An independent observed failure still wins over an UNKNOWN sub-observation.
 | J1 — isolated lifecycle | MUST load [debug-launch.md](references/debug-launch.md); return the declared pin, process preflight, background launch, authenticated reads and owned quit. Entry: `mise run run-debug-observability -- --detach --skip-build --build-path "$BUILD_PATH"`, with the documented escrow/watch-folder environment. | Declared debug executable, fresh marker and background identity; successful `pane.list`/`window.list` readbacks; that owned PID confirmed retired after bundle-id quit. | `scripts/debug-lifecycle.sh` |
 | J2 — Panes row | MUST load [panes-row.md](references/panes-row.md); return separate declared build/oracle commits, compatible stimuli, AX labels, PID frames, whole-chip/row differences and visual judgment. | Working breathes, monitoring rotates, other glyphs stay still; chip never pulses, recency updates. Equal chip AX labels permit exact stillness checks; changed labels defer chip/text, UNKNOWN after three repaint-spanned bursts. Judge glyph every burst; Reduce Motion stops it; branch lines remain correct. | `scripts/panes-row.sh`, `scripts/frame_diff.py` |
 | J3 — cold restore | MUST load [cold-restore.md](references/cold-restore.md); return declared restore build, explicit one-session fault grant, saved text, same pane/stored session, owned quit, isolated list/kill, relaunch and replay. | Restore notice → saved text → restart marker → usable fresh shell, in the same pane (Spec 11 / Program Design 28). A warm reconnect cannot satisfy this. | `scripts/cold-restore.sh` |
-| J4 — drawer toolbar | MUST load `references/drawer-toolbar.md` and return held states, glyph x/y, bar height, cap and text/suffix observations. | Fixed groups/bar; message uses middle gap. Fixed message icon + truncatable text + complete age suffix inside 360pt. No toolbar status/warning. | `scripts/pane-chrome.sh capture`, `scripts/toolbar_geometry.py` |
-| J5 — ⌘R pane card | MUST load `references/pane-card.md` and return five-width layout/identity/copy results and separate one-open-card clock evidence. | Title → state → two-line message → warning → note → caption grid → git chips, one field per line at every width. Verified SESSION copies only ID; PANE always. Distinct clocks. | `scripts/pane-chrome.sh capture` |
-| J6 — credential warning | MUST load `references/credential-warning.md` and return unbound receipts, target-specific placement and exact refusal comparison. | Quiet success does not create/clear refusal. Genuine failure warns card only under current policy, never toolbar. Historical row/card policy requires an explicit declaration. | `scripts/pane-chrome.sh capture` |
-| J7 — agent in its displaying pane | MUST load `references/agent-setups.md` and return four owned setup results, hook recipient, real-turn row/card status/message/title and N-of-4 coverage with its required host label. | Every displaying pane shows its live agent's status: foreground, (b) remote app-server, Claude daemon/attach, Cursor. Standalone counts in (b), labelled "Router wrapper not exercised". Unsafe routes UNKNOWN with blocker; missing status FAIL. | Granted provider operator; `scripts/pane-chrome.sh capture` |
+| J4 — drawer toolbar | MUST load `references/drawer-toolbar.md` and return held states, glyph x/y, bar height, cap and text/suffix observations. | Fixed groups/bar; message uses middle gap. Fixed message icon + truncatable text + complete age suffix inside 360pt. No toolbar status/warning. | `scripts/window-frame.sh render/resize`, `scripts/toolbar_geometry.py` |
+| J5 — ⌘R pane card | MUST load `references/pane-card.md` and return five-width layout/identity/copy results and separate one-open-card clock evidence. | Title → state → two-line message → warning → note → caption grid → git chips, one field per line at every width. Verified SESSION copies only ID; PANE always. Distinct clocks. | `scripts/window-frame.sh render/resize` |
+| J6 — credential warning | MUST load `references/credential-warning.md` and return unbound receipts, target-specific placement and exact refusal comparison. | Quiet success does not create/clear refusal. Genuine failure warns card only under current policy, never toolbar. Historical row/card policy requires an explicit declaration. | `scripts/window-frame.sh render/resize` |
+| J7 — agent in its displaying pane | MUST load `references/agent-setups.md` and return four owned setup results, hook recipient, real-turn row/card status/message/title and N-of-4 coverage with its required host label. | Every displaying pane shows its live agent's status: foreground, (b) remote app-server, Claude daemon/attach, Cursor. Standalone counts in (b), labelled "Router wrapper not exercised". Unsafe routes UNKNOWN with blocker; missing status FAIL. | Granted provider operator; `scripts/window-frame.sh render/resize` |
 
 ## Driver entry points
 
@@ -75,6 +75,8 @@ Run from the repository root; the caller supplies the runtime write grant.
 /bin/bash .agents/skills/verify-agentstudio/scripts/cold-restore.sh --self-test
 uv run --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/frame_diff.py --help
 uv run --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/frame_diff.py --self-test
+/bin/bash .agents/skills/verify-agentstudio/scripts/window-frame.sh --help
+/bin/bash .agents/skills/verify-agentstudio/scripts/window-frame.sh --self-test
 /bin/bash .agents/skills/verify-agentstudio/scripts/pane-chrome.sh --help
 /bin/bash .agents/skills/verify-agentstudio/scripts/pane-chrome.sh --self-test
 uv run --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/toolbar_geometry.py --self-test
@@ -99,12 +101,29 @@ readiness. `terminal.snapshot` exports lifecycle/renderer metadata, **not output
 use the typed `terminal.wait(titleChanged, afterSequence:)` route plus its
 correlated title and visible content. No sleeps or polling for readiness.
 
+For J4–J7 static layout/text, use `window-frame.sh` through the existing escrow
+CLI, including while locked. Establish the state through its owner fact first;
+then the consumer waits 3 s after each change and takes **one** `window.render`.
+This observed settle is separate from readiness. The renderer captures the
+current frame, including animations in flight; it adds no wait. A stale or
+in-flight result after the settle is a failure, not a reason for a longer wait,
+retry, refresh or reopen. Match asynchronous fields such as SESSION against
+that pane's owner fact taken immediately before capture. Metadata locates crops;
+only the decoded PNG establishes painted text and geometry.
+
+The fidelity gaps and optional native route are in shared setup. Keep J2 motion,
+vibrancy, native tab/titlebar and final on-screen appearance with Peekaboo when
+the screen is already unlocked and that route is granted. Never unlock it.
+
 ## Evidence and cleanup
 
 Keep exact commands/statuses, stdout/stderr, original frames, AX output,
 pin/ownership receipt, region coordinates and observations in the run's granted
-evidence directory (for example `tmp/verify-agentstudio/<run>/`). Keep installed
-skill files read-only.
+evidence directory (for example `tmp/verify-agentstudio/<run>/`). For every app
+render, retain request/result, before/after lock probes, UTC/monotonic capture
+bounds, owner facts, source path and evidence path. Move each received PNG into
+evidence using the wrapper; a path without an opened image proves no pixels.
+Keep installed skill files read-only.
 Never print or commit escrow contents. Keep runtime evidence outside the skill.
 
 Post each actual denial with its exact command, verbatim error and exit status
@@ -112,6 +131,12 @@ to the commission's access/coordination thread, or return it to the Lead when
 no such destination is supplied. An unattempted
 dependency, missing build or needed grant is different from an OS denial. Post coverage and
 artifact paths on the execution thread and message the Lead with the handback.
+
+Run `window-frame.sh cleanup RUN_DIR` to recover interrupted transfers from
+recorded paths before retiring the fixture when possible. It can finish those
+filesystem transfers after retirement without calling the app. Preserve and
+report any unresolved transfer; never sweep the app's renders directory or
+remove an unreceived file. This cleanup grants no app quit.
 
 Quit only the verified owned debug bundle id through J1, then confirm PID
 retirement. A quit request alone is not retirement; an inspection error is not

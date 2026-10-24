@@ -15,6 +15,24 @@ extension AppIPCBuiltInMethodRegistrations {
         let descriptors = inputs.catalog.presentationAndSidebar
         return try [
             AppIPCTypedMethodRegistration(
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.windowRender),
+                correlation: .notRequired,
+                resolveTarget: { parameters, _, _ in
+                    AppIPCBuiltInRegistrationSupport.canonicalWindowTarget(
+                        parameters, windowId: parameters.workspaceWindowId)
+                },
+                connectionHandler: { parameters, _, _ in try await inputs.ports.windowRenderPort.render(parameters) }
+            ).erase(),
+            AppIPCTypedMethodRegistration(
+                descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.windowResize),
+                correlation: .required(\.correlationId),
+                resolveTarget: { parameters, _, _ in
+                    AppIPCBuiltInRegistrationSupport.canonicalWindowTarget(
+                        parameters, windowId: parameters.workspaceWindowId)
+                },
+                connectionHandler: { parameters, _, _ in try await inputs.ports.windowRenderPort.resize(parameters) }
+            ).erase(),
+            AppIPCTypedMethodRegistration(
                 descriptorRepresentations: try inputs.descriptorRepresentations(for: descriptors.uiCommandBarOpen),
                 correlation: .required {
                     try AppIPCBuiltInRegistrationSupport.requiredCorrelation($0.correlationId)

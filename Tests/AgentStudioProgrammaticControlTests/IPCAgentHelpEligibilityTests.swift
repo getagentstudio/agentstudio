@@ -72,6 +72,8 @@ struct IPCAgentHelpEligibilityTests {
         "ui.commandBar.open": .notYetAllowed,
         "window.current": .anyTarget,
         "window.list": .anyTarget,
+        "window.render": .notYetAllowed,
+        "window.resize": .notYetAllowed,
         "workspace.current": .anyTarget,
         "workspace.list": .anyTarget,
     ]

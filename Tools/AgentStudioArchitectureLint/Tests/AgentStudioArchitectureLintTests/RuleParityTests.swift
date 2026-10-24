@@ -8,6 +8,16 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct RuleParityTests {
+    @Test("window render ports are admitted only in App IPC composition")
+    func windowRenderPortHasOneCompositionHome() throws {
+        let failures = try lintFixtureCorpus("Bad").filter {
+            $0.ruleID == "agentstudio_ipc_composition_location"
+                && $0.path.hasSuffix("BadIPCCompositionLocation.swift")
+        }
+        #expect(failures.map(\.line) == [1, 4])
+        #expect(try lintFixtureCorpus("Good").allSatisfy { $0.ruleID != "agentstudio_ipc_composition_location" })
+    }
+
     @Test("drawer toolbar rejects raw button constructors while owned controls remain valid")
     func drawerToolbarRequiresOwnedControls() throws {
         let failures = try lintFixtureCorpus("Bad").filter { $0.ruleID == "agentstudio_drawer_toolbar_owned_controls" }

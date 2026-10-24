@@ -302,9 +302,9 @@ struct AgentStudioIPCCommandAdapterTests {
 
         // Static built-ins include session.status; composition adds the two
         // command descriptors and system.capabilities.
-        #expect(builtIns.erasedDescriptors.count == 55)
+        #expect(builtIns.erasedDescriptors.count == 57)
         #expect(commandCatalog.commands.count == 24)
-        #expect(capabilities.result.methods.count == 58)
+        #expect(capabilities.result.methods.count == 60)
 
         let encodedCatalog = try capabilities.descriptor.encodeResult(capabilities.result)
         let decodedCatalog = try IPCMethodCatalogDecoder.decode(encodedCatalog)

@@ -63,6 +63,8 @@ extension AgentStudioAppIPCRequestError {
             self.init(
                 code: -32_001, message: "unauthenticated",
                 data: .object(["reason": .string(refusal.reason.rawValue)]))
+        case let renderError as AppIPCWindowRenderError:
+            self.init(renderError)
         case let queryError as AppIPCQueryError:
             self.init(queryError.reason)
         case let layoutError as AppIPCLayoutError:
@@ -133,6 +135,18 @@ extension AgentStudioAppIPCRequestError {
         case .bindingRequired, .conflict, .notSender, .noticeAlreadyRead, .stale: code = -32_007
         }
         self.init(code: code, message: error.reason.rawValue, data: .object(details))
+    }
+
+    private init(_ error: AppIPCWindowRenderError) {
+        let code: Int
+        switch error {
+        case .targetNotFound: code = -32_004
+        case .invalidSize: code = -32_602
+        case .noContentView, .bitmapCreationFailed, .imageCreationFailed, .untrustedRenderDirectory,
+            .encodingFailed, .writeFailed:
+            code = -32_005
+        }
+        self.init(code: code, message: error.rawValue, data: .object(["reason": .string(error.rawValue)]))
     }
 
     /// A frame this process composed itself overflowed the outbound bound.

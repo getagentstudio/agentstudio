@@ -1,6 +1,7 @@
 import AgentStudioCore
 import AgentStudioEditorChooser
 import AgentStudioInfrastructure
+import AgentStudioSharedComponents
 import AppKit
 import SwiftUI
 
@@ -264,6 +265,7 @@ struct PaneSurfaceToolbarHost: View {
             paneContextActions: contextToolbarActions,
             middleContent: paneAgentLineContent
         )
+        .background { CaptureRegionMarker(kind: "paneToolbar", id: anchorPaneId.uuidString) }
         .onAppear {
             consumePendingPaneInboxRequest(in: paneInboxScope)
         }

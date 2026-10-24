@@ -255,6 +255,13 @@ invent Router creation flags or daemon isolation switches from this document.
 4. Observe the **displaying pane's Panes row and its ⌘R card**: status, exact
    message and title, with real turn/session identity. Compare the agent's actual
    turn state with the visible status and any debug-origin/comparator row.
+   Use shared setup's app-render route for static fields, including while locked:
+   establish the actual phase, wait 3 s after its change and render once. Record
+   that pane's owner session/turn facts immediately before capture and match the
+   asynchronous rendered fields to them. An in-flight/stale result fails; do not
+   retry or extend the settle. A synthetic foreground hold or line CLI fixture
+   cannot supply this journey's real turn/provider-host proof. Preserve the
+   before/after lock probes and original source-to-evidence paths.
    Record each field's PASS/FAIL/UNKNOWN, all supported widths/taste frames
    (cards: 420/520/640/780/1000pt), and the overall setup result. A missed brief
    Working capture is UNKNOWN for that state, not evidence that status works.
