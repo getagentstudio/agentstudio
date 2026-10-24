@@ -120,10 +120,7 @@ struct ObservabilityDebugBundleSigningTests {
     }
 
     private func signingEnvironment(fixture: LauncherScriptFixture, failedItem: String) throws -> [String: String] {
-        let buildPath = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
-        try FileManager.default.copyItem(
-            at: buildPath.appending(path: "debug/AgentStudio"),
-            to: buildPath.appending(path: "debug/agentstudio-cli"))
+        _ = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
         var environment = try launchServicesDiagnosticEnvironment(
             fixture: fixture, openArgsURL: fixture.url("open-args"),
             launchedAppURL: fixture.url("launched-app"), stateFile: fixture.url("latest.env"))

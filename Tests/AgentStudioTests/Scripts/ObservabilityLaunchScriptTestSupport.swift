@@ -67,7 +67,13 @@ struct LauncherScriptFixture {
         let binaryURL = debugPath.appending(path: "AgentStudio")
         try contents.write(to: binaryURL, atomically: true, encoding: .utf8)
         chmod(binaryURL.path, 0o755)
+        try makeDebugBuildCLI("#!/bin/bash\nexit 0\n")
         return buildPath
+    }
+
+    @discardableResult
+    func makeDebugBuildCLI(_ contents: String) throws -> URL {
+        try executable("debug-build/debug/agentstudio-cli", contents)
     }
 
     func runScript(
