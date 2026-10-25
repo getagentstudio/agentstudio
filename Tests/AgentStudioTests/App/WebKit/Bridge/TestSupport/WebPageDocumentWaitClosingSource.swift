@@ -1,6 +1,7 @@
 import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import Foundation
+import Observation
 import WebKit
 
 @testable import AgentStudioBridge
@@ -70,6 +71,7 @@ final class WebPageDocumentWaitClosingSource {
     let recorder: FactRecorder<WebPageDocumentWaitScope, WebPageDocumentWaitCloseReason>
     private var observers: [UUID: @MainActor (WebPageDocumentWaitWake) -> Void] = [:]
     private var navigationTask: Task<Void, Never>?
+    private var paneRetirementTask: Task<Void, Never>?
 
     init(pane: String) throws {
         self.pane = pane
@@ -122,6 +124,23 @@ final class WebPageDocumentWaitClosingSource {
         }
     }
 
+    func observePaneRetirement(_ controller: BridgePaneController) {
+        precondition(paneRetirementTask == nil)
+        guard controller.canReloadWebView else {
+            record(.pageClosed)
+            return
+        }
+        let paneAvailability = Observations { controller.canReloadWebView }
+        paneRetirementTask = Task { @MainActor [weak self] in
+            for await canReload in paneAvailability {
+                guard !Task.isCancelled else { return }
+                guard !canReload else { continue }
+                self?.record(.pageClosed)
+                return
+            }
+        }
+    }
+
     func requireMountedApp(_ controller: BridgePaneController) async throws -> BridgeProductWebKitCarrierNativeSnapshot
     {
         await WebPageEventWaits.waitForNavigationToFinish(controller.page)
@@ -163,6 +182,9 @@ final class WebPageDocumentWaitClosingSource {
     }
 
     func finish() async throws {
+        paneRetirementTask?.cancel()
+        await paneRetirementTask?.value
+        paneRetirementTask = nil
         navigationTask?.cancel()
         await navigationTask?.value
         navigationTask = nil
