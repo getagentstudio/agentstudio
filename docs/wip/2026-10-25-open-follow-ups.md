@@ -1,6 +1,6 @@
 # Open follow-ups
 
-Open work as of 2026-10-25, on `main` at `e5da452ce`. Each item says what it is, what we know, and the next step. Numbers like #77 are the Lead's tracking numbers, not GitHub PRs.
+The open follow-up work. Each item says what it is, what we know, and the next step.
 
 ## Needs an owner decision
 
@@ -8,12 +8,8 @@ Open work as of 2026-10-25, on `main` at `e5da452ce`. Each item says what it is,
 
 The same pane tells different stories on different surfaces. The ⌘R card can say "Needs you · question" while the sidebar row says "Idle · ready", and the question's text appears nowhere. Ages float away from the text they date, and the Messages popover cuts off its buttons.
 
-- **State:** designed, not built. The requirements, the specification and an HTML storyboard of realistic renders are drafted under `docs/specs/2026-10-24-pane-context-display/`. That folder is not committed yet.
-- **Waiting on:** owner approval of the storyboard, plus three open choices:
-  1. whether an approval has a reason text box;
-  2. `?` or `⚑` as the question mark;
-  3. how the card avoids counting the same item twice.
-- **Next:** after approval, Program Design, independent review, plan, build, then native frames checked at three widths.
+- **State:** designed, not built. The requirements, the specification and an HTML storyboard of realistic renders are drafted. Their artifacts are not included in this checkout.
+- **Next:** Program Design, independent review, plan, build, then native frames checked at three widths against the storyboard.
 
 ### Codex restore: binding shows ended after a successful resume (J2-Codex)
 
@@ -27,7 +23,7 @@ After an app restart, restore resumes a Codex pane into its exact conversation. 
 
 ### Agent status model (#68)
 
-How a pane's agent status is derived, and what happens when a pane loses its IPC token. The current default for a lost token is restarting the process. Parked while the owner thinks it through.
+How a pane's agent status is derived, and what happens when a pane's IPC credential is not recognized. Today, a protected call with an unrecognized credential requires the owner to restart that pane's shell. Line/title and hook-status reporting can continue through their existing-pane fallback without a recognized token. Parked while the owner thinks it through.
 
 ### Parked designs
 
@@ -35,74 +31,69 @@ These are named but not designed:
 
 - **Conversation ↔ pane identity:** which server-side conversation belongs to which pane. It is kept separate from process identity and from which pane is viewing it.
 - **Restore for background agents:** agents running under codex-router or Claude and ACP background sessions, viewed through a pane.
-- **Direct zmx socket control:** controlling a session through its socket instead of through the `zmx attach` client. Today a side connection is ignored while an attach client leads, so real direct control means replacing attach.
+- **Direct zmx socket control:** controlling a session through its socket instead of through the `zmx attach` client. A side connection's resize is ignored while another client leads, so direct resize control needs an explicit leadership or attachment arrangement.
 - **Tooltips:** the routes for oversized titles, paths and branches. Needs scoping.
 
 ## Bugs
 
 ### Reattached panes come back narrow
 
-After an app restart, some reattached Codex panes draw at about 68 of 175 columns.
+After an app restart, some reattached Codex panes draw much narrower than their pane.
 
 **What we know:**
 
-- Ghostty starts an embedded surface at 800×600 and spawns the PTY before the app's first size reaches it.
-- The app's first size commit is rejected until its view joins a window, because there is no content scale yet.
-- zmx resizes the inner PTY only for the leading client, and it ignores the ioctl result.
+- Ghostty starts an embedded surface at 800×600 and opens the PTY with that initial grid, before the app's first size reaches it.
+- The app's first size commit is rejected until its view joins a window, because there is no content scale yet. A correction is scheduled when the view joins a window.
+- zmx resizes the inner PTY only for the leading client, and it discards the `TIOCSWINSZ` result.
 
-**What the evidence rules out and leaves open:**
+**What's open:** the cause is unknown. In ranked order:
 
-- A stale second attach client is ruled out.
-- The cause is unknown. In ranked order:
-  1. the narrow bootstrap plus a missed correction later;
-  2. wide PTYs with a stale Codex repaint;
-  3. hidden or drawer reveal geometry.
+1. the narrow bootstrap plus a missed correction later;
+2. wide PTYs with a stale Codex repaint;
+3. hidden or drawer reveal geometry.
 
-**Next:** the deciding experiment, run on a debug app with a non-production `ZMX_DIR`. It restores two PTYs and measures how the width converges at each edge: Ghostty grid, outer PTY, attach `Resize` payloads, daemon leadership, inner PTY.
+**Next:** run the deciding experiment on a debug app with a non-production `ZMX_DIR`. It restores two PTYs and measures how the width converges at each edge: Ghostty grid, outer PTY, attach `Resize` payloads, daemon leadership, inner PTY.
 
-### Review content may stick on "loading" (#89)
+### Review content may stay on "loading" (#89)
 
-In a CI WebKit run, the selected Review content wait never got its content. The entry sample, taken once when the wait started, read `loading`, generation 2, 0 lines, after metadata publications had arrived.
+Selected Review content can remain loading, and the producer's terminal outcome is not established.
 
 - **What the evidence can't tell:** whether the content was never requested or was requested and never delivered.
 - **Cause:** unknown. This may be a real product bug, not only a test problem.
-- **Next:** add correlated telemetry for the selected-content producer: request, native terminal outcome, worker application and page render. Then catch it again.
+- **Next:** add correlated telemetry for the selected-content producer: request, native terminal outcome, worker application and page render.
 
-### Sidebar workload stops at the Show Pinned toggle (#72)
+### Sidebar workload and the Show Pinned toggle (#72)
 
-`verify-sidebar-performance-workload.sh --baseline` passes the first Panes gate. It then stops in `toggle_panes_shows_pinned_pair`, because no Panes projection newer than the initial one arrives after `togglePanesShowsPinned`.
+In `scripts/verify-sidebar-performance-workload.sh`, `toggle_panes_shows_pinned_pair` dispatches `togglePanesShowsPinned`. It then requires a Panes projection newer than the one before the toggle.
 
-- **Decide which is wrong:**
-  - Does the app equal-suppress an unchanged projection? The fixture has no pinned panes.
-  - Or does the workload expect a publication that shouldn't happen?
+- **Decide which side is wrong:**
+  - Does the app correctly equal-suppress an unchanged projection? The fixture has no pinned panes.
+  - Or is the workload expecting a publication that shouldn't happen?
 
 ## Test reliability
 
-### Chromium hangs on launch under heavy load (#77)
+### Chromium sometimes hangs on launch (#77)
 
-Under heavy machine load (load average about 30–40), headless Chrome sometimes never finishes launching for the BridgeWeb E2E lane.
+Under heavy machine load, headless Chrome for the BridgeWeb E2E lane can fail to finish launching. Its child process blocks in a fork-time lock wait.
 
-- **First seen:** on sunclaw, where its child sat in a fork-time mutex wait (`xpc_atfork_child`). Later seen once on the M4 at a similar load.
-- **What's already fixed:**
-  - An earlier fix gave Chromium acquisition an exit: an owned browser host the harness can stop. A hang now fails at its bound instead of hanging the whole gate.
-  - Later fixes made the acquisition tests themselves deterministic.
-- **What's not fixed:** neither change removes the launch hang itself.
-- **Next:** diagnose it on sunclaw:
-  - Chrome version;
-  - whether the fork deadlock reproduces;
-  - how it depends on load.
-
-  sunclaw has also been up for weeks with heavy swap, and a reboot there is the owner's call.
+- **What exists today:** the harness owns the browser host process and stops it at a bound, so a hang fails the lane instead of hanging the run.
+- **What's not fixed:** the launch hang itself.
+- **Next:**
+  1. Confirm the signature: sample the stuck child and record the Chrome version.
+  2. Choose a fix:
+     - retry only the browser launch once after stopping the hung host (needs owner approval);
+     - pin a Chrome build without the hang;
+     - reduce load on the affected host.
 
 ### Dev-server annotation draft 404 after a host restart (#82)
 
-`BridgeDevelopmentAnnotationHTTPRoutingTests.annotationDraftSurvivesDevelopmentHostRestart` failed once under load with HTTP 404, "annotation projection cumulative credit through 1". It has passed everywhere else.
+`BridgeDevelopmentAnnotationHTTPRoutingTests.annotationDraftSurvivesDevelopmentHostRestart` can get HTTP 404 for an annotation draft after the development host restarts.
 
-- **Next:** find whether this is a test synchronization gap or a dev-server restart race, and fix it at its owner. Never rerun it to green.
+- **Next:** find whether this is a test synchronization gap or a dev-server restart race, and fix it at its owner.
 
 ### Grandfathered polling waits (#78)
 
-172 existing test waits in 75 files yield or poll a fixed number of times. They pass on a 16-thread Mac and can starve on 3-core CI runners. They are listed in `Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv` under `agentstudio_no_polling_wait_in_tests`.
+172 existing test waits in 75 files are grandfathered under `agentstudio_no_polling_wait_in_tests`, in `Tools/AgentStudioArchitectureLint/architecture-debt-ledger.tsv`. A wait that yields or polls instead of awaiting an event depends on machine speed, and it can starve on 3-core CI runners.
 
 - **Plan:** classify every site:
   - (A) a fact exists;
@@ -111,33 +102,32 @@ Under heavy machine load (load average about 30–40), headless Chrome sometimes
   - (D) the test isn't worth keeping.
 
   Then convert A and B in batches, removing ledger rows in the same PR.
-- **Branch:** `test/event-waits-not-turn-counts`.
 
 ## Measurement
 
 ### Restore cost with many panes
 
-The session-restore work added restore cost diagnostics in six phases. They have never been read from a run with 15–20 panes.
+Measure the existing six restore-cost phases with 15–20 panes.
 
-- **Next:** run a debug-app restore with 15–20 panes on the M4. Read the diagnostics from the observability verifier, not JSONL, and record where the time goes.
+- **Next:** run a debug-app restore on the M4. Read the diagnostics through the observability verifier, not JSONL.
 
 ## Code cleanup
 
 ### Two readers of process arguments (`KERN_PROCARGS2`)
 
-Two separate functions read a process's argument list from the kernel with `sysctl(KERN_PROCARGS2)`. They use different strategies:
+Two separate code paths read a process's argument list with `sysctl(KERN_PROCARGS2)`. They use different strategies:
 
 | Reader | Strategy |
 | --- | --- |
-| `ColdStartObserverSyscalls.singleProcessArgumentsRead` (`ColdStartObserverSyscalls.swift`) | One read into a zero-filled buffer of `KERN_ARGMAX` bytes (about 1 MiB), with retries. One read avoids the size-then-fetch race. |
-| `DarwinProcessChainArgumentsReader` (`DarwinProcessChainExecutableReader.swift`) | Asks for the size, fetches exactly that size, then asks again. A changed size means the process exec'd in between. |
+| `DarwinColdStartObserverSyscalls.singleProcessArgumentsRead(pid:)` in `ColdStartObserverSyscalls.swift` | One data read into a zero-filled buffer sized by the cached `KERN_ARGMAX` (falling back to 256 KiB). `readProcessArgumentsBuffer` retries failed reads. |
+| `DarwinProcessChainExecutableReader.argumentZero(of:)`, using `DarwinProcessChainArgumentsReader`, in `DarwinProcessChainExecutableReader.swift` | Queries the size, caps it at `ARG_MAX`, fetches that capacity, then queries the size again. It also compares the fetched byte count rounded to an `Int32` boundary with the original size. A mismatch returns `nil`, rejecting a possibly raced read. |
 
-Both pass the bytes to the shared `ProcessArgumentsBufferParser`. Nothing is broken today. The cost is two answers to the same kernel question: a fix to one, such as a new failure mode or a size rule, won't reach the other.
+Both pass the bytes to the shared `ProcessArgumentsBufferParser`. The cost is two answers to the same kernel question: a fix to one, such as a new failure mode or a size rule, won't reach the other.
 
 **Next:**
 
 1. Pick one reader and one owner in `Core/RuntimeEventSystem/Runtime/`.
-2. Keep the exec-race check.
+2. Keep the consistency check.
 3. Move both callers to it.
 
 ## Watching
@@ -145,5 +135,3 @@ Both pass the bytes to the shared `ProcessArgumentsBufferParser`. Nothing is bro
 ### Production crash evidence
 
 If the production app crashes again, read the scan scheduler fault breadcrumb and the Ghostty crash capture together.
-
-Three older AgentStudio crash reports, from 2026-10-17 and 2026-10-18, are no longer in `/Library/Logs/DiagnosticReports`. The cause is unknown. Their absence doesn't mean there were no crashes.
