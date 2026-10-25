@@ -478,7 +478,7 @@ extension AppDelegate {
         }
         if let workspaceSQLiteDatastore {
             await installRestoreEvidenceOwners(
-                datastore: workspaceSQLiteDatastore, sessionDirectory: workspaceSurfaceCoordinator.sessionConfig.zmxDir)
+                datastore: workspaceSQLiteDatastore)
         }
         bootInstallPreparedContentMountOwners(coordinator: workspaceSurfaceCoordinator)
         workspaceCacheCoordinator = WorkspaceCacheCoordinator(

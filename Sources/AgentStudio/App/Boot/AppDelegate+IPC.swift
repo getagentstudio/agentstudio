@@ -4,6 +4,7 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSessions
+import AgentStudioTerminal
 import CryptoKit
 import Foundation
 import Security
@@ -191,7 +192,6 @@ extension AppDelegate {
             return .initializationCancelled
         }
         replayBootRestoreRetirements()
-        startRestoreForegroundLifecycleConsumption()
         guard appIPCServer == nil else { return nil }
         guard let sessionsComposition = await prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)
         else {
@@ -311,10 +311,12 @@ extension AppDelegate {
         let readiness = restoreResumeReadiness
         let ingestion = sessionsComposition.ingestion
         let workspaceId = store.identityAtom.workspaceId
-        guard let evidenceRepository = restoreForegroundEvidenceRepository else {
-            await readiness.shutdown()
-            return
-        }
+        let evidenceRepository =
+            restoreReportEvidenceRepository
+            ?? SQLitePaneForegroundEvidenceRepository(
+                access: WorkspaceForegroundEvidenceSQLiteAccess(datastore: datastore),
+                observerLaunchId: UUIDv7.generate())
+        restoreReportEvidenceRepository = evidenceRepository
         let restoreEvidence = ClosedAppRestoreEvidenceParticipant(repository: evidenceRepository)
         let performanceRecorder = performanceTraceRecorder
         let telemetry = AgentStudioIPCAgentAuthorizationTelemetry(performanceTraceRecorder: performanceRecorder)
@@ -393,7 +395,6 @@ extension AppDelegate {
                         ])
                 },
                 activityClock: paneActivityClock,
-                foregroundLookSink: makeRestoreForegroundLookSink(),
                 resumedSessionStartSink: terminalActivityRouter?.resumedSessionStartSink,
                 terminalLeaderReader: appIPCTerminalLeaderReader,
                 processChainReader: appIPCProcessChainReader)

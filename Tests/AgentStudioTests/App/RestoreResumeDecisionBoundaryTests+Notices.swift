@@ -16,7 +16,7 @@ extension RestoreResumeDecisionBoundaryTests {
             let pane = try await ColdResumeTestPane.make(harness: harness)
             let before = try await harness.evidenceRepository.loadEvidence(paneId: pane.paneId)
             let verdict = await pane.decision(harness: harness).resolve(
-                paneId: pane.paneId, sessionId: pane.look.zmxSessionId,
+                paneId: pane.paneId, sessionId: pane.zmxSessionId,
                 readiness: .unavailable, launchBoot: .init(previousBootId: "B", currentBootId: "B"),
                 inventory: .complete([:]))
 
@@ -53,10 +53,10 @@ extension RestoreResumeDecisionBoundaryTests {
     func cursorRawMainIsNotResumable() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let pane = try await ColdResumeTestPane.make(
-                harness: harness, provider: "cursor", sessionId: "\n\u{1b}éabc123456789", program: .other)
+                harness: harness, provider: "cursor", sessionId: "\n\u{1b}éabc123456789")
             let result = await pane.resolve(pane.decision(harness: harness))
             #expect(result.evidence == .unknown(.unknownProvider))
-            let plan = result.applying(to: coldResumeBasePlan(session: pane.look.zmxSessionId))
+            let plan = result.applying(to: coldResumeBasePlan(session: pane.zmxSessionId))
             #expect(plan.resume == nil)
             #expect(plan.notice.linesByCandidateIndex[0].contains("Cursor session abc12345"))
         }
@@ -77,11 +77,6 @@ extension RestoreResumeDecisionBoundaryTests {
                     recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 25),
                     chain: TestMainAgentChain.observation))
             try await pane.repository.clearReportedEvidenceForChangedBinding(paneId: pane.paneId)
-            let later = PaneForegroundLook(
-                paneId: pane.paneId, zmxSessionId: pane.look.zmxSessionId, sessionIdentity: pane.look.sessionIdentity,
-                bindingGenerationId: pane.look.bindingGenerationId, program: .codex,
-                observerLaunchId: pane.look.observerLaunchId, sequence: 2, observedAt: Date(timeIntervalSince1970: 26))
-            #expect(try await pane.repository.admit(later) == .reportedEvidence)
             #expect(await pane.resolve(pane.decision(harness: harness)).evidence == .unknown(.changedWhileClosed))
         }
     }
@@ -115,7 +110,7 @@ extension RestoreResumeDecisionBoundaryTests {
             let affected = await original.resolve(original.decision(harness: harness))
             #expect(affected.evidence == .unknown(.historyLost))
             let next = try await ColdResumeTestPane.make(harness: harness, paneId: original.paneId)
-            #expect(next.look.bindingGenerationId != original.look.bindingGenerationId)
+            #expect(next.bindingGenerationId != original.bindingGenerationId)
             #expect(await harness.drain().readOutcome == .complete(throughId: 0))
             #expect(await harness.drain().readOutcome == .complete(throughId: 0))
             let result = await next.resolve(next.decision(harness: harness))

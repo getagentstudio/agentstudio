@@ -89,7 +89,7 @@ extension TerminalActivityProjector {
         latestState: ScrollbarState,
         context: TerminalActivityProjectionContext
     ) -> ActivityWindow? {
-        guard activitySink != nil || foregroundLookSink != nil else { return nil }
+        guard activitySink != nil else { return nil }
         let next = mergeWindow(
             current,
             surfaceID: surfaceID,
@@ -109,7 +109,6 @@ extension TerminalActivityProjector {
         latestState: ScrollbarState,
         context: TerminalActivityProjectionContext
     ) {
-        let previousActivityWindow = state.activityWindow
         state.activityWindow = admittedActivityWindow(
             current: state.activityWindow,
             surfaceID: surfaceID,
@@ -118,9 +117,6 @@ extension TerminalActivityProjector {
             latestState: latestState,
             context: context
         )
-        if previousActivityWindow == nil, let window = state.activityWindow, foregroundLookSink != nil {
-            pendingForegroundEdges.append((.outputBegan(burstWindowId: window.id), paneID))
-        }
         if context.isAttended {
             state.unseenWindow = nil
         } else {
@@ -153,11 +149,9 @@ extension TerminalActivityProjector {
         unseenCloseTasks[target.paneID] = nil
         if unseenWindow != nil { state.unseenWindow = nil }
         if activityWindow != nil {
-            queueForegroundClose(activityWindow)
             state.activityWindow = nil
         }
         paneStates[target.paneID] = state
-        await deliverForegroundEdges()
         guard (unseenWindow?.rowsAdded ?? 0) > 0 || (activityWindow?.rowsAdded ?? 0) > 0 else { return true }
         let readStartedAt = ContinuousClock.now
         let lastOutputLine = await resolveLastOutputLine(
@@ -297,18 +291,6 @@ extension TerminalActivityProjector {
             isPinnedToBottom: window.latestIsPinnedToBottom,
             lastOutputLine: lastOutputLine
         )
-    }
-
-    func queueForegroundClose(_ window: ActivityWindow?) {
-        guard foregroundLookSink != nil, let window else { return }
-        pendingForegroundEdges.append((.outputSettled(burstWindowId: window.id), window.paneID))
-    }
-
-    func deliverForegroundEdges() async {
-        let pending = pendingForegroundEdges
-        pendingForegroundEdges.removeAll()
-        guard let foregroundLookSink else { return }
-        for (trigger, paneID) in pending { await foregroundLookSink(trigger, paneID) }
     }
 
     private static func milliseconds(_ duration: Duration) -> Int {

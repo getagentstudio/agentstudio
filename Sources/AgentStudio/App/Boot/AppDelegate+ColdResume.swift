@@ -43,7 +43,7 @@ extension AppDelegate {
 
     private func coldResumeDecision(needsFinalRead: Bool) async -> ColdRestoreResumeDecision? {
         guard let ingestion = appIPCSessionsPaneContextComposition?.ingestion,
-            let foreground = restoreForegroundEvidenceRepository
+            let foreground = restoreReportEvidenceRepository
         else { return nil }
         let storeURL = appIPCPaths?.cliStoreURL
         let task = paneCLIOutboxDrainTask

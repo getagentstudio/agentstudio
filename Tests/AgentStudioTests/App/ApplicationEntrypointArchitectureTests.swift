@@ -395,7 +395,6 @@ struct ApplicationEntrypointArchitectureTests {
         let appIPCDrainIndex = try #require(
             terminationSource.range(of: "await self?.captureRestoreEvidenceAndFinishIPCForTermination()")?.lowerBound)
         #expect(terminationSource.contains("await self.drainAppIPCCredentialPersistence()"))
-        #expect(terminationSource.contains("await foregroundObserver?.finishQuitLooks()"))
         let identityAuthorityIndex = try #require(
             workspaceBootSource.range(of: "installAppIPCIdentityAuthority(datastore:")?.lowerBound)
         let surfaceCoordinatorIndex = try #require(

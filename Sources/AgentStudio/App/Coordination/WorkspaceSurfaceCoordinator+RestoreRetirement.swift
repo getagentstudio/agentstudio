@@ -5,18 +5,18 @@ import Foundation
 import os.log
 
 extension WorkspaceSurfaceCoordinator {
-    enum ForegroundRetirementRoute {
+    enum RestoreEvidenceRetirementRoute {
         case awaitingReady(pendingPaneIDs: Set<UUID>)
         case ready(sink: @Sendable (UUID) async -> Void)
     }
 
     /// The sink and optional schema must both be installed before foreground delivery.
     /// Reuse the owned retirement route; snapshot deletion on replay is idempotent.
-    func markRestoreForegroundRetirementReady() {
-        guard case .awaitingReady(let pendingPaneIDs) = restoreForegroundRetirementRoute,
+    func markRestoreEvidenceRetirementReady() {
+        guard case .awaitingReady(let pendingPaneIDs) = restoreEvidenceRetirementRoute,
             let sink = restorePaneRetirementSink
         else { return }
-        restoreForegroundRetirementRoute = .ready(sink: sink)
+        restoreEvidenceRetirementRoute = .ready(sink: sink)
         submitRestoreRetirement(pendingPaneIDs)
     }
 
@@ -27,10 +27,10 @@ extension WorkspaceSurfaceCoordinator {
         let snapshotter = scrollbackSnapshotter
         let scrollback = scrollbackStore
         let retireForeground: (@Sendable (UUID) async -> Void)?
-        switch restoreForegroundRetirementRoute {
+        switch restoreEvidenceRetirementRoute {
         case .awaitingReady(var pendingPaneIDs):
             pendingPaneIDs.formUnion(paneIDs)
-            restoreForegroundRetirementRoute = .awaitingReady(pendingPaneIDs: pendingPaneIDs)
+            restoreEvidenceRetirementRoute = .awaitingReady(pendingPaneIDs: pendingPaneIDs)
             retireForeground = nil
         case .ready(let sink):
             retireForeground = sink

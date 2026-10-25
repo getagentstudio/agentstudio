@@ -23,15 +23,13 @@ extension E2ESerializedTests.ZmxE2ETests {
                     let lost = try await old.resolve()
                     try await old.prove(lost, expected: .unknown(.historyLost), label: "history-lost-X")
                     try await old.close()
-                    try removeRetiredForegroundProtocolFiles(
-                        environment: environment, session: old.foreground.sessionId)
                     let next = try await ResumeEvidenceZmxProof.make(
                         environment: environment, data: data, provider: "codex",
-                        paneId: old.foreground.paneId, restoredSessionId: old.foreground.sessionId)
+                        paneId: old.binding.paneId, restoredSessionId: old.binding.sessionId)
                     do {
                         #expect(next.sessionId != old.sessionId)
-                        #expect(next.foreground.generationId != old.foreground.generationId)
-                        #expect(next.foreground.sessionId == old.foreground.sessionId)
+                        #expect(next.binding.generationId != old.binding.generationId)
+                        #expect(next.binding.sessionId == old.binding.sessionId)
                         try await next.prepareCold()
                         let result = try await next.resolve()
                         let invocation = ResumeInvocation(
@@ -65,7 +63,7 @@ extension E2ESerializedTests.ZmxE2ETests {
                     environment: environment, data: data, provider: "codex")
                 do {
                     try await proof.prepareCold()
-                    try await data.append(pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex")
+                    try await data.append(pane: proof.binding.paneId, session: proof.sessionId, provider: "codex")
                     let writer = data.writer
                     let observation = try await valueFromDedicatedThread {
                         let before = try writer.readOutbox(after: 0).get().entries
@@ -90,16 +88,5 @@ extension E2ESerializedTests.ZmxE2ETests {
                 throw error
             }
         }
-    }
-}
-
-private func removeRetiredForegroundProtocolFiles(environment: ResumeEvidenceZmxEnvironment, session: ZmxSessionID)
-    throws
-{
-    for prefix in ["agent-input", "agent-output", "shell-ready"] {
-        let path = environment.harness.zmxDir + "/" + prefix + "-" + session.rawValue
-        var metadata = stat()
-        guard lstat(path, &metadata) == 0, metadata.st_mode & S_IFMT == S_IFIFO else { throw POSIXError(.EINVAL) }
-        try FileManager.default.removeItem(atPath: path)
     }
 }

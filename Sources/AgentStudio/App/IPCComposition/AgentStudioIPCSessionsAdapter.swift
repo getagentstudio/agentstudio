@@ -17,7 +17,6 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
     let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
-    private let foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
 
     init(
         ingestion: SessionsIngestion, now: @escaping @Sendable () -> Date = { Date() },
@@ -25,7 +24,6 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         activityClock: PaneActivityClock? = nil,
         ownerPaneLookup: @escaping @Sendable (PaneId) -> PaneId? = { _ in nil },
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
-        foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil,
         resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)? = nil,
         processChainReader: any ProcessChainReading
     ) {
@@ -36,7 +34,6 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         self.ownerPaneLookup = ownerPaneLookup
         self.performanceTraceRecorder = performanceTraceRecorder
         self.resumedSessionStartSink = resumedSessionStartSink
-        self.foregroundLookSink = foregroundLookSink
         self.processChainReader = processChainReader
     }
 
@@ -78,13 +75,9 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
                     .init(
                         paneId: paneId, source: .hook,
                         orderingInstant: admissionInstant, wallTime: now()))
-                let trigger: ForegroundLookTrigger =
-                    committed.disposition == .bound || hook.eventName == .sessionStart || hook.eventName == .sessionEnd
-                    ? .bindingChanged : .agentMessage
                 if hook.eventName == .sessionStart {
                     await resumedSessionStartSink?(paneId, hook.providerIdentifier, hook.sessionId)
                 }
-                await foregroundLookSink?(trigger, paneId)
             }
         } catch {
             if let capacityError = error as? SessionsRepositoryError {

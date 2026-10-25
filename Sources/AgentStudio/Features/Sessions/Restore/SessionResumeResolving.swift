@@ -6,7 +6,7 @@ package protocol SessionResumeResolving: Sendable {
     func resumeEvidence(for input: ResumeEvidenceInput) async -> ResumeEvidence
 }
 
-/// Decides only from the cold end and the evidence captured before activation.
+/// Decides only from the cold end and the reports read before activation.
 package struct SessionsResumeResolver: SessionResumeResolving {
     private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     package init(performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil) {
@@ -22,7 +22,7 @@ package struct SessionsResumeResolver: SessionResumeResolving {
             case .reportedOtherSessionEnd, .reportedOtherStart: return .unknown(.changedWhileClosed)
             case .reportsUnreadable(.historyLost): return .unknown(.historyLost)
             case .reportsUnreadable(.rowRefused): return .unknown(.reportRefused)
-            case .look, nil: break
+            case nil: break
             }
             guard let main = input.coldEndedMain else { return .knownExited }
             guard let provider = ResumeProvider(providerIdentifier: main.providerIdentifier) else {

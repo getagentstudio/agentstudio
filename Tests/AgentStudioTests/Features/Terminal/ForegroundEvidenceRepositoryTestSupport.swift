@@ -43,10 +43,8 @@ struct ForegroundEvidenceRepositoryFixture: Sendable {
             try database.execute(
                 sql: "CREATE TABLE fixture_latest_binding(pane_id TEXT PRIMARY KEY, generation TEXT, is_live INTEGER)")
         }
-        let sessions = [paneId: sessionId]
         repository = SQLitePaneForegroundEvidenceRepository(
-            access: TestForegroundEvidenceSQLiteAccess(databaseQueue: database), observerLaunchId: launchId,
-            paneSessions: { sessions })
+            access: TestForegroundEvidenceSQLiteAccess(databaseQueue: database), observerLaunchId: launchId)
         try database.write { database in
             try database.execute(
                 sql: "INSERT INTO fixture_latest_binding VALUES (?,?,1)",
@@ -70,20 +68,4 @@ struct ForegroundEvidenceRepositoryFixture: Sendable {
         }
     }
 
-    func look(
-        sequence: UInt64, generation: UUID? = nil, program: ForegroundProgram = .claudeCode, launchId: UUID? = nil
-    ) throws
-        -> PaneForegroundLook
-    {
-        let identity = ZmxSessionIdentity(
-            version: 1, bootID: "test-boot",
-            daemon: .init(pid: 4100, startSeconds: 10, startMicroseconds: 0),
-            terminalLeader: .init(pid: 4200, startSeconds: 11, startMicroseconds: 0),
-            processGroupID: 4200, sessionCreatedAt: 100)
-        return PaneForegroundLook(
-            paneId: paneId, zmxSessionId: sessionId, sessionIdentity: try identity.encoded(),
-            bindingGenerationId: generation ?? self.generation, program: program,
-            observerLaunchId: launchId ?? self.launchId, sequence: sequence,
-            observedAt: Date(timeIntervalSince1970: 100))
-    }
 }

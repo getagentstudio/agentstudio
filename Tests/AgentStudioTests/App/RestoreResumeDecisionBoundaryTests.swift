@@ -51,7 +51,7 @@ struct RestoreResumeDecisionBoundaryTests {
     @Test("F10 uses the app's preceding boot even when the stored look is older")
     func oldLookCannotSkipSameBootDecision() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
-            let pane = try await ColdResumeTestPane.make(harness: harness, bootId: "boot-A")
+            let pane = try await ColdResumeTestPane.make(harness: harness)
             let hold = HeldStep<PaneForegroundEvidence?>("old look after cold end before B1")
             let repository = HeldResumeEvidenceRepository(base: pane.repository, hold: hold, heldRead: 1)
             let decision = pane.decision(harness: harness, foreground: repository)

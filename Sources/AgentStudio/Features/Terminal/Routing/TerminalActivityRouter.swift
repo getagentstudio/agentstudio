@@ -83,7 +83,6 @@ package final class TerminalActivityRouter {
         clearPaneActivityStatus: (@MainActor (UUID) -> Void)? = nil,
         activityOccurrenceSink: (@Sendable (PaneActivityOccurrence) -> Void)? = nil,
         closeReadDurationSink: (@Sendable (Duration) -> Void)? = nil,
-        foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil,
         unseenActivityDebounceDuration: Duration = AppPolicies.InboxNotification.terminalActivityQuietDebounceDuration,
         agentSettledQuietDuration: Duration = AppPolicies.InboxNotification.agentSettledQuietDuration,
         unseenActivityClock: (any Clock<Duration> & Sendable)? = nil,
@@ -101,7 +100,7 @@ package final class TerminalActivityRouter {
                 agentSettledQuietDuration: agentSettledQuietDuration,
                 clock: unseenActivityClock,
                 activitySink: activityOccurrenceSink,
-                closeReadDurationSink: closeReadDurationSink, foregroundLookSink: foregroundLookSink
+                closeReadDurationSink: closeReadDurationSink
             )
         self.activityAtom = activityAtom
         self.attendedPane = attendedPane

@@ -104,12 +104,12 @@ struct ScrollbackWorkspaceLifecycleTests {
             delegate.viewRegistry = fixture.coordinator.viewRegistry
             delegate.workspaceSurfaceCoordinator = fixture.coordinator
             delegate.workspaceSQLiteDatastore = fixture.datastore
-            delegate.restoreForegroundEvidenceRepository = repository
+            delegate.restoreReportEvidenceRepository = repository
             // These are the production boot calls, in their actual installation order.
             delegate.workspaceSurfaceCoordinator.installUndoJournalRecovery(recovery)
             await delegate.installRestoreEvidenceOwners(
-                datastore: fixture.datastore, sessionDirectory: fixture.root.path)
-            try #require(delegate.restoreForegroundObserver != nil)
+                datastore: fixture.datastore)
+            try #require(delegate.restoreReportEvidenceRepository != nil)
             delegate.acceptWorkspacePreparedContentMountCohort(
                 .init(
                     generation: .init(), terminalActivationInput: .init(entries: []),
@@ -123,7 +123,6 @@ struct ScrollbackWorkspaceLifecycleTests {
             }
             #expect(await AppIPCDeferredInitialization.prepareOptionalSchema(using: fixture.datastore))
             delegate.replayBootRestoreRetirements()
-            delegate.startRestoreForegroundLifecycleConsumption()
             await fixture.coordinator.shutdown()
             await delegate.shutdownRestoreEvidenceOwners()
             let remaining = try await fixture.datastore.performApplicationLocalRead {

@@ -1,5 +1,7 @@
 import AgentStudioInfrastructure
+import AgentStudioTestHarness
 import Darwin
+import Dispatch
 import Foundation
 import Synchronization
 import Testing
@@ -15,7 +17,6 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
     private struct Ownership: Sendable {
         var sessions: Set<ZmxSessionID> = []
         var clients: [ResumeZmxProcessDriver] = []
-        var jobControlChildren: [ProcessIncarnation] = []
     }
     let harness: ZmxTestHarness
     let backend: ZmxBackend
@@ -59,10 +60,6 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
         ownership.withLock { $0.clients.append(client) }
     }
 
-    func retainJobControlChild(_ child: ProcessIncarnation) {
-        ownership.withLock { $0.jobControlChildren.append(child) }
-    }
-
     func killSession(_ sessionID: ZmxSessionID) async throws {
         try #require(
             ownership.withLock { $0.sessions.contains(sessionID) }, "only S5-owned session names may be killed")
@@ -82,28 +79,40 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
     }
 
     private func joinExit(
-        of process: ProcessIncarnation, terminate: @Sendable () async throws -> Void
+        of process: ZmxProcessIncarnation, terminate: @Sendable () async throws -> Void
     ) async throws {
-        let watcher = DarwinProcessExitWatcher()
-        let watchID = UUIDv7.generate()
-        let watch = watcher.watchExit(of: process, watchId: watchID)
-        defer { watcher.shutdown() }
+        // Reuse ColdStartObserver's native primitive; no foreground-following owner remains.
+        let registered = HeldStep<Void>("owned zmx exit source registration")
+        let exited = HeldStep<Void>("owned zmx daemon NOTE_EXIT")
+        let cancelled = HeldStep<Void>("owned zmx exit source cancellation")
+        let source = makeDefaultColdStartProcessWatchSource(
+            identifier: process.pid, eventMask: .exit,
+            queue: DispatchQueue(label: "resume-owned-daemon-exit"))
+        source.setRegistrationHandler { try? registered.arriveBlocking(()) }
+        source.setEventHandler { didExit in if didExit { try? exited.arriveBlocking(()) } }
+        source.setCancelHandler { try? cancelled.arriveBlocking(()) }
+        source.resume()
         do {
-            try await terminate()
+            _ = try await registered.firstArrival()
+            registered.release()
+            switch DarwinColdStartObserverSyscalls().leaderState(of: process) {
+            case .exited: break
+            case .unverifiable(let failure): throw failure
+            case .sameIncarnationAlive:
+                try await terminate()
+                _ = try await exited.firstArrival()
+            }
+            exited.release()
+            source.cancel()
+            _ = try await cancelled.firstArrival()
+            cancelled.release()
         } catch {
-            watch.cancel()
-            // Cancellation finishes only after the native source acknowledges it.
-            for await _ in watch.events {}
+            registered.retire()
+            exited.retire()
+            source.cancel()
+            _ = try? await cancelled.firstArrival()
+            cancelled.release()
             throw error
-        }
-        var events = watch.events.makeAsyncIterator()
-        let settlement = await events.next()
-        let event = try #require(settlement, "native exit watch must settle the owned process")
-        switch event {
-        case .exited(let observedID), .alreadyGone(let observedID):
-            #expect(observedID == watchID)
-        case .unavailable:
-            throw ResumeEvidenceCleanupFailure.watchUnavailable(event)
         }
     }
 
@@ -112,22 +121,6 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
         var failure: (any Error)?
         for sessionID in owned.sessions.sorted(by: { $0.rawValue < $1.rawValue }) {
             do { try await killSession(sessionID) } catch { if failure == nil { failure = error } }
-        }
-        // Job-control execs can leave stopped/background children outside the
-        // replacement shell's group. Verify their incarnation before signalling.
-        for child in owned.jobControlChildren {
-            do {
-                switch DarwinColdStartObserverSyscalls().leaderState(of: child) {
-                case .exited: continue
-                case .unverifiable: throw ResumeEvidenceCleanupFailure.unverifiableChild(child)
-                case .sameIncarnationAlive:
-                    try await joinExit(of: child) {
-                        guard Darwin.kill(child.pid, SIGKILL) == 0 || errno == ESRCH else {
-                            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
-                        }
-                    }
-                }
-            } catch { if failure == nil { failure = error } }
         }
         for client in owned.clients {
             do { try await client.stop() } catch { if failure == nil { failure = error } }
@@ -143,8 +136,6 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
 }
 
 private enum ResumeEvidenceCleanupFailure: Error {
-    case watchUnavailable(ProcessExitWatchEvent)
-    case unverifiableChild(ProcessIncarnation)
     case remainingInventory(ZmxSessionInventory)
 }
 

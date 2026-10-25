@@ -31,7 +31,7 @@ struct RestoreResumeReadinessOrderingTests {
                 return await AppDelegate.resolveColdResumePlan(
                     request: .init(
                         paneID: .init(existingUUID: pane.paneId),
-                        plan: coldResumeBasePlan(session: pane.look.zmxSessionId), inventory: .complete([:])),
+                        plan: coldResumeBasePlan(session: pane.zmxSessionId), inventory: .complete([:])),
                     readiness: readiness,
                     launchBoot: .init(previousBootId: "B", currentBootId: "B"),
                     decision: { finalRead in
