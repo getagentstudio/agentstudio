@@ -12,9 +12,20 @@ import Testing
 extension E2ESerializedTests.ZmxE2ETests {
     @Test(
         "Spec agent outcomes reach the real command with exact per-pane UUIDs",
-        arguments: ["claude-code", "codex"], ResumeEvidenceAgentRow.allCases)
+        arguments: ["claude-code", "codex"], ResumeEvidenceAgentRow.allCases.filter { !$0.requiresJobControl })
     @MainActor
     func resumeEvidenceTable(provider: String, row: ResumeEvidenceAgentRow) async throws {
+        try await withResumeEvidenceBackend { environment in
+            try await runResumeEvidenceRow(environment: environment, provider: provider, row: row)
+        }
+    }
+
+    @Test(
+        "stopped and background owned agents resume once under r13",
+        arguments: ["claude-code", "codex"],
+        ResumeEvidenceAgentRow.allCases.filter { $0.requiresJobControl })
+    @MainActor
+    func resumeJobControlEvidence(provider: String, row: ResumeEvidenceAgentRow) async throws {
         try await withResumeEvidenceBackend { environment in
             try await runResumeEvidenceRow(environment: environment, provider: provider, row: row)
         }
@@ -29,7 +40,8 @@ private func runResumeEvidenceRow(
     let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: row.boot)
     do {
         let proof = try await ResumeEvidenceZmxProof.make(
-            environment: environment, data: data, provider: provider)
+            environment: environment, data: data, provider: provider,
+            physicalAgent: row.usesPhysicalAgent, controlledJobs: row.requiresJobControl)
         do {
             try await row.prepare(proof)
             try await proof.prepareCold()
@@ -49,10 +61,14 @@ private func runResumeEvidenceRow(
 
 enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
     case exitedInApp, rebootInterrupted, commandExitObserved
+    case silentExitWithoutEnd, stoppedObserved, backgroundObserved
     case activeWithoutEnd, keptEnd, keptOldEnd, keptOtherStart, keptStartWithoutMain
     case daemonKilledWithoutEnd, hangupEnd
     case refusedReport, unreadableStore
     case endStoreUnavailable, storeReplaced, storeRemoved, freshMissingStore, invalidId
+
+    var requiresJobControl: Bool { self == .stoppedObserved || self == .backgroundObserved }
+    var usesPhysicalAgent: Bool { requiresJobControl || self == .silentExitWithoutEnd }
 
     var boot: ResumeProofBoot { self == .rebootInterrupted || self == .activeWithoutEnd ? .reboot : .same }
 
@@ -60,7 +76,7 @@ enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
         switch self {
         case .exitedInApp, .commandExitObserved, .keptEnd, .keptOldEnd, .hangupEnd: .knownExited
         case .rebootInterrupted, .activeWithoutEnd, .daemonKilledWithoutEnd,
-            .endStoreUnavailable, .freshMissingStore:
+            .silentExitWithoutEnd, .stoppedObserved, .backgroundObserved, .endStoreUnavailable, .freshMissingStore:
             .interruptedCandidate(
                 .init(
                     provider: proof.provider == "codex" ? .codex : .claudeCode,
@@ -79,6 +95,11 @@ enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
         switch self {
         case .exitedInApp:
             _ = try await data.liveHook(pane: pane, session: proof.sessionId, provider: proof.provider, end: true)
+        case .silentExitWithoutEnd:
+            try await #require(proof.binding.agentFixture).letAgentExitIntoShell()
+        case .stoppedObserved, .backgroundObserved:
+            try await #require(proof.binding.agentFixture).suspendAgentIntoShell(
+                background: self == .backgroundObserved)
         case .commandExitObserved:
             #expect(try await data.ingestion.submitCommandFinished(paneId: pane, reportedAt: .now) != nil)
         case .keptEnd, .hangupEnd:

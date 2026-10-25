@@ -17,6 +17,7 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
     private struct Ownership: Sendable {
         var sessions: Set<ZmxSessionID> = []
         var clients: [ResumeZmxProcessDriver] = []
+        var jobControlChildren: [ZmxProcessIncarnation] = []
     }
     let harness: ZmxTestHarness
     let backend: ZmxBackend
@@ -44,7 +45,8 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
         retainSession(sessionID)
         print("R3_ZMX_OWNED root=\(harness.zmxDir) session=\(sessionID.rawValue) source=\(#filePath)")
         let zmxPath = try #require(harness.zmxPath)
-        var environment = ProcessInfo.processInfo.environment
+        var environment = ZmxTestHarness.hermeticChildEnvironment(
+            zmxDir: harness.zmxDir, scratchHomeDirectory: harness.scratchHomeDirectory)
         environment["ZMX_DIR"] = harness.zmxDir
         environment["ZMX_SESSION"] = ""
         environment["ZMX_SESSION_PREFIX"] = ""
@@ -60,13 +62,18 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
         ownership.withLock { $0.clients.append(client) }
     }
 
+    func retainJobControlChild(_ child: ZmxProcessIncarnation) {
+        ownership.withLock { $0.jobControlChildren.append(child) }
+    }
+
     func killSession(_ sessionID: ZmxSessionID) async throws {
         try #require(
             ownership.withLock { $0.sessions.contains(sessionID) }, "only S5-owned session names may be killed")
         guard let encoded = try await backend.observeSessionIdentity(sessionID) else { return }
         let identity = try ZmxSessionIdentity.decode(encoded)
         let zmxPath = try #require(harness.zmxPath)
-        var environment = ProcessInfo.processInfo.environment
+        var environment = ZmxTestHarness.hermeticChildEnvironment(
+            zmxDir: harness.zmxDir, scratchHomeDirectory: harness.scratchHomeDirectory)
         environment["ZMX_DIR"] = harness.zmxDir
         environment["ZMX_SESSION"] = ""
         let killEnvironment = environment
@@ -122,6 +129,20 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
         for sessionID in owned.sessions.sorted(by: { $0.rawValue < $1.rawValue }) {
             do { try await killSession(sessionID) } catch { if failure == nil { failure = error } }
         }
+        for child in owned.jobControlChildren {
+            do {
+                switch DarwinColdStartObserverSyscalls().leaderState(of: child) {
+                case .exited: continue
+                case .unverifiable(let failure): throw failure
+                case .sameIncarnationAlive:
+                    try await joinExit(of: child) {
+                        guard Darwin.kill(child.pid, SIGKILL) == 0 || errno == ESRCH else {
+                            throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO)
+                        }
+                    }
+                }
+            } catch { if failure == nil { failure = error } }
+        }
         for client in owned.clients {
             do { try await client.stop() } catch { if failure == nil { failure = error } }
         }
@@ -132,6 +153,7 @@ final class ResumeEvidenceZmxEnvironment: Sendable {
         }
         if let failure { throw failure }  // Retain the scratch root for diagnosis.
         try FileManager.default.removeItem(atPath: harness.zmxDir)
+        try FileManager.default.removeItem(atPath: harness.scratchHomeDirectory)
     }
 }
 

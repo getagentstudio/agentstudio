@@ -4,13 +4,7 @@ import Testing
 @testable import AgentStudioInfrastructure
 
 enum RestoreCostTraceTestPhase: String, CaseIterable, Sendable {
-    case gathering = "performance.restore.foreground.gather"
-    case scheduling = "performance.restore.foreground.schedule"
-    case probing = "performance.restore.foreground.probe"
-    case watching = "performance.restore.foreground.watch"
     case importing = "performance.restore.outbox.import"
-    case quitForward = "performance.restore.allowance.quit_forward"
-    case activationForward = "performance.restore.allowance.activation_forward"
     case mountApply = "performance.restore.allowance.mount_apply"
     case resumedStartEnd = "performance.restore.allowance.resumed_start_end"
     case deciding = "performance.restore.resume.decide"

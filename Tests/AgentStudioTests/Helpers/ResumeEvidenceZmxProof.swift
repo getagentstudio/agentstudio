@@ -22,6 +22,7 @@ struct ResumeEvidenceZmxProof {
 
     static func make(
         environment: ResumeEvidenceZmxEnvironment, data: ResumeEvidenceZmxData, provider: String,
+        physicalAgent: Bool = false, controlledJobs: Bool = false,
         paneId: UUID? = nil, restoredSessionId: ZmxSessionID? = nil
     ) async throws -> Self {
         let pane = paneId ?? UUIDv7.generate()
@@ -30,12 +31,24 @@ struct ResumeEvidenceZmxProof {
         let hook = try await data.liveHook(pane: pane, session: session, provider: provider, end: false)
         guard case .committed(let commit) = hook else { throw ResumeEvidenceFixtureFailure.bindingNotAdmitted }
         let sessionId = restoredSessionId ?? .generateUUIDv7()
-        let client = try await environment.launchSession(
-            sessionId,
-            arguments: [
-                "/bin/sh", "-c", "printf " + ResumeZmxProcessDriver.shellMarker + "; exec /bin/cat",
-            ])
-        _ = try await client.expectInteractiveShell()
+        let agentFixture: OwnedResumeAgentFixture?
+        if physicalAgent {
+            agentFixture = try await OwnedResumeAgentFixture.make(
+                ownership: environment, sessionId: sessionId, provider: provider == "codex" ? "codex" : "claude",
+                controlledJobStop: controlledJobs)
+        } else {
+            agentFixture = nil
+            let client = try await environment.launchSession(
+                sessionId,
+                arguments: [
+                    "/bin/sh", "-c",
+                    "IFS= read -r startup; printf '%s\\n' \"$startup\"; printf "
+                        + ResumeZmxProcessDriver.shellMarker + "; exec /bin/cat",
+                ])
+            try await client.sendStartupProbe()
+            _ = try await client.expectStartupGate()
+            _ = try await client.expectInteractiveShell()
+        }
         let repository = SQLitePaneForegroundEvidenceRepository(
             access: TestForegroundSQLiteAccess(databaseQueue: data.database), observerLaunchId: UUIDv7.generate())
         _ = await data.drain.drain(storeURL: data.storeURL)
@@ -43,7 +56,7 @@ struct ResumeEvidenceZmxProof {
             environment: environment, data: data,
             binding: .init(
                 paneId: pane, sessionId: sessionId,
-                generationId: commit.binding.bindingGenerationId, repository: repository),
+                generationId: commit.binding.bindingGenerationId, repository: repository, agentFixture: agentFixture),
             provider: provider, sessionId: session, drain: data.drain)
     }
 
@@ -165,6 +178,7 @@ struct ResumeEvidenceZmxProof {
     func close() async throws {
         await data.access.setRejectsWrites(false)
         try await environment.killSession(binding.sessionId)
+        binding.agentFixture?.closeHandles()
     }
 }
 
@@ -173,6 +187,7 @@ struct ResumeEvidenceZmxBinding: Sendable {
     let sessionId: ZmxSessionID
     let generationId: UUID
     let repository: SQLitePaneForegroundEvidenceRepository
+    let agentFixture: OwnedResumeAgentFixture?
 }
 
 private struct ResumeEvidenceInvocationReceipt: Encodable {
