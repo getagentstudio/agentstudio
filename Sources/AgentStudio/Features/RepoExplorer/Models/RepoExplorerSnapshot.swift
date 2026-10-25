@@ -55,8 +55,8 @@ enum RepoExplorerPaneSecondaryLine: Equatable, Sendable {
 
 struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     let terminalTitle: String
-    let sessionStatus: AgentSessionStatus?
-    let connectionIssue: AgentConnectionRefusalReason?
+    let sessionPresentation: PaneAgentStatusPresentation?
+    let ownedDrawerPaneIDs: [UUID]
     let contextDisplay: PaneContextDisplay?
     let activityAt: Date?
     let paneActivityTime: PaneActivityTime?
@@ -73,8 +73,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
 
     init(
         terminalTitle: String,
-        sessionStatus: AgentSessionStatus? = nil,
-        connectionIssue: AgentConnectionRefusalReason? = nil,
+        sessionPresentation: PaneAgentStatusPresentation? = nil,
+        ownedDrawerPaneIDs: [UUID] = [],
         contextDisplay: PaneContextDisplay? = nil,
         activityAt: Date? = nil,
         paneActivityTime: PaneActivityTime? = nil,
@@ -90,8 +90,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
         drawerOwnerPaneID: UUID? = nil
     ) {
         self.terminalTitle = terminalTitle
-        self.sessionStatus = sessionStatus
-        self.connectionIssue = connectionIssue
+        self.sessionPresentation = sessionPresentation
+        self.ownedDrawerPaneIDs = ownedDrawerPaneIDs
         self.contextDisplay = contextDisplay
         self.activityAt = activityAt
         self.paneActivityTime = paneActivityTime
@@ -112,7 +112,8 @@ struct RepoExplorerPaneRowFacts: Equatable, Sendable {
     }
 
     var sidebarTerminalTitle: String {
-        contextDisplay?.agentTitle ?? terminalTitle
+        PaneContextPresentationRules.displayTitle(
+            raw: terminalTitle, agentTitle: contextDisplay?.agentTitle, cwd: nil, shell: nil)
     }
 
     private func normalizedSecondaryText(_ text: String?) -> String? {

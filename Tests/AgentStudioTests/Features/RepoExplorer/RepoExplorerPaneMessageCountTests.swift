@@ -9,66 +9,6 @@ import Testing
 @Suite
 struct RepoExplorerPaneMessageCountTests {
     @Test
-    func ownerUsesDrawersChildUsesOwnAndTotalsCountEachSourceOnce() {
-        let owner = PaneContextDisplay(
-            revision: .init(1), agentTitle: nil, agentLine: nil,
-            own: counts(failure: 0, needsYou: 1, info: 8),
-            includingDrawers: counts(failure: 2, needsYou: 4, info: 12), pullRequests: .notApplicable
-        )
-        let drawer = PaneContextDisplay(
-            revision: .init(1), agentTitle: nil, agentLine: nil,
-            own: counts(failure: 2, needsYou: 3, info: 4),
-            includingDrawers: .zero, pullRequests: .notApplicable)
-        let ownerChip = RepoExplorerPaneMessageCountProjection.make(display: owner, isDrawer: false)
-        let drawerChip = RepoExplorerPaneMessageCountProjection.make(display: drawer, isDrawer: true)
-        #expect(ownerChip.count == 6)
-        #expect(drawerChip.count == 5)
-        #expect(ownerChip.tone == .danger)
-        #expect(drawerChip.tone == .danger)
-        #expect(RepoExplorerPaneMessageCountProjection.totalOwn([owner, drawer]) == 6)
-        #expect(ownerChip.countIncludingInformational == 18)
-        #expect(drawerChip.countIncludingInformational == 9)
-        #expect(RepoExplorerPaneMessageCountProjection.totalOwn([owner, drawer], includingInformational: true) == 18)
-    }
-    @Test
-    func tintAndInformationComeOnlyFromCountedTypes() {
-        let cases: [MessageCountOracle] = [
-            .init(
-                counts: counts(failure: 1, needsYou: 7, info: 9), count: 8, tone: .danger,
-                countIncludingInformational: 17, toneIncludingInformational: .danger),
-            .init(
-                counts: counts(failure: 0, needsYou: 1, info: 9), count: 1, tone: .warning,
-                countIncludingInformational: 10, toneIncludingInformational: .warning),
-            .init(
-                counts: counts(failure: 0, needsYou: 2, info: 9), count: 2, tone: .warning,
-                countIncludingInformational: 11, toneIncludingInformational: .warning),
-            .init(
-                counts: counts(failure: 0, needsYou: 0, info: 9), count: 0, tone: .neutral,
-                countIncludingInformational: 9, toneIncludingInformational: .info),
-            .init(
-                counts: counts(failure: 0, needsYou: 0, done: 2, info: 1), count: 0, tone: .neutral,
-                countIncludingInformational: 3, toneIncludingInformational: .success),
-            .init(
-                counts: .zero, count: 0, tone: .neutral, countIncludingInformational: 0,
-                toneIncludingInformational: .neutral),
-        ]
-        for oracle in cases {
-            let model = RepoExplorerPaneMessageCountProjection.make(oracle.counts)
-            #expect(model.count == oracle.count)
-            #expect(model.tone == oracle.tone)
-            #expect(model.countIncludingInformational == oracle.countIncludingInformational)
-            #expect(model.toneIncludingInformational == oracle.toneIncludingInformational)
-        }
-    }
-    struct MessageCountOracle {
-        let counts: PaneMessageCounts
-        let count: Int
-        let tone: PaneContextChipTone
-        let countIncludingInformational: Int
-        let toneIncludingInformational: PaneContextChipTone
-    }
-
-    @Test
     func actualRowsReceiveTheirPreparedCountsAndFixedChipOrder() throws {
         let owner = UUIDv7.generate()
         let child = UUIDv7.generate()
@@ -101,10 +41,14 @@ struct RepoExplorerPaneMessageCountTests {
         let rows = projection.resolvedGroups.flatMap { projection.paneRowsByGroupId[$0.id] ?? [] }
         let ownerRow = try #require(rows.first { $0.destination.paneId == owner })
         let childRow = try #require(rows.first { $0.destination.paneId == child })
-        #expect(ownerRow.messageChip?.count == 6)
-        #expect(childRow.messageChip?.count == 5)
-        #expect(ownerRow.variants?.compact.chips == [.messages, .clock])
-        #expect(childRow.variants?.compact.chips == [.drawer, .messages, .clock])
+        #expect(
+            ownerRow.variants?.compact.chipModels == [
+                .init(kind: .failure, count: 2), .init(kind: .needsYou, count: 4), .init(kind: .info, count: 12),
+            ])
+        #expect(
+            childRow.variants?.compact.chipModels == [
+                .init(kind: .failure, count: 2), .init(kind: .needsYou, count: 3), .init(kind: .info, count: 4),
+            ])
         #expect(ownerRow.variants?.compact.fallbackLineCount == ownerRow.variants?.expanded.fallbackLineCount)
     }
     private func counts(failure: Int, needsYou: Int, done: Int = 0, info: Int) -> PaneMessageCounts {

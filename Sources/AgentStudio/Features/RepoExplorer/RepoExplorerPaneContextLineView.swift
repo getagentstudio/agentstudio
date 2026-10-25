@@ -11,16 +11,21 @@ package struct RepoExplorerPaneContextLineView: View {
     let isAgentLine: Bool
     let octiconLoader: OcticonLoader
     let showsTooltip: Bool
+    let maximumTextWidth: CGFloat
     let maximumLineCount: Int
 
     package init(
         line: RepoExplorerPaneContextLine, isAgentLine: Bool, octiconLoader: OcticonLoader,
-        showsTooltip: Bool = true, maximumLineCount: Int = 1
+        showsTooltip: Bool = true, maximumLineCount: Int = 1,
+        maximumTextWidth: CGFloat? = nil
     ) {
         self.line = line
         self.isAgentLine = isAgentLine
         self.octiconLoader = octiconLoader
         self.showsTooltip = showsTooltip
+        self.maximumTextWidth =
+            maximumTextWidth
+            ?? (maximumLineCount > 1 ? .infinity : AppStyles.Shell.Sidebar.agentLineMaxWidth)
         self.maximumLineCount = maximumLineCount
     }
     package var body: some View {
@@ -59,25 +64,39 @@ package struct RepoExplorerPaneContextLineView: View {
                 )
                 .foregroundStyle(line.tone.foregroundColor)
                 .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
-            Text(line.text)
-                .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
-                .foregroundStyle(isAgentLine ? Color.primary : Color.secondary)
-                .lineLimit(maximumLineCount)
-                .truncationMode(.tail)
-                .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
             if let ageText = line.ageText {
-                Text(ageText)
-                    .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
-                    .foregroundStyle(Color.secondary)
-                    .lineLimit(1)
-                    .fixedSize(horizontal: true, vertical: false)
-                    .layoutPriority(1)
+                AdjacentAgeLayout(maximumTextWidth: maximumTextWidth) {
+                    text
+                        .background {
+                            AccessibilityLabelBridge(
+                                identifier: "paneContext.agentLine.text", label: line.text, role: .staticText)
+                        }
+                    Text(" " + ageText)
+                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
+                        .foregroundStyle(Color.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .background {
+                            AccessibilityLabelBridge(
+                                identifier: "paneContext.agentLine.age", label: ageText, role: .staticText)
+                        }
+                }
+            } else {
+                text
                     .background {
                         AccessibilityLabelBridge(
-                            identifier: "paneContext.agentLine.age", label: ageText, role: .staticText)
+                            identifier: "paneContext.status.text", label: line.text, role: .staticText)
                     }
             }
         }
+    }
+
+    private var text: some View {
+        Text(line.text)
+            .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
+            .foregroundStyle(isAgentLine ? Color.primary : line.tone.foregroundColor)
+            .lineLimit(maximumLineCount)
+            .truncationMode(.tail)
     }
 
     private var opacityPulseIsActive: Bool {

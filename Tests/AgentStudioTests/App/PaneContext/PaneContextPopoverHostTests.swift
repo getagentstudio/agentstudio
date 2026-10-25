@@ -12,13 +12,6 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverHostTests {
-    @Test("Informational-only messages keep the entry point present")
-    func informationalOnlyMessagesKeepEntryPointPresent() {
-        let chip = PaneMessageChipModel(
-            count: 0, tone: .neutral, countIncludingInformational: 2, toneIncludingInformational: .info)
-        #expect(PaneContextPopoverHost.shouldPresentMessagesButton(chip: chip))
-    }
-
     @Test
     func disappearanceOfTheProviderClearsControlsButRealStorageFailureStaysVisible() async throws {
         let pane = PaneId.generateUUIDv7()
@@ -94,8 +87,16 @@ struct PaneContextPopoverHostTests {
                 kinds: .init(failure: 4, needsYou: 3, done: 0, info: 8),
                 newestOpenBlockingAskId: .generateUUIDv7()),
             pullRequests: .notApplicable)
-        #expect(await PaneContextToolbarControls.shapeMessages(display: nil, isDrawer: false) == nil)
-        #expect(await PaneContextToolbarControls.shapeMessages(display: display, isDrawer: false)?.count == 7)
-        #expect(await PaneContextToolbarControls.shapeMessages(display: display, isDrawer: true)?.count == 1)
+        #expect(ToolbarProjection.project(display: nil, isDrawer: false, now: .distantPast).item == .none)
+        #expect(
+            ToolbarProjection.project(display: display, isDrawer: false, now: .distantPast).item
+                == .chips([
+                    .init(kind: .failure, count: 4), .init(kind: .needsYou, count: 3), .init(kind: .info, count: 8),
+                ]))
+        #expect(
+            ToolbarProjection.project(display: display, isDrawer: true, now: .distantPast).item
+                == .chips([
+                    .init(kind: .needsYou, count: 1), .init(kind: .info, count: 3),
+                ]))
     }
 }

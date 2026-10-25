@@ -27,8 +27,10 @@ extension RepoExplorerPaneContextLineTests {
                 summary: "A quiet message", refs: [], writer: .pane(.generateUUIDv7()), updatedAt: now) : nil
 
         let variants = RepoExplorerPaneRowVariants.make(
-            title: "Pane", note: nil, isDrawer: false, branchStatus: nil, isActive: true,
-            agentLine: message, sessionStatus: .working(.active), connectionIssue: oracle.reason, now: now)
+            title: "Pane",
+            agentLine: message,
+            sessionPresentation: .init(status: .working(.active), evidence: .verifiedLive),
+            now: now)
         let card = RepoExplorerPaneRowVariants.informationLines(
             title: "Pane", note: nil, agentLine: message, sessionStatus: .working(.active),
             connectionIssue: oracle.reason, now: now)

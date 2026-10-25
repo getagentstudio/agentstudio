@@ -169,6 +169,7 @@ package enum AppStyles {
             package static let notificationRowDetailSize: CGFloat = AppStyles.General.Typography.textSm
             package static let notificationRowTimestampSize: CGFloat = AppStyles.General.Typography.textSm
             package static let chipRowSpacing: CGFloat = 4
+            package static let agentLineMaxWidth: CGFloat = 220
             package static let chipContentSpacing: CGFloat = 2
             package static let syncClusterSpacing: CGFloat = 1
             package static let chipHorizontalPadding: CGFloat = 4
@@ -383,6 +384,7 @@ package enum AppStyles {
             package static let agentLineMaxWidth: CGFloat = 360
             package static let labeledActionTrailingPadding: CGFloat = AppStyles.General.Spacing.standard
             package static let dividerHeight: CGFloat = 16
+            package static let dividerWidth: CGFloat = 1
             package static let dividerHorizontalPadding = AppStyles.General.Spacing.standard
             package static let statusClusterSpacing: CGFloat = AppStyles.General.Spacing.standard
             package static let statusValueSpacing: CGFloat = AppStyles.General.Spacing.tight

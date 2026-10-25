@@ -42,10 +42,7 @@ struct PaneContextPopoverHostNativeTests {
             let host = NSHostingView(
                 rootView: PaneContextPopoverHost(
                     paneId: paneId,
-                    presentation: .messages(
-                        .init(
-                            count: 1, tone: .warning, countIncludingInformational: 2,
-                            toneIncludingInformational: .warning)),
+                    presentation: .kind(.init(kind: .needsYou, count: 1)),
                     location: .pane, readers: readers, octiconLoader: makeTestOcticonLoader(),
                     onGoToPane: { _ in },
                     onOpenCompleted: { value in
@@ -66,7 +63,8 @@ struct PaneContextPopoverHostNativeTests {
             host.layoutSubtreeIfNeeded()
             var visited = Set<ObjectIdentifier>()
             let button = try #require(
-                Self.find(host, identifier: "pane-context.messages", visited: &visited) as? AccessibilityPressBridgeView
+                Self.find(host, identifier: "pane-context.messages.needsYou", visited: &visited)
+                    as? AccessibilityPressBridgeView
             )
             #expect(button.accessibilityLabel() == LocalActionSpec.showPaneMessages.actionSpec.label)
             #expect(providerReadCount == 0)
@@ -114,10 +112,7 @@ struct PaneContextPopoverHostNativeTests {
             let host = NSHostingView(
                 rootView: PaneContextPopoverHost(
                     paneId: paneId,
-                    presentation: .messages(
-                        .init(
-                            count: 1, tone: .danger, countIncludingInformational: 1, toneIncludingInformational: .danger
-                        )),
+                    presentation: .kind(.init(kind: .needsYou, count: 1)),
                     location: .pane, readers: readers, octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
                     onOpenCompleted: { value in
                         controller = value
@@ -137,7 +132,8 @@ struct PaneContextPopoverHostNativeTests {
             host.layoutSubtreeIfNeeded()
             var visited = Set<ObjectIdentifier>()
             let button = try #require(
-                Self.find(host, identifier: "pane-context.messages", visited: &visited) as? AccessibilityPressBridgeView
+                Self.find(host, identifier: "pane-context.messages.needsYou", visited: &visited)
+                    as? AccessibilityPressBridgeView
             )
             #expect(button.accessibilityPerformPress())
             try await completed.expectNext(in: 0, .released)

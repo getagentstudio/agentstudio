@@ -20,7 +20,7 @@ struct PaneContextUIReadersTests {
             let pane = store.createPane(title: "Terminal title")
             let paneId = PaneId(existingUUID: pane.id)
             let statusAtom = SessionStatusAtom()
-            statusAtom.apply([paneId: .set(.init(status: .idle(.ended)))])
+            statusAtom.apply([paneId: .set(.init(status: .idle(.ended), evidence: .verifiedEnded))])
             let display = PaneContextDisplay(
                 revision: .init(7), agentTitle: "Agent title", agentLine: nil,
                 own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
@@ -46,11 +46,13 @@ struct PaneContextUIReadersTests {
             let facts = try #require(capture.capturePaneFact(paneID: pane.id, for: .panes))
             #expect(statusKeys == [paneId])
             #expect(displayKeys == [paneId])
-            #expect(facts.sessionStatus == .idle(.ended))
+            #expect(facts.sessionPresentation?.status == .idle(.ended))
+            #expect(facts.sessionPresentation?.evidence == .verifiedEnded)
             #expect(facts.contextDisplay == display)
             let prepared = RepoExplorerProjectionWorker.preparedPaneRowFacts(
                 [pane.id: facts], snapshot: .init(repos: [], repoEnrichmentByRepoId: [:], surface: .panes, query: ""))
-            #expect(prepared[pane.id]?.sessionStatus == .idle(.ended))
+            #expect(prepared[pane.id]?.sessionPresentation?.status == .idle(.ended))
+            #expect(prepared[pane.id]?.sessionPresentation?.evidence == .verifiedEnded)
             #expect(prepared[pane.id]?.contextDisplay == display)
             _ = capture.capturePaneFact(paneID: pane.id, for: .repos)
             #expect(statusKeys == [paneId])

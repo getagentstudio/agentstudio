@@ -21,10 +21,6 @@ struct PaneContextPopoverHost: View {
     @State private var openRequest: UInt64 = 0
     private static let controls = PaneContextPopoverControlProjection.controls()
 
-    static func shouldPresentMessagesButton(chip: PaneMessageChipModel) -> Bool {
-        chip.tone != .neutral || chip.countIncludingInformational != chip.count
-    }
-
     var body: some View {
         button
             .popover(isPresented: $isPresented, arrowEdge: .bottom) { popover }
@@ -48,13 +44,10 @@ struct PaneContextPopoverHost: View {
 
     @ViewBuilder private var button: some View {
         switch presentation {
-        case .messages(let chip):
-            let count = includeInformational ? chip.countIncludingInformational : chip.count
-            if Self.shouldPresentMessagesButton(chip: chip) {
-                MessagesChip(
-                    count: count, tone: includeInformational ? chip.toneIncludingInformational : chip.tone,
-                    control: Self.controls.messages, octiconLoader: octiconLoader, onOpen: requestOpen)
-            }
+        case .kind(let chip):
+            PaneMessageKindChip(
+                model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
+                octiconLoader: octiconLoader, onOpen: requestOpen)
         case .agentLine(let line):
             Button(action: requestOpen) {
                 RepoExplorerPaneContextLineView(line: line, isAgentLine: true, octiconLoader: octiconLoader)
@@ -74,7 +67,7 @@ struct PaneContextPopoverHost: View {
             PopoverPanel { Text(unavailableNote).foregroundStyle(.secondary) }
         } else if let controller, let state = controller.state {
             switch presentation {
-            case .messages:
+            case .kind:
                 MessagesPopover(
                     paneId: paneId.uuid, model: state.messages, controls: Self.controls, location: location,
                     providerPrompts: state.providerPrompts, feedback: controller.actionFeedback,

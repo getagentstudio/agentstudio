@@ -3,6 +3,7 @@ import AppKit
 import SwiftUI
 
 package enum SystemSymbol: String, CaseIterable, Equatable, Sendable {
+    case infoCircle = "info.circle"
     case arrowDown = "arrow.down"
     case arrowDownToLine = "arrow.down.to.line"
     case arrowClockwise = "arrow.clockwise"

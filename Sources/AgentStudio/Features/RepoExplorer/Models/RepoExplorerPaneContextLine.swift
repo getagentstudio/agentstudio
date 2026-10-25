@@ -59,4 +59,22 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "paneSessionStatus")),
             tone: tone, glyphMotion: glyphMotion, ageText: nil)
     }
+
+    static func status(_ line: StatusLine, presentation: PaneAgentStatusPresentation?) -> Self? {
+        let source: AgentSessionStatus =
+            switch line.kind {
+            case .needsYou: .needsYou(presentation?.compactPrompt?.reason ?? .blocked)
+            case .working: .working(.active)
+            case .monitoring: .working(.monitoring)
+            case .failed: presentation?.status ?? .failed(.init(category: ""))
+            case .idle: presentation?.status ?? .idle(.ready)
+            }
+        guard let rendered = session(source) else { return nil }
+        let spec = LocalActionSpec.paneSessionStatus(source).actionSpec
+        return Self(
+            text: line.text, icon: rendered.icon,
+            tooltip: spec.controlTooltipRenderValue(
+                provenance: .localAction(rawValue: "paneSessionStatus"), textOverride: line.text),
+            tone: rendered.tone, glyphMotion: rendered.glyphMotion, ageText: nil)
+    }
 }

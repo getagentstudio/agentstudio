@@ -2,6 +2,7 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSessions
+import AgentStudioSharedComponents
 import Foundation
 import Observation
 
@@ -29,11 +30,13 @@ enum PaneManagementIdentityCapture {
     enum VisibleInput: Equatable, Sendable {
         case card(LineInput)
         case message(paneId: UUID, detail: AgentLineDetail)
+        case toolbar(paneId: UUID, display: PaneContextDisplay?, isDrawer: Bool)
 
         var paneId: UUID {
             switch self {
             case .card(let input): input.paneId
             case .message(let paneId, _): paneId
+            case .toolbar(let paneId, _, _): paneId
             }
         }
 
@@ -46,6 +49,7 @@ enum PaneManagementIdentityCapture {
             switch self {
             case .card(let input): input.agentLine
             case .message(_, let detail): detail
+            case .toolbar(_, let display, _): display?.agentLine
             }
         }
     }
@@ -55,6 +59,7 @@ enum PaneManagementIdentityCapture {
         let recencyText: String
         let recencyTier: RepoExplorerPaneRecencyTier
         let isActive: Bool
+        var toolbarItem: ToolbarItemModel = .none
     }
 
     static func input(
@@ -129,20 +134,36 @@ enum PaneManagementIdentityCapture {
                 time: input.activityTime, referenceInstant: referenceInstant.advanced(by: elapsed),
                 wallNow: currentWallDate, calendar: calendar)
             let preparedLines: [RepoExplorerPaneRowLine]
+            var toolbarItem: ToolbarItemModel = .none
+            var toolbarDeadline: Date?
             switch input {
             case .card(let card): preparedLines = await lines(card, now: currentWallDate)
             case .message(_, let detail): preparedLines = [.agentLine(.agent(detail, now: currentWallDate))]
+            case .toolbar(_, let display, let isDrawer):
+                let projected = ToolbarProjection.project(display: display, isDrawer: isDrawer, now: currentWallDate)
+                toolbarItem = projected.item
+                toolbarDeadline = projected.nextChange
+                if case .agentLine = projected.item, let detail = display?.agentLine {
+                    preparedLines = [.agentLine(.agent(detail, now: currentWallDate))]
+                } else {
+                    preparedLines = []
+                }
             }
             let prepared = Presentation(
                 lines: preparedLines, recencyText: activity.clockText,
-                recencyTier: activity.recencyTier, isActive: activity.isActive)
+                recencyTier: activity.recencyTier, isActive: activity.isActive, toolbarItem: toolbarItem)
             if prepared != previous {
                 guard !Task.isCancelled else { return }
                 await publish(prepared)
                 previous = prepared
             }
-            let messageDeadline = input.agentLine.map {
-                RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: currentWallDate)
+            let messageDeadline: Date?
+            if case .toolbar = input {
+                messageDeadline = toolbarDeadline
+            } else {
+                messageDeadline = input.agentLine.map {
+                    RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: currentWallDate)
+                }
             }
             guard let nextDate = [activity.nextPresentationChangeDate, messageDeadline].compactMap(\.self).min()
             else { return }

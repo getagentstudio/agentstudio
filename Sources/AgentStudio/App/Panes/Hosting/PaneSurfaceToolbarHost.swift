@@ -262,8 +262,7 @@ struct PaneSurfaceToolbarHost: View {
             pinPaneAction: commandPresentation.pinPane,
             trailingActions: hostedActions.withPaneContextContent(paneContextContent),
             paneSurfaceActions: leadingToolbarActions,
-            paneContextActions: contextToolbarActions,
-            middleContent: paneAgentLineContent
+            paneContextActions: contextToolbarActions
         )
         .background { CaptureRegionMarker(kind: "paneToolbar", id: anchorPaneId.uuidString) }
         .onAppear {
@@ -288,13 +287,6 @@ struct PaneSurfaceToolbarHost: View {
         .onChange(of: paneNotePresentation?.pendingRequest()?.id) { _, _ in
             consumePendingPaneNoteRequest()
         }
-    }
-
-    private var paneAgentLineContent: AnyView? {
-        guard let paneContextReaders else { return nil }
-        return AnyView(
-            PaneContextToolbarAgentLine(
-                paneId: PaneId(existingUUID: anchorPaneId), readers: paneContextReaders, octiconLoader: octiconLoader))
     }
 
     private var paneContextContent: AnyView? {

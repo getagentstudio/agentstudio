@@ -13,7 +13,7 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextToolbarRenderingTests {
-    @Test("Agent Line uses the sidebar's keyed source and leaves both button groups fixed", arguments: [480.0, 1000.0])
+    @Test("Agent Line uses the sidebar's keyed source and leaves both button groups fixed", arguments: [390.0, 1000.0])
     func agentLineOnlyUsesRemainingWidth(width: Double) async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let pane = PaneId.generateUUIDv7()
@@ -25,7 +25,7 @@ struct PaneContextToolbarRenderingTests {
             var baselineHeight: CGFloat?
             var emptyTextPixels: Data?
             var fixedGroupPixels: [Data]?
-            var emptyBeyondCapPixels: Data?
+            var emptyFullPixels: Data?
             for summary in [
                 nil, "Checking toolbar spacing", String(repeating: "W", count: 200),
                 String(repeating: "Wide agent work description ", count: 20),
@@ -71,33 +71,32 @@ struct PaneContextToolbarRenderingTests {
                             in: mounted.host,
                             rect: CGRect(x: middleEnd, y: 0, width: width - middleEnd, height: barHeight)),
                     ]
-                    let capEnd = min(
-                        middleEnd, middleStart + 360 + AppStyles.Shell.DrawerToolbar.trailingClusterSpacing)
-                    let beyondCapPixels =
-                        middleEnd > capEnd
-                        ? try pixels(
-                            in: mounted.host,
-                            rect: CGRect(x: capEnd, y: 0, width: middleEnd - capEnd, height: barHeight))
-                        : Data()
                     if summary != nil {
-                        #expect(
-                            textPixels != (try #require(emptyTextPixels)), "Agent Line text must paint in the middle")
+                        if width == 1000 {
+                            #expect(textPixels != (try #require(emptyTextPixels)), "The fitting Agent Line must paint")
+                        } else {
+                            #expect(
+                                try pixels(in: mounted.host) == (try #require(emptyFullPixels)),
+                                "An insufficient-width item must hide completely, including its divider")
+                        }
                         #expect(
                             groupPixels == (try #require(fixedGroupPixels)), "Agent Line must not paint over controls")
-                        #expect(
-                            beyondCapPixels == (try #require(emptyBeyondCapPixels)),
-                            "Agent Line ink must stop at 360 points")
+                        if width == 1000 {
+                            let textView = try #require(findToolbarText(in: mounted.host))
+                            let rect = mounted.host.convert(textView.bounds, from: textView)
+                            #expect(rect.width <= 360, "The text clamp excludes the icon and age")
+                        }
                     } else {
                         emptyTextPixels = textPixels
                         fixedGroupPixels = groupPixels
-                        emptyBeyondCapPixels = beyondCapPixels
+                        emptyFullPixels = try pixels(in: mounted.host)
                     }
                     let labels = accessibilityLabels(in: mounted.host)
                     #expect(!labels.contains("Working"))
                     #expect(
                         !labels.contains(where: { $0.contains("Messages unavailable") || $0.contains("credential") }))
                     if let summary {
-                        #expect(labels.contains(summary))
+                        #expect(labels.contains(summary) == (width == 1000))
                     } else {
                         #expect(!labels.contains("Checking toolbar spacing"))
                     }
@@ -107,6 +106,15 @@ struct PaneContextToolbarRenderingTests {
             }
             atoms.paneContextPresentation.remove([pane])
         }
+    }
+
+    private func findToolbarText(in view: NSView) -> AccessibilityLabelBridgeView? {
+        if let label = view as? AccessibilityLabelBridgeView,
+            label.accessibilityIdentifier() == "paneContext.agentLine.text"
+        {
+            return label
+        }
+        return view.subviews.lazy.compactMap { findToolbarText(in: $0) }.first
     }
 
     @Test("a card with no activity still paints the sidebar clock chip")
@@ -130,59 +138,28 @@ struct PaneContextToolbarRenderingTests {
             "The card must paint the same clock and unknown-activity text as the sidebar")
     }
 
-    @Test(
-        "extracting activity chips leaves the sidebar row pixels unchanged",
-        arguments: [false, true],
-        [RepoExplorerPaneRecencyTier.strongBlue, .mediumBlue, .mutedBlue, .faintBlue, .grey])
-    func sidebarActivityPixelsRemainUnchanged(isActive: Bool, tier: RepoExplorerPaneRecencyTier)
-        throws
-    {
+    @Test("a sidebar activity chip does not repeat the active mark")
+    func sidebarActivityDoesNotRepeatActive() throws {
         let loader = makeTestOcticonLoader()
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let variant = RepoExplorerPaneRowVariants.make(
+            title: "Terminal", activityDate: now.addingTimeInterval(-720), now: now
+        ).compact
         let actual = mountCard(
-            AnyView(
-                RepoExplorerPaneRowContent(
-                    primaryText: "Terminal", secondaryLine: nil, branchContextText: nil, branchStatus: nil,
-                    recencyText: "12m", recencyTier: tier, isActive: isActive,
-                    isDrawerPane: false, octiconLoader: loader)), width: 420)
-        defer { actual.window.orderOut(nil) }
-        // Frozen from the pre-extraction row at 8c5fef8bc; no call to the extracted renderer.
+            AnyView(RepoExplorerPaneRowContent(variant: variant, isDrawerPane: false, octiconLoader: loader)),
+            width: 420)
+        defer { actual.window.close() }
         let reference = mountCard(
             AnyView(
                 VStack(alignment: .leading, spacing: AppStyles.Shell.Sidebar.rowContentSpacing) {
-                    RepoExplorerPaneTitleLineView(
-                        text: "Terminal", isDrawerPane: false, octiconLoader: loader)
-                    SidebarStatusChipRow(isPendingPullRequestFacts: false) {
-                        RepoExplorerPaneChipOverflow { _ in
-                            HStack(spacing: AppStyles.Shell.Sidebar.chipRowSpacing) {
-                                SidebarChip(
-                                    icon: .system(.clock), octiconLoader: loader, text: "12m",
-                                    style: frozenRecencyStyle(tier))
-                                if isActive {
-                                    SidebarChip(
-                                        icon: .system(.playCircleFill), octiconLoader: loader,
-                                        text: nil, style: .accent(.accentColor))
-                                }
-                            }
-                        }
-                    }
+                    RepoExplorerPaneTitleLineView(text: "Terminal", isDrawerPane: false, octiconLoader: loader)
+                    SidebarChip(icon: .system("clock"), octiconLoader: loader, text: "12m", style: .neutral)
                 }
-                .padding(.leading, 0)
                 .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
-                .fixedSize(horizontal: false, vertical: true)
-            ), width: 420)
-        defer { reference.window.orderOut(nil) }
+                .fixedSize(horizontal: false, vertical: true)), width: 420)
+        defer { reference.window.close() }
         #expect(actual.host.bounds == reference.host.bounds)
         #expect(try pixels(in: actual.host) == pixels(in: reference.host))
-    }
-
-    private func frozenRecencyStyle(_ tier: RepoExplorerPaneRecencyTier) -> SidebarChip.Style {
-        switch tier {
-        case .strongBlue: .accent(AppStyles.Shell.Sidebar.chipInfoColor)
-        case .mediumBlue: .accent(AppStyles.Shell.Sidebar.recencyMediumBlue)
-        case .mutedBlue: .accent(AppStyles.Shell.Sidebar.recencyMutedBlue)
-        case .faintBlue: .accent(AppStyles.Shell.Sidebar.recencyFaintBlue)
-        case .grey: .neutral
-        }
     }
 
     @Test("lineless cards paint complete identity values", arguments: [1340.0, 2000.0])
@@ -401,36 +378,17 @@ struct PaneContextToolbarRenderingTests {
         -> PaneContextToolbarTestHost
     {
         let clock = NativeCardTestClock()
-        let hasLine = readers.contextDisplayForPane(pane)?.agentLine != nil
+        let display = readers.contextDisplayForPane(pane)
+        let counts = (readers.isDrawerPane(pane) ? display?.own : display?.includingDrawers)?.kinds
+        let hasLine = display?.agentLine != nil && (counts?.unread ?? 0) == 0
         let loader = makeTestOcticonLoader()
-        let trailing = DrawerOverlay.TrailingActions(
-            editPaneNoteAction: action(.editPaneNote), openEditorMenuAction: action(.openPaneLocationInEditorMenu),
-            openFinderAction: action(.openPaneLocationInFinder), copyPathAction: action(.copyCurrentPanePath),
-            gitStatusPresentation: .resolve(
-                branchStatus: .init(
-                    isDirty: true, syncState: .unknown, prCount: 1, linesAdded: 0, linesDeleted: 0,
-                    untrackedFileCount: 1)),
-            openPullRequestAction: surfaceAction(.openPullRequest),
-            editorMenuContent: AnyView(EmptyView()), editorMenuPresented: .constant(false), buttonTitle: nil
-        ).withPaneContextContent(
-            AnyView(
-                PaneContextToolbarControls(paneId: pane, readers: readers, octiconLoader: loader, onGoToPane: { _ in }))
-        )
         let host = NSHostingView(
-            rootView: AnyView(
-                DrawerIconBar(
-                    octiconLoader: loader,
-                    leadingControls: .drawer(
-                        isExpanded: false, addDrawerPaneAction: action(.addDrawerPane),
-                        toggleDrawerAction: action(.toggleDrawer)),
-                    pinPaneAction: action(.pinPane), trailingActions: trailing,
-                    paneContextActions: [surfaceAction(.zoomPane)],
-                    middleContent: AnyView(
-                        PaneContextToolbarAgentLine(
-                            paneId: pane, readers: readers, octiconLoader: loader, clock: clock,
-                            wallNow: Date(timeIntervalSince1970: 1_800_000_125),
-                            onRelativeTimeEvent: { clock.observeOwner($0) }))
-                ).frame(width: width).environment(\.colorScheme, .dark)))
+            rootView: toolbarRoot(
+                contextContent: AnyView(
+                    PaneContextToolbarControls(
+                        paneId: pane, readers: readers, octiconLoader: loader, clock: clock,
+                        wallNow: Date(timeIntervalSince1970: 1_800_000_125),
+                        onRelativeTimeEvent: { clock.observeOwner($0) }, onGoToPane: { _ in })), width: width))
         host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -443,16 +401,19 @@ struct PaneContextToolbarRenderingTests {
         let mounted = PaneContextToolbarTestHost(
             host: host, window: window, clock: clock, paneId: pane.uuid, hasLine: hasLine)
         do {
+            try #require(try await clock.nextOperation(pane: pane.uuid, input: nil) == .started)
+            try await clock.entered(pane: pane.uuid, input: nil)
+            let fact = try await clock.facts.expectNext(
+                in: 0, where: { _ in true }, "toolbar age registration or worker end")
             if hasLine {
-                try #require(try await clock.nextOperation(pane: pane.uuid, input: nil) == .started)
-                try await clock.entered(pane: pane.uuid, input: nil)
-                let fact = try await clock.facts.expectNext(
-                    in: 0, where: { _ in true }, "toolbar age registration or worker end")
                 guard case .registered = fact else {
                     throw ToolbarHostFailure.unexpectedClockFact(String(describing: fact))
                 }
             } else {
-                #expect(try await clock.nextHideResult() == .notRunning)
+                guard fact == .workerEnded(pane.uuid, nil, cancelled: false) else {
+                    throw ToolbarHostFailure.unexpectedClockFact(String(describing: fact))
+                }
+                try await clock.facts.expectNext(in: 1, .workerEnded(pane.uuid, nil, cancelled: false))
             }
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
@@ -464,6 +425,29 @@ struct PaneContextToolbarRenderingTests {
             window.close()
             throw error
         }
+    }
+
+    func toolbarRoot(contextContent: AnyView, width: CGFloat) -> AnyView {
+        let loader = makeTestOcticonLoader()
+        let trailing = DrawerOverlay.TrailingActions(
+            editPaneNoteAction: action(.editPaneNote), openEditorMenuAction: action(.openPaneLocationInEditorMenu),
+            openFinderAction: action(.openPaneLocationInFinder), copyPathAction: action(.copyCurrentPanePath),
+            gitStatusPresentation: .resolve(
+                branchStatus: .init(
+                    isDirty: true, syncState: .unknown, prCount: 1, linesAdded: 0, linesDeleted: 0,
+                    untrackedFileCount: 1)),
+            openPullRequestAction: surfaceAction(.openPullRequest),
+            editorMenuContent: AnyView(EmptyView()), editorMenuPresented: .constant(false), buttonTitle: nil
+        ).withPaneContextContent(contextContent)
+        return AnyView(
+            DrawerIconBar(
+                octiconLoader: loader,
+                leadingControls: .drawer(
+                    isExpanded: false, addDrawerPaneAction: action(.addDrawerPane),
+                    toggleDrawerAction: action(.toggleDrawer)),
+                pinPaneAction: action(.pinPane), trailingActions: trailing,
+                paneContextActions: [surfaceAction(.zoomPane)]
+            ).frame(width: width).environment(\.colorScheme, .dark))
     }
 
     private func action(_ command: AppCommand) -> TargetedCommandControlAction {

@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioSharedComponents
 import Foundation
 
 package enum RepoExplorerPaneRowLine: Equatable, Sendable {
@@ -21,21 +22,26 @@ package enum RepoExplorerPaneRowLine: Equatable, Sendable {
     }
 }
 
-enum RepoExplorerPaneChipKind: Equatable, Sendable {
-    case drawer
-    case gitPR
-    case changes
-    case sync
-    case messages
-    case clock
-    case active
-}
-
 struct RepoExplorerPaneRowVariant: Equatable, Sendable {
     let lines: [RepoExplorerPaneRowLine]
-    let chips: [RepoExplorerPaneChipKind]
-    let fallbackLineCount: Int
-    var showsChipLine = true
+    let statusLine: StatusLine?
+    let chips: [KindCount]
+    let activityChip: AgeText?
+    let chipModels: [KindChipModel]
+
+    var showsChipLine: Bool { !chips.isEmpty || activityChip != nil }
+    var fallbackLineCount: Int { lines.count + (showsChipLine ? 1 : 0) }
+
+    init(
+        lines: [RepoExplorerPaneRowLine], statusLine: StatusLine? = nil,
+        chips: [KindCount] = [], activityChip: AgeText? = nil
+    ) {
+        self.lines = lines
+        self.statusLine = statusLine
+        self.chips = chips
+        self.activityChip = activityChip
+        self.chipModels = chips.map(RepoExplorerPaneKindChipProjection.model)
+    }
 }
 
 package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
@@ -47,94 +53,37 @@ package struct RepoExplorerPaneRowVariants: Equatable, Sendable {
         sessionStatus: AgentSessionStatus?, connectionIssue: AgentConnectionRefusalReason?,
         now: Date
     ) -> [RepoExplorerPaneRowLine] {
-        RepoExplorerPaneLineVisibilityTable.lines(
-            lineCandidates(
-                title: title, branchContext: nil, note: note, agentLine: agentLine,
-                sessionStatus: sessionStatus, connectionIssue: connectionIssue, now: now),
-            selected: true, surface: .informationCard)
+        var lines: [RepoExplorerPaneRowLine] = [.title(title)]
+        if let note { lines.append(.note(note)) }
+        if let status = sessionStatus.flatMap(RepoExplorerPaneContextLine.session) {
+            lines.append(.sessionStatus(status))
+        }
+        if let agentLine { lines.append(.agentLine(.agent(agentLine, now: now))) }
+        if let connectionIssue { lines.append(.connectionIssue(.connection(connectionIssue))) }
+        return lines
     }
 
     static func make(
         title: String,
-        branchContext: String? = nil,
-        note: String?,
-        isDrawer: Bool,
-        branchStatus: GitBranchStatus?,
-        isActive: Bool,
         agentLine: AgentLineDetail? = nil,
-        sessionStatus: AgentSessionStatus? = nil,
-        connectionIssue: AgentConnectionRefusalReason? = nil,
-        messageCount: Int = 0,
+        sessionPresentation: PaneAgentStatusPresentation? = nil,
+        scopedPrompt: (source: PaneId, prompt: CompactProviderPrompt)? = nil,
+        counts: PaneMessageKindCounts = .zero,
+        activityDate: Date? = nil,
         now: Date
     ) -> Self {
-        let candidates = lineCandidates(
-            title: title, branchContext: branchContext, note: note, agentLine: agentLine,
-            sessionStatus: sessionStatus, connectionIssue: connectionIssue, now: now)
-        let compactLines = RepoExplorerPaneLineVisibilityTable.lines(
-            candidates, selected: false)
-        let expandedLines = RepoExplorerPaneLineVisibilityTable.lines(
-            candidates, selected: true)
-
-        var compactChips: [RepoExplorerPaneChipKind] = []
-        if isDrawer { compactChips.append(.drawer) }
-        if let branchStatus,
-            SidebarPullRequestChipSpec.presentation(
-                branchStatus: branchStatus,
-                usesPanesLoadingChip: true
-            ) != .hidden
-        {
-            compactChips.append(.gitPR)
-        }
-        var expandedChips = compactChips
-        if let branchStatus {
-            if SidebarGitStatusChips.diffDetail(branchStatus: branchStatus) != nil {
-                expandedChips.append(.changes)
-            }
-            if SidebarGitStatusChips.showsSync(branchStatus: branchStatus) {
-                expandedChips.append(.sync)
-            }
-        }
-        if messageCount > 0 {
-            compactChips.append(.messages)
-            expandedChips.append(.messages)
-        }
-        compactChips.append(.clock)
-        expandedChips.append(.clock)
-        if isActive {
-            compactChips.append(.active)
-            expandedChips.append(.active)
-        }
-        let compactChipLine = RepoExplorerPaneLineVisibilityTable.showsChips(selected: false)
-        let expandedChipLine = RepoExplorerPaneLineVisibilityTable.showsChips(selected: true)
-        return Self(
-            compact: RepoExplorerPaneRowVariant(
-                lines: compactLines,
-                chips: compactChips,
-                fallbackLineCount: compactLines.count + (compactChipLine ? 1 : 0),
-                showsChipLine: compactChipLine
-            ),
-            expanded: RepoExplorerPaneRowVariant(
-                lines: expandedLines,
-                chips: expandedChips,
-                fallbackLineCount: expandedLines.count + (expandedChipLine ? 1 : 0),
-                showsChipLine: expandedChipLine
-            )
-        )
-    }
-    private static func lineCandidates(
-        title: String, branchContext: String? = nil, note: String?, agentLine: AgentLineDetail?,
-        sessionStatus: AgentSessionStatus?, connectionIssue: AgentConnectionRefusalReason?, now: Date
-    ) -> [RepoExplorerPaneLineKind: RepoExplorerPaneRowLine] {
-        let candidates: [RepoExplorerPaneLineKind: RepoExplorerPaneRowLine?] = [
-            .title: .title(title),
-            .worktreeBranch: branchContext.map(RepoExplorerPaneRowLine.worktreeBranch),
-            .note: note.map(RepoExplorerPaneRowLine.note),
-            .agentLine: agentLine.map { .agentLine(RepoExplorerPaneContextLine.agent($0, now: now)) },
-            .connectionIssue: connectionIssue.map { .connectionIssue(RepoExplorerPaneContextLine.connection($0)) },
-            .sessionStatus: sessionStatus.flatMap(RepoExplorerPaneContextLine.session).map(
-                RepoExplorerPaneRowLine.sessionStatus),
+        let status = PaneContextPresentationRules.statusLine(sessionPresentation, scopedPrompt: scopedPrompt)
+        var lines: [RepoExplorerPaneRowLine] = [
+            .title(PaneContextPresentationRules.displayTitle(raw: title, cwd: nil, shell: nil))
         ]
-        return candidates.compactMapValues { $0 }
+        if let status, let rendered = RepoExplorerPaneContextLine.status(status, presentation: sessionPresentation) {
+            lines.append(.sessionStatus(rendered))
+        }
+        if let agentLine { lines.append(.agentLine(.agent(agentLine, now: now))) }
+        let variant = RepoExplorerPaneRowVariant(
+            lines: lines, statusLine: status, chips: PaneContextPresentationRules.kindChips(counts),
+            activityChip: PaneContextPresentationRules.activityChip(
+                agentLine: agentLine, activity: activityDate, now: now))
+        return Self(compact: variant, expanded: variant)
     }
-
 }

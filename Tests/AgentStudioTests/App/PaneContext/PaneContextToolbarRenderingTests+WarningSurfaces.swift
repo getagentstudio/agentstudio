@@ -18,8 +18,10 @@ extension PaneContextToolbarRenderingTests {
             summary: "Quiet message", refs: [], writer: .pane(pane),
             updatedAt: now.addingTimeInterval(-125))
         let variants = RepoExplorerPaneRowVariants.make(
-            title: "Pane", note: nil, isDrawer: false, branchStatus: nil, isActive: false,
-            agentLine: message, sessionStatus: .working(.active), connectionIssue: .credentialNotRecognized, now: now)
+            title: "Pane",
+            agentLine: message,
+            sessionPresentation: .init(status: .working(.active), evidence: .verifiedLive),
+            now: now)
         let lines = expanded ? variants.expanded.lines : variants.compact.lines
         let loader = makeTestOcticonLoader()
         let row = mountCard(AnyView(warningPolicyRow(lines, expanded: expanded, loader: loader)), width: 420)
@@ -40,7 +42,7 @@ extension PaneContextToolbarRenderingTests {
         let actualPixels = try pixels(in: row.host, rect: textRect)
         let expectedPixels = try pixels(in: expected.host, rect: textRect)
         #expect(actualPixels == expectedPixels)
-        try expectWarningSurfaceText("Working", color: .secondary, in: row.host)
+        try expectWarningSurfaceText("Working", color: AppStyles.General.Accent.primaryColor, in: row.host)
         try expectWarningSurfaceText("Quiet message", color: .primary, in: row.host)
         let information = RepoExplorerPaneRowVariants.informationLines(
             title: "Pane", note: nil, agentLine: message, sessionStatus: .working(.active),
@@ -68,9 +70,7 @@ extension PaneContextToolbarRenderingTests {
         _ lines: [RepoExplorerPaneRowLine], expanded: Bool, loader: OcticonLoader
     ) -> some View {
         RepoExplorerPaneRowContent(
-            primaryText: "Pane", secondaryLine: nil, branchContextText: nil, branchStatus: nil,
-            recencyText: "—", recencyTier: .grey, isActive: false, isDrawerPane: false,
-            octiconLoader: loader, showsExpandedChips: expanded, preparedLines: lines)
+            variant: .init(lines: lines), isDrawerPane: false, octiconLoader: loader)
     }
 
     private func expectWarningSurfaceText(_ text: String, color: Color, in host: NSView) throws {

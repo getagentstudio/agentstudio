@@ -81,6 +81,7 @@ package enum LocalActionSpec {
     case paneAgentConnectionIssue(AgentConnectionRefusalReason)
     case countInformationalPaneMessages
     case showPaneMessages
+    case showPaneMessageKind(MessageKind)
     case showPaneMessageDetails
     case answerPaneMessage
     case selectPaneMessageChoice(AskChoice)
@@ -171,6 +172,16 @@ package enum LocalActionSpec {
                 icon: .system(.docText))
         case .showPaneMessages:
             return ActionSpec(label: "Messages", helpText: "Show this pane's messages", icon: .system(.bell))
+        case .showPaneMessageKind(let kind):
+            let messages = Self.showPaneMessages.actionSpec
+            let icon: CommandIcon =
+                switch kind {
+                case .failure: .system(.xmark)
+                case .needsYou: .system(.flag)
+                case .done: .system(.checkmark)
+                case .info: .system(.infoCircle)
+                }
+            return ActionSpec(label: messages.label, helpText: messages.helpText, icon: icon)
         case .selectPaneMessageChoice(let choice):
             return ActionSpec(label: choice.label, helpText: "Select \(choice.label)", icon: .system(.checkmarkCircle))
         case .answerPaneMessage:

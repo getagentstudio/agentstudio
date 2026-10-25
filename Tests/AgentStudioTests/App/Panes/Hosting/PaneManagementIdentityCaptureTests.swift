@@ -172,11 +172,12 @@ struct PaneManagementIdentityCaptureTests {
             #expect(lines.first == .title("Agent title"))
             #expect(lines[1] == .note("Watch release logs"))
             let sidebar = RepoExplorerPaneRowVariants.make(
-                title: "Agent title", branchContext: "repo · main", note: "Watch release logs",
-                isDrawer: false, branchStatus: nil, isActive: false, agentLine: detail,
-                sessionStatus: .working(.active), connectionIssue: .credentialNotRecognized, now: .distantPast)
+                title: "Agent title",
+                agentLine: detail,
+                sessionPresentation: .init(status: .working(.active), evidence: .verifiedLive),
+                now: .distantPast)
             #expect(
-                lines.filter { $0.kind != .connectionIssue }
+                lines.filter { $0.kind != .connectionIssue && $0.kind != .note }
                     == sidebar.expanded.lines.filter { $0.kind != .worktreeBranch })
             #expect(!sidebar.compact.lines.contains { $0.kind == .connectionIssue })
             #expect(lines.last == .connectionIssue(.connection(.credentialNotRecognized)))

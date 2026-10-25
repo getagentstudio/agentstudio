@@ -120,13 +120,15 @@ struct RepoExplorerPaneContextLineTests {
                 provider: try .init("codex"), sessionRef: try .init("run"), bindingGeneration: UUIDv7.generate()),
             updatedAt: .distantPast)
         let variants = RepoExplorerPaneRowVariants.make(
-            title: "Agent title", branchContext: "repo · main", note: "Review this", isDrawer: true,
-            branchStatus: nil, isActive: false, agentLine: line, sessionStatus: .needsYou(.approval), now: .distantPast)
+            title: "Agent title",
+            agentLine: line,
+            sessionPresentation: .init(status: .needsYou(.approval), evidence: .verifiedLive),
+            now: .distantPast)
         #expect(variants.compact.lines == variants.expanded.lines)
-        #expect(variants.compact.lines.count == 5)
-        #expect(variants.compact.fallbackLineCount == 6)
-        guard case .sessionStatus(let statusLine) = variants.compact.lines[3],
-            case .agentLine(let messageLine) = variants.compact.lines[4]
+        #expect(variants.compact.lines.count == 3)
+        #expect(variants.compact.fallbackLineCount == 3)
+        guard case .sessionStatus(let statusLine) = variants.compact.lines[1],
+            case .agentLine(let messageLine) = variants.compact.lines[2]
         else {
             Issue.record("Agent Line and Session status must remain separate ordered lines")
             return
@@ -142,10 +144,11 @@ struct RepoExplorerPaneContextLineTests {
     func missingAndUnknownStatusHaveNoLine() {
         for status: AgentSessionStatus? in [nil, .unknown] {
             let variants = RepoExplorerPaneRowVariants.make(
-                title: "Pane", branchContext: nil, note: nil, isDrawer: false,
-                branchStatus: nil, isActive: false, sessionStatus: status, now: .distantPast)
+                title: "Pane",
+                sessionPresentation: status.map { .init(status: $0, evidence: .verifiedLive) },
+                now: .distantPast)
             #expect(variants.compact.lines == [.title("Pane")])
-            #expect(variants.compact.fallbackLineCount == 2)
+            #expect(variants.compact.fallbackLineCount == 1)
         }
     }
     @Test
@@ -163,10 +166,12 @@ struct RepoExplorerPaneContextLineTests {
             revision: .init(1), agentTitle: "Owner agent", agentLine: nil,
             own: .zero, includingDrawers: .zero, pullRequests: .notApplicable)
         let ownerFacts = RepoExplorerPaneRowFacts(
-            terminalTitle: "Owner terminal", sessionStatus: .working(.active), contextDisplay: display,
+            terminalTitle: "Owner terminal",
+            sessionPresentation: .init(status: .working(.active), evidence: .verifiedLive), contextDisplay: display,
             latestMessageText: "Private output", recencyReferenceDate: .distantPast, recencyText: "—", isActive: false)
         let drawerFacts = RepoExplorerPaneRowFacts(
-            terminalTitle: "Drawer", sessionStatus: .idle(.ended), latestMessageText: nil,
+            terminalTitle: "Drawer", sessionPresentation: .init(status: .idle(.ended), evidence: .verifiedEnded),
+            latestMessageText: nil,
             recencyReferenceDate: .distantPast, recencyText: "—", isActive: false,
             isDrawerPane: true, drawerOwnerPaneID: owner)
         let projection = RepoExplorerProjection.project(
@@ -187,8 +192,9 @@ struct RepoExplorerPaneContextLineTests {
     @Test("Needs you stays in both rows while its scoped connection warning stays in the card")
     func connectionIssueNeverHidesStatus() throws {
         let variants = RepoExplorerPaneRowVariants.make(
-            title: "Pane", branchContext: nil, note: nil, isDrawer: false, branchStatus: nil, isActive: false,
-            sessionStatus: .needsYou(.approval), connectionIssue: .credentialNotRecognized, now: .distantPast)
+            title: "Pane",
+            sessionPresentation: .init(status: .needsYou(.approval), evidence: .verifiedLive),
+            now: .distantPast)
         #expect(variants.compact.lines == variants.expanded.lines)
         #expect(variants.compact.lines.map(\.kind) == [.title, .sessionStatus])
         let card = RepoExplorerPaneRowVariants.informationLines(
@@ -203,7 +209,7 @@ struct RepoExplorerPaneContextLineTests {
         #expect(connection.text == "Messages unavailable · restart this shell to reconnect")
         #expect(connection.tooltip.text == "Messages unavailable · restart this shell to reconnect")
         #expect(connection.tone == .warning)
-        #expect(variants.compact.fallbackLineCount == 3)
+        #expect(variants.compact.fallbackLineCount == 2)
     }
 
 }
