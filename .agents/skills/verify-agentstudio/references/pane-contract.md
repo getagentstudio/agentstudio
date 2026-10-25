@@ -31,10 +31,15 @@ kind. Status/colours also have icons or words. Activity chip appears only with
 no E4 and known E6. S11 is measured at 260pt sidebar width.
 
 Toolbar is one line: after notes/pencil, an item divider then **all nonzero chips
-while unread**, otherwise Agent Line, otherwise no item/divider. Never status or
-warning. The line's text is clamped (360pt in Program Design), separate from
-icon/age extent; it hides entirely if insufficient room. Fixed controls/git chip
-retain their positions. No clipped age/partial chips/second row.
+while unread**, otherwise Agent Line, otherwise no item/divider. For this delivery,
+the Lead's provisional Amendment 2 (pending owner review; detailed in J4) lets the
+passive Git readout hide whole first when the item does not fit, then hides the
+whole chip item if it still cannot fit. All action buttons retain presence,
+size, order and hit area. The item divider draws only with a drawn item. Never
+status or warning. The line's text clamp (360pt in Program Design) remains
+separate from icon/age extent, with whole-item hide when needed. No clipped age,
+partial/clipped/wrapped chips or second row. Record measured policy order at
+390; at 520/wide require all four chips and Git. Fixed owner rules are unchanged.
 
 ## Card and popovers
 

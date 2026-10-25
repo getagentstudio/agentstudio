@@ -251,6 +251,16 @@ Run each applicable journey at V2's 1400/520/390 windows; read independent facts
 and measured surfaces before credit. Native popovers need their own originals.
 The cumulative notice sequence uses separate IDs and retains unread state.
 
+Toolbar observations use J4's explicitly pinned **provisional Amendment 2**:
+at constrained actual widths passive Git hides whole before the complete chip
+item may hide whole. Action buttons keep presence/size/order/hit area. No
+partial, clipped or wrapped chips; item divider only with a drawn item. At 390
+record chips-with-Git-hidden versus item-hidden and measure the policy order;
+at 520 and wide (≥1400) require all four chips plus Git. Thus a below-table
+toolbar chip expectation means the complete item **when it fits**, with this
+documented constrained-width branch; row/card counts and scope do not change.
+The fixed spec/checklist stays intact and the owner reviews the V2 narrow result.
+
 | Scenario | Setup and expected consequence |
 | --- | --- |
 | S1 | Verified turnDone then viewed/readied → Idle · ready; no E4/E5; known E6, compact activity/ACTIVE, empty toolbar. SessionStart alone may be unknown. |
@@ -278,4 +288,5 @@ state, loading/unavailable, oldest beyond page, live prompt/clock update and
 source-collision cases. Each original gets R1–R10 from the verbatim checklist,
 functional/taste judgments and UNKNOWN/N/A reason where applicable. Match a
 valid fitting alternative: short text need not ellipsize; whole Agent Line may
-hide for insufficient toolbar space; service-owned status can legitimately change.
+hide for insufficient toolbar space; the whole chip item may hide only after
+passive Git yields under Amendment 2; service-owned status can legitimately change.
