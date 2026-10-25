@@ -60,17 +60,15 @@ extension PaneContextStorage {
     {
         let importance = try importance(row)
         _ = try sender(row)
-        let kind: AgentMessageAttentionType.ClassificationShape
-        let outstanding: Bool
+        let countedState: PaneMessageCountInput.CountedState
         switch table {
         case .request:
             _ = try reason(row)
             _ = try formKind(row)
             let waiting = try askWaiting(row)
-            if case .blocking = waiting { kind = .blockingAsk } else { kind = .nonBlockingAsk }
             let state: String = try required(row, .state)
             switch state {
-            case "open": outstanding = true
+            case "open": countedState = .openAsk(waiting)
             case "answered":
                 guard try required(row, .answeredBy) as String == "localUser" else {
                     throw PaneContextStorageFailure.decode("answered_by")
@@ -80,13 +78,12 @@ extension PaneContextStorage {
                     throw PaneContextStorageFailure.decode("answer_kind")
                 }
                 _ = try answerReceipt(row)
-                outstanding = false
-            case "handedBack", "dismissed", "expired", "withdrawn", "stale": outstanding = false
+                countedState = .settled
+            case "handedBack", "dismissed", "expired", "withdrawn", "stale": countedState = .settled
             default: throw PaneContextStorageFailure.decode("state")
             }
         case .notice:
-            kind = .notice
-            outstanding = try noticeState(row) == .unread
+            countedState = try noticeState(row) == .unread ? .unreadNotice(importance) : .settled
         }
         let position = try unsigned(row, .position)
         let displayHidden = try flag(row, .displayHidden)
@@ -95,7 +92,7 @@ extension PaneContextStorage {
                 id: AgentMessageId(existingUUID: try uuid(row, .messageId)),
                 sourcePaneId: PaneId(existingUUID: try uuid(row, .paneId)), sentAt: try date(row, .sentAt),
                 position: position, displayHidden: displayHidden,
-                attention: outstanding ? AgentMessageAttentionType.classify(kind: kind, importance: importance) : nil),
+                state: countedState),
             retention: PaneContextRetentionMessage(
                 rowId: try uuid(row, .id), position: position, settledAt: try optionalDate(row, .settledAt),
                 displayHidden: displayHidden, table: table))

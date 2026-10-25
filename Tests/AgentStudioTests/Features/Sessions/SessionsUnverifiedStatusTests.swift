@@ -77,7 +77,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(latest.count == 1)
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: pane)]
-                    == .set(.init(status: .working(.active), connectionIssue: .queueFull)))
+                    == .set(.init(status: .working(.active), connectionIssue: .queueFull, evidence: .unverified)))
 
             held.release()
             _ = try await predecessor?.value
@@ -86,7 +86,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(await ingestion.lastRefusal(paneId: pane) == latest)
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: pane)]
-                    == .set(.init(status: .idle(.ended), connectionIssue: .queueFull)))
+                    == .set(.init(status: .idle(.ended), connectionIssue: .queueFull, evidence: .unverified)))
         } catch {
             held.release()
             _ = try? await predecessor?.value
@@ -112,7 +112,9 @@ struct SessionsUnverifiedStatusTests {
             _ = mailbox.takeBatch()
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnDone)
             #expect(
-                mailbox.takeBatch()[key] == .set(.init(status: .idle(.done), connectionIssue: .credentialNotRecognized))
+                mailbox.takeBatch()[key]
+                    == .set(
+                        .init(status: .idle(.done), connectionIssue: .credentialNotRecognized, evidence: .unverified))
             )
             #expect(
                 try await Self.submit(ingestion, pane: pane, session: "B", signal: .sessionEnd)
@@ -121,12 +123,12 @@ struct SessionsUnverifiedStatusTests {
 
             #expect(try await Self.submit(ingestion, pane: pane, signal: .sessionEnd) == .hookApplied)
 
-            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended))))
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended), evidence: .unverified)))
             #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
             #expect(await ingestion.lastRefusal(paneId: pane)?.count == 1)
             _ = try await Self.submit(ingestion, pane: pane, session: "B", signal: .turnStart)
             #expect(
-                mailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
+                mailbox.takeBatch()[key] == .set(.init(status: .working(.active), evidence: .unverified)))
             #expect(try await Self.protectedCounts(fixture) == Array(repeating: 0, count: 10))
         }
     }
@@ -143,7 +145,7 @@ struct SessionsUnverifiedStatusTests {
                 ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
             #expect(applied == .hookApplied)
             let batch = statusMailbox.takeBatch()
-            #expect(batch[key] == .set(.init(status: .needsYou(.approval))))
+            #expect(batch[key] == .set(.init(status: .needsYou(.approval), evidence: .unverified)))
             #expect(try await ingestion.readSessionStatus(paneId: pane) == .unbound)
             #expect(try await Self.protectedCounts(fixture) == before)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
@@ -151,12 +153,15 @@ struct SessionsUnverifiedStatusTests {
                 paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
             #expect(
                 statusMailbox.takeBatch()[key]
-                    == .set(.init(status: .needsYou(.approval), connectionIssue: .credentialNotRecognized)))
+                    == .set(
+                        .init(
+                            status: .needsYou(.approval), connectionIssue: .credentialNotRecognized,
+                            evidence: .unverified)))
             _ = try await ingestion.submitHook(
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified",
                     eventName: .turnStart, signal: .turnStart, turnId: nil))
-            #expect(statusMailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
+            #expect(statusMailbox.takeBatch()[key] == .set(.init(status: .working(.active), evidence: .verifiedLive)))
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await Self.submit(ingestion, pane: pane, signal: .turnDone) == .hookAcceptedWithoutStatus)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
@@ -176,7 +181,9 @@ struct SessionsUnverifiedStatusTests {
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified", eventName: .turnStart, signal: .turnStart, turnId: nil))
             let statusMailbox = await ingestion.statusPublicationMailbox
-            #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .working(.active))))
+            #expect(
+                statusMailbox.takeBatch()[.init(existingUUID: pane)]
+                    == .set(.init(status: .working(.active), evidence: .verifiedLive)))
             let protectedBefore = try await Self.protectedCounts(fixture)
             let outcome: SessionsUnverifiedStatusOutcome
             if refusalOnly {
@@ -311,7 +318,9 @@ struct SessionsUnverifiedStatusTests {
                 let currentExit = try await ingestion.submitCommandFinished(
                     paneId: pane, reportedAt: origin + .seconds(4))
                 #expect(currentExit == nil)
-                #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .idle(.ended))))
+                #expect(
+                    statusMailbox.takeBatch()[.init(existingUUID: pane)]
+                        == .set(.init(status: .idle(.ended), evidence: .unverified)))
                 #expect(await ingestion.lastRefusal(paneId: pane)?.reason == .credentialNotRecognized)
                 #expect(
                     try await Self.submit(ingestion, pane: pane, signal: .turnDone, instant: origin + .seconds(4))
@@ -383,7 +392,7 @@ struct SessionsUnverifiedStatusTests {
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]
-                    == .set(.init(status: .working(.active))))
+                    == .set(.init(status: .working(.active), evidence: .verifiedLive)))
         } catch {
             held.release()
             _ = try? await binding.value

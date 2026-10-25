@@ -24,7 +24,7 @@ struct PaneContextMembershipLifetimeTests {
             await fixture.service.reconcileMembership()
             let after = try await fixture.display()
             #expect(after.own == before.own)
-            #expect(after.own.needsReplyCount == 1)
+            #expect(after.own.kinds.needsYou == 1)
             #expect(after.revision.value > before.revision.value)
             try await fixture.expectApplied(.set(after))
             #expect(fixture.atom.value(for: fixture.storage.paneId) == after)

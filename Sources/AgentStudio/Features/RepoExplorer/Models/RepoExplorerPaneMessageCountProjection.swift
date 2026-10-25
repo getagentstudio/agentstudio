@@ -7,11 +7,13 @@ package enum RepoExplorerPaneMessageCountProjection {
         make(isDrawer ? display.own : display.includingDrawers)
     }
     package static func make(_ counts: PaneMessageCounts) -> PaneMessageChipModel {
-        let count = counts.needsApprovalCount + counts.needsReplyCount + counts.attentionCount
-        let tone: PaneContextChipTone = counts.needsApprovalCount > 0 ? .danger : count > 0 ? .warning : .neutral
+        let kinds = counts.kinds
+        let count = kinds.failure + kinds.needsYou
+        let tone: PaneContextChipTone = kinds.failure > 0 ? .danger : count > 0 ? .warning : .neutral
         return PaneMessageChipModel(
-            count: count, tone: tone, countIncludingInformational: count + counts.informationalCount,
-            toneIncludingInformational: count > 0 ? tone : counts.informationalCount > 0 ? .info : .neutral)
+            count: count, tone: tone, countIncludingInformational: kinds.unread,
+            toneIncludingInformational: count > 0 ? tone : kinds.done > 0 ? .success : kinds.info > 0 ? .info : .neutral
+        )
     }
     package static func totalOwn(_ displays: [PaneContextDisplay], includingInformational: Bool = false) -> Int {
         displays.reduce(0) { total, display in

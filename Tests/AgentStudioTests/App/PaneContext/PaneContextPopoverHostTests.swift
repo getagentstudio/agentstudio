@@ -88,10 +88,10 @@ struct PaneContextPopoverHostTests {
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil,
             own: .init(
-                needsApprovalCount: 1, needsReplyCount: 0, attentionCount: 0, informationalCount: 3,
+                kinds: .init(failure: 0, needsYou: 1, done: 0, info: 3),
                 newestOpenBlockingAskId: .generateUUIDv7()),
             includingDrawers: .init(
-                needsApprovalCount: 1, needsReplyCount: 2, attentionCount: 4, informationalCount: 8,
+                kinds: .init(failure: 4, needsYou: 3, done: 0, info: 8),
                 newestOpenBlockingAskId: .generateUUIDv7()),
             pullRequests: .notApplicable)
         #expect(await PaneContextToolbarControls.shapeMessages(display: nil, isDrawer: false) == nil)

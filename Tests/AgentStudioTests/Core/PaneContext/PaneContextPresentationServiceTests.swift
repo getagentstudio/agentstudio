@@ -33,7 +33,7 @@ struct PaneContextPresentationServiceTests {
                 let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
                 let committed = try #require(desired)
                 #expect(committed.agentLine?.summary == "Committed line")
-                #expect(committed.own.attentionCount == 1)
+                #expect(committed.own.kinds.needsYou == 1)
                 held.release()
                 try await fixture.expectPublication(heldValue, for: storage.paneId, in: scope)
                 try await fixture.expectPublication(.set(committed), for: storage.paneId, in: scope)
@@ -99,15 +99,14 @@ struct PaneContextPresentationServiceTests {
             #expect(
                 owner.own
                     == .init(
-                        needsApprovalCount: 1, needsReplyCount: 0, attentionCount: 1, informationalCount: 0,
-                        newestOpenBlockingAskId: ownAsk.messageId))
-            #expect(owner.includingDrawers.needsApprovalCount == 2)
-            #expect(owner.includingDrawers.needsReplyCount == 1)
-            #expect(owner.includingDrawers.attentionCount == 1)
-            #expect(owner.includingDrawers.informationalCount == 1)
+                        kinds: .init(failure: 0, needsYou: 2, done: 0, info: 0),
+                        newestOpenBlockingAskId: ownAsk.messageId,
+                        oldestOpenAsk: .init(paneId: storage.paneId, messageId: ownAsk.messageId)))
+            #expect(owner.includingDrawers.kinds == .init(failure: 0, needsYou: 4, done: 0, info: 1))
             let drawer = try await fixture.display(child)
             #expect(drawer.own == drawer.includingDrawers)
-            #expect(drawer.own.needsApprovalCount == 1)
+            #expect(drawer.own.kinds.needsYou == 2)
+            #expect(drawer.own.oldestOpenAsk == .init(paneId: child, messageId: drawerAsk.messageId))
             #expect(await fixture.latestPublished(storage.paneId) == .set(owner))
             #expect(owner.revision == (try await storage.detail(fixture.service)).revision)
         }
@@ -203,13 +202,13 @@ struct PaneContextPresentationServiceTests {
             let display = try await fixture.display()
             #expect(display.agentLine?.summary == "Monitoring")
             #expect(display.agentLine == beforeEnd.agentLine)
-            #expect(display.includingDrawers.needsApprovalCount == 1)
+            #expect(display.includingDrawers.kinds.needsYou == 1)
             #expect(await fixture.latestPublished(storage.paneId) == .set(display))
             let disconnected = await fixture.service.settleAsk(
                 ask.messageId, paneId: storage.paneId, cause: .callerGone)
             let afterDisconnect = try await fixture.display()
             #expect(disconnected == .settled(.withdrawn))
-            #expect(afterDisconnect.includingDrawers.needsApprovalCount == 0)
+            #expect(afterDisconnect.includingDrawers.kinds.needsYou == 0)
         }
     }
 
@@ -265,13 +264,13 @@ struct PaneContextPresentationServiceTests {
             let ask = storage.ask(blocking: true, deadline: storage.time.now.addingTimeInterval(10))
             try await storage.sendCreated(ask, to: fixture.service)
             let before = try await fixture.display()
-            try #require(before.own.needsApprovalCount == 1 && before.agentLine != nil)
+            try #require(before.own.kinds.needsYou == 1 && before.agentLine != nil)
             await storage.clock.waitForPendingSleepCount(exactly: 1)
             storage.clock.advance(by: .seconds(10))
             #expect(
                 await fixture.service.waitForAskOutcome(messageId: ask.messageId, paneId: storage.paneId) == .expired)
             let after = try await fixture.display()
-            #expect(after.own.needsApprovalCount == 0)
+            #expect(after.own.kinds.needsYou == 0)
             #expect(after.agentLine == before.agentLine)
             #expect(await fixture.latestPublished(storage.paneId) == .set(after))
         }
@@ -297,7 +296,7 @@ struct PaneContextPresentationServiceTests {
             let notice = storage.message()
             try await storage.sendCreated(notice, to: fixture.service)
             let after = try await fixture.display()
-            #expect(after.own.attentionCount == 1)
+            #expect(after.own.kinds.needsYou == 1)
             #expect(await fixture.latestPublished(storage.paneId) == .set(after))
         }
     }
@@ -324,7 +323,7 @@ struct PaneContextPresentationServiceTests {
             await fixture.service.reconcileMembership()
             let after = try await fixture.display()
             let newOwner = try await fixture.display(second)
-            #expect(after.includingDrawers.needsApprovalCount == 0)
+            #expect(after.includingDrawers.kinds.needsYou == 0)
             #expect(newOwner.own == .zero)
             #expect(newOwner.includingDrawers.newestOpenBlockingAskId == ask.messageId)
             #expect(after.revision.value > before.revision.value)
@@ -450,7 +449,7 @@ private func withMeasuredPaneContextQueries(noticeCount: Int) async throws -> Pa
             let lineCounts = recorder.takeCounts()
             #expect(lineResult == .applied)
             let desired = fixture.mailbox.desiredDisplay(for: storage.paneId)
-            #expect(desired?.own.attentionCount == noticeCount + 1)
+            #expect(desired?.own.kinds.needsYou == noticeCount + 1)
             #expect(desired?.agentLine?.summary == "Measured line")
             await storage.sqliteAccess.traceReads(nil)
             try await storage.databasePool.write { database in database.trace(options: []) }

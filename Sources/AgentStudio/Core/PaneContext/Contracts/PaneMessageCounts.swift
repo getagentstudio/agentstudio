@@ -16,31 +16,23 @@ package struct PaneMessageKindCounts: Sendable, Equatable {
 }
 
 package struct PaneMessageCounts: Sendable, Equatable {
-    package let needsApprovalCount: Int
-    package let needsReplyCount: Int
-    package let attentionCount: Int
-    package let informationalCount: Int
+    package let kinds: PaneMessageKindCounts
     package let newestOpenBlockingAskId: AgentMessageId?
+    package let oldestOpenAsk: PaneContextMessageKey?
 
     package init(
-        needsApprovalCount: Int,
-        needsReplyCount: Int,
-        attentionCount: Int,
-        informationalCount: Int,
-        newestOpenBlockingAskId: AgentMessageId?
+        kinds: PaneMessageKindCounts,
+        newestOpenBlockingAskId: AgentMessageId?,
+        oldestOpenAsk: PaneContextMessageKey? = nil
     ) {
-        self.needsApprovalCount = needsApprovalCount
-        self.needsReplyCount = needsReplyCount
-        self.attentionCount = attentionCount
-        self.informationalCount = informationalCount
+        self.kinds = kinds
         self.newestOpenBlockingAskId = newestOpenBlockingAskId
+        self.oldestOpenAsk = oldestOpenAsk
     }
 
     package static let zero = Self(
-        needsApprovalCount: 0,
-        needsReplyCount: 0,
-        attentionCount: 0,
-        informationalCount: 0,
-        newestOpenBlockingAskId: nil
+        kinds: .zero,
+        newestOpenBlockingAskId: nil,
+        oldestOpenAsk: nil
     )
 }

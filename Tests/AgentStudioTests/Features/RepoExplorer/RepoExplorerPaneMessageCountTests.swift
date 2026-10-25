@@ -12,12 +12,12 @@ struct RepoExplorerPaneMessageCountTests {
     func ownerUsesDrawersChildUsesOwnAndTotalsCountEachSourceOnce() {
         let owner = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil,
-            own: counts(approval: 0, reply: 1, attention: 0, information: 8),
-            includingDrawers: counts(approval: 2, reply: 1, attention: 3, information: 12), pullRequests: .notApplicable
+            own: counts(failure: 0, needsYou: 1, info: 8),
+            includingDrawers: counts(failure: 2, needsYou: 4, info: 12), pullRequests: .notApplicable
         )
         let drawer = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil,
-            own: counts(approval: 2, reply: 0, attention: 3, information: 4),
+            own: counts(failure: 2, needsYou: 3, info: 4),
             includingDrawers: .zero, pullRequests: .notApplicable)
         let ownerChip = RepoExplorerPaneMessageCountProjection.make(display: owner, isDrawer: false)
         let drawerChip = RepoExplorerPaneMessageCountProjection.make(display: drawer, isDrawer: true)
@@ -34,17 +34,20 @@ struct RepoExplorerPaneMessageCountTests {
     func tintAndInformationComeOnlyFromCountedTypes() {
         let cases: [MessageCountOracle] = [
             .init(
-                counts: counts(approval: 1, reply: 3, attention: 4, information: 9), count: 8, tone: .danger,
+                counts: counts(failure: 1, needsYou: 7, info: 9), count: 8, tone: .danger,
                 countIncludingInformational: 17, toneIncludingInformational: .danger),
             .init(
-                counts: counts(approval: 0, reply: 1, attention: 0, information: 9), count: 1, tone: .warning,
+                counts: counts(failure: 0, needsYou: 1, info: 9), count: 1, tone: .warning,
                 countIncludingInformational: 10, toneIncludingInformational: .warning),
             .init(
-                counts: counts(approval: 0, reply: 0, attention: 2, information: 9), count: 2, tone: .warning,
+                counts: counts(failure: 0, needsYou: 2, info: 9), count: 2, tone: .warning,
                 countIncludingInformational: 11, toneIncludingInformational: .warning),
             .init(
-                counts: counts(approval: 0, reply: 0, attention: 0, information: 9), count: 0, tone: .neutral,
+                counts: counts(failure: 0, needsYou: 0, info: 9), count: 0, tone: .neutral,
                 countIncludingInformational: 9, toneIncludingInformational: .info),
+            .init(
+                counts: counts(failure: 0, needsYou: 0, done: 2, info: 1), count: 0, tone: .neutral,
+                countIncludingInformational: 3, toneIncludingInformational: .success),
             .init(
                 counts: .zero, count: 0, tone: .neutral, countIncludingInformational: 0,
                 toneIncludingInformational: .neutral),
@@ -70,11 +73,11 @@ struct RepoExplorerPaneMessageCountTests {
         let owner = UUIDv7.generate()
         let child = UUIDv7.generate()
         let tab = UUIDv7.generate()
-        let own = counts(approval: 0, reply: 1, attention: 0, information: 8)
-        let drawerOwn = counts(approval: 2, reply: 0, attention: 3, information: 4)
+        let own = counts(failure: 0, needsYou: 1, info: 8)
+        let drawerOwn = counts(failure: 2, needsYou: 3, info: 4)
         let ownerDisplay = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil, own: own,
-            includingDrawers: counts(approval: 2, reply: 1, attention: 3, information: 12), pullRequests: .notApplicable
+            includingDrawers: counts(failure: 2, needsYou: 4, info: 12), pullRequests: .notApplicable
         )
         let childDisplay = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: nil, own: drawerOwn,
@@ -104,9 +107,8 @@ struct RepoExplorerPaneMessageCountTests {
         #expect(childRow.variants?.compact.chips == [.drawer, .messages, .clock])
         #expect(ownerRow.variants?.compact.fallbackLineCount == ownerRow.variants?.expanded.fallbackLineCount)
     }
-    private func counts(approval: Int, reply: Int, attention: Int, information: Int) -> PaneMessageCounts {
+    private func counts(failure: Int, needsYou: Int, done: Int = 0, info: Int) -> PaneMessageCounts {
         .init(
-            needsApprovalCount: approval, needsReplyCount: reply, attentionCount: attention,
-            informationalCount: information, newestOpenBlockingAskId: nil)
+            kinds: .init(failure: failure, needsYou: needsYou, done: done, info: info), newestOpenBlockingAskId: nil)
     }
 }

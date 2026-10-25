@@ -21,7 +21,7 @@ struct SessionsIngestionCommitDispositionTests {
                     admissionInstant: boundAt))
             await ingestion.recordRefusal(
                 paneId: pane, refusal: .init(reason: .credentialNotRecognized, event: nil, at: .distantPast))
-            #expect(mailbox.takeBatch()[key] == .set(.init(status: .working(.active))))
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .working(.active), evidence: .verifiedLive)))
             _ = try await ingestion.submitCommandFinished(paneId: pane, reportedAt: boundAt)
             #expect(mailbox.takeBatch().isEmpty)
 
@@ -35,7 +35,7 @@ struct SessionsIngestionCommitDispositionTests {
                 #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             }
 
-            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended))))
+            #expect(mailbox.takeBatch()[key] == .set(.init(status: .idle(.ended), evidence: .verifiedEnded)))
         }
     }
 

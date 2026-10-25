@@ -11,11 +11,15 @@ struct PaneMessageCountFoldTests {
         let source = PaneId.generateUUIDv7()
         let message = try countedMessage(source: source, importance: scenario.importance, shape: scenario.shape)
         let expected = PaneMessageCounts(
-            needsApprovalCount: scenario.expectedType == .needsApproval ? 1 : 0,
-            needsReplyCount: scenario.expectedType == .needsReply ? 1 : 0,
-            attentionCount: scenario.expectedType == .attention ? 1 : 0,
-            informationalCount: scenario.expectedType == .informational ? 1 : 0,
-            newestOpenBlockingAskId: scenario.expectedType == .needsApproval ? message.detail.id : nil)
+            kinds: .init(
+                failure: scenario.expectedType == .attention && scenario.importance == .failure ? 1 : 0,
+                needsYou: scenario.expectedType == .needsApproval || scenario.expectedType == .needsReply
+                    || (scenario.expectedType == .attention && scenario.importance == .attention) ? 1 : 0,
+                done: scenario.expectedType == .informational && scenario.importance == .done ? 1 : 0,
+                info: scenario.expectedType == .informational && scenario.importance == .info ? 1 : 0),
+            newestOpenBlockingAskId: scenario.expectedType == .needsApproval ? message.detail.id : nil,
+            oldestOpenAsk: scenario.expectedType == .needsApproval || scenario.expectedType == .needsReply
+                ? .init(paneId: source, messageId: message.detail.id) : nil)
         #expect(PaneMessageCountFold.summarize(messages: [message], sourceOrder: [source]) == expected)
     }
 
@@ -34,8 +38,9 @@ struct PaneMessageCountFoldTests {
         #expect(
             PaneMessageCountFold.summarize(messages: [blocking, reply, attention, info, settled], sourceOrder: [owner])
                 == PaneMessageCounts(
-                    needsApprovalCount: 1, needsReplyCount: 1, attentionCount: 1, informationalCount: 1,
-                    newestOpenBlockingAskId: blocking.detail.id))
+                    kinds: .init(failure: 1, needsYou: 2, done: 1, info: 0),
+                    newestOpenBlockingAskId: blocking.detail.id,
+                    oldestOpenAsk: .init(paneId: owner, messageId: blocking.detail.id)))
     }
 
     @Test("Later drawer receive time wins even with a lower source position")
@@ -97,6 +102,49 @@ struct PaneMessageCountFoldTests {
         #expect(
             PaneMessageCountFold.summarize(messages: [blocking, reply], sourceOrder: [source]).newestOpenBlockingAskId
                 == blocking.detail.id)
+    }
+
+    @Test("Oldest open ask uses receive time before source and position, excluding unrelated and hidden rows")
+    func oldestOpenAskUsesScopedReceiveOrder() throws {
+        let owner = PaneId.generateUUIDv7()
+        let drawer = PaneId.generateUUIDv7()
+        let unrelated = PaneId.generateUUIDv7()
+        let open = AgentMessageShape.ask(.question, .freeText(placeholder: nil), .nonBlocking, .open)
+        let ownAsk = try countedMessage(
+            source: owner, position: 1, sentAt: .init(timeIntervalSince1970: 100), shape: open)
+        let drawerAsk = try countedMessage(
+            source: drawer, position: 90, sentAt: .init(timeIntervalSince1970: 99), shape: open)
+        let otherAsk = try countedMessage(source: unrelated, sentAt: .init(timeIntervalSince1970: 1), shape: open)
+        let hiddenOriginal = try countedMessage(source: owner, sentAt: .init(timeIntervalSince1970: 2), shape: open)
+        let hidden = PaneContextStoredMessage(
+            rowId: hiddenOriginal.rowId, position: hiddenOriginal.position, detail: hiddenOriginal.detail,
+            settledAt: nil, displayHidden: true)
+        let notice = try countedMessage(
+            source: owner, sentAt: .init(timeIntervalSince1970: 3), importance: .failure, shape: .notice(.unread))
+        let counts = PaneMessageCountFold.summarize(
+            messages: [otherAsk, hidden, notice, ownAsk, drawerAsk], sourceOrder: [owner, drawer])
+        #expect(counts.oldestOpenAsk == .init(paneId: drawer, messageId: drawerAsk.detail.id))
+        #expect(counts.kinds == .init(failure: 1, needsYou: 2, done: 0, info: 0))
+    }
+
+    @Test("Oldest-ask ties use main/drawer order then ascending position, regardless of input order")
+    func oldestOpenAskUsesSourceAndPositionTies() throws {
+        let owner = PaneId.generateUUIDv7()
+        let firstDrawer = PaneId.generateUUIDv7()
+        let secondDrawer = PaneId.generateUUIDv7()
+        let open = AgentMessageShape.ask(.blocked, .freeText(placeholder: nil), .nonBlocking, .open)
+        let mainNew = try countedMessage(source: owner, position: 10, shape: open)
+        let mainOld = try countedMessage(source: owner, position: 1, shape: open)
+        let first = try countedMessage(source: firstDrawer, position: 50, shape: open)
+        let second = try countedMessage(source: secondDrawer, position: 1, shape: open)
+        #expect(
+            PaneMessageCountFold.summarize(
+                messages: [second, mainNew, first, mainOld], sourceOrder: [owner, firstDrawer, secondDrawer]
+            )
+            .oldestOpenAsk == .init(paneId: owner, messageId: mainOld.detail.id))
+        #expect(
+            PaneMessageCountFold.summarize(messages: [second, first], sourceOrder: [owner, firstDrawer, secondDrawer])
+                .oldestOpenAsk == .init(paneId: firstDrawer, messageId: first.detail.id))
     }
 
     @Test("No outstanding messages yields zero counts")

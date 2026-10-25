@@ -3,11 +3,6 @@ import Foundation
 import GRDB
 import Synchronization
 
-struct PaneContextMessageKey: Hashable, Sendable {
-    let paneId: PaneId
-    let messageId: AgentMessageId
-}
-
 struct PaneContextRetirementMailbox: Sendable {
     var accepting = true
     var pending = Set<PaneId>()

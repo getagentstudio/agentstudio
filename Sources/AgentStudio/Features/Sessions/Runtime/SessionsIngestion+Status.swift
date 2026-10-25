@@ -213,6 +213,7 @@ extension SessionsIngestion: SessionOpenAskInput {
                 statusRuntime.confirmedLiveBindingIds.remove(bindingGenerationId)
             }
             statusRuntime.latestViewedAt.removeValue(forKey: paneId)
+            statusRuntime.publishedPromptLists.removeValue(forKey: paneId)
             statusPublicationMailbox.retire(.init(existingUUID: paneId))
         }
         for view in batch.views where !statusRuntime.retiredPaneIds.contains(view.paneId) {
@@ -242,15 +243,37 @@ extension SessionsIngestion: SessionOpenAskInput {
         let verified = statusRuntime.currentBindingByPane[paneId].flatMap { statusRuntime.states[$0] }
         let status: AgentSessionStatus
         let issue: AgentConnectionRefusalReason?
+        let evidence: StatusEvidence
         if hasActiveBinding(paneId: paneId), let verified {
             status = SessionStatusReducer.status(of: verified)
             issue = nil
+            evidence = .verifiedLive
         } else {
-            status =
-                unverifiedStatusRuntime.status(paneId: paneId)
-                ?? verified.map(SessionStatusReducer.status) ?? .unknown
+            if let unverified = unverifiedStatusRuntime.status(paneId: paneId) {
+                status = unverified
+                evidence = .unverified
+            } else if let verified {
+                status = SessionStatusReducer.status(of: verified)
+                evidence = .verifiedEnded
+            } else {
+                status = .unknown
+                evidence = .none
+            }
             issue = currentRefusalReason(paneId: paneId)
         }
-        statusPublicationMailbox.offer(.init(status: status, connectionIssue: issue), for: .init(existingUUID: paneId))
+        let prompts =
+            evidence == .verifiedLive ? verified.map { SessionSummaryProjection.prompts($0.providerPrompts) } ?? [] : []
+        let omitted = evidence == .verifiedLive ? (verified?.providerPrompts.count ?? 0) - prompts.count : 0
+        let revision = statusRuntime.recordPromptList(prompts, omittedCount: omitted, paneId: paneId)
+        let compact = prompts.first.map {
+            CompactProviderPrompt(
+                reason: $0.reason, summary: $0.summary, observedAt: $0.observedAt,
+                omittedOrFurtherCount: prompts.count - 1 + omitted)
+        }
+        statusPublicationMailbox.offer(
+            .init(
+                status: status, connectionIssue: issue, evidence: evidence, compactPrompt: compact,
+                promptListRevision: revision),
+            for: .init(existingUUID: paneId))
     }
 }
