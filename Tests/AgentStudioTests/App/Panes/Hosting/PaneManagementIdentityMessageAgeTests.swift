@@ -48,11 +48,11 @@ struct PaneManagementIdentityMessageAgeTests {
                 #expect(input.agentLine?.updatedAt == fixture.now)
                 #expect(input.activityTime?.wallTime == activityAge.map { now.addingTimeInterval(-Double($0)) })
                 try await withMessageWatch(input, reference: reference, wallNow: now) { run in
-                    try await run.facts.expectNext(in: 0, .published("2 min ago", hasActivity ? "Now" : "—"))
+                    try await run.facts.expectNext(in: 0, .published("[2 min ago]", hasActivity ? "Now" : "—"))
                     if activityAge == 59 {
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(1))))
                         run.clock.advance(by: .seconds(1))
-                        try await run.facts.expectNext(in: 0, .published("2 min ago", "1m"))
+                        try await run.facts.expectNext(in: 0, .published("[2 min ago]", "1m"))
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(55))))
                         run.clock.advance(by: .seconds(54))
                     } else {
@@ -60,12 +60,12 @@ struct PaneManagementIdentityMessageAgeTests {
                         run.clock.advance(by: .seconds(55))
                     }
                     let chip = activityAge == 59 ? "1m" : (hasActivity ? "Now" : "—")
-                    try await run.facts.expectNext(in: 0, .published("3 min ago", chip))
+                    try await run.facts.expectNext(in: 0, .published("[3 min ago]", chip))
                     let nextSeconds = activityAge == 59 ? 61 : (hasActivity ? 60 : 115)
                     try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(nextSeconds))))
                     if !hasActivity {
                         run.clock.advance(to: run.start.advanced(by: .seconds(172_675)))
-                        try await run.facts.expectNext(in: 0, .published("2 days ago", "—"))
+                        try await run.facts.expectNext(in: 0, .published("[2 days ago]", "—"))
                         try await run.facts.expectNext(in: 0, .sleep(run.start.advanced(by: .seconds(259_075))))
                     }
                     #expect(input.agentLine?.updatedAt == fixture.now)

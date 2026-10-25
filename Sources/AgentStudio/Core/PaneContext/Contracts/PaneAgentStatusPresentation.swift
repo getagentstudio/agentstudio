@@ -1,11 +1,42 @@
+import Foundation
+
 /// Sessions derives this cohesive read model before publication.
 package struct PaneAgentStatusPresentation: Sendable, Equatable {
     package let status: AgentSessionStatus
     package let connectionIssue: AgentConnectionRefusalReason?
+    package let evidence: StatusEvidence
+    package let compactPrompt: CompactProviderPrompt?
+    package let promptListRevision: UInt64
 
-    package init(status: AgentSessionStatus, connectionIssue: AgentConnectionRefusalReason? = nil) {
+    package init(
+        status: AgentSessionStatus, connectionIssue: AgentConnectionRefusalReason? = nil,
+        evidence: StatusEvidence = .none, compactPrompt: CompactProviderPrompt? = nil, promptListRevision: UInt64 = 0
+    ) {
         self.status = status
         self.connectionIssue = connectionIssue
+        self.evidence = evidence
+        self.compactPrompt = compactPrompt
+        self.promptListRevision = promptListRevision
+    }
+}
+
+package enum StatusEvidence: Sendable, Equatable {
+    case verifiedLive, verifiedEnded, unverified
+    // swiftlint:disable:next discouraged_none_name
+    case none
+}
+
+package struct CompactProviderPrompt: Sendable, Equatable {
+    package let reason: AskReason
+    package let summary: String?
+    package let observedAt: Date
+    package let omittedOrFurtherCount: Int
+
+    package init(reason: AskReason, summary: String?, observedAt: Date, omittedOrFurtherCount: Int) {
+        self.reason = reason
+        self.summary = summary
+        self.observedAt = observedAt
+        self.omittedOrFurtherCount = omittedOrFurtherCount
     }
 }
 

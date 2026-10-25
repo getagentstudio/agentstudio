@@ -13,6 +13,38 @@ import Testing
 @testable import AgentStudioSessions
 
 extension PaneManagementIdentityHostTests {
+    @Test("G11 the production card paints an eight-day-old stored Agent Line and schedules tomorrow")
+    func eightDayStoredLineReachesNativeCard() async throws {
+        let fixture = try await StoredMessageCardFixture.make(hasActivity: false, messageAgeSeconds: 8 * 86_400)
+        let clock = fixture.clock
+        let pane = fixture.context.paneId
+        let start = clock.now
+        do {
+            try #require(try await clock.nextOperation(pane: pane, input: nil) == .started)
+            try await clock.entered(pane: pane, input: nil)
+            try await clock.registered(start.advanced(by: .seconds(86_400)), pane: pane, currentInput: nil)
+            try fixture.expectRendered(age: "[8 days ago]", chip: "—")
+            let read = await fixture.composition.composition.paneContextService.readDetail(
+                .init(paneId: .init(existingUUID: pane), page: .first))
+            guard case .detail(let detail) = read else { throw StoredMessageCardFailure.missingDetail }
+            #expect(detail.agentLine == fixture.written)
+            #expect(fixture.written.summary == "Message before the current activity")
+            #expect(fixture.written.updatedAt == Date(timeIntervalSince1970: 1_800_000_000))
+            fixture.hide()
+            try #require(try await clock.nextHideResult() == .cancelled(requested: true))
+            try await clock.cancelledWorker(pane: pane, input: nil)
+            #expect(clock.pendingSleepCount == 0)
+            try await clock.finish()
+            try await fixture.close()
+        } catch {
+            fixture.hide()
+            try? await clock.retire()
+            try? await clock.facts.finish()
+            try? await fixture.close()
+            throw error
+        }
+    }
+
     @Test(
         "a real stored message and Working hook reach the same visible card across their own deadlines",
         arguments: [false, true])
@@ -26,18 +58,18 @@ extension PaneManagementIdentityHostTests {
             try #require(try await clock.nextOperation(pane: pane, input: input) == .started)
             try await clock.entered(pane: pane, input: input)
             try await clock.registered(start.advanced(by: .seconds(55)), pane: pane, currentInput: input)
-            try fixture.expectRendered(age: "2 min ago", chip: hasActivity ? "Now" : "—")
+            try fixture.expectRendered(age: "[2 min ago]", chip: hasActivity ? "Now" : "—")
             let identity = ObjectIdentifier(fixture.host)
 
             clock.advance(by: .seconds(55))
             try await clock.registered(
                 start.advanced(by: .seconds(hasActivity ? 60 : 115)), pane: pane, currentInput: input)
-            try fixture.expectRendered(age: "3 min ago", chip: hasActivity ? "Now" : "—")
+            try fixture.expectRendered(age: "[3 min ago]", chip: hasActivity ? "Now" : "—")
             #expect(ObjectIdentifier(fixture.host) == identity)
             if hasActivity {
                 clock.advance(by: .seconds(5))
                 try await clock.registered(start.advanced(by: .seconds(115)), pane: pane, currentInput: input)
-                try fixture.expectRendered(age: "3 min ago", chip: "1m")
+                try fixture.expectRendered(age: "[3 min ago]", chip: "1m")
             }
             let read = await fixture.composition.composition.paneContextService.readDetail(
                 .init(paneId: .init(existingUUID: pane), page: .first))
@@ -106,7 +138,7 @@ private final class StoredMessageCardFixture {
         host.layoutSubtreeIfNeeded()
     }
 
-    static func make(hasActivity: Bool) async throws -> StoredMessageCardFixture {
+    static func make(hasActivity: Bool, messageAgeSeconds: Double = 125) async throws -> StoredMessageCardFixture {
         installTestCoreAtomsIfNeeded()
         let atoms = CoreAtomScope.store
         let store = WorkspaceStore(
@@ -125,7 +157,7 @@ private final class StoredMessageCardFixture {
         }
         do {
             let written = try await writeStoredMessage(composition)
-            let currentDate = composition.now.addingTimeInterval(125)
+            let currentDate = composition.now.addingTimeInterval(messageAgeSeconds)
             wallNow.withLock { $0 = currentDate }
             let statuses = try await workingHook(composition)
             let clock = NativeCardTestClock()

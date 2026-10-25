@@ -23,10 +23,10 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             text: line.summary, icon: spec.icon,
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "showPaneAgentLine")),
             tone: .neutral, glyphMotion: .still,
-            ageText: RepoExplorerPaneRecencyText.age(referenceDate: line.updatedAt, now: now).messageText)
+            ageText: PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now))
     }
     package static func nextMessageAgeChangeDate(_ line: AgentLineDetail, now: Date) -> Date {
-        RepoExplorerPaneRecencyText.age(referenceDate: line.updatedAt, now: now).nextChangeDate
+        PaneContextPresentationRules.age(referenceDate: line.updatedAt, now: now).nextChange
     }
 
     package static func connection(_ reason: AgentConnectionRefusalReason) -> Self {
@@ -39,7 +39,7 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
     }
 
     package static func session(_ status: AgentSessionStatus) -> Self? {
-        guard status != .unknown else { return nil }
+        guard let line = PaneContextPresentationRules.statusLine(for: status) else { return nil }
         let spec = LocalActionSpec.paneSessionStatus(status).actionSpec
         let tone: PaneContextChipTone =
             switch status {
@@ -55,7 +55,7 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             case .needsYou, .failed, .idle, .unknown: .still
             }
         return Self(
-            text: spec.label, icon: spec.icon,
+            text: line.text, icon: spec.icon,
             tooltip: spec.controlTooltipRenderValue(provenance: .localAction(rawValue: "paneSessionStatus")),
             tone: tone, glyphMotion: glyphMotion, ageText: nil)
     }

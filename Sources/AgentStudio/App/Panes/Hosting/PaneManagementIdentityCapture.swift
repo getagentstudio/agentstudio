@@ -79,11 +79,9 @@ enum PaneManagementIdentityCapture {
     @concurrent nonisolated static func lines(_ input: LineInput, now: Date) async
         -> [RepoExplorerPaneRowLine]
     {
-        let title =
-            input.agentTitle
-            ?? RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                liveTitle: input.terminalTitle, cwd: input.cwd,
-                shellExecutablePath: input.shellExecutablePath)
+        let title = PaneContextPresentationRules.displayTitle(
+            raw: input.terminalTitle, agentTitle: input.agentTitle, cwd: input.cwd,
+            shell: input.shellExecutablePath)
         return RepoExplorerPaneRowVariants.informationLines(
             title: title, note: input.note, agentLine: input.agentLine,
             sessionStatus: input.sessionPresentation?.status,

@@ -23,7 +23,7 @@ struct RepoExplorerMessageDeadlineHostTests {
                     await fixture.adapter.deadlineWorker.hasPendingPresentationDeadline(),
                     "The real adapter dropped the message-only deadline")
                 try await fixture.clock.expectRegistration(after: .seconds(55), at: .seconds(55))
-                let rowID = try fixture.expectVisibleMessage(age: "2 min ago")
+                let rowID = try fixture.expectVisibleMessage(age: "[2 min ago]")
                 let hostIdentity = ObjectIdentifier(fixture.host.host)
                 #expect(fixture.adapter.publishedResult?.snapshot.sortField == .activity)
                 #expect(fixture.adapter.publishedResult?.snapshot.groupingMode == .activity)
@@ -45,7 +45,7 @@ struct RepoExplorerMessageDeadlineHostTests {
                 try await fixture.expectPublished(generation + 1)
                 await fixture.adapter.waitForDeadlineWorkerUpdate()
                 try await fixture.clock.expectRegistration(after: .seconds(60), at: .seconds(115))
-                #expect(try fixture.expectVisibleMessage(age: "3 min ago") == rowID)
+                #expect(try fixture.expectVisibleMessage(age: "[3 min ago]") == rowID)
                 #expect(ObjectIdentifier(fixture.host.host) == hostIdentity)
                 try await fixture.expectStoredMessageUnchanged()
                 #expect(atoms.paneActivityTime.value(for: fixture.paneID) == nil)

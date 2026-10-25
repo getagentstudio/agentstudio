@@ -31,7 +31,7 @@ extension PaneContextToolbarRenderingTests {
             try await withMountedToolbar(pane: pane, readers: readers, width: width) { mounted in
                 let identity = ObjectIdentifier(mounted.host)
                 let controls = buttonFrames(in: mounted.host)
-                try expectFullAge("2 min ago", in: mounted, width: width)
+                try expectFullAge("[2 min ago]", in: mounted, width: width)
                 let clock = try #require(mounted.clock)
 
                 clock.advance(by: .seconds(55))
@@ -42,7 +42,7 @@ extension PaneContextToolbarRenderingTests {
                 mounted.host.displayIfNeeded()
                 #expect(ObjectIdentifier(mounted.host) == identity)
                 #expect(buttonFrames(in: mounted.host) == controls)
-                try expectFullAge("3 min ago", in: mounted, width: width)
+                try expectFullAge("[3 min ago]", in: mounted, width: width)
                 #expect(atoms.paneContextPresentation.value(for: pane)?.agentLine == detail)
             }
             atoms.paneContextPresentation.remove([pane])

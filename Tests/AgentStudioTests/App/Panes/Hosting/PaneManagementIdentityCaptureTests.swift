@@ -24,8 +24,8 @@ struct PaneManagementIdentityCaptureTests {
         #expect(
             lines.first
                 == .title(
-                    RepoExplorerPaneTitleNormalizer.normalizedTitle(
-                        liveTitle: liveTitle, cwd: input.cwd, shellExecutablePath: "/bin/zsh")))
+                    PaneContextPresentationRules.displayTitle(
+                        raw: liveTitle, cwd: input.cwd, shell: "/bin/zsh")))
     }
 
     enum SessionMode: CaseIterable, Sendable { case unbound, live, ended, unverified }

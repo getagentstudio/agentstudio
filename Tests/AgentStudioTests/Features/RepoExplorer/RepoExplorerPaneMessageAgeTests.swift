@@ -14,9 +14,9 @@ extension RepoExplorerPaneContextLineTests {
     }
 
     static let messageAges: [MessageAgeOracle] = [
-        .init(seconds: -5, message: "just now", chip: "Now", nextSeconds: 60),
-        .init(seconds: 0, message: "just now", chip: "Now", nextSeconds: 60),
-        .init(seconds: 59.999, message: "just now", chip: "Now", nextSeconds: 60),
+        .init(seconds: -5, message: "Now", chip: "Now", nextSeconds: 60),
+        .init(seconds: 0, message: "Now", chip: "Now", nextSeconds: 60),
+        .init(seconds: 59.999, message: "Now", chip: "Now", nextSeconds: 60),
         .init(seconds: 60, message: "1 min ago", chip: "1m", nextSeconds: 120),
         .init(seconds: 60.001, message: "1 min ago", chip: "1m", nextSeconds: 120),
         .init(seconds: 125, message: "2 min ago", chip: "2m", nextSeconds: 180),
@@ -24,8 +24,8 @@ extension RepoExplorerPaneContextLineTests {
         .init(seconds: 3600, message: "1 hr ago", chip: "1h", nextSeconds: 7200),
         .init(seconds: 3600.001, message: "1 hr ago", chip: "1h", nextSeconds: 7200),
         .init(seconds: 86_400 - 0.001, message: "23 hr ago", chip: "23h", nextSeconds: 86_400),
-        .init(seconds: 86_400, message: "1 days ago", chip: "1d", nextSeconds: 172_800),
-        .init(seconds: 86_400.001, message: "1 days ago", chip: "1d", nextSeconds: 172_800),
+        .init(seconds: 86_400, message: "1 day ago", chip: "1d", nextSeconds: 172_800),
+        .init(seconds: 86_400.001, message: "1 day ago", chip: "1d", nextSeconds: 172_800),
         .init(seconds: 172_800, message: "2 days ago", chip: "2d", nextSeconds: 259_200),
     ]
 
@@ -39,7 +39,7 @@ extension RepoExplorerPaneContextLineTests {
         let line = RepoExplorerPaneContextLine.agent(detail, now: now)
 
         #expect(line.text == "A message")
-        #expect(line.ageText == oracle.message)
+        #expect(line.ageText == "[\(oracle.message)]")
         #expect(line.tone == .neutral)
         #expect(line.glyphMotion == .still)
         #expect(RepoExplorerPaneRecencyText.display(lastInteractedAt: written, now: now) == oracle.chip)
@@ -84,7 +84,7 @@ extension RepoExplorerPaneActivityProjectionTests {
                 return nil
             }.first)
 
-        #expect(message.ageText == "2 min ago")
+        #expect(message.ageText == "[2 min ago]")
         #expect(transitions == [paneId: written.addingTimeInterval(180)])
         #expect(row.recencyText == "—")
         #expect(!row.isActive)

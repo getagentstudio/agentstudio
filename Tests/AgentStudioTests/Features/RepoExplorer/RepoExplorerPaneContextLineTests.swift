@@ -8,6 +8,14 @@ import Testing
 
 @Suite
 struct RepoExplorerPaneContextLineTests {
+    @Test("O6 strips leading terminal title spinners", arguments: ["✳", "⠃", "⠋"])
+    func leadingTitleSpinnersAreHidden(spinner: String) {
+        #expect(
+            PaneContextPresentationRules.displayTitle(
+                raw: "\(spinner)  Running tests", cwd: nil, shell: "/bin/zsh")
+                == "Running tests")
+    }
+
     @MainActor
     @Test("Working resolves to app accent and opacity pulse while success stays green")
     func workingUsesAppAccentAndGentlePulse() throws {
