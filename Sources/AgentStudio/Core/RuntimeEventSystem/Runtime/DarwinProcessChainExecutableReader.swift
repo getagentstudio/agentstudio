@@ -24,7 +24,7 @@ package struct DarwinProcessChainExecutableReader: ProcessChainExecutableReading
     }
 
     package func argumentZero(of pid: Int32) -> String? {
-        guard case .success(let buffer) = argumentsReader.read(pid: pid) else { return nil }
+        guard case .success(let buffer) = argumentsReader.read(pid: pid, policy: .election) else { return nil }
         return ProcessArgumentsBufferParser.firstArgument(in: buffer)
     }
 }

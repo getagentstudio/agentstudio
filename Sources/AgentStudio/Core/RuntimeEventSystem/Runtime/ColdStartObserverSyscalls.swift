@@ -107,7 +107,7 @@ package struct DarwinColdStartObserverSyscalls: ColdStartObserverSyscalls {
     }
 
     package func readProcessArgumentsBuffer(pid: Int32) -> Result<[UInt8], POSIXErrorNumber> {
-        argumentsReader.read(pid: pid)
+        argumentsReader.read(pid: pid, policy: .startupHandoff)
     }
 
     package func observeSession(path: String, bootID: String) -> ZmxDiscoveryObservation {

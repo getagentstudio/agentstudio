@@ -19,19 +19,20 @@ struct ProcessArgumentsReaderTests {
         let reader = ProcessArgumentsReader(syscalls: calls)
 
         // Act
-        let result = reader.read(pid: 42)
+        let result = reader.read(pid: 42, policy: .election)
 
         // Assert
         #expect(result == scenario.expected(bytes: bytes))
         #expect(calls.queryCount == scenario.expectedQueries(attempts: attempts))
         #expect(calls.requestedSizes == scenario.expectedCapacities(attempts: attempts))
+        #expect(calls.maximumSizeQueryCount == 0)
     }
 }
 
 enum ArgumentsReadScenario: CaseIterable, Sendable {
     case zeroThenSuccess, headerThenSuccess, zeroExhausted, oversized
     case queryEIOThenSuccess, queryEIOExhausted, queryESRCH
-    case fetchEIOThenSuccess, fetchEIOExhausted, fetchESRCH
+    case fetchEIOThenSuccess, fetchEIOExhausted, fetchESRCH, fetchEINVAL
     case requeryChangedThenSuccess, requeryEIOThenSuccess, requeryESRCH
     case alignedShortFetch, misalignedExhausted
 
@@ -48,7 +49,7 @@ enum ArgumentsReadScenario: CaseIterable, Sendable {
         case .requeryEIOThenSuccess: [.success(8), .failure(POSIXErrorNumber(EIO)), .success(8), .success(8)]
         case .requeryESRCH: [.success(8), .failure(POSIXErrorNumber(ESRCH))]
         case .misalignedExhausted: [.success(12)]
-        case .fetchEIOThenSuccess, .fetchEIOExhausted, .fetchESRCH, .alignedShortFetch: [.success(8)]
+        case .fetchEIOThenSuccess, .fetchEIOExhausted, .fetchESRCH, .fetchEINVAL, .alignedShortFetch: [.success(8)]
         }
     }
 
@@ -57,6 +58,7 @@ enum ArgumentsReadScenario: CaseIterable, Sendable {
         case .fetchEIOThenSuccess: [.failure(POSIXErrorNumber(EIO)), .success(7)]
         case .fetchEIOExhausted: [.failure(POSIXErrorNumber(EIO))]
         case .fetchESRCH: [.failure(POSIXErrorNumber(ESRCH))]
+        case .fetchEINVAL: [.failure(POSIXErrorNumber(EINVAL))]
         default: [.success(7)]
         }
     }
@@ -67,6 +69,7 @@ enum ArgumentsReadScenario: CaseIterable, Sendable {
             .failure(POSIXErrorNumber(EIO))
         case .oversized: .failure(POSIXErrorNumber(E2BIG))
         case .queryESRCH, .fetchESRCH, .requeryESRCH: .failure(POSIXErrorNumber(ESRCH))
+        case .fetchEINVAL: .failure(POSIXErrorNumber(EINVAL))
         case .zeroThenSuccess, .headerThenSuccess, .queryEIOThenSuccess, .fetchEIOThenSuccess,
             .requeryChangedThenSuccess, .requeryEIOThenSuccess, .alignedShortFetch:
             .success(bytes)
@@ -77,7 +80,7 @@ enum ArgumentsReadScenario: CaseIterable, Sendable {
         switch self {
         case .zeroThenSuccess, .headerThenSuccess, .queryEIOThenSuccess, .fetchEIOThenSuccess: 3
         case .zeroExhausted, .queryEIOExhausted, .fetchEIOExhausted, .misalignedExhausted: attempts
-        case .oversized, .queryESRCH, .fetchESRCH: 1
+        case .oversized, .queryESRCH, .fetchESRCH, .fetchEINVAL: 1
         case .requeryChangedThenSuccess, .requeryEIOThenSuccess: 4
         case .requeryESRCH, .alignedShortFetch: 2
         }
@@ -89,7 +92,7 @@ enum ArgumentsReadScenario: CaseIterable, Sendable {
         case .fetchEIOExhausted: Array(repeating: 8, count: attempts)
         case .misalignedExhausted: Array(repeating: 12, count: attempts)
         case .fetchEIOThenSuccess, .requeryChangedThenSuccess, .requeryEIOThenSuccess: [8, 8]
-        case .zeroThenSuccess, .headerThenSuccess, .queryEIOThenSuccess, .fetchESRCH,
+        case .zeroThenSuccess, .headerThenSuccess, .queryEIOThenSuccess, .fetchESRCH, .fetchEINVAL,
             .requeryESRCH, .alignedShortFetch:
             [8]
         }
@@ -100,6 +103,7 @@ final class ScriptedArgumentsSyscalls: ProcessArgumentsSyscalls {
     private struct Calls {
         var queryIndex = 0
         var fetchIndex = 0
+        var maximumSizeQueries = 0
         var capacities: [Int] = []
     }
     private let calls = Mutex(Calls())
@@ -117,7 +121,14 @@ final class ScriptedArgumentsSyscalls: ProcessArgumentsSyscalls {
     }
 
     var queryCount: Int { calls.withLock { $0.queryIndex } }
+    var fetchCount: Int { calls.withLock { $0.fetchIndex } }
+    var maximumSizeQueryCount: Int { calls.withLock { $0.maximumSizeQueries } }
     var requestedSizes: [Int] { calls.withLock { $0.capacities } }
+
+    func maximumSize() -> Int {
+        calls.withLock { $0.maximumSizeQueries += 1 }
+        return 64
+    }
 
     func requiredSize(of pid: Int32) -> Result<Int, POSIXErrorNumber> {
         calls.withLock { state in

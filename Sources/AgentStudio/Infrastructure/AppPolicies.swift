@@ -416,8 +416,8 @@ package enum AppPolicies {
         /// once. Matches this file's other small per-turn bounds (compare
         /// `NonterminalContentMount.maximumMountsPerMainActorTurn`).
         package static let maximumConcurrentIdentityObservations: Int = 4
-        /// Bounds immediate retries of the shared exact-size argument transaction
-        /// after EIO or an inconsistent size/fetch/requery during exec.
+        /// Bounds startup argument fetches after any errno, and election transactions
+        /// after EIO or inconsistent size/fetch/requery during exec.
         package static let processArgumentsReadAttempts: Int = 3
         /// `ColdStartObserver`'s discovery-stage backoff, in milliseconds,
         /// after `ZmxSessionControl.observe` throws `.connectionRefused`
