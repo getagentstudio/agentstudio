@@ -175,17 +175,19 @@ struct RecordedStatusDatabase: Sendable {
         activityClock: PaneActivityClock? = nil,
         continuousNow: @escaping @Sendable () -> ContinuousClock.Instant = { ContinuousClock.now },
         sessionEnded: @escaping @Sendable (UUID) async -> Void = { _ in },
+        processChainReader: any ProcessChainReading = EligibleTestProcessChainReader(),
+        probe: @escaping SessionsIngestionProbe = { _ in },
         operation: @Sendable (SessionsIngestion, AgentStudioIPCSessionsAdapter) async throws -> Output
     ) async throws -> Output {
         let queue = try DatabaseQueue(path: databaseURL.path)
         try WorkspaceLocalMigrations.migrate(queue)
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: RecordedStatusSQLiteAccess(queue: queue)),
-            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: { _ in },
+            limits: .init(maximumPendingPerPane: 32, maximumPendingGlobal: 128), probe: probe,
             sessionEnded: sessionEnded, terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let adapter = AgentStudioIPCSessionsAdapter(
             ingestion: ingestion, continuousNow: continuousNow, activityClock: activityClock,
-            processChainReader: EligibleTestProcessChainReader())
+            processChainReader: processChainReader)
         do {
             let result = try await operation(ingestion, adapter)
             await ingestion.finish()

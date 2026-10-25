@@ -3,9 +3,8 @@ import Foundation
 /// Parses the `sysctl(CTL_KERN, KERN_PROCARGS2, pid)` buffer format, the
 /// wire shape `ColdStartObserver`'s handoff check reads to find the startup
 /// token in a process's argument vector (Program Design revision 11, item
-/// 3, "the token"). Only the arguments are used -- macOS returns no
-/// environment to a third-party reader for any process, so this parser
-/// never looks past argv.
+/// 3, "the token"). Only the requested arguments are used; any environment
+/// section the kernel supplies is never interpreted.
 ///
 /// Layout, confirmed empirically against a live macOS process (a native
 /// `Int32` argc, then the exec path, then argc argv strings, every string
@@ -20,6 +19,20 @@ import Foundation
 /// terminator ends parsing early rather than reading past the buffer, since
 /// this reads memory the kernel filled for an external, unrelated process.
 package enum ProcessArgumentsBufferParser {
+    /// Reads argv0 only. Later arguments need not decode and are never traversed.
+    static func firstArgument(in buffer: [UInt8]) -> String? {
+        guard buffer.count >= MemoryLayout<Int32>.size else { return nil }
+        let argumentCount = buffer.withUnsafeBytes { $0.loadUnaligned(as: Int32.self) }
+        guard argumentCount > 0,
+            let execPathEnd = nulTerminatedStringEnd(in: buffer, from: MemoryLayout<Int32>.size)
+        else { return nil }
+        let offset = skipNULPadding(in: buffer, from: execPathEnd)
+        guard let argumentEnd = nulTerminatedStringEnd(in: buffer, from: offset), argumentEnd > offset + 1 else {
+            return nil
+        }
+        return String(bytes: buffer[offset..<(argumentEnd - 1)], encoding: .utf8)
+    }
+
     /// Returns the process's argument vector (never the exec path itself),
     /// or `nil` when the buffer is malformed, truncated, or too short to
     /// contain `argc` argv strings -- matching `ColdStartUnobservableReason

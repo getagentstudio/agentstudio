@@ -70,11 +70,11 @@ struct SessionAdapterWiringTests {
     }
 
     @Test(
-        "both adapters observe synchronously before their admission clock and FIFO enqueue",
+        "both adapters observe at FIFO election time after their admission clock",
         arguments: MainEligibilityRoute.allCases)
-    func adapterObservationBeforeEnqueue(route: MainEligibilityRoute) async throws {
+    func adapterObservationAtElection(route: MainEligibilityRoute) async throws {
         let result = try await driveAdapterObservation(route: route, refusalOnly: false)
-        #expect(result.operations == [.observe, .clock, .enqueue])
+        #expect(result.operations == [.clock, .enqueue, .observe])
         #expect(result.peers == [ProcessChainPeer(pid: 500, pidVersion: 17)])
         #expect(result.session == "wire-main")
     }

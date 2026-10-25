@@ -15,7 +15,7 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
     let activityClock: PaneActivityClock?
     let processChainReader: any ProcessChainReading
     private let ownerPaneLookup: @Sendable (PaneId) -> PaneId?
-    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     private let resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
     private let foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
 
@@ -44,7 +44,6 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         paneId: UUID, params: IPCSessionEventParams,
         provenance: IPCSessionEventProvenance, peerProcess: AppIPCPeerProcess? = nil
     ) async throws -> IPCSessionEventResult {
-        let chain = observeProcessChain(peerProcess: peerProcess, providerIdentifier: params.provider.identifier)
         guard provenance == .matchingPane else { throw AppIPCSessionsError(reason: .validationRejected) }
         guard !params.event.conversationId.isEmpty else { throw AppIPCSessionsError(reason: .validationRejected) }
         let began = performanceTraceRecorder?.isEnabled == true ? ContinuousClock.now : nil
@@ -68,7 +67,8 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
             ownerPaneId: ownerPaneLookup(.init(existingUUID: paneId))?.uuid,
             resumeHint: params.event.providerFields.resumeHint
                 ?? Self.resumeHint(provider: params.provider.identifier, conversationId: params.event.conversationId),
-            chain: chain)
+            observeProcessChain: processChainObservation(
+                peerProcess: peerProcess, providerIdentifier: params.provider.identifier))
         do {
             let outcome = try await ingestion.submitHook(hook)
             if case .committed(let committed) = outcome,
@@ -101,9 +101,12 @@ struct AgentStudioIPCSessionsAdapter: AppIPCSessionsPort {
         return .init(paneId: paneId, disposition: .admitted, correlationId: params.correlationId)
     }
 
-    func observeProcessChain(peerProcess: AppIPCPeerProcess?, providerIdentifier: String) -> ProcessChainObservation {
+    func processChainObservation(peerProcess: AppIPCPeerProcess?, providerIdentifier: String)
+        -> @Sendable () -> ProcessChainObservation
+    {
         let peer = peerProcess.map { ProcessChainPeer(pid: $0.pid, pidVersion: $0.pidVersion) }
-        return processChainReader.observe(peer: peer, provider: providerIdentifier)
+        let reader = processChainReader
+        return { reader.observe(peer: peer, provider: providerIdentifier) }
     }
 
     func recordRefusal(

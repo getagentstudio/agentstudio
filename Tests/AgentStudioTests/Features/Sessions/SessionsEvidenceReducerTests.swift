@@ -27,8 +27,18 @@ struct SessionsEvidenceReducerTests {
         } else {
             rowsBeforeDecision = []
         }
-        let outcome = try await repository.applyHook(
-            scenario.admission(paneId: pane, instant: timeline.decision), eligibility: .eligible)
+        let hook = scenario.admission(paneId: pane, instant: timeline.decision)
+        let before = try await repository.statusContext(paneId: pane)
+        let matching = before.bindings.first {
+            $0.paneId == pane && $0.providerIdentifier == hook.providerIdentifier
+                && $0.providerConversationId == hook.sessionId
+        }
+        let liveMain = before.bindings.first { $0.paneId == pane && $0.status == .active }
+        let prediction = SessionsEvidenceReducer.predictsElection(
+            for: hook, liveMain: liveMain, ownMatching: matching, confirmedLiveMain: true)
+        #expect(prediction == scenario.expectsElection)
+        // A skipped observation must preserve this table's final disposition.
+        let outcome = try await repository.applyHook(hook, eligibility: prediction ? .eligible : .notEligible)
         try await assertBindingTableOutcome(
             outcome, scenario: scenario, context: context, rowsBeforeDecision: rowsBeforeDecision)
     }
@@ -236,6 +246,16 @@ enum BindingTableScenario: CaseIterable, Equatable, Sendable {
     case endedStartIgnoredWhileNewMainIsLive
     case endedStartResumesAfterNewMainEnds
     case sameConversationInAnotherPane
+
+    var expectsElection: Bool {
+        switch self {
+        case .firstStart, .firstActivity, .endedStartResumesAfterNewMainEnds, .sameConversationInAnotherPane:
+            true
+        case .liveMainApplies, .unknownChildActivityIgnored, .unknownChildStartIgnored,
+            .endedLateFactWhileNewMainIsLive, .endedStartIgnoredWhileNewMainIsLive:
+            false
+        }
+    }
 
     var isIgnored: Bool {
         switch self {
