@@ -5,7 +5,7 @@ import Foundation
 /// Bounded control requests to the existing zmx daemon. All callers run off MainActor.
 /// The connection used to inspect an incarnation is also the connection used to request Kill.
 package enum ZmxSessionControl {
-    static func endpointIsAbsent(path: String) throws -> Bool {
+    package static func endpointIsAbsent(path: String) throws -> Bool {
         var information = stat()
         if lstat(path, &information) == 0 { return false }
         guard errno == ENOENT else { throw ZmxSessionControlFailure.unavailable }
@@ -19,7 +19,7 @@ package enum ZmxSessionControl {
     /// start time, so a reused pid can't pass as a handoff. Reuses
     /// `processSnapshot`'s validated read rather than a second raw
     /// `proc_pidinfo` call.
-    static func currentIncarnation(forPID pid: Int32) -> ZmxProcessIncarnation? {
+    package static func currentIncarnation(forPID pid: Int32) -> ZmxProcessIncarnation? {
         (try? processSnapshot(pid))?.incarnation
     }
 

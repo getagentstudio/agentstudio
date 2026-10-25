@@ -120,6 +120,8 @@ package enum ProviderHookInvocation {
         package let delivery: ProviderHookDelivery
         package let standardErrorSink: @Sendable (String) -> Void
         package let deadline: CallDeadline?
+        package let wallNow: @Sendable () -> Date
+        package let lifecycleWriter: ProviderLifecycleOutboxWriter?
 
         package init(
             eventName: String,
@@ -128,7 +130,9 @@ package enum ProviderHookInvocation {
             correlationIdProvider: @escaping @Sendable () -> UUID,
             delivery: ProviderHookDelivery,
             standardErrorSink: @escaping @Sendable (String) -> Void,
-            deadline: CallDeadline? = nil
+            deadline: CallDeadline? = nil,
+            wallNow: @escaping @Sendable () -> Date = { Date() },
+            lifecycleWriter: ProviderLifecycleOutboxWriter? = nil
         ) {
             self.eventName = eventName
             self.environment = environment
@@ -137,11 +141,14 @@ package enum ProviderHookInvocation {
             self.delivery = delivery
             self.standardErrorSink = standardErrorSink
             self.deadline = deadline
+            self.wallNow = wallNow
+            self.lifecycleWriter = lifecycleWriter
         }
     }
 
     @discardableResult
     package static func runCodexHook(_ props: Props) -> Int32 {
+        let reportedAt = props.wallNow()
         guard let eventName = CodexHookEventName(rawValue: props.eventName) else {
             props.standardErrorSink(IPCAgentConnectionRefusalReason.undecodablePayload.rawValue)
             return 0
@@ -175,16 +182,17 @@ package enum ProviderHookInvocation {
         }
         ProviderHookStatusReporting(
             environment: props.environment, configuration: configuration, delivery: props.delivery,
-            deadline: deadline, diagnosticSink: props.standardErrorSink
+            deadline: deadline, diagnosticSink: props.standardErrorSink, lifecycleWriter: props.lifecycleWriter
         ).event(
             IPCSessionEventParams(
                 handle: "self", provider: projected.provider, event: projected.event,
-                correlationId: props.correlationIdProvider()))
+                correlationId: props.correlationIdProvider()), reportedAt: reportedAt)
         return 0
     }
 
     @discardableResult
     package static func runCursorHook(_ props: Props) -> Int32 {
+        let reportedAt = props.wallNow()
         guard let event = CursorHookEventName(rawValue: props.eventName) else { return 0 }
         let deadline = (props.deadline ?? CallDeadline(limit: CLIPolicy.hookCallLimit))
             .capped(to: CLIPolicy.hookCallLimit)
@@ -213,11 +221,11 @@ package enum ProviderHookInvocation {
         }
         ProviderHookStatusReporting(
             environment: props.environment, configuration: configuration, delivery: props.delivery,
-            deadline: deadline, diagnosticSink: props.standardErrorSink
+            deadline: deadline, diagnosticSink: props.standardErrorSink, lifecycleWriter: props.lifecycleWriter
         ).event(
             .init(
                 handle: "self", provider: projected.provider, event: projected.event,
-                correlationId: props.correlationIdProvider()))
+                correlationId: props.correlationIdProvider()), reportedAt: reportedAt)
         return 0
     }
 

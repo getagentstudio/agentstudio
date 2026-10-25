@@ -546,7 +546,7 @@ struct TerminalActivityProjectorRestorePhaseTests {
         let generation = RestoreGeneration(rawValue: 7)
 
         await router.consumeTerminalActivityInput(
-            .restorePhaseArmed(paneID: paneID, restoreGeneration: generation)
+            .restorePhaseArmed(paneID: paneID, restoreGeneration: generation, resumeInvocation: nil)
         )
         await router.consumeTerminalActivityInput(
             .restorePhaseEnded(paneID: paneID, restoreGeneration: generation)

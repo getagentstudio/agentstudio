@@ -82,6 +82,16 @@ struct HeldStepTests {
         await #expect(throws: CancellationError.self) { try await step.arrive(2) }
     }
 
+    @Test("producer completion without delivery fails current and later first-arrival observers")
+    func producerRetirementEndsMissingArrival() async throws {
+        let step = HeldStep<Int>("producer ended without aggregate delivery")
+        let observer = Task { try await step.firstArrival() }
+        let producer = Task { step.retire() }
+        await producer.value
+        await #expect(throws: HeldStepRetiredBeforeArrival.self) { try await observer.value }
+        await #expect(throws: HeldStepRetiredBeforeArrival.self) { try await step.firstArrival() }
+    }
+
     @Test("the first terminal call wins and later terminal calls change nothing")
     func firstTerminalCallWins() async throws {
         // Arrange

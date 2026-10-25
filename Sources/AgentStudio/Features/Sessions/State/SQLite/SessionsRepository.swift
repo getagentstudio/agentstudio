@@ -1,9 +1,16 @@
+import AgentStudioInfrastructure
 import Foundation
 import GRDB
 
 package struct SessionsRepository: Sendable {
     let sqliteAccess: any SessionsSQLiteAccess
-    package init(sqliteAccess: any SessionsSQLiteAccess) { self.sqliteAccess = sqliteAccess }
+    let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
+    package init(
+        sqliteAccess: any SessionsSQLiteAccess, performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
+    ) {
+        self.sqliteAccess = sqliteAccess
+        self.performanceTraceRecorder = performanceTraceRecorder
+    }
 
     package func applyHook(
         _ hook: SessionsHookAdmission,

@@ -142,6 +142,7 @@ struct PaneCLIOutboxDrainTests {
     func malformedEnvelopeIsSkipped() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
+            try await harness.bindPane(paneID: paneID)
             _ = try await harness.append(paneID: paneID, line: #"{"not":"a json-rpc request"}"#)
             let survivor = try await harness.append(paneID: paneID, line: harness.messageLine(text: "survivor"))
 
@@ -152,6 +153,7 @@ struct PaneCLIOutboxDrainTests {
             #expect(try await harness.cursor() == survivor.id)
             #expect(try await harness.rows().count == 2)
             #expect(try await harness.paneMessages(paneID: paneID).map(\.body) == ["survivor"])
+            #expect(try await harness.evidenceRepository.loadEvidence(paneId: paneID) == nil)
         }
     }
 
@@ -262,6 +264,10 @@ struct PaneCLIOutboxDrainTests {
     @Test("a one-shot admission write failure retains the pending prefix and retries each notice exactly once")
     func transientAdmissionFailureRetainsPendingPrefix() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
+            // Adopt the history before arming the one-shot notice admission failure.
+            let initial = await harness.drain()
+            #expect(initial.readOutcome == .complete(throughId: 0))
+            #expect(!initial.hasWork)
             let paneID = UUIDv7.generate()
             let firstMessageID = UUIDv7.generate()
             let laterMessageID = UUIDv7.generate()
@@ -275,6 +281,7 @@ struct PaneCLIOutboxDrainTests {
             // malformed path could incorrectly commit the cursor in this drain.
             let failed = await harness.drain()
 
+            #expect(failed.readOutcome == .incomplete(heldAtId: failedEntry.id))
             #expect(failed.retryableEntryCount == 1)
             #expect(failed.admittedEntryCount == 0)
             #expect(failed.malformedEntryCount == 0)
@@ -512,6 +519,7 @@ struct PaneCLIOutboxDrainTests {
     func unknownStoredKindAdvancesTheRefusedPrefix() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let paneID = UUIDv7.generate()
+            try await harness.bindPane(paneID: paneID)
             let entry = try await harness.append(paneID: paneID, line: harness.messageLine(text: "future kind"))
             let writer = harness.writer
             try await valueFromDedicatedThread {
@@ -531,6 +539,9 @@ struct PaneCLIOutboxDrainTests {
                 try writer.databaseQueue.read { try Int.fetchOne($0, sql: "SELECT COUNT(*) FROM cli_outbox") }
             }
             #expect(storedCount == 1)
+            #expect(
+                try await harness.evidenceRepository.loadEvidence(paneId: paneID)?.value
+                    == .reportsUnreadable(.rowRefused))
         }
     }
 

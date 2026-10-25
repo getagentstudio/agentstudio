@@ -44,7 +44,7 @@ struct AgentStudioOTLPMeasurementListTests {
     @Test
     func everyListedMeasurementHasAnEmitterAnchorAndProducesNumericSamples() async throws {
         let entries = try await valueFromDedicatedThread { try Self.readMeasurementAnchors() }
-        #expect(entries.count == 542)
+        #expect(entries.count == 545)
         #expect(Set(entries.map(\.name)) == AgentStudioOTLPMeasurementList.names)
         #expect(Set(entries.map(\.name)).count == entries.count)
         let numericValues: [(AgentStudioTraceValue, Double)] = [(.int(7), 7), (.double(2.5), 2.5)]
@@ -119,6 +119,9 @@ struct AgentStudioOTLPMeasurementListTests {
     @Test
     func rareMeasurementsAndClassifiedTalliesRemainListed() {
         for name in [
+            "agentstudio.performance.restore.execution.count",
+            "agentstudio.performance.restore.main_thread.execution.count",
+            "agentstudio.performance.restore.main_thread.elapsed_ms",
             "agentstudio.performance.ipc.pane_context_read.detail_elapsed_ms",
             "agentstudio.performance.ipc.pane_context_read.reply_bytes",
             "agentstudio.bridge.native_capacity.entry.count",
