@@ -65,7 +65,7 @@ func launchServicesDiagnosticEnvironment(
         "AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION": "cross-tab-move-geometry-smoke",
         "AGENTSTUDIO_STARTUP_WATCH_FOLDER": fixture.url("watch-folder").path,
         "AGENTSTUDIO_IPC_UNSAFE_NO_AUTH": "1",
-        "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": "1",
+        "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": try fixture.makeDebugEscrow().path,
     ]
 }
 
@@ -85,7 +85,9 @@ func expectDirectExecutableFallbackState(_ state: String, buildExecutable: URL, 
     try expectOwnerOnlyDirectory(stateValue("AGENTSTUDIO_OBSERVABILITY_ZMX_DIR", in: state))
 }
 
-func expectDirectExecutableFallbackLaunchEnvironment(_ launchedEnv: String, hostileDataRoot: URL) throws {
+func expectDirectExecutableFallbackLaunchEnvironment(
+    _ launchedEnv: String, hostileDataRoot: URL, escrowPath: String
+) throws {
     #expect(launchedEnv.contains("data=/"))
     #expect(launchedEnv.contains("ipc_socket_dir=/"))
     #expect(launchedEnv.contains("zmx_path=/"))
@@ -99,7 +101,7 @@ func expectDirectExecutableFallbackLaunchEnvironment(_ launchedEnv: String, host
     #expect(launchedEnv.contains("diagnostic=cross-tab-move-geometry-smoke"))
     #expect(launchedEnv.contains("watch_folder="))
     #expect(launchedEnv.contains("ipc_no_auth=1"))
-    #expect(launchedEnv.contains("ipc_escrow=1"))
+    #expect(stateValue("ipc_escrow", in: launchedEnv) == escrowPath)
     #expect(!launchedEnv.contains(hostileDataRoot.path))
     try expectOwnerOnlyDirectory(stateValue("ipc_socket_dir", in: launchedEnv))
 }

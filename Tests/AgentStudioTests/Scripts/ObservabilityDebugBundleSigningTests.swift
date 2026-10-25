@@ -62,6 +62,7 @@ struct ObservabilityDebugBundleSigningTests {
             environment: try signingEnvironment(fixture: fixture, failedItem: "none"))
 
         #expect(result.exitCode == 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        try fixture.expectIPCHealthChecked()
         let invocations = try String(contentsOf: fixture.url("codesign-argv"), encoding: .utf8)
             .split(separator: "\n").map { $0.split(separator: "\t").map(String.init) }
         let signingInvocations = invocations.filter { $0.contains("--sign") }
@@ -110,6 +111,7 @@ struct ObservabilityDebugBundleSigningTests {
         #expect(assembledPlist["CFBundleURLTypes"] == nil)
         #expect(assembledPlist["CFBundleDisplayName"] as? String == "Agent Studio Debug \(debugCode)")
         try #require(result.exitCode == 0, "stdout: \(result.stdout)\nstderr: \(result.stderr)")
+        try fixture.expectIPCHealthChecked()
         let invocations = try String(contentsOf: fixture.url("codesign-argv"), encoding: .utf8)
             .split(separator: "\n").map { $0.split(separator: "\t").map(String.init) }
         #expect(invocations.filter { $0.contains("--sign") }.count == 3)
@@ -120,10 +122,7 @@ struct ObservabilityDebugBundleSigningTests {
     }
 
     private func signingEnvironment(fixture: LauncherScriptFixture, failedItem: String) throws -> [String: String] {
-        let buildPath = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
-        try FileManager.default.copyItem(
-            at: buildPath.appending(path: "debug/AgentStudio"),
-            to: buildPath.appending(path: "debug/agentstudio-cli"))
+        _ = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")
         var environment = try launchServicesDiagnosticEnvironment(
             fixture: fixture, openArgsURL: fixture.url("open-args"),
             launchedAppURL: fixture.url("launched-app"), stateFile: fixture.url("latest.env"))
