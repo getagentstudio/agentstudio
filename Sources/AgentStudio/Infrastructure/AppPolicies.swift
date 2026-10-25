@@ -419,15 +419,8 @@ package enum AppPolicies {
         /// once. Matches this file's other small per-turn bounds (compare
         /// `NonterminalContentMount.maximumMountsPerMainActorTurn`).
         package static let maximumConcurrentIdentityObservations: Int = 4
-        /// `DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer`'s
-        /// bound on immediate, no-backoff retries after `sysctl
-        /// (KERN_PROCARGS2)` returns `EIO` (Program Design item 3, stage 2,
-        /// amended 2026-09-30): a single read landing mid-exec races the
-        /// leader's own argument-space replacement, not a genuinely unread-
-        /// able process -- confirmed empirically against real zmx (30/30
-        /// EIO occurrences, 30/30 recovered on the very next read, `proc_pidinfo`
-        /// live throughout). Only exhausting every attempt counts as
-        /// `.processArgsUnreadable`.
+        /// Bounds immediate retries of the shared exact-size argument transaction
+        /// after EIO or an inconsistent size/fetch/requery during exec.
         package static let processArgumentsReadAttempts: Int = 3
         /// `ColdStartObserver`'s discovery-stage backoff, in milliseconds,
         /// after `ZmxSessionControl.observe` throws `.connectionRefused`
