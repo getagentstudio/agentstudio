@@ -20,7 +20,7 @@ extension RestoreResumeDecisionBoundaryTests {
             let stored = try #require(try await pane.repository.load(paneId: pane.paneId))
             print("R3_CACHED_LOOK display_timestamp_changed=\(stored.observedAt != cached.observedAt)")
             let result = await pane.decision(harness: harness).resolve(
-                paneId: pane.paneId, sessionId: cached.zmxSessionId, preRestoreLook: cached,
+                paneId: pane.paneId, sessionId: cached.zmxSessionId,
                 readiness: .ready, launchBoot: .init(previousBootId: "A", currentBootId: "B"), inventory: .complete([:])
             )
             let invocation = ResumeInvocation(

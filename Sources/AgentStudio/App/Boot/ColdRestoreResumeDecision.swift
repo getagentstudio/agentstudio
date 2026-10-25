@@ -36,7 +36,7 @@ struct ColdRestoreResumeDecision: Sendable {
     var performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
 
     @concurrent nonisolated func resolve(
-        paneId: UUID, sessionId: ZmxSessionID, preRestoreLook: PaneForegroundLook?,
+        paneId: UUID, sessionId: ZmxSessionID,
         readiness: RestoreResumeReadinessResult, launchBoot: TerminalRestoreLaunchBoot?,
         inventory: ZmxSessionInventory
     ) async -> ColdRestoreResumeVerdict {
@@ -55,7 +55,7 @@ struct ColdRestoreResumeDecision: Sendable {
         func input(_ evidence: PaneForegroundEvidence?) -> ResumeEvidenceInput {
             .init(
                 paneId: paneId, zmxSessionId: sessionId, coldEndedMain: ended, evidence: evidence,
-                preRestoreLook: preRestoreLook, launchBootId: launchBoot.currentBootId, inventory: inventory)
+                isSameBoot: launchBoot.isSameBoot, inventory: inventory)
         }
         var verdict = await resolver.resumeEvidence(for: input(foreground))
         if launchBoot.isSameBoot {

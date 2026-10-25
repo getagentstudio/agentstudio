@@ -16,7 +16,7 @@ extension RestoreResumeDecisionBoundaryTests {
             let pane = try await ColdResumeTestPane.make(harness: harness)
             let before = try await harness.evidenceRepository.loadEvidence(paneId: pane.paneId)
             let verdict = await pane.decision(harness: harness).resolve(
-                paneId: pane.paneId, sessionId: pane.look.zmxSessionId, preRestoreLook: pane.look,
+                paneId: pane.paneId, sessionId: pane.look.zmxSessionId,
                 readiness: .unavailable, launchBoot: .init(previousBootId: "B", currentBootId: "B"),
                 inventory: .complete([:]))
 
@@ -39,7 +39,7 @@ extension RestoreResumeDecisionBoundaryTests {
                 ingestion: harness.ingestion, foregroundRepository: harness.evidenceRepository,
                 drain: harness.drainOwner, storeURL: harness.storeURL)
             let result = await decision.resolve(
-                paneId: pane, sessionId: session, preRestoreLook: nil, readiness: .ready,
+                paneId: pane, sessionId: session, readiness: .ready,
                 launchBoot: .init(previousBootId: "B", currentBootId: "B"), inventory: .complete([:]))
             #expect(result.endedMain == nil)
             #expect(result.evidence == .unknown(.changedWhileClosed))

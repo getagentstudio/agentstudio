@@ -81,9 +81,12 @@ enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
                 .init(
                     provider: proof.provider == "codex" ? .codex : .claudeCode,
                     sessionId: try ProviderSessionId(rawValue: proof.sessionId)))
-        case .exitLookSawShell, .stoppedObserved, .backgroundObserved, .otherForeground: .unknown(.programNotAgent)
+        case .exitLookSawShell, .stoppedObserved, .backgroundObserved, .otherForeground, .noLook:
+            .interruptedCandidate(
+                .init(
+                    provider: proof.provider == "codex" ? .codex : .claudeCode,
+                    sessionId: try ProviderSessionId(rawValue: proof.sessionId)))
         case .keptOtherStart, .keptStartWithoutMain: .unknown(.changedWhileClosed)
-        case .noLook: .unknown(.noObservation)
         case .storeReplaced, .storeRemoved: .unknown(.historyLost)
         case .refusedReport: .unknown(.reportRefused)
         case .unreadableStore: .unknown(.reportsNotRead)

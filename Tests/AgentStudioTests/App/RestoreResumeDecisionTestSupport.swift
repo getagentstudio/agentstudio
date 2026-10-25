@@ -63,7 +63,7 @@ struct ColdResumeTestPane: Sendable {
         currentBoot: String = "boot-B", inventory: ZmxSessionInventory = .complete([:])
     ) async -> ColdRestoreResumeVerdict {
         await decision.resolve(
-            paneId: paneId, sessionId: look.zmxSessionId, preRestoreLook: look,
+            paneId: paneId, sessionId: look.zmxSessionId,
             readiness: .ready, launchBoot: .init(previousBootId: previousBoot, currentBootId: currentBoot),
             inventory: inventory)
     }

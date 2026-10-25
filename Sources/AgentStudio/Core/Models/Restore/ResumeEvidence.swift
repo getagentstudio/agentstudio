@@ -1,7 +1,7 @@
 import Foundation
 
 package enum ResumeUnknownReason: Equatable, Sendable {
-    case noObservation, observationMismatch, programNotAgent, changedWhileClosed
+    case observationMismatch, changedWhileClosed
     case historyLost, reportRefused, invalidSessionId, unknownProvider, reportsNotRead
 }
 
@@ -16,21 +16,18 @@ package struct ResumeEvidenceInput: Sendable {
     package let zmxSessionId: ZmxSessionID
     package let coldEndedMain: ColdEndedMain?
     package let evidence: PaneForegroundEvidence?
-    package let preRestoreLook: PaneForegroundLook?
-    package let launchBootId: String
+    package let isSameBoot: Bool
     package let inventory: ZmxSessionInventory
 
     package init(
         paneId: UUID, zmxSessionId: ZmxSessionID, coldEndedMain: ColdEndedMain?,
-        evidence: PaneForegroundEvidence?, preRestoreLook: PaneForegroundLook?,
-        launchBootId: String, inventory: ZmxSessionInventory
+        evidence: PaneForegroundEvidence?, isSameBoot: Bool, inventory: ZmxSessionInventory
     ) {
         self.paneId = paneId
         self.zmxSessionId = zmxSessionId
         self.coldEndedMain = coldEndedMain
         self.evidence = evidence
-        self.preRestoreLook = preRestoreLook
-        self.launchBootId = launchBootId
+        self.isSameBoot = isSameBoot
         self.inventory = inventory
     }
 }

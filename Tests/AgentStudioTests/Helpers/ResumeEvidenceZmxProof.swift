@@ -60,7 +60,6 @@ struct ResumeEvidenceZmxProof {
     }
 
     func resolve() async throws -> ColdRestoreResumeVerdict {
-        let look = try await foreground.repository.load(paneId: foreground.paneId)
         let report = await drain.drain(storeURL: data.storeURL)
         print("R3_READINESS outcome=\(report.readOutcome)")
         guard case .incomplete = report.readOutcome else {
@@ -68,32 +67,31 @@ struct ResumeEvidenceZmxProof {
             await readiness.record(report.readOutcome)
             let state = await readiness.wait(paneId: foreground.paneId)
             await readiness.shutdown()
-            return await resolve(readiness: state, look: look)
+            return await resolve(readiness: state)
         }
         throw ResumeEvidenceFixtureFailure.incompleteInitialRead
     }
 
-    private func resolve(readiness: RestoreResumeReadinessResult, look: PaneForegroundLook?) async
+    private func resolve(readiness: RestoreResumeReadinessResult) async
         -> ColdRestoreResumeVerdict
     {
         let decision = ColdRestoreResumeDecision(
             ingestion: data.ingestion, foregroundRepository: foreground.repository, drain: drain,
             storeURL: data.storeURL)
         return await decision.resolve(
-            paneId: foreground.paneId, sessionId: foreground.sessionId, preRestoreLook: look,
+            paneId: foreground.paneId, sessionId: foreground.sessionId,
             readiness: readiness, launchBoot: data.launchBoot,
             inventory: await environment.backend.discoverSessionInventory())
     }
 
     /// Counterfactual only: the same real cold end/E8/FIFO owners, with both reads replaced by verified-empty.
     func resolveWithEmptyDrain() async throws -> ColdRestoreResumeVerdict {
-        let look = try await foreground.repository.load(paneId: foreground.paneId)
         let ended = try await data.ingestion.endLiveMainForColdRestore(paneId: foreground.paneId)
         let evidence = try await foreground.repository.loadEvidence(paneId: foreground.paneId)
         let verdict = await SessionsResumeResolver().resumeEvidence(
             for: .init(
                 paneId: foreground.paneId, zmxSessionId: foreground.sessionId, coldEndedMain: ended,
-                evidence: evidence, preRestoreLook: look, launchBootId: data.launchBoot.currentBootId,
+                evidence: evidence, isSameBoot: data.launchBoot.isSameBoot,
                 inventory: await environment.backend.discoverSessionInventory()))
         if case .interruptedCandidate = verdict, data.launchBoot.isSameBoot, let ended {
             #expect(

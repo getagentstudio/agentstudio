@@ -90,7 +90,7 @@ extension RestoreForegroundLifecycleTests {
         do {
             let input = ResumeEvidenceInput(
                 paneId: UUIDv7.generate(), zmxSessionId: .generateUUIDv7(), coldEndedMain: nil,
-                evidence: nil, preRestoreLook: nil, launchBootId: "restore-cost-boot", inventory: .complete([:]))
+                evidence: nil, isSameBoot: false, inventory: .complete([:]))
             let result = await SessionsResumeResolver(performanceTraceRecorder: trace.recorder).resumeEvidence(
                 for: input)
             #expect(result == .knownExited)

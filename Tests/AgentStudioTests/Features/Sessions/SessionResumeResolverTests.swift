@@ -1,80 +1,77 @@
 import AgentStudioCore
-import AgentStudioInfrastructure
-import Foundation
 import Testing
 
 @testable import AgentStudioSessions
 
-@Suite("SR11/SR12 cold verdict input product")
+@Suite("SR11/SR12 revision 13 cold verdicts")
 struct SessionResumeResolverTests {
-    @Test(arguments: ["claude-code", "codex", "unrecognized-provider"])
-    func exhaustiveResumeInputProduct(provider: String) async throws {
-        let fixture = ResumeResolverFixture(provider: provider)
-        var rows = 0
-        for mainExists in [false, true] {
-            for validID in [false, true] {
-                for generationMatches in [false, true] {
-                    for sameBoot in [false, true] {
-                        for death in ResumeDeathCase.allCases {
-                            for evidence in ResumeEvidenceCase.allCases {
-                                for program in [ForegroundProgram.shell, .claudeCode, .codex, .other, .unknown] {
-                                    let input = try fixture.input(
-                                        mainExists: mainExists, validID: validID, generationMatches: generationMatches,
-                                        sameBoot: sameBoot, death: death, evidence: evidence, program: program)
-                                    let result = await SessionsResumeResolver().resumeEvidence(for: input)
-                                    // Spec SR12: reported end wins; an already-ended/no-main pane with no report exits.
-                                    let exits =
-                                        evidence == .end
-                                        || (!mainExists && (evidence == .noEvidence || evidence == .look))
-                                    // Spec SR11: a cold-ended main + its provider in the pre-restore foreground,
-                                    // exact valid id, correct generation and proof that its daemon is gone.
-                                    let providerMatches =
-                                        (provider == "codex" && program == .codex)
-                                        || (provider == "claude-code" && program == .claudeCode)
-                                    let interrupted =
-                                        mainExists && validID && generationMatches && evidence == .look
-                                        && providerMatches && death != .malformedIdentity
-                                        && (!sameBoot || death == .absent || death == .refused)
-                                    if exits {
-                                        #expect(result == .knownExited)
-                                    } else if interrupted {
-                                        guard case .interruptedCandidate(let invocation) = result else {
-                                            Issue.record("SR11 positive row refused: \(provider), \(death)")
-                                            return
-                                        }
-                                        #expect(invocation.sessionId.rawValue == fixture.sessionID)
-                                    } else {
-                                        guard case .unknown = result else {
-                                            Issue.record(
-                                                "SR12 veto row resumed or exited: \(provider), \(evidence), \(death)")
-                                            return
-                                        }
-                                    }
-                                    rows += 1
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+    @Test(
+        "report vetoes precede missing main and provider/id validation",
+        arguments: ResumeEvidenceCase.allCases.filter { $0 != .noEvidence })
+    func reportVetoPrecedence(evidence: ResumeEvidenceCase) async throws {
+        let fixture = ResumeResolverFixture(provider: "cursor")
+        let expected: ResumeEvidence
+        switch evidence {
+        case .end: expected = .knownExited
+        case .otherEnd, .otherStart: expected = .unknown(.changedWhileClosed)
+        case .historyLost: expected = .unknown(.historyLost)
+        case .refused: expected = .unknown(.reportRefused)
+        case .noEvidence:
+            Issue.record("not a report row")
+            return
         }
-        #expect(rows == 3360)
+        let input = try fixture.input(mainExists: false, validID: false, evidence: evidence)
+        #expect(await SessionsResumeResolver().resumeEvidence(for: input) == expected)
     }
 
-    @Test("reported reasons and raw invalid provider/id remain distinguishable")
-    func reportedEvidenceReasonsAndRawValidation() async throws {
+    @Test("same boot requires complete inventory proving absence or refusal", arguments: ResumeDeathCase.allCases)
+    func sameBootInventory(death: ResumeDeathCase) async throws {
         let fixture = ResumeResolverFixture(provider: "codex")
-        for (kind, reason) in [
-            (ResumeEvidenceCase.otherStart, ResumeUnknownReason.changedWhileClosed),
-            (.otherEnd, .changedWhileClosed), (.historyLost, .historyLost), (.refused, .reportRefused),
-        ] {
-            let input = try fixture.input(evidence: kind)
-            #expect(await SessionsResumeResolver().resumeEvidence(for: input) == .unknown(reason))
+        let result = await SessionsResumeResolver().resumeEvidence(for: try fixture.input(sameBoot: true, death: death))
+        switch death {
+        case .absent, .refused:
+            #expect(
+                result
+                    == .interruptedCandidate(
+                        .init(provider: .codex, sessionId: try ProviderSessionId(rawValue: fixture.sessionID))))
+        case .alive, .unresponsive, .unavailable:
+            #expect(result == .unknown(.observationMismatch))
         }
+    }
+
+    @Test("different boot does not consult inventory", arguments: ResumeDeathCase.allCases)
+    func differentBootIgnoresInventory(death: ResumeDeathCase) async throws {
+        let fixture = ResumeResolverFixture(provider: "claude-code")
+        let input = try fixture.input(sameBoot: false, death: death)
         #expect(
-            await SessionsResumeResolver().resumeEvidence(for: try fixture.input(validID: false))
-                == .unknown(.invalidSessionId))
-        let unknown = ResumeResolverFixture(provider: "cursor")
-        #expect(await SessionsResumeResolver().resumeEvidence(for: try unknown.input()) == .unknown(.unknownProvider))
+            await SessionsResumeResolver().resumeEvidence(for: input)
+                == .interruptedCandidate(
+                    .init(provider: .claudeCode, sessionId: try ProviderSessionId(rawValue: fixture.sessionID))))
+    }
+
+    @Test("no cold-ended main is known exited even for an unknown provider")
+    func noMainKnownExited() async throws {
+        let fixture = ResumeResolverFixture(provider: "cursor")
+        #expect(
+            await SessionsResumeResolver().resumeEvidence(
+                for: try fixture.input(mainExists: false, validID: false)) == .knownExited)
+    }
+
+    @Test("unsupported providers and invalid UUIDs retain exact reasons")
+    func providerAndIDValidation() async throws {
+        for provider in ["cursor", "unrecognized-provider"] {
+            let fixture = ResumeResolverFixture(provider: provider)
+            #expect(
+                await SessionsResumeResolver().resumeEvidence(
+                    for: try fixture.input(validID: false)) == .unknown(.unknownProvider))
+        }
+        let fixture = ResumeResolverFixture(provider: "codex")
+        #expect(
+            await SessionsResumeResolver().resumeEvidence(
+                for: try fixture.input(validID: false)) == .unknown(.invalidSessionId))
+        #expect(
+            await SessionsResumeResolver().resumeEvidence(
+                for: try fixture.input(validID: false, sameBoot: true, death: .alive)) == .unknown(.observationMismatch)
+        )
     }
 }

@@ -118,7 +118,6 @@ func heldNativeResumeDecision(
     _ proof: ResumeEvidenceZmxProof, heldRead: Int,
     inject: @MainActor () async throws -> Void
 ) async throws -> ColdRestoreResumeVerdict {
-    let look = try await proof.foreground.repository.load(paneId: proof.foreground.paneId)
     let read = await proof.drain.drain(storeURL: proof.data.storeURL)
     #expect(read.readOutcome == .complete(throughId: 0))
     let hold = HeldStep<PaneForegroundEvidence?>("B1 evidence read \(heldRead)")
@@ -129,7 +128,7 @@ func heldNativeResumeDecision(
     let operation = Task {
         defer { hold.retire() }
         return await decision.resolve(
-            paneId: proof.foreground.paneId, sessionId: proof.foreground.sessionId, preRestoreLook: look,
+            paneId: proof.foreground.paneId, sessionId: proof.foreground.sessionId,
             readiness: .ready, launchBoot: boot, inventory: await proof.environment.backend.discoverSessionInventory())
     }
     do {
