@@ -50,12 +50,21 @@ The layout uses measured laid-out widths, not a guessed width breakpoint:
 3. Draw the item divider after notes **only when the item draws**. When unread
    facts exist but the whole chip item is hidden, its divider is absent too.
 
-At actual 520 and wide (≥1400) toolbars require all four chips **and** passive Git
-readout, with the unchanged action group. At actual 390 record which branch is
-painted: chips with Git hidden, or whole item hidden. Retain actual item, Git,
-action-group and available-gap measurements showing that Git yielded before
-the chip item. A requested window width alone cannot establish this ordering.
-An absent item without those measurements is UNKNOWN, not a policy pass.
+Apply the **same measured priority rule at every actual width**, including
+1400/520/390: Git is visible exactly when the complete chips + Git combination
+(including its layout spacing/dividers) fits the available gap; otherwise hide
+Git and show all chips if that complete item fits; otherwise hide the whole
+chip item. Retain actual item, Git, action-group and available-gap measurements.
+At 390 explicitly record the branch and its measured comparison; width alone
+never predicts the branch. An absent item without those measurements is UNKNOWN.
+
+Retain a wide (≥1400) **positive witness** with all four chips and the complete
+Git cluster visible, actions unchanged. There is **no fixed 520 outcome**: the
+earlier chips-plus-Git expectation was withdrawn in Amendment 2's Correction.
+Use the unchanged Git fixture at every width; never shorten it to manufacture
+fit. Once layout is settled, retain the required RGBA reference calibration,
+diagnosis and deliberate-break sensitivity receipt; matcher arithmetic alone
+does not replace that native product-test evidence.
 
 Record original pixels/point scale. The geometry helper takes nine templates
 and bar-edge bands. Retain dx/dy and unchanged bar height, comparing like fit/Git

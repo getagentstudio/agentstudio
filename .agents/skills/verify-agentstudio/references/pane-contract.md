@@ -38,8 +38,10 @@ whole chip item if it still cannot fit. All action buttons retain presence,
 size, order and hit area. The item divider draws only with a drawn item. Never
 status or warning. The line's text clamp (360pt in Program Design) remains
 separate from icon/age extent, with whole-item hide when needed. No clipped age,
-partial/clipped/wrapped chips or second row. Record measured policy order at
-390; at 520/wide require all four chips and Git. Fixed owner rules are unchanged.
+partial/clipped/wrapped chips or second row. The same measured fit rule applies
+at every width (including 520 and 390), with a ≥1400 positive witness showing
+all four chips plus complete Git. Do not shorten the Git fixture to create fit;
+the fixed 520 expectation is withdrawn. Fixed owner rules are unchanged.
 
 ## Card and popovers
 

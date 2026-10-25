@@ -254,11 +254,15 @@ The cumulative notice sequence uses separate IDs and retains unread state.
 Toolbar observations use J4's explicitly pinned **provisional Amendment 2**:
 at constrained actual widths passive Git hides whole before the complete chip
 item may hide whole. Action buttons keep presence/size/order/hit area. No
-partial, clipped or wrapped chips; item divider only with a drawn item. At 390
-record chips-with-Git-hidden versus item-hidden and measure the policy order;
-at 520 and wide (≥1400) require all four chips plus Git. Thus a below-table
-toolbar chip expectation means the complete item **when it fits**, with this
-documented constrained-width branch; row/card counts and scope do not change.
+partial, clipped or wrapped chips; item divider only with a drawn item. Apply
+one measured rule at **every** width: complete chips + Git iff that combination
+fits; else Git hidden/all chips iff the complete chip item fits; else item
+hidden whole. Record branch and actual fit measurements at 390 as at 520/1400;
+there is no fixed 520 outcome. Retain a ≥1400 all-chips-plus-complete-Git positive
+witness with the unchanged Git fixture; never shorten Git to manufacture fit.
+Keep the required settled-layout RGBA calibration/diagnosis/deliberate-break
+receipt. Thus below-table toolbar chip expectations mean the complete item
+**when it fits**, with this documented branch; row/card scope/counts do not change.
 The fixed spec/checklist stays intact and the owner reviews the V2 narrow result.
 
 | Scenario | Setup and expected consequence |
