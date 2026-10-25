@@ -2,7 +2,7 @@
 
 The open follow-up work. Each item says what it is, what we know, and the next step.
 
-## Approved, ready to build
+## Approved design, implementation pending
 
 ### Pane context display: status and Agent Line
 

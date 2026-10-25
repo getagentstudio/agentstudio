@@ -10,6 +10,6 @@
 | R6 | "the divider after notes" | `\|` divider after the notes (pencil) button | toolbar | divider present before the item; none trailing when empty |
 | R7 | "one chip per kind, or not shown if not there" | One chip per kind, hidden at 0 | sidebar, toolbar | no 0 chips; each kind at most once |
 | R8 | "clamp" (not "up to a max width") | Agent Line text clamped to a max width; never fills the row | sidebar, toolbar, card | text truncates before the age |
-| R9 | "approval should be its own form… agentstudio approval" | Approval form: [Approve] [Deny] | card, popover | buttons present (the reason box is a Lead addition, pending the owner's decision) |
+| R9 | "approval should be its own form… agentstudio approval" | Approval form: [Approve] [Deny] | card, popover | buttons present |
 | R10 | "Now or 2 min ago" | Age words: Now / N min ago | all | no "just now" |
 

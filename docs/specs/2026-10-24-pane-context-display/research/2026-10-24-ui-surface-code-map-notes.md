@@ -1,4 +1,6 @@
-# UI surface code map: Lead notes (from a read-only Explore lane, 2026-10-24; anchors to be re-verified before the Program Design)
+# UI surface code map
+
+Re-verify these anchors before the Program Design.
 
 - One data path feeds all five surfaces: `SessionStatusAtom`, `PaneContextPresentationAtom` and `PaneActivityTimeAtom`, read through `PaneContextUIReaders` (`App/PaneContext/PaneContextUIReaders.swift:7-42`).
 - **Sidebar row:**
