@@ -275,7 +275,7 @@ struct WorkspaceSurfaceRestorePhaseReplacementTests {
     /// then a real repair through `executeRepair(.recreateSurface)`. Stops
     /// short of delivering input -- each `@Test` does that itself, since the
     /// two cases differ only in which real entry point they call.
-    private func arrangeArmedAndRepairedPane() async throws -> ReplacementScenario {
+    func arrangeArmedAndRepairedPane(resumeInvocation: ResumeInvocation? = nil) async throws -> ReplacementScenario {
         let windowLifecycleStore = WindowLifecycleAtom()
         windowLifecycleStore.recordTerminalContainerBounds(CGRect(x: 0, y: 0, width: 400, height: 300))
         let surfaceManager = SucceedingRestoreSurfaceManager()
@@ -293,7 +293,7 @@ struct WorkspaceSurfaceRestorePhaseReplacementTests {
         // `mountPreparedTerminalContent` makes for every cold pane.
         let generation = coordinator.allocateRestoreGeneration()
         let acknowledgment = await routing.router.armRestorePhase(
-            paneID: pane.id, restoreGeneration: generation)
+            paneID: pane.id, restoreGeneration: generation, resumeInvocation: resumeInvocation)
         #expect(acknowledgment == .armed)
         #expect(await projector.restorePhaseGenerationsByPane[pane.id] == generation)
 

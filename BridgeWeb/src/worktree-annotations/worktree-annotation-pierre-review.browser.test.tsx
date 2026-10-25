@@ -9,6 +9,8 @@ import { describe, expect, test } from 'vitest';
 import { cleanup, render } from 'vitest-browser-react';
 import { userEvent } from 'vitest/browser';
 
+import { runBridgeTransitionFramesInAct } from '../../tests/test-support/bridge-transition-dom-fact.browser.test-support.js';
+
 // oxlint-disable-next-line import/no-unassigned-import -- Browser Mode must load production app CSS.
 import '../app/bridge-app.css';
 import { createBridgeMainRenderFulfillmentCoordinator } from '../core/comm-worker/bridge-main-render-fulfillment-coordinator.js';
@@ -17,7 +19,10 @@ import type { BridgeFileViewerSelectedCodeViewItem } from '../file-viewer/bridge
 import { makeBridgeReviewPackage } from '../foundation/review-package/bridge-review-package-test-support.js';
 import { BridgeCodeViewPanel } from '../review-viewer/code-view/bridge-code-view-panel.js';
 import { worktreeAnnotationMetadataForPierreAnnotation } from '../review-viewer/code-view/worktree-annotation-pierre-adapter.js';
-import { installReviewAnimationFrameClock } from '../review-viewer/code-view/worktree-annotation-pierre-review.browser.test-support.js';
+import {
+	installReviewAnimationFrameClock,
+	waitForReviewControl,
+} from '../review-viewer/code-view/worktree-annotation-pierre-review.browser.test-support.js';
 import { buildBridgeReviewProjection } from '../review-viewer/navigation/review-projection.js';
 import {
 	annotationBaseThreadId,
@@ -71,7 +76,7 @@ describe('worktree annotation Pierre Review integration', () => {
 			reviewPackage,
 			request: { facets: [], mode: { kind: 'normalReview' } },
 		});
-		const animationFrames = installReviewAnimationFrameClock(context.signal);
+		let animationFrames = installReviewAnimationFrameClock(context.signal);
 		const coordinator = createBridgeMainRenderFulfillmentCoordinator({
 			sendDisposition: (): void => {},
 		});
@@ -245,16 +250,33 @@ describe('worktree annotation Pierre Review integration', () => {
 					await Promise.resolve();
 				});
 				await animationFrames.drain();
-				await expect
-					.element(rendered.getByRole('button', { name: 'Reply to annotation thread' }).first())
-					.toBeEnabled();
-				await act(async (): Promise<void> => {
-					await rendered
-						.getByRole('button', { name: 'Reply to annotation thread' })
-						.first()
-						.click();
-					await Promise.resolve();
-				});
+				// Resize/highlight completion can request a frame after the simulated
+				// queue drains. Keep real frames running until Reply is committed.
+				animationFrames.restore();
+				try {
+					await runBridgeTransitionFramesInAct(async (): Promise<void> => {
+						const replyButtons = rendered.getByRole('button', {
+							name: 'Reply to annotation thread',
+						});
+						await waitForReviewControl({
+							panel: rendered.getByTestId('bridge-code-view-panel').element(),
+							signal: context.signal,
+							label: 'both Review thread Reply controls',
+							isReady: (): boolean =>
+								replyButtons.all().length === 2 &&
+								replyButtons.all().every((button): boolean => {
+									const element = button.element();
+									return element.checkVisibility() && !element.matches(':disabled');
+								}),
+						});
+						expect(replyButtons.all()).toHaveLength(2);
+						await act(async (): Promise<void> => {
+							await replyButtons.first().click();
+						});
+					});
+				} finally {
+					animationFrames = installReviewAnimationFrameClock(context.signal);
+				}
 				await animationFrames.settleCondition(
 					(): boolean => annotationEditorAttentionSnapshots.at(-1)?.[0] === 'item-source',
 					'Expected an existing-thread editor to publish its owning Review item.',

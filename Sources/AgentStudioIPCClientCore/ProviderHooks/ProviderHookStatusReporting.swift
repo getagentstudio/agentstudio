@@ -10,6 +10,7 @@ struct ProviderHookStatusReporting {
     let delivery: ProviderHookDelivery
     let deadline: CallDeadline
     let diagnosticSink: (String) -> Void
+    var lifecycleWriter: ProviderLifecycleOutboxWriter?
 
     static func configuration(environment: [String: String]) -> AgentStudioIPCClientConfiguration? {
         guard let socket = environment["AGENTSTUDIO_IPC_SOCKET"], !socket.isEmpty else { return nil }
@@ -25,11 +26,12 @@ struct ProviderHookStatusReporting {
         return .init(paneId: pane, workspaceId: workspace)
     }
 
-    func event(_ params: IPCSessionEventParams) {
+    func event(_ params: IPCSessionEventParams, reportedAt: Date) {
         submit(
             report: .hook(
                 event: params.event, provider: params.provider, providerSessionId: params.event.conversationId),
             correlationID: params.correlationId,
+            lifecycle: ProviderLifecycleOutboxWriter.permits(params) ? (params, reportedAt) : nil,
             authenticated: { try delivery.deliver(params, configuration, deadline) })
     }
 
@@ -42,7 +44,8 @@ struct ProviderHookStatusReporting {
     }
 
     private func submit(
-        report: IPCSessionStatusReport, correlationID: UUID, authenticated: () throws -> Void
+        report: IPCSessionStatusReport, correlationID: UUID, lifecycle: (IPCSessionEventParams, Date)? = nil,
+        authenticated: () throws -> Void
     ) {
         guard deadline.remainingBudget > .zero else {
             diagnosticSink(IPCAgentConnectionRefusalReason.deadlineExceeded.rawValue)
@@ -56,6 +59,7 @@ struct ProviderHookStatusReporting {
             } catch let failure as IPCDescriptorClientFailure where failure.disposition == .authenticationRejected {
                 tokenOutcome = .rejected
             } catch {
+                queueIfNeverReached(error, lifecycle: lifecycle)
                 diagnosticSink(Self.reason(for: error, deadline: deadline).rawValue)
                 return
             }
@@ -76,7 +80,23 @@ struct ProviderHookStatusReporting {
                 .init(paneClaim: claim, tokenOutcome: tokenOutcome, report: report, correlationId: correlationID),
                 configuration.withAuthToken(nil), deadline)
         } catch {
+            queueIfNeverReached(error, lifecycle: lifecycle)
             diagnosticSink(Self.reason(for: error, deadline: deadline).rawValue)
+        }
+    }
+
+    private func queueIfNeverReached(_ error: any Error, lifecycle: (IPCSessionEventParams, Date)?) {
+        guard let failure = error as? IPCDescriptorClientFailure, failure.permitsOfflineQueue,
+            let (params, reportedAt) = lifecycle
+        else { return }
+        do {
+            guard deadline.remainingBudget > .zero else {
+                diagnosticSink(IPCAgentConnectionRefusalReason.deadlineExceeded.rawValue)
+                return
+            }
+            try (lifecycleWriter ?? .live(environment: environment)).write(params, reportedAt, deadline)
+        } catch {
+            diagnosticSink(deadline.remainingBudget == .zero ? "deadlineExceeded" : "lifecycleStoreUnavailable")
         }
     }
 

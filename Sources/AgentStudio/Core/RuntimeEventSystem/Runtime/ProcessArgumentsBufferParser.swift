@@ -18,7 +18,7 @@ import Foundation
 /// Bounds are never trusted implicitly: a truncated buffer or a missing
 /// terminator ends parsing early rather than reading past the buffer, since
 /// this reads memory the kernel filled for an external, unrelated process.
-enum ProcessArgumentsBufferParser {
+package enum ProcessArgumentsBufferParser {
     /// Reads argv0 only. Later arguments need not decode and are never traversed.
     static func firstArgument(in buffer: [UInt8]) -> String? {
         guard buffer.count >= MemoryLayout<Int32>.size else { return nil }
@@ -37,7 +37,7 @@ enum ProcessArgumentsBufferParser {
     /// or `nil` when the buffer is malformed, truncated, or too short to
     /// contain `argc` argv strings -- matching `ColdStartUnobservableReason
     /// .processArgsUnreadable`'s "returned no argument vector" case.
-    static func argumentVector(in buffer: [UInt8]) -> [String]? {
+    package static func argumentVector(in buffer: [UInt8]) -> [String]? {
         guard buffer.count >= MemoryLayout<Int32>.size else { return nil }
         let argumentCount = buffer.withUnsafeBytes {
             $0.loadUnaligned(fromByteOffset: 0, as: Int32.self)

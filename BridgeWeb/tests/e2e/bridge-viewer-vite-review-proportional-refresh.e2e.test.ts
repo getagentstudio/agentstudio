@@ -26,7 +26,6 @@ import {
 import { waitForSettledReviewComparison } from './bridge-viewer-vite-review-comparison-observation.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
-const proportionalRefreshTimeoutMilliseconds = 120_000;
 const retiredAndSuccessorAffectedFileIdentityCount = 2;
 
 interface ReviewContentRequestObservation {
@@ -96,7 +95,6 @@ describe('Bridge Viewer proportional Review refresh E2E', () => {
 					expectedTargetLabel: 'HEAD',
 					expectedTargetOID: fixture.oracle.baseRef,
 					page,
-					timeoutMilliseconds: proportionalRefreshTimeoutMilliseconds,
 				});
 				await selectReviewFile({ page, path: unchangedFile.path });
 				await waitForSelectedReviewReady({ itemId: unchangedFile.itemId, page });

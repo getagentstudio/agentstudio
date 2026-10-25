@@ -69,7 +69,10 @@ final class WorkspacePreparedContentMountCoordinator {
     /// construct this coordinator without restore wiring keep compiling
     /// unchanged; production wiring is assigned at construction in
     /// `AppDelegate+WorkspaceBoot.swift`.
-    private let resolveTerminalRestoreKinds: ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind]
+    private let classifyTerminalRestoreKinds: TerminalRestoreClassifier?
+    private let resolveColdResumePlan: ColdResumePlanResolution?
+    private let resolveTerminalRestoreKinds:
+        @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind]
 
     init(
         cohort: WorkspacePreparedContentMountCohort,
@@ -77,8 +80,11 @@ final class WorkspacePreparedContentMountCoordinator {
         terminalAdmissionPort: any TerminalActivationAdmissionPort,
         nonterminalAdmissionPort: any NonterminalContentMountAdmissionPort,
         placeholderTransitionHandler: @escaping (Pane, TerminalStatusPlaceholderMode) -> Void = { _, _ in },
-        resolveTerminalRestoreKinds: @escaping ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind] =
-            WorkspacePreparedContentMountCoordinator.noRestoreKindsResolved
+        resolveTerminalRestoreKinds:
+            @escaping @MainActor @Sendable ([TerminalActivationDescriptor]) async -> [PaneId: TerminalRestoreKind] =
+            WorkspacePreparedContentMountCoordinator.noRestoreKindsResolved,
+        classifyTerminalRestoreKinds: TerminalRestoreClassifier? = nil,
+        resolveColdResumePlan: ColdResumePlanResolution? = nil
     ) {
         // Hidden nonterminal panes stay outside the startup ledger so later
         // demand falls through to the existing steady-state content mount
@@ -96,6 +102,8 @@ final class WorkspacePreparedContentMountCoordinator {
         self.terminalAdmissionPort = terminalAdmissionPort
         self.placeholderTransitionHandler = placeholderTransitionHandler
         self.resolveTerminalRestoreKinds = resolveTerminalRestoreKinds
+        self.classifyTerminalRestoreKinds = classifyTerminalRestoreKinds
+        self.resolveColdResumePlan = resolveColdResumePlan
         terminalDescriptorsByPaneID = Dictionary(
             uniqueKeysWithValues: startupCohort.terminalActivationInput.entries.map { ($0.paneID, $0) }
         )
@@ -107,6 +115,7 @@ final class WorkspacePreparedContentMountCoordinator {
                 input: startupCohort.terminalActivationInput
             ),
             admissionPort: terminalAdmissionPort,
+            requiresRestoreClassification: Set(startupCohort.terminalActivationInput.entries.map(\.paneID)),
             releaseSignal: terminalActivationReleaseGate
         )
         nonterminalPhaseOwners = [false, true].map { selectingDrawerEntries in
@@ -172,6 +181,10 @@ final class WorkspacePreparedContentMountCoordinator {
         }
     }
 
+    func retireAwaitingResumeReadiness(_ paneID: PaneId) async {
+        await terminalScheduler.retireAwaitingResumeReadiness(paneID)
+    }
+
     func mount() async -> WorkspacePreparedContentMountSettlement {
         switch lifecycle {
         case .settled(let settlement):
@@ -184,14 +197,10 @@ final class WorkspacePreparedContentMountCoordinator {
             lifecycle = .mounting
         }
 
-        // SR1: decided before the terminal lane activates, never after
-        // (`terminalScheduler.activate()` below is what actually attaches).
-        // This costs no extra wall-clock time in practice: that lane already
-        // blocks on the launch-owned release gate until the first
-        // interactive frame is published, so the probe runs inside a window
-        // that was otherwise idle-waiting regardless.
-        let restoreKindsByPaneID = await resolveTerminalRestoreKinds(cohort.terminalActivationInput.entries)
-        terminalAdmissionPort.installRestoreKinds(restoreKindsByPaneID)
+        async let classification: Void = Self.classifyAndReleaseTerminals(
+            entries: cohort.terminalActivationInput.entries, scheduler: terminalScheduler,
+            classify: classifyTerminalRestoreKinds, resolveKinds: resolveTerminalRestoreKinds,
+            resolveResume: resolveColdResumePlan)
 
         async let terminalSettlement = terminalScheduler.activate()
 
@@ -211,6 +220,7 @@ final class WorkspacePreparedContentMountCoordinator {
                 outcomesByPaneID: nonterminalOutcomesByPaneID
             )
         )
+        await classification
         requireCompleteSettlement(settlement)
         notifyWaitingForGeometryPlaceholders(in: settlement)
         viewRegistry.completeInitialRestore()

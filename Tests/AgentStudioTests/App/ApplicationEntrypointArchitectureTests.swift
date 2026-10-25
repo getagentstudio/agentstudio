@@ -393,13 +393,16 @@ struct ApplicationEntrypointArchitectureTests {
             terminationSource.range(of: "await self?.stopAcceptingAppIPCConnections()")?.lowerBound)
         let flushStoresIndex = try #require(terminationSource.range(of: "await store.flushAsync()")?.lowerBound)
         let appIPCDrainIndex = try #require(
-            terminationSource.range(of: "await self?.drainAppIPCCredentialPersistence()")?.lowerBound)
+            terminationSource.range(of: "await self?.captureRestoreEvidenceAndFinishIPCForTermination()")?.lowerBound)
+        #expect(terminationSource.contains("await self.drainAppIPCCredentialPersistence()"))
+        #expect(terminationSource.contains("await foregroundObserver?.finishQuitLooks()"))
         let identityAuthorityIndex = try #require(
             workspaceBootSource.range(of: "installAppIPCIdentityAuthority(datastore:")?.lowerBound)
         let surfaceCoordinatorIndex = try #require(
             workspaceBootSource.range(of: "workspaceSurfaceCoordinator = WorkspaceSurfaceCoordinator(")?.lowerBound)
         let undoRecoveryIndex = try #require(
-            workspaceBootSource.range(of: "workspaceSurfaceCoordinator.installUndoJournalRecovery(")?.lowerBound)
+            workspaceBootSource.range(of: "workspaceSurfaceCoordinator.installUndoJournalRecovery(undoRecovery)")?
+                .lowerBound)
 
         #expect(appDelegateSource.contains("import AgentStudioAppIPC"))
         #expect(appDelegateSource.contains("var appIPCServer: AgentStudioAppIPCServer?"))
@@ -418,26 +421,7 @@ struct ApplicationEntrypointArchitectureTests {
         #expect(ipcBootSource.contains("await finishAppIPCSessionsPaneContext()"))
         #expect(!ipcBootSource.contains("func stopAppIPCServer()"))
 
-        // Connection handlers are joined in the durable drain, before the
-        // credential drain runs, and never in the ingress-only stop — a
-        // handler mid-request can still enqueue persistence work, so the
-        // credential drain must not start until every handler has quiesced.
-        let stopAcceptingRange = try #require(
-            ipcBootSource.range(of: "func stopAcceptingAppIPCConnections() async {"))
-        // Ends at drainAppIPCCredentialPersistence()'s own doc comment, not its
-        // func line: that comment (legitimately) names joinConnectionHandlers
-        // in prose, and a range ending at the func line would sweep it into
-        // stopAcceptingBody.
-        let drainDocCommentRange = try #require(
-            ipcBootSource.range(of: "/// The durable half,"))
-        let stopAcceptingBody = ipcBootSource[stopAcceptingRange.lowerBound..<drainDocCommentRange.lowerBound]
-        #expect(!stopAcceptingBody.contains("joinConnectionHandlers"))
-        #expect(ipcBootSource.contains("await server.joinConnectionHandlers()"))
-        let credentialDrainCallIndex = try #require(
-            ipcBootSource.range(of: "await server.drainCredentialPersistence()")?.lowerBound)
-        let joinConnectionHandlersIndex = try #require(
-            ipcBootSource.range(of: "await server.joinConnectionHandlers()")?.lowerBound)
-        #expect(joinConnectionHandlersIndex < credentialDrainCallIndex)
+        try assertConnectionHandlersJoinBeforeCredentialDrain(ipcBootSource)
         #expect(ipcBootSource.contains("let paneIPCIdentityOwner = paneIPCIdentityOwner!"))
         #expect(!ipcBootSource.contains("self.appIPCInitializationTask = nil"))
         let ipcStartRange = try #require(
@@ -516,4 +500,27 @@ struct ApplicationEntrypointArchitectureTests {
         let ingestionFinish = try #require(shutdownBody.range(of: "await ingestion.finish()")?.lowerBound)
         #expect(serviceStop < ingestionFinish)
     }
+}
+
+private func assertConnectionHandlersJoinBeforeCredentialDrain(_ ipcBootSource: String) throws {
+    // Connection handlers are joined in the durable drain, before the
+    // credential drain runs, and never in the ingress-only stop — a
+    // handler mid-request can still enqueue persistence work, so the
+    // credential drain must not start until every handler has quiesced.
+    let stopAcceptingRange = try #require(
+        ipcBootSource.range(of: "func stopAcceptingAppIPCConnections() async {"))
+    // Ends at drainAppIPCCredentialPersistence()'s own doc comment, not its
+    // func line: that comment (legitimately) names joinConnectionHandlers
+    // in prose, and a range ending at the func line would sweep it into
+    // stopAcceptingBody.
+    let drainDocCommentRange = try #require(
+        ipcBootSource.range(of: "/// The durable half,"))
+    let stopAcceptingBody = ipcBootSource[stopAcceptingRange.lowerBound..<drainDocCommentRange.lowerBound]
+    #expect(!stopAcceptingBody.contains("joinConnectionHandlers"))
+    #expect(ipcBootSource.contains("await server.joinConnectionHandlers()"))
+    let credentialDrainCallIndex = try #require(
+        ipcBootSource.range(of: "await server.drainCredentialPersistence()")?.lowerBound)
+    let joinConnectionHandlersIndex = try #require(
+        ipcBootSource.range(of: "await server.joinConnectionHandlers()")?.lowerBound)
+    #expect(joinConnectionHandlersIndex < credentialDrainCallIndex)
 }

@@ -23,6 +23,7 @@ struct ProviderHookStatusFallbackTests {
         let reports = Mutex<[IPCSessionStatusParams]>([])
         let fallbackBudgets = Mutex<[Duration]>([])
         let diagnostics = Mutex<[String]>([])
+        let queued = Mutex(0)
         let loginCost: Duration = exhaustLogin ? limit - .milliseconds(100) : .milliseconds(50)
         let delivery = ProviderHookDelivery(
             deliver: { _, _, authenticationDeadline in
@@ -50,7 +51,8 @@ struct ProviderHookStatusFallbackTests {
                     return payload
                 },
                 correlationIdProvider: { UUIDv7.generate() }, delivery: delivery,
-                standardErrorSink: { label in diagnostics.withLock { $0.append(label) } }, deadline: deadline))
+                standardErrorSink: { label in diagnostics.withLock { $0.append(label) } }, deadline: deadline,
+                lifecycleWriter: .init { _, _, _ in queued.withLock { $0 += 1 } }))
         #expect(exitCode == 0)
         #expect(deadline.remainingBudget == .zero)
         #expect(timing.elapsed == limit)
@@ -66,6 +68,7 @@ struct ProviderHookStatusFallbackTests {
             #expect(fallbackBudgets.withLock { $0 } == [limit - .milliseconds(150)])
             #expect(diagnostics.withLock { $0 } == ["credentialNotRecognized"])
         }
+        #expect(queued.withLock { $0 } == 0)
     }
 
     @Test(
@@ -111,6 +114,7 @@ struct ProviderHookStatusFallbackTests {
     func authenticationTransportFailureIsFinal() throws {
         let timing = StatusFallbackTiming()
         let diagnostics = Mutex<[String]>([])
+        let queued = Mutex(0)
         let payload = try CodexFixtures.data(for: .stop)
         let exitCode = ProviderHookInvocation.runCodexHook(
             .init(
@@ -128,9 +132,11 @@ struct ProviderHookStatusFallbackTests {
                     recordRefusal: { _, _, _ in Issue.record("Unexpected refusal request") },
                     reportStatus: { _, _, _ in Issue.record("Transport failure must not reconnect for fallback") }),
                 standardErrorSink: { label in diagnostics.withLock { $0.append(label) } },
-                deadline: CallDeadline(limit: .seconds(2), timing: timing)))
+                deadline: CallDeadline(limit: .seconds(2), timing: timing),
+                lifecycleWriter: .init { _, _, _ in queued.withLock { $0 += 1 } }))
         #expect(exitCode == 0)
         #expect(diagnostics.withLock { $0 } == ["appUnavailable"])
+        #expect(queued.withLock { $0 } == 0)
     }
 
     @Test(
