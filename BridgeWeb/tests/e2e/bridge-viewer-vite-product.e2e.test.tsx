@@ -478,7 +478,6 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 					expectedTargetLabel: 'HEAD',
 					expectedTargetOID: fixture.oracle.baseRef,
 					page: pageA,
-					timeoutMilliseconds: productJourneyTimeoutMilliseconds,
 				});
 
 				// Act: process A commits the symbolic target through the real Compare Worktree UI.
@@ -487,7 +486,6 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 					expectedTargetLabel: fixture.oracle.comparisonTargetName,
 					expectedTargetOID: fixture.oracle.baseRef,
 					page: pageA,
-					timeoutMilliseconds: productJourneyTimeoutMilliseconds,
 				});
 				await pageA.close();
 
@@ -517,7 +515,6 @@ describe('Bridge Viewer dedicated Vite product E2E', () => {
 					expectedTargetOID: movedTargetOID,
 					failureContext: (): string => `server=${serverB?.diagnostics() ?? '<stopped>'}`,
 					page: pageB,
-					timeoutMilliseconds: productJourneyTimeoutMilliseconds,
 				});
 				await pageB.close();
 

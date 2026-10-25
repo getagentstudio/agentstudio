@@ -1,13 +1,21 @@
 import type { ConsoleMessage, Page, Request, Response } from 'playwright';
-import { expect } from 'vitest';
+import { z } from 'zod';
 
-export interface ReviewComparisonBrowserObservation {
-	readonly packageId: string;
-	readonly reviewGeneration: number;
-	readonly revision: number;
-	readonly symbolicTargetLabel: string;
-	readonly targetOID: string;
-}
+import { reviewWaitTerminalOwner } from './bridge-viewer-vite-review-owner-wait.ts';
+import { waitForOwnerOrRetirement } from './bridge-viewer-vite-selected-content-wait.ts';
+
+const reviewComparisonBrowserObservationSchema = z
+	.object({
+		packageId: z.string().min(1),
+		reviewGeneration: z.number().int().nonnegative(),
+		revision: z.number().int().nonnegative(),
+		symbolicTargetLabel: z.string().min(1),
+		targetOID: z.string().min(1),
+	})
+	.strict();
+export type ReviewComparisonBrowserObservation = Readonly<
+	z.infer<typeof reviewComparisonBrowserObservationSchema>
+>;
 
 export interface BrowserRuntimeDiagnostics {
 	readonly describe: () => Promise<string>;
@@ -189,96 +197,141 @@ export async function waitForSettledReviewComparison(props: {
 	readonly expectedTargetLabel: string;
 	readonly expectedTargetOID: string;
 	readonly page: Page;
-	readonly timeoutMilliseconds: number;
 }): Promise<ReviewComparisonBrowserObservation> {
-	const comparisonTrigger = props.page.getByTestId('bridge-review-comparison-trigger');
-	await expect
-		.poll(async (): Promise<string | null> => await comparisonTrigger.textContent(), {
-			timeout: props.timeoutMilliseconds,
-		})
-		.toBe(props.expectedTargetLabel);
-	let settledTargetOID = '';
-	try {
-		await expect
-			.poll(
-				async (): Promise<string | null> => {
-					// Read the resolved target only from an open picker. A picker animating
-					// closed after a selection still shows the previous target's state.
-					const picker = await readReviewComparisonPickerState(props.page);
-					if (picker.kind === 'closed') await comparisonTrigger.click();
-					if (picker.kind !== 'open') return null;
-					if (picker.resolvedTargetOID !== null) settledTargetOID = picker.resolvedTargetOID;
-					return picker.resolvedTargetOID;
-				},
-				{ timeout: props.timeoutMilliseconds },
-			)
-			.toBe(props.expectedTargetOID);
-	} catch (error: unknown) {
-		const comparisonState = await props.page.evaluate(
-			(): string | null =>
-				document.querySelector('[data-testid="bridge-review-comparison-content"]')?.textContent ??
-				null,
-		);
-		throw new Error(`Review comparison did not settle: ${comparisonState ?? '<missing>'}`, {
-			cause: error,
-		});
-	}
-	const reviewShell = props.page.getByTestId('review-viewer-shell');
-	const packageId = await reviewShell.getAttribute('data-review-metadata-id');
-	const reviewGeneration = Number(
-		await reviewShell.getAttribute('data-review-metadata-generation'),
+	return reviewComparisonBrowserObservationSchema.parse(
+		await waitForReviewComparisonOwner({
+			page: props.page,
+			goal: {
+				kind: 'comparison',
+				expectedTargetLabel: props.expectedTargetLabel,
+				expectedTargetOID: props.expectedTargetOID,
+			},
+		}),
 	);
-	const revision = Number(await reviewShell.getAttribute('data-review-metadata-revision'));
-	const symbolicTargetLabel = (await comparisonTrigger.textContent()) ?? '';
-	if (packageId === null || packageId.length === 0) {
-		throw new Error('Settled Review comparison is missing package identity.');
-	}
-	return {
-		packageId,
-		reviewGeneration,
-		revision,
-		symbolicTargetLabel,
-		targetOID: settledTargetOID,
-	};
-}
-
-type ReviewComparisonPickerState =
-	| { readonly kind: 'closed' }
-	| { readonly kind: 'closing' }
-	| { readonly kind: 'open'; readonly resolvedTargetOID: string | null };
-
-async function readReviewComparisonPickerState(page: Page): Promise<ReviewComparisonPickerState> {
-	return await page.evaluate((): ReviewComparisonPickerState => {
-		const content = document.querySelector('[data-testid="bridge-review-comparison-content"]');
-		if (content === null) return { kind: 'closed' };
-		if (content.closest('[data-ending-style]') !== null) return { kind: 'closing' };
-		if (content.closest('[inert], [data-closed]') !== null) return { kind: 'closed' };
-		return {
-			kind: 'open',
-			resolvedTargetOID:
-				content
-					.querySelector('[data-testid="bridge-review-comparison-current-state"]')
-					?.getAttribute('data-resolved-target-oid') ?? null,
-		};
-	});
 }
 
 /** Opens the comparison picker if it is closed and waits until it is open, not animating. */
-export async function openReviewComparisonPicker(props: {
+export async function openReviewComparisonPicker(props: { readonly page: Page }): Promise<void> {
+	z.null().parse(
+		await waitForReviewComparisonOwner({ page: props.page, goal: { kind: 'picker' } }),
+	);
+}
+
+type ReviewComparisonWaitGoal =
+	| { readonly kind: 'picker' }
+	| {
+			readonly kind: 'comparison';
+			readonly expectedTargetLabel: string;
+			readonly expectedTargetOID: string;
+	  };
+
+/** DOM/worker notifications decide readiness; a missing trigger never starts a locator wait. */
+async function waitForReviewComparisonOwner(props: {
 	readonly page: Page;
-	readonly timeoutMilliseconds: number;
-}): Promise<void> {
-	const comparisonTrigger = props.page.getByTestId('bridge-review-comparison-trigger');
-	await expect
-		.poll(
-			async (): Promise<ReviewComparisonPickerState['kind']> => {
-				const picker = await readReviewComparisonPickerState(props.page);
-				if (picker.kind === 'closed') await comparisonTrigger.click();
-				return picker.kind;
+	readonly goal: ReviewComparisonWaitGoal;
+}): Promise<unknown> {
+	const label =
+		props.goal.kind === 'picker'
+			? 'open Review comparison picker'
+			: `Review comparison ${props.goal.expectedTargetLabel} at ${props.goal.expectedTargetOID}`;
+	const input = JSON.stringify(props.goal);
+	let observation: unknown;
+	let retainedState = '<no comparison state observed>';
+	const observeState = (message: ConsoleMessage): void => {
+		if (!message.text().startsWith('REVIEW_COMPARISON_WAIT ')) return;
+		retainedState = message.text();
+	};
+	props.page.on('console', observeState);
+	try {
+		await waitForOwnerOrRetirement({
+			label,
+			subscribeRetirement: (retire): (() => void) => {
+				const closed = (): void => retire('page-closed');
+				const crashed = (): void => retire('page-crashed');
+				props.page.on('close', closed);
+				props.page.on('crash', crashed);
+				if (props.page.isClosed()) closed();
+				return (): void => {
+					props.page.off('close', closed);
+					props.page.off('crash', crashed);
+				};
 			},
-			{ timeout: props.timeoutMilliseconds },
-		)
-		.toBe('open');
+			run: async (): Promise<void> => {
+				// Keep the native import in the page realm, as in the selected-content owner wait.
+				observation = await props.page.evaluate(`(async () => {
+				const input = ${input};
+				const label = ${JSON.stringify(label)};
+				const terminalOwner = (${reviewWaitTerminalOwner.toString()});
+				let diagnostics = null;
+				if (location.protocol === 'http:' || location.protocol === 'https:') {
+					diagnostics = await import(new URL('/src/foundation/diagnostics/bridge-review-selection-diagnostic.ts', location.href).href);
+				}
+				let workerSessionState = window.__bridgeReviewSelectionDiagnostic?.sessionState ?? null;
+				return await new Promise((resolve, reject) => {
+					let unsubscribeWorker = () => {};
+					let ended = false;
+					let requestedOpen = false;
+					let requestedTrigger = null;
+					let previousState = '';
+					const finish = (error, value = null) => {
+						if (ended) return;
+						ended = true;
+						observer.disconnect(); unsubscribeWorker();
+						window.removeEventListener('pagehide', retired);
+						window.removeEventListener('error', failed);
+						window.removeEventListener('unhandledrejection', failed);
+						if (error === null) resolve(value); else reject(error);
+					};
+					const retired = () => finish(new Error(label + ' ended: document-retired'));
+					const failed = event => finish(new Error(label + ' ended: ' + event.type, { cause: event.error ?? event.reason }));
+					const inspect = () => {
+						if (ended) return;
+						try {
+							const diagnosticTrigger = document.querySelector('[data-testid="bridge-review-comparison-trigger"]');
+							const diagnosticContent = document.querySelector('[data-testid="bridge-review-comparison-content"]');
+							const state = JSON.stringify({ label, workerSessionState, triggerTag: diagnosticTrigger?.tagName, triggerText: diagnosticTrigger?.textContent, disabled: diagnosticTrigger?.getAttribute('disabled'), busy: diagnosticTrigger?.getAttribute('aria-busy'), visible: diagnosticTrigger?.checkVisibility(), content: diagnosticContent !== null, closing: diagnosticContent !== null && diagnosticContent.closest('[data-ending-style]') !== null, inert: diagnosticContent !== null && diagnosticContent.closest('[inert], [data-closed]') !== null, targetOID: diagnosticContent?.querySelector('[data-testid="bridge-review-comparison-current-state"]')?.getAttribute('data-resolved-target-oid'), packageId: document.querySelector('[data-testid="review-viewer-shell"]')?.getAttribute('data-review-metadata-id') });
+							if (state !== previousState) { previousState = state; console.debug('REVIEW_COMPARISON_WAIT ' + state); }
+							const owner = terminalOwner({ inactiveSession: document.querySelector('[data-testid="bridge-dev-session-inactive"]') !== null, workerSessionState });
+							if (owner !== null) { finish(new Error(label + ' ended: ' + owner)); return; }
+							const trigger = document.querySelector('[data-testid="bridge-review-comparison-trigger"]');
+							const triggerLabel = trigger?.textContent ?? null;
+							const shell = document.querySelector('[data-testid="review-viewer-shell"]');
+							const packageId = shell?.getAttribute('data-review-metadata-id') ?? null;
+							if (!(trigger instanceof HTMLButtonElement) || trigger.disabled || trigger.getAttribute('aria-busy') === 'true' || !trigger.checkVisibility()) return;
+							if (input.kind === 'comparison' && triggerLabel !== input.expectedTargetLabel) return;
+							if (input.kind === 'comparison' && (packageId === null || packageId.length === 0)) return;
+							if (requestedTrigger !== trigger) { requestedTrigger = trigger; requestedOpen = false; }
+							const content = document.querySelector('[data-testid="bridge-review-comparison-content"]');
+							// Closing content belongs to the previous target and must not certify the new one.
+							if (content !== null && content.closest('[data-ending-style]') !== null) return;
+							const open = content !== null && content.closest('[inert], [data-closed]') === null;
+							if (!open) {
+								if (!requestedOpen) { requestedOpen = true; trigger.click(); }
+								return;
+							}
+							if (input.kind === 'picker') { finish(null); return; }
+							const targetOID = content.querySelector('[data-testid="bridge-review-comparison-current-state"]')?.getAttribute('data-resolved-target-oid') ?? null;
+							if (targetOID !== input.expectedTargetOID) return;
+							finish(null, { packageId, reviewGeneration: Number(shell.getAttribute('data-review-metadata-generation')), revision: Number(shell.getAttribute('data-review-metadata-revision')), symbolicTargetLabel: triggerLabel, targetOID });
+						} catch (error) { finish(error); }
+					};
+					const observer = new MutationObserver(inspect);
+					observer.observe(document, { attributes: true, childList: true, subtree: true });
+					window.addEventListener('pagehide', retired, { once: true });
+					window.addEventListener('error', failed);
+					window.addEventListener('unhandledrejection', failed);
+					if (diagnostics !== null) unsubscribeWorker = diagnostics.observeBridgePaneCommWorkerSessionDiagnosticSnapshots(snapshot => { workerSessionState = snapshot.state; inspect(); });
+					inspect();
+				});
+			})()`);
+			},
+		});
+	} catch (error: unknown) {
+		throw new Error(`${label} did not complete; ${retainedState}`, { cause: error });
+	} finally {
+		props.page.off('console', observeState);
+	}
+	return observation;
 }
 
 export async function waitForSettledReviewComparisonWithDiagnostics(props: {
@@ -287,7 +340,6 @@ export async function waitForSettledReviewComparisonWithDiagnostics(props: {
 	readonly expectedTargetOID: string;
 	readonly failureContext: () => string;
 	readonly page: Page;
-	readonly timeoutMilliseconds: number;
 }): Promise<ReviewComparisonBrowserObservation> {
 	try {
 		return await waitForSettledReviewComparison(props);

@@ -1,6 +1,7 @@
 import AgentStudioInfrastructure
 import AgentStudioProgrammaticControl
 import AgentStudioSharedComponents
+import AgentStudioTestHarness
 import AppKit
 import SwiftUI
 import Testing
@@ -24,6 +25,9 @@ struct WindowSurfaceCompositionTests {
         try await withAsyncTestCoreAtoms { atoms in
             let fixture = try PaneSurfaceCaptureFixture(atoms: atoms, composition: composition)
             defer { fixture.stop() }
+            let identityCardLabels = try await fixture.awaitIdentityCardLabels()
+            #expect(identityCardLabels.contains("Capture source"))
+            #expect(identityCardLabels.contains("Capture adjacent"))
             let result = try await fixture.render()
             let surfaces = result.surfaces
 
@@ -91,6 +95,16 @@ private final class PaneSurfaceCaptureFixture {
     let tabId: UUID
     let composition: WindowSurfaceComposition
     let host: NSHostingView<AnyView>
+    private var initialRelativeTimeInputs: [UUID: PaneManagementIdentityCapture.VisibleInput] = [:]
+    private let relativeTimeFacts = FactRecorder<UUID, PaneRelativeTimeRefresh.Event>(
+        vocabulary: .init(
+            describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
+            isClosing: { _, event in
+                switch event {
+                case .ended, .hidden: true
+                case .operation, .entered: false
+                }
+            }))
     let editorChooser = EditorChooserState()
     let closeCoordinator = PaneCloseTransitionCoordinator()
     let cache = RepoCacheAtom()
@@ -113,8 +127,9 @@ private final class PaneSurfaceCaptureFixture {
             repositoryTopologyAtom: atoms.workspaceRepositoryTopology, paneAtom: atoms.workspacePane,
             tabLayoutAtom: atoms.workspaceTabLayout, mutationCoordinator: atoms.workspaceMutationCoordinator,
             startsObserving: false)
-        sourceId = store.createPane(launchDirectory: URL(filePath: "/tmp/capture-source")).id
-        adjacentId = store.createPane(launchDirectory: URL(filePath: "/tmp/capture-adjacent")).id
+        sourceId = store.createPane(launchDirectory: URL(filePath: "/tmp/capture-source"), title: "Capture source").id
+        adjacentId =
+            store.createPane(launchDirectory: URL(filePath: "/tmp/capture-adjacent"), title: "Capture adjacent").id
         companionId = store.createPane().id
         let tab = Tab(paneId: sourceId)
         tabId = tab.id
@@ -155,6 +170,32 @@ private final class PaneSurfaceCaptureFixture {
         return try #require(bitmap.cgImage)
     }
 
+    func awaitIdentityCardLabels() async throws -> [String] {
+        do {
+            for paneId in [sourceId, adjacentId] {
+                let input = try #require(initialRelativeTimeInputs[paneId], "Mounted card must start its owner")
+                // These inputs finish after the first publication instead of scheduling a future refresh.
+                try #require(input.activityTime == nil && input.agentLine == nil, "Fixture must have no deadline")
+                try await relativeTimeFacts.expectNext(in: paneId, .operation(input, .started))
+                try await relativeTimeFacts.expectNext(in: paneId, .entered(input))
+                try await relativeTimeFacts.expectNext(in: paneId, .ended(input, .completed))
+            }
+            try await relativeTimeFacts.finish()
+        } catch {
+            try? await relativeTimeFacts.finish()
+            throw error
+        }
+        // Publication precedes the native layout that establishes the capture baseline.
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        return PaneIdentityCardFixture.elements(in: host).map(\.label)
+    }
+
+    private func observeRelativeTime(_ event: PaneRelativeTimeRefresh.Event, paneId: UUID) {
+        if case .operation(let input, .started) = event { initialRelativeTimeInputs[paneId] = input }
+        relativeTimeFacts.append(scope: paneId, fact: event)
+    }
+
     func stop() {
         host.rootView = AnyView(EmptyView())
         host.layoutSubtreeIfNeeded()
@@ -174,7 +215,11 @@ private final class PaneSurfaceCaptureFixture {
                     octiconLoader: makeTestOcticonLoader(), editorChooser: editorChooser,
                     actionDispatcher: dispatcher, commandDispatcher: AppTerminalFixtureCommandDispatcher(),
                     arrangementInlineRenameState: ArrangementInlineRenameState(), onPaneFocusTrigger: { _ in },
-                    viewRegistry: registry, surfaceId: "capture-zoom", renderedPaneIds: [sourceId, companionId]
+                    viewRegistry: registry, surfaceId: "capture-zoom", renderedPaneIds: [sourceId, companionId],
+                    onRelativeTimeEvent: { [weak self] event in
+                        guard let self else { return }
+                        self.observeRelativeTime(event, paneId: self.sourceId)
+                    }
                 )
                 .frame(width: 1100)
             } else {
@@ -195,7 +240,8 @@ private final class PaneSurfaceCaptureFixture {
             commandDispatcher: AppTerminalFixtureCommandDispatcher(), onPaneFocusTrigger: { _ in },
             onOpenPaneGitHub: { _ in },
             toolbarPresentation: hiddenToolbar ? .hidden : toolbar(),
-            managementChromePresentation: hiddenToolbar ? .zoomChild : .ordinary)
+            managementChromePresentation: hiddenToolbar ? .zoomChild : .ordinary,
+            onRelativeTimeEvent: { [weak self] event in self?.observeRelativeTime(event, paneId: paneId) })
     }
 
     private func drawerOverlay() -> some View {

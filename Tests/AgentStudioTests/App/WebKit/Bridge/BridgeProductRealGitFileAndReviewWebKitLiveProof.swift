@@ -167,7 +167,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             reviewTrace.hasReviewMetadataPublication
         else { throw LiveProofError.successorReviewPublicationMissing }
         let displayedPath = try await BridgeProductWebKitSelectedReviewContentWait.wait(
-            controller.page,
+            controller,
             expectedPath: sourceOracle.path,
             expectedHashes: expectedSelectedContentHashes,
             expectedGeneration: successorGeneration,
