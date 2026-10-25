@@ -11,13 +11,13 @@ struct TestForegroundEvidenceSQLiteAccess: ForegroundEvidenceSQLiteAccess {
         { database, paneId in
             guard
                 let row = try Row.fetchOne(
-                    database, sql: "SELECT generation, is_live FROM fixture_latest_binding WHERE pane_id = ?",
+                    database, sql: "SELECT generation FROM fixture_latest_binding WHERE pane_id = ?",
                     arguments: [paneId.uuidString])
             else { return nil }
             guard let generation = UUID(uuidString: row["generation"]) else {
                 throw WorkspaceUndoJournalFailure.invalidStoredIdentifier
             }
-            return .init(bindingGenerationId: generation, isLive: row["is_live"])
+            return .init(bindingGenerationId: generation)
         }
     }
     func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {
@@ -60,10 +60,13 @@ struct ForegroundEvidenceRepositoryFixture: Sendable {
         }
     }
 
-    func report(_ evidence: ForegroundEvidence, sequence: UInt64) async throws -> ForegroundEvidenceAdmission {
+    func report(_ evidence: ForegroundEvidence, sequence: UInt64, bindingGenerationId: UUID? = nil) async throws
+        -> ForegroundEvidenceAdmission
+    {
         try await database.write { database in
             try repository.write(
-                in: database, evidence: evidence, paneId: paneId, bindingGenerationId: generation,
+                in: database, evidence: evidence, paneId: paneId,
+                bindingGenerationId: bindingGenerationId ?? generation,
                 sequence: sequence, observedAt: Date(timeIntervalSince1970: 100))
         }
     }

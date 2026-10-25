@@ -41,10 +41,10 @@ struct ColdResumeTestPane: Sendable {
     }
 
     @MainActor func decision(
-        harness: PaneCLIOutboxDrainHarness, foreground: (any PaneForegroundEvidenceRepository)? = nil
+        harness: PaneCLIOutboxDrainHarness, reportRepository: (any PaneForegroundEvidenceRepository)? = nil
     ) -> ColdRestoreResumeDecision {
         .init(
-            ingestion: harness.ingestion, foregroundRepository: foreground ?? repository,
+            ingestion: harness.ingestion, reportRepository: reportRepository ?? repository,
             drain: harness.drainOwner, storeURL: harness.storeURL)
     }
 
@@ -74,9 +74,6 @@ actor HeldResumeEvidenceRepository: PaneForegroundEvidenceRepository {
         reads += 1
         if reads == heldRead { try await hold.arrive(value) }
         return value
-    }
-    func clearReportedEvidenceForChangedBinding(paneId: UUID) async throws {
-        try await base.clearReportedEvidenceForChangedBinding(paneId: paneId)
     }
     func retire(paneId: UUID) async throws { try await base.retire(paneId: paneId) }
 }

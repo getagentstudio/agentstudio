@@ -10,7 +10,7 @@ struct TestForegroundSQLiteAccess: ForegroundEvidenceSQLiteAccess, SessionsSQLit
         { database, paneId in
             guard let binding = try SessionsRepositoryStorage.loadBindings(database: database, paneId: paneId).first
             else { return nil }
-            return .init(bindingGenerationId: binding.bindingGenerationId, isLive: binding.status == .active)
+            return .init(bindingGenerationId: binding.bindingGenerationId)
         }
     }
     func read<Output: Sendable>(_ operation: @Sendable (Database) throws -> Output) async throws -> Output {

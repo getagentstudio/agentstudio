@@ -8,7 +8,6 @@ import Synchronization
 enum ForegroundFIFOTransferFailure: Error, Equatable {
     case zeroProgressWrite(bytesWritten: Int, expectedBytes: Int)
     case prematureEOF(bytesRead: Int, expectedBytes: Int)
-    case unexpectedJobControlReply(expected: String, actual: String)
     case ownerExited(Int32)
     case ownerObservationEnded
     case protocolProducerExited

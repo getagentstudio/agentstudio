@@ -64,7 +64,7 @@ struct ResumeEvidenceZmxProof {
         try await environment.killSession(binding.sessionId)
     }
 
-    func resolve() async throws -> ColdRestoreResumeVerdict {
+    func resolve(inventory: ZmxSessionInventory? = nil) async throws -> ColdRestoreResumeVerdict {
         let report = await drain.drain(storeURL: data.storeURL)
         print("R3_READINESS outcome=\(report.readOutcome)")
         guard case .incomplete = report.readOutcome else {
@@ -72,21 +72,27 @@ struct ResumeEvidenceZmxProof {
             await readiness.record(report.readOutcome)
             let state = await readiness.wait(paneId: binding.paneId)
             await readiness.shutdown()
-            return await resolve(readiness: state)
+            return await resolve(readiness: state, inventory: inventory)
         }
         throw ResumeEvidenceFixtureFailure.incompleteInitialRead
     }
 
-    private func resolve(readiness: RestoreResumeReadinessResult) async
+    private func resolve(readiness: RestoreResumeReadinessResult, inventory: ZmxSessionInventory?) async
         -> ColdRestoreResumeVerdict
     {
         let decision = ColdRestoreResumeDecision(
-            ingestion: data.ingestion, foregroundRepository: binding.repository, drain: drain,
+            ingestion: data.ingestion, reportRepository: binding.repository, drain: drain,
             storeURL: data.storeURL)
+        let decisionInventory: ZmxSessionInventory
+        if let inventory {
+            decisionInventory = inventory
+        } else {
+            decisionInventory = await environment.backend.discoverSessionInventory()
+        }
         return await decision.resolve(
             paneId: binding.paneId, sessionId: binding.sessionId,
             readiness: readiness, launchBoot: data.launchBoot,
-            inventory: await environment.backend.discoverSessionInventory())
+            inventory: decisionInventory)
     }
 
     /// Counterfactual only: the same real cold end/E8/FIFO owners, with both reads replaced by verified-empty.
@@ -95,7 +101,7 @@ struct ResumeEvidenceZmxProof {
         let evidence = try await binding.repository.loadEvidence(paneId: binding.paneId)
         let verdict = await SessionsResumeResolver().resumeEvidence(
             for: .init(
-                paneId: binding.paneId, zmxSessionId: binding.sessionId, coldEndedMain: ended,
+                zmxSessionId: binding.sessionId, coldEndedMain: ended,
                 evidence: evidence, isSameBoot: data.launchBoot.isSameBoot,
                 inventory: await environment.backend.discoverSessionInventory()))
         if case .interruptedCandidate = verdict, data.launchBoot.isSameBoot, let ended {
@@ -103,7 +109,7 @@ struct ResumeEvidenceZmxProof {
                 try await data.ingestion.commitColdResume(
                     paneId: binding.paneId, bindingGenerationId: ended.bindingGenerationId))
         }
-        return .init(evidence: verdict, endedMain: ended, foreground: evidence)
+        return .init(evidence: verdict, endedMain: ended, reportEvidence: evidence)
     }
 
     func prove(
@@ -157,7 +163,7 @@ struct ResumeEvidenceZmxProof {
                 if case .unknown = expected { #expect(output.contains("resume it manually")) }
                 if case .knownExited = expected { #expect(!output.contains("resume it manually")) }
             }
-            if case .reportedOtherStart(let other) = result.foreground?.value {
+            if case .reportedOtherStart(let other) = result.reportEvidence?.value {
                 #expect(output.contains(String(other.conversationId.prefix(8))))
                 #expect(other.conversationId.prefix(8) != sessionId.prefix(8))
             }

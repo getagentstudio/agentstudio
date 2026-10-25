@@ -17,7 +17,7 @@ struct RestoreResumeSameBootTests {
             let pane = try await ColdResumeTestPane.make(harness: harness)
             let hold = HeldStep<PaneForegroundEvidence?>("current E8 after final reread before FIFO")
             let repository = HeldResumeEvidenceRepository(base: pane.repository, hold: hold, heldRead: 2)
-            let decision = pane.decision(harness: harness, foreground: repository)
+            let decision = pane.decision(harness: harness, reportRepository: repository)
             let operation = Task {
                 defer { hold.retire() }
                 return await pane.resolve(decision)

@@ -16,14 +16,6 @@ extension E2ESerializedTests.ZmxE2ETests {
             try await proveNativeCutoff(environment, cutoff: cutoff)
         }
     }
-
-    @Test("an older look's boot cannot skip B1 when the app's previous run was this boot")
-    @MainActor
-    func previousAppBootWinsOverOldLookBoot() async throws {
-        try await withResumeEvidenceBackend { environment in
-            try await proveNativeCutoff(environment, cutoff: .liveBeforeDecision, boot: .oldLookSameBoot)
-        }
-    }
 }
 
 enum NativeResumeCutoff: CaseIterable, Sendable {
@@ -33,9 +25,9 @@ enum NativeResumeCutoff: CaseIterable, Sendable {
 
 @MainActor
 private func proveNativeCutoff(
-    _ environment: ResumeEvidenceZmxEnvironment, cutoff: NativeResumeCutoff, boot: ResumeProofBoot = .same
+    _ environment: ResumeEvidenceZmxEnvironment, cutoff: NativeResumeCutoff
 ) async throws {
-    let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: boot)
+    let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: .same)
     do {
         let proof = try await ResumeEvidenceZmxProof.make(environment: environment, data: data, provider: "codex")
         do {
@@ -95,7 +87,7 @@ private func proveNativeCutoff(
                     }
                 }
             }
-            // The first new-run look is intentionally held, the F10/F9 case: use the persisted old look.
+            // The next cold end uses the binding/report state left by the ordered live and stored cutoffs.
             let next = try await proof.resolve()
             let mayResumeAgain = cutoff == .liveAfterDecisionBeforeInstall || cutoff == .liveBeforeStart
             try await proof.prove(
@@ -123,7 +115,7 @@ func heldNativeResumeDecision(
     let hold = HeldStep<PaneForegroundEvidence?>("B1 evidence read \(heldRead)")
     let held = HeldResumeEvidenceRepository(base: proof.binding.repository, hold: hold, heldRead: heldRead)
     let decision = ColdRestoreResumeDecision(
-        ingestion: proof.data.ingestion, foregroundRepository: held, drain: proof.drain, storeURL: proof.data.storeURL)
+        ingestion: proof.data.ingestion, reportRepository: held, drain: proof.drain, storeURL: proof.data.storeURL)
     let boot = proof.data.launchBoot
     let operation = Task {
         defer { hold.retire() }

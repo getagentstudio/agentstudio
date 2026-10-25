@@ -14,7 +14,7 @@ struct RestoreResumeCostTests {
         defer { trace.cleanup() }
         do {
             let input = ResumeEvidenceInput(
-                paneId: UUIDv7.generate(), zmxSessionId: .generateUUIDv7(), coldEndedMain: nil,
+                zmxSessionId: .generateUUIDv7(), coldEndedMain: nil,
                 evidence: nil, isSameBoot: false, inventory: .complete([:]))
             let result = await SessionsResumeResolver(performanceTraceRecorder: trace.recorder).resumeEvidence(
                 for: input)

@@ -39,7 +39,7 @@ struct OneProcessWalkTests {
             #expect(ended == nil)
             let verdict = await SessionsResumeResolver().resumeEvidence(
                 for: .init(
-                    paneId: pane, zmxSessionId: .generateUUIDv7(), coldEndedMain: ended, evidence: nil,
+                    zmxSessionId: .generateUUIDv7(), coldEndedMain: ended, evidence: nil,
                     isSameBoot: false, inventory: .unavailable(.timedOut)))
             #expect(verdict == .knownExited)
             await ingestion.finish()
@@ -103,7 +103,7 @@ struct OneProcessWalkTests {
             #expect(ended != nil)
             let result = await SessionsResumeResolver().resumeEvidence(
                 for: .init(
-                    paneId: pane, zmxSessionId: .generateUUIDv7(), coldEndedMain: ended, evidence: nil,
+                    zmxSessionId: .generateUUIDv7(), coldEndedMain: ended, evidence: nil,
                     isSameBoot: false, inventory: .unavailable(.timedOut)))
             #expect(
                 result

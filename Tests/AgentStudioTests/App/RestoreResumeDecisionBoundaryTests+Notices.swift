@@ -10,7 +10,7 @@ import Testing
 @testable import AgentStudio
 
 extension RestoreResumeDecisionBoundaryTests {
-    @Test("unavailable launch readiness leaves durable foreground evidence unchanged")
+    @Test("unavailable launch readiness leaves durable report evidence unchanged")
     func unavailableReadinessDoesNotPersistUnknown() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let pane = try await ColdResumeTestPane.make(harness: harness)
@@ -36,7 +36,7 @@ extension RestoreResumeDecisionBoundaryTests {
             _ = try await harness.appendLifecycle(pane: pane, session: other, event: .sessionStart, at: 20)
             _ = await harness.drain()
             let decision = ColdRestoreResumeDecision(
-                ingestion: harness.ingestion, foregroundRepository: harness.evidenceRepository,
+                ingestion: harness.ingestion, reportRepository: harness.evidenceRepository,
                 drain: harness.drainOwner, storeURL: harness.storeURL)
             let result = await decision.resolve(
                 paneId: pane, sessionId: session, readiness: .ready,
@@ -76,7 +76,6 @@ extension RestoreResumeDecisionBoundaryTests {
                     eventName: .sessionStart, turnId: nil, signal: .sessionStart,
                     recordId: UUIDv7.generate(), admittedAt: Date(timeIntervalSince1970: 25),
                     chain: TestMainAgentChain.observation))
-            try await pane.repository.clearReportedEvidenceForChangedBinding(paneId: pane.paneId)
             #expect(await pane.resolve(pane.decision(harness: harness)).evidence == .unknown(.changedWhileClosed))
         }
     }
@@ -101,7 +100,7 @@ extension RestoreResumeDecisionBoundaryTests {
         }
     }
 
-    @Test("a new positively observed Y resumes after S-to-T history loss; unchanged T stays adopted")
+    @Test("a newly elected Y resumes after S-to-T history loss; unchanged T stays adopted")
     func newBindingResumesAfterHistoryLoss() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
             let original = try await ColdResumeTestPane.make(harness: harness)

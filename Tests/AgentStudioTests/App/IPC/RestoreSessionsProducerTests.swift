@@ -32,7 +32,7 @@ struct RestoreSessionsProducerTests {
     func bindingReplyFollowsCommit() async throws {
         let fixture = try AppResumeSessionsFixture()
         let ingestion = fixture.makeIngestion()
-        let adapter = resumeProducerAdapter(ingestion: ingestion, fixture: fixture)
+        let adapter = resumeProducerAdapter(ingestion: ingestion)
         let hold = HeldStep<Void>("provider start before Sessions transaction")
         defer { hold.retire() }
         fixture.access.holdNextWrite(hold)
@@ -67,7 +67,7 @@ struct RestoreSessionsProducerTests {
     func activityHookPreservesBinding() async throws {
         let fixture = try AppResumeSessionsFixture()
         let ingestion = fixture.makeIngestion()
-        let adapter = resumeProducerAdapter(ingestion: ingestion, fixture: fixture)
+        let adapter = resumeProducerAdapter(ingestion: ingestion)
         do {
             _ = try await adapter.recordProviderEvent(
                 paneId: fixture.paneId, params: fixture.event(.sessionStart), provenance: .matchingPane)
@@ -87,7 +87,7 @@ struct RestoreSessionsProducerTests {
     func providerVersionStillBinds() async throws {
         let fixture = try AppResumeSessionsFixture()
         let ingestion = fixture.makeIngestion()
-        let adapter = resumeProducerAdapter(ingestion: ingestion, fixture: fixture)
+        let adapter = resumeProducerAdapter(ingestion: ingestion)
         do {
             _ = try await adapter.recordProviderEvent(
                 paneId: fixture.paneId, params: fixture.event(.sessionStart, version: "future-version"),
@@ -104,7 +104,7 @@ struct RestoreSessionsProducerTests {
     func refusedMalformedHookCannotBind() async throws {
         let fixture = try AppResumeSessionsFixture()
         let ingestion = fixture.makeIngestion()
-        let adapter = resumeProducerAdapter(ingestion: ingestion, fixture: fixture)
+        let adapter = resumeProducerAdapter(ingestion: ingestion)
         let valid = try fixture.event(.sessionStart)
         let malformed = IPCSessionEventParams(
             handle: valid.handle, provider: valid.provider,

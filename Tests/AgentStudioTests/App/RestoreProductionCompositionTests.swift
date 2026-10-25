@@ -46,6 +46,29 @@ struct RestoreProductionCompositionTests {
         }
     }
 
+    @Test("ready intake still fails closed when the actual App factory lacks its required report reader")
+    func missingRequiredReportReaderFailsClosedAfterReadiness() async throws {
+        try await withCompositionFactory { fixture in
+            _ = try await fixture.bind(paneId: fixture.ownerId)
+            let delegate = await MainActor.run { AppDelegate() }
+            let resolution = await MainActor.run {
+                delegate.appIPCSessionsPaneContextComposition = fixture.composition
+                delegate.restoreLaunchBoot = .init(previousBootId: "before", currentBootId: "after")
+                return delegate.makeColdResumePlanResolution()
+            }
+            let readerMissing = await MainActor.run { delegate.restoreReportEvidenceRepository == nil }
+            #expect(readerMissing)
+            await delegate.restoreResumeReadiness.record(.verifiedEmpty)
+            #expect(await delegate.restoreResumeReadiness.wait(paneId: fixture.ownerId.uuid) == .ready)
+            let plan = await resolution(fixture.ownerId, coldResumeBasePlan(session: .generateUUIDv7()), .complete([:]))
+            #expect(plan.resume == nil)
+            #expect(plan.notice.linesByCandidateIndex[0].contains("Agent state couldn't be checked"))
+            #expect(plan.notice.linesByCandidateIndex[0].contains("resume it manually"))
+            await delegate.shutdownRestoreEvidenceOwners()
+            await MainActor.run { delegate.appIPCSessionsPaneContextComposition = nil }
+        }
+    }
+
     @Test("a valid historical look reads as no report and gives the no-row resume verdict")
     func oldLookRowReadsAsNoReport() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
@@ -70,11 +93,11 @@ struct RestoreProductionCompositionTests {
             let ended = try await harness.ingestion.endLiveMainForColdRestore(paneId: pane.paneId)
             let fromRow = await SessionsResumeResolver().resumeEvidence(
                 for: .init(
-                    paneId: pane.paneId, zmxSessionId: pane.zmxSessionId, coldEndedMain: ended, evidence: report,
+                    zmxSessionId: pane.zmxSessionId, coldEndedMain: ended, evidence: report,
                     isSameBoot: false, inventory: .complete([:])))
             let noRow = await SessionsResumeResolver().resumeEvidence(
                 for: .init(
-                    paneId: pane.paneId, zmxSessionId: pane.zmxSessionId, coldEndedMain: ended, evidence: nil,
+                    zmxSessionId: pane.zmxSessionId, coldEndedMain: ended, evidence: nil,
                     isSameBoot: false, inventory: .complete([:])))
             #expect(fromRow == noRow)
             #expect(

@@ -12,7 +12,6 @@ package enum ResumeEvidence: Equatable, Sendable {
 }
 
 package struct ResumeEvidenceInput: Sendable {
-    package let paneId: UUID
     package let zmxSessionId: ZmxSessionID
     package let coldEndedMain: ColdEndedMain?
     package let evidence: PaneForegroundEvidence?
@@ -20,10 +19,9 @@ package struct ResumeEvidenceInput: Sendable {
     package let inventory: ZmxSessionInventory
 
     package init(
-        paneId: UUID, zmxSessionId: ZmxSessionID, coldEndedMain: ColdEndedMain?,
+        zmxSessionId: ZmxSessionID, coldEndedMain: ColdEndedMain?,
         evidence: PaneForegroundEvidence?, isSameBoot: Bool, inventory: ZmxSessionInventory
     ) {
-        self.paneId = paneId
         self.zmxSessionId = zmxSessionId
         self.coldEndedMain = coldEndedMain
         self.evidence = evidence

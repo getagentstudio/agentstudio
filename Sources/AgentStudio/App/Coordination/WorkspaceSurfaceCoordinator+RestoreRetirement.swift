@@ -10,7 +10,7 @@ extension WorkspaceSurfaceCoordinator {
         case ready(sink: @Sendable (UUID) async -> Void)
     }
 
-    /// The sink and optional schema must both be installed before foreground delivery.
+    /// The sink and optional schema must both be installed before report/cold-resume retirement delivery.
     /// Reuse the owned retirement route; snapshot deletion on replay is idempotent.
     func markRestoreEvidenceRetirementReady() {
         guard case .awaitingReady(let pendingPaneIDs) = restoreEvidenceRetirementRoute,
@@ -26,16 +26,16 @@ extension WorkspaceSurfaceCoordinator {
         guard !paneIDs.isEmpty else { return }
         let snapshotter = scrollbackSnapshotter
         let scrollback = scrollbackStore
-        let retireForeground: (@Sendable (UUID) async -> Void)?
+        let retireReports: (@Sendable (UUID) async -> Void)?
         switch restoreEvidenceRetirementRoute {
         case .awaitingReady(var pendingPaneIDs):
             pendingPaneIDs.formUnion(paneIDs)
             restoreEvidenceRetirementRoute = .awaitingReady(pendingPaneIDs: pendingPaneIDs)
-            retireForeground = nil
+            retireReports = nil
         case .ready(let sink):
-            retireForeground = sink
+            retireReports = sink
         }
-        guard snapshotter != nil || scrollback != nil || retireForeground != nil else { return }
+        guard snapshotter != nil || scrollback != nil || retireReports != nil else { return }
         let operationID = UUIDv7.generate()
         restoreRetirementTasksByID[operationID] = Task { [weak self] in
             do {
@@ -48,7 +48,7 @@ extension WorkspaceSurfaceCoordinator {
                 // Never include captured data, paths or an OS error payload.
                 Self.logger.warning("Scrollback retirement could not delete a snapshot")
             }
-            for paneId in paneIDs { await retireForeground?(paneId) }
+            for paneId in paneIDs { await retireReports?(paneId) }
             self?.restoreRetirementTasksByID.removeValue(forKey: operationID)
         }
     }

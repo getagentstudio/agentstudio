@@ -6,7 +6,7 @@ import Testing
 @testable import AgentStudioCore
 @testable import AgentStudioTerminal
 
-@Suite("Foreground evidence repository")
+@Suite("Closed-app report evidence repository")
 struct ForegroundEvidenceRepositoryTests {
     @Test("a previous binding's report does not veto the different latest binding after relaunch")
     func previousBindingsReportDoesNotVetoLatestBinding() async throws {
@@ -24,7 +24,6 @@ struct ForegroundEvidenceRepositoryTests {
         let fixture = try ForegroundEvidenceRepositoryFixture()
         _ = try await fixture.report(.reportedEnd, sequence: 1)
         try await fixture.database.write { try $0.execute(sql: "DELETE FROM fixture_latest_binding") }
-        try await fixture.repository.clearReportedEvidenceForChangedBinding(paneId: fixture.paneId)
         #expect(try await fixture.repository.loadEvidence(paneId: fixture.paneId)?.value == .reportedEnd)
     }
 
@@ -34,18 +33,21 @@ struct ForegroundEvidenceRepositoryTests {
         #expect(try await fixture.report(.reportedEnd, sequence: 1) == .admitted)
         try await fixture.bind(generation: fixture.generation, isLive: false)
         try await fixture.bind(generation: fixture.generation, isLive: true)
-        try await fixture.repository.clearReportedEvidenceForChangedBinding(paneId: fixture.paneId)
         #expect(try await fixture.repository.loadEvidence(paneId: fixture.paneId)?.value == .reportedEnd)
     }
 
-    @Test("a different latest binding clears reported evidence")
-    func differentBindingClearsReportedEvidence() async throws {
+    @Test("a different latest binding filters the old report and its next report overwrites it")
+    func differentBindingFiltersAndOverwritesReportedEvidence() async throws {
         let fixture = try ForegroundEvidenceRepositoryFixture()
         #expect(try await fixture.report(.reportsUnreadable(.historyLost), sequence: 1) == .admitted)
         let nextGeneration = UUIDv7.generate()
         try await fixture.bind(generation: nextGeneration)
-        try await fixture.repository.clearReportedEvidenceForChangedBinding(paneId: fixture.paneId)
         #expect(try await fixture.repository.loadEvidence(paneId: fixture.paneId)?.value == nil)
+        #expect(
+            try await fixture.report(.reportedEnd, sequence: 2, bindingGenerationId: nextGeneration) == .admitted)
+        let overwritten = try await fixture.repository.loadEvidence(paneId: fixture.paneId)
+        #expect(overwritten?.bindingGenerationId == nextGeneration)
+        #expect(overwritten?.value == .reportedEnd)
     }
 
     @Test("the strongest reported kind wins in either write order")

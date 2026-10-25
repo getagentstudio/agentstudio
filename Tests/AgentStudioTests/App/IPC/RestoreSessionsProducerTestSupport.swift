@@ -64,7 +64,7 @@ struct AppResumeSessionsFixture: Sendable {
     }
 }
 
-func resumeProducerAdapter(ingestion: SessionsIngestion, fixture: AppResumeSessionsFixture)
+func resumeProducerAdapter(ingestion: SessionsIngestion)
     -> AgentStudioIPCSessionsAdapter
 {
     AgentStudioIPCSessionsAdapter(

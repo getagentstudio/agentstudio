@@ -43,13 +43,13 @@ extension AppDelegate {
 
     private func coldResumeDecision(needsFinalRead: Bool) async -> ColdRestoreResumeDecision? {
         guard let ingestion = appIPCSessionsPaneContextComposition?.ingestion,
-            let foreground = restoreReportEvidenceRepository
+            let reportRepository = restoreReportEvidenceRepository
         else { return nil }
         let storeURL = appIPCPaths?.cliStoreURL
         let task = paneCLIOutboxDrainTask
         let drain = needsFinalRead ? await task?.value : nil
         return .init(
-            ingestion: ingestion, foregroundRepository: foreground, drain: drain, storeURL: storeURL,
+            ingestion: ingestion, reportRepository: reportRepository, drain: drain, storeURL: storeURL,
             performanceTraceRecorder: performanceTraceRecorder)
     }
 }

@@ -41,7 +41,7 @@ struct ResumeResolverFixture {
         case .unavailable: inventory = .unavailable(.timedOut)
         }
         return .init(
-            paneId: paneID, zmxSessionId: zmxID,
+            zmxSessionId: zmxID,
             coldEndedMain: mainExists
                 ? .init(
                     bindingGenerationId: generation, providerIdentifier: provider,

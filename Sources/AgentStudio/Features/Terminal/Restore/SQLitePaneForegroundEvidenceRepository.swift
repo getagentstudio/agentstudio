@@ -31,19 +31,6 @@ package actor SQLitePaneForegroundEvidenceRepository: PaneForegroundEvidenceRepo
         return retirementFence.contains(paneId) ? nil : evidence
     }
 
-    package func clearReportedEvidenceForChangedBinding(paneId: UUID) async throws {
-        let access = access
-        try await access.write { database in
-            guard let previous = try ForegroundEvidenceRow.load(paneId: paneId, in: database),
-                let latest = try access.latestBinding(database, paneId),
-                previous.bindingGenerationId != latest.bindingGenerationId
-            else { return }
-            try database.execute(
-                sql: "DELETE FROM terminal_pane_foreground_evidence WHERE pane_id = ? AND evidence_kind != 'look'",
-                arguments: [paneId.uuidString])
-        }
-    }
-
     /// Joins the supplied Sessions commit; never opens a nested transaction.
     package nonisolated func write(
         in database: Database, evidence: ForegroundEvidence, paneId: UUID, bindingGenerationId: UUID?,

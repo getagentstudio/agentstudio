@@ -54,7 +54,7 @@ final class ResumeEvidenceZmxData {
         let storeURL = root.appending(path: "cli.sqlite")
         let database = try await valueFromDedicatedThread {
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-            let database = try DatabaseQueue()
+            let database = try DatabaseQueue(path: root.appending(path: "local.sqlite").path)
             try WorkspaceLocalMigrations.migrate(database)
             return database
         }
@@ -141,7 +141,7 @@ final class ResumeEvidenceZmxData {
     }
 }
 
-enum ResumeProofBoot { case same, reboot, missing, oldLookSameBoot }
+enum ResumeProofBoot { case same, reboot, missing }
 
 actor ResumeEvidenceSQLiteAccess: SessionsSQLiteAccess, PaneContextSQLiteAccess {
     let database: DatabaseQueue

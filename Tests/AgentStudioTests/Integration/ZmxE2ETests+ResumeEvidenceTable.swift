@@ -11,6 +11,45 @@ import Testing
 
 extension E2ESerializedTests.ZmxE2ETests {
     @Test(
+        "r13 boot and inventory variants decide the native command and exact UUID",
+        arguments: ["claude-code", "codex"], ResumeInventoryProofRow.allCases)
+    @MainActor
+    func resumeBootInventoryMatrix(provider: String, row: ResumeInventoryProofRow) async throws {
+        try await withResumeEvidenceBackend { environment in
+            let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: row.boot)
+            do {
+                #expect(data.launchBoot.isSameBoot)
+                if row.boot == .missing { #expect(data.launchBoot.previousBootId == nil) }
+                let proof = try await ResumeEvidenceZmxProof.make(
+                    environment: environment, data: data, provider: provider)
+                do {
+                    try await proof.prepareCold()
+                    let observed = await environment.backend.discoverSessionInventory()
+                    #expect(observed == .complete([:]))
+                    let inventory = row.inventory(sessionId: proof.binding.sessionId, observedAbsent: observed)
+                    let result = try await proof.resolve(inventory: inventory)
+                    let expected: ResumeEvidence =
+                        row.shouldResume
+                        ? .interruptedCandidate(
+                            .init(
+                                provider: provider == "codex" ? .codex : .claudeCode,
+                                sessionId: try ProviderSessionId(rawValue: proof.sessionId)))
+                        : .unknown(.observationMismatch)
+                    try await proof.prove(result, expected: expected, label: "boot-inventory-\(row)")
+                    try await proof.close()
+                    await data.close()
+                } catch {
+                    try? await proof.close()
+                    throw error
+                }
+            } catch {
+                await data.close()
+                throw error
+            }
+        }
+    }
+
+    @Test(
         "Spec agent outcomes reach the real command with exact per-pane UUIDs",
         arguments: ["claude-code", "codex"], ResumeEvidenceAgentRow.allCases.filter { !$0.requiresJobControl })
     @MainActor
@@ -31,6 +70,35 @@ extension E2ESerializedTests.ZmxE2ETests {
         }
     }
 
+}
+
+enum ResumeInventoryProofRow: CaseIterable, Sendable {
+    case completeAbsent, completeRefused, completeAlive, completeUnresponsive, incomplete
+    case missingPreviousBootAbsent, missingPreviousBootAlive
+
+    var boot: ResumeProofBoot {
+        switch self {
+        case .missingPreviousBootAbsent, .missingPreviousBootAlive: .missing
+        default: .same
+        }
+    }
+
+    var shouldResume: Bool {
+        switch self {
+        case .completeAbsent, .completeRefused, .missingPreviousBootAbsent: true
+        case .completeAlive, .completeUnresponsive, .incomplete, .missingPreviousBootAlive: false
+        }
+    }
+
+    func inventory(sessionId: ZmxSessionID, observedAbsent: ZmxSessionInventory) -> ZmxSessionInventory {
+        switch self {
+        case .completeAbsent, .missingPreviousBootAbsent: observedAbsent
+        case .completeRefused: .complete([sessionId: .refused])
+        case .completeAlive, .missingPreviousBootAlive: .complete([sessionId: .alive(wrapperPid: 2111)])
+        case .completeUnresponsive: .complete([sessionId: .unresponsive])
+        case .incomplete: .unavailable(.timedOut)
+        }
+    }
 }
 
 @MainActor
