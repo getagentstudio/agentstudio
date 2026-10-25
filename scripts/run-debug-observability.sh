@@ -565,6 +565,7 @@ wait_for_app_ipc() {
     "$launch_wait_deadline" "$pid" \
     "${AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN:-}" \
     "${AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_ALIVE_BIN:-}" <<'PY'
+import json
 import os
 import subprocess
 import sys
@@ -596,6 +597,18 @@ def process_is_alive() -> bool:
         return True
     return True
 
+def escrow_endpoint_matches() -> bool:
+    if not escrow_path:
+        return True
+    try:
+        with open(escrow_path, encoding="utf-8") as escrow_file:
+            document = json.load(escrow_file)
+        published_socket = document.get("socketPath") if isinstance(document, dict) else None
+        return isinstance(published_socket, str) and os.path.realpath(published_socket) == os.path.realpath(socket_path)
+    except (OSError, ValueError):
+        # Missing, partial or foreign publication is not readiness for this app.
+        return False
+
 arguments: list[str] = [cli_path]
 if escrow_path:
     environment["AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW"] = escrow_path
@@ -608,6 +621,9 @@ while True:
     remaining = deadline - now()
     if remaining <= 0:
         sys.exit(1)
+    if not escrow_endpoint_matches():
+        time.sleep(min(0.1, remaining))
+        continue
     try:
         result = subprocess.run(
             arguments, env=environment, stdin=subprocess.DEVNULL,
@@ -622,7 +638,7 @@ while True:
         sys.exit(1)
     if not process_is_alive():
         sys.exit(3)
-    if result.returncode == 0 and now() < deadline:
+    if result.returncode == 0 and escrow_endpoint_matches() and now() < deadline:
         sys.exit(0)
     remaining = deadline - now()
     if remaining <= 0:

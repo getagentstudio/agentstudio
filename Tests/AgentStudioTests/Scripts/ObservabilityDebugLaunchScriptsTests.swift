@@ -577,7 +577,7 @@ struct ObservabilityDebugLaunchScriptVerifierTests {
                 "AGENTSTUDIO_STARTUP_DIAGNOSTIC_ACTION": "cross-tab-move-geometry-smoke",
                 "AGENTSTUDIO_STARTUP_WATCH_FOLDER": fixture.url("watch-folder").path,
                 "AGENTSTUDIO_IPC_UNSAFE_NO_AUTH": "1",
-                "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": "1",
+                "AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW": try fixture.makeDebugEscrow().path,
                 "ZMX_DIR": "/tmp/hostile-zmx-dir",
                 "ZMX_SESSION": "hostile-session",
                 "ZMX_SESSION_PREFIX": "hostile-prefix",
@@ -601,8 +601,10 @@ struct ObservabilityDebugLaunchScriptVerifierTests {
             hostileDataRoot: hostileDataRoot
         )
         try fixture.expectIPCHealthChecked()
-        let launchedEnv = try await fixture.waitForFile(fixture.url("launched-env"), containing: "ipc_escrow=1")
-        try expectDirectExecutableFallbackLaunchEnvironment(launchedEnv, hostileDataRoot: hostileDataRoot)
+        let launchedEnv = try await fixture.waitForFile(
+            fixture.url("launched-env"), containing: "ipc_escrow=\(fixture.url("ipc-escrow.json").path)")
+        try expectDirectExecutableFallbackLaunchEnvironment(
+            launchedEnv, hostileDataRoot: hostileDataRoot, escrowPath: fixture.url("ipc-escrow.json").path)
         #expect(!FileManager.default.fileExists(atPath: fixture.url("leaked-env").path))
     }
 
@@ -647,7 +649,7 @@ struct ObservabilityDebugLaunchScriptVerifierTests {
         #expect(openArgs.contains("AGENTSTUDIO_STARTUP_WATCH_FOLDER="))
         #expect(openArgs.contains("AGENTSTUDIO_RESTORE_TRACE=1"))
         #expect(openArgs.contains("AGENTSTUDIO_IPC_UNSAFE_NO_AUTH=1"))
-        #expect(openArgs.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=1"))
+        #expect(openArgs.contains("AGENTSTUDIO_IPC_DEBUG_TOKEN_ESCROW=\(fixture.url("ipc-escrow.json").path)"))
         #expect(openArgs.contains("AGENTSTUDIO_DATA_DIR="))
         #expect(openArgs.contains("AGENTSTUDIO_IPC_SOCKET_DIR="))
         #expect(openArgs.contains("AGENTSTUDIO_ZMX_PATH="))

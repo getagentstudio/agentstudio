@@ -47,13 +47,17 @@ mise run run-debug-observability -- --detach --skip-build --build-path "$BUILD_P
 2. Launch once, preserving output/status. A failure must not source a stale
    handoff, retry, switch transports or fall back to a different binary.
    The launcher waits for the published CLI's `system.ping` through the supplied
-   escrow before reporting `running`. PID discovery and health share its
+   escrow naming this launch's isolated socket before reporting `running`.
+   A stale escrow for another endpoint cannot satisfy readiness and is left intact.
+   PID discovery and health share its
    existing launch deadline. `launch_failed` with `REASON=ipc_health_timeout`
    means IPC did not become usable within that deadline; retain the failure
    state and log. It does not prove that the process exited.
    Health calls each have at most one second within that elapsed deadline.
    `REASON=ipc_app_exited` records early failure when the launched PID disappears
-   before readiness. Bundle assembly and open retries precede the readiness window.
+   before readiness. For this journey's detached launch, bundle assembly and
+   open retries precede the readiness window. Foreground-wait mode starts
+   `open -W` concurrently, so its open retries consume that same window.
 3. A successful handoff must report `running`, flavor `debug`, matching code,
    build path, generated executable/bundle id, isolated data/zmx roots and
    `ACTIVATION_MODE=background`. Direct-executable fallback does not prove a

@@ -1,3 +1,5 @@
+import AgentStudioInfrastructure
+import AgentStudioProgrammaticControl
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Darwin
@@ -84,6 +86,18 @@ struct LauncherScriptFixture {
         try executable("debug-build/debug/agentstudio-cli", contents)
     }
 
+    func makeDebugEscrow(name: String = "ipc-escrow.json", socketPath: String? = nil) throws -> URL {
+        let escrowURL = url(name)
+        let document = IPCDebugCredentialEscrowDocument(
+            runtimeId: UUIDv7.generate(),
+            socketPath: socketPath ?? url("ipc-socket/agentstudio.sock").path,
+            token: "fixture-debug-credential"
+        )
+        try JSONEncoder().encode(document).write(to: escrowURL)
+        chmod(escrowURL.path, 0o600)
+        return escrowURL
+    }
+
     func expectIPCHealthChecked() throws {
         let arguments = try String(contentsOf: url("ipc-health-arguments"), encoding: .utf8)
         #expect(arguments.split(separator: "\n").last == "system.ping")
@@ -131,6 +145,9 @@ struct LauncherScriptFixture {
         mergedEnvironment["AGENTSTUDIO_CURL_BIN"] = curl.path
         mergedEnvironment["AGENTSTUDIO_DEBUG_ARTIFACT_DIR"] = url("debug-app-artifacts").path
         mergedEnvironment["AGENTSTUDIO_DEBUG_BUILD_PATH"] = url("debug-build").path
+        if URL(fileURLWithPath: scriptPath).lastPathComponent == "run-debug-observability.sh" {
+            mergedEnvironment["AGENTSTUDIO_IPC_SOCKET_DIR"] = url("ipc-socket").path
+        }
         mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_TEST_LAUNCH_CLOCK_BIN"] = launchClock.path
         mergedEnvironment["AGENTSTUDIO_OBSERVABILITY_TEST_PROCESS_ALIVE_BIN"] = processAlive.path
         for (key, value) in environment {

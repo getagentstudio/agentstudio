@@ -143,7 +143,7 @@ extension ObservabilityDebugLaunchScriptsTests {
         let stateFile = fixture.url("latest.env")
         let healthCount = fixture.url("health-count")
         let healthCalls = fixture.url("health-calls")
-        let escrow = fixture.url("ipc-escrow.json")
+        let escrow = try fixture.makeDebugEscrow()
         let pidObserved = fixture.url("pid-observed")
         try "0".write(to: healthCount, atomically: true, encoding: .utf8)
         let buildPath = try fixture.makeDebugBuildExecutable("#!/bin/bash\nexit 0\n")

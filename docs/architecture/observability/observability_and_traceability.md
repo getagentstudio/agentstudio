@@ -336,20 +336,26 @@ The launcher writes `AGENTSTUDIO_OBSERVABILITY_STATUS=running` and reports
 success only after the published bundle's `Contents/Helpers/agentstudio`
 answers `system.ping`. PID discovery and IPC health share the existing launch
 elapsed deadline (`AGENTSTUDIO_PID_WAIT_ATTEMPTS`, default 200 × 0.1 seconds),
-computed once when process discovery starts after launch acceptance. PID
-discovery checks it before each inventory; health checks it before each call.
+computed once when process discovery starts. On the detached path, this is
+after launch acceptance; foreground-wait mode starts `open -W` concurrently,
+so open retries and delays consume the same readiness window. PID discovery
+checks the deadline before each inventory; health checks it before each call.
 Each health call has a one-second timeout capped by the remaining deadline,
 so a stalled call cannot consume a fresh launch budget. If IPC never answers, it exits 1
 with `STATUS=launch_failed` and `REASON=ipc_health_timeout` in the state file.
 If the launched PID exits during readiness, the launcher instead fails early
-with `REASON=ipc_app_exited`. Bundle preparation and LaunchServices open retries
-precede this readiness window; the bound does not describe total script time.
+with `REASON=ipc_app_exited`. Bundle preparation precedes this readiness window,
+as do LaunchServices open retries on the detached path. The bound does not
+describe total script time.
 The app is left available for diagnosis; a failed launch does not authorize
 retiring an unverified candidate.
 
 When escrow is requested, the readiness check uses that same escrow path with
-inherited pane credentials and socket overrides removed. The app publishes
-escrow only after its IPC listener starts. Without escrow, the check uses
+inherited pane credentials and socket overrides removed. Only an escrow naming
+this launch's isolated socket can satisfy readiness; missing, malformed or
+foreign publication waits within the same deadline. The launcher leaves
+caller-owned escrow files intact. The app publishes escrow only after its IPC
+listener starts. Without escrow, the check uses
 `system.ping`'s existing pre-authentication access on the isolated debug socket;
 it does not mint an automation credential. IPC reachability does not establish
 terminal attachment or completion of a startup diagnostic.
