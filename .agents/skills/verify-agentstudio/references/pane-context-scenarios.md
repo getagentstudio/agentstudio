@@ -7,7 +7,7 @@ panes, sole operator, fixture paths, mutations/capture and cleanup before a run.
 
 Oracle: repository `docs/specs/2026-10-24-pane-context-display/` requirements,
 specification r5, **verbatim** `owner-rules-checklist.md` R1–R10, storyboard and
-renders; Program Design r4's later contracts. Open these adopted sources when
+renders; Program Design r5's later contracts and notice-read clarification. Open these adopted sources when
 the commission selects this feature; do not infer expected values from output.
 Expected values belong in the run's facts table, never computed by the rules
 under test. No script self-test is a real-target observation.
@@ -205,7 +205,7 @@ Sessions open-ask reduction, compare it to that current fact, not a fixed value.
 
 | State | Real setup / proof |
 | --- | --- |
-| Read notice | Use the preserved disclosure/read path from the actual UI; retain the mark-read result and changed detail. Opening/expanding can change unread counts, so capture unread scenes first. No removed Mark read button is invented. |
+| Read notice | Product-test-only fixture through the existing service read transition. The flat UI has no read trigger; opening/scrolling never substitutes for read. Name the missing live setup and keep its real-target case UNKNOWN. |
 | Dismissed notice | Actual Dismiss or Dismiss all; row absent. Other asks/prompts/sources unchanged. |
 | Withdrawn notice/ask | Sender's `withdraw ID` while retained; exact label, no forbidden actions. |
 | Handed back | Actual Dismiss on an open blocking `ask --wait`; service returns handedBack. |
@@ -213,10 +213,17 @@ Sessions open-ask reduction, compare it to that current fact, not a fixed value.
 | Expired | Blocking request with declared deadline; wait for owner's deadline result, then read exact state. No fixed sleep/test-time budget. |
 | Stale | Declared owned shutdown/restart fixture crossing appStopping with a retained blocking ask. Require actual stale readback; callerGone withdrawal does not count. No fault/restart without that later grant. |
 
-If the preserved read route, shutdown fixture or unavailable/failure fixture is
-absent on the delivered target, record the exact setup gap; retain product-test
-coverage without pretending it was a runtime scene. Existing retention applies;
-finish resolved scenes before their rows age out. No retention policy changes.
+Program Design r5 removes the disclosure and mark-read-on-expand with the flat
+rows; it adds no new UI read trigger. An unread notice remains unread and counted
+until individually dismissed or Dismiss all notices. Observe that opening and
+scrolling Messages leave those facts unchanged. Retained read states and their
+dimmed presentation still need product-test fixtures; read done/info, read
+attention/failure and S19's read failure are named live setup gaps. Do not invent
+a UI read action, raw mutation method or offline-state workaround to claim them.
+
+If a shutdown or unavailable/failure fixture is absent, record that specific gap
+too; product-test coverage never becomes a runtime scene. Existing retention
+applies; finish retained scenes before their rows age out. No retention changes.
 
 ## Oldest ask, live refresh and action destinations
 
@@ -285,7 +292,7 @@ The fixed spec/checklist stays intact and the owner reviews the V2 narrow result
 | S16a/b | E7 approval with/without summary, no E5/unread. b uses actual permission; a real-input cell UNKNOWN under G07. Supplement question-summary with its honest question label. |
 | S17 | Six-line failure/no target via actual notify; complete popover body, no target action. |
 | S18 | Exact 2 listed/+1 omitted and approval summary: real-input UNKNOWN under G07/G08; labelled synthetic product results, supplementary actual 16/1 only. |
-| S19 | Real nonblocking dismissed ask, unconfirmed answer, withdrawn notice, read failure; Resolved, unread zero, correct dimming/forbidden-control absence. |
+| S19 | Nonblocking dismissed ask, unconfirmed answer and withdrawn notice use their real routes. The read-failure component is product-test-only under r5; full S19 remains a named live setup gap/UNKNOWN. Test Resolved, unread zero, dimming and forbidden-control absence against the exact fixture. |
 
 Also run no-E6, bound-unknown/unverified/ended, all form kinds/locations, every E5
 state, loading/unavailable, oldest beyond page, live prompt/clock update and

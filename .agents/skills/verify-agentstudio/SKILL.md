@@ -66,9 +66,12 @@ actual receipt only once available. Native cells remain UNKNOWN/real ingress
 unavailable. Never alter mapping/limit or relabel a question to fill them.
 
 Updated recipes are **draft for live coverage until driven on a declared target**.
-Self-tests cover apparatus only. Unavailable eligible hook, offline datastore
-load, read/disclosure, fault/failure or opener fixtures leave those specific
-journey cases UNKNOWN with the exact missing prerequisite.
+Self-tests cover apparatus only. Under Program Design r5, flat notice rows have
+no UI read trigger: notices remain unread/countable until dismissed. Read-notice
+scenes (including S19's read failure) use product-test-only fixtures and remain
+a named live setup gap. Never invent disclosure/expand-to-read or a replacement
+Mark read action. Unavailable eligible hook, offline datastore load, fault/failure
+or opener fixtures leave their specific journey cases UNKNOWN too.
 
 ## Driver help and self-tests
 

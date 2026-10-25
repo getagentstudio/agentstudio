@@ -43,6 +43,15 @@ and actions. S17's six lines are a specimen, never a permitted line cap.
 | E7 | Actual reason/optional summary, plain age, terminal instruction; all returned prompts and omitted count. No invented summary, message identity/form or repeated row Go to pane. |
 | Footer | Dismiss all notices only with retained unread/read notices; Go to pane in full. Dismiss all leaves asks/prompts/other panes intact. |
 
+Program Design r5 removes the collapsed disclosure and its read-on-expand
+trigger with flat rows. No UI read trigger replaces it: opening or scrolling
+Messages leaves unread notices counted until Dismiss/Dismiss all. Check that
+unchanged unread state through actual owner readback. The retained read-state
+rendering above is still required, but its setup is **product-test-only**, a
+named live gap. In particular, S19's read-failure component cannot be generated
+by a disclosure, expand-to-read or invented Mark read action; full live S19 stays
+UNKNOWN. Do not count a model/service fixture as a native journey observation.
+
 Use the held receipt/lifecycle recipes for S10/S19. Keep an independent provider
 prompt to catch optimistic status changes. After an action inspect the exact
 stored source/message and unchanged other source, then the rebound UI. Live

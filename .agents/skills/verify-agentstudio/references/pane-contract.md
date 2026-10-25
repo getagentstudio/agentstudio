@@ -2,7 +2,7 @@
 
 The pane-context oracle is the owner's approved specification r5 at
 `docs/specs/2026-10-24-pane-context-display/2026-10-24-pane-context-display-specification.md`,
-its verbatim `owner-rules-checklist.md` and storyboard/renders. Program Design r4's
+its verbatim `owner-rules-checklist.md` and storyboard/renders. Program Design r5's
 later contracts govern structure. The specification governs observable outcomes.
 Historical targets require their explicit oracle; current rendering cannot
 replace it. `pane-context-scenarios.md` links setup to its source owners.
@@ -67,6 +67,10 @@ Read rows dim; read attention/failure move to Resolved/Read. Withdrawn notices
 have no actions; dismissed notices disappear. Remove filters/Count informational/
 Mark read controls. Footer: Dismiss all notices only with unread/read notices,
 and Go to pane, both readable. Long content scrolls to final row/actions.
+Under the r5 notice clarification, no UI read trigger replaces the removed
+disclosure. New notices stay unread/countable until dismissed; opening/scrolling
+does not mark read. Retained read-state presentation is unchanged, but read-notice
+journey setup is product-test-only/a named live gap, including S19's read failure.
 Loading/unavailable retain normal width. Agent Line popover shows full line,
 age/writer/refs/Go to pane, no E7. Program Design sizes are 380pt wide/max 480pt
 Messages height. Native capture must visibly include the actual popover.
