@@ -21,7 +21,8 @@ extension SessionsIngestion {
                 for: hook, liveMain: prediction.liveMain, ownMatching: prediction.matchingBinding,
                 confirmedLiveMain: prediction.confirmedLiveMain)
         guard predictsElection else { return .notEligible }
-        switch hook.chain {
+        let chain = hook.observeProcessChain()
+        switch chain {
         case .unknown: return .notEligible
         case .agentShell(_, .multiplexerServer): return .eligible
         case .agentShell(_, .other): break
@@ -37,7 +38,7 @@ extension SessionsIngestion {
         guard !isStatusClosed, !statusRuntime.retiredPaneIds.contains(hook.paneId),
             currentSessionID == sessionID, eligibilityPrediction(for: hook) == prediction
         else { return .notEligible }
-        return hook.chain.isMainEligible(terminalLeader: leader) ? .eligible : .notEligible
+        return chain.isMainEligible(terminalLeader: leader) ? .eligible : .notEligible
     }
 
     private func eligibilityPrediction(for hook: SessionsHookAdmission) -> MainEligibilityPrediction {

@@ -48,8 +48,7 @@ package protocol ProcessChainReading: Sendable {
 package struct ProcessChainProcessFacts: Equatable, Sendable {
     package let incarnation: ZmxProcessIncarnation
     package let parentPID: Int32
-    /// Basename of invoked argv[0], as measured by the probe's `ps -o comm`.
-    /// Version-named and argv0-rewriting launchers require it; unreadable arguments use the kernel name.
+    /// BSD name for wrapper and multiplexer checks; provider identity is read separately.
     package let executableName: String
 
     package init(incarnation: ZmxProcessIncarnation, parentPID: Int32, executableName: String) {
@@ -62,6 +61,11 @@ package struct ProcessChainProcessFacts: Equatable, Sendable {
 package protocol ProcessChainFactsReading: Sendable {
     func pidVersion(of pid: Int32) -> UInt32?
     func bsdInfo(of pid: Int32) -> ProcessChainProcessFacts?
+    func executableName(of process: ProcessChainProcessFacts) -> String?
+}
+
+extension ProcessChainFactsReading {
+    package func executableName(of process: ProcessChainProcessFacts) -> String? { process.executableName }
 }
 
 /// Synchronous admission observation; every walk owns its entire read budget.
@@ -115,7 +119,9 @@ private struct ProcessChainWalk {
             guard agent.executableName == "zsh" else { throw .unrecognizedChain }
             agent = try parent(of: agent.incarnation.pid, expected: agent)
         }
-        guard providerNames.contains(agent.executableName) else { throw .unrecognizedChain }
+        guard let providerName = facts.executableName(of: agent), providerNames.contains(providerName) else {
+            throw .unrecognizedChain
+        }
         // Stop at the first provider. Walking beyond it could turn a nested agent into the main.
         let shell = try parent(of: agent.incarnation.pid, expected: agent)
         let shellParent = try parent(of: shell.incarnation.pid, expected: shell)

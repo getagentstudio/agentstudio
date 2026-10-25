@@ -1,11 +1,14 @@
 import Darwin
 import Foundation
 
-/// Public, query-time process facts only. Names follow the probe's `ps -o comm`
-/// measurement: argv[0] preserves version-named and argv0-rewriting launchers.
-/// Unreadable arguments fall back to the kernel name; no observation history is kept.
+/// BSD continuity facts are cheap. Provider identification is requested only at the provider hop.
+/// No process identity or eligibility result survives a walk.
 package struct DarwinProcessChainFactsReader: ProcessChainFactsReading {
-    package init() {}
+    private let executableReader: any ProcessChainExecutableReading
+
+    package init(executableReader: any ProcessChainExecutableReading = DarwinProcessChainExecutableReader()) {
+        self.executableReader = executableReader
+    }
 
     package func pidVersion(of pid: Int32) -> UInt32? {
         var taskName = mach_port_t(MACH_PORT_NULL)
@@ -36,27 +39,47 @@ package struct DarwinProcessChainFactsReader: ProcessChainFactsReading {
         let commandName = withUnsafeBytes(of: information.pbi_comm) {
             String(bytes: $0.prefix(while: { $0 != 0 }), encoding: .utf8)
         }
-        let kernelName = executableName?.isEmpty == false ? executableName : commandName
-        guard let processName = invokedCommandName(of: pid) ?? kernelName,
-            !processName.isEmpty
-        else { return nil }
-        let basename = URL(fileURLWithPath: processName).lastPathComponent
-        guard !basename.isEmpty else { return nil }
+        let names = [executableName, commandName].compactMap { $0 }.filter { !$0.isEmpty }
+        let kernelName = names.first { ["sh", "zsh", "tmux", "herdr"].contains($0) } ?? names.first
+        guard let kernelName else { return nil }
         return .init(
             incarnation: .init(
                 pid: pid, startSeconds: information.pbi_start_tvsec, startMicroseconds: information.pbi_start_tvusec),
-            parentPID: Int32(information.pbi_ppid), executableName: basename)
+            parentPID: Int32(information.pbi_ppid), executableName: kernelName)
     }
 
-    private func invokedCommandName(of pid: Int32) -> String? {
-        var query: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-        var buffer = [UInt8](repeating: 0, count: Int(ARG_MAX))
-        var size = buffer.count
-        let result = buffer.withUnsafeMutableBytes { sysctl(&query, 3, $0.baseAddress, &size, nil, 0) }
-        guard result == 0, size <= buffer.count,
-            let command = ProcessArgumentsBufferParser.argumentVector(in: Array(buffer.prefix(size)))?.first,
-            !command.isEmpty
+    package func executableName(of process: ProcessChainProcessFacts) -> String? {
+        if ["sh", "zsh", "tmux", "herdr"].contains(process.executableName) { return process.executableName }
+        let path = executableReader.executablePath(of: process.incarnation.pid)
+        if let path, let name = Self.providerName(at: path) {
+            return name
+        }
+        // A system launcher can deny Mach task access. Keep the walk's BSD continuity checks,
+        // and reject a changed executable path; the peer's audit-token checks stay in the walk.
+        guard let command = executableReader.argumentZero(of: process.incarnation.pid),
+            let current = bsdInfo(of: process.incarnation.pid),
+            current.incarnation == process.incarnation, current.parentPID == process.parentPID,
+            executableReader.executablePath(of: process.incarnation.pid) == path
         else { return nil }
-        return command
+        let basename = URL(fileURLWithPath: command).lastPathComponent
+        return basename.isEmpty ? nil : basename
+    }
+
+    private static func providerName(at path: String) -> String? {
+        let components = path.split(separator: "/")
+        guard path.hasPrefix("/"), let basename = components.last else { return nil }
+        if basename == "codex" { return "codex" }
+        if components.count >= 3, components.suffix(3).dropLast().elementsEqual(["claude", "versions"]) {
+            return "claude"
+        }
+        if components.suffix(4).elementsEqual(["ClaudeCode.app", "Contents", "MacOS", "claude"]) {
+            return "claude"
+        }
+        if basename == "node", components.count >= 4,
+            components.suffix(4).prefix(2).elementsEqual(["cursor-agent", "versions"])
+        {
+            return "agent"
+        }
+        return nil
     }
 }

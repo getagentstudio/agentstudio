@@ -8,7 +8,7 @@ import Testing
 
 @Suite("Darwin process chain invoked command names")
 struct DarwinProcessChainFactsReaderTests {
-    @Test("real launcher names come from argv zero rather than the kernel executable", arguments: ["claude", "agent"])
+    @Test("unclassified paths retain the argv-zero launcher contract", arguments: ["claude", "agent"])
     func invokedCommandName(name: String) async throws {
         // Arrange: both children execute sleep; only their invocation names differ.
         let directory = FileManager.default.temporaryDirectory
@@ -64,7 +64,13 @@ struct DarwinProcessChainFactsReaderTests {
         guard spawnResult == 0 else { throw ChildSpawnError.spawnFailed(spawnResult) }
 
         // Nothing below throws before cleanup. All blocking work stays on this dedicated thread.
-        let facts = DarwinProcessChainFactsReader().bsdInfo(of: childPID)
+        let reader = DarwinProcessChainFactsReader()
+        let rawFacts = reader.bsdInfo(of: childPID)
+        let facts = rawFacts.flatMap { raw in
+            reader.executableName(of: raw).map {
+                ProcessChainProcessFacts(incarnation: raw.incarnation, parentPID: raw.parentPID, executableName: $0)
+            }
+        }
         var information = proc_bsdinfo()
         let informationSize = Int32(MemoryLayout<proc_bsdinfo>.size)
         let informationRead = proc_pidinfo(childPID, PROC_PIDTBSDINFO, 0, &information, informationSize)

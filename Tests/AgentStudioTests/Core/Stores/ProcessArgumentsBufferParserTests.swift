@@ -79,6 +79,26 @@ struct ProcessArgumentsBufferParserTests {
         #expect(arguments == ["-c", "script"])
     }
 
+    @Test("argv0 parsing ignores undecodable later arguments and environment")
+    func firstArgumentDoesNotTraverseLaterBytes() {
+        var buffer = makeBuffer(execPath: "/bin/sleep", argv: ["claude"])
+        buffer.replaceSubrange(0..<4, with: withUnsafeBytes(of: Int32(3)) { Array($0) })
+        buffer.append(contentsOf: [0xff, 0xfe, 0, 0xff])
+        #expect(ProcessArgumentsBufferParser.firstArgument(in: buffer) == "claude")
+        #expect(ProcessArgumentsBufferParser.argumentVector(in: buffer) == nil)
+    }
+
+    @Test(
+        "argv0 parsing rejects missing fields and terminators",
+        arguments: [
+            [UInt8](), [0, 0], [0, 0, 0, 0], [255, 255, 255, 255],
+            [1, 0, 0, 0, 47, 98, 105, 110],
+            [1, 0, 0, 0, 47, 98, 105, 110, 0, 0, 99, 108, 97, 117, 100, 101],
+        ])
+    func firstArgumentRejectsMalformedBuffers(buffer: [UInt8]) {
+        #expect(ProcessArgumentsBufferParser.firstArgument(in: buffer) == nil)
+    }
+
     // MARK: - Helpers
 
     /// Builds a synthetic `KERN_PROCARGS2` buffer: argc, exec path (NUL
