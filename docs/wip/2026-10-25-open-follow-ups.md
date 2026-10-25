@@ -2,14 +2,16 @@
 
 The open follow-up work. Each item says what it is, what we know, and the next step.
 
-## Needs an owner decision
+## Approved, ready to build
 
 ### Pane context display: status and Agent Line
 
 The same pane tells different stories on different surfaces. The ⌘R card can say "Needs you · question" while the sidebar row says "Idle · ready", and the question's text appears nowhere. Ages float away from the text they date, and the Messages popover cuts off its buttons.
 
-- **State:** designed, not built. The requirements, the specification and an HTML storyboard of realistic renders are drafted. Their artifacts are not included in this checkout.
+- **State:** approved by the owner, not built. The requirements, the specification and the HTML storyboard with its renders are in `docs/specs/2026-10-24-pane-context-display/`.
 - **Next:** Program Design, independent review, plan, build, then native frames checked at three widths against the storyboard.
+
+## Needs an owner decision
 
 ### Codex restore: binding shows ended after a successful resume (J2-Codex)
 
