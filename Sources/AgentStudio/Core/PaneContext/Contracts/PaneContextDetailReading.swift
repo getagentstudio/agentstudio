@@ -61,12 +61,23 @@ package struct OmittedLiveMessages: Sendable, Equatable {
     }
 }
 
+package struct PaneContextScopedSessionSummary: Sendable, Equatable {
+    package let sourcePaneId: PaneId
+    package let session: SessionSummary?
+
+    package init(sourcePaneId: PaneId, session: SessionSummary?) {
+        self.sourcePaneId = sourcePaneId
+        self.session = session
+    }
+}
+
 package struct PaneContextDetail: Sendable, Equatable {
     package let paneId: PaneId
     package let revision: PaneContextRevision
     package let agentTitle: String?
     package let agentLine: AgentLineDetail?
-    package let session: SessionSummary?
+    package let scopedSessions: [PaneContextScopedSessionSummary]
+    package let hasDismissibleNotices: Bool
     package let messages: [AgentMessageDetail]
     package let drawerMessages: [DrawerMessageGroup]
     package let links: PaneLinksDetail
@@ -78,7 +89,8 @@ package struct PaneContextDetail: Sendable, Equatable {
         revision: PaneContextRevision,
         agentTitle: String?,
         agentLine: AgentLineDetail?,
-        session: SessionSummary?,
+        scopedSessions: [PaneContextScopedSessionSummary],
+        hasDismissibleNotices: Bool,
         messages: [AgentMessageDetail],
         drawerMessages: [DrawerMessageGroup],
         links: PaneLinksDetail,
@@ -89,12 +101,18 @@ package struct PaneContextDetail: Sendable, Equatable {
         self.revision = revision
         self.agentTitle = agentTitle
         self.agentLine = agentLine
-        self.session = session
+        self.scopedSessions = scopedSessions
+        self.hasDismissibleNotices = hasDismissibleNotices
         self.messages = messages
         self.drawerMessages = drawerMessages
         self.links = links
         self.pullRequests = pullRequests
         self.truncation = truncation
+    }
+
+    /// The public IPC identity field describes the requested pane, while native prompts use the full scope.
+    package var ownSession: SessionSummary? {
+        scopedSessions.first { $0.sourcePaneId == paneId }?.session
     }
 }
 

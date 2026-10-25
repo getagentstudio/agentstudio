@@ -1,6 +1,16 @@
 import AgentStudioCore
 import AgentStudioSessions
 import AgentStudioSharedComponents
+import Foundation
+
+struct PaneContextRefreshKey: Equatable, Sendable {
+    struct Source: Hashable, Sendable {
+        let paneId: PaneId
+        let promptListRevision: UInt64
+    }
+    let displayRevision: PaneContextRevision?
+    let sources: [Source]
+}
 
 /// App composes Feature-owned keyed facts; consumers never reach across Features.
 @MainActor
@@ -11,6 +21,7 @@ struct PaneContextUIReaders {
     let isDrawerPane: @MainActor (PaneId) -> Bool
     let titleForPane: @MainActor (PaneId) -> String?
     let readSessionStatus: @MainActor (PaneId) async throws -> SessionsStatusReadResult
+    let scopeForPane: @MainActor (PaneId) -> [PaneId]
 
     init(
         sessionStatus: SessionStatusAtom, presentation: PaneContextPresentationAtom,
@@ -21,6 +32,9 @@ struct PaneContextUIReaders {
         self.serviceProvider = serviceProvider
         self.readSessionStatus = readSessionStatus
         isDrawerPane = { pane($0)?.parentPaneId != nil }
+        scopeForPane = { owner in
+            [owner] + (pane(owner)?.drawer?.paneIds ?? []).map { PaneId(existingUUID: $0) }
+        }
         sessionStatusForPane = { sessionStatus.value(for: $0) }
         contextDisplayForPane = { presentation.value(for: $0) }
         let titles = PaneDisplayTitleDerived(presentation: presentation)
@@ -30,13 +44,22 @@ struct PaneContextUIReaders {
         }
     }
 
+    func refreshKey(for pane: PaneId) -> PaneContextRefreshKey {
+        .init(
+            displayRevision: contextDisplayForPane(pane)?.revision,
+            sources: scopeForPane(pane).map {
+                .init(paneId: $0, promptListRevision: sessionStatusForPane($0)?.promptListRevision ?? 0)
+            })
+    }
+
     func makePopoverController(
         reader: any PaneContextDetailReading, person: any PaneContextPersonActing,
-        location: PaneContextPopoverLocation, includingDrawers: Bool = true
+        location: PaneContextPopoverLocation, includingDrawers: Bool = true,
+        wallNow: @escaping @Sendable () -> Date = Date.init
     ) -> PaneContextPopoverController {
         PaneContextPopoverController(
             reader: reader, person: person,
             location: location, includingDrawers: includingDrawers, titleForPane: titleForPane,
-            revisionForPane: { contextDisplayForPane($0)?.revision })
+            refreshKeyForPane: { refreshKey(for: $0) }, wallNow: wallNow)
     }
 }

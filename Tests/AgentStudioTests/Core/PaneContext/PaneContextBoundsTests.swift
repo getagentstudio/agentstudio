@@ -6,6 +6,44 @@ import Testing
 
 @Suite("Pane context bounds")
 struct PaneContextBoundsTests {
+    @Test("G16 notice presence survives a detail page filled entirely by asks")
+    func noticeFooterFactCoversOmittedRows() async throws {
+        try await withPaneContextService { fixture, service in
+            for _ in 0..<16 {
+                let request = PaneMessageSendRequest(
+                    paneId: fixture.paneId, messageId: .generateUUIDv7(),
+                    sender: fixture.sender, sourceOccurredAt: nil, importance: .attention,
+                    body: String(repeating: "a", count: 4096), why: nil, actions: [],
+                    shape: .ask(
+                        reason: .question,
+                        form: .freeText(placeholder: String(repeating: "f", count: 8000)), waiting: .nonBlocking))
+                try await fixture.sendCreated(request, to: service)
+            }
+            let notice = fixture.message(body: "An omitted unread notice")
+            try await fixture.sendCreated(notice, to: service)
+            guard
+                case .detail(let detail) = await service.readDetail(
+                    .init(paneId: fixture.paneId, page: .first),
+                    maximumDetailBytes: 0)
+            else {
+                Issue.record("The floor read must return its scoped notice-presence fact")
+                return
+            }
+            #expect(detail.hasDismissibleNotices)
+            #expect(!detail.messages.isEmpty)
+            #expect(
+                detail.messages.allSatisfy {
+                    if case .ask = $0.shape { return true }
+                    return false
+                })
+            #expect(detail.truncation?.omitted.first?.unreadNotices == 1)
+            try #require(await service.markRead(messageId: notice.messageId, paneId: fixture.paneId) == .done)
+            #expect(try await fixture.detail(service).hasDismissibleNotices)
+            try #require(await service.dismiss(messageId: notice.messageId, paneId: fixture.paneId) == .done)
+            #expect(try await fixture.detail(service).hasDismissibleNotices == false)
+        }
+    }
+
     @Test("The floor holds maximal message, current values and bounded Sessions metadata together")
     func floorIncludesWholeOwnerMetadata() async throws {
         try await withPaneContextService { fixture, _ in
@@ -60,7 +98,7 @@ struct PaneContextBoundsTests {
                     await service.stop()
                     return
                 }
-                #expect(detail.session == summary)
+                #expect(detail.ownSession == summary)
                 #expect(detail.agentTitle?.utf8.count == 256)
                 #expect(detail.agentLine?.refs.count == 8)
                 #expect(detail.messages.map(\.id) == [ask.messageId])

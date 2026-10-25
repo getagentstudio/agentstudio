@@ -4,34 +4,35 @@ import SwiftUI
 
 package struct AgentLinePopover: View {
     private let model: AgentLinePopoverModel
-    private let providerPrompts: ProviderPromptsModel?
     private let goToPaneControl: PaneContextControlModel
     private let onGoToPane: @MainActor () -> Void
+    private let feedback: String?
     package init(
-        model: AgentLinePopoverModel, providerPrompts: ProviderPromptsModel? = nil,
-        goToPaneControl: PaneContextControlModel, onGoToPane: @escaping @MainActor () -> Void
+        model: AgentLinePopoverModel,
+        goToPaneControl: PaneContextControlModel, feedback: String? = nil,
+        onGoToPane: @escaping @MainActor () -> Void
     ) {
         self.model = model
-        self.providerPrompts = providerPrompts
         self.goToPaneControl = goToPaneControl
         self.onGoToPane = onGoToPane
+        self.feedback = feedback
     }
     package var body: some View {
-        PopoverPanel {
-            Text(model.summary).font(.headline)
+        PaneContextPopoverPanel {
+            if let feedback { PaneContextPopoverNote(feedback) }
+            PaneContextDatedText(body: model.summary, age: model.age).font(.headline)
+            MessageSenderLabel(sender: model.writer)
             ForEach(model.refs.indices, id: \.self) { index in
                 switch model.refs[index] {
                 case .openFile(let path, let line):
-                    Text(path)
-                    if let line { Text("Line \(line)").font(.caption) }
+                    Text(path).textSelection(.enabled)
+                    if let line { Text("Line \(line)").font(.caption).textSelection(.enabled) }
                 case .openPullRequest(let identity):
-                    Text("\(identity.owner)/\(identity.repository) #\(identity.number)")
-                case .goToPane: Text("Related pane")
+                    Text("\(identity.owner)/\(identity.repository) #\(identity.number)").textSelection(.enabled)
+                case .goToPane: Text("Related pane").textSelection(.enabled)
                 }
             }
-            MessageSenderLabel(sender: model.writer)
-            Text(model.updatedAt, style: .relative).font(.caption)
-            if let providerPrompts { ProviderPromptRows(model: providerPrompts) }
+        } footer: {
             PaneContextActionButton(goToPaneControl, action: onGoToPane)
         }
     }

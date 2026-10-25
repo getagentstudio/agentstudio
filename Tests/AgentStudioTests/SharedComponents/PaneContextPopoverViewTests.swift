@@ -12,19 +12,30 @@ struct PaneContextPopoverViewTests {
     func choiceButtonsAndAnswerDriveTheRealFormDraft(allowsMultiple: Bool) throws {
         let options = [Self.choice("allow", label: "Allow"), Self.choice("deny", label: "Deny")]
         var submitted: AskFormDraft?
+        var submissionCount = 0
         try Self.withMounted(
             AskAnswerForm(
                 form: .choice(options: options, allowsMultiple: allowsMultiple),
-                submitControl: Self.answerControl, onSubmit: { submitted = $0 })
+                submitControl: Self.answerControl,
+                onSubmit: {
+                    submitted = $0
+                    submissionCount += 1
+                })
         ) { host in
             let allow = try Self.button(in: host, identifier: "pane-context.choice.allow", label: "Allow")
             let deny = try Self.button(in: host, identifier: "pane-context.choice.deny", label: "Deny")
             #expect(allow.accessibilityPerformPress())
+            #expect(submissionCount == (allowsMultiple ? 0 : 1))
             host.layoutSubtreeIfNeeded()
             #expect(deny.accessibilityPerformPress())
             host.layoutSubtreeIfNeeded()
-            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Answer")
-            #expect(answer.accessibilityPerformPress())
+            if allowsMultiple {
+                let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
+                #expect(answer.accessibilityPerformPress())
+            } else {
+                #expect(Self.find(in: host, identifier: "pane-context.answer") == nil)
+            }
+            #expect(submissionCount == (allowsMultiple ? 1 : 2))
             #expect(submitted?.selectedChoices == (allowsMultiple ? ["allow", "deny"] : ["deny"]))
         }
     }
@@ -38,7 +49,7 @@ struct PaneContextPopoverViewTests {
                 onSubmit: { submitted = $0 })
         ) { host in
             #expect(Self.labels(in: host).contains("Your reply"))
-            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Answer")
+            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
             #expect(answer.accessibilityPerformPress())
             #expect(submitted?.text.isEmpty == true)
         }
@@ -81,14 +92,14 @@ struct PaneContextPopoverViewTests {
                 // SwiftUI does not expose it here; draft value-in/answer-out is unit tested.
                 print("checkbox render presence: visually confirmed in PNG, not test-asserted")
             }
-            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Answer")
+            let answer = try Self.button(in: host, identifier: "pane-context.answer", label: "Submit")
             #expect(answer.accessibilityPerformPress())
             #expect(submitted != nil)
         }
     }
 
     private static let answerControl = PaneContextControlModel(
-        identifier: "pane-context.answer", label: "Answer", icon: .system("checkmark.circle"),
+        identifier: "pane-context.answer", label: "Submit", icon: .system("checkmark.circle"),
         tooltip: .init(text: "Answer this message", shortcutDisplayText: nil))
 
     private static func choice(_ id: String, label: String) -> AskChoiceModel {

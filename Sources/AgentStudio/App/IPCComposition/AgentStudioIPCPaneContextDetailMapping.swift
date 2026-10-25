@@ -24,7 +24,7 @@ extension PaneContextIPCMapping {
             try IPCPaneNumericCoding.requireSafe(value.revision.value)
             return IPCPaneContextGetResult(
                 paneId: value.paneId.uuid, revision: value.revision.value, agentTitle: value.agentTitle,
-                agentLine: value.agentLine.map(line), session: value.session.map(session),
+                agentLine: value.agentLine.map(line), session: value.ownSession.map(session),
                 messages: value.messages.map(message),
                 drawerMessages: value.drawerMessages.map { group in
                     IPCPaneDrawerMessageGroup(

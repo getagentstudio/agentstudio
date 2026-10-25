@@ -45,7 +45,7 @@ struct PaneContextPopoverHostNativeTests {
                     presentation: .kind(.init(kind: .needsYou, count: 1)),
                     location: .pane, readers: readers, octiconLoader: makeTestOcticonLoader(),
                     onGoToPane: { _ in },
-                    onOpenCompleted: { value in
+                    onReadCompleted: { _, value in
                         controller = value
                         completed.append(scope: openNumber, fact: .released)
                         openNumber += 1
@@ -114,7 +114,7 @@ struct PaneContextPopoverHostNativeTests {
                     paneId: paneId,
                     presentation: .kind(.init(kind: .needsYou, count: 1)),
                     location: .pane, readers: readers, octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
-                    onOpenCompleted: { value in
+                    onReadCompleted: { _, value in
                         controller = value
                         completed.append(scope: 0, fact: .released)
                     }
@@ -138,8 +138,8 @@ struct PaneContextPopoverHostNativeTests {
             #expect(button.accessibilityPerformPress())
             try await completed.expectNext(in: 0, .released)
             #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
-            #expect(controller?.state?.messages.partitions.needsApproval.first?.sourceLabel == "Review drawer")
-            #expect(controller?.state?.messages.partitions.needsApproval.first?.rows.first?.id == message.id.uuid)
+            #expect(controller?.state?.messages.messageRows.first?.sourceLabel == "Review drawer")
+            #expect(controller?.state?.messages.messageRows.first?.id == message.id.uuid)
             controller?.close()
             try await completed.finish()
             try await ports.finish()

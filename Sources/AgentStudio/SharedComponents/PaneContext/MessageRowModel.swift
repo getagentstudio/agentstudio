@@ -3,39 +3,78 @@ import Foundation
 package struct MessageRowModel: Sendable, Equatable {
     package let id: UUID
     package let sourcePaneId: UUID
-    package let sourcePaneLabel: String
+    package let sourceLabel: String?
     package let sender: MessageSenderModel
     package let sentAt: Date
     package let sourceOccurredAt: Date?
     package let body: String
     package let why: String?
     package let importance: MessageImportanceModel
-    package let attentionType: MessageAttentionTypeModel
-    package let isOutstanding: Bool
     package let shape: MessageShapeModel
     package let actions: [MessageActionModel]
+    package let kind: MessageKindPresentationModel
+    package let kindIcon: PaneContextControlModel.Icon
+    package let isDimmed: Bool
+    package let settledLabel: String?
+    package let availability: RowActionAvailabilityModel
+    package private(set) var age: AgeTextModel
+
+    package struct Key: Hashable, Sendable {
+        package let sourcePaneId: UUID
+        package let messageId: UUID
+        package init(sourcePaneId: UUID, messageId: UUID) {
+            self.sourcePaneId = sourcePaneId
+            self.messageId = messageId
+        }
+        package var controlScope: String { sourcePaneId.uuidString + "." + messageId.uuidString }
+    }
+    package var key: Key { .init(sourcePaneId: sourcePaneId, messageId: id) }
 
     package init(
-        id: UUID, sourcePaneId: UUID, sourcePaneLabel: String, sender: MessageSenderModel, sentAt: Date,
+        id: UUID, sourcePaneId: UUID, sourceLabel: String?, sender: MessageSenderModel, sentAt: Date,
         sourceOccurredAt: Date?, body: String, why: String?, importance: MessageImportanceModel,
-        attentionType: MessageAttentionTypeModel, isOutstanding: Bool, shape: MessageShapeModel,
-        actions: [MessageActionModel]
+        shape: MessageShapeModel, actions: [MessageActionModel], kind: MessageKindPresentationModel,
+        kindIcon: PaneContextControlModel.Icon, age: AgeTextModel, isDimmed: Bool, settledLabel: String?,
+        availability: RowActionAvailabilityModel
     ) {
         self.id = id
         self.sourcePaneId = sourcePaneId
-        self.sourcePaneLabel = sourcePaneLabel
+        self.sourceLabel = sourceLabel
         self.sender = sender
         self.sentAt = sentAt
         self.sourceOccurredAt = sourceOccurredAt
         self.body = body
         self.why = why
         self.importance = importance
-        self.attentionType = attentionType
-        self.isOutstanding = isOutstanding
         self.shape = shape
         self.actions = actions
+        self.kind = kind
+        self.kindIcon = kindIcon
+        self.age = age
+        self.isDimmed = isDimmed
+        self.settledLabel = settledLabel
+        self.availability = availability
     }
 
+    package func replacingAge(_ age: AgeTextModel) -> Self {
+        var copy = self
+        copy.age = age
+        return copy
+    }
+}
+
+package enum MessageKindPresentationModel: Sendable, Equatable {
+    case notice(KindChipModel.Kind)
+    case openAsk
+    case settledAsk
+}
+
+package enum RowActionAvailabilityModel: Sendable, Equatable {
+    // Settled rows have an explicit no-actions state.
+    // swiftlint:disable:next discouraged_none_name
+    case none
+    case noticeActions
+    case askForm
 }
 
 package enum MessageSenderModel: Sendable, Equatable {
@@ -47,12 +86,6 @@ package enum MessageImportanceModel: Sendable, Equatable {
     case attention
     case done
     case failure
-}
-package enum MessageAttentionTypeModel: Sendable, Equatable {
-    case needsApproval
-    case needsReply
-    case attention
-    case informational
 }
 package enum MessageShapeModel: Sendable, Equatable {
     case notice(NoticeStateModel)

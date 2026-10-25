@@ -9,13 +9,14 @@ struct PaneContextDetailSnapshot: Sendable {
     let messages: [[PaneContextStoredMessage]]
     let readTimeVersions: [PaneContextReadTimeVersion]
     let initialCursors: [LiveMessageCursor?]
+    let hasDismissibleNotices: Bool
 }
 
 struct PaneContextDetailVersion: Sendable, Equatable {
     let sources: [PaneId]
     let membershipRevision: UInt64?
     let sourceRevisions: [PaneContextRevision]
-    let session: SessionSummary?
+    let scopedSessions: [PaneContextScopedSessionSummary]
     let readTimeVersions: [PaneContextReadTimeVersion]
 }
 
@@ -32,7 +33,7 @@ extension PaneContextService {
             }
             let sources = view.sources
             guard sourceIsInView(page: request.page, sources: sources) else { return .sourceNotInView }
-            let session = try await sessionSummary(request.paneId)
+            let sessions = try await scopedSessionSummaries(for: sources)
             let now = wallNow
             let snapshot = try await sqliteAccess.read { database in
                 try capturePaneContextDetail(database, paneId: request.paneId, sources: sources, now: now)
@@ -40,17 +41,29 @@ extension PaneContextService {
             guard let snapshot, !isPendingRetirement(request.paneId) else { return .paneGone }
             let version = PaneContextDetailVersion(
                 sources: sources, membershipRevision: view.revision,
-                sourceRevisions: snapshot.sourceRevisions, session: session, readTimeVersions: snapshot.readTimeVersions
+                sourceRevisions: snapshot.sourceRevisions, scopedSessions: sessions,
+                readTimeVersions: snapshot.readTimeVersions
             )
             let revision = detailRevision(for: request.paneId, version: version)
             var assembly = PaneContextDetailPageAssembly(
-                request: request, sources: sources, snapshot: snapshot, session: session,
+                request: request, sources: sources, snapshot: snapshot, scopedSessions: sessions,
                 maximumDetailBytes: maximumDetailBytes)
             assembly.reserveSourceMetadata()
             assembly.fillLiveMessages()
             assembly.fillSettledMessages()
             return .detail(assembly.detail(revision: revision))
         } catch { return .unavailable(storageFailure(error)) }
+    }
+
+    func scopedSessionSummaries(for sources: [PaneId]) async throws -> [PaneContextScopedSessionSummary] {
+        var result: [PaneContextScopedSessionSummary] = []
+        for source in sources where !isPendingRetirement(source) {
+            let session = try await sessionSummary(source)
+            if !isPendingRetirement(source) {
+                result.append(.init(sourcePaneId: source, session: session))
+            }
+        }
+        return result
     }
 
     func detailRevision(for paneId: PaneId, version: PaneContextDetailVersion) -> PaneContextRevision {
@@ -94,7 +107,13 @@ func capturePaneContextDetail(
         title: try PaneContextStorage.title(database, paneId: paneId),
         line: line,
         sourceRevisions: try sources.map { try PaneContextStorage.revision(database, paneId: $0) },
-        messages: messages, readTimeVersions: readTimeVersions, initialCursors: cursors)
+        messages: messages, readTimeVersions: readTimeVersions, initialCursors: cursors,
+        hasDismissibleNotices: messages.joined().contains {
+            switch $0.detail.shape {
+            case .notice(.read), .notice(.unread): true
+            case .notice(.dismissed), .notice(.withdrawn), .ask: false
+            }
+        })
 }
 
 /// One read's stack-local accounting; the service remains the read owner.
@@ -102,7 +121,7 @@ private struct PaneContextDetailPageAssembly {
     let request: PaneContextReadRequest
     let sources: [PaneId]
     let snapshot: PaneContextDetailSnapshot
-    let session: SessionSummary?
+    let scopedSessions: [PaneContextScopedSessionSummary]
     let byteBudget: Int
     let liveMessages: [[PaneContextStoredMessage]]
     let candidateSourceIndices: [Int]
@@ -116,17 +135,19 @@ private struct PaneContextDetailPageAssembly {
 
     init(
         request: PaneContextReadRequest, sources: [PaneId], snapshot: PaneContextDetailSnapshot,
-        session: SessionSummary?, maximumDetailBytes: Int
+        scopedSessions: [PaneContextScopedSessionSummary], maximumDetailBytes: Int
     ) {
         self.request = request
         self.sources = sources
         self.snapshot = snapshot
-        self.session = session
+        self.scopedSessions = scopedSessions
         byteBudget = max(
             AppPolicies.PaneContext.minimumDetailBytes,
             min(maximumDetailBytes, AppPolicies.PaneContext.maximumDetailBytes))
         byteCount =
-            PaneContextDetailBudget.metadataBytes(title: snapshot.title, line: snapshot.line, session: session)
+            PaneContextDetailBudget.metadataBytes(
+                title: snapshot.title, line: snapshot.line,
+                session: scopedSessions.first { $0.sourcePaneId == request.paneId }?.session)
             + PaneContextDetailBudget.truncationHeaderBytes
         let live = snapshot.messages.map { $0.filter { liveRank($0.detail) != nil }.sorted(by: livePrecedes) }
         liveMessages = live
@@ -240,7 +261,8 @@ private struct PaneContextDetailPageAssembly {
         }
         return PaneContextDetail(
             paneId: request.paneId, revision: revision, agentTitle: snapshot.title, agentLine: snapshot.line,
-            session: session, messages: ownerIndex.map { selectedMessages[$0] } ?? [], drawerMessages: drawers,
+            scopedSessions: scopedSessions, hasDismissibleNotices: snapshot.hasDismissibleNotices,
+            messages: ownerIndex.map { selectedMessages[$0] } ?? [], drawerMessages: drawers,
             links: .unknown, pullRequests: .notApplicable, truncation: truncation())
     }
 }

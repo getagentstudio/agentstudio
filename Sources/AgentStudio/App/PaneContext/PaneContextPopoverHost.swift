@@ -5,21 +5,52 @@ import AgentStudioSharedComponents
 import SwiftUI
 
 /// Local presentation state; providers resolve effects only when the person opens or acts.
-struct PaneContextPopoverHost: View {
+struct PaneContextPopoverHost<AgeClock: Clock>: View
+where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant {
     let paneId: PaneId
     let presentation: RepoExplorerPaneContextControlPresentation
     let location: PaneContextPopoverLocation
     let readers: PaneContextUIReaders
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
-    var includingDrawers = true
-    var onOpenCompleted: @MainActor (PaneContextPopoverController?) -> Void = { _ in }
+    let includingDrawers: Bool
+    let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
+    let onActionCompleted: @MainActor () -> Void
+    let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
+    let clock: AgeClock
+    let wallNow: @Sendable () -> Date
     @State private var controller: PaneContextPopoverController?
     @State private var isPresented = false
     @State private var unavailableNote: String?
-    @State private var includeInformational = false
+    @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
     @State private var openRequest: UInt64 = 0
-    private static let controls = PaneContextPopoverControlProjection.controls()
+    private var controls: PaneContextPopoverControls { PaneContextPopoverControlProjection.controls() }
+
+    init(
+        paneId: PaneId, presentation: RepoExplorerPaneContextControlPresentation,
+        location: PaneContextPopoverLocation, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
+        onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
+        onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
+        },
+        onActionCompleted: @escaping @MainActor () -> Void = {},
+        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
+        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
+    ) {
+        self.paneId = paneId
+        self.presentation = presentation
+        self.location = location
+        self.readers = readers
+        self.octiconLoader = octiconLoader
+        self.onGoToPane = onGoToPane
+        self.includingDrawers = includingDrawers
+        self.onReadCompleted = onReadCompleted
+        self.onActionCompleted = onActionCompleted
+        self.onActionTaskStarted = onActionTaskStarted
+        self.clock = clock
+        self.wallNow = wallNow
+        _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
+    }
 
     var body: some View {
         button
@@ -28,10 +59,14 @@ struct PaneContextPopoverHost: View {
                 guard openRequest > 0 else { return }
                 await openPopover()
             }
-            .task(id: readers.contextDisplayForPane(paneId)?.revision) {
+            .task(id: readers.refreshKey(for: paneId)) {
                 guard isPresented, let controller else { return }
-                guard controller.useCurrentService(readers.serviceProvider()) else { return }
-                await controller.refreshIfRevisionChanged()
+                let key = readers.refreshKey(for: paneId)
+                guard controller.useCurrentService(readers.serviceProvider()) else {
+                    onReadCompleted(key, controller)
+                    return
+                }
+                if await controller.refreshIfRevisionChanged(), !Task.isCancelled { onReadCompleted(key, controller) }
             }
             .onChange(of: controller?.paneId) { _, pane in
                 if pane == nil, unavailableNote == nil, controller?.unavailableNote == nil { isPresented = false }
@@ -39,7 +74,11 @@ struct PaneContextPopoverHost: View {
             .onChange(of: isPresented) { _, presented in
                 if !presented { controller?.close() }
             }
-            .onDisappear { controller?.close() }
+            .onChange(of: controller?.state) { _, state in refreshAges(state) }
+            .onDisappear {
+                controller?.close()
+                relativeTimeRefresh.hide()
+            }
     }
 
     @ViewBuilder private var button: some View {
@@ -64,33 +103,31 @@ struct PaneContextPopoverHost: View {
     }
     @ViewBuilder private var popover: some View {
         if let unavailableNote {
-            PopoverPanel { Text(unavailableNote).foregroundStyle(.secondary) }
+            note(unavailableNote)
         } else if let controller, let state = controller.state {
+            let visible = relativeTimeRefresh.popoverShape.flatMap { $0.revision == state.revision ? $0 : nil } ?? state
             switch presentation {
             case .kind:
                 MessagesPopover(
-                    paneId: paneId.uuid, model: state.messages, controls: Self.controls, location: location,
-                    providerPrompts: state.providerPrompts, feedback: controller.actionFeedback,
-                    informationalToggle: PaneContextPopoverControlProjection.control(
-                        .countInformationalPaneMessages, identifier: "pane-context.count-informational"),
-                    includesInformational: $includeInformational,
+                    paneId: paneId.uuid, model: visible.messages, controls: controls, octiconLoader: octiconLoader,
+                    location: location,
+                    feedback: controller.unavailableNote ?? controller.actionFeedback,
                     actions: PaneContextPopoverHostActions.messages(
-                        controller: controller, readers: readers, onGoToPane: onGoToPane))
-                if let note = controller.unavailableNote { Text(note).foregroundStyle(.secondary) }
+                        controller: controller, readers: readers, onGoToPane: onGoToPane,
+                        onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted))
             case .agentLine:
-                if let line = state.agentLine {
+                if let line = visible.agentLine {
                     AgentLinePopover(
-                        model: line, providerPrompts: state.providerPrompts, goToPaneControl: Self.controls.goToPane
+                        model: line, goToPaneControl: controls.goToPane, feedback: controller.unavailableNote
                     ) {
                         onGoToPane(paneId.uuid)
                     }
                 }
-                if let note = controller.unavailableNote { Text(note).foregroundStyle(.secondary) }
             }
         } else if let note = controller?.unavailableNote {
-            PopoverPanel { Text(note).foregroundStyle(.secondary) }
+            self.note(note)
         } else {
-            PopoverPanel { Text("Loading…").foregroundStyle(.secondary) }
+            note("Loading…")
         }
     }
     private func requestOpen() {
@@ -98,24 +135,63 @@ struct PaneContextPopoverHost: View {
         openRequest &+= 1
     }
     private func openPopover() async {
+        let key = readers.refreshKey(for: paneId)
         isPresented = true
         unavailableNote = nil
         guard let adapter = readers.serviceProvider() else {
             controller?.close()
             controller = nil
             unavailableNote = "Not available right now"
-            onOpenCompleted(nil)
+            onReadCompleted(key, nil)
             return
         }
         let active =
             controller
             ?? readers.makePopoverController(
                 reader: adapter, person: adapter,
-                location: location, includingDrawers: includingDrawers)
+                location: location, includingDrawers: includingDrawers, wallNow: wallNow)
         controller = active
         _ = active.useCurrentService(adapter)
         await active.open(paneId)
         guard !Task.isCancelled else { return }
-        onOpenCompleted(active)
+        onReadCompleted(key, active)
+    }
+
+    private func refreshAges(_ shape: PaneContextPopoverShape?) {
+        guard isPresented, let shape else {
+            relativeTimeRefresh.hide()
+            return
+        }
+        let content: PaneManagementIdentityCapture.PopoverContent =
+            switch presentation {
+            case .kind: .messages
+            case .agentLine: .agentLine
+            }
+        relativeTimeRefresh.startOrReplace(.popover(shape, content), clock: clock, wallNow: wallNow())
+    }
+    private func note(_ text: String) -> some View {
+        PopoverPanel { PaneContextPopoverNote(text) }
+            .frame(width: AppStyles.Components.PaneContext.popoverWidth)
+            .background {
+                AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group)
+            }
+    }
+}
+
+extension PaneContextPopoverHost where AgeClock == ContinuousClock {
+    init(
+        paneId: PaneId, presentation: RepoExplorerPaneContextControlPresentation,
+        location: PaneContextPopoverLocation, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
+        onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
+        onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
+        },
+        onActionCompleted: @escaping @MainActor () -> Void = {},
+        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
+    ) {
+        self.init(
+            paneId: paneId, presentation: presentation, location: location, readers: readers,
+            octiconLoader: octiconLoader, onGoToPane: onGoToPane, includingDrawers: includingDrawers,
+            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+            onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock())
     }
 }

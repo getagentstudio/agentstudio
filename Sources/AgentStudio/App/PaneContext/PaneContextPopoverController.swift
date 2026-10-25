@@ -16,22 +16,26 @@ final class PaneContextPopoverController {
     private var reader: any PaneContextDetailReading
     private var person: any PaneContextPersonActing
     private let titleForPane: @MainActor (PaneId) -> String?
-    private let revisionForPane: @MainActor (PaneId) -> PaneContextRevision?
+    private let refreshKeyForPane: @MainActor (PaneId) -> PaneContextRefreshKey
+    private let wallNow: @Sendable () -> Date
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var detail: PaneContextDetail?
+    @ObservationIgnored private var readKey: PaneContextRefreshKey?
 
     init(
         reader: any PaneContextDetailReading, person: any PaneContextPersonActing,
         location: PaneContextPopoverLocation, includingDrawers: Bool = true,
         titleForPane: @escaping @MainActor (PaneId) -> String?,
-        revisionForPane: @escaping @MainActor (PaneId) -> PaneContextRevision?
+        refreshKeyForPane: @escaping @MainActor (PaneId) -> PaneContextRefreshKey,
+        wallNow: @escaping @Sendable () -> Date = Date.init
     ) {
         self.reader = reader
         self.person = person
         self.location = location
         self.includingDrawers = includingDrawers
         self.titleForPane = titleForPane
-        self.revisionForPane = revisionForPane
+        self.refreshKeyForPane = refreshKeyForPane
+        self.wallNow = wallNow
     }
 
     func useCurrentService(_ adapter: PaneContextUIAdapter?) -> Bool {
@@ -64,6 +68,7 @@ final class PaneContextPopoverController {
         paneId = nil
         state = nil
         detail = nil
+        readKey = nil
         unavailableNote = nil
         actionFeedback = nil
     }
@@ -74,10 +79,12 @@ final class PaneContextPopoverController {
         await read(paneId, page: .first, generation: generation)
     }
 
-    /// Stage 2 invokes this from its existing keyed revision observation.
-    func refreshIfRevisionChanged() async {
-        guard let paneId, let revision = revisionForPane(paneId), revision != state?.revision else { return }
+    /// The host observes the display and every scoped prompt-list revision.
+    @discardableResult
+    func refreshIfRevisionChanged() async -> Bool {
+        guard let paneId, refreshKeyForPane(paneId) != readKey else { return false }
         await refresh()
+        return true
     }
 
     func moreMessages(source: PaneId, after: LiveMessageCursor) async {
@@ -93,6 +100,7 @@ final class PaneContextPopoverController {
     }
 
     private func read(_ pane: PaneId, page: PaneContextReadPage, generation requestGeneration: UInt64) async {
+        readKey = refreshKeyForPane(pane)
         let result = await reader.readDetail(.init(paneId: pane, page: page))
         guard requestGeneration == generation, paneId == pane else { return }
         switch result {
@@ -122,11 +130,10 @@ final class PaneContextPopoverController {
     private func assign(_ snapshot: PaneContextDetail, generation requestGeneration: UInt64) async {
         // These are keyed reads of canonical titles, not a join or projection.
         var titles: [PaneId: String] = [:]
-        titles[snapshot.paneId] = titleForPane(snapshot.paneId)
-        for group in snapshot.drawerMessages {
-            titles[group.sourcePaneId] = titleForPane(group.sourcePaneId)
+        for source in snapshot.scopedSessions {
+            titles[source.sourcePaneId] = titleForPane(source.sourcePaneId)
         }
-        let shaped = await PaneContextPopoverShaping.shape(snapshot, sourceTitles: titles)
+        let shaped = await PaneContextPopoverShaping.shape(snapshot, sourceTitles: titles, now: wallNow())
         guard requestGeneration == generation, paneId == snapshot.paneId else { return }
         detail = snapshot
         state = shaped
@@ -135,8 +142,11 @@ final class PaneContextPopoverController {
 
     func answer(messageId: AgentMessageId, source: PaneId, value: AskAnswerValue) async {
         guard let owner = paneId else { return }
-        guard location == .pane else {
-            actionFeedback = "Answer this ask in the pane"
+        let presentation = await PaneContextPopoverAnswerParsing.answerPresentation(
+            messageId: messageId, source: source, detail: detail, location: location)
+        guard paneId == owner else { return }
+        guard presentation == .inline else {
+            actionFeedback = "Answer this ask in Messages"
             return
         }
         let result = await person.answer(.init(messageId: messageId, paneId: source, by: .localUser, value: value))
@@ -148,11 +158,8 @@ final class PaneContextPopoverController {
 
     func answerDraft(messageId: AgentMessageId, source: PaneId, draft: AskFormDraft) async {
         guard let owner = paneId else { return }
-        guard location == .pane else {
-            actionFeedback = "Answer this ask in the pane"
-            return
-        }
-        let answer = await PaneContextPopoverAnswerParsing.parse(messageId: messageId, detail: detail, draft: draft)
+        let answer = await PaneContextPopoverAnswerParsing.parse(
+            messageId: messageId, source: source, detail: detail, draft: draft)
         guard paneId == owner else { return }
         switch answer {
         case .success(let value):
@@ -165,23 +172,15 @@ final class PaneContextPopoverController {
     func dismiss(messageId: AgentMessageId, source: PaneId) async {
         guard let owner = paneId else { return }
         let permitted = await PaneContextPopoverAnswerParsing.canDismiss(
-            messageId: messageId, detail: detail, location: location)
+            messageId: messageId, source: source, detail: detail, location: location)
         guard paneId == owner else { return }
         guard permitted else {
-            actionFeedback = "Dismiss this ask in the pane"
+            actionFeedback = "This message cannot be dismissed here"
             return
         }
         let result = await person.dismiss(messageId: messageId, paneId: source)
-        let feedback = await PaneContextPopoverFeedback.dismiss(result, messageId: messageId, detail: detail)
-        guard paneId == owner else { return }
-        actionFeedback = feedback
-        await refresh()
-    }
-
-    func markRead(messageId: AgentMessageId, source: PaneId) async {
-        guard let owner = paneId else { return }
-        let result = await person.markRead(messageId: messageId, paneId: source)
-        let feedback = await PaneContextPopoverFeedback.markRead(result)
+        let feedback = await PaneContextPopoverFeedback.dismiss(
+            result, messageId: messageId, source: source, detail: detail)
         guard paneId == owner else { return }
         actionFeedback = feedback
         await refresh()
@@ -189,8 +188,11 @@ final class PaneContextPopoverController {
 
     func runAction(messageId: AgentMessageId, source: PaneId, action: MessageAction) async {
         guard let owner = paneId else { return }
-        guard location == .pane else {
-            actionFeedback = "Run this message action in the pane"
+        let permitted = await PaneContextPopoverAnswerParsing.canRunAction(
+            messageId: messageId, source: source, detail: detail, location: location)
+        guard paneId == owner else { return }
+        guard permitted else {
+            actionFeedback = "This message action is not available here"
             return
         }
         let result = await person.runAction(.init(messageId: messageId, paneId: source, action: action))

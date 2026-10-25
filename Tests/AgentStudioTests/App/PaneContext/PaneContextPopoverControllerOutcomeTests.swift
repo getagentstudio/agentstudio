@@ -100,29 +100,6 @@ struct PaneContextPopoverControllerOutcomeTests {
         try await ports.finish()
     }
 
-    struct ReadCase: Sendable {
-        let result: MarkReadResult
-        let shown: String
-    }
-    @Test(arguments: [
-        ReadCase(result: .done, shown: "Marked read"), .init(result: .alreadyRead, shown: "Already read"),
-        .init(result: .notFound, shown: "Message not found"),
-        .init(result: .unavailable(.databaseUnavailable), shown: "Mark read unavailable: database unavailable"),
-    ])
-    func everyMarkReadOutcomeIsVisible(scenario: ReadCase) async throws {
-        let pane = PaneId.generateUUIDv7()
-        let notice = try PaneContextPopoverShapingTests.message(
-            paneId: pane, shape: .notice(.unread), importance: .info)
-        let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: pane, messages: [notice]))
-        let controller = makePopoverController(ports: ports)
-        await controller.open(pane)
-        await ports.configureMarkRead(scenario.result)
-        await controller.markRead(messageId: notice.id, source: pane)
-        #expect(controller.actionFeedback == scenario.shown)
-        controller.close()
-        try await ports.finish()
-    }
-
     struct ActionCase: Sendable {
         let result: MessageActionResult
         let shown: String
@@ -144,8 +121,11 @@ struct PaneContextPopoverControllerOutcomeTests {
     func everyMessageActionOutcomeIsVisible(scenario: ActionCase) async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
-        let ports = PaneContextPopoverTestPorts(
-            try PaneContextPopoverControllerTests.askDetail(pane: pane, id: id, state: .open, revision: 1))
+        let notice = AgentMessageDetail(
+            id: id, sourcePaneId: pane, sender: .pane(pane),
+            sentAt: .distantPast, sourceOccurredAt: nil, importance: .info, body: "Notice", why: nil,
+            actions: [], shape: .notice(.unread))
+        let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: pane, messages: [notice]))
         let controller = makePopoverController(ports: ports)
         await controller.open(pane)
         await ports.configureAction(scenario.result)
@@ -225,7 +205,7 @@ struct PaneContextPopoverControllerOutcomeTests {
     }
 
     @Test
-    func sidebarRejectsAskAnswerDismissAndMessageActions() async throws {
+    func sidebarPermitsAskAnswerAndDismissButAsksHaveNoNoticeActions() async throws {
         let pane = PaneId.generateUUIDv7()
         let id = AgentMessageId.generateUUIDv7()
         let ports = PaneContextPopoverTestPorts(
@@ -235,8 +215,8 @@ struct PaneContextPopoverControllerOutcomeTests {
         await controller.answer(messageId: id, source: pane, value: .text("Yes"))
         await controller.dismiss(messageId: id, source: pane)
         await controller.runAction(messageId: id, source: pane, action: .goToPane(pane))
-        #expect(await ports.answers.isEmpty)
-        #expect(await ports.dismissals.isEmpty)
+        #expect(await ports.answers == [.init(messageId: id, paneId: pane, by: .localUser, value: .text("Yes"))])
+        #expect(await ports.dismissals.count == 1)
         #expect(await ports.actions.isEmpty)
         controller.close()
         try await ports.finish()

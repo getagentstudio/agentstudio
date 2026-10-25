@@ -65,7 +65,8 @@ struct PaneContextUIReadersTests {
             let controller = readers.makePopoverController(
                 reader: ports, person: ports, location: .pane)
             await controller.open(paneId)
-            #expect(controller.state?.messages.partitions.all.first?.sourceLabel == "Agent title")
+            #expect(controller.state?.messages.messageRows.first?.sourceLabel == nil)
+            #expect(controller.state?.agentTitle == "Agent")
             controller.close()
             atoms.paneContextPresentation.remove([paneId])
             #expect(readers.titleForPane(paneId) == "Terminal title")

@@ -15,6 +15,7 @@ struct PaneContextScenarioFacts: Sendable {
     let own: PaneMessageCounts
     let scoped: PaneMessageCounts
     let presentation: PaneAgentStatusPresentation
+    let session: SessionSummary?
     let activityDate: Date
 
     static func make(_ scenario: PaneContextScenario) async throws -> Self {
@@ -25,13 +26,16 @@ struct PaneContextScenarioFacts: Sendable {
             AgentLineDetail(summary: $0.text, refs: [], writer: .pane(owner), updatedAt: PaneContextScenario.writtenAt)
         }
         let messages = try scenario.messages.enumerated().map { index, input in
-            try storedMessage(input, owner: owner, drawer: drawer, position: UInt64(index + 1), at: now)
+            try storedMessage(
+                input, owner: owner, drawer: drawer, position: UInt64(index + 1),
+                at: now.addingTimeInterval(Double(index - scenario.messages.count + 1)))
         }
         let own = PaneMessageCountFold.summarize(messages: messages, sourceOrder: [owner])
         let scoped = PaneMessageCountFold.summarize(messages: messages, sourceOrder: [owner, drawer])
+        let status = try await publishedStatus(scenario, pane: owner)
         return Self(
             owner: owner, drawer: drawer, now: now, line: line, messages: messages, own: own, scoped: scoped,
-            presentation: try await publishedStatus(scenario, pane: owner),
+            presentation: status.presentation, session: status.session,
             activityDate: now.addingTimeInterval(-scenario.activityAgeSeconds))
     }
 
@@ -99,7 +103,7 @@ struct PaneContextScenarioFacts: Sendable {
     }
 
     private static func publishedStatus(_ scenario: PaneContextScenario, pane: PaneId) async throws
-        -> PaneAgentStatusPresentation
+        -> (presentation: PaneAgentStatusPresentation, session: SessionSummary?)
     {
         let fixture = try await CompositionFactoryFixture.make(ownerId: pane)
         let ingestion = fixture.composition.ingestion
@@ -171,8 +175,9 @@ struct PaneContextScenarioFacts: Sendable {
             } else {
                 prepared = published
             }
+            let session = try await ingestion.sessionSummary(paneId: pane.uuid)
             try await fixture.close()
-            return prepared
+            return (prepared, session)
         } catch {
             try? await fixture.close()
             throw error

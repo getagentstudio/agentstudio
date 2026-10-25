@@ -39,11 +39,11 @@ enum PaneContextPopoverFeedback {
         }
     }
     @concurrent nonisolated static func dismiss(
-        _ result: DismissResult, messageId: AgentMessageId, detail: PaneContextDetail?
+        _ result: DismissResult, messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?
     ) async -> String {
         switch result {
         case .done:
-            if let message = PaneContextPopoverAnswerParsing.message(messageId, detail: detail),
+            if let message = PaneContextPopoverAnswerParsing.message(messageId, source: source, detail: detail),
                 case .ask(_, _, .blocking, _) = message.shape
             {
                 return "Handed back"
@@ -60,14 +60,6 @@ enum PaneContextPopoverFeedback {
             }
         case .notFound: return "Message not found"
         case .unavailable(let failure): return "Dismiss unavailable: \(storage(failure))"
-        }
-    }
-    @concurrent nonisolated static func markRead(_ result: MarkReadResult) async -> String {
-        switch result {
-        case .done: "Marked read"
-        case .alreadyRead: "Already read"
-        case .notFound: "Message not found"
-        case .unavailable(let failure): "Mark read unavailable: \(storage(failure))"
         }
     }
     @concurrent nonisolated static func dismissAll(_ result: DismissAllNoticesResult) async -> String {

@@ -108,7 +108,7 @@ extension PaneContextService {
             return nil
         }
         let sources = view.sources
-        let session = try await sessionSummary(paneId)
+        let sessions = try await scopedSessionSummaries(for: sources)
         let now = wallNow
         let snapshot = try await sqliteAccess.write { database in
             try capturePaneContextDisplay(database, paneId: paneId, sources: sources, now: now)
@@ -128,7 +128,7 @@ extension PaneContextService {
         }
         let version = PaneContextDetailVersion(
             sources: sources, membershipRevision: view.revision, sourceRevisions: snapshot.sourceRevisions,
-            session: session, readTimeVersions: snapshot.readTimeVersions)
+            scopedSessions: sessions, readTimeVersions: snapshot.readTimeVersions)
         let display = PaneContextDisplay(
             revision: detailRevision(for: paneId, version: version), agentTitle: snapshot.title,
             agentLine: snapshot.line,

@@ -499,6 +499,11 @@ package enum AppStyles {
     }
 
     package enum Components {
+        package enum PaneContext {
+            package static let popoverWidth: CGFloat = 380
+            package static let popoverMaximumHeight: CGFloat = 480
+        }
+
         package enum PopoverPanel {
             package static let contentPadding: CGFloat = 12
             package static let sectionSpacing: CGFloat = 8

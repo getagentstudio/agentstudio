@@ -60,7 +60,7 @@ struct PaneContextPopoverControllerTests {
         await ports.enqueue(.sourceNotInView)
         await ports.setDetail(PaneContextPopoverShapingTests.detail(paneId: owner))
         await controller.moreMessages(source: drawer, after: .init(rank: 0, position: 12))
-        #expect(controller.state?.messages.partitions.all.isEmpty == true)
+        #expect(controller.state?.messages.groups.isEmpty == true)
         #expect(await ports.requests.last?.page == .first)
         controller.close()
         try await ports.finish()
@@ -85,9 +85,9 @@ struct PaneContextPopoverControllerTests {
             })
         await controller.open(owner)
         #expect(captured == [owner, drawer])
-        let groups = try #require(controller.state?.messages.partitions.all)
-        #expect(groups.contains { $0.sourceLabel == "Implementation" })
-        #expect(groups.contains { $0.sourceLabel == "Drawer pane" })
+        let state = try #require(controller.state)
+        let rows = PaneContextPopoverShapingTests.rows(state)
+        #expect(rows.map(\.sourceLabel) == ["Drawer pane", nil])
         controller.close()
         try await ports.finish()
     }
@@ -139,11 +139,12 @@ struct PaneContextPopoverControllerTests {
             sentAt: .distantPast, sourceOccurredAt: nil, importance: .info, body: "Question", why: nil,
             actions: [], shape: .ask(.question, .freeText(placeholder: "Reply"), .nonBlocking, state))
         return .init(
-            paneId: pane, revision: .init(revision), agentTitle: nil, agentLine: nil, session: nil,
+            paneId: pane, revision: .init(revision), agentTitle: nil, agentLine: nil,
+            scopedSessions: [.init(sourcePaneId: pane, session: nil)], hasDismissibleNotices: false,
             messages: [message], drawerMessages: [], links: .unknown, pullRequests: .notApplicable, truncation: nil)
     }
     static func firstRow(_ controller: PaneContextPopoverController) -> MessageRowModel? {
-        controller.state?.messages.partitions.all.first?.rows.first
+        controller.state.flatMap { PaneContextPopoverShapingTests.rows($0).first }
     }
 }
 

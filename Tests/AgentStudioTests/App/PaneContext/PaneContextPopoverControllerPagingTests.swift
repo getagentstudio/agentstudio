@@ -90,7 +90,7 @@ struct PaneContextPopoverControllerPagingTests {
         await controller.open(owner)
         await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])))
         await controller.moreMessages(source: owner, after: .init(rank: 1, position: 12))
-        #expect(controller.state?.messages.partitions.all.flatMap(\.rows).map(\.id) == [first.id.uuid, second.id.uuid])
+        #expect(controller.state?.messages.messageRows.map(\.id) == [second.id.uuid, first.id.uuid])
         #expect(controller.state?.messages.pages.isEmpty == true)
         #expect(controller.state?.messages.nextSourcesAfter == owner.uuid)
         await ports.enqueue(
@@ -99,8 +99,8 @@ struct PaneContextPopoverControllerPagingTests {
                     paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [third])])))
         await controller.moreSources(after: owner)
         #expect(
-            controller.state?.messages.partitions.all.flatMap(\.rows).map(\.id) == [
-                first.id.uuid, second.id.uuid, third.id.uuid,
+            controller.state?.messages.messageRows.map(\.id) == [
+                second.id.uuid, first.id.uuid, third.id.uuid,
             ])
         #expect(controller.state?.messages.nextSourcesAfter == nil)
         #expect(

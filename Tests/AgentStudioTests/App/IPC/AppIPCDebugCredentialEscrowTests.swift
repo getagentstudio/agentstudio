@@ -161,10 +161,10 @@ struct AppIPCDebugCredentialEscrowTests {
                 }
                 #expect(writerProvider.value == provider)
                 #expect(sessionRef.value == conversationID)
-                #expect(detail.session?.sessionRef.value == conversationID)
+                #expect(detail.ownSession?.sessionRef.value == conversationID)
             } else {
                 #expect(line.writer == .pane(PaneId(existingUUID: paneID)))
-                #expect(detail.session == nil)
+                #expect(detail.ownSession == nil)
             }
             let sqliteAccess = await composition.paneContextService.sqliteAccess
             let titleWriter = try await sqliteAccess.read { database in

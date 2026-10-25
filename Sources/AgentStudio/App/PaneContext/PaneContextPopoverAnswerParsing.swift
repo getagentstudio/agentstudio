@@ -6,16 +6,18 @@ enum PaneContextPopoverParsedAnswer: Sendable {
     case failure(AnswerRefusal)
 }
 enum PaneContextPopoverAnswerParsing {
-    nonisolated static func message(_ id: AgentMessageId, detail: PaneContextDetail?) -> AgentMessageDetail? {
+    nonisolated static func message(_ id: AgentMessageId, source: PaneId, detail: PaneContextDetail?)
+        -> AgentMessageDetail?
+    {
         guard let detail else { return nil }
-        return detail.messages.first { $0.id == id }
-            ?? detail.drawerMessages.lazy.flatMap(\.messages).first { $0.id == id }
+        if source == detail.paneId { return detail.messages.first { $0.id == id && $0.sourcePaneId == source } }
+        return detail.drawerMessages.first { $0.sourcePaneId == source }?.messages.first { $0.id == id }
     }
 
     @concurrent nonisolated static func parse(
-        messageId: AgentMessageId, detail: PaneContextDetail?, draft: AskFormDraft
+        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, draft: AskFormDraft
     ) async -> PaneContextPopoverParsedAnswer {
-        guard let message = message(messageId, detail: detail) else { return .failure(.notFound) }
+        guard let message = message(messageId, source: source, detail: detail) else { return .failure(.notFound) }
         guard case .ask(_, let form, _, _) = message.shape else { return .failure(.invalidAnswer(.formMismatch)) }
         switch form {
         case .choice:
@@ -52,13 +54,32 @@ enum PaneContextPopoverAnswerParsing {
         }
     }
 
+    @concurrent nonisolated static func answerPresentation(
+        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
+    ) async -> PaneContextInteractionPresentation {
+        guard let message = message(messageId, source: source, detail: detail),
+            case .ask(_, let form, _, _) = message.shape
+        else { return .notApplicable }
+        return location.presentation(for: .answer(PaneContextPopoverShaping.form(form)))
+    }
+
     @concurrent nonisolated static func canDismiss(
-        messageId: AgentMessageId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
+        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
     ) async -> Bool {
-        if location == .pane { return true }
-        guard let message = message(messageId, detail: detail) else { return false }
-        if case .notice = message.shape { return true }
-        return false
+        guard let message = message(messageId, source: source, detail: detail) else { return false }
+        switch message.shape {
+        case .notice: return location.presentation(for: .noticeActions) == .inline
+        case .ask: return location.presentation(for: .dismissAsk) == .inline
+        }
+    }
+
+    @concurrent nonisolated static func canRunAction(
+        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
+    ) async -> Bool {
+        guard let message = message(messageId, source: source, detail: detail),
+            PaneContextPresentationRules.rowActionAvailability(message) == .noticeActions
+        else { return false }
+        return location.presentation(for: .noticeActions) == .inline
     }
 
 }

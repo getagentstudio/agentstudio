@@ -79,21 +79,18 @@ package enum LocalActionSpec {
     case showPaneAgentLine
     case paneSessionStatus(AgentSessionStatus)
     case paneAgentConnectionIssue(AgentConnectionRefusalReason)
-    case countInformationalPaneMessages
     case showPaneMessages
     case showPaneMessageKind(MessageKind)
-    case showPaneMessageDetails
+    case paneMessageAsk
+    case submitPaneMessageAnswer
     case answerPaneMessage
     case selectPaneMessageChoice(AskChoice)
     case dismissPaneMessage
     case dismissAllPaneNotices
-    case markPaneMessageRead
     case openPaneMessageFile
     case openPaneMessagePullRequest
     case loadMorePaneMessages
     case loadMoreMessageSources
-    case showAllPaneMessages
-    case filterPaneMessages(AgentMessageAttentionType)
 
     case quickOpen
     case commandPalette
@@ -164,12 +161,6 @@ package enum LocalActionSpec {
             return PaneContextLineActionSpecs.sessionStatus(status)
         case .goToMessagePane:
             return ActionSpec(label: "Go to pane", helpText: "Focus this message's pane", icon: .system(.terminal))
-        case .showPaneMessageDetails:
-            return ActionSpec(label: "Message details", helpText: "Show this message", icon: .system(.docText))
-        case .countInformationalPaneMessages:
-            return ActionSpec(
-                label: "Count informational", helpText: "Include informational notices in the messages count",
-                icon: .system(.docText))
         case .showPaneMessages:
             return ActionSpec(label: "Messages", helpText: "Show this pane's messages", icon: .system(.bell))
         case .showPaneMessageKind(let kind):
@@ -182,6 +173,10 @@ package enum LocalActionSpec {
                 case .info: .system(.infoCircle)
                 }
             return ActionSpec(label: messages.label, helpText: messages.helpText, icon: icon)
+        case .paneMessageAsk:
+            return ActionSpec(label: "Ask", helpText: "Ask", icon: .system(.questionmark))
+        case .submitPaneMessageAnswer:
+            return ActionSpec(label: "Submit", helpText: "Submit this answer", icon: .system(.checkmarkCircle))
         case .selectPaneMessageChoice(let choice):
             return ActionSpec(label: choice.label, helpText: "Select \(choice.label)", icon: .system(.checkmarkCircle))
         case .answerPaneMessage:
@@ -193,8 +188,6 @@ package enum LocalActionSpec {
         case .dismissAllPaneNotices:
             return ActionSpec(
                 label: "Dismiss all notices", helpText: "Dismiss this pane's notices", icon: .system(.trash))
-        case .markPaneMessageRead:
-            return ActionSpec(label: "Mark read", helpText: "Mark this notice read", icon: .system(.checkmarkCircle))
         case .openPaneMessageFile:
             return ActionSpec(label: "Open file", helpText: "Open this message's file", icon: .system(.docText))
         case .openPaneMessagePullRequest:
@@ -206,22 +199,6 @@ package enum LocalActionSpec {
         case .loadMoreMessageSources:
             return ActionSpec(
                 label: "More panes", helpText: "Load messages from more drawer panes", icon: .system(.chevronDown))
-        case .showAllPaneMessages:
-            return ActionSpec(label: "All", helpText: "Show all message types", icon: .system(.bell))
-        case .filterPaneMessages(let type):
-            switch type {
-            case .needsApproval:
-                return ActionSpec(
-                    label: "Approvals", helpText: "Show messages needing approval", icon: .system(.personBadgeKey))
-            case .needsReply:
-                return ActionSpec(
-                    label: "Replies", helpText: "Show messages needing a reply", icon: .system(.envelopeBadge))
-            case .attention:
-                return ActionSpec(label: "Attention", helpText: "Show attention messages", icon: .system(.bellBadge))
-            case .informational:
-                return ActionSpec(
-                    label: "Information", helpText: "Show informational messages", icon: .system(.docText))
-            }
         case .quickOpen:
             return ActionSpec(
                 label: "Quick Open", helpText: "Show the quick-open palette", icon: .system(.magnifyingglass))

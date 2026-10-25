@@ -79,7 +79,7 @@ final class RepoExplorerMessageDeadlineHostFixture {
                 PaneContextPopoverHost(
                     paneId: pane, presentation: control, location: .sidebar, readers: readers,
                     octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
-                    onOpenCompleted: { onOpen(control, $0) }))
+                    onReadCompleted: { _, controller in onOpen(control, controller) }))
         }
         paneContextControl = controls
         host = RepoExplorerMessageDeadlineTableHost(adapter: adapter, paneContextControl: controls)

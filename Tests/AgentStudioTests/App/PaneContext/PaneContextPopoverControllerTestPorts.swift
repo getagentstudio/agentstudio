@@ -104,5 +104,6 @@ func makePopoverController(
 ) -> PaneContextPopoverController {
     PaneContextPopoverController(
         reader: ports, person: ports, location: location, includingDrawers: includingDrawers,
-        titleForPane: titleForPane, revisionForPane: revisionForPane)
+        titleForPane: titleForPane,
+        refreshKeyForPane: { .init(displayRevision: revisionForPane($0), sources: []) })
 }

@@ -38,7 +38,7 @@ struct SessionsPaneContextCompositionFactoryTests {
             let read = await composition.paneContextService.readDetail(.init(paneId: fixture.ownerId, page: .first))
             let detail: PaneContextDetail?
             if case .detail(let value) = read { detail = value } else { detail = nil }
-            #expect(try #require(detail).session?.bindingGeneration == binding.bindingGenerationId)
+            #expect(try #require(detail).ownSession?.bindingGeneration == binding.bindingGenerationId)
             #expect(try #require(detail).messages.count == 1)
             #expect(try #require(detail).messages.first?.id.uuid == messageId)
             await composition.presentationLane.publishPending()

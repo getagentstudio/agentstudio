@@ -34,7 +34,7 @@ struct PaneContextSidebarRenderingTests {
                         scope: press,
                         fact: .opened(
                             pane: controller?.paneId?.uuid,
-                            bodies: Set(controller?.state?.messages.partitions.all.flatMap(\.rows).map(\.body) ?? []),
+                            bodies: Set(controller?.state?.messages.messageRows.map(\.body) ?? []),
                             line: controller?.state?.agentLine?.summary))
                     press += 1
                 })

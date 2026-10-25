@@ -18,16 +18,20 @@ struct PaneCardRelativeTimeRefreshTests {
             clock.observeOwner($0)
         })
         let pane = UUIDv7.generate()
-        let initial = PaneManagementIdentityCapture.VisibleInput.message(
-            paneId: pane,
-            detail: .init(
-                summary: "First", refs: [], writer: .pane(.init(existingUUID: pane)),
-                updatedAt: Date(timeIntervalSince1970: 1_800_000_000)))
-        let replacement = PaneManagementIdentityCapture.VisibleInput.message(
-            paneId: pane,
-            detail: .init(
-                summary: "First", refs: [], writer: .pane(.init(existingUUID: pane)),
-                updatedAt: Date(timeIntervalSince1970: 1_800_000_010)))
+        let initial = PaneManagementIdentityCapture.VisibleInput.card(
+            .init(
+                paneId: pane, terminalTitle: "Pane", cwd: nil, shellExecutablePath: nil,
+                agentTitle: nil, note: nil, isDrawer: false,
+                agentLine: .init(
+                    summary: "First", refs: [], writer: .pane(.init(existingUUID: pane)),
+                    updatedAt: Date(timeIntervalSince1970: 1_800_000_000)), sessionPresentation: nil))
+        let replacement = PaneManagementIdentityCapture.VisibleInput.card(
+            .init(
+                paneId: pane, terminalTitle: "Pane", cwd: nil, shellExecutablePath: nil,
+                agentTitle: nil, note: nil, isDrawer: false,
+                agentLine: .init(
+                    summary: "First", refs: [], writer: .pane(.init(existingUUID: pane)),
+                    updatedAt: Date(timeIntervalSince1970: 1_800_000_010)), sessionPresentation: nil))
         let clockOpening = await clock.facts.mark(0)
         let ownerOpening = await clock.facts.mark(1)
         do {

@@ -38,13 +38,14 @@ struct PaneContextPopoverControllerNativeTests {
                     completed.append(scope: 0, fact: .released)
                 }
             },
-            dismiss: { _, _ in }, dismissAllNotices: {}, markRead: { _, _ in }, runAction: { _, _, _ in },
+            dismiss: { _, _ in }, dismissAllNotices: {}, runAction: { _, _, _ in },
             goToPane: { _ in }, moreMessages: { _ in }, moreSources: { _ in })
         let controls = PaneContextPopoverControlProjection.controls()
         let state = try #require(controller.state)
         let host = NSHostingView(
             rootView: MessagesPopover(
-                paneId: pane.uuid, model: state.messages, controls: controls, location: .pane, actions: actions))
+                paneId: pane.uuid, model: state.messages, controls: controls, octiconLoader: makeTestOcticonLoader(),
+                location: .pane, actions: actions))
         host.frame = CGRect(x: 0, y: 0, width: 420, height: 500)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -58,9 +59,9 @@ struct PaneContextPopoverControllerNativeTests {
         var visited = Set<ObjectIdentifier>()
         let button = try #require(
             Self.find(
-                host, identifier: controls.answer.identifier(in: id.uuid.uuidString),
+                host, identifier: controls.submit.identifier(in: pane.uuid.uuidString + "." + id.uuid.uuidString),
                 visited: &visited) as? AccessibilityPressBridgeView)
-        #expect(button.accessibilityLabel() == LocalActionSpec.answerPaneMessage.actionSpec.label)
+        #expect(button.accessibilityLabel() == LocalActionSpec.submitPaneMessageAnswer.actionSpec.label)
         #expect(button.accessibilityPerformPress())
         try await completed.expectNext(in: 0, .released)
         await task?.value
