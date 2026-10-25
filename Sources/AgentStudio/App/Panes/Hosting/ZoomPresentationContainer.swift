@@ -97,6 +97,7 @@ struct ZoomPresentationContainer: View {
     let surfaceId: String
     let renderedPaneIds: Set<UUID>
     private let performZoomExitAnimation: ZoomExitAnimationPerformer
+    private let onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)?
 
     @State private var splitRatio: CGFloat
     @State private var showsZoomToolbarLabel = false
@@ -136,7 +137,8 @@ struct ZoomPresentationContainer: View {
         viewRegistry: ViewRegistry,
         surfaceId: String,
         renderedPaneIds: Set<UUID>,
-        performZoomExitAnimation: @escaping ZoomExitAnimationPerformer = Self.performLiveZoomExitAnimation
+        performZoomExitAnimation: @escaping ZoomExitAnimationPerformer = Self.performLiveZoomExitAnimation,
+        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil
     ) {
         self.tabId = tabId
         self.sourcePaneId = sourcePaneId
@@ -164,6 +166,7 @@ struct ZoomPresentationContainer: View {
         self.surfaceId = surfaceId
         self.renderedPaneIds = renderedPaneIds
         self.performZoomExitAnimation = performZoomExitAnimation
+        self.onRelativeTimeEvent = onRelativeTimeEvent
         _splitRatio = State(initialValue: CGFloat(splitRatio))
     }
 
@@ -205,7 +208,8 @@ struct ZoomPresentationContainer: View {
                             ManagementPaneIdentityOverlay(
                                 context: sourceManagementContext,
                                 octiconLoader: octiconLoader,
-                                store: store
+                                store: store,
+                                onRelativeTimeEvent: onRelativeTimeEvent
                             )
                         }
                     }

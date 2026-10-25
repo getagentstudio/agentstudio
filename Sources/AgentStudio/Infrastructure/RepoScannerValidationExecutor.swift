@@ -183,8 +183,14 @@ package enum RepoDiscoveryValidationCompletionWaitResult: Equatable, Sendable {
     case rejected(RepoDiscoveryValidationCompletionWaitRejection)
 }
 
+package enum RepoDiscoveryPhysicalDrainWaitResult: Equatable, Sendable {
+    case drained
+    case cancelled(outstandingPhysicalJobs: Int)
+}
+
 package struct RepoDiscoveryValidationExecutorSnapshot: Equatable, Sendable {
     package let physicalJobCount: Int
+    package let physicalDrainWaiterCount: Int
     package let drainingPhysicalJobCount: Int
     package let queuedRequestCount: Int
     package let logicalRequestCount: Int
@@ -282,6 +288,12 @@ package actor RepoScannerValidationExecutor {
         let continuation: CheckedContinuation<RepoDiscoveryValidationCompletionWaitResult, Never>
     }
 
+    private struct PhysicalDrainWaiter: Sendable {
+        let identity: UUID
+        let maximumPhysicalJobCount: Int
+        let continuation: CheckedContinuation<RepoDiscoveryPhysicalDrainWaitResult, Never>
+    }
+
     private let validationClient: any RepoDiscoveryReadClient
     private let deadlineScheduler: any RepoDiscoveryDeadlineScheduler
     private let budget: RepoDiscoveryValidationBudget
@@ -298,7 +310,7 @@ package actor RepoScannerValidationExecutor {
     private var recentRequestIDOrder: [RepoDiscoveryValidationRequestID] = []
     private var completions: [RepoDiscoveryValidationCompletion] = []
     private var completionWaiter: CompletionWaiter?
-    private var physicalDrainWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var physicalDrainWaiters: [PhysicalDrainWaiter] = []
     private var semanticCompletionCount: UInt64 = 0
     private var lateNativeReturnCount: UInt64 = 0
     private var staleNativeReturnCount: UInt64 = 0
@@ -387,20 +399,29 @@ package actor RepoScannerValidationExecutor {
         }
     }
 
-    package func waitUntilPhysicalJobCount(_ maximumCount: Int) async {
-        guard physicalJobs.count > maximumCount else { return }
-        await withCheckedContinuation { continuation in
-            physicalDrainWaiters.append((maximumCount, continuation))
+    package func waitUntilPhysicalJobCount(_ maximumCount: Int) async -> RepoDiscoveryPhysicalDrainWaitResult {
+        let waiterIdentity = UUIDv7.generate()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                registerPhysicalDrainWaiter(
+                    identity: waiterIdentity,
+                    maximumPhysicalJobCount: maximumCount,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelPhysicalDrainWaiter(identity: waiterIdentity) }
         }
     }
 
-    package func waitUntilPhysicalJobSlotAvailable() async {
+    package func waitUntilPhysicalJobSlotAvailable() async -> RepoDiscoveryPhysicalDrainWaitResult {
         await waitUntilPhysicalJobCount(max(0, budget.maximumPhysicalJobs - 1))
     }
 
     func snapshot() -> RepoDiscoveryValidationExecutorSnapshot {
         RepoDiscoveryValidationExecutorSnapshot(
             physicalJobCount: physicalJobs.count,
+            physicalDrainWaiterCount: physicalDrainWaiters.count,
             drainingPhysicalJobCount: physicalJobs.values.count { job in
                 switch job.phase {
                 case .running: false
@@ -638,9 +659,35 @@ extension RepoScannerValidationExecutor {
     }
 
     private func resumePhysicalDrainWaiters() {
-        let ready = physicalDrainWaiters.filter { $0.0 >= physicalJobs.count }
-        physicalDrainWaiters.removeAll { $0.0 >= physicalJobs.count }
-        for waiter in ready { waiter.1.resume() }
+        let ready = physicalDrainWaiters.filter { $0.maximumPhysicalJobCount >= physicalJobs.count }
+        physicalDrainWaiters.removeAll { $0.maximumPhysicalJobCount >= physicalJobs.count }
+        for waiter in ready { waiter.continuation.resume(returning: .drained) }
+    }
+
+    private func registerPhysicalDrainWaiter(
+        identity: UUID,
+        maximumPhysicalJobCount: Int,
+        continuation: CheckedContinuation<RepoDiscoveryPhysicalDrainWaitResult, Never>
+    ) {
+        if Task.isCancelled {
+            continuation.resume(returning: .cancelled(outstandingPhysicalJobs: physicalJobs.count))
+        } else if physicalJobs.count <= maximumPhysicalJobCount {
+            continuation.resume(returning: .drained)
+        } else {
+            physicalDrainWaiters.append(
+                PhysicalDrainWaiter(
+                    identity: identity,
+                    maximumPhysicalJobCount: maximumPhysicalJobCount,
+                    continuation: continuation
+                )
+            )
+        }
+    }
+
+    private func cancelPhysicalDrainWaiter(identity: UUID) {
+        guard let index = physicalDrainWaiters.firstIndex(where: { $0.identity == identity }) else { return }
+        let waiter = physicalDrainWaiters.remove(at: index)
+        waiter.continuation.resume(returning: .cancelled(outstandingPhysicalJobs: physicalJobs.count))
     }
 }
 
