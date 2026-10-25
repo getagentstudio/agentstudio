@@ -1,6 +1,6 @@
 # Pane context display: program design
 
-**Status:** revision 4, 2026-10-25, written by the 🦁 Lead. Revisions 2–4 close independent review rounds 1–3 (all findings accepted). The section "Contracts added in revisions 2–3" governs wherever an earlier paragraph is less specific. The owner waived the structural confirmation step ("you handle the 2 things and make prs and proof ready", 2026-10-25). The views below are still shown so the owner can check them at PR review.
+**Status:** revision 5, 2026-10-25 (r5: notice read trigger, see the Messages popover paragraph), written by the 🦁 Lead. Revisions 2–4 close independent review rounds 1–3 (all findings accepted). The section "Contracts added in revisions 2–3" governs wherever an earlier paragraph is less specific. The owner waived the structural confirmation step ("you handle the 2 things and make prs and proof ready", 2026-10-25). The views below are still shown so the owner can check them at PR review.
 **Requirements:** [requirements](2026-10-24-pane-context-display-requirements.md) (U1–U7, Q1 answered by the approved renders).
 **Specification:** [specification r5](2026-10-24-pane-context-display-specification.md) (E1–E7, O1–O50, V1–V5, S1–S19), owner-approved 2026-10-25. Owner rules R1–R10: [owner-rules-checklist.md](owner-rules-checklist.md). Renders: [storyboard.html](storyboard.html) and `renders/`.
 **Current system:** read at `origin/main` `2b3f49da5`. Evidence lane: `tmp/design-workflows/2026-10-25-pane-context-display/current-ui-model.md` in this worktree; the Lead opened the decisive anchors cited below.
@@ -191,7 +191,7 @@ Paint stays in SharedComponents: `SidebarChip` keeps token lookup. One `KindChip
 - removes the filter buttons, "Count informational" and "Mark read" (and their `LocalActionSpec` cases);
 - adds a footer with "Dismiss all notices" (only when notices exist) and "Go to pane".
 
-Unread notices are marked read only through the existing disclosure path (unchanged).
+Rows are flat and full (O42), so the old collapsed disclosure and its mark-read-on-expand trigger are removed with it, as are the Mark read buttons (O41). No new read trigger is added: an unread notice stays unread, and counted, until it is dismissed (singly or with Dismiss all notices). The service's read transition, its retained read states and their dimmed presentation are unchanged, for read states that arrive by other routes (revision 5, Lead decision while the owner is away; listed under Waiting on owner).
 
 **Agent Line popover (O50).** Width 380. Full wrapped text, plain age, writer, references and Go to pane. Its E7 rows are removed.
 
