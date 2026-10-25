@@ -345,7 +345,6 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 					expectedTargetOID: firstAdvance.finalHeadOID,
 					failureContext: (): string => server?.diagnostics() ?? 'server unavailable',
 					page,
-					timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
 				});
 				expect(verifiedAppliedComparison.reviewGeneration).toBeGreaterThanOrEqual(
 					appliedComparison.reviewGeneration,
@@ -378,7 +377,6 @@ export function registerBridgeViewerViteAnnotationSystemJourneyTests(): void {
 						expectedTargetOID: secondAdvance.finalHeadOID,
 						failureContext: (): string => server?.diagnostics() ?? 'server unavailable',
 						page,
-						timeoutMilliseconds: annotationRestartJourneyTimeoutMilliseconds,
 					});
 				expect(automaticallyInstalledComparison.reviewGeneration).toBeGreaterThanOrEqual(
 					secondHeldCandidate.reviewGeneration,

@@ -30,5 +30,4 @@ no-playwright-timeout-options	BridgeWeb/tests/e2e/bridge-viewer-vite-product.e2e
 no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-lifecycle-telemetry.ts	1
 no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-output-capture.ts	3
 no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-annotation-restart-journey.ts	3
-no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-review-comparison-observation.ts	3
 no-vitest-wait-options	BridgeWeb/tests/e2e/bridge-viewer-vite-worker-recovery.e2e.test.ts	1
