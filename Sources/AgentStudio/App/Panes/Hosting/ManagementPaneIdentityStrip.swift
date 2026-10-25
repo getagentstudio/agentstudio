@@ -290,7 +290,12 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
 }
 
 extension ManagementPaneIdentityOverlay where ActivityClock == ContinuousClock {
-    init(context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore) {
-        self.init(context: context, octiconLoader: octiconLoader, store: store, clock: ContinuousClock())
+    init(
+        context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
+        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil
+    ) {
+        self.init(
+            context: context, octiconLoader: octiconLoader, store: store, clock: ContinuousClock(),
+            onRelativeTimeEvent: onRelativeTimeEvent ?? { _ in })
     }
 }

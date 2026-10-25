@@ -151,7 +151,6 @@ test.for(['proxy502', 'abortedDelivery'] as const)(
 					expectedTargetLabel: 'HEAD',
 					expectedTargetOID: fixture.oracle.baseRef,
 					page,
-					timeoutMilliseconds: 30_000,
 				});
 				markPhase('unchanged-file-selecting');
 				await selectReviewFile({ page, path: unchangedFile.path });
