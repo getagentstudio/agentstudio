@@ -24,13 +24,14 @@ struct AppTerminationDrainDeadlineTests {
         let stages = TerminationStageRecorder()
         let heldCapture = HeldStep<String>("scrollback quit capture before performance drain")
         let termination = Task { @MainActor in
+            defer { heldCapture.retire() }
             await drainPerformanceTraceAfterScrollbackCapture(
                 scrollbackCapture: {
                     stages.record("captureStarted")
                     try? await heldCapture.arrive("captureStarted")
                     stages.record("captureCompleted")
                 },
-                performanceTraceDrain: { stages.record("performanceDrain") }
+                foregroundLook: {}, performanceTraceDrain: { stages.record("performanceDrain") }
             )
         }
 
@@ -43,6 +44,50 @@ struct AppTerminationDrainDeadlineTests {
             #expect(stages.names == ["captureStarted", "captureCompleted", "performanceDrain"])
         } catch {
             heldCapture.release()
+            await termination.value
+            throw error
+        }
+    }
+
+    @Test("quit capture and foreground look both start before either is released")
+    func scrollbackCaptureAndForegroundLookRunConcurrently() async throws {
+        let stages = TerminationStageRecorder()
+        let heldCapture = HeldStep<Void>("concurrent quit capture")
+        let heldLook = HeldStep<Void>("concurrent quit foreground look")
+        let termination = Task { @MainActor in
+            defer {
+                heldCapture.retire()
+                heldLook.retire()
+            }
+            await drainPerformanceTraceAfterScrollbackCapture(
+                scrollbackCapture: {
+                    stages.record("captureStarted")
+                    try? await heldCapture.arrive(())
+                    stages.record("captureCompleted")
+                },
+                foregroundLook: {
+                    stages.record("lookStarted")
+                    try? await heldLook.arrive(())
+                    stages.record("lookCompleted")
+                },
+                performanceTraceDrain: { stages.record("performanceDrain") })
+        }
+        do {
+            _ = try await heldCapture.firstArrival()
+            _ = try await heldLook.firstArrival()
+            #expect(Set(stages.names) == Set(["captureStarted", "lookStarted"]))
+            heldCapture.release()
+            heldLook.release()
+            await termination.value
+            #expect(
+                Set(stages.names)
+                    == Set([
+                        "captureStarted", "lookStarted", "captureCompleted", "lookCompleted", "performanceDrain",
+                    ]))
+            #expect(stages.names.last == "performanceDrain")
+        } catch {
+            heldCapture.retire()
+            heldLook.retire()
             await termination.value
             throw error
         }

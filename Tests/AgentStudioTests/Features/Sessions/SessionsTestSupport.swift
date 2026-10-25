@@ -94,7 +94,7 @@ func makeHookAdmission(
 ) -> SessionsHookAdmission {
     let resumeHint =
         providerIdentifier == "claude-code"
-        ? "claude --resume \(sessionId)" : "codex resume \(sessionId)"
+        ? "claude --resume \(sessionId)" : "codex resume --no-daemon \(sessionId)"
     return .init(
         paneId: paneId, providerIdentifier: providerIdentifier, providerVersion: providerVersion,
         sessionId: sessionId, eventName: eventName, turnId: turnId, kind: kind,

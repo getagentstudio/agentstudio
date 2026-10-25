@@ -159,7 +159,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         return committed
     }
 
-    private func applyCommittedCommandFinished(
+    func applyCommittedCommandFinished(
         _ committed: SessionsBindingEndCommit, reportedAt: ContinuousClock.Instant
     ) {
         let binding = committed.binding

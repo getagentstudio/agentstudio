@@ -1,28 +1,45 @@
 import AgentStudioCore
 import Foundation
+import Synchronization
 
 extension TerminalActivityProjector {
     /// A newer restore generation replaces the previous arm for this pane.
-    func armRestorePhase(paneID: UUID, generation: RestoreGeneration) {
-        recordRestorePhaseGeneration(generation, for: paneID)
+    func armRestorePhase(paneID: UUID, generation: RestoreGeneration, resumeInvocation: ResumeInvocation? = nil) async {
+        recordRestorePhaseGeneration(generation, for: paneID, resumeInvocation: resumeInvocation)
         discardOpenActivityWindowsForRestorePhaseArm(for: paneID)
+        await deliverForegroundEdges()
+    }
+
+    /// Claim once while keeping suppression active until the ordered end arrives.
+    func claimMatchingResumeRestoreGeneration(
+        paneID: UUID, providerIdentifier: String, providerSessionID: String
+    ) -> RestorePhaseGenerationClaim? {
+        guard let invocation = pendingResumeInvocation(for: paneID),
+            invocation.provider == ResumeProvider(providerIdentifier: providerIdentifier),
+            invocation.sessionId.rawValue == providerSessionID,
+            let claim = restorePhaseGenerationClaim(for: paneID)
+        else { return nil }
+        consumePendingResumeInvocation(for: paneID)
+        return claim
     }
 
     /// Only a matching generation ends suppression and establishes a fresh
     /// activity baseline. A stale or duplicate end has no effect.
     @discardableResult
-    func endRestorePhase(paneID: UUID, generation: RestoreGeneration) -> Bool {
+    func endRestorePhase(paneID: UUID, generation: RestoreGeneration) async -> Bool {
         guard endRestorePhaseGenerationIfMatching(paneID: paneID, generation: generation) else {
             return false
         }
         resetPaneActivityBaselineAfterRestorePhaseEnd(for: paneID)
+        await deliverForegroundEdges()
         return true
     }
 
     /// Clears restore suppression only for permanent pane retirement.
-    func retirePanePermanently(paneID: UUID) {
+    func retirePanePermanently(paneID: UUID) async {
         clearRestorePhaseGeneration(for: paneID)
         retirePaneStatePermanently(for: paneID)
+        await deliverForegroundEdges()
     }
 
     func isRestorePhaseActive(paneID: UUID) -> Bool {
@@ -104,4 +121,32 @@ extension TerminalActivityProjector {
         appendChangedState(latestIsPinnedToBottom)
         return transitions
     }
+}
+
+/// Producer-owned currentness travels with the matched generation. A raw
+/// generation can become stale while its single MainActor delivery is queued.
+struct RestorePhaseGenerationClaim: Sendable {
+    private let generation: RestoreGeneration
+    private let validity: RestorePhaseArmValidity
+
+    init(generation: RestoreGeneration, validity: RestorePhaseArmValidity) {
+        self.generation = generation
+        self.validity = validity
+    }
+
+    /// Validate inside the synchronous native-application turn. Surface
+    /// replacement cannot interleave with this turn; rearming invalidates the
+    /// claim before any newer surface can be published on MainActor.
+    @MainActor func withCurrentGeneration<Output: Sendable>(_ apply: (RestoreGeneration) -> Output) -> Output? {
+        guard validity.isCurrent else { return nil }
+        return apply(generation)
+    }
+}
+
+/// Only the projector writes this one-way arm validity; native application
+/// reads it without a second actor round trip. No lock crosses an await.
+final class RestorePhaseArmValidity: Sendable {
+    private let state = Mutex(true)
+    var isCurrent: Bool { state.withLock { $0 } }
+    func invalidate() { state.withLock { $0 = false } }
 }

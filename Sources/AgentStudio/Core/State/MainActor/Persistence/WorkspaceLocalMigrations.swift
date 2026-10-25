@@ -11,6 +11,7 @@ package enum WorkspaceLocalMigrations {
         registerPanesDrawerVisibilityMigration(in: &migrator)
         registerDrawerPresentationSchema(in: &migrator)
         registerPaneActivitySchema(in: &migrator)
+        registerRestoreLaunchBoot(in: &migrator)
         return migrator
     }
 
@@ -25,6 +26,8 @@ package enum WorkspaceLocalMigrations {
         registerSessionsPermissionHandling(in: &migrator)
         registerSessionsHookCleanup(in: &migrator)
         registerAgentLineMessageCutover(in: &migrator)
+        registerForegroundEvidence(in: &migrator)
+        registerRestoreOutboxIdentity(in: &migrator)
         return migrator
     }
 

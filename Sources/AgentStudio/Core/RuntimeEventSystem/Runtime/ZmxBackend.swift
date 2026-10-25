@@ -308,10 +308,10 @@ package final class ZmxBackend: SessionBackend, ZmxSessionControlling, ZmxSessio
         }
         let loginShellInvocation = "\(shellEscape(plan.loginShell.path)) -i -l"
         if let resume = plan.resume {
-            // R3 finalizes the exact resume invocation shape; R1 never
-            // populates it, so this branch never runs today.
+            // Initialize the user's login shell before its fixed provider argv.
             let resumeArgv = resume.argv.map(shellEscape).joined(separator: " ")
-            lines.append("\(resumeArgv); exec \(loginShellInvocation)")
+            let resumeScript = "\(resumeArgv); exec \(loginShellInvocation)"
+            lines.append("exec \(loginShellInvocation) -c \(shellEscape(resumeScript))")
         } else {
             lines.append("exec \(loginShellInvocation)")
         }

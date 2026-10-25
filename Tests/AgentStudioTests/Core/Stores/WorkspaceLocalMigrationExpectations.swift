@@ -15,6 +15,7 @@ let expectedBootRequiredLocalMigrationIdentifiers = [
     "015_add_panes_drawer_visibility",
     "015_create_local_drawer_presentation",
     "028_add_local_pane_activity",
+    "031_create_terminal_restore_launch_boot",
 ]
 
 let expectedFullLocalMigrationIdentifiers =
@@ -34,4 +35,6 @@ let expectedFullLocalMigrationIdentifiers =
         "026_sessions_permission_handling",
         "027_sessions_hook_admission_cleanup",
         "029_reset_agent_line_messages",
+        "030_create_terminal_pane_foreground_evidence",
+        "032_create_terminal_restore_outbox_identity",
     ]

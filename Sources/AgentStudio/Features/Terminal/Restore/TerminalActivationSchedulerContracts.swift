@@ -64,6 +64,7 @@ package enum TerminalActivationRetry: Equatable, Sendable {
 }
 
 package enum TerminalActivationMemberState: Equatable, Sendable {
+    case awaitingClassification, awaitingResumeReadiness, retired
     /// Held before this pane's geometry eligibility is installed (SPEC R5,
     /// the R1 deferral half). Not a candidate for admission and not
     /// promotable — distinct from `queued`, which has already entered the
@@ -80,9 +81,9 @@ package enum TerminalActivationMemberState: Equatable, Sendable {
 
     var isTerminal: Bool {
         switch self {
-        case .waitingForGeometry, .queued, .attaching:
+        case .awaitingClassification, .awaitingResumeReadiness, .waitingForGeometry, .queued, .attaching:
             return false
-        case .ready, .failedTerminal, .cancelledReplaced:
+        case .retired, .ready, .failedTerminal, .cancelledReplaced:
             return true
         }
     }

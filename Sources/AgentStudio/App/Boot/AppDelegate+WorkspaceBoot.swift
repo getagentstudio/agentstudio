@@ -134,7 +134,7 @@ extension AppDelegate {
         workspaceSQLiteDatastore = sqliteDatastore
         switch await sqliteDatastore.prepareDatabasesForBoot() {
         case .prepared:
-            break
+            restoreLaunchBoot = try? await TerminalRestoreLaunchBootPreparation.prepare(datastore: sqliteDatastore)
         case .failed(let failure):
             let diagnosticCode: WorkspaceStartupFailureDiagnosticCode
             switch failure.kind {
@@ -390,7 +390,7 @@ extension AppDelegate {
         watchedFolderCommands = pipeline
         repositoryFactUpdateSource = pipeline
         installWorktreeCreationCoordinator(publication: pipeline)
-        bootInstallWorkspaceRuntimeOwners(
+        await bootInstallWorkspaceRuntimeOwners(
             paneRuntimeBus: paneRuntimeBus,
             pipeline: pipeline,
             gitWorkingTreeStatusProvider: gitWorkingTreeStatusProvider,
@@ -432,7 +432,7 @@ extension AppDelegate {
         gitWorkingTreeStatusProvider: AgentStudioGitWorkingTreeStatusProvider,
         gitStatusPhysicalGate: AgentStudioGitStatusPhysicalGate,
         undoRecovery: WorkspaceUndoJournalRecovery
-    ) {
+    ) async {
         let surfaceManager = terminalLookupForBoot()
         workspaceSurfaceCoordinator = WorkspaceSurfaceCoordinator(
             store: store,
@@ -475,6 +475,10 @@ extension AppDelegate {
             workspaceSurfaceCoordinator.startTerminalSessionCleanup(
                 using: backend,
                 canRetire: { sessionID in !surfaceManager.hasNativeAttachments(for: sessionID) })
+        }
+        if let workspaceSQLiteDatastore {
+            await installRestoreEvidenceOwners(
+                datastore: workspaceSQLiteDatastore, sessionDirectory: workspaceSurfaceCoordinator.sessionConfig.zmxDir)
         }
         bootInstallPreparedContentMountOwners(coordinator: workspaceSurfaceCoordinator)
         workspaceCacheCoordinator = WorkspaceCacheCoordinator(
@@ -593,7 +597,7 @@ extension AppDelegate {
         }
     }
 
-    private func bootInstallPreparedContentMountOwners(coordinator: WorkspaceSurfaceCoordinator) {
+    func bootInstallPreparedContentMountOwners(coordinator: WorkspaceSurfaceCoordinator) {
         let contentMountCohort = acceptedWorkspacePreparedContentMountCohort
         coordinator.acceptedPreparedContentMountGeneration = contentMountCohort.generation
         let terminalAdmissionPort = PreparedTerminalMountAdmissionPort(
@@ -625,7 +629,11 @@ extension AppDelegate {
             },
             resolveTerminalRestoreKinds: { descriptors in
                 await terminalRestoreKindResolver.resolveRestoreKinds(for: descriptors)
-            }
+            },
+            classifyTerminalRestoreKinds: { descriptors, publish in
+                await terminalRestoreKindResolver.classifyRestoreKinds(for: descriptors, publish: publish)
+            },
+            resolveColdResumePlan: makeColdResumePlanResolution()
         )
         installWorkspacePreparedContentMountOwners(
             InstalledWorkspacePreparedContentMountOwners(

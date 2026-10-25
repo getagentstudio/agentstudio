@@ -30,6 +30,7 @@ package final class TerminalActivityRouter {
     private let attendedPane: AttendedPaneDerived?
     private let traceRuntime: AgentStudioTraceRuntime?
     private let startupTraceRecorder: AgentStudioStartupTraceRecorder?
+    private let performanceTraceRecorder: AgentStudioPerformanceTraceRecorder?
     /// A6 (advisor review 2026-10-01; PD rev 21 item 5, Lead decision: push,
     /// not pull): notified from `consumeProjectionOutcome`'s existing
     /// `.firstRender` arm -- the same raw fact, already unconditional for
@@ -72,6 +73,7 @@ package final class TerminalActivityRouter {
         attendedPane: AttendedPaneDerived? = nil,
         traceRuntime: AgentStudioTraceRuntime? = nil,
         startupTraceRecorder: AgentStudioStartupTraceRecorder? = nil,
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         onFirstRender: (@MainActor @Sendable (UUID) -> Void)? = nil,
         surfaceIDForPaneID: @escaping @MainActor (UUID) -> UUID?,
         isPaneCurrentlyAttended: (@MainActor (UUID) -> Bool)? = nil,
@@ -81,6 +83,7 @@ package final class TerminalActivityRouter {
         clearPaneActivityStatus: (@MainActor (UUID) -> Void)? = nil,
         activityOccurrenceSink: (@Sendable (PaneActivityOccurrence) -> Void)? = nil,
         closeReadDurationSink: (@Sendable (Duration) -> Void)? = nil,
+        foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil,
         unseenActivityDebounceDuration: Duration = AppPolicies.InboxNotification.terminalActivityQuietDebounceDuration,
         agentSettledQuietDuration: Duration = AppPolicies.InboxNotification.agentSettledQuietDuration,
         unseenActivityClock: (any Clock<Duration> & Sendable)? = nil,
@@ -98,12 +101,13 @@ package final class TerminalActivityRouter {
                 agentSettledQuietDuration: agentSettledQuietDuration,
                 clock: unseenActivityClock,
                 activitySink: activityOccurrenceSink,
-                closeReadDurationSink: closeReadDurationSink
+                closeReadDurationSink: closeReadDurationSink, foregroundLookSink: foregroundLookSink
             )
         self.activityAtom = activityAtom
         self.attendedPane = attendedPane
         self.traceRuntime = traceRuntime
         self.startupTraceRecorder = startupTraceRecorder
+        self.performanceTraceRecorder = performanceTraceRecorder
         self.onFirstRender = onFirstRender
         self.surfaceIDForPaneID = surfaceIDForPaneID
         self.isPaneCurrentlyAttended =
@@ -247,14 +251,22 @@ package final class TerminalActivityRouter {
         for waiter in waiters.values { waiter.resume() }
     }
 
+    package var resumedSessionStartSink: @Sendable (UUID, String, String) async -> Void {
+        Self.makeResumedSessionStartSink(
+            projector: projector, surfaceIDForPaneID: surfaceIDForPaneID,
+            callbackHandlingAccess: callbackHandlingAccess, performanceTraceRecorder: performanceTraceRecorder)
+    }
+
     package func armRestorePhase(
         paneID: UUID,
         restoreGeneration: RestoreGeneration,
+        resumeInvocation: ResumeInvocation? = nil,
         onWaiterRegistered: (@Sendable () -> Void)? = nil
     ) async -> RestorePhaseArmAcknowledgment {
         await awaitSourceInputReady(onWaiterRegistered: onWaiterRegistered)
         guard acceptsSourceInput, !Task.isCancelled else { return .projectorUnbound }
-        await projector.armRestorePhase(paneID: paneID, generation: restoreGeneration)
+        await projector.armRestorePhase(
+            paneID: paneID, generation: restoreGeneration, resumeInvocation: resumeInvocation)
         return .armed
     }
 
@@ -294,8 +306,9 @@ package final class TerminalActivityRouter {
                 precedingAggregate: precedingAggregate,
                 control: control
             )
-        case .restorePhaseArmed(let paneID, let restoreGeneration):
-            await projector.armRestorePhase(paneID: paneID, generation: restoreGeneration)
+        case .restorePhaseArmed(let paneID, let restoreGeneration, let resumeInvocation):
+            await projector.armRestorePhase(
+                paneID: paneID, generation: restoreGeneration, resumeInvocation: resumeInvocation)
         case .restorePhaseEnded(let paneID, let restoreGeneration):
             await projector.endRestorePhase(paneID: paneID, generation: restoreGeneration)
         case .paneRetiredPermanently(let paneID):

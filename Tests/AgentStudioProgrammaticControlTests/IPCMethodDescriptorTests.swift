@@ -350,6 +350,25 @@ struct IPCMethodDescriptorTests {
         }
     }
 
+    @Test("only session.event declares lifecycle eligibility, including full catalog roundtrip")
+    func lifecycleEligibilityRejectsUnrelatedMethods() throws {
+        let examples = IPCBuiltInMethodExampleContext(illustrativeIdentifier: UUIDv7.generate())
+        let catalog = try IPCBuiltInMethodCatalog(inputs: .init(examples: examples))
+        let metadata = catalog.erasedDescriptors.map(\.metadata)
+        let encoded = try JSONEncoder().encode(metadata)
+        let decoded = try JSONDecoder().decode([IPCMethodCatalogEntry].self, from: encoded)
+        #expect(decoded.map(\.name) == metadata.map(\.name))
+        #expect(decoded.filter { $0.offlineEligibility == .sessionLifecycleOnly }.map(\.name) == ["session.event"])
+        #expect(catalog.sessions.sessionEvent.offlineEligibility == .sessionLifecycleOnly)
+        #expect(
+            try IPCBuiltInMethodCatalog.offlineNotificationDescriptors(examples: examples).map { $0.metadata.name } == [
+                "pane.message.send", "session.event",
+            ])
+        #expect(throws: IPCMethodDescriptorError.self) {
+            try makeDescriptor(correlationId: UUIDv7.generate(), offlineEligibility: .sessionLifecycleOnly)
+        }
+    }
+
     private func makeDescriptor(
         correlationId: UUID,
         commandRelationship: IPCCommandRelationship = .noInteractiveIdentity,
