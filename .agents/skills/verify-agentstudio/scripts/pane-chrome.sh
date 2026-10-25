@@ -1,17 +1,21 @@
 #!/bin/bash
-# J4/J5/J6/J7 guarded PNG collection. Never launches,
+# J4–J10 guarded native inventory/PNG collection. Never launches,
 # activates, quits, sends IPC, reads escrow or changes permissions.
 set -euo pipefail
+PANE_CHROME_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 
 usage() {
   cat <<'HELP'
 pane-chrome.sh --help | --self-test
 pane-chrome.sh guard PID EXPECTED_EXECUTABLE EXPECTED_LSTART
+pane-chrome.sh inventory PID EXPECTED_EXECUTABLE EXPECTED_LSTART NEW_ABSOLUTE_JSON
 pane-chrome.sh capture PID NATIVE_WINDOW_ID EXPECTED_EXECUTABLE EXPECTED_LSTART NEW_ABSOLUTE_PNG
 
 guard performs locale-stable ps reads.
 capture requires a separately authorized, declared debug target and evidence
-path; confirm its numeric native window ID first with peekaboo window list.
+path; confirm its numeric native window ID first with PID-targeted inventory.
+A popover can be a different window; inspect its original pixels before credit.
+inventory retains the raw local window list, stderr and exit code.
 It repeats the PID/start guard and collects one non-focusing window PNG.
 Exit 0 is collection, never a UI PASS. No action retries or cleanup are implicit.
 HELP
@@ -35,18 +39,17 @@ guard() {
   }
 }
 
+pane_chrome_main() {
 case "${1:---help}" in
   --help) usage ;;
   --self-test)
-    valid_identity 1 '/tmp/.agentstudio-db/fixture/apps/AgentStudio Debug fixture.app/Contents/MacOS/AgentStudio' 'Wed Oct 21 11:36:25 2026'
-    if valid_identity 1 '/Applications/AgentStudio.app/Contents/MacOS/AgentStudio' x; then exit 1; fi
-    if valid_identity 0 '/tmp/.agentstudio-db/x/apps/Debug.app/Contents/MacOS/AgentStudio' x; then exit 1; fi
-    if valid_identity invalid '/tmp/.agentstudio-db/x/apps/Debug.app/Contents/MacOS/AgentStudio' x; then exit 1; fi
-    echo '4 pure identity-validation checks passed; no process or app call'
+    # shellcheck source=.agents/skills/verify-agentstudio/scripts/pane-chrome-self-test.sh
+    source "$PANE_CHROME_DIR/pane-chrome-self-test.sh"
+    pane_chrome_self_test
     ;;
   guard)
     [ "$#" = 4 ] || { usage >&2; exit 2; }
-    guard "$2" "$3" "$4"
+    guard "$2" "$3" "$4" || return
     echo 'Process guard matched; source/window/fixture still require the declared receipt'
     ;;
   capture)
@@ -56,10 +59,27 @@ case "${1:---help}" in
     [ -d "$(dirname -- "$6")" ] && [ ! -e "$6" ] && [ ! -L "$6" ] || {
       echo 'Output parent missing or PNG already exists; HOLD' >&2; exit 2;
     }
-    guard "$2" "$4" "$5"
-    peekaboo see --pid "$2" --window-id "$3" --mode window --no-elements --path "$6"
+    guard "$2" "$4" "$5" || return
+    peekaboo see --pid "$2" --window-id "$3" --mode window --no-remote --no-elements --path "$6" || return
+    guard "$2" "$4" "$5" || return
     [ -s "$6" ] || { echo 'No PNG collected; UNKNOWN' >&2; exit 2; }
     echo 'PNG collected; inspect original/state/geometry before a verdict'
     ;;
+  inventory)
+    [ "$#" = 5 ] || { usage >&2; exit 2; }
+    case "$5" in /*.json) ;; *) echo 'Need a new absolute JSON path' >&2; exit 2 ;; esac
+    [ -d "$(dirname -- "$5")" ] && [ ! -e "$5" ] && [ ! -e "$5.stderr" ] && [ ! -e "$5.rc" ] || {
+      echo 'Evidence parent missing or inventory exists; HOLD' >&2; exit 2;
+    }
+    guard "$2" "$3" "$4" || return
+    inventory_status=0
+    peekaboo window list --pid "$2" --no-remote --json > "$5" 2> "$5.stderr" || inventory_status=$?
+    printf '%s\n' "$inventory_status" > "$5.rc"
+    [ "$inventory_status" -eq 0 ] || exit "$inventory_status"
+    guard "$2" "$3" "$4" || return
+    echo 'Inventory retained; select actual popover/window ID, never infer from order'
+    ;;
   *) usage >&2; exit 2 ;;
 esac
+}
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then pane_chrome_main "$@"; fi

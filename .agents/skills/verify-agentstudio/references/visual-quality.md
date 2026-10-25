@@ -1,6 +1,6 @@
 # Taste pass — every original, every supported width
 
-For **J2, J4, J5, J6 and J7**, functional correctness and visual quality are
+For **J2, J4, J5, J6, J7, J8, J9 and J10**, functional correctness and visual quality are
 separate observations. The owner's directions are the oracle: readable content,
 aligned siblings, deliberate use of space, and the same card shape in every pane.
 For cards, use `pane-contract.md` and J5. A new frame needs a judgment;
@@ -10,6 +10,18 @@ This recipe grants no app operation, resizing, preference change or capture.
 The live commission must name the operator, capture owner and permitted route.
 
 ## Capture the width/state matrix
+
+Pane-context r5 additionally requires V2 at 1400/520/390 **window** widths,
+including S16a/b and S10 pending/confirmed, plus S11's actual 260pt sidebar.
+Keep those independent from the retained J5 actual-card-width matrix below.
+Record requested and applied window dimensions and each surface's actual bounds;
+never equate them. J9/J10 require originals visibly including the native popover,
+with top and final-scroll content. Obscured/unreachable surfaces remain UNKNOWN.
+
+Audit every applicable original against the adopted **verbatim** owner checklist
+R1–R10 in `docs/specs/2026-10-24-pane-context-display/owner-rules-checklist.md`.
+Keep that audit beside the quality table; N/A needs a reason. Follow spec r5 for
+Now/brackets/chip XOR/ACTIVE/request blocks, not older baseline screenshots.
 
 1. Before driving, list **every state** in the selected journey and the supported
    widths for each surface. Cards require **420, 520, 640, 780 and 1000 pt** at

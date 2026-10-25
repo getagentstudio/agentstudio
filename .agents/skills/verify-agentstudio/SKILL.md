@@ -1,160 +1,130 @@
 ---
 name: verify-agentstudio
-description: "Use when verifying a declared Agent Studio debug build's pane UI, visual quality, displayed-agent status across foreground, remote Codex app-server (Router or standalone), Claude daemon or Cursor setups, drawer toolbar, ⌘R card, credential warnings, or terminal lifecycle and restore. Not for product repairs, builds, performance acceptance, or releases."
+description: "Use when verifying a declared Agent Studio debug build's pane context: sidebar, drawer toolbar, ⌘R card, Messages and Agent Line popovers, displayed-agent status, credential warnings, or terminal lifecycle/restore. Includes source-backed scenario setup and native capture; not product repair, builds, performance acceptance or releases."
 ---
 
 # Verify Agent Studio
 
-Observe one declared debug build through the surface its user sees. A launcher
-handoff, a CLI receipt and a screenshot prove different things. Keep the target,
-action and resulting visible state together. This skill grants no commands or
-access beyond the current commission.
+Observe the declared debug build through the user's real surface. A setup
+receipt, IPC acknowledgement and painted outcome are different evidence.
+Take expected values from the adopted source; compare each consumer to those
+facts, not merely to the other consumers. Return PASS/FAIL/UNKNOWN per observation.
+NOT RUN, blocked, invalid timing and missing fixtures are UNKNOWN reasons.
+An independently observed failure wins over an UNKNOWN sub-observation.
 
-Choose the oracle from the declared source; reuse is not a new run. Recheck
-permissions on the surface executing the run. Static checks and old images do
-not prove a live wrapper. Every observation returns PASS, FAIL or UNKNOWN;
-INVALID, inconclusive, NOT RUN, blocked and repaint-spanned are UNKNOWN reasons.
-An independent observed failure still wins over an UNKNOWN sub-observation.
+## Target, readiness and grant
 
-## Start here
-
-1. Take the full commit, prepared build path, debug code and fixture from the
-   Lead's declaration. Confirm worktree/branch/HEAD using `git status` and
-   `git log`. A file's existence does not attest its binary's source commit.
-2. Check the commission's command/write boundaries. This recipe's final home is
-   `.agents/skills/verify-agentstudio/`; `.claude/skills/verify-agentstudio` is
-   only a relative link to it. Authoring copies are not live run roots.
-   Installed instruction directories are read-only for Router workspace sessions.
-   Use the commission's granted runtime evidence directory; if none is granted,
-   request one before a live run.
-3. Use only the declared `com.agentstudio.app.debug.d<code>` and its isolated
-   `~/.agentstudio-db/<code>` data/zmx/socket roots. Operate only processes this
-   run launched or the Lead explicitly handed over. Refuse stable, beta, an
-   unowned process, a changed pin, an escaped path or a permission/TCC prompt.
-   Never `pkill AgentStudio`.
-4. Preflight process inspection before launch. Preserve stderr and status.
-   The launcher contains `pgrep ... || true`; its empty result can be a swallowed
-   sandbox error. Empty output alone proves neither absence nor ownership.
-   Do not change transport or use a direct launch to bypass a denial.
-5. IF running J4–J7, load `references/pane-proof-setup.md` and return the current
-   binary/CLI provenance, process/window receipt, IPC route, observation grant
-   and fixture ownership. A missing prerequisite leaves the journey UNKNOWN.
-   One operator drives states, the capture owner saves originals, and the
-   Verifier opens and measures them before acknowledging the next state.
-6. IF running a visual journey (J2, J4, J5, J6, J7), load
-   `references/visual-quality.md` and return every state's supported-width frames,
-   quality judgments and functional/taste/combined verdicts under that procedure.
-7. IF running J4–J7, load `references/pane-contract.md` and return the applicable
-   portable outcomes before driving; ignored scratch briefs are not prerequisites.
+1. Confirm source worktree/branch/HEAD, prepared and bundled executable provenance,
+   matching compiled CLI and debug code from the Lead's declaration. Equal source
+   does not attest an installed binary. Use J1's launch/readiness/health procedure
+   only when launched under that grant; upkeep/self-tests never launch an app.
+2. Keep one declared `com.agentstudio.app.debug.d<code>` with isolated data/zmx/IPC
+   roots. Own PID/start/window/panes and sole operator/capture/cleanup roles before
+   driving. Refuse stable/beta, unowned target, changed pin or permission prompt.
+   Never `pkill AgentStudio`, unlock the screen or change TCC/transport to bypass
+   denial. Process inspection errors are not absence; launcher `pgrep || true`
+   can swallow denial. Operate only a process launched here or explicitly handed over.
+3. Canonical skill is `.agents/skills/verify-agentstudio/`; Claude is only its
+   relative link. Keep runtime evidence outside the skill in the granted run
+   directory. These recipes grant neither app writes nor fixture installation.
+4. For J4–J10 load `references/pane-proof-setup.md` and `references/pane-contract.md`;
+   return provenance, ownership, health and fixture/access gaps. For pane-context
+   r5 load `references/pane-context-scenarios.md` and its adopted spec/checklist.
+   For every visual journey load `references/visual-quality.md` and return actual
+   widths, opened originals and independent functional/taste verdicts.
 
 ## Journey index
 
-| Journey | Entry and exact procedure | Observation that decides it | Driver |
-| --- | --- | --- | --- |
-| J1 — isolated lifecycle | MUST load [debug-launch.md](references/debug-launch.md); return the declared pin, process preflight, background launch, authenticated reads and owned quit. Entry: `mise run run-debug-observability -- --detach --skip-build --build-path "$BUILD_PATH"`, with the documented escrow/watch-folder environment. | Declared debug executable, fresh marker and background identity; successful `pane.list`/`window.list` readbacks; that owned PID confirmed retired after bundle-id quit. | `scripts/debug-lifecycle.sh` |
-| J2 — Panes row | MUST load [panes-row.md](references/panes-row.md); return separate declared build/oracle commits, compatible stimuli, AX labels, PID frames, whole-chip/row differences and visual judgment. | Working breathes, monitoring rotates, other glyphs stay still; chip never pulses, recency updates. Equal chip AX labels permit exact stillness checks; changed labels defer chip/text, UNKNOWN after three repaint-spanned bursts. Judge glyph every burst; Reduce Motion stops it; branch lines remain correct. | `scripts/panes-row.sh`, `scripts/frame_diff.py` |
-| J3 — cold restore | MUST load [cold-restore.md](references/cold-restore.md); return declared restore build, explicit one-session fault grant, saved text, same pane/stored session, owned quit, isolated list/kill, relaunch and replay. | Restore notice → saved text → restart marker → usable fresh shell, in the same pane (Spec 11 / Program Design 28). A warm reconnect cannot satisfy this. | `scripts/cold-restore.sh` |
-| J4 — drawer toolbar | MUST load `references/drawer-toolbar.md` and return held states, glyph x/y, bar height, cap and text/suffix observations. | Fixed groups/bar; message uses middle gap. Fixed message icon + truncatable text + complete age suffix inside 360pt. No toolbar status/warning. | `scripts/window-frame.sh render/resize`, `scripts/toolbar_geometry.py` |
-| J5 — ⌘R pane card | MUST load `references/pane-card.md` and return five-width layout/identity/copy results and separate one-open-card clock evidence. | Title → state → two-line message → warning → note → caption grid → git chips, one field per line at every width. Verified SESSION copies only ID; PANE always. SESSION and PANE IDs may middle-truncate with an always-visible inline copy icon. Distinct clocks. | `scripts/window-frame.sh render/resize` |
-| J6 — credential warning | MUST load `references/credential-warning.md` and return unbound receipts, target-specific placement and exact refusal comparison. | Quiet success does not create/clear refusal. Genuine failure warns card only under current policy, never toolbar. Historical row/card policy requires an explicit declaration. | `scripts/window-frame.sh render/resize` |
-| J7 — agent in its displaying pane | MUST load `references/agent-setups.md` and return four owned setup results, hook recipient, real-turn row/card status/message/title and N-of-4 coverage with its required host label. | Every displaying pane shows its live agent's status: foreground, (b) remote app-server, Claude daemon/attach, Cursor. Standalone counts in (b), labelled "Router wrapper not exercised". Unsafe routes UNKNOWN with blocker; missing status FAIL. | Granted provider operator; `scripts/window-frame.sh render/resize` |
+| Journey | Required procedure and real entry | Deciding observation / driver |
+| --- | --- | --- |
+| J1 — isolated lifecycle | `references/debug-launch.md`; declared background debug launcher, authenticated readiness/health and owned quit | Correct process/build/root, pane/window readbacks, confirmed owned PID retirement. `scripts/debug-lifecycle.sh`. |
+| J2 — Panes row motion | `references/panes-row.md`; declared real compatible provider/CLI stimulus | Working glyph breathes, monitoring rotates, others still; chip never pulses, Reduce Motion stops it, branch/recency correct. Legacy stateful-line stimulus requires old applicability. `scripts/panes-row.sh`, `frame_diff.py`. |
+| J3 — cold restore | `references/cold-restore.md`; explicit owned single-session fault grant | Same pane/stored session, restore notice → saved text → restart marker → usable new shell. Warm reconnect insufficient. `scripts/cold-restore.sh`. |
+| J4 — drawer toolbar | `references/drawer-toolbar.md`; real pane-origin line/notice/ask plus actual chip interaction | One line, notes divider, all chips XOR Agent Line XOR empty, complete bracketed line age, no status/warning; fixed groups/height. `scripts/window-frame.sh`, `toolbar_geometry.py`, `pane-chrome.sh`. |
+| J5 — ⌘R card | `references/pane-card.md`; select pane/open actual management layer, real request/service actions | Correct status/line/request/unread/ACTIVE, no recency/play chips; exact selected ask/receipt/rebind, conditional metadata/copy and independent clocks. `scripts/window-frame.sh`, `pane-chrome.sh`. |
+| J6 — credential warning | `references/credential-warning.md`; genuine owned protected refusal | Quiet success neither creates nor clears refusal; current warning card-only, no toolbar/sidebar warning. `scripts/window-frame.sh`. |
+| J7 — agent in displaying pane | `references/agent-setups.md`; actual contained foreground, remote app-server, Claude daemon/attach and Cursor turns | That pane's actual status/title/line, actual hook recipient and N-of-4 coverage. Standalone remote label includes Router wrapper not exercised. Provider operator plus `window-frame.sh`/native capture. |
+| J8 — sidebar context | `references/sidebar-context.md`; actual row, chip and line entries | Title/status/line/chips stack, all kind counts, evidence gate, S11 actual 260pt, real navigation. `scripts/window-frame.sh`, `pane-chrome.sh`. |
+| J9 — Messages | `references/messages-popover.md`; press actual row/toolbar chip or card link | Actual native popover, full groups/body/explanation/source/actions, state/receipt control absence, footer and final scroll content. `scripts/pane-chrome.sh inventory/capture`. |
+| J10 — Agent Line popover | `references/agent-line-popover.md`; press actual sidebar line | Full text/bracketed age/writer/refs/Go to pane; no E7; real focus destination. `scripts/pane-chrome.sh inventory/capture`. |
 
-## Driver entry points
+Each indexed script is the single implementation at the existing skill-local
+scripts home; the references do not copy it. Scripts collect one step at a time.
+Exit 0 is collection/setup, never a journey verdict or feature acceptance.
 
-Run from the repository root; the caller supplies the runtime write grant.
+## Scenario setup and known real-target gaps
+
+`references/pane-context-scenarios.md` owns S1–S19 recipes, four evidence states,
+drawers, form/location matrix, held receipts/lifecycle, old line, oversubscribed
+card, prompt-only refresh and action destinations. The input helper prints
+synthetic JSON for the **real adapter**; it never sends or establishes binding.
+The offline helper makes a new closed-database copy; it never installs or launches.
+
+G07/G08: real ingress cannot produce approval-with-summary or exact S18 two-listed/
+one-omitted. The assigned proof is labelled synthetic product tests; cite their
+actual receipt only once available. Native cells remain UNKNOWN/real ingress
+unavailable. Never alter mapping/limit or relabel a question to fill them.
+
+Updated recipes are **draft for live coverage until driven on a declared target**.
+Self-tests cover apparatus only. Unavailable eligible hook, offline datastore
+load, read/disclosure, fault/failure or opener fixtures leave those specific
+journey cases UNKNOWN with the exact missing prerequisite.
+
+## Driver help and self-tests
+
+Run from repository root. Every runtime command needs its separate grant.
 
 ```bash
-/bin/bash .agents/skills/verify-agentstudio/scripts/debug-lifecycle.sh --help
-/bin/bash .agents/skills/verify-agentstudio/scripts/debug-lifecycle.sh --dry-run
 /bin/bash .agents/skills/verify-agentstudio/scripts/debug-lifecycle.sh --self-test
-/bin/bash .agents/skills/verify-agentstudio/scripts/panes-row.sh --help
-/bin/bash .agents/skills/verify-agentstudio/scripts/panes-row.sh --dry-run
 /bin/bash .agents/skills/verify-agentstudio/scripts/panes-row.sh --self-test
-/bin/bash .agents/skills/verify-agentstudio/scripts/cold-restore.sh --help
-/bin/bash .agents/skills/verify-agentstudio/scripts/cold-restore.sh --dry-run
 /bin/bash .agents/skills/verify-agentstudio/scripts/cold-restore.sh --self-test
-uv run --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/frame_diff.py --help
-uv run --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/frame_diff.py --self-test
-/bin/bash .agents/skills/verify-agentstudio/scripts/window-frame.sh --help
 /bin/bash .agents/skills/verify-agentstudio/scripts/window-frame.sh --self-test
-/bin/bash .agents/skills/verify-agentstudio/scripts/pane-chrome.sh --help
 /bin/bash .agents/skills/verify-agentstudio/scripts/pane-chrome.sh --self-test
-uv run --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/toolbar_geometry.py --self-test
+/bin/bash .agents/skills/verify-agentstudio/scripts/pane-context-input.sh --self-test
+/bin/bash .agents/skills/verify-agentstudio/scripts/offline-pane-line.sh --self-test
+uv run --offline --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/frame_diff.py --self-test
+uv run --offline --with pillow --with numpy python -I .agents/skills/verify-agentstudio/scripts/toolbar_geometry.py --self-test
 ```
 
-The shell drivers expose one step at a time. They never retry a denied action,
-activate the app, or quit/kill automatically during error handling. Zero status
-means that step collected its result; it is not a whole-journey verdict. Read
-CLI JSON, capture success fields and the actual visible result. Permission for
-each individual effect must already exist.
-Author checks may use the same relative paths below the assigned package root;
-they must not install or launch as a side effect.
+Use each driver's `--help` before a live command. Tests use only private stubs or
+owned temporary fixtures; no app, real escrow, native capture or network call.
+The Python tools need their declared packages; dependency setup/cache access is
+separate from product observation. Do not install anything as a self-test fallback.
 
-## Readiness and health
+## Evidence, captures and cleanup
 
-J1 records a launch ownership receipt: PID, executable, declared source/build,
-marker, process start, bundle identity and debug roots. Before every action,
-compare it with the current launcher handoff and live process. `health` performs
-read-only `pane.list` and `window.list`; inspect the responses and terminal
-readiness. `terminal.snapshot` exports lifecycle/renderer metadata, **not output**.
-`terminal.send` means input accepted, not command completed. For a shell stimulus,
-use the typed `terminal.wait(titleChanged, afterSequence:)` route plus its
-correlated title and visible content. No sleeps or polling for readiness.
+J1 binds readiness to the exact launched incarnation. `health` retains successful
+`pane.list`/`window.list` and actual terminal readiness; port/process existence
+alone is insufficient. `terminal.snapshot` is lifecycle metadata, not terminal
+output; `terminal.send` only accepts input. Use correlated child/owner completion.
 
-For J4–J7 static layout/text, use `window-frame.sh` through the existing escrow
-CLI, including while locked. Establish the state through its owner fact first;
-then the consumer waits 3 s after each change and takes **one** `window.render`.
-This observed settle is separate from readiness. The renderer captures the
-current frame, including animations in flight; it adds no wait. A stale or
-in-flight result after the settle is a failure, not a reason for a longer wait,
-retry, refresh or reopen. Match asynchronous fields such as SESSION against
-that pane's owner fact taken immediately before capture. Metadata locates crops;
-only the decoded PNG establishes painted text and geometry.
+For static content-view layout/text, `window-frame.sh` checks ownership, observes
+3s after owner-state completion, records optional same-pane `session.query` and
+captures **once**, preserving request/result, timestamps/lock probes and immutable
+PNG transfer receipts. A stale/in-flight/blank frame after settle fails; no longer
+wait/retry/reopen repairs it. Metadata only locates crops; open the original PNG.
 
-The fidelity gaps and optional native route are in shared setup. Keep J2 motion,
-vibrancy, native tab/titlebar and final on-screen appearance with Peekaboo when
-the screen is already unlocked and that route is granted. Never unlock it.
+Popover, final native appearance, motion, tooltips and pasteboard require their
+own already-unlocked granted route. `pane-chrome.sh inventory` retains local
+PID-window inventory; capture the actual popover window or an original visibly
+including it. Main-window pixels without the popover prove none of it. Do not
+infer content from AX full strings, window-array order or the image filename.
 
-## Evidence and cleanup
+Keep commands/statuses/stderr, provenance and state/readback facts, measured
+applied/window/surface widths, originals/crop origins, capture owner and per-state
+R1–R10/quality judgments in the run directory. Distinguish synthetic producer
+stimuli, synthetic product tests and real app observations. Preserve failures and
+UNKNOWN cells; no equivalent rerun without change or an unresolved concern.
 
-Keep exact commands/statuses, stdout/stderr, original frames, AX output,
-pin/ownership receipt, region coordinates and observations in the run's granted
-evidence directory (for example `tmp/verify-agentstudio/<run>/`). For every app
-render, retain request/result, before/after lock probes, UTC/monotonic capture
-bounds, owner facts, source path and evidence path. Move each received PNG into
-evidence using the wrapper; a path without an opened image proves no pixels.
-Keep installed skill files read-only.
-Never print or commit escrow contents. Keep runtime evidence outside the skill.
+Post denied-command evidence only to the assigned trace destination, or return
+it to the Lead when none is granted. Missing/unattempted access is distinct from
+denial. No new board authority follows from the recipe.
 
-Post each actual denial with its exact command, verbatim error and exit status
-to the commission's access/coordination thread, or return it to the Lead when
-no such destination is supplied. An unattempted
-dependency, missing build or needed grant is different from an OS denial. Post coverage and
-artifact paths on the execution thread and message the Lead with the handback.
+`window-frame.sh cleanup RUN_DIR` resumes only recorded transfers, even after
+retirement; preserve unresolved source paths. It grants no app quit. Quit only
+an owned debug bundle through J1 and confirm PID retirement; never sweep pane
+records, snapshots or render directories. Keep any held fixture's owner named.
 
-Run `window-frame.sh cleanup RUN_DIR` to recover interrupted transfers from
-recorded paths before retiring the fixture when possible. It can finish those
-filesystem transfers after retirement without calling the app. Preserve and
-report any unresolved transfer; never sweep the app's renders directory or
-remove an unreceived file. This cleanup grants no app quit.
-
-Quit only the verified owned debug bundle id through J1, then confirm PID
-retirement. A quit request alone is not retirement; an inspection error is not
-absence. Hold an uncertain or unowned process. Preserve evidence after cleanup
-and name any owned process left running. J3's one-session kill is its deliberate
-fault step, never generic cleanup. Do not remove pane records, snapshots or app
-data to tidy a run. Product tests, performance, CI, release and acceptance remain
-separate, unclaimed proof layers.
-
-For J4–J7 return PASS / FAIL / UNKNOWN separately per observation, with commit,
-binary and CLI provenance, PID/window, fixture state, original PNG paths and
-measurements. Fixed icon geometry does not prove text was painted. A full AX
-label does not prove the full ID was visible. Record the actual capture owner;
-an Implementer's description of an image is not evidence. Preserve a known-bad
-calibration, and keep time/credential journeys UNKNOWN until their real path ran.
-Return the shared quality report as specified by `references/visual-quality.md`. If offered
-product tests are missing real-path coverage, report that gap separately to the
-Lead; supporting test evidence is not a substitute for this journey's verdict.
-Done when every commissioned observation has a verdict/reason and retained
-evidence, shared quality is returned, and owned cleanup or an explicit held-state
-owner is recorded. This completes the observation, not product acceptance.
+Return per-observation PASS/FAIL/UNKNOWN with commit/binary/CLI, PID/window/pane,
+state/originals/measurements, required live gaps and retained evidence. Product
+suite, CI, performance, release and acceptance remain their own proof layers.
