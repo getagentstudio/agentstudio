@@ -1,6 +1,8 @@
 import Foundation
 import WebKit
 
+@testable import AgentStudioBridge
+
 struct BridgeProductWebKitSelectedReviewContentFailure: Error, Equatable, CustomStringConvertible {
     let path: String
     let generation: Int
@@ -30,6 +32,8 @@ enum BridgeProductWebKitSelectedReviewContentWait {
           ?? panel?.getAttribute('data-selected-item-id') ?? null;
         return JSON.stringify({
           pageAvailability: attribute('data-selected-content-state'),
+          contentPresentation: document.querySelector('[data-bridge-region="review-content"]')
+            ?.getAttribute('data-presentation-state') ?? null,
           path: attribute('data-selected-display-path'), packageId, generation,
           revision: attribute('data-review-metadata-revision'),
           renderedItemId,
@@ -71,7 +75,11 @@ enum BridgeProductWebKitSelectedReviewContentWait {
         const state = shell?.getAttribute('data-selected-content-state');
         const generation = Number(shell?.getAttribute('data-review-metadata-generation'));
         if (path !== expectedPath || generation !== expectedGeneration) return null;
-        if (state === 'failed') return {state, path, generation,
+        // Raw unavailable can precede a demand. A failed region is the owner's
+        // final read disposition; loading and other in-flight states stay open.
+        const contentPresentation = document.querySelector('[data-bridge-region="review-content"]')
+          ?.getAttribute('data-presentation-state');
+        if (state === 'failed' || (state === 'unavailable' && contentPresentation === 'failed')) return {state, path, generation,
           diagnostic: (() => { \(failureDiagnosticReader) })()};
         return state === 'ready'
           && Number(panel?.getAttribute('data-selected-content-line-count') ?? '0') > 0
@@ -86,29 +94,41 @@ enum BridgeProductWebKitSelectedReviewContentWait {
         """
 
     static func wait(
-        _ page: WebPage, expectedPath: String, expectedHashes: String, expectedGeneration: Int,
+        _ controller: BridgePaneController, expectedPath: String, expectedHashes: String, expectedGeneration: Int,
         expectedItemId: String
     ) async throws -> Any? {
-        let observation = try await WebPageEventWaits.waitForDocumentValue(
-            page, reader: reader,
-            arguments: [
-                "expectedPath": expectedPath, "expectedHashes": expectedHashes,
-                "expectedGeneration": expectedGeneration,
-                "expectedItemId": expectedItemId,
-            ],
-            milestone: "Review selected content rendered", lastObservation: diagnostic
-        )
-        return try requireRenderedPath(from: observation)
+        let closingSource = try WebPageDocumentWaitClosingSource(pane: controller.paneId.uuidString)
+        closingSource.observePaneRetirement(controller)
+        closingSource.observePage(controller.page)
+        do {
+            let observation = try await WebPageEventWaits.waitForDocumentValue(
+                controller.page, reader: reader,
+                arguments: [
+                    "expectedPath": expectedPath, "expectedHashes": expectedHashes,
+                    "expectedGeneration": expectedGeneration,
+                    "expectedItemId": expectedItemId,
+                ],
+                milestone: "Review selected content rendered", lastObservation: diagnostic, closingSource: closingSource
+            )
+            let path = try requireRenderedPath(from: observation)
+            try await closingSource.finish()
+            return path
+        } catch {
+            let primaryFailure = error
+            try? await closingSource.finish()
+            throw primaryFailure
+        }
     }
 
     static func requireRenderedPath(from observation: Any?) throws -> String {
         if let terminal = observation as? [String: Any],
-            terminal["state"] as? String == "failed",
+            let state = terminal["state"] as? String,
+            state == "failed" || state == "unavailable",
             let path = terminal["path"] as? String,
             let generation = terminal["generation"] as? Int
         {
             throw BridgeProductWebKitSelectedReviewContentFailure(
-                path: path, generation: generation, state: "failed",
+                path: path, generation: generation, state: state,
                 diagnostic: terminal["diagnostic"] as? String ?? "unavailable")
         }
         guard let path = observation as? String else {

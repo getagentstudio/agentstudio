@@ -46,6 +46,7 @@ struct PaneLeafContainer: View {
     let workspaceWindowId: UUID?
     let toolbarPresentation: PaneSurfaceToolbarPresentation
     let managementChromePresentation: PaneManagementChromePresentation
+    private let onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)?
 
     @State private var isHovered: Bool = false
     private var managementLayer: ManagementLayerAtom {
@@ -85,7 +86,8 @@ struct PaneLeafContainer: View {
         ordinal: Int? = nil,
         workspaceWindowId: UUID? = nil,
         toolbarPresentation: PaneSurfaceToolbarPresentation,
-        managementChromePresentation: PaneManagementChromePresentation = .ordinary
+        managementChromePresentation: PaneManagementChromePresentation = .ordinary,
+        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil
     ) {
         self.paneHost = paneHost
         self.octiconLoader = octiconLoader
@@ -109,6 +111,7 @@ struct PaneLeafContainer: View {
         self.workspaceWindowId = workspaceWindowId
         self.toolbarPresentation = toolbarPresentation
         self.managementChromePresentation = managementChromePresentation
+        self.onRelativeTimeEvent = onRelativeTimeEvent
         _contextMenuPresenter = State(
             initialValue: PaneManagementContextMenuPresenter(octiconLoader: octiconLoader)
         )
@@ -274,7 +277,8 @@ struct PaneLeafContainer: View {
                                 ManagementPaneIdentityOverlay(
                                     context: managementContext,
                                     octiconLoader: octiconLoader,
-                                    store: store
+                                    store: store,
+                                    onRelativeTimeEvent: onRelativeTimeEvent
                                 )
                             }
                         }

@@ -163,7 +163,7 @@ extension WebKitSerializedTests.BridgeProductRealGitFileAndReviewWebKitTests {
             let hashes = selected.contentRoles.allHandles.map { "\($0.role.rawValue):\($0.contentHash)" }
                 .joined(separator: ",")
             return try await BridgeProductWebKitSelectedReviewContentWait.wait(
-                hosted.page, expectedPath: "tracked.txt", expectedHashes: hashes,
+                hosted, expectedPath: "tracked.txt", expectedHashes: hashes,
                 expectedGeneration: package.reviewGeneration.rawValue, expectedItemId: selected.itemId
             ) as? String
         }

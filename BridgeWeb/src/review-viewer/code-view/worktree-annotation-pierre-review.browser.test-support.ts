@@ -1,5 +1,64 @@
 import { act } from 'react';
 
+/** Observe the control's committed DOM, with failure exits owned by its panel and page. */
+export function waitForReviewControl(props: {
+	readonly panel: Element;
+	readonly signal: AbortSignal;
+	readonly isReady: () => boolean;
+	readonly label: string;
+}): Promise<void> {
+	return new Promise<void>((resolve, reject): void => {
+		const observer = new MutationObserver(inspect);
+		function dispose(): void {
+			observer.disconnect();
+			props.signal.removeEventListener('abort', abort);
+			window.removeEventListener('error', fail);
+			window.removeEventListener('unhandledrejection', fail);
+			window.removeEventListener('pagehide', fail);
+		}
+		function fail(event: Event): void {
+			dispose();
+			reject(
+				new Error(`Awaiting ${props.label} ended with ${event.type}.`, {
+					cause:
+						event instanceof ErrorEvent
+							? event.error
+							: event instanceof PromiseRejectionEvent
+								? event.reason
+								: undefined,
+				}),
+			);
+		}
+		function abort(): void {
+			dispose();
+			reject(
+				new Error(`Test retired while awaiting ${props.label}.`, { cause: props.signal.reason }),
+			);
+		}
+		function inspect(): void {
+			try {
+				if (!props.panel.isConnected) {
+					dispose();
+					reject(new Error(`Review panel retired while awaiting ${props.label}.`));
+				} else if (props.isReady()) {
+					dispose();
+					resolve();
+				}
+			} catch (error: unknown) {
+				dispose();
+				reject(error);
+			}
+		}
+		observer.observe(document.body, { attributes: true, childList: true, subtree: true });
+		props.signal.addEventListener('abort', abort, { once: true });
+		window.addEventListener('error', fail);
+		window.addEventListener('unhandledrejection', fail);
+		window.addEventListener('pagehide', fail);
+		if (props.signal.aborted) abort();
+		else inspect();
+	});
+}
+
 interface ReviewAnimationFrameClock {
 	readonly settleCondition: (predicate: () => boolean, failureMessage: string) => Promise<void>;
 	readonly drain: () => Promise<void>;
