@@ -87,7 +87,7 @@ describe('Bridge product transport recovery edges', () => {
 				);
 				observeSettlement(terminal, (): void => {});
 				harness.server.failMetadataReader(new Error('physical stream disconnected'));
-				await harness.server.waitForMetadataStream(2);
+				await Promise.race([harness.server.waitForMetadataStream(2), terminal]);
 				const resumed = harness.server.requiredMetadataRequest(1);
 				if (resumed.resumeFromStreamSequence === null) throw new Error('Missing resume cursor');
 				harness.server.emitMetadata(

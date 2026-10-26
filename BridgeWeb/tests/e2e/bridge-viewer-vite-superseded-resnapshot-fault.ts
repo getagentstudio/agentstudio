@@ -1,6 +1,7 @@
 import type { ConsoleMessage, Page, Route } from 'playwright';
 
 import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
+import { assertBridgeProductResponseCorrelation } from '../../src/core/comm-worker/bridge-product-control-response-correlation.js';
 import {
 	bridgeProductAdmissionResponseSchema,
 	bridgeProductOperationResultAcknowledgementSchema,
@@ -9,20 +10,23 @@ import {
 	bridgeProductOperationResultResponseSchema,
 } from '../../src/core/comm-worker/bridge-product-operation-wire-contracts.js';
 import { bridgeProductControlRequestSchema } from '../../src/core/comm-worker/bridge-product-session-contracts.js';
-import type {
-	BridgeProductViewResnapshotRequest,
-	BridgeProductViewScopeRequest,
+import {
+	bridgeProductViewAcceptedResponseSchema,
+	type BridgeProductViewResnapshotRequest,
+	type BridgeProductViewScopeRequest,
 } from '../../src/core/comm-worker/bridge-product-view-control-wire-contracts.js';
 
 /** Faults an old result after real native admission of a newer scope; native execution is not held. */
 export async function installSupersededResnapshotFault(
 	page: Page,
 	signal: AbortSignal,
+	options: { readonly intermediateScopeOutcome?: 'cancelled' | 'superseded' } = {},
 ): Promise<{
 	readonly arm: () => void;
 	readonly held: Promise<BridgeProductViewResnapshotRequest>;
 	readonly newerScope: Promise<number>;
 	readonly consumed: Promise<void>;
+	readonly intermediate: { readonly held: Promise<number>; readonly settled: Promise<void> } | null;
 	readonly release: () => void;
 	readonly failedViews: () => readonly string[];
 	readonly dispose: () => Promise<void>;
@@ -32,6 +36,17 @@ export async function installSupersededResnapshotFault(
 	const consumed = createBridgeProductDeferred<void>();
 	const release = createBridgeProductDeferred<void>();
 	const failure = createBridgeProductDeferred<never>();
+	const intermediate =
+		options.intermediateScopeOutcome === undefined
+			? null
+			: {
+					outcome: options.intermediateScopeOutcome,
+					held: createBridgeProductDeferred<number>(),
+					settled: createBridgeProductDeferred<void>(),
+				};
+	let intermediateOperationId: string | null = null;
+	void intermediate?.held.promise.catch((): void => {});
+	void intermediate?.settled.promise.catch((): void => {});
 	void held.promise.catch((): void => {});
 	void newerScope.promise.catch((): void => {});
 	void consumed.promise.catch((): void => {});
@@ -42,6 +57,7 @@ export async function installSupersededResnapshotFault(
 		readonly request: BridgeProductViewResnapshotRequest;
 	} | null = null;
 	const scopes = new Map<string, BridgeProductViewScopeRequest>();
+	let latestScopeRevision = -1;
 	const pending = new Set<Promise<void>>();
 	const failedViews: string[] = [];
 	const failurePrefix = '__superseded_resnapshot_view_failed:';
@@ -111,10 +127,24 @@ export async function installSupersededResnapshotFault(
 			}
 			const response = await route.fetch({ timeout: 0 });
 			try {
-				const result = bridgeProductOperationResultResponseSchema.parse(await response.json());
-				if (result.outcome !== 'succeeded')
-					throw new Error(`Native fixture operation failed: ${result.outcome}`);
+				let result = bridgeProductOperationResultResponseSchema.parse(await response.json());
+				if (
+					intermediate !== null &&
+					scope !== undefined &&
+					result.operationId === intermediateOperationId
+				) {
+					intermediate.held.resolve(scope.scopeRevision);
+					await Promise.race([newerScope.promise, failure.promise]);
+					result = bridgeProductOperationResultResponseSchema.parse({
+						...result,
+						outcome: intermediate.outcome === 'cancelled' ? 'cancelled' : 'refused',
+						failureCode: intermediate.outcome === 'cancelled' ? null : 'superseded',
+						result: null,
+					});
+				}
 				if (target?.operationId === resultRequest.data.operationId) {
+					if (result.outcome !== 'succeeded')
+						throw new Error(`Native fixture operation failed: ${result.outcome}`);
 					held.resolve(target.request);
 					await release.promise;
 					const refused = bridgeProductOperationResultResponseSchema.parse({
@@ -129,8 +159,35 @@ export async function installSupersededResnapshotFault(
 						body: JSON.stringify(refused),
 					});
 				} else {
-					await route.fulfill({ response });
-					if (scope !== undefined) newerScope.resolve(scope.scopeRevision);
+					if (scope === undefined) throw new Error('Scope result has no correlated admission');
+					const superseded =
+						result.outcome === 'cancelled' ||
+						((result.outcome === 'refused' || result.outcome === 'failed') &&
+							result.failureCode === 'superseded');
+					if (!superseded && result.outcome !== 'succeeded')
+						throw new Error(`Native fixture scope failed: ${result.outcome}`);
+					if (result.outcome === 'succeeded') {
+						const accepted = bridgeProductViewAcceptedResponseSchema.parse(result.result);
+						assertBridgeProductResponseCorrelation({ request: scope, response: accepted });
+						if (
+							accepted.kind !== 'subscription.scopeAccepted' ||
+							accepted.scopeRevision !== scope.scopeRevision ||
+							accepted.subscriptionId !== scope.subscriptionId ||
+							accepted.handle !== scope.handle ||
+							accepted.incarnation !== scope.incarnation ||
+							accepted.domain !== scope.domain
+						)
+							throw new Error('Scope acceptance does not match its admission');
+					}
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/json',
+						body: JSON.stringify(result),
+					});
+					// A cancelled intermediate result is not the end of the newest desired scope.
+					if (result.outcome === 'succeeded' && scope.scopeRevision === latestScopeRevision)
+						newerScope.resolve(scope.scopeRevision);
+					if (result.operationId === intermediateOperationId) intermediate?.settled.resolve();
 				}
 			} finally {
 				await response.dispose();
@@ -157,6 +214,8 @@ export async function installSupersededResnapshotFault(
 			await route.continue();
 			return;
 		}
+		if (replace && control.kind === 'subscription.setScope')
+			latestScopeRevision = Math.max(latestScopeRevision, control.scopeRevision);
 		const response = await route.fetch({ timeout: 0 });
 		try {
 			const admission = bridgeProductAdmissionResponseSchema.parse(await response.json());
@@ -164,8 +223,11 @@ export async function installSupersededResnapshotFault(
 				throw new Error('Native refused the fault fixture admission');
 			if (hold && control.kind === 'subscription.resnapshot')
 				older = { operationId: admission.operationId, request: control };
-			if (replace && control.kind === 'subscription.setScope')
+			if (replace && control.kind === 'subscription.setScope') {
 				scopes.set(admission.operationId, control);
+				if (intermediate !== null && intermediateOperationId === null)
+					intermediateOperationId = admission.operationId;
+			}
 			await route.fulfill({ response });
 		} finally {
 			await response.dispose();
@@ -186,6 +248,15 @@ export async function installSupersededResnapshotFault(
 	const heldResult = Promise.race([held.promise, failure.promise]);
 	const newerResult = Promise.race([newerScope.promise, failure.promise]);
 	const consumedResult = Promise.race([consumed.promise, failure.promise]);
+	const intermediateResult =
+		intermediate === null
+			? null
+			: {
+					held: Promise.race([intermediate.held.promise, failure.promise]),
+					settled: Promise.race([intermediate.settled.promise, failure.promise]),
+				};
+	void intermediateResult?.held.catch((): void => {});
+	void intermediateResult?.settled.catch((): void => {});
 	void heldResult.catch((): void => {});
 	void newerResult.catch((): void => {});
 	void consumedResult.catch((): void => {});
@@ -196,6 +267,7 @@ export async function installSupersededResnapshotFault(
 		held: heldResult,
 		newerScope: newerResult,
 		consumed: consumedResult,
+		intermediate: intermediateResult,
 		release: (): void => release.resolve(),
 		failedViews: (): readonly string[] => [...failedViews],
 		dispose: async (): Promise<void> => {

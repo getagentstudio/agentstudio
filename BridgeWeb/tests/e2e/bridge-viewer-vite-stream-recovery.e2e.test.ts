@@ -27,10 +27,17 @@ import { waitForStreamRecoveryFilePaint } from './bridge-viewer-vite-stream-reco
 import { installSupersededResnapshotFault } from './bridge-viewer-vite-superseded-resnapshot-fault.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
-test.for(['direct', 'healthy', 'disconnected', 'superseded'] as const)(
+test.for([
+	'direct',
+	'healthy',
+	'disconnected',
+	'superseded',
+	'superseded-cancelled-scope',
+	'superseded-refused-scope',
+] as const)(
 	'updates the selected File after %s metadata recovery',
 	async (scenario, context): Promise<void> => {
-		const streamState = scenario === 'superseded' ? 'disconnected' : scenario;
+		const streamState = scenario === 'direct' || scenario === 'healthy' ? scenario : 'disconnected';
 		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			// Arrange — production browser worker, Vite and Swift with a transparent wire seam.
 			const fixture = await createBridgeViewerViteProductFixture();
@@ -53,8 +60,16 @@ test.for(['direct', 'healthy', 'disconnected', 'superseded'] as const)(
 				if (streamState !== 'direct') proxy = await startBridgeStreamFaultProxy(server.origin);
 				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
-				if (scenario === 'superseded')
-					resnapshotFault = await installSupersededResnapshotFault(page, context.signal);
+				if (scenario.startsWith('superseded'))
+					resnapshotFault = await installSupersededResnapshotFault(
+						page,
+						context.signal,
+						scenario === 'superseded-cancelled-scope'
+							? { intermediateScopeOutcome: 'cancelled' }
+							: scenario === 'superseded-refused-scope'
+								? { intermediateScopeOutcome: 'superseded' }
+								: {},
+					);
 				phase = 'install owner observation before navigation';
 				ownerObservation = await installSelectedContentOwnerObservation(page);
 				diagnostics = observeBrowserRuntimeDiagnostics(page);
@@ -96,10 +111,29 @@ test.for(['direct', 'healthy', 'disconnected', 'superseded'] as const)(
 					const held = await server.testLaunch.observeStep(phase, resnapshotFault.held).value();
 					await page.getByTestId('worktree-file-search-toggle').click();
 					await page.getByTestId('worktree-file-search-input').fill(fixture.oracle.largeFilePath);
+					let intermediateRevision: number | null = null;
+					if (resnapshotFault.intermediate !== null) {
+						intermediateRevision = await server.testLaunch
+							.observeStep('intermediate scope result held', resnapshotFault.intermediate.held)
+							.value();
+						await page.getByTestId('worktree-file-search-input').fill('');
+						await server.testLaunch
+							.observeStep(
+								'intermediate scope superseded by successor',
+								resnapshotFault.intermediate.settled,
+							)
+							.value();
+					}
 					const revision = await server.testLaunch
 						.observeStep('newer File scope accepted', resnapshotFault.newerScope)
 						.value();
 					expect(revision).toBeGreaterThan(held.scopeRevision);
+					if (intermediateRevision !== null) {
+						expect(revision).toBeGreaterThan(intermediateRevision);
+						process.stdout.write(
+							`SUPERSEDED_SCOPE_SCHEDULE intermediate=${intermediateRevision} outcome=${scenario === 'superseded-cancelled-scope' ? 'cancelled' : 'superseded'} newest=${revision}\n`,
+						);
+					}
 					resnapshotFault.release();
 					await server.testLaunch
 						.observeStep('old resnapshot refusal consumed', resnapshotFault.consumed)
