@@ -6,9 +6,14 @@ import {
 	bridgeProductReviewMetadataApplicationProtocol,
 } from './bridge-product-metadata-application-registry.js';
 import {
+	BridgeProductControlRequestError,
+	type BridgeProductControlMux,
+} from './bridge-product-session-authority.js';
+import {
 	bridgeProductMetadataFrameSchema,
 	type BridgeProductMetadataStreamRequest,
 } from './bridge-product-session-contracts.js';
+import type { ViewResnapshotAdmissionProps } from './bridge-product-view-control-admission.js';
 import {
 	createTransportHarness,
 	disposeTransportHarnesses,
@@ -33,6 +38,105 @@ afterEach(async () => {
 });
 
 describe('Bridge product transport recovery edges', () => {
+	test.each([
+		{ failureCode: 'superseded', newerScope: true },
+		{ failureCode: 'superseded', newerScope: false },
+		{ failureCode: 'internal', newerScope: true },
+	] as const)(
+		'handles held $failureCode resnapshot with newer scope=$newerScope',
+		async ({ failureCode, newerScope }) => {
+			// Arrange: hold only the old operation's result, leaving W1 admission live.
+			const held = createBridgeProductDeferred<ViewResnapshotAdmissionProps>();
+			const release = createBridgeProductDeferred<void>();
+			const recoveryStatuses: string[] = [];
+			const harness = createTransportHarness({
+				onViewRecoveryStatus: (event): void => {
+					recoveryStatuses.push(event.status);
+				},
+			});
+			const original = harness.controlMux.resnapshotView.bind(harness.controlMux);
+			let holdFirst = true;
+			const resnapshot = vi
+				.spyOn(harness.controlMux, 'resnapshotView')
+				.mockImplementation(
+					async (
+						request: ViewResnapshotAdmissionProps,
+					): ReturnType<BridgeProductControlMux['resnapshotView']> => {
+						const accepted = await original(request);
+						if (!holdFirst || request.subscriptionKind !== 'file.metadata') return accepted;
+						holdFirst = false;
+						held.resolve(request);
+						await release.promise;
+						throw new BridgeProductControlRequestError({
+							code: failureCode,
+							message: `Held native resnapshot rejected: ${failureCode}`,
+							retryAfterMilliseconds: null,
+							retryable: false,
+						});
+					},
+				);
+			try {
+				const first = await establishFileSubscription(harness);
+				const terminal = first.events.next().then(
+					(): never => {
+						throw new Error('File subscription ended during recovery');
+					},
+					(error: unknown): never => {
+						throw error;
+					},
+				);
+				observeSettlement(terminal, (): void => {});
+				harness.server.failMetadataReader(new Error('physical stream disconnected'));
+				await harness.server.waitForMetadataStream(2);
+				const resumed = harness.server.requiredMetadataRequest(1);
+				if (resumed.resumeFromStreamSequence === null) throw new Error('Missing resume cursor');
+				harness.server.emitMetadata(
+					metadataAccepted(resumed, resumed.resumeFromStreamSequence + 1, 'resumed'),
+				);
+				const older = await Promise.race([held.promise, terminal]);
+
+				// Act: the newer scope and its own resnapshot settle before the old refusal.
+				if (newerScope) {
+					const scope = await harness.transport.setViewScopeForSubscription?.({
+						scope: { kind: 'file', changeFilter: { kind: 'none' }, interests: [], pathScope: [] },
+						subscriptionId: first.subscription.subscriptionId,
+					});
+					expect(scope?.kind).toBe('accepted');
+					if (scope?.kind !== 'accepted') throw new Error('Newer File scope was not accepted');
+					expect(scope.scopeRevision).toBeGreaterThan(older.scopeRevision);
+					await harness.transport.resnapshotLatestView?.(
+						first.subscription.subscriptionId,
+						'default',
+					);
+				}
+				const successor = harness.transport.subscribe(
+					bridgeProductReviewMetadataApplicationProtocol,
+					{},
+				);
+				release.resolve();
+
+				// Assert: only the stale typed refusal is benign; real faults still fail every waiter.
+				if (failureCode === 'internal' || !newerScope) {
+					await expect(terminal).rejects.toThrow(`Held native resnapshot rejected: ${failureCode}`);
+					expect(recoveryStatuses).toContain('failedRetryable');
+				} else {
+					const resumedAdmission = harness.server.waitForControlRequestWhere(
+						(request) =>
+							request.kind === 'subscription.open' &&
+							request.subscriptionId === successor.subscriptionId,
+					);
+					await Promise.race([resumedAdmission, terminal]);
+					expect(recoveryStatuses).not.toContain('failedRetryable');
+					expect(harness.transport.metadataStreamDiagnostics?.().activeSubscriptionCount).toBe(2);
+				}
+			} finally {
+				release.resolve();
+				resnapshot.mockRestore();
+				harness.server.shutdown();
+			}
+		},
+	);
+
 	test('does not invent a received stream sequence when the first stream fails before acceptance', async () => {
 		// Arrange
 		const harness = createTransportHarness();

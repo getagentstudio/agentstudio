@@ -24,11 +24,13 @@ import {
 	type BridgeStreamFaultProxy,
 } from './bridge-viewer-vite-stream-fault-proxy.ts';
 import { waitForStreamRecoveryFilePaint } from './bridge-viewer-vite-stream-recovery-readiness.ts';
+import { installSupersededResnapshotFault } from './bridge-viewer-vite-superseded-resnapshot-fault.ts';
 import { runBridgeWebE2ETestBody } from './bridge-web-e2e-test-retirement.ts';
 
-test.for(['direct', 'healthy', 'disconnected'] as const)(
-	'updates the selected File without user interaction after a %s metadata stream',
-	async (streamState, context): Promise<void> => {
+test.for(['direct', 'healthy', 'disconnected', 'superseded'] as const)(
+	'updates the selected File after %s metadata recovery',
+	async (scenario, context): Promise<void> => {
+		const streamState = scenario === 'superseded' ? 'disconnected' : scenario;
 		return await runBridgeWebE2ETestBody(context, async (): Promise<void> => {
 			// Arrange — production browser worker, Vite and Swift with a transparent wire seam.
 			const fixture = await createBridgeViewerViteProductFixture();
@@ -36,6 +38,8 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 			let server: BridgeViewerOwnedViteProductServer | null = null;
 			let proxy: BridgeStreamFaultProxy | null = null;
 			let page: Page | null = null;
+			let resnapshotFault: Awaited<ReturnType<typeof installSupersededResnapshotFault>> | null =
+				null;
 			let diagnostics: ReturnType<typeof observeBrowserRuntimeDiagnostics> | null = null;
 			let failures: Awaited<ReturnType<typeof observeInteractionProfileFailures>> | null = null;
 			let primaryFailure: { readonly error: Error } | null = null;
@@ -49,6 +53,8 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 				if (streamState !== 'direct') proxy = await startBridgeStreamFaultProxy(server.origin);
 				browser = await launchBridgeViewerE2EChromium({ testSignal: context.signal });
 				page = await browser.newPage({ viewport: { height: 980, width: 1728 } });
+				if (scenario === 'superseded')
+					resnapshotFault = await installSupersededResnapshotFault(page, context.signal);
 				phase = 'install owner observation before navigation';
 				ownerObservation = await installSelectedContentOwnerObservation(page);
 				diagnostics = observeBrowserRuntimeDiagnostics(page);
@@ -83,7 +89,20 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 				}
 
 				// Act — cut only the established metadata connection, not the worker or backend.
+				resnapshotFault?.arm();
 				if (streamState === 'disconnected') expect(proxy?.disconnectMetadata()).toBe(1);
+				if (resnapshotFault !== null) {
+					phase = 'hold old resnapshot and accept newer File demand';
+					const held = await server.testLaunch.observeStep(phase, resnapshotFault.held).value();
+					await page.getByTestId('worktree-file-search-toggle').click();
+					await page.getByTestId('worktree-file-search-input').fill(fixture.oracle.largeFilePath);
+					const revision = await server.testLaunch
+						.observeStep('newer File scope accepted', resnapshotFault.newerScope)
+						.value();
+					expect(revision).toBeGreaterThan(held.scopeRevision);
+					resnapshotFault.release();
+					console.info(`SUPERSEDED_RESNAPSHOT_FAULT old=${held.scopeRevision} newer=${revision}`);
+				}
 				phase = 'mutate fixture bytes';
 				const updatedContent = await server.testLaunch
 					.observeStep(
@@ -102,6 +121,7 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 					streamState,
 					testLaunch: server.testLaunch,
 				});
+				if (resnapshotFault !== null) expect(resnapshotFault.failedViews()).toEqual([]);
 				if (proxy !== null && before !== undefined && streamState === 'healthy') {
 					expect(proxy.snapshot().metadataRequestCount).toBe(before.metadataRequestCount);
 				} else if (proxy !== null && before !== undefined) {
@@ -149,7 +169,14 @@ test.for(['direct', 'healthy', 'disconnected'] as const)(
 						{
 							name: 'browser close',
 							run: async (): Promise<void> => {
+								resnapshotFault?.release();
 								await browser?.close();
+							},
+						},
+						{
+							name: 'held resnapshot fault',
+							run: async (): Promise<void> => {
+								await resnapshotFault?.dispose();
 							},
 						},
 						{
