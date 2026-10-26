@@ -101,6 +101,9 @@ test.for(['direct', 'healthy', 'disconnected', 'superseded'] as const)(
 						.value();
 					expect(revision).toBeGreaterThan(held.scopeRevision);
 					resnapshotFault.release();
+					await server.testLaunch
+						.observeStep('old resnapshot refusal consumed', resnapshotFault.consumed)
+						.value();
 					console.info(`SUPERSEDED_RESNAPSHOT_FAULT old=${held.scopeRevision} newer=${revision}`);
 				}
 				phase = 'mutate fixture bytes';

@@ -3,6 +3,8 @@ import type { ConsoleMessage, Page, Route } from 'playwright';
 import { createBridgeProductDeferred } from '../../src/core/comm-worker/bridge-product-async-queue.js';
 import {
 	bridgeProductAdmissionResponseSchema,
+	bridgeProductOperationResultAcknowledgementSchema,
+	bridgeProductOperationResultAcknowledgedResponseSchema,
 	bridgeProductOperationResultRequestSchema,
 	bridgeProductOperationResultResponseSchema,
 } from '../../src/core/comm-worker/bridge-product-operation-wire-contracts.js';
@@ -20,16 +22,19 @@ export async function installSupersededResnapshotFault(
 	readonly arm: () => void;
 	readonly held: Promise<BridgeProductViewResnapshotRequest>;
 	readonly newerScope: Promise<number>;
+	readonly consumed: Promise<void>;
 	readonly release: () => void;
 	readonly failedViews: () => readonly string[];
 	readonly dispose: () => Promise<void>;
 }> {
 	const held = createBridgeProductDeferred<BridgeProductViewResnapshotRequest>();
 	const newerScope = createBridgeProductDeferred<number>();
+	const consumed = createBridgeProductDeferred<void>();
 	const release = createBridgeProductDeferred<void>();
 	const failure = createBridgeProductDeferred<never>();
 	void held.promise.catch((): void => {});
 	void newerScope.promise.catch((): void => {});
+	void consumed.promise.catch((): void => {});
 	void failure.promise.catch((): void => {});
 	let armed = false;
 	let older: {
@@ -75,10 +80,27 @@ export async function installSupersededResnapshotFault(
 		);
 	};
 	page.once('close', retire);
+	page.once('crash', retire);
 	signal.addEventListener('abort', retire, { once: true });
 	if (signal.aborted) retire();
 	const intercept = async (route: Route): Promise<void> => {
 		const body: unknown = route.request().postDataJSON();
+		const acknowledgement = bridgeProductOperationResultAcknowledgementSchema.safeParse(body);
+		if (acknowledgement.success && acknowledgement.data.operationId === older?.operationId) {
+			const response = await route.fetch({ timeout: 0 });
+			try {
+				const accepted = bridgeProductOperationResultAcknowledgedResponseSchema.parse(
+					await response.json(),
+				);
+				if (accepted.operationId !== acknowledgement.data.operationId)
+					throw new Error('Old resnapshot result acknowledgement identity mismatch');
+				await route.fulfill({ response });
+				consumed.resolve();
+			} finally {
+				await response.dispose();
+			}
+			return;
+		}
 		const resultRequest = bridgeProductOperationResultRequestSchema.safeParse(body);
 		if (resultRequest.success) {
 			const target = older;
@@ -163,14 +185,17 @@ export async function installSupersededResnapshotFault(
 	await page.route('**/__bridge-product/command', handler);
 	const heldResult = Promise.race([held.promise, failure.promise]);
 	const newerResult = Promise.race([newerScope.promise, failure.promise]);
+	const consumedResult = Promise.race([consumed.promise, failure.promise]);
 	void heldResult.catch((): void => {});
 	void newerResult.catch((): void => {});
+	void consumedResult.catch((): void => {});
 	return {
 		arm: (): void => {
 			armed = true;
 		},
 		held: heldResult,
 		newerScope: newerResult,
+		consumed: consumedResult,
 		release: (): void => release.resolve(),
 		failedViews: (): readonly string[] => [...failedViews],
 		dispose: async (): Promise<void> => {
@@ -178,6 +203,7 @@ export async function installSupersededResnapshotFault(
 			await Promise.all(pending);
 			if (!page.isClosed()) await page.unroute('**/__bridge-product/command', handler);
 			page.off('close', retire);
+			page.off('crash', retire);
 			page.off('console', observeFailure);
 			signal.removeEventListener('abort', retire);
 		},
