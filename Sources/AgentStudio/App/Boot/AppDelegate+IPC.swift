@@ -356,6 +356,8 @@ extension AppDelegate {
         let viewedMailbox = atomStore.sessionsPaneViewedMailbox
         let applyMeasurement = SessionStatusApplyMeasurement()
         let traceRecorder = performanceTraceRecorder
+        let messageActions = PaneContextMessageActionRunner.make(
+            store: store, editorPreference: atomStore.editorPreference, dispatcher: commandDispatcherForBoot())
         let composition = SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore,
@@ -396,7 +398,8 @@ extension AppDelegate {
                 foregroundLookSink: makeRestoreForegroundLookSink(),
                 resumedSessionStartSink: terminalActivityRouter?.resumedSessionStartSink,
                 terminalLeaderReader: appIPCTerminalLeaderReader,
-                processChainReader: appIPCProcessChainReader)
+                processChainReader: appIPCProcessChainReader,
+                messageActionRunner: { await messageActions.run($0) })
         )
         guard !Task.isCancelled else {
             await composition.shutdown()

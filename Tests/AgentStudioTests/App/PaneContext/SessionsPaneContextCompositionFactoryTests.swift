@@ -321,7 +321,10 @@ struct CompositionFactoryFixture: Sendable {
     @concurrent static func make(
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         ownerId: PaneId = .generateUUIDv7(),
-        wallNow: (@Sendable () -> Date)? = nil
+        wallNow: (@Sendable () -> Date)? = nil,
+        messageActionRunner: @escaping @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
+            .unavailable(.databaseUnavailable)
+        }
     ) async throws -> Self {
         let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
@@ -378,7 +381,7 @@ struct CompositionFactoryFixture: Sendable {
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
                 performanceTraceRecorder: performanceTraceRecorder,
                 terminalLeaderReader: MatchingTestPaneTerminalLeaderReader(),
-                processChainReader: EligibleTestProcessChainReader()))
+                processChainReader: EligibleTestProcessChainReader(), messageActionRunner: messageActionRunner))
         return Self(
             root: root, corePool: corePool, localPool: localPool, statements: statements, composition: composition,
             directory: directory,

@@ -83,10 +83,10 @@ enum PaneContextPopoverFeedback {
     @concurrent nonisolated static func action(_ result: MessageActionResult) async -> String {
         switch result {
         case .openFile(.opened): "File opened"
-        case .openFile(.shown): "File shown"
-        case .openFile(.declined): "File take-over declined"
         case .openFile(.notFound): "File not found"
-        case .openFile(.paneUnavailable): "Pane unavailable"
+        case .openFile(.sourceUnavailable): "Source pane unavailable"
+        case .openFile(.editorUnavailable): "Editor unavailable"
+        case .openFile(.launchFailed): "File open failed"
         case .openPullRequest(.opened): "Pull request opened"
         case .openPullRequest(.notFound): "Pull request not found"
         case .openPullRequest(.failed): "Pull request open failed"

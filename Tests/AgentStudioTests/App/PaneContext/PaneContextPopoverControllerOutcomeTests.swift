@@ -105,10 +105,11 @@ struct PaneContextPopoverControllerOutcomeTests {
         let shown: String
     }
     nonisolated static let actionCases: [ActionCase] = [
-        .init(result: .openFile(.opened), shown: "File opened"), .init(result: .openFile(.shown), shown: "File shown"),
-        .init(result: .openFile(.declined), shown: "File take-over declined"),
+        .init(result: .openFile(.opened), shown: "File opened"),
         .init(result: .openFile(.notFound), shown: "File not found"),
-        .init(result: .openFile(.paneUnavailable), shown: "Pane unavailable"),
+        .init(result: .openFile(.sourceUnavailable), shown: "Source pane unavailable"),
+        .init(result: .openFile(.editorUnavailable), shown: "Editor unavailable"),
+        .init(result: .openFile(.launchFailed), shown: "File open failed"),
         .init(result: .openPullRequest(.opened), shown: "Pull request opened"),
         .init(result: .openPullRequest(.notFound), shown: "Pull request not found"),
         .init(result: .openPullRequest(.failed), shown: "Pull request open failed"),
