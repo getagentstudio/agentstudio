@@ -135,7 +135,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                         location: location,
                         feedback: controller.unavailableNote ?? controller.actionFeedback,
                         actions: PaneContextPopoverHostActions.messages(
-                            controller: controller, readers: readers, onGoToPane: onGoToPane,
+                            controller: controller, readers: readers, onGoToPane: goToPaneAndDismissPopover,
                             onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
                     )
                     .task(id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages))
@@ -161,7 +161,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                     AgentLinePopover(
                         model: line, goToPaneControl: controls.goToPane, feedback: controller.unavailableNote
                     ) {
-                        onGoToPane(paneId.uuid)
+                        goToPaneAndDismissPopover(paneId.uuid)
                     }
                 }
             }
@@ -174,6 +174,10 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     private func requestOpen() {
         isPresented = true
         openRequest &+= 1
+    }
+    private func goToPaneAndDismissPopover(_ targetPaneId: UUID) {
+        onGoToPane(targetPaneId)
+        isPresented = false
     }
     private func openPopover(read: PaneContextReadOperation) async {
         isPresented = true

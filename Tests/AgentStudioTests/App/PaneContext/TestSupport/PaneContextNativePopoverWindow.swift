@@ -198,7 +198,8 @@ final class PaneContextNativePopoverWindow {
                 PaneContextPopoverHost(
                     paneId: paneId, presentation: messageEntry ?? .init(presentation), location: location,
                     readers: readers,
-                    octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in }, includingDrawers: includingDrawers,
+                    octiconLoader: makeTestOcticonLoader(), onGoToPane: { sink.goToPaneTargets.append($0) },
+                    includingDrawers: includingDrawers,
                     onReadCompleted: { read, value in
                         sink.controller = value
                         sink.completed(read)
