@@ -149,10 +149,21 @@ struct S5PaneCLIContext: Sendable {
             arguments: ["pane.writer.claimEpoch", "--json", json], environment: environment)
     }
 
-    func runWithWallClock(_ arguments: [String], now: Date) async -> ClientCommandLineOutcome {
+    func runWithWallClock(
+        _ arguments: [String], now: Date, deadlineTiming: (any CallDeadlineTiming)? = nil
+    ) async -> ClientCommandLineOutcome {
         let environment = callEnvironment(store: nil, useStore: true)
-        let driver = ControlledDeadlineDriver()
-        defer { driver.close() }
+        let driver: ControlledDeadlineDriver?
+        let timing: any CallDeadlineTiming
+        if let deadlineTiming {
+            driver = nil
+            timing = deadlineTiming
+        } else {
+            let owned = ControlledDeadlineDriver()
+            driver = owned
+            timing = owned.timing
+        }
+        defer { driver?.close() }
         return await valueFromDedicatedThread {
             let output = S5TextOutputCollector()
             let error = S5TextOutputCollector()
@@ -161,7 +172,7 @@ struct S5PaneCLIContext: Sendable {
                     arguments: arguments, environment: environment, executablePath: executableURL.path,
                     bundleExecutableURL: nil, standardInput: { Data() },
                     identifierGenerator: { UUIDv7.generate() }, standardOutputSink: { output.append($0) },
-                    standardErrorSink: { error.append($0) }, now: { now }, deadlineTiming: driver.timing))
+                    standardErrorSink: { error.append($0) }, now: { now }, deadlineTiming: timing))
             return ClientCommandLineOutcome(
                 exitCode: code, standardOutput: output.joined(), standardError: error.joined())
         }

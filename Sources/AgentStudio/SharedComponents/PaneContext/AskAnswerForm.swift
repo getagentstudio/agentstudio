@@ -19,6 +19,15 @@ package struct AskAnswerForm: View {
     package var body: some View {
         VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
             switch form {
+            case .approval(let approve, let deny, let reason):
+                TextField(reason.label, text: $draft.text)
+                    .accessibilityLabel(reason.label)
+                    .accessibilityIdentifier(fieldIdentifier("reason"))
+                    .controlHelp(reason.tooltip)
+                HStack(spacing: AppStyles.General.Spacing.standard) {
+                    PaneContextActionButton(approve, scope: scope) { submitDecision(.approve) }
+                    PaneContextActionButton(deny, scope: scope) { submitDecision(.deny) }
+                }
             case .choice(let options, let allowsMultiple):
                 ForEach(options.indices, id: \.self) { index in
                     let option = options[index]
@@ -65,9 +74,16 @@ package struct AskAnswerForm: View {
 
     private var requiresSubmit: Bool {
         switch form {
+        case .approval: false
         case .choice(_, let allowsMultiple): allowsMultiple
         case .freeText, .elicitation: true
         }
+    }
+
+    private func submitDecision(_ decision: ApprovalDecisionModel) {
+        var answer = draft
+        answer.approvalDecision = decision
+        onSubmit(answer)
     }
 
     @ViewBuilder

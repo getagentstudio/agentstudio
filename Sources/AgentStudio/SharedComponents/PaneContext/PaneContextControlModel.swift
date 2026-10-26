@@ -69,7 +69,7 @@ package enum PaneContextPopoverLocation: Sendable, Equatable {
             case .noticeActions: .notApplicable
             case .answer(let form):
                 switch form {
-                case .choice, .freeText: .inline
+                case .approval, .choice, .freeText: .inline
                 case .elicitation: .inMessages
                 }
             }
@@ -90,6 +90,7 @@ package enum PaneContextInteractionPresentation: Sendable, Equatable {
 }
 
 package struct AskFormDraft: Sendable, Equatable {
+    package var approvalDecision: ApprovalDecisionModel?
     package private(set) var selectedChoices: [String] = []
     package var text = ""
     package var fields: [String: String] = [:]

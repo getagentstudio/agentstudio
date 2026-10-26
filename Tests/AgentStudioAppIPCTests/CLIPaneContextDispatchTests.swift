@@ -33,7 +33,8 @@ struct CLIPaneContextDispatchTests {
         }
     }
     @Test(
-        "each pane verb has offline help", arguments: ["notify", "ask", "withdraw", "answers", "line", "title", "pane"])
+        "each pane verb has offline help",
+        arguments: ["notify", "ask", "approval", "withdraw", "answers", "line", "title", "pane"])
     func paneVerbHelpIsOffline(verb: String) async throws {
         try await withS5PaneCLIContext { context in
             let output = try await context.run([verb, "--help"], useStore: false)

@@ -66,7 +66,7 @@ struct PaneContextScenario: Sendable, CustomStringConvertible {
         Then run the focused test lane again.
         """
 
-    /// S15 stays in this inventory; its approval driver is enabled at P6, as the Lead approved.
+    /// Literal owner-approved scenarios shared by the production surface proofs.
     static let all: [Self] = [
         .init(
             activityAgeSeconds: 60, id: "S1", session: .ready, line: nil, messages: [], prompts: .absent,

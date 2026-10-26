@@ -61,7 +61,8 @@ final class PaneContextNativePopoverWindow {
     init(
         paneId: PaneId, readers: PaneContextUIReaders, location: PaneContextPopoverLocation,
         wallNow: Date, agentLine: RepoExplorerPaneContextLine? = nil, includingDrawers: Bool = true,
-        card: (context: PaneManagementContext, store: WorkspaceStore)? = nil
+        card: (context: PaneManagementContext, store: WorkspaceStore)? = nil,
+        viewportWidth: CGFloat? = nil
     ) {
         let clock = NativeCardTestClock()
         let sink = Sink()
@@ -118,8 +119,10 @@ final class PaneContextNativePopoverWindow {
                     },
                     onRelativeTimeEvent: onRelativeTimeEvent))
         }
-        let host = NSHostingView(rootView: root)
-        host.frame = CGRect(x: 0, y: 0, width: card == nil ? 280 : 640, height: card == nil ? 80 : 900)
+        let content = viewportWidth.map { AnyView(root.frame(width: $0)) } ?? root
+        let host = NSHostingView(rootView: content)
+        host.frame = CGRect(
+            x: 0, y: 0, width: viewportWidth ?? (card == nil ? 280 : 640), height: card == nil ? 80 : 900)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host

@@ -20,6 +20,7 @@ package enum IPCCorrelationPolicy: String, Codable, CaseIterable, Equatable, Sen
 package enum IPCModelCallVariant: String, Codable, CaseIterable, Equatable, Hashable, Sendable {
     case notify
     case ask
+    case approval
     case withdraw
     case answers
     case line

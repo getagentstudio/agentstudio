@@ -81,6 +81,7 @@ package enum AskReason: Sendable, Equatable {
     case blocked
 }
 package enum AskForm: Sendable, Equatable {
+    case approval
     case choice(options: [AskChoice], allowsMultiple: Bool)
     case freeText(placeholder: String?)
     case elicitation(ElicitationSchema)
@@ -104,7 +105,13 @@ package enum AnswerReceipt: Sendable, Equatable {
     case unconfirmed
 }
 package enum AskAnswerValue: Sendable, Equatable {
+    case decision(PaneMessageApprovalDecision, reason: String?)
     case choices([AskChoiceId])
     case text(String)
     case form(ElicitationValues)
+}
+
+package enum PaneMessageApprovalDecision: String, Sendable, Equatable {
+    case approve
+    case deny
 }

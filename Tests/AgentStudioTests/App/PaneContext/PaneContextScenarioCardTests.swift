@@ -40,7 +40,7 @@ struct PaneContextScenarioCardTests {
     @Test(
         "real fold and Sessions publication reach the card",
         arguments: (PaneContextScenario.all + PaneContextScenario.evidenceCases).filter {
-            $0.id != "S15" && !$0.isSyntheticPromptInput
+            !$0.isSyntheticPromptInput
         })
     func sourceFactsReachCard(_ scenario: PaneContextScenario) async throws { try await assertCard(scenario) }
 
@@ -106,6 +106,18 @@ struct PaneContextScenarioCardTests {
             }
             #expect(row.body == "Which suites should I rerun?")
             #expect(options.map(\.label) == ["Swift", "BridgeWeb", "E2E"])
+        case "S15":
+            guard case .ask(let row) = card.request,
+                case .ask(.approval, .approval(let approve, let deny, let reason), _, .open) = row.shape
+            else {
+                Issue.record("S15 must show the approval form")
+                return
+            }
+            #expect(row.body == "Approve running the migration?")
+            #expect(approve.label == "Approve")
+            #expect(deny.label == "Deny")
+            #expect(reason.label == "Reason (optional)")
+            #expect(card.moreCount == 0)
         case "S16a-synthetic-input", "S18-synthetic-input":
             guard case .providerPrompt(let source, _, let summary) = card.request else {
                 Issue.record("Synthetic prompt card must show its request block")

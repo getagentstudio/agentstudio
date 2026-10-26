@@ -9,8 +9,8 @@ import Testing
 @Suite("V3 literal pane context scenario projections")
 struct PaneContextScenarioProjectionTests {
     @Test(
-        "S1–S19 sidebar and toolbar from the real fold and Sessions publication; approval driver lands at P6",
-        arguments: PaneContextScenario.all.filter { $0.id != "S15" && !$0.isSyntheticPromptInput })
+        "S1–S19 sidebar and toolbar from the real fold and Sessions publication",
+        arguments: PaneContextScenario.all.filter { !$0.isSyntheticPromptInput })
     func sourceFactsReachSidebarAndToolbar(_ scenario: PaneContextScenario) async throws {
         try await assertProjections(scenario)
     }

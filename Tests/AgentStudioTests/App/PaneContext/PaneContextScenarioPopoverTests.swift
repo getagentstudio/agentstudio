@@ -10,7 +10,7 @@ import Testing
 struct PaneContextScenarioPopoverTests {
     @Test(
         "real fold and Sessions publication reach Messages and Agent Line shapers",
-        arguments: PaneContextScenario.all.filter { $0.id != "S15" && !$0.isSyntheticPromptInput })
+        arguments: PaneContextScenario.all.filter { !$0.isSyntheticPromptInput })
     func sourceFactsReachPopovers(_ scenario: PaneContextScenario) async throws {
         try await assertPopovers(scenario)
     }
@@ -36,6 +36,16 @@ struct PaneContextScenarioPopoverTests {
         #expect(rows.map(\.body) == expectedBodies(scenario.id))
         if let label = scenario.expected.settledLabel { #expect(rows.first?.settledLabel == label) }
         if scenario.id == "S11" { #expect(rows.last?.sourceLabel == "tests") }
+        if scenario.id == "S15" {
+            guard case .ask(.approval, .approval(let approve, let deny, let reason), _, .open)? = rows.first?.shape
+            else {
+                Issue.record("S15 must show the approval form")
+                return
+            }
+            #expect(approve.label == "Approve")
+            #expect(deny.label == "Deny")
+            #expect(reason.label == "Reason (optional)")
+        }
         if scenario.id == "S8" {
             #expect(
                 rows.first?.actions == [
@@ -106,6 +116,7 @@ struct PaneContextScenarioPopoverTests {
             ]
         case "S9", "S10-pending", "S10-confirmed": ["Pick a color for the test?"]
         case "S14": ["Which suites should I rerun?"]
+        case "S15": ["Approve running the migration?"]
         case "S17":
             [
                 """

@@ -8,6 +8,7 @@ extension IPCModelCallVariant {
     var methodName: String {
         switch self {
         case .notify, .ask: "pane.message.send"
+        case .approval: "pane.message.ask"
         case .withdraw: "pane.message.withdraw"
         case .answers: "pane.message.changes"
         case .line: "pane.line.set"
@@ -26,6 +27,7 @@ extension IPCModelCallVariant {
         switch self {
         case .notify: "notify TEXT [--kind info|attention|done|failure] [--open file:line]"
         case .ask: "ask QUESTION [--reason approval|question|blocked] [--choice a,b] [--wait --timeout SECONDS]"
+        case .approval: "approval REQUEST [--timeout SECONDS]"
         case .withdraw: "withdraw ID"
         case .answers: "answers"
         case .line:
@@ -78,6 +80,11 @@ enum PaneCLIIntent: Sendable {
         let options = try PaneCLIOptions(arguments: Array(arguments.dropFirst()), verb: verb)
         switch verb {
         case .notify: return .notify(try options.message(now: now))
+        case .approval:
+            return .ask(
+                .init(
+                    message: try options.message(now: now), reason: .approval, form: .approval,
+                    timeout: try options.duration("--timeout") ?? (CLIPolicy.defaultAskTimeout / .seconds(1))))
         case .ask:
             let timeout = try options.duration("--timeout")
             guard timeout == nil || options.flags.contains("--wait") else { throw invalid() }
@@ -142,6 +149,9 @@ private struct PaneCLIOptions {
         case .ask:
             flagNames = ["--wait"]
             valueNames = ["--reason", "--choice", "--timeout", "--kind", "--open"]
+        case .approval:
+            flagNames = []
+            valueNames = ["--timeout"]
         case .title:
             flagNames = ["--reset"]
             valueNames = []

@@ -119,9 +119,16 @@ private struct MessagePopoverRow: View {
         HStack(alignment: .top, spacing: AppStyles.General.Spacing.standard) {
             PaneContextRowGlyph(icon: row.kindIcon, style: glyphStyle, octiconLoader: octiconLoader)
             VStack(alignment: .leading, spacing: AppStyles.General.Spacing.standard) {
-                PaneContextDatedText(
-                    body: row.body, explanation: row.why, age: row.age,
-                    identifier: "pane-context.message-text." + row.key.controlScope)
+                HStack(alignment: .top, spacing: AppStyles.General.Spacing.standard) {
+                    PaneContextDatedText(
+                        body: row.body, explanation: row.why, age: row.age,
+                        identifier: "pane-context.message-text." + row.key.controlScope
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if row.availability == .askForm, location.presentation(for: .dismissAsk) == .inline {
+                        dismiss.fixedSize()
+                    }
+                }
                 if let source = row.sourceLabel {
                     PaneContextSourceLabel(title: source, scope: row.key.controlScope)
                 }
@@ -159,7 +166,6 @@ private struct MessagePopoverRow: View {
                         actions.answer(row.id, row.sourcePaneId, $0)
                     }
                 }
-                if location.presentation(for: .dismissAsk) == .inline { dismiss }
             }
         }
     }

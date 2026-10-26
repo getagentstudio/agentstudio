@@ -74,7 +74,7 @@ extension PaneContextStorage {
                     throw PaneContextStorageFailure.decode("answered_by")
                 }
                 let answerKind: String = try required(row, .answerKind)
-                guard ["text", "choices", "form"].contains(answerKind) else {
+                guard ["text", "choices", "form", "decision"].contains(answerKind) else {
                     throw PaneContextStorageFailure.decode("answer_kind")
                 }
                 _ = try answerReceipt(row)

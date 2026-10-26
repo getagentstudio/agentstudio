@@ -26,6 +26,13 @@ enum PaneContextPopoverAnswerParsing {
         guard let message = message(messageId, source: source, snapshot: snapshot) else { return .failure(.notFound) }
         guard case .ask(_, let form, _, _) = message.shape else { return .failure(.invalidAnswer(.formMismatch)) }
         switch form {
+        case .approval:
+            guard let decision = draft.approvalDecision else { return .failure(.invalidAnswer(.formMismatch)) }
+            let reason = draft.text.isEmpty ? nil : draft.text
+            switch decision {
+            case .approve: return .success(.decision(.approve, reason: reason))
+            case .deny: return .success(.decision(.deny, reason: reason))
+            }
         case .choice:
             do { return .success(.choices(try draft.selectedChoices.map { try AskChoiceId($0) })) } catch {
                 return .failure(.invalidAnswer(.choiceCount))

@@ -70,7 +70,7 @@ struct PaneContextScenarioFacts: Sendable {
                         .init(id: try .init("bridgeweb"), label: "BridgeWeb"),
                         .init(id: try .init("e2e"), label: "E2E"),
                     ], allowsMultiple: true)
-            case .approval: throw ScenarioFactsFailure.approvalBelongsToP6
+            case .approval: form = .approval
             }
             let state: AskState =
                 switch answer {
@@ -85,7 +85,7 @@ struct PaneContextScenarioFacts: Sendable {
                 }
             let waiting: AskWaiting =
                 answer == .dismissed ? .nonBlocking : .blocking(deadline: at.addingTimeInterval(60))
-            shape = .ask(.question, form, waiting, state)
+            shape = .ask(formInput == .approval ? .approval : .question, form, waiting, state)
         }
         let sender: AgentMessageSender =
             switch shape {
@@ -192,7 +192,6 @@ struct PaneContextScenarioFacts: Sendable {
     }
 
     private enum ScenarioFactsFailure: Error {
-        case approvalBelongsToP6
         case missingPublication(String)
     }
 }

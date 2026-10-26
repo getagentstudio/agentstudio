@@ -46,6 +46,11 @@ extension PaneContextPopoverShaping {
 
     nonisolated static func answer(_ value: AskAnswerValue) -> AskAnswerModel {
         switch value {
+        case .decision(let decision, let reason):
+            switch decision {
+            case .approve: .decision(.approve, reason: reason)
+            case .deny: .decision(.deny, reason: reason)
+            }
         case .choices(let ids): .choices(ids.map(\.value))
         case .text(let text): .text(text)
         case .form(let form):
@@ -71,6 +76,13 @@ extension PaneContextPopoverShaping {
 
     nonisolated static func form(_ form: AskForm) -> AskFormModel {
         switch form {
+        case .approval:
+            .approval(
+                approve: PaneContextPopoverControlProjection.control(
+                    .approvePaneMessage, identifier: "pane-context.approve"),
+                deny: PaneContextPopoverControlProjection.control(.denyPaneMessage, identifier: "pane-context.deny"),
+                reason: PaneContextPopoverControlProjection.control(
+                    .paneMessageApprovalReason, identifier: "pane-context.reason"))
         case .choice(let options, let allowsMultiple):
             .choice(
                 options: options.map {

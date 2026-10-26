@@ -55,6 +55,11 @@ extension PaneContextPresentationRules {
 
     private static func answerSummary(_ value: AskAnswerValue, form: AskForm) -> String {
         switch value {
+        case .decision(let decision, _):
+            switch decision {
+            case .approve: return "Approve"
+            case .deny: return "Deny"
+            }
         case .choices(let selected):
             guard case .choice(let options, _) = form else { return "" }
             return selected.compactMap { id in options.first { $0.id == id }?.label }.joined(separator: ", ")

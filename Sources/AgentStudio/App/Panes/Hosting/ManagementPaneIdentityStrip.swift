@@ -50,15 +50,6 @@ struct ManagementPaneIdentityStrip: View {
                 secondaryLine(line)
                     .background { identityBounds(String(describing: line.kind), label: secondaryLabel(line)) }
             }
-            if unreadCount > 0, let readers {
-                HStack(spacing: AppStyles.General.Spacing.tight) {
-                    Text("\(unreadCount) unread ·")
-                        .background { identityBounds("unread", label: "\(unreadCount) unread ·") }
-                    messagesEntry(
-                        .showPaneMessagesFromCard, identifier: "pane-context.card-messages",
-                        readers: readers)
-                }
-            }
             if let feedback { PaneContextPopoverNote(feedback) }
             if let cardModel, cardModel.request != .none, let readers, let actions {
                 PaneContextCardRequestBlock(
@@ -69,6 +60,15 @@ struct ManagementPaneIdentityStrip: View {
                 if cardModel.moreCount > 0 {
                     messagesEntry(
                         .showMorePaneNeedsYou(count: cardModel.moreCount), identifier: "pane-context.card-more",
+                        readers: readers)
+                }
+            }
+            if unreadCount > 0, let readers {
+                HStack(spacing: AppStyles.General.Spacing.tight) {
+                    Text("\(unreadCount) unread ·")
+                        .background { identityBounds("unread", label: "\(unreadCount) unread ·") }
+                    messagesEntry(
+                        .showPaneMessagesFromCard, identifier: "pane-context.card-messages",
                         readers: readers)
                 }
             }

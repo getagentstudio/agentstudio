@@ -95,6 +95,7 @@ extension PaneContextIPCMapping {
 
     static func form(_ value: AskForm) -> IPCPaneAskForm {
         switch value {
+        case .approval: return .approval
         case .choice(let options, let multiple):
             return .choice(
                 options: options.map { IPCPaneAskChoice(id: $0.id.value, label: $0.label) }, allowsMultiple: multiple)

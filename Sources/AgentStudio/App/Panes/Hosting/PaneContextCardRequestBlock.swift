@@ -25,8 +25,19 @@ struct PaneContextCardRequestBlock: View {
                 Text("Answer in the agent's terminal").foregroundStyle(.secondary)
                 PaneContextActionButton(controls.goToPane) { actions.goToPane(source.uuid) }
             case .ask(let row):
-                Text(row.body).textSelection(.enabled)
-                if let why = row.why { Text(why).foregroundStyle(.secondary).textSelection(.enabled) }
+                HStack(alignment: .top, spacing: AppStyles.General.Spacing.standard) {
+                    PaneContextDatedText(
+                        body: row.body, explanation: row.why, age: row.age,
+                        identifier: "pane-context.message-text." + row.key.controlScope
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if row.availability == .askForm {
+                        PaneContextActionButton(controls.dismiss, scope: row.key.controlScope) {
+                            actions.dismiss(row.id, row.sourcePaneId)
+                        }
+                        .fixedSize()
+                    }
+                }
                 if let source = row.sourceLabel {
                     Text("Drawer · \(source)").font(.caption).foregroundStyle(.secondary)
                 }
@@ -36,6 +47,7 @@ struct PaneContextCardRequestBlock: View {
                         AskAnswerForm(form: form, submitControl: controls.submit, scope: row.key.controlScope) {
                             actions.answer(row.id, row.sourcePaneId, $0)
                         }
+                        .id(row.key)
                     case .inMessages:
                         PaneContextPopoverHost(
                             paneId: owner,
@@ -51,9 +63,6 @@ struct PaneContextCardRequestBlock: View {
                             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
                             onRelativeTimeEvent: onRelativeTimeEvent)
                     case .notApplicable: EmptyView()
-                    }
-                    PaneContextActionButton(controls.dismiss, scope: row.key.controlScope) {
-                        actions.dismiss(row.id, row.sourcePaneId)
                     }
                 }
             }
