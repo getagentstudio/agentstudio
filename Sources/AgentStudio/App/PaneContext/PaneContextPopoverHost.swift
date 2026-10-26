@@ -14,7 +14,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let octiconLoader: OcticonLoader
     let onGoToPane: @MainActor (UUID) -> Void
     let includingDrawers: Bool
-    let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
+    let onReadCompleted: PaneContextReadCompletionObserver
     let onReadTaskStarted: PaneContextReadTaskObserver
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
@@ -31,9 +31,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         paneId: PaneId, presentation: PaneContextPopoverEntry,
         location: PaneContextPopoverLocation, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
-        onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
+        onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
-        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _, _ in },
+        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
@@ -62,20 +62,22 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 guard openRequest > 0 else { return }
                 await PaneContextPopoverHostActions.read(
                     key: readers.refreshKey(for: paneId), location: location, onStarted: onReadTaskStarted
-                ) {
-                    await openPopover()
+                ) { read in
+                    await openPopover(read: read)
                 }
             }
             .task(id: readers.refreshKey(for: paneId)) {
                 guard isPresented, let controller, controller.needsRevisionRefresh else { return }
                 let key = readers.refreshKey(for: paneId)
-                await PaneContextPopoverHostActions.read(key: key, location: location, onStarted: onReadTaskStarted) {
+                await PaneContextPopoverHostActions.read(
+                    key: key, location: location, onStarted: onReadTaskStarted
+                ) { read in
                     guard controller.useCurrentService(readers.serviceProvider()) else {
-                        onReadCompleted(key, controller)
+                        onReadCompleted(read, controller)
                         return
                     }
                     if await controller.refreshIfRevisionChanged(), !Task.isCancelled {
-                        onReadCompleted(key, controller)
+                        onReadCompleted(read, controller)
                     }
                 }
             }
@@ -158,15 +160,14 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         isPresented = true
         openRequest &+= 1
     }
-    private func openPopover() async {
-        let key = readers.refreshKey(for: paneId)
+    private func openPopover(read: PaneContextReadOperation) async {
         isPresented = true
         unavailableNote = nil
         guard let adapter = readers.serviceProvider() else {
             controller?.close()
             controller = nil
             unavailableNote = "Not available right now"
-            onReadCompleted(key, nil)
+            onReadCompleted(read, nil)
             return
         }
         let active =
@@ -182,7 +183,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
             await active.open(paneId)
         }
         guard !Task.isCancelled else { return }
-        onReadCompleted(key, active)
+        onReadCompleted(read, active)
     }
 
     private func refreshAges(_ shape: PaneContextPopoverShape?) {
@@ -211,7 +212,7 @@ extension PaneContextPopoverHost where AgeClock == ContinuousClock {
         paneId: PaneId, presentation: PaneContextPopoverEntry,
         location: PaneContextPopoverLocation, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
-        onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
+        onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }

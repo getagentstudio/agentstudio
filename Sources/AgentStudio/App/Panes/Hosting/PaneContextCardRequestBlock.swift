@@ -9,8 +9,8 @@ struct PaneContextCardRequestBlock: View {
     let readers: PaneContextUIReaders
     let owner: PaneId
     let octiconLoader: OcticonLoader
-    let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
-    var onReadTaskStarted: PaneContextReadTaskObserver = { _, _, _ in }
+    let onReadCompleted: PaneContextReadCompletionObserver
+    var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void

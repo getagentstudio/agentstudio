@@ -1,19 +1,28 @@
 import AgentStudioCore
+import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import Foundation
 
-typealias PaneContextReadTaskObserver =
-    @MainActor (PaneContextRefreshKey, PaneContextPopoverLocation, Task<Void, Never>) -> Void
+struct PaneContextReadOperation: Equatable, Sendable {
+    let id = UUIDv7.generate()
+    let key: PaneContextRefreshKey
+    let location: PaneContextPopoverLocation
+}
+
+typealias PaneContextReadTaskObserver = @MainActor (PaneContextReadOperation, Task<Void, Never>) -> Void
+typealias PaneContextReadCompletionObserver =
+    @MainActor (PaneContextReadOperation, PaneContextPopoverController?) -> Void
 
 @MainActor
 enum PaneContextPopoverHostActions {
     static func read(
         key: PaneContextRefreshKey, location: PaneContextPopoverLocation,
-        onStarted: @MainActor (PaneContextRefreshKey, PaneContextPopoverLocation, Task<Void, Never>) -> Void,
-        operation: @escaping @MainActor () async -> Void
+        onStarted: PaneContextReadTaskObserver,
+        operation: @escaping @MainActor (PaneContextReadOperation) async -> Void
     ) async {
-        let task = Task { await operation() }
-        onStarted(key, location, task)
+        let read = PaneContextReadOperation(key: key, location: location)
+        let task = Task { await operation(read) }
+        onStarted(read, task)
         await withTaskCancellationHandler {
             await task.value
         } onCancel: {

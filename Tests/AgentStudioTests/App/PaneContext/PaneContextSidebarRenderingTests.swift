@@ -46,7 +46,7 @@ struct PaneContextSidebarRenderingTests {
                 let mounted = mount(row, controls: fixture.paneContextControl, width: 260)
                 defer { mounted.window.close() }
                 let identity = ObjectIdentifier(mounted.cell.hostingView)
-                try assertOrderedPaint(in: mounted.cell.hostingView)
+                try assertOrderedPaint(in: mounted.cell.hostingView, associated: associated)
                 try assertChipPalette(row, in: mounted.cell.hostingView)
                 for (index, identifier)
                     in (["failure", "needsYou", "done", "info"].map({ "pane-context.messages." + $0 })
@@ -142,7 +142,7 @@ struct PaneContextSidebarRenderingTests {
         return (cell, window)
     }
 
-    private func assertOrderedPaint(in host: NSView) throws {
+    private func assertOrderedPaint(in host: NSView, associated: Bool) throws {
         let title = try #require(label(in: host, identifier: "paneContext.title"))
         let status = try #require(label(in: host, identifier: "paneContext.status.text"))
         let line = try #require(label(in: host, identifier: "paneContext.agentLine.text"))
@@ -165,11 +165,7 @@ struct PaneContextSidebarRenderingTests {
             "Working", font: .system(size: 12),
             colour: Color(.sRGB, red: 0x40 / 255.0, green: 0x9C / 255.0, blue: 1), in: host)
         try expectText("[2 min ago]", font: .system(size: 12), in: host)
-        let statusPixels = Array(try PaneContextToolbarRenderingTests().pixels(in: host, rect: frames[1]))
-        #expect(
-            stride(from: 0, to: statusPixels.count, by: 4).contains { index in
-                statusPixels[index] == 0x40 && statusPixels[index + 1] == 0x9C && statusPixels[index + 2] == 0xFF
-            }, "Working text must paint the literal semantic blue, independently of its glyph mask")
+        try assertWorkingColor(in: host, rect: frames[1], associated: associated)
     }
 
     private func assertChipPalette(_ row: RepoExplorerMaterializedRow, in host: NSView) throws {

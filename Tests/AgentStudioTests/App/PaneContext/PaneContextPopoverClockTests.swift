@@ -12,6 +12,43 @@ import Testing
 @MainActor
 @Suite("Open popover relative time", .serialized)
 struct PaneContextPopoverClockTests {
+    @Test("a publication between task creation and the real read preserves the producing operation")
+    func publicationBeforeReadDoesNotLoseItsProducer() async throws {
+        let fixture = try await CompositionFactoryFixture.make()
+        var window: PaneContextNativePopoverWindow?
+        do {
+            _ = try await prepare(fixture, agentLine: false)
+            await fixture.composition.presentationLane.publishPending()
+            let adapter = PaneContextUIAdapter(service: fixture.composition.paneContextService)
+            let readers = PaneContextUIReaders(
+                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
+                pane: { _ in nil }, serviceProvider: { adapter })
+            var origin: PaneContextReadOperation?
+            let mounted = PaneContextNativePopoverWindow(
+                paneId: fixture.ownerId, readers: readers, location: .pane, wallNow: fixture.now,
+                onReadStarted: { operation in
+                    guard origin == nil else { return }
+                    origin = operation
+                    fixture.presentationAtom.remove([fixture.ownerId])
+                })
+            window = mounted
+            try await mounted.open()
+            let producer = try #require(origin)
+            #expect(producer.key.displayRevision != nil)
+            #expect(producer.key != readers.refreshKey(for: fixture.ownerId))
+            #expect(mounted.controller?.needsRevisionRefresh == false)
+            assertAge("Now", bracketed: false, in: mounted)
+            try await mounted.close()
+            #expect(mounted.clock.pendingSleepCount == 0)
+            window = nil
+            try await fixture.close()
+        } catch {
+            try? await window?.close()
+            try? await fixture.close()
+            throw error
+        }
+    }
+
     @Test(
         "G12 continuously open production popovers advance minute/hour/day and cancel on close",
         arguments: [false, true])
