@@ -8,6 +8,41 @@ import Testing
 
 @Suite("Darwin process chain invoked command names")
 struct DarwinProcessChainFactsReaderTests {
+    @Test("a real sh shebang trampoline preserves the provider's shell election")
+    func realHookScriptTrampolineChain() async throws {
+        // Arrange: execute a script file so the kernel chooses its shebang interpreter.
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("agentstudio-hook-chain-\(UUIDv7.generate().uuidString)")
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let script = directory.appendingPathComponent("hook.sh")
+        try """
+        #!/bin/sh
+        /usr/bin/perl -e '$| = 1; print "$$\\n"; scalar <STDIN>;'
+        exit $?
+
+        """.write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+
+        // Act: the child's PID handshake holds the real script alive until stdin closes.
+        let observation = try await Self.observeHookScript(at: script)
+
+        // Assert after teardown: BSD facts retain the trampoline's actual kernel name.
+        let wrapper = try #require(observation.wrapper)
+        #expect(["sh", "bash", "dash"].contains(wrapper.executableName))
+        #expect(wrapper.incarnation.pid == observation.scriptPID)
+        #expect(wrapper.parentPID == getpid())
+        #expect(observation.peer?.parentPID == observation.scriptPID)
+        #expect(observation.terminationStatus == 0)
+        let expectedShell = try #require(observation.expectedShell)
+        guard case .agentShell(let shell, _) = observation.chain else {
+            Issue.record("Real shebang wrapper \(wrapper.executableName) failed election: \(observation.chain)")
+            return
+        }
+        #expect(shell == expectedShell)
+        #expect(observation.chain.isMainEligible(terminalLeader: expectedShell))
+    }
+
     @Test("unclassified paths retain the argv-zero launcher contract", arguments: ["claude", "agent"])
     func invokedCommandName(name: String) async throws {
         // Arrange: both children execute sleep; only their invocation names differ.
@@ -50,6 +85,60 @@ struct DarwinProcessChainFactsReaderTests {
     private enum ChildSpawnError: Error {
         case allocationFailed
         case spawnFailed(Int32)
+        case missingPeerHandshake
+        case unavailablePeerVersion
+    }
+
+    private struct HookScriptObservation: Sendable {
+        let wrapper: ProcessChainProcessFacts?
+        let peer: ProcessChainProcessFacts?
+        let expectedShell: ZmxProcessIncarnation?
+        let chain: ProcessChainObservation
+        let scriptPID: pid_t
+        let terminationStatus: Int32
+    }
+
+    private static func observeHookScript(at script: URL) async throws -> HookScriptObservation {
+        try await valueFromDedicatedThread {
+            let process = Process()
+            let input = Pipe()
+            let output = Pipe()
+            process.executableURL = script
+            process.standardInput = input
+            process.standardOutput = output
+            try process.run()
+            // Close the parent's duplicate write end so process exit also ends a missing handshake.
+            output.fileHandleForWriting.closeFile()
+            defer {
+                input.fileHandleForWriting.closeFile()
+                process.waitUntilExit()
+                input.fileHandleForReading.closeFile()
+                output.fileHandleForReading.closeFile()
+            }
+            var handshake = Data()
+            while let byte = try output.fileHandleForReading.read(upToCount: 1), !byte.isEmpty {
+                if byte == Data([10]) { break }
+                handshake.append(byte)
+            }
+            guard let text = String(data: handshake, encoding: .utf8), let peerPID = Int32(text), peerPID > 0 else {
+                throw ChildSpawnError.missingPeerHandshake
+            }
+            let reader = DarwinProcessChainFactsReader()
+            guard let peerVersion = reader.pidVersion(of: peerPID) else {
+                throw ChildSpawnError.unavailablePeerVersion
+            }
+            let wrapper = reader.bsdInfo(of: process.processIdentifier)
+            let peer = reader.bsdInfo(of: peerPID)
+            let expectedShell = reader.bsdInfo(of: getppid())?.incarnation
+            let chain = DarwinProcessChainReader(facts: HookScriptProviderFacts(providerPID: getpid()), readLimit: 20)
+                .observe(peer: .init(pid: peerPID, pidVersion: peerVersion), provider: "codex")
+            // EOF releases the peer, and the script waits for it before reporting exit.
+            input.fileHandleForWriting.closeFile()
+            process.waitUntilExit()
+            return .init(
+                wrapper: wrapper, peer: peer, expectedShell: expectedShell, chain: chain,
+                scriptPID: process.processIdentifier, terminationStatus: process.terminationStatus)
+        }
     }
 
     private static func observeOwnedChild(executable: String, argvZero: String) throws -> ChildObservation {
@@ -91,5 +180,17 @@ struct DarwinProcessChainFactsReaderTests {
         return .init(
             facts: facts, kernelName: kernelName, argumentsReadError: argumentsReadError,
             childPID: childPID, terminationResult: terminationResult, reapedPID: reapedPID, waitStatus: waitStatus)
+    }
+}
+
+/// Only provider identity is substituted; the script, peer and every BSD continuity read stay real.
+private struct HookScriptProviderFacts: ProcessChainFactsReading {
+    let providerPID: pid_t
+    private let reader = DarwinProcessChainFactsReader()
+
+    func pidVersion(of pid: Int32) -> UInt32? { reader.pidVersion(of: pid) }
+    func bsdInfo(of pid: Int32) -> ProcessChainProcessFacts? { reader.bsdInfo(of: pid) }
+    func executableName(of process: ProcessChainProcessFacts) -> String? {
+        process.incarnation.pid == providerPID ? "codex" : reader.executableName(of: process)
     }
 }

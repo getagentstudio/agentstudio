@@ -94,9 +94,12 @@ package struct DarwinProcessChainReader: ProcessChainReading {
     }
 }
 
-/// CLI → optional hook-script sh → Cursor's zsh if applicable → first provider → shell → shell parent.
+/// CLI → optional hook-script shell → Cursor's zsh if applicable → first provider → shell → shell parent.
 /// The skipped hook shell uses the same hop continuity checks and read budget as every other edge.
 private struct ProcessChainWalk {
+    /// macOS /bin/sh re-execs its selected shell, so a hook's BSD name may be sh, bash or dash.
+    private static let hookScriptShellExecutableNames: Set<String> = ["sh", "bash", "dash"]
+
     let facts: any ProcessChainFactsReading
     var remainingReads: Int
 
@@ -112,7 +115,7 @@ private struct ProcessChainWalk {
         }
         try requirePeerVersion(peer)
         var agent = try parent(of: peer.pid, expected: nil)
-        if agent.executableName == "sh" {
+        if Self.hookScriptShellExecutableNames.contains(agent.executableName) {
             agent = try parent(of: agent.incarnation.pid, expected: agent)
         }
         if provider == "cursor" {
