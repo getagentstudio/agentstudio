@@ -37,7 +37,8 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
-        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
+        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
     ) {
         self.paneId = paneId
         self.presentation = presentation
@@ -52,7 +53,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.onActionTaskStarted = onActionTaskStarted
         self.clock = clock
         self.wallNow = wallNow
-        _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
+        _relativeTimeRefresh = State(
+            initialValue: PaneRelativeTimeRefresh(
+                onEvent: onRelativeTimeEvent, onPresentationReady: onRelativeTimeReady))
     }
 
     var body: some View {
@@ -76,9 +79,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                         onReadCompleted(read, controller)
                         return
                     }
-                    if await controller.refreshIfRevisionChanged(), !Task.isCancelled {
-                        onReadCompleted(read, controller)
-                    }
+                    _ = await controller.refreshIfRevisionChanged()
+                    guard !Task.isCancelled else { return }
+                    onReadCompleted(read, controller)
                 }
             }
             .onChange(of: controller?.paneId) { _, pane in

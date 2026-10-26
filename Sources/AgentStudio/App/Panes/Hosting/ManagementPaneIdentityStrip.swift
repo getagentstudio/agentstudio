@@ -29,6 +29,7 @@ struct ManagementPaneIdentityStrip: View {
     var onActionCompleted: @MainActor () -> Void = {}
     var onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
     var onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
+    var onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
 
     private var presentation: ManagementPaneIdentityPresentation {
         ManagementPaneIdentityPresentation(context: context, lines: lines)
@@ -58,7 +59,8 @@ struct ManagementPaneIdentityStrip: View {
                     owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
                     onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
                     onActionCompleted: onActionCompleted,
-                    onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent)
+                    onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
+                    onRelativeTimeReady: onRelativeTimeReady)
                 if cardModel.moreCount > 0 {
                     messagesEntry(
                         .showMorePaneNeedsYou(count: cardModel.moreCount), identifier: "pane-context.card-more",
@@ -288,7 +290,9 @@ struct ManagementPaneIdentityStrip: View {
             onGoToPane: onGoToPane, includingDrawers: !isDrawerPane,
             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
             onActionCompleted: onActionCompleted,
-            onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(), onRelativeTimeEvent: onRelativeTimeEvent
+            onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
+            onRelativeTimeEvent: onRelativeTimeEvent,
+            onRelativeTimeReady: onRelativeTimeReady
         )
     }
 }
@@ -307,6 +311,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
+    let onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver
     @State private var sessionIdentity = PaneManagementSessionIdentity()
     @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
     @State private var cardController: PaneContextPopoverController?
@@ -321,7 +326,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
         clock: ActivityClock, wallNow: Date? = nil,
         onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
-        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _ in },
+        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in },
         onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in },
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
@@ -340,6 +345,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.onRelativeTimeEvent = onRelativeTimeEvent
+        self.onRelativeTimeReady = onRelativeTimeReady
         _relativeTimeRefresh = State(
             initialValue: PaneRelativeTimeRefresh(
                 onEvent: onRelativeTimeEvent, onPresentationReady: onRelativeTimeReady))
@@ -373,7 +379,8 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
             onGoToPane: onGoToPane,
             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
             onActionCompleted: onActionCompleted,
-            onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent
+            onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
+            onRelativeTimeReady: onRelativeTimeReady
         )
         .frame(maxWidth: .infinity)
         .background(AppStyles.Shell.PaneChrome.background)

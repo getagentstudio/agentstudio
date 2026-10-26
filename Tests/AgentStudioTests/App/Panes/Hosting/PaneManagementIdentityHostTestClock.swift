@@ -74,14 +74,14 @@ final class NativeCardTestClock: Clock {
     @MainActor
     func observeOwner(_ event: PaneRelativeTimeRefresh.Event) {
         switch event {
-        case .operation(let input, let result):
+        case .operation(let input, let result, _):
             if result != .unchanged { sleeps.withLock { $0.workerTasks += 1 } }
             facts.append(scope: 1, fact: .operation(input.paneId, input.activityTime?.orderingInstant, result))
         case .hidden(let result):
             facts.append(scope: 1, fact: .hidden(result))
-        case .entered(let input):
+        case .entered(let input, _):
             facts.append(scope: 1, fact: .entered(input.paneId, input.activityTime?.orderingInstant))
-        case .ended(let input, let outcome):
+        case .ended(let input, let outcome, _):
             let terminal = NativeCardClockFact.workerEnded(
                 input.paneId, input.activityTime?.orderingInstant, cancelled: outcome == .cancelled)
             facts.append(

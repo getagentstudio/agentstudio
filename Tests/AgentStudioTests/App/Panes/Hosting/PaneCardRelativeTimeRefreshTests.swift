@@ -54,8 +54,17 @@ struct PaneCardRelativeTimeRefreshTests {
                     return false
                 },
                 "uncancelled hidden worker", from: ownerOpening, closedBy: { $0 == .retired })
-            #expect(events.contains(.ended(initial, .cancelled)))
-            #expect(events.contains(.ended(replacement, .cancelled)))
+            let starts = events.compactMap { event -> (PaneManagementIdentityCapture.VisibleInput, UUID)? in
+                if case .operation(let input, .started, let id) = event { return (input, id) }
+                if case .operation(let input, .replaced, let id) = event { return (input, id) }
+                return nil
+            }
+            let initialID = try #require(starts.first { $0.0 == initial }?.1)
+            let replacementID = try #require(starts.first { $0.0 == replacement }?.1)
+            #expect(initialID != replacementID)
+            #expect(events.contains(.operation(initial, .unchanged, id: initialID)))
+            #expect(events.contains(.ended(initial, .cancelled, id: initialID)))
+            #expect(events.contains(.ended(replacement, .cancelled, id: replacementID)))
             #expect(refresh.presentation == nil)
             #expect(clock.pendingSleepCount == 0)
             try await clock.facts.finish()

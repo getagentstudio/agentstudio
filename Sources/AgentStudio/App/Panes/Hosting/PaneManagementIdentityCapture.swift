@@ -205,7 +205,8 @@ enum PaneManagementIdentityCapture {
 @MainActor
 @Observable
 final class PaneRelativeTimeRefresh {
-    typealias PresentationReadyObserver = @MainActor @Sendable (PaneManagementIdentityCapture.VisibleInput) -> Void
+    typealias PresentationReadyObserver =
+        @MainActor @Sendable (PaneManagementIdentityCapture.VisibleInput, UUID) -> Void
     enum StartResult: Equatable, Sendable {
         case started
         case unchanged
@@ -220,10 +221,10 @@ final class PaneRelativeTimeRefresh {
     enum WorkerOutcome: Equatable, Sendable { case completed, cancelled }
 
     enum Event: Equatable, Sendable {
-        case operation(PaneManagementIdentityCapture.VisibleInput, StartResult)
+        case operation(PaneManagementIdentityCapture.VisibleInput, StartResult, id: UUID)
         case hidden(HideResult)
-        case entered(PaneManagementIdentityCapture.VisibleInput)
-        case ended(PaneManagementIdentityCapture.VisibleInput, WorkerOutcome)
+        case entered(PaneManagementIdentityCapture.VisibleInput, id: UUID)
+        case ended(PaneManagementIdentityCapture.VisibleInput, WorkerOutcome, id: UUID)
     }
 
     private struct Worker: Sendable {
@@ -254,7 +255,7 @@ final class PaneRelativeTimeRefresh {
 
     init(
         onEvent: @escaping @MainActor @Sendable (Event) -> Void = { _ in },
-        onPresentationReady: @escaping PresentationReadyObserver = { _ in }
+        onPresentationReady: @escaping PresentationReadyObserver = { _, _ in }
     ) {
         self.onEvent = onEvent
         self.onPresentationReady = onPresentationReady
@@ -273,8 +274,8 @@ final class PaneRelativeTimeRefresh {
     func startOrReplace<C: Clock>(
         _ input: PaneManagementIdentityCapture.VisibleInput, clock: C, wallNow: Date? = nil
     ) -> StartResult where C.Duration == Duration, C.Instant == ContinuousClock.Instant {
-        if worker?.input == input {
-            onEvent(.operation(input, .unchanged))
+        if let worker, worker.input == input {
+            onEvent(.operation(input, .unchanged, id: worker.id))
             return .unchanged
         }
         let result: StartResult
@@ -287,21 +288,21 @@ final class PaneRelativeTimeRefresh {
         let id = UUIDv7.generate()
         let onEvent = onEvent
         let task = Task { [weak self] in
-            onEvent(.entered(input))
+            onEvent(.entered(input, id: id))
             defer {
                 if self?.worker?.id == id { self?.worker = nil }
-                onEvent(.ended(input, Task.isCancelled ? .cancelled : .completed))
+                onEvent(.ended(input, Task.isCancelled ? .cancelled : .completed, id: id))
             }
             await PaneManagementIdentityCapture.watch(
                 input, clock: clock, wallNow: wallNow
             ) { [weak self] prepared in
                 guard let self, !Task.isCancelled, self.worker?.id == id else { return }
                 if self.value != prepared { self.value = prepared }
-                self.onPresentationReady(input)
+                self.onPresentationReady(input, id)
             }
         }
         worker = Worker(input: input, id: id, task: task)
-        onEvent(.operation(input, result))
+        onEvent(.operation(input, result, id: id))
         return result
     }
 

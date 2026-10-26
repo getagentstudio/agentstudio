@@ -14,6 +14,7 @@ struct PaneContextCardRequestBlock: View {
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
+    var onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
     private var controls: PaneContextPopoverControls { PaneContextPopoverControlProjection.controls() }
 
     var body: some View {
@@ -63,7 +64,7 @@ struct PaneContextCardRequestBlock: View {
                             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
                             onActionCompleted: onActionCompleted,
                             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
-                            onRelativeTimeEvent: onRelativeTimeEvent)
+                            onRelativeTimeEvent: onRelativeTimeEvent, onRelativeTimeReady: onRelativeTimeReady)
                     case .notApplicable: EmptyView()
                     }
                 }

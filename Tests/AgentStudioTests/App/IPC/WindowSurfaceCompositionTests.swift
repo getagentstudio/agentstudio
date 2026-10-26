@@ -95,7 +95,7 @@ private final class PaneSurfaceCaptureFixture {
     let tabId: UUID
     let composition: WindowSurfaceComposition
     let host: NSHostingView<AnyView>
-    private var initialRelativeTimeInputs: [UUID: PaneManagementIdentityCapture.VisibleInput] = [:]
+    private var initialRelativeTimeInputs: [UUID: (input: PaneManagementIdentityCapture.VisibleInput, id: UUID)] = [:]
     private let relativeTimeFacts = FactRecorder<UUID, PaneRelativeTimeRefresh.Event>(
         vocabulary: .init(
             describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
@@ -173,12 +173,13 @@ private final class PaneSurfaceCaptureFixture {
     func awaitIdentityCardLabels() async throws -> [String] {
         do {
             for paneId in [sourceId, adjacentId] {
-                let input = try #require(initialRelativeTimeInputs[paneId], "Mounted card must start its owner")
+                let operation = try #require(initialRelativeTimeInputs[paneId], "Mounted card must start its owner")
+                let input = operation.input
                 // These inputs finish after the first publication instead of scheduling a future refresh.
                 try #require(input.activityTime == nil && input.agentLine == nil, "Fixture must have no deadline")
-                try await relativeTimeFacts.expectNext(in: paneId, .operation(input, .started))
-                try await relativeTimeFacts.expectNext(in: paneId, .entered(input))
-                try await relativeTimeFacts.expectNext(in: paneId, .ended(input, .completed))
+                try await relativeTimeFacts.expectNext(in: paneId, .operation(input, .started, id: operation.id))
+                try await relativeTimeFacts.expectNext(in: paneId, .entered(input, id: operation.id))
+                try await relativeTimeFacts.expectNext(in: paneId, .ended(input, .completed, id: operation.id))
             }
             try await relativeTimeFacts.finish()
         } catch {
@@ -192,7 +193,7 @@ private final class PaneSurfaceCaptureFixture {
     }
 
     private func observeRelativeTime(_ event: PaneRelativeTimeRefresh.Event, paneId: UUID) {
-        if case .operation(let input, .started) = event { initialRelativeTimeInputs[paneId] = input }
+        if case .operation(let input, .started, let id) = event { initialRelativeTimeInputs[paneId] = (input, id) }
         relativeTimeFacts.append(scope: paneId, fact: event)
     }
 
