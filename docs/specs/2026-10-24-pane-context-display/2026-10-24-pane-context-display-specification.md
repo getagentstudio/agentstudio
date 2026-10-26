@@ -29,7 +29,8 @@
 
 | Item | State | Shown where | Label | Actions |
 | --- | --- | --- | --- | --- |
-| Notice | unread, attention or failure | **Needs you** | none | Open file / Open pull request when targeted; Dismiss |
+| Notice | unread, failure | **Failed** | none | Open file / Open pull request when targeted; Dismiss |
+| Notice | unread, attention | **Needs you** | none | Open file / Open pull request when targeted; Dismiss |
 | Notice | unread, done / info | **Done** / **Info** | none | as above |
 | Notice | read, done / info | **Done** / **Info**, dimmed | none | as above |
 | Notice | read, attention or failure | **Resolved**, dimmed | "Read" | as above |
@@ -89,14 +90,14 @@
 
   A line whose content is absent isn't drawn, and leaves no gap. The sidebar row has **no `|` dividers**.
 - **O13 (U3; Q1):** the chip line holds at most:
-  - **one chip per kind present** (owner decision 2026-10-24): `✕ N` failure (red), `⚑ N` needs you (open asks + unread attention, amber), `✓ N` done (green), `ⓘ N` info (neutral). They appear in that urgency order, and a kind with a count of 0 is not shown (O4). Clicking any of them opens the Messages popover;
+  - **one chip per kind present** (owner decision 2026-10-24): `✕ N` failure (red), `⚑ N` needs you (open asks + unread attention, amber), `✓ N` done (green), `ⓘ N` info (neutral). They appear in that urgency order, and a kind with a count of 0 is not shown (O4). Clicking a chip opens the Messages popover scrolled to **that chip's section** (O41; owner decision 2026-10-26, option A);
   - an **activity chip** with E6's age, only when the row has no E4 and E6 is known. That gives one age per row, per Q1.
 - **O14 (U4):** clicking the bell opens the Messages popover; clicking the Agent Line opens the Agent Line popover.
 
 ## Pane drawer toolbar
 
 - **O20 (U1, U2, U4; owner 2026-10-24: "all the chips shown, or the agent line"):** the drawer toolbar shows, after its buttons and a **`|` divider after the notes (pencil) button** (owner 2026-10-24: "the divider after notes"), on **exactly one line**, never wrapping, **never agent status**:
-  - while any unread notification or open ask exists: **all the item chips**, one per kind present, the same chips and order as the sidebar (O13): `✕ N` `⚑ N` `✓ N` `i N`, hidden at 0. Clicking any chip opens the Messages popover;
+  - while any unread notification or open ask exists: **all the item chips**, one per kind present, the same chips and order as the sidebar (O13): `✕ N` `⚑ N` `✓ N` `i N`, hidden at 0. Clicking a chip opens the Messages popover scrolled to that chip's section (O41);
   - once they're all cleared: **the Agent Line**, as the message icon, its text, then its age in square brackets (O2);
   - with neither: nothing.
 
@@ -127,7 +128,9 @@
   - every label is shown in full at that width;
   - loading shows "Loading…" and an unavailable service shows its note, and neither collapses the width.
 - **O41 (U3, U4, U5):**
-  - groups, in order: **Needs you** (open asks, unread attention and failure, and **every** returned E7 prompt, with "+N more not shown" when the supplied omitted count is above 0), **Done**, **Info**, **Resolved** (per the E5 table);
+  - sections mirror the kind chips (owner decision 2026-10-26, option A: "why are they clumped up"), in order: **Failed** (unread failure notices), **Needs you** (open asks, unread attention notices, and **every** returned E7 prompt, with "+N more not shown" when the supplied omitted count is above 0), **Done**, **Info**, **Resolved** (per the E5 table);
+  - each section header except Resolved carries its kind chip (O13) with the section's count: `✕ N` Failed, `⚑ N` Needs you (open asks + unread attention; E7 isn't counted), `✓ N` Done, `ⓘ N` Info. A chip at 0 isn't shown;
+  - opening from a chip scrolls that chip's section into view; opening from the bell or the card opens at the top;
   - newest first within each group; empty groups are hidden;
   - the five filter buttons, "Count informational" and "Mark read" are removed. Read state still shows by dimming, per the E5 table.
 - **O42 (U4, U5):**

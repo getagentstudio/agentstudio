@@ -87,7 +87,7 @@ Design-only concepts, each with the entity or rule it serves:
 - `PaneContextPresentationRules` serves O1–O7 and O13: the shared pure rules.
 - `CompactProviderPrompt` serves E7, O11, O31 and S16/S18: the first prompt in returned order, carried to compact surfaces.
 - `PaneMessageKindCounts` serves E5, O13, O20, O32 and the unread count: one count per kind.
-- `MessageGroupKind` (Core) and `MessagesGroupModel` (render) serve O41: Needs you / Done / Info / Resolved.
+- `MessageGroupKind` (Core) and `MessagesGroupModel` (render) serve O41: Failed / Needs you / Done / Info / Resolved (option A, 2026-10-26).
 
 ### Shapes that change
 
@@ -165,7 +165,7 @@ IPC: `IPCPaneAskForm` gains `approval`, and `IPCPaneAskAnswerValue` gains `decis
 | `displayTitle(raw:agentTitle:cwd:shell:) -> String` | agent title, else the normalized terminal title, with leading spinner glyphs (✳ and braille U+2800–U+28FF) stripped | O6, O10 | three title paths (sidebar cache normalizer, card `@concurrent` normalize, popover raw title) |
 | `activityChip(agentLine:activity:)` | an activity chip only when there's no E4 and E6 is known; never "—" | O4, O13, Q1 | the always-on clock and the ▶ play glyph |
 | `toolbarSelection(counts:agentLine:) -> ToolbarSelection` | `.chips` while unread > 0; else `.agentLine`; else `.none` | O20, R3 | the toolbar's independent line and bell |
-| `messageGroup(for state:) -> MessageGroupKind?` (nil = not shown) | Needs you / Done / Info / Resolved, newest first, empty groups dropped, dismissed notices dropped | O41, E5 table | source-run partitions and filters |
+| `messageGroup(for state:) -> MessageGroupKind?` (nil = not shown) | Failed / Needs you / Done / Info / Resolved, newest first, empty groups dropped, dismissed notices dropped | O41, E5 table | source-run partitions and filters |
 | `settledLabel(_ state:) -> String?` | the E5 display-state labels verbatim | E5 table, O42 | the current settled wording |
 
 The authoritative result and render shapes are in "Contracts added in revisions 2–3 → Shapes". The function names in the table above return those shapes.
@@ -306,7 +306,7 @@ E5's display states map one-to-one from the service's existing states, so no new
 | U4 | O32 "N unread · Show messages" when unread > 0 | E5 | card capture | `PaneMessageKindCounts.unread` | Core/PaneContext | derived | none | card host test S8 |
 | U1, U6 | O33 identity metadata preserved; `ACTIVE  N min ago` when E6 is known; no recency chips | E2, E6 | card capture | rules `age` | `ManagementPaneIdentityPresentation` (existing) | derived | E6 unknown → no row | card host test; frames |
 | U5 | O40 popover fixed width 380, max height 480 then scroll, full labels, Loading/unavailable keep the width | E5 | `MessagesPopover` | `AppStyles` sizes | SharedComponents | view | loading/unavailable notes at the same width | native popover test; sunclaw screenshots at 390 |
-| U3, U4, U5 | O41 groups Needs you / Done / Info / Resolved, newest first, empty hidden; filters, Count informational and Mark read removed | E5, E7 | rules `messageGroup(for:)` + `MessagesPopoverProjection` | `MessageGroupKind` (Core) → `[MessagesGroupModel]` (SharedComponents) | Core / SharedComponents | derived from service states | dismissed notices dropped | rules unit over the E5 table; shaping tests |
+| U3, U4, U5 | O41 groups Failed / Needs you / Done / Info / Resolved (headers carry the kind chip; a chip click scrolls to its section), newest first, empty hidden; filters, Count informational and Mark read removed | E5, E7 | rules `messageGroup(for:)` + `MessagesPopoverProjection` | `MessageGroupKind` (Core) → `[MessagesGroupModel]` (SharedComponents) | Core / SharedComponents | derived from service states | dismissed notices dropped | rules unit over the E5 table; shaping tests |
 | U4, U5 | O42 row: kind icon, full body (no cap), explanation, age, drawer label; actions by state; E7 rows with reason and "Answer in the agent's terminal" | E5, E7 | `MessagesPopover` row + shaping | `MessageRowModel` (modified: kind, group, label) | SharedComponents | per E5 table | actions per the E5 state table (read notices keep theirs) | native popover test; S17, S19 tables |
 | U5 | O43 footer: Dismiss all notices (only when notices exist) + Go to pane | E5 | `MessagesPopover` footer | existing specs | `LocalActionSpec` | none | none | native popover test |
 | U2, U5 | O50 Agent Line popover: width 380, full text, age, writer, references, Go to pane; no E7 | E4 | `AgentLinePopover` + shaping | `AgentLinePopoverModel` (E7 removed) | SharedComponents | none | none | native popover test |
@@ -372,7 +372,7 @@ package enum ToolbarSelection {
     case chips([KindCount])                      // non-empty, urgency order
     case agentLine(text: String, age: AgeText)   // brackets added at render (R1)
 }
-package enum MessageGroupKind { case needsYou, done, info, resolved }
+package enum MessageGroupKind { case failed, needsYou, done, info, resolved }
 package enum CardRequestSelection {
     case none
     case ask(source: PaneId, message: AgentMessageId)
