@@ -39,6 +39,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     private var exactResults: [MessageReadResult] = []
     private var heldExactReads: Set<Int> = []
     private(set) var requests: [PaneContextReadRequest] = []
+    private(set) var exactRequests: [PaneContextMessageKey] = []
     private(set) var answers: [AnswerAskRequest] = []
     private(set) var dismissals: [(AgentMessageId, PaneId)] = []
     private(set) var readsMarked: [(AgentMessageId, PaneId)] = []
@@ -90,6 +91,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         return answerResults.isEmpty ? answerResult : answerResults.removeFirst()
     }
     func readMessage(source: PaneId, message: AgentMessageId) async -> MessageReadResult {
+        exactRequests.append(.init(paneId: source, messageId: message))
         let number = exactNumber
         exactNumber += 1
         let rows = fallback.messages + fallback.drawerMessages.flatMap(\.messages)

@@ -129,9 +129,11 @@ final class PaneContextNativePopoverWindow {
     }
     let clock: NativeCardTestClock
     let window: NSWindow
+    let scrolling: PaneContextNativeScrollRecorder
     private let sink: Sink
     private let isCard: Bool
     private let messageEntryKind: KindChipModel.Kind
+    private let messageEntryIdentifier: String?
     private var isPresentingMessages = false
     private var verifiedReads: [NativePopoverScope: Int] = [:]
     private let currentReadKey: @MainActor () -> PaneContextRefreshKey
@@ -148,10 +150,12 @@ final class PaneContextNativePopoverWindow {
         card: (context: PaneManagementContext, store: WorkspaceStore)? = nil,
         viewportWidth: CGFloat? = nil, cancelReadsOnStart: Bool = false,
         onReadStarted: @escaping @MainActor (PaneContextReadOperation) -> Void = { _ in },
-        messageEntryKind: KindChipModel.Kind = .needsYou
+        messageEntryKind: KindChipModel.Kind = .needsYou,
+        messageEntry: PaneContextPopoverEntry? = nil
     ) {
         let clock = NativeCardTestClock()
         let sink = Sink()
+        let scrolling = PaneContextNativeScrollRecorder()
         sink.cancelReadsOnStart = cancelReadsOnStart
         let reference = clock.now
         let presentation: RepoExplorerPaneContextControlPresentation =
@@ -182,6 +186,7 @@ final class PaneContextNativePopoverWindow {
                         sink.started(read, task: task)
                         onReadStarted(read)
                     },
+                    onScrollEvent: { scrolling.observe($0) },
                     onActionCompleted: {
                         sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
                         sink.completedActions += 1
@@ -191,7 +196,8 @@ final class PaneContextNativePopoverWindow {
         } else {
             root = AnyView(
                 PaneContextPopoverHost(
-                    paneId: paneId, presentation: .init(presentation), location: location, readers: readers,
+                    paneId: paneId, presentation: messageEntry ?? .init(presentation), location: location,
+                    readers: readers,
                     octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in }, includingDrawers: includingDrawers,
                     onReadCompleted: { read, value in
                         sink.controller = value
@@ -201,6 +207,7 @@ final class PaneContextNativePopoverWindow {
                         sink.started(read, task: task)
                         onReadStarted(read)
                     },
+                    onScrollEvent: { scrolling.observe($0) },
                     onActionCompleted: {
                         sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
                         sink.completedActions += 1
@@ -223,7 +230,13 @@ final class PaneContextNativePopoverWindow {
         window.contentView = host
         self.clock = clock
         self.sink = sink
+        self.scrolling = scrolling
         self.messageEntryKind = messageEntryKind
+        if case .messagesAction(let control, _) = messageEntry {
+            messageEntryIdentifier = control.identifier
+        } else {
+            messageEntryIdentifier = nil
+        }
         isCard = card != nil
         self.window = window
         currentReadKey = { readers.refreshKey(for: paneId) }
@@ -284,7 +297,9 @@ final class PaneContextNativePopoverWindow {
     }
 
     func open(agentLine: Bool = false) async throws {
-        try press(agentLine ? "pane-context.agent-line" : "pane-context.messages.\(messageEntryKind)")
+        try press(
+            agentLine
+                ? "pane-context.agent-line" : messageEntryIdentifier ?? "pane-context.messages.\(messageEntryKind)")
         try await readCompleted()
         while controller?.state == nil {
             try #require(
@@ -443,6 +458,7 @@ final class PaneContextNativePopoverWindow {
             await task.value
         }
         try await clock.retire()
+        try await scrolling.finish()
         facts.receive(.ended)
         try await facts.finish()
         try await clock.facts.finish()
@@ -453,6 +469,7 @@ final class PaneContextNativePopoverWindow {
     func retireView() {
         guard !sink.retired else { return }
         sink.retired = true
+        scrolling.retire()
         let scopes = Set(sink.reads.map(\.scope)).union([
             .cardReadSources(currentReadKey().sources), .readSources(currentReadKey().sources),
         ])

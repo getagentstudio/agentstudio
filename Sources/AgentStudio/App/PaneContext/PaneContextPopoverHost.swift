@@ -16,6 +16,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let includingDrawers: Bool
     let onReadCompleted: PaneContextReadCompletionObserver
     let onReadTaskStarted: PaneContextReadTaskObserver
+    let onScrollEvent: PaneContextPopoverScrollObserver
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let clock: AgeClock
@@ -34,6 +35,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
+        onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
@@ -49,6 +51,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.includingDrawers = includingDrawers
         self.onReadCompleted = onReadCompleted
         self.onReadTaskStarted = onReadTaskStarted
+        self.onScrollEvent = onScrollEvent
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.clock = clock
@@ -137,15 +140,20 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                     )
                     .task(id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages))
                     {
-                        switch visible.messagesTarget {
-                        case .top: break
-                        case .section(let kind): proxy.scrollTo(kind, anchor: .top)
-                        case .message(let key):
-                            proxy.scrollTo(
-                                MessageRowModel.Key(
-                                    sourcePaneId: key.paneId.uuid,
-                                    messageId: key.messageId.uuid), anchor: .top)
-                        }
+                        await PaneContextPopoverScrollObservation.perform(
+                            requested: presentation.messagesTarget, effective: visible.messagesTarget,
+                            isPresented: { isPresented && controller.paneId != nil }, observe: onScrollEvent,
+                            apply: {
+                                switch visible.messagesTarget {
+                                case .top: break
+                                case .section(let kind): proxy.scrollTo(kind, anchor: .top)
+                                case .message(let key):
+                                    proxy.scrollTo(
+                                        MessageRowModel.Key(
+                                            sourcePaneId: key.paneId.uuid,
+                                            messageId: key.messageId.uuid), anchor: .top)
+                                }
+                            })
                     }
                 }
             case .agentLine:
