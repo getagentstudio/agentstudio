@@ -129,7 +129,7 @@
   - loading shows "Loading…" and an unavailable service shows its note, and neither collapses the width.
 - **O41 (U3, U4, U5):**
   - sections mirror the kind chips (owner decision 2026-10-26, option A: "why are they clumped up"), in order: **Failed** (unread failure notices), **Needs you** (open asks, unread attention notices, and **every** returned E7 prompt, with "+N more not shown" when the supplied omitted count is above 0), **Done**, **Info**, **Resolved** (per the E5 table);
-  - each section header except Resolved carries its kind chip (O13) with the section's count: `✕ N` Failed, `⚑ N` Needs you (open asks + unread attention; E7 isn't counted), `✓ N` Done, `ⓘ N` Info. A chip at 0 isn't shown;
+  - each section header except Resolved carries its kind chip (O13) showing **the same number as that kind's sidebar/toolbar chip**: the unread count for the popover's scope (O8), including rows not yet loaded by paging. Read rows listed in Done or Info are shown dimmed and aren't counted; E7 prompts aren't counted. A count of 0 shows no chip, and the section still shows its read rows (Lead ruling 2026-10-26 on D26);
   - opening from a chip scrolls that chip's section into view; opening from the bell or the card opens at the top;
   - newest first within each group; empty groups are hidden;
   - the five filter buttons, "Count informational" and "Mark read" are removed. Read state still shows by dimming, per the E5 table.
