@@ -280,20 +280,22 @@ final class PaneContextPopoverController {
         await refresh()
     }
 
-    func runAction(messageId: AgentMessageId, source: PaneId, action: MessageAction) async {
-        guard let owner = paneId else { return }
+    @discardableResult
+    func runAction(messageId: AgentMessageId, source: PaneId, action: MessageAction) async -> MessageActionResult? {
+        guard let owner = paneId else { return nil }
         let permitted = await PaneContextPopoverAnswerParsing.canRunAction(
             messageId: messageId, source: source, snapshot: actionSnapshot, location: location)
-        guard paneId == owner else { return }
+        guard paneId == owner else { return nil }
         guard permitted else {
             actionFeedback = "This message action is not available here"
-            return
+            return nil
         }
         let result = await person.runAction(.init(messageId: messageId, paneId: source, action: action))
         let feedback = await PaneContextPopoverFeedback.action(result)
-        guard paneId == owner else { return }
+        guard paneId == owner else { return nil }
         actionFeedback = feedback
         await refresh()
+        return paneId == owner ? result : nil
     }
 
     func dismissAllNotices() async {

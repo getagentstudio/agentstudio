@@ -136,6 +136,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                         feedback: controller.unavailableNote ?? controller.actionFeedback,
                         actions: PaneContextPopoverHostActions.messages(
                             controller: controller, readers: readers, onGoToPane: goToPaneAndDismissPopover,
+                            onDismissPopover: dismissPopover,
                             onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
                     )
                     .task(id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages))
@@ -177,6 +178,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     }
     private func goToPaneAndDismissPopover(_ targetPaneId: UUID) {
         onGoToPane(targetPaneId)
+        dismissPopover()
+    }
+    private func dismissPopover() {
         isPresented = false
     }
     private func openPopover(read: PaneContextReadOperation) async {

@@ -52,13 +52,13 @@ struct PaneContextMessageActionFixture {
     let repository: Repo
     var service: PaneContextService { composition.composition.paneContextService }
 
-    static func make() async throws -> Self {
+    static func make(focusSucceeds: Bool = true) async throws -> Self {
         let store = WorkspaceStore(
             identityAtom: .init(workspaceId: UUIDv7.generate()), startsObserving: false)
         let owner = store.createPane(title: "Action owner")
         let preference = EditorPreferenceAtom()
         let effects = PaneContextMessageActionEffects()
-        let shell = RecordingDispatcherShellCommandOwner(executionResult: true)
+        let shell = RecordingDispatcherShellCommandOwner(executionResult: focusSucceeds)
         let dispatcher = CommandDispatcherFixtureConfiguration(shellOwner: shell).makeDispatcher()
         let runner = PaneContextMessageActionRunner.make(
             store: store, editorPreference: preference, dispatcher: dispatcher, effects: effects.effects)

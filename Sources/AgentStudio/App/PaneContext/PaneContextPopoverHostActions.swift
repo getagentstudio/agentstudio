@@ -33,6 +33,7 @@ enum PaneContextPopoverHostActions {
     static func messages(
         controller: PaneContextPopoverController, readers: PaneContextUIReaders,
         onGoToPane: @escaping @MainActor (UUID) -> Void,
+        onDismissPopover: @escaping @MainActor () -> Void = {},
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) -> MessagesPopoverActions {
@@ -60,8 +61,9 @@ enum PaneContextPopoverHostActions {
                 start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
                     guard controller.useCurrentService(readers.serviceProvider()), let action = await coreAction(action)
                     else { return }
-                    await controller.runAction(
+                    let result = await controller.runAction(
                         messageId: .init(existingUUID: message), source: .init(existingUUID: pane), action: action)
+                    if result == .goToPane(.focused) { onDismissPopover() }
                 }
             },
 

@@ -1,0 +1,104 @@
+import AgentStudioInfrastructure
+import AgentStudioSessions
+import AgentStudioSharedComponents
+import AgentStudioTestSupport
+import Foundation
+import Testing
+
+@testable import AgentStudio
+@testable import AgentStudioCore
+
+extension PaneContextGoToPaneNativeTests {
+    enum RowSurface: Sendable, CaseIterable {
+        case messages, cardMessages
+    }
+
+    @Test("F06 admitted row Go to pane dispatches once and closes Messages", arguments: RowSurface.allCases)
+    func rowGoToPaneClosesItsPopover(surface: RowSurface) async throws {
+        try await exerciseRowGoToPane(surface: surface, focusSucceeds: true)
+    }
+
+    @Test("F06 refused row focus preserves Messages and failure feedback", arguments: RowSurface.allCases)
+    func refusedRowGoToPaneKeepsItsPopover(surface: RowSurface) async throws {
+        try await exerciseRowGoToPane(surface: surface, focusSucceeds: false)
+    }
+
+    private func exerciseRowGoToPane(surface: RowSurface, focusSucceeds: Bool) async throws {
+        try await withAsyncTestCoreAtoms { _ in
+            let fixture = try await PaneContextMessageActionFixture.make(focusSucceeds: focusSucceeds)
+            do {
+                try await pressStoredRowGoToPane(fixture: fixture, surface: surface, focusSucceeds: focusSucceeds)
+                try await fixture.close()
+            } catch {
+                try? await fixture.close()
+                throw error
+            }
+        }
+    }
+
+    private func pressStoredRowGoToPane(
+        fixture: PaneContextMessageActionFixture, surface: RowSurface, focusSucceeds: Bool
+    ) async throws {
+        let paneId = fixture.composition.ownerId
+        let request = try await fixture.send(.goToPane(paneId))
+        let counts = PaneMessageCounts(
+            kinds: .init(failure: 0, needsYou: 0, done: 0, info: 1), newestOpenBlockingAskId: nil)
+        fixture.composition.presentationAtom.apply([
+            paneId: .set(
+                .init(
+                    revision: .init(1), agentTitle: nil, agentLine: nil, own: counts,
+                    includingDrawers: counts, pullRequests: .notApplicable))
+        ])
+        let adapter = PaneContextUIAdapter(service: fixture.service)
+        let readers = PaneContextUIReaders(
+            sessionStatus: SessionStatusAtom(), presentation: fixture.composition.presentationAtom,
+            pane: { fixture.store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
+        let mounted = PaneContextNativePopoverWindow(
+            paneId: paneId, readers: readers, location: .pane, wallNow: fixture.composition.now,
+            card: surface == .cardMessages ? (.project(paneId: paneId.uuid, store: fixture.store), fixture.store) : nil,
+            messageEntry: .messagesAction(PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil))
+        do {
+            if surface == .cardMessages {
+                try await mounted.renderedCard()
+                try mounted.press("pane-context.card-messages")
+                try await mounted.readCompleted()
+                try await mounted.rendered()
+            } else {
+                try await mounted.open()
+            }
+            let controller = try #require(mounted.controller)
+            let popover = try #require(mounted.popoverWindow)
+            let identifier = "pane-context.go-to-pane.\(paneId.uuid).\(request.messageId.uuid).0"
+            #expect(popover.isVisible)
+            #expect(fixture.effects.contexts.isEmpty)
+            try mounted.press(identifier)
+            try await mounted.actionCompleted()
+            mounted.layout()
+            #expect(
+                fixture.effects.contexts == [
+                    .init(sourcePaneId: paneId, messageId: request.messageId, action: .goToPane(paneId))
+                ])
+            #expect(
+                fixture.shell.interactions.filter {
+                    if case .targetedExecution = $0 { return true }
+                    return false
+                } == [.targetedExecution(command: .focusPane, target: paneId.uuid, targetType: .pane)])
+            #expect(mounted.goToPaneTargets.isEmpty, "Row navigation must not invoke the footer navigation callback")
+            if focusSucceeds {
+                #expect(!popover.isVisible, "Successful row Go to pane must dismiss the actual popover window")
+                #expect(mounted.find(identifier) == nil)
+                #expect(controller.paneId == nil, "Successful row navigation must close its controller")
+            } else {
+                #expect(popover.isVisible)
+                #expect(mounted.find(identifier) != nil)
+                #expect(controller.paneId == paneId)
+                #expect(controller.actionFeedback == "Pane gone")
+                #expect(mounted.labels().contains("Pane gone"))
+            }
+            try await mounted.close()
+        } catch {
+            try? await mounted.close()
+            throw error
+        }
+    }
+}
