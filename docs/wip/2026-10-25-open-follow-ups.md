@@ -2,14 +2,14 @@
 
 The open follow-up work. Each item says what it is, what we know, and the next step.
 
-## Approved design, implementation pending
+## In review
 
 ### Pane context display: status and Agent Line
 
-The same pane tells different stories on different surfaces. The ⌘R card can say "Needs you · question" while the sidebar row says "Idle · ready", and the question's text appears nowhere. Ages float away from the text they date, and the Messages popover cuts off its buttons.
+Pane context uses shared display rules across the sidebar, drawer toolbar, ⌘R card and popovers. The card and Messages offer the selected request's form, including approval decisions, and rebind after real settlement. Agent Line ages stay beside their text; Messages keeps full bodies and reachable controls.
 
-- **State:** approved by the owner, not built. The requirements, the specification and the HTML storyboard with its renders are in `docs/specs/2026-10-24-pane-context-display/`.
-- **Next:** Program Design, independent review, plan, build, then native frames checked at three widths against the storyboard.
+- **State:** implemented and in review, with focused product-test and deliberate-fault evidence. The requirements, specification and HTML storyboard with renders remain in `docs/specs/2026-10-24-pane-context-display/`.
+- **Next:** the Lead runs the aggregate gate and independent review, then checks native debug-build frames at 390, 520 and 1400 against the storyboard. CI and owner acceptance remain pending.
 
 ## Needs an owner decision
 
