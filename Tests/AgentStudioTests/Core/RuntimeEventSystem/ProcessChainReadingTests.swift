@@ -66,6 +66,56 @@ struct ProcessChainReadingTests {
         #expect(observation.isMainEligible(terminalLeader: fixture.leader) == fixture.expectedEligible)
     }
 
+    @Test(
+        "one macOS sh trampoline wrapper preserves provider election",
+        arguments: ["sh", "bash", "dash"], [ChainCase.directCodex, .directClaude, .directCursor, .cursorAgentAlias])
+    func hookScriptTrampolineShells(shellName: String, chainCase: ChainCase) throws {
+        // Arrange: the wrapper name is a kernel fact, independent of argv0.
+        let fixture = ChainTableFixture(chainCase: chainCase)
+        var table = try hookScriptTable(fixture)
+        let wrapper = try #require(table[50])
+        table[50] = chainFact(50, parent: wrapper.parentPID, name: shellName)
+
+        // Act: Cursor still has its own zsh hop after the single hook wrapper.
+        let observation = DarwinProcessChainReader(facts: ScriptedChainFacts(table: table), readLimit: 20)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+
+        // Assert: the provider's pane shell is elected, not the hook shell.
+        #expect(observation == fixture.expectedObservation)
+        #expect(observation.isMainEligible(terminalLeader: fixture.leader))
+    }
+
+    @Test(
+        "non-trampoline wrappers remain unrecognized",
+        arguments: ["python3", "zsh"], [ChainCase.directCodex, .directClaude])
+    func rejectsNonTrampolineWrapper(wrapperName: String, chainCase: ChainCase) throws {
+        let fixture = ChainTableFixture(chainCase: chainCase)
+        var table = try hookScriptTable(fixture)
+        table[50] = chainFact(50, parent: 40, name: wrapperName)
+
+        let observation = DarwinProcessChainReader(facts: ScriptedChainFacts(table: table), readLimit: 20)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+
+        #expect(observation == .unknown(.unrecognizedChain))
+        #expect(!observation.isMainEligible(terminalLeader: fixture.leader))
+    }
+
+    @Test(
+        "a second trampoline shell is not skipped",
+        arguments: ["sh", "bash", "dash"], [ChainCase.directCodex, .directClaude])
+    func rejectsSecondTrampolineShell(shellName: String, chainCase: ChainCase) throws {
+        let fixture = ChainTableFixture(chainCase: chainCase)
+        var table = try hookScriptTable(fixture)
+        table[50] = chainFact(50, parent: 45, name: shellName)
+        table[45] = chainFact(45, parent: 40, name: shellName)
+
+        let observation = DarwinProcessChainReader(facts: ScriptedChainFacts(table: table), readLimit: 20)
+            .observe(peer: .init(pid: 60, pidVersion: 17), provider: fixture.provider)
+
+        #expect(observation == .unknown(.unrecognizedChain))
+        #expect(!observation.isMainEligible(terminalLeader: fixture.leader))
+    }
+
     @Test("a second or misplaced sh is not another skippable hook", arguments: ExtraHookShellCase.allCases)
     func onlyOneHookScriptShell(extraShell: ExtraHookShellCase) throws {
         let fixture = ChainTableFixture(chainCase: extraShell == .secondImmediateShell ? .directClaude : .directCursor)
