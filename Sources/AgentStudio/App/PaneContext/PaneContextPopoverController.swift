@@ -164,9 +164,14 @@ final class PaneContextPopoverController {
     }
 
     /// The host observes the display and every scoped prompt-list revision.
+    var needsRevisionRefresh: Bool {
+        guard let paneId else { return false }
+        return refreshKeyForPane(paneId) != readKey
+    }
+
     @discardableResult
     func refreshIfRevisionChanged() async -> Bool {
-        guard let paneId, refreshKeyForPane(paneId) != readKey else { return false }
+        guard needsRevisionRefresh else { return false }
         await refresh()
         return true
     }

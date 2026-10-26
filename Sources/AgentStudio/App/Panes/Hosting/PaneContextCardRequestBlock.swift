@@ -10,6 +10,7 @@ struct PaneContextCardRequestBlock: View {
     let owner: PaneId
     let octiconLoader: OcticonLoader
     let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
+    var onReadTaskStarted: PaneContextReadTaskObserver = { _, _, _ in }
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
@@ -59,7 +60,8 @@ struct PaneContextCardRequestBlock: View {
                                     messageId: .init(existingUUID: row.id))),
                             location: .pane, readers: readers, octiconLoader: octiconLoader,
                             onGoToPane: actions.goToPane,
-                            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+                            onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+                            onActionCompleted: onActionCompleted,
                             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
                             onRelativeTimeEvent: onRelativeTimeEvent)
                     case .notApplicable: EmptyView()

@@ -117,7 +117,7 @@ struct PaneContextToolbarRenderingTests {
         return view.subviews.lazy.compactMap { findToolbarText(in: $0) }.first
     }
 
-    @Test("a card with no activity still paints the sidebar clock chip")
+    @Test("O33 omits unknown ACTIVE and renders known activity as a plain dated field")
     func cardPaintsUnknownActivityClock() throws {
         let context = PaneManagementContext(
             paneId: UUIDv7.generate(), identityRows: [], statusChips: nil,
@@ -125,17 +125,26 @@ struct PaneContextToolbarRenderingTests {
         let loader = makeTestOcticonLoader()
         let mounted = mountCard(
             AnyView(ManagementPaneIdentityStrip(context: context, octiconLoader: loader)), width: 1000)
-        defer { mounted.window.orderOut(nil) }
+        defer { mounted.window.close() }
         let reference = mountCard(
             AnyView(
                 SidebarChip(icon: .system(.clock), octiconLoader: loader, text: "—", style: .neutral)),
             width: nil)
-        defer { reference.window.orderOut(nil) }
+        defer { reference.window.close() }
         let referenceInk = try ink(in: reference.host, minimumBrightness: 80)
         #expect(referenceInk.mask.contains(true), "The independent clock reference must paint")
         #expect(
-            containsTextInk(referenceInk, in: try ink(in: mounted.host, minimumBrightness: 80)),
-            "The card must paint the same clock and unknown-activity text as the sidebar")
+            !containsTextInk(referenceInk, in: try ink(in: mounted.host, minimumBrightness: 80)),
+            "Unknown E6 must not paint a recency chip")
+        #expect(!accessibilityLabels(in: mounted.host).contains("ACTIVE"))
+        let known = mountCard(
+            AnyView(ManagementPaneIdentityStrip(context: context, octiconLoader: loader, activityText: "2 min ago")),
+            width: 1000)
+        defer { known.window.close() }
+        #expect(accessibilityLabels(in: known.host).contains("ACTIVE 2 min ago"))
+        let plainAge = mountCard(AnyView(Text("2 min ago").font(.system(size: 12)).fixedSize()), width: nil)
+        defer { plainAge.window.close() }
+        #expect(containsTextInk(try ink(in: plainAge.host), in: try ink(in: known.host)))
     }
 
     @Test("a sidebar activity chip does not repeat the active mark")
@@ -427,15 +436,16 @@ struct PaneContextToolbarRenderingTests {
         }
     }
 
-    func toolbarRoot(contextContent: AnyView, width: CGFloat) -> AnyView {
+    func toolbarRoot(contextContent: AnyView, width: CGFloat, includesGit: Bool = true) -> AnyView {
         let loader = makeTestOcticonLoader()
         let trailing = DrawerOverlay.TrailingActions(
             editPaneNoteAction: action(.editPaneNote), openEditorMenuAction: action(.openPaneLocationInEditorMenu),
             openFinderAction: action(.openPaneLocationInFinder), copyPathAction: action(.copyCurrentPanePath),
-            gitStatusPresentation: .resolve(
-                branchStatus: .init(
-                    isDirty: true, syncState: .unknown, prCount: 1, linesAdded: 0, linesDeleted: 0,
-                    untrackedFileCount: 1)),
+            gitStatusPresentation: includesGit
+                ? .resolve(
+                    branchStatus: .init(
+                        isDirty: true, syncState: .unknown, prCount: 1, linesAdded: 0, linesDeleted: 0,
+                        untrackedFileCount: 1)) : nil,
             openPullRequestAction: surfaceAction(.openPullRequest),
             editorMenuContent: AnyView(EmptyView()), editorMenuPresented: .constant(false), buttonTitle: nil
         ).withPaneContextContent(contextContent)

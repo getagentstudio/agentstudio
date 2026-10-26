@@ -15,6 +15,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let onGoToPane: @MainActor (UUID) -> Void
     let includingDrawers: Bool
     let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
+    let onReadTaskStarted: PaneContextReadTaskObserver
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let clock: AgeClock
@@ -32,6 +33,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
         onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
         },
+        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _, _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
@@ -45,6 +47,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.onGoToPane = onGoToPane
         self.includingDrawers = includingDrawers
         self.onReadCompleted = onReadCompleted
+        self.onReadTaskStarted = onReadTaskStarted
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.clock = clock
@@ -57,16 +60,24 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
             .popover(isPresented: $isPresented, arrowEdge: .bottom) { popover }
             .task(id: openRequest) {
                 guard openRequest > 0 else { return }
-                await openPopover()
+                await PaneContextPopoverHostActions.read(
+                    key: readers.refreshKey(for: paneId), location: location, onStarted: onReadTaskStarted
+                ) {
+                    await openPopover()
+                }
             }
             .task(id: readers.refreshKey(for: paneId)) {
-                guard isPresented, let controller else { return }
+                guard isPresented, let controller, controller.needsRevisionRefresh else { return }
                 let key = readers.refreshKey(for: paneId)
-                guard controller.useCurrentService(readers.serviceProvider()) else {
-                    onReadCompleted(key, controller)
-                    return
+                await PaneContextPopoverHostActions.read(key: key, location: location, onStarted: onReadTaskStarted) {
+                    guard controller.useCurrentService(readers.serviceProvider()) else {
+                        onReadCompleted(key, controller)
+                        return
+                    }
+                    if await controller.refreshIfRevisionChanged(), !Task.isCancelled {
+                        onReadCompleted(key, controller)
+                    }
                 }
-                if await controller.refreshIfRevisionChanged(), !Task.isCancelled { onReadCompleted(key, controller) }
             }
             .onChange(of: controller?.paneId) { _, pane in
                 if pane == nil, unavailableNote == nil, controller?.unavailableNote == nil { isPresented = false }

@@ -6,7 +6,8 @@ import Testing
 
 @testable import AgentStudioRepoExplorer
 
-@Suite("RepoExplorerMaterializationSnapshotTests")
+@MainActor
+@Suite("RepoExplorerMaterializationSnapshotTests", .serialized)
 struct RepoExplorerMaterializationSnapshotTests {
     @Test("section breathing room is above the heading, with no added gap below")
     func sectionSpacingIsAboveOnly() {
@@ -594,7 +595,7 @@ extension RepoExplorerMaterializationSnapshotTests {
         #expect(linkedWorktreeRow.layout.metrics.metadataLineHeight >= renderedMetadataLineHeight)
     }
 
-    @Test("content revision changes for every associated-pane rendered field")
+    @Test("content revision retains every associated-pane legacy fact")
     func paneContentRevisionIncludesEveryRenderedField() {
         let repoID = UUIDv7.generate()
         let worktreeID = UUIDv7.generate()
@@ -649,15 +650,7 @@ extension RepoExplorerMaterializationSnapshotTests {
         let baselineRevision = RepoExplorerRowContentRevision(
             presentation: .pane(baseline)
         )
-        let baselineLayout = RepoExplorerRowLayout.make(for: .pane(baseline))
-
-        #expect(
-            baselineLayout.metrics.fallbackHeight
-                == expectedPaneHeight(
-                    metadataLineCount: 2,
-                    metrics: baselineLayout.metrics
-                )
-        )
+        // Actual rendered-variant height/revision is covered by renderedVariantOwnsHeightAndRevision.
 
         for changedRow in changedRows {
             #expect(
@@ -679,7 +672,7 @@ extension RepoExplorerMaterializationSnapshotTests {
             paneIndexInTab: 0,
             isActiveInTab: true
         )
-        let projectedRow = RepoExplorerProjectedPaneRow(
+        var projectedRow = RepoExplorerProjectedPaneRow(
             groupId: groupID,
             destination: destination,
             rowId: "pane-row:\(groupID):\(paneID.uuidString)",
@@ -688,6 +681,8 @@ extension RepoExplorerMaterializationSnapshotTests {
             recencyText: "Now",
             isActive: true
         )
+        let visible = RepoExplorerPaneRowVariant(lines: [.title("Pane 1 · shell")])
+        projectedRow.variants = .init(compact: visible, expanded: visible)
         let group = RepoPresentationGroup(
             id: groupID,
             repoTitle: "Unassociated",
@@ -743,12 +738,13 @@ extension RepoExplorerMaterializationSnapshotTests {
         #expect(pane.worktreeId == nil)
         #expect(pane.branchContextText == nil)
         #expect(pane.branchStatus == nil)
+        #expect(pane.variants?.compact == visible)
         #expect(materializedRow.representedRepoID == nil)
         #expect(materializedRow.representedWorktreeID == nil)
         #expect(
             materializedRow.layout.metrics.fallbackHeight
-                == expectedPaneHeight(
-                    metadataLineCount: 1,
+                == expectedMetadataHeight(
+                    metadataLineCount: 0,
                     metrics: materializedRow.layout.metrics
                 )
         )
@@ -765,6 +761,7 @@ extension RepoExplorerMaterializationSnapshotTests {
         )
         let presentation = RepoExplorerMaterializedRowPresentation.unassociatedPane(
             RepoExplorerUnassociatedPanePresentation(
+                variant: .init(lines: [.title("Pane 1 · zsh")]),
                 destination: destination,
                 primaryText: "Pane 1 · zsh",
                 secondaryLine: nil,
@@ -778,19 +775,8 @@ extension RepoExplorerMaterializationSnapshotTests {
 
         #expect(
             layout.metrics.fallbackHeight
-                == expectedPaneHeight(metadataLineCount: 0, metrics: layout.metrics)
+                == expectedMetadataHeight(metadataLineCount: 0, metrics: layout.metrics)
         )
-    }
-
-    private func expectedPaneHeight(
-        metadataLineCount: CGFloat,
-        metrics: RepoExplorerRowLayoutMetrics
-    ) -> CGFloat {
-        metrics.primaryLineHeight
-            + metrics.metadataLineHeight * metadataLineCount
-            + metrics.chipLineHeight
-            + metrics.contentSpacing * (metadataLineCount + 1)
-            + metrics.verticalInset * 2
     }
 
     private func expectedMetadataHeight(

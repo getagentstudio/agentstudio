@@ -89,7 +89,7 @@ extension PaneContextToolbarRenderingTests {
                     Divider().frame(width: 1, height: 16).padding(.horizontal, 6)
                     Image(systemName: "text.bubble").frame(width: 14)
                     Color.clear.frame(width: 4, height: 0)
-                    Text("… [8 days ago]").font(.system(size: 11)).fixedSize()
+                    Text("… [8 days ago]").font(.system(size: 12)).fixedSize()
                 }.fixedSize().background {
                     AccessibilityLabelBridge(identifier: "reference.lineMinimum", label: "", role: .staticText)
                 }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading))
@@ -179,13 +179,19 @@ extension PaneContextToolbarRenderingTests {
             let region = CGRect(
                 x: region.lowerBound + 1, y: 0,
                 width: region.upperBound - region.lowerBound - 2, height: mounted.host.bounds.height)
+            // Equivalent native parent and crop coordinates keep background/edge rasterization
+            // independent of the optional context item. O20 still requires exact absence.
             let reference = mountCard(
-                AnyView(
-                    AppStyles.Shell.DrawerToolbar.background
-                        .frame(width: region.width, height: region.height)), width: region.width)
+                toolbarRoot(contextContent: AnyView(EmptyView()), width: width, includesGit: false), width: width)
             defer { reference.window.close() }
+            let actualPixels = try pixels(in: mounted.host, rect: region)
+            let referencePixels = try pixels(in: reference.host, rect: region)
+            if actualPixels != referencePixels {
+                recordToolbarPaint(mounted.host, name: "hidden-actual", rect: region)
+                recordToolbarPaint(reference.host, name: "hidden-reference", rect: region)
+            }
             #expect(
-                try pixels(in: mounted.host, rect: region) == pixels(in: reference.host),
+                actualPixels == referencePixels,
                 "A hidden item leaves no partial chip, text, icon or divider")
         }
     }

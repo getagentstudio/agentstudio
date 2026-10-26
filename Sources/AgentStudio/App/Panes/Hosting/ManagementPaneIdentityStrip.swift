@@ -25,6 +25,7 @@ struct ManagementPaneIdentityStrip: View {
     var feedback: String?
     var onGoToPane: @MainActor (UUID) -> Void = { _ in }
     var onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in }
+    var onReadTaskStarted: PaneContextReadTaskObserver = { _, _, _ in }
     var onActionCompleted: @MainActor () -> Void = {}
     var onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
     var onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
@@ -55,7 +56,8 @@ struct ManagementPaneIdentityStrip: View {
                 PaneContextCardRequestBlock(
                     request: cardModel.request, actions: actions, readers: readers,
                     owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
-                    onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+                    onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+                    onActionCompleted: onActionCompleted,
                     onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent)
                 if cardModel.moreCount > 0 {
                     messagesEntry(
@@ -284,7 +286,8 @@ struct ManagementPaneIdentityStrip: View {
                 focusedMessage: nil),
             location: .pane, readers: readers, octiconLoader: octiconLoader,
             onGoToPane: onGoToPane, includingDrawers: !isDrawerPane,
-            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+            onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+            onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(), onRelativeTimeEvent: onRelativeTimeEvent
         )
     }
@@ -300,6 +303,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let wallNow: Date?
     let onGoToPane: @MainActor (UUID) -> Void
     let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
+    let onReadTaskStarted: PaneContextReadTaskObserver
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
@@ -317,9 +321,11 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
         clock: ActivityClock, wallNow: Date? = nil,
         onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _ in },
         onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in },
         onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
         },
+        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _, _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) {
@@ -330,10 +336,13 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         self.wallNow = wallNow
         self.onGoToPane = onGoToPane
         self.onReadCompleted = onReadCompleted
+        self.onReadTaskStarted = onReadTaskStarted
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.onRelativeTimeEvent = onRelativeTimeEvent
-        _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
+        _relativeTimeRefresh = State(
+            initialValue: PaneRelativeTimeRefresh(
+                onEvent: onRelativeTimeEvent, onPresentationReady: onRelativeTimeReady))
     }
 
     var body: some View {
@@ -362,7 +371,8 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
             cardModel: card, readers: readers, actions: actions,
             feedback: cardController?.unavailableNote ?? cardController?.actionFeedback,
             onGoToPane: onGoToPane,
-            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+            onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
+            onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent
         )
         .frame(maxWidth: .infinity)
@@ -379,32 +389,44 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         .task(id: trigger) {
             guard let readers, let selection = trigger.selection else { return }
             let key = readers.refreshKey(for: paneId)
-            guard trigger.needsDetailRead else {
-                cardController?.close()
-                onReadCompleted(key, cardController)
-                return
+            await PaneContextPopoverHostActions.read(key: key, location: .card, onStarted: onReadTaskStarted) {
+                await readCard(
+                    readers: readers, selection: selection, needsDetailRead: trigger.needsDetailRead, key: key,
+                    isDrawer: input.isDrawer)
             }
-            guard let adapter = readers.serviceProvider() else {
-                cardController?.close()
-                onReadCompleted(key, cardController)
-                return
-            }
-            let controller =
-                cardController
-                ?? readers.makePopoverController(
-                    reader: adapter, person: adapter,
-                    location: .card, includingDrawers: !input.isDrawer)
-            cardController = controller
-            guard controller.useCurrentService(adapter) else { return }
-            await controller.openCard(paneId, selection: selection)
-            guard !Task.isCancelled else { return }
-            onReadCompleted(key, controller)
         }
         .onDisappear {
             relativeTimeRefresh.hide()
             sessionIdentity.close()
             cardController?.close()
         }
+    }
+
+    private func readCard(
+        readers: PaneContextUIReaders, selection: CardRequestSelection, needsDetailRead: Bool,
+        key: PaneContextRefreshKey, isDrawer: Bool
+    ) async {
+        let paneId = PaneId(existingUUID: context.paneId)
+        guard needsDetailRead else {
+            cardController?.close()
+            onReadCompleted(key, cardController)
+            return
+        }
+        guard let adapter = readers.serviceProvider() else {
+            cardController?.close()
+            onReadCompleted(key, cardController)
+            return
+        }
+        let controller =
+            cardController
+            ?? readers.makePopoverController(
+                reader: adapter, person: adapter,
+                location: .card, includingDrawers: !isDrawer)
+        cardController = controller
+        guard controller.useCurrentService(adapter) else { return }
+        await controller.openCard(paneId, selection: selection)
+        guard !Task.isCancelled else { return }
+        onReadCompleted(key, controller)
     }
 
     private func captureInput() -> PaneManagementIdentityCapture.LineInput {

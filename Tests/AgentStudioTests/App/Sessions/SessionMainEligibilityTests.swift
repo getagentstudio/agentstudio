@@ -48,10 +48,14 @@ struct SessionMainEligibilityTests {
                 #expect(query.session?.status == expected.wireStatus)
                 let publications = await restored.statusPublicationMailbox.takeBatch()
                 let paneKey = PaneId(existingUUID: pane)
-                #expect(publications[paneKey] == .set(.init(status: expected.status)))
+                // P2/F03 evidence accompanies the entire publication, including active unknown status.
+                let presentation = PaneAgentStatusPresentation(
+                    status: expected.status, connectionIssue: nil, evidence: expected.evidence,
+                    compactPrompt: nil, promptListRevision: 0)
+                #expect(publications[paneKey] == .set(presentation))
                 let sidebar = SessionStatusAtom()
                 sidebar.apply(publications)
-                #expect(sidebar.value(for: paneKey)?.status == expected.status)
+                #expect(sidebar.value(for: paneKey) == presentation)
                 await restored.finish()
             } catch {
                 await restored.finish()

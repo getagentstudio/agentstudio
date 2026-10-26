@@ -19,8 +19,12 @@ struct PaneContextApprovalTests {
         arguments: [
             DecisionCase(
                 decision: .approve, reason: "Reviewed the migration", storedValue: "approve",
-                confirmedLabel: "Answered: Approve"),
-            .init(decision: .deny, reason: nil, storedValue: "deny", confirmedLabel: "Answered: Deny"),
+                confirmedLabel: "Answered: Approved · Reviewed the migration"),
+            .init(decision: .approve, reason: nil, storedValue: "approve", confirmedLabel: "Answered: Approved"),
+            .init(
+                decision: .deny, reason: "The migration is unsafe", storedValue: "deny",
+                confirmedLabel: "Answered: Denied · The migration is unsafe"),
+            .init(decision: .deny, reason: nil, storedValue: "deny", confirmedLabel: "Answered: Denied"),
         ])
     func approvalRoundTripsThroughSQLite(_ input: DecisionCase) async throws {
         try await withPaneContextService { fixture, service in

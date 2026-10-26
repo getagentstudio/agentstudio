@@ -187,7 +187,15 @@ enum PaneManagementIdentityCapture {
             let activityDeadline = card.activityTime.map {
                 PaneContextPresentationRules.age(referenceDate: $0.wallTime, now: now).nextChange
             }
-            return (.card(model), [activityDeadline, messageDeadline].compactMap(\.self).min())
+            let requestDeadline: Date?
+            if case .ask = model.request {
+                requestDeadline = card.selectedAsk.map {
+                    PaneContextPresentationRules.age(referenceDate: $0.detail.sentAt, now: now).nextChange
+                }
+            } else {
+                requestDeadline = nil
+            }
+            return (.card(model), [activityDeadline, messageDeadline, requestDeadline].compactMap(\.self).min())
         }
         return (.pane(prepared), messageDeadline)
     }
@@ -197,6 +205,7 @@ enum PaneManagementIdentityCapture {
 @MainActor
 @Observable
 final class PaneRelativeTimeRefresh {
+    typealias PresentationReadyObserver = @MainActor @Sendable (PaneManagementIdentityCapture.VisibleInput) -> Void
     enum StartResult: Equatable, Sendable {
         case started
         case unchanged
@@ -241,9 +250,14 @@ final class PaneRelativeTimeRefresh {
     }
     @ObservationIgnored private var worker: Worker?
     @ObservationIgnored private let onEvent: @MainActor @Sendable (Event) -> Void
+    @ObservationIgnored private let onPresentationReady: PresentationReadyObserver
 
-    init(onEvent: @escaping @MainActor @Sendable (Event) -> Void = { _ in }) {
+    init(
+        onEvent: @escaping @MainActor @Sendable (Event) -> Void = { _ in },
+        onPresentationReady: @escaping PresentationReadyObserver = { _ in }
+    ) {
         self.onEvent = onEvent
+        self.onPresentationReady = onPresentationReady
     }
 
     isolated deinit { worker?.task.cancel() }
@@ -281,8 +295,9 @@ final class PaneRelativeTimeRefresh {
             await PaneManagementIdentityCapture.watch(
                 input, clock: clock, wallNow: wallNow
             ) { [weak self] prepared in
-                guard let self, !Task.isCancelled, self.worker?.id == id, self.value != prepared else { return }
-                self.value = prepared
+                guard let self, !Task.isCancelled, self.worker?.id == id else { return }
+                if self.value != prepared { self.value = prepared }
+                self.onPresentationReady(input)
             }
         }
         worker = Worker(input: input, id: id, task: task)

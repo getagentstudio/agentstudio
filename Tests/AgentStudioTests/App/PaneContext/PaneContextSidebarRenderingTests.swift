@@ -161,8 +161,15 @@ struct PaneContextSidebarRenderingTests {
         }.map { host.convert($0.bounds, from: $0) }
         #expect(zip(chips, chips.dropFirst()).allSatisfy { $0.0.maxX <= $0.1.minX })
         #expect(chips.allSatisfy { $0.minY >= frames[2].maxY && $0.width > 0 && $0.maxX <= host.bounds.maxX })
-        try expectText("Working", font: .system(size: 11), in: host)
-        try expectText("[2 min ago]", font: .system(size: 11), in: host)
+        try expectText(
+            "Working", font: .system(size: 12),
+            colour: Color(.sRGB, red: 0x40 / 255.0, green: 0x9C / 255.0, blue: 1), in: host)
+        try expectText("[2 min ago]", font: .system(size: 12), in: host)
+        let statusPixels = Array(try PaneContextToolbarRenderingTests().pixels(in: host, rect: frames[1]))
+        #expect(
+            stride(from: 0, to: statusPixels.count, by: 4).contains { index in
+                statusPixels[index] == 0x40 && statusPixels[index + 1] == 0x9C && statusPixels[index + 2] == 0xFF
+            }, "Working text must paint the literal semantic blue, independently of its glyph mask")
     }
 
     private func assertChipPalette(_ row: RepoExplorerMaterializedRow, in host: NSView) throws {
@@ -221,10 +228,10 @@ struct PaneContextSidebarRenderingTests {
         #expect(pressBridge(in: mounted.cell.hostingView, identifier: "pane-context.messages.info") == nil)
     }
 
-    private func expectText(_ text: String, font: Font, in host: NSView) throws {
+    private func expectText(_ text: String, font: Font, colour: Color = .secondary, in host: NSView) throws {
         let render = PaneContextToolbarRenderingTests()
         let reference = render.mountCard(
-            AnyView(Text(text).font(font).foregroundStyle(Color.secondary).fixedSize()), width: nil)
+            AnyView(Text(text).font(font).foregroundStyle(colour).fixedSize()), width: nil)
         defer { reference.window.close() }
         #expect(
             render.containsTextInk(

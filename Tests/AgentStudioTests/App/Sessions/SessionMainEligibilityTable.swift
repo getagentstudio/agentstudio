@@ -84,30 +84,41 @@ enum MainElectionTableScenario: CaseIterable, Sendable {
 
     func expected(eligible: Bool) -> MainElectionTableExpected {
         switch self {
-        case .ownEnd: return .init(session: "A", status: .ended, disposition: .applied, additionalEvidence: 1)
+        case .ownEnd:
+            return .init(
+                session: "A", status: .ended, evidence: .verifiedEnded, disposition: .applied, additionalEvidence: 1)
         case .cursorTakeover:
             return .init(
-                session: eligible ? "B" : "A", status: .active, disposition: eligible ? .bound : nil,
+                session: eligible ? "B" : "A", status: .active, evidence: .verifiedLive,
+                disposition: eligible ? .bound : nil,
                 additionalEvidence: eligible ? 1 : 0)
         case .cursorWithoutMain, .firstReport:
             return .init(
                 session: eligible ? "B" : nil, status: eligible ? .active : .unknown,
+                evidence: eligible ? .verifiedLive : .none,
                 disposition: eligible ? .bound : nil, additionalEvidence: eligible ? 1 : 0)
         case .endedNonStart:
-            return .init(session: "A", status: .ended, disposition: .recordedOnly, additionalEvidence: 1)
+            return .init(
+                session: "A", status: .ended, evidence: .verifiedEnded, disposition: .recordedOnly,
+                additionalEvidence: 1)
         case .reopenEnded:
             return .init(
-                session: "A", status: eligible ? .unknown : .ended, disposition: eligible ? .bound : .recordedOnly,
+                session: "A", status: eligible ? .unknown : .ended, evidence: eligible ? .verifiedLive : .verifiedEnded,
+                disposition: eligible ? .bound : .recordedOnly,
                 additionalEvidence: 1)
         case .newStart:
             return .init(
                 session: eligible ? "B" : "A", status: eligible ? .unknown : .active,
+                evidence: .verifiedLive,
                 disposition: eligible ? .bound : nil, additionalEvidence: eligible ? 1 : 0)
         case .supersedeUnconfirmed:
             return .init(
-                session: eligible ? "B" : "A", status: .active, disposition: eligible ? .bound : nil,
+                session: eligible ? "B" : "A", status: .active, evidence: .verifiedLive,
+                disposition: eligible ? .bound : nil,
                 additionalEvidence: eligible ? 1 : 0)
-        case .confirmedOther: return .init(session: "A", status: .active, disposition: nil, additionalEvidence: 0)
+        case .confirmedOther:
+            return .init(
+                session: "A", status: .active, evidence: .verifiedLive, disposition: nil, additionalEvidence: 0)
         }
     }
 }
@@ -116,12 +127,17 @@ struct MainElectionTableExpected {
     enum Status { case active, ended, unknown }
     let session: String?
     let statusKind: Status
+    let evidence: StatusEvidence
     let disposition: SessionsHookDisposition?
     let additionalEvidence: Int
 
-    init(session: String?, status: Status, disposition: SessionsHookDisposition?, additionalEvidence: Int) {
+    init(
+        session: String?, status: Status, evidence: StatusEvidence, disposition: SessionsHookDisposition?,
+        additionalEvidence: Int
+    ) {
         self.session = session
         statusKind = status
+        self.evidence = evidence
         self.disposition = disposition
         self.additionalEvidence = additionalEvidence
     }
