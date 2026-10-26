@@ -42,7 +42,7 @@ extension ProcessExecutorTests {
             // no resume-before-suspend optimization can hide the wrong order.
             let caller = Task(executorPreference: immediateExecutor) {
                 let result = try await AgentStudioPerformanceTraceRecorder.withRestorePhaseScope(
-                    .restoreForegroundProbe
+                    .restoreOutboxImport
                 ) {
                     try await processExecutor.execute(command: "true", args: [], cwd: nil, environment: nil)
                 }
@@ -62,7 +62,7 @@ extension ProcessExecutorTests {
                 FileManager.default.fileExists(atPath: output.path)
                 ? try String(contentsOf: output, encoding: .utf8) : ""
             let probeRecords = contents.split(separator: "\n").filter {
-                $0.contains("\"body\":\"performance.restore.foreground.probe\"")
+                $0.contains("\"body\":\"performance.restore.outbox.import\"")
             }
             #expect(probeRecords.count == 1, "execute must enqueue exactly one scoped cost before resuming its caller")
         } catch {

@@ -7,21 +7,6 @@ import Testing
 
 @Suite("Persisted restore zmx membership")
 struct WorkspaceLiveZmxMembershipTests {
-    @Test("membership is scoped to the persisted workspace and zmx provider")
-    func persistedMembershipIsWorkspaceAndProviderScoped() async throws {
-        let fixture = try LiveZmxMembershipFixture()
-        let expectedSession = ZmxSessionID.generateUUIDv7()
-        let expectedPane = try fixture.addTerminal(provider: .zmx, sessionId: expectedSession)
-        _ = try fixture.addTerminal(provider: .ghostty, sessionId: .generateUUIDv7())
-        let otherWorkspace = UUIDv7.generate()
-        try fixture.repository.upsertWorkspace(
-            .init(id: otherWorkspace, name: "Other", createdAt: fixture.date, updatedAt: fixture.date))
-        _ = try fixture.addTerminal(provider: .zmx, sessionId: .generateUUIDv7(), workspaceId: otherWorkspace)
-
-        let membership = try await fixture.repository.liveZmxSessionsByPane(workspaceId: fixture.workspaceId)
-        #expect(membership == [expectedPane: expectedSession])
-    }
-
     @Test("closed-app intake reads persisted pane membership, including non-zmx terminals")
     func closedAppPaneMembershipUsesPersistedGraph() async throws {
         let fixture = try LiveZmxMembershipFixture()
@@ -34,24 +19,6 @@ struct WorkspaceLiveZmxMembershipTests {
         #expect(try await fixture.repository.persistedPaneIds(workspaceId: fixture.workspaceId) == [second])
     }
 
-    @Test("an invalid stored identifier fails the whole membership read instead of silently skipping a pane")
-    func malformedStoredIdentityFailsMembershipRead() async throws {
-        let fixture = try LiveZmxMembershipFixture()
-        let paneId = try fixture.addTerminal(provider: .zmx, sessionId: .generateUUIDv7())
-        // SQLite's trim does not remove tabs, whereas the identity parser does.
-        // This reaches the parser through the real schema without disabling a constraint.
-        try await fixture.database.write { database in
-            try database.execute(
-                sql: "INSERT INTO workspace_terminal_session_ownership(session_id) VALUES (?)", arguments: ["\t"])
-            try database.execute(
-                sql: "UPDATE pane_content_terminal SET zmx_session_id = ? WHERE pane_id = ?",
-                arguments: ["\t", paneId.uuidString])
-        }
-
-        await #expect(throws: WorkspaceUndoJournalFailure.invalidStoredIdentifier) {
-            try await fixture.repository.liveZmxSessionsByPane(workspaceId: fixture.workspaceId)
-        }
-    }
 }
 
 private struct LiveZmxMembershipFixture: Sendable {

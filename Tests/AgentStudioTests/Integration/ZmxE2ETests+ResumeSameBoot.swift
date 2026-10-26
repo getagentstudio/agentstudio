@@ -16,14 +16,6 @@ extension E2ESerializedTests.ZmxE2ETests {
             try await proveNativeCutoff(environment, cutoff: cutoff)
         }
     }
-
-    @Test("an older look's boot cannot skip B1 when the app's previous run was this boot")
-    @MainActor
-    func previousAppBootWinsOverOldLookBoot() async throws {
-        try await withResumeEvidenceBackend { environment in
-            try await proveNativeCutoff(environment, cutoff: .liveBeforeDecision, boot: .oldLookSameBoot)
-        }
-    }
 }
 
 enum NativeResumeCutoff: CaseIterable, Sendable {
@@ -33,9 +25,9 @@ enum NativeResumeCutoff: CaseIterable, Sendable {
 
 @MainActor
 private func proveNativeCutoff(
-    _ environment: ResumeEvidenceZmxEnvironment, cutoff: NativeResumeCutoff, boot: ResumeProofBoot = .same
+    _ environment: ResumeEvidenceZmxEnvironment, cutoff: NativeResumeCutoff
 ) async throws {
-    let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: boot)
+    let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: .same)
     do {
         let proof = try await ResumeEvidenceZmxProof.make(environment: environment, data: data, provider: "codex")
         do {
@@ -45,7 +37,7 @@ private func proveNativeCutoff(
             case .liveBeforeDecision:
                 first = try await heldNativeResumeDecision(proof, heldRead: 1) {
                     let end = try await data.liveHook(
-                        pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex", end: true)
+                        pane: proof.binding.paneId, session: proof.sessionId, provider: "codex", end: true)
                     guard case .committed(let committed) = end else {
                         throw ResumeEvidenceFixtureFailure.bindingNotAdmitted
                     }
@@ -53,19 +45,19 @@ private func proveNativeCutoff(
                 }
             case .storedBeforeReread:
                 first = try await heldNativeResumeDecision(proof, heldRead: 1) {
-                    try await data.append(pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex")
+                    try await data.append(pane: proof.binding.paneId, session: proof.sessionId, provider: "codex")
                 }
             case .storedAfterReread:
                 first = try await heldNativeResumeDecision(proof, heldRead: 2) {
                     try await data.append(
-                        pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex", at: 20)
+                        pane: proof.binding.paneId, session: proof.sessionId, provider: "codex", at: 20)
                 }
             case .liveAfterDecisionBeforeInstall, .liveBeforeStart, .liveAfterStart:
                 first = try await proof.resolve()
             }
             if cutoff == .liveAfterDecisionBeforeInstall {
                 _ = try await data.liveHook(
-                    pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex", end: true)
+                    pane: proof.binding.paneId, session: proof.sessionId, provider: "codex", end: true)
             }
             let invocation = ResumeInvocation(
                 provider: .codex, sessionId: try ProviderSessionId(rawValue: proof.sessionId))
@@ -77,17 +69,17 @@ private func proveNativeCutoff(
                 try await proof.prove(first, expected: .interruptedCandidate(invocation), label: "B1-first-\(cutoff)") {
                     if cutoff == .liveBeforeStart {
                         _ = try await data.liveHook(
-                            pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex", end: true)
+                            pane: proof.binding.paneId, session: proof.sessionId, provider: "codex", end: true)
                     }
                     let start = try await data.liveHook(
-                        pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex", end: false, at: 25)
+                        pane: proof.binding.paneId, session: proof.sessionId, provider: "codex", end: false, at: 25)
                     guard case .committed(let started) = start else {
                         throw ResumeEvidenceFixtureFailure.bindingNotAdmitted
                     }
-                    #expect(started.binding.bindingGenerationId == proof.foreground.generationId)
+                    #expect(started.binding.bindingGenerationId == proof.binding.generationId)
                     if cutoff == .liveAfterStart {
                         let end = try await data.liveHook(
-                            pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex", end: true)
+                            pane: proof.binding.paneId, session: proof.sessionId, provider: "codex", end: true)
                         guard case .committed(let ended) = end else {
                             throw ResumeEvidenceFixtureFailure.bindingNotAdmitted
                         }
@@ -95,7 +87,7 @@ private func proveNativeCutoff(
                     }
                 }
             }
-            // The first new-run look is intentionally held, the F10/F9 case: use the persisted old look.
+            // The next cold end uses the binding/report state left by the ordered live and stored cutoffs.
             let next = try await proof.resolve()
             let mayResumeAgain = cutoff == .liveAfterDecisionBeforeInstall || cutoff == .liveBeforeStart
             try await proof.prove(
@@ -118,18 +110,17 @@ func heldNativeResumeDecision(
     _ proof: ResumeEvidenceZmxProof, heldRead: Int,
     inject: @MainActor () async throws -> Void
 ) async throws -> ColdRestoreResumeVerdict {
-    let look = try await proof.foreground.repository.load(paneId: proof.foreground.paneId)
     let read = await proof.drain.drain(storeURL: proof.data.storeURL)
     #expect(read.readOutcome == .complete(throughId: 0))
     let hold = HeldStep<PaneForegroundEvidence?>("B1 evidence read \(heldRead)")
-    let held = HeldResumeEvidenceRepository(base: proof.foreground.repository, hold: hold, heldRead: heldRead)
+    let held = HeldResumeEvidenceRepository(base: proof.binding.repository, hold: hold, heldRead: heldRead)
     let decision = ColdRestoreResumeDecision(
-        ingestion: proof.data.ingestion, foregroundRepository: held, drain: proof.drain, storeURL: proof.data.storeURL)
+        ingestion: proof.data.ingestion, reportRepository: held, drain: proof.drain, storeURL: proof.data.storeURL)
     let boot = proof.data.launchBoot
     let operation = Task {
         defer { hold.retire() }
         return await decision.resolve(
-            paneId: proof.foreground.paneId, sessionId: proof.foreground.sessionId, preRestoreLook: look,
+            paneId: proof.binding.paneId, sessionId: proof.binding.sessionId,
             readiness: .ready, launchBoot: boot, inventory: await proof.environment.backend.discoverSessionInventory())
     }
     do {

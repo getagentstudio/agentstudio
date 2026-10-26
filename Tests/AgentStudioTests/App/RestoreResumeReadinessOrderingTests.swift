@@ -31,8 +31,8 @@ struct RestoreResumeReadinessOrderingTests {
                 return await AppDelegate.resolveColdResumePlan(
                     request: .init(
                         paneID: .init(existingUUID: pane.paneId),
-                        plan: coldResumeBasePlan(session: pane.look.zmxSessionId), inventory: .complete([:])),
-                    readiness: readiness, observer: nil,
+                        plan: coldResumeBasePlan(session: pane.zmxSessionId), inventory: .complete([:])),
+                    readiness: readiness,
                     launchBoot: .init(previousBootId: "B", currentBootId: "B"),
                     decision: { finalRead in
                         source.sink(scope, .capabilities(finalRead))
@@ -47,7 +47,7 @@ struct RestoreResumeReadinessOrderingTests {
                 if available { await readiness.record(.verifiedEmpty) } else { clock.advance(to: deadline) }
                 try await facts.expectNext(in: scope, .capabilities(available))
                 let plan = await operation.value
-                #expect(plan.resume == nil)
+                #expect((plan.resume != nil) == available)
                 if available {
                     #expect(
                         try await harness.repository.statusContext(paneId: pane.paneId).currentBinding?.status == .ended

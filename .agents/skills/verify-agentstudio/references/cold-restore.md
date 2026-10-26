@@ -6,13 +6,15 @@ the matching J1 launch receipt, and checks `VERIFY_RESTORE_RUN_AUTHORIZED=1`.
 The selector does not grant permission; do not substitute or build a target.
 
 Oracle: `docs/specs/2026-09-28-session-restore/2026-09-28-session-restore-specification.md`,
-**revision 11**, SR3, SR5, SR6a and SR7–SR10, together with **Program Design
+**revision 13**, SR3, SR5, SR6a and SR7–SR10, together with **Program Design
 revision 28**, item 2 (the cold command). SR10 requires replay → marker → shell;
 Program Design 28 places the restore notice **before** that sequence. The
 declared build's `ZmxBackend.coldRestoreScript`/`folderFallbackLines` must therefore
 select the folder and print the notice, replay the saved bytes, print
 `--- restored after restart ---`, then hand off to the login shell. Recheck these
 symbols in that build; unqualified line ranges from an older build are not anchors.
+
+Specification revision 13 supersedes Program Design 28's R3 foreground-observation material. The Program Design's opening note points to the one-process-walk contract. J3 keeps item 2's saved-scrollback sequence; agent auto-resume still requires its own declared fixtures.
 
 Find that build's stored session-id codec (the current owner is
 `Core/State/MainActor/Persistence/WorkspaceCoreRepository+PaneGraphCodecs.swift`)

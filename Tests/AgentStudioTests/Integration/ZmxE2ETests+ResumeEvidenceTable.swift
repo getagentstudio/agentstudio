@@ -11,6 +11,45 @@ import Testing
 
 extension E2ESerializedTests.ZmxE2ETests {
     @Test(
+        "r13 boot and inventory variants decide the native command and exact UUID",
+        arguments: ["claude-code", "codex"], ResumeInventoryProofRow.allCases)
+    @MainActor
+    func resumeBootInventoryMatrix(provider: String, row: ResumeInventoryProofRow) async throws {
+        try await withResumeEvidenceBackend { environment in
+            let data = try await ResumeEvidenceZmxData.make(environment: environment, boot: row.boot)
+            do {
+                #expect(data.launchBoot.isSameBoot)
+                if row.boot == .missing { #expect(data.launchBoot.previousBootId == nil) }
+                let proof = try await ResumeEvidenceZmxProof.make(
+                    environment: environment, data: data, provider: provider)
+                do {
+                    try await proof.prepareCold()
+                    let observed = await environment.backend.discoverSessionInventory()
+                    #expect(observed == .complete([:]))
+                    let inventory = row.inventory(sessionId: proof.binding.sessionId, observedAbsent: observed)
+                    let result = try await proof.resolve(inventory: inventory)
+                    let expected: ResumeEvidence =
+                        row.shouldResume
+                        ? .interruptedCandidate(
+                            .init(
+                                provider: provider == "codex" ? .codex : .claudeCode,
+                                sessionId: try ProviderSessionId(rawValue: proof.sessionId)))
+                        : .unknown(.observationMismatch)
+                    try await proof.prove(result, expected: expected, label: "boot-inventory-\(row)")
+                    try await proof.close()
+                    await data.close()
+                } catch {
+                    try? await proof.close()
+                    throw error
+                }
+            } catch {
+                await data.close()
+                throw error
+            }
+        }
+    }
+
+    @Test(
         "Spec agent outcomes reach the real command with exact per-pane UUIDs",
         arguments: ["claude-code", "codex"], ResumeEvidenceAgentRow.allCases.filter { !$0.requiresJobControl })
     @MainActor
@@ -19,8 +58,10 @@ extension E2ESerializedTests.ZmxE2ETests {
             try await runResumeEvidenceRow(environment: environment, provider: provider, row: row)
         }
     }
+
     @Test(
-        "SR12a real stopped and background foregrounds decide the actual resume", arguments: ["claude-code", "codex"],
+        "stopped and background owned agents resume once under r13",
+        arguments: ["claude-code", "codex"],
         ResumeEvidenceAgentRow.allCases.filter { $0.requiresJobControl })
     @MainActor
     func resumeJobControlEvidence(provider: String, row: ResumeEvidenceAgentRow) async throws {
@@ -31,6 +72,35 @@ extension E2ESerializedTests.ZmxE2ETests {
 
 }
 
+enum ResumeInventoryProofRow: CaseIterable, Sendable {
+    case completeAbsent, completeRefused, completeAlive, completeUnresponsive, incomplete
+    case missingPreviousBootAbsent, missingPreviousBootAlive
+
+    var boot: ResumeProofBoot {
+        switch self {
+        case .missingPreviousBootAbsent, .missingPreviousBootAlive: .missing
+        default: .same
+        }
+    }
+
+    var shouldResume: Bool {
+        switch self {
+        case .completeAbsent, .completeRefused, .missingPreviousBootAbsent: true
+        case .completeAlive, .completeUnresponsive, .incomplete, .missingPreviousBootAlive: false
+        }
+    }
+
+    func inventory(sessionId: ZmxSessionID, observedAbsent: ZmxSessionInventory) -> ZmxSessionInventory {
+        switch self {
+        case .completeAbsent, .missingPreviousBootAbsent: observedAbsent
+        case .completeRefused: .complete([sessionId: .refused])
+        case .completeAlive, .missingPreviousBootAlive: .complete([sessionId: .alive(wrapperPid: 2111)])
+        case .completeUnresponsive: .complete([sessionId: .unresponsive])
+        case .incomplete: .unavailable(.timedOut)
+        }
+    }
+}
+
 @MainActor
 private func runResumeEvidenceRow(
     environment: ResumeEvidenceZmxEnvironment, provider: String, row: ResumeEvidenceAgentRow
@@ -39,8 +109,7 @@ private func runResumeEvidenceRow(
     do {
         let proof = try await ResumeEvidenceZmxProof.make(
             environment: environment, data: data, provider: provider,
-            captureLook: row != .noLook, watchRefused: row == .watchRefused,
-            successor: row == .otherForeground, controlledJobs: row.requiresJobControl)
+            physicalAgent: row.usesPhysicalAgent, controlledJobs: row.requiresJobControl)
         do {
             try await row.prepare(proof)
             try await proof.prepareCold()
@@ -59,60 +128,48 @@ private func runResumeEvidenceRow(
 }
 
 enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
-    case exitedInApp, rebootInterrupted, commandExitObserved, exitLookSawShell, watchRefused
-    case staleExitAfterLook, keptEnd, keptOldEnd, keptOtherStart, keptStartWithoutMain
-    case noLook, daemonKilledWithoutEnd, hangupEnd, stoppedObserved, backgroundObserved, stoppedAfterLastLook
+    case exitedInApp, rebootInterrupted, commandExitObserved
+    case silentExitWithoutEnd, stoppedObserved, backgroundObserved
+    case activeWithoutEnd, keptEnd, keptOldEnd, keptOtherStart, keptStartWithoutMain
+    case daemonKilledWithoutEnd, hangupEnd
     case refusedReport, unreadableStore
-    case endStoreUnavailable, storeReplaced, storeRemoved, freshMissingStore, invalidId, staleGeneration,
-        otherForeground
+    case endStoreUnavailable, storeReplaced, storeRemoved, freshMissingStore, invalidId
 
-    var requiresJobControl: Bool {
-        self == .stoppedObserved || self == .backgroundObserved || self == .stoppedAfterLastLook
-    }
+    var requiresJobControl: Bool { self == .stoppedObserved || self == .backgroundObserved }
+    var usesPhysicalAgent: Bool { requiresJobControl || self == .silentExitWithoutEnd }
 
-    var boot: ResumeProofBoot { self == .rebootInterrupted || self == .staleExitAfterLook ? .reboot : .same }
+    var boot: ResumeProofBoot { self == .rebootInterrupted || self == .activeWithoutEnd ? .reboot : .same }
 
     @MainActor func expected(_ proof: ResumeEvidenceZmxProof) throws -> ResumeEvidence {
         switch self {
         case .exitedInApp, .commandExitObserved, .keptEnd, .keptOldEnd, .hangupEnd: .knownExited
-        case .rebootInterrupted, .watchRefused, .staleExitAfterLook, .daemonKilledWithoutEnd, .stoppedAfterLastLook,
-            .endStoreUnavailable, .freshMissingStore:
+        case .rebootInterrupted, .activeWithoutEnd, .daemonKilledWithoutEnd,
+            .silentExitWithoutEnd, .stoppedObserved, .backgroundObserved, .endStoreUnavailable, .freshMissingStore:
             .interruptedCandidate(
                 .init(
                     provider: proof.provider == "codex" ? .codex : .claudeCode,
                     sessionId: try ProviderSessionId(rawValue: proof.sessionId)))
-        case .exitLookSawShell, .stoppedObserved, .backgroundObserved, .otherForeground: .unknown(.programNotAgent)
         case .keptOtherStart, .keptStartWithoutMain: .unknown(.changedWhileClosed)
-        case .noLook: .unknown(.noObservation)
         case .storeReplaced, .storeRemoved: .unknown(.historyLost)
         case .refusedReport: .unknown(.reportRefused)
         case .unreadableStore: .unknown(.reportsNotRead)
         case .invalidId: .unknown(.invalidSessionId)
-        case .staleGeneration: .unknown(.observationMismatch)
         }
     }
 
     @MainActor func prepare(_ proof: ResumeEvidenceZmxProof) async throws {
         let data = proof.data
-        let pane = proof.foreground.paneId
+        let pane = proof.binding.paneId
         switch self {
         case .exitedInApp:
             _ = try await data.liveHook(pane: pane, session: proof.sessionId, provider: proof.provider, end: true)
+        case .silentExitWithoutEnd:
+            try await #require(proof.binding.agentFixture).letAgentExitIntoShell()
+        case .stoppedObserved, .backgroundObserved:
+            try await #require(proof.binding.agentFixture).suspendAgentIntoShell(
+                background: self == .backgroundObserved)
         case .commandExitObserved:
-            await proof.foreground.observer.shutdown()
-            try await proof.foreground.letAgentExitIntoShell()
             #expect(try await data.ingestion.submitCommandFinished(paneId: pane, reportedAt: .now) != nil)
-        case .exitLookSawShell:
-            await proof.foreground.observer.shutdown()
-            try await proof.foreground.letAgentExitIntoShell()
-            try await proof.captureForeground(expected: .shell)
-        case .otherForeground:
-            await proof.foreground.observer.shutdown()
-            try await proof.foreground.letAnotherProgramTakeForeground()
-            try await proof.captureForeground(expected: .other)
-        case .staleExitAfterLook:
-            await proof.foreground.observer.shutdown()
-            try await proof.foreground.letAgentExitIntoShell()
         case .keptEnd, .hangupEnd:
             try await data.append(pane: pane, session: proof.sessionId, provider: proof.provider)
         case .keptOldEnd:
@@ -126,10 +183,6 @@ enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
             try await data.append(
                 pane: pane, session: proof.otherSessionId,
                 provider: proof.provider == "codex" ? "claude-code" : "codex", start: true)
-        case .stoppedObserved, .backgroundObserved, .stoppedAfterLastLook:
-            await proof.foreground.observer.shutdown()
-            try await proof.foreground.suspendAgentIntoShell(background: self == .backgroundObserved)
-            if self != .stoppedAfterLastLook { try await proof.captureForeground(expected: .shell) }
         case .endStoreUnavailable:
             let storeURL = data.storeURL
             let failure = try await valueFromDedicatedThread {
@@ -168,11 +221,7 @@ enum ResumeEvidenceAgentRow: CaseIterable, Sendable {
                         "UPDATE sessions_conversation SET provider_conversation_id = '--last' WHERE provider_conversation_id = ?",
                     arguments: [proof.sessionId])
             }
-        case .staleGeneration:
-            _ = try await data.ingestion.endLiveMainForColdRestore(paneId: pane)
-            _ = try await data.liveHook(
-                pane: pane, session: proof.otherSessionId, provider: proof.provider, end: false, at: 25)
-        case .rebootInterrupted, .watchRefused, .noLook, .daemonKilledWithoutEnd: break
+        case .rebootInterrupted, .activeWithoutEnd, .daemonKilledWithoutEnd: break
         }
     }
 }

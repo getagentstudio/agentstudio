@@ -35,7 +35,7 @@ extension PaneCLIOutboxDrainTests {
                 #expect(firstReport.admittedEntryCount == 1)
                 #expect(try await original.repository.loadEvidence(paneId: original.paneId)?.value == .reportedEnd)
                 let next = try await ColdResumeTestPane.make(harness: harness, paneId: original.paneId)
-                #expect(next.look.bindingGenerationId != original.look.bindingGenerationId)
+                #expect(next.bindingGenerationId != original.bindingGenerationId)
                 held.second.release()
                 let secondReport = await started.task.value
                 #expect(firstReport.admittedEntryCount + secondReport.admittedEntryCount == 1)
@@ -44,8 +44,8 @@ extension PaneCLIOutboxDrainTests {
                     return
                 }
                 #expect(ledger.reports == [report.messageID])
-                let observedLook = try await next.repository.load(paneId: next.paneId)
-                #expect(observedLook == next.look)
+                let observedReport = try await next.repository.loadEvidence(paneId: next.paneId)
+                #expect(observedReport == nil)
                 let result = await next.resolve(next.decision(harness: harness))
                 let invocation = ResumeInvocation(
                     provider: .codex, sessionId: try ProviderSessionId(rawValue: next.sessionId))
@@ -88,8 +88,8 @@ extension PaneCLIOutboxDrainTests {
                 held.second.release()
                 #expect(await started.task.value.readOutcome == .complete(throughId: 0))
                 #expect(ledger.historyLosses == 1)
-                let observedLook = try await next.repository.load(paneId: next.paneId)
-                #expect(observedLook == next.look)
+                let observedReport = try await next.repository.loadEvidence(paneId: next.paneId)
+                #expect(observedReport == nil)
                 let result = await next.resolve(next.decision(harness: harness))
                 let invocation = ResumeInvocation(
                     provider: .codex, sessionId: try ProviderSessionId(rawValue: next.sessionId))

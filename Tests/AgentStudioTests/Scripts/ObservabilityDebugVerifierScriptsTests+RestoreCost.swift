@@ -10,8 +10,6 @@ extension ObservabilityDebugVerifierScriptsTests {
     @Test(
         "restore cost verification refuses every missing phase",
         arguments: [
-            "performance.restore.foreground.gather", "performance.restore.foreground.schedule",
-            "performance.restore.foreground.probe", "performance.restore.foreground.watch",
             "performance.restore.outbox.import", "performance.restore.resume.decide",
         ])
     func restoreCostVerifierRefusesMissingPhase(missingPhase: String) async throws {
@@ -26,7 +24,6 @@ extension ObservabilityDebugVerifierScriptsTests {
     @Test(
         "restore cost verification requires each separate main-thread allowance",
         arguments: [
-            "performance.restore.allowance.quit_forward", "performance.restore.allowance.activation_forward",
             "performance.restore.allowance.mount_apply", "performance.restore.allowance.resumed_start_end",
         ])
     func restoreCostVerifierRefusesMissingAllowance(missingAllowance: String) async throws {
@@ -35,7 +32,7 @@ extension ObservabilityDebugVerifierScriptsTests {
         #expect(result.stderr.contains("missing restore phase \(missingAllowance)"))
     }
 
-    @Test("six measured off-main phases and four main-thread allowances pass")
+    @Test("two measured off-main phases and two main-thread allowances pass")
     func restoreCostVerifierAcceptsMeasuredSlicesAndAllowances() async throws {
         let (result, queries) = try await runRestoreCostVerifier()
         #expect(result.exitCode == 0, "\(result.stderr)\n\(result.stdout)")
@@ -63,7 +60,7 @@ extension ObservabilityDebugVerifierScriptsTests {
         let (accepted, queries) = try await runRestoreCostVerifier(completedExit: true, allowCompletedExit: true)
         #expect(accepted.exitCode == 0, "\(accepted.stderr)")
         #expect(queries.contains("agent.proof.launch:=\"restore-cost-launch\""))
-        #expect(accepted.stdout.contains("performance.restore.allowance.quit_forward"))
+        #expect(accepted.stdout.contains("performance.restore.allowance.mount_apply"))
     }
 
     @Test(
@@ -112,10 +109,7 @@ private func runRestoreCostVerifier(
         fi
         if [[ "$*" == *":*"* ]]; then exit 0; fi
         if [[ "$*" == *"performance.restore"* ]]; then
-          for phase in performance.restore.foreground.gather performance.restore.foreground.schedule \
-                       performance.restore.foreground.probe performance.restore.foreground.watch \
-                       performance.restore.outbox.import performance.restore.resume.decide \
-                       performance.restore.allowance.quit_forward performance.restore.allowance.activation_forward \
+          for phase in performance.restore.outbox.import performance.restore.resume.decide \
                        performance.restore.allowance.mount_apply performance.restore.allowance.resumed_start_end; do
             [[ "$*" == *"$phase"* ]] || continue
             count=2; valid=2; elapsed=2; main=0

@@ -1,5 +1,7 @@
 # Session restore after a reboot: how it is built
 
+**Superseded foreground material (2026-10-25).** [Specification revision 13](2026-09-28-session-restore-specification.md) and the one-process-walk design (getagentstudio/agentstudio#649, design brief revision 2) replace revision 28's foreground-observation contract below: `PaneForegroundObserver`, foreground looks, their probes, exit watches, triggers, pre-restore handoff and cost phases. This includes the affected parts of items 5–10, R3 interfaces, flows, execution tables and proof. Those passages are historical. Resume now uses the cold-ended active binding, retained closed-app reports and launch boot; old look rows read as no report, with no schema change. Other revision 28 material is retained as written.
+
 28.1 (2026-10-22): `ColdEndedMain` carries the binding's raw provider identifier and conversation id; the resolver validates them (implementation finding I1).
 
 Date: 2026-10-22, revision 28 (R3 rebuilt on Sessions as pane-context rev 36/37 left it). R1, R2 and the restore phase (item 13) are unchanged. Revision 28 replaces R3's items 5–10, "R3 interfaces", and R3's parts of "What exists", "Entity binding", "What runs where", "Where the code lives" and "Proof". It goes with [Specification revision 11](2026-09-28-session-restore-specification.md).

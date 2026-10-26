@@ -37,7 +37,7 @@ private func proveNativeFinalRead(_ environment: ResumeEvidenceZmxEnvironment, c
                 case .replacement: try await proof.replaceStore(missing: false)
                 case .refused, .undecodable:
                     let writer = data.writer
-                    let pane = proof.foreground.paneId
+                    let pane = proof.binding.paneId
                     let payload = change == .undecodable ? "not JSON" : "{}"
                     _ = try await valueFromDedicatedThread {
                         try writer.appendSessionLifecycle(
@@ -46,8 +46,8 @@ private func proveNativeFinalRead(_ environment: ResumeEvidenceZmxEnvironment, c
                         ).get()
                     }
                 case .heldNotice:
-                    try await data.appendNotice(pane: proof.foreground.paneId)
-                    try await data.append(pane: proof.foreground.paneId, session: proof.sessionId, provider: "codex")
+                    try await data.appendNotice(pane: proof.binding.paneId)
+                    try await data.append(pane: proof.binding.paneId, session: proof.sessionId, provider: "codex")
                     await data.access.setRejectsWrites(true)
                 }
             }

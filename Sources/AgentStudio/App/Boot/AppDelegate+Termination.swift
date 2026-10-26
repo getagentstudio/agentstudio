@@ -106,13 +106,9 @@ func runFirstPersistenceFlushAfterWorkspaceCacheShutdown(
 @MainActor
 func drainPerformanceTraceAfterScrollbackCapture(
     scrollbackCapture: @MainActor () async -> Void,
-    foregroundLook: @MainActor () async -> Void,
     performanceTraceDrain: @MainActor () async -> Void
 ) async {
-    async let capture: Void = scrollbackCapture()
-    async let look: Void = foregroundLook()
-    await capture
-    await look
+    await scrollbackCapture()
     await performanceTraceDrain()
 }
 
@@ -222,14 +218,10 @@ extension AppDelegate {
     }
 
     private func captureRestoreEvidenceAndFinishIPCForTermination() async {
-        let foregroundObserver = restoreForegroundObserver
         await drainPerformanceTraceAfterScrollbackCapture(
             scrollbackCapture: { await self.captureScrollbackForTermination() },
-            foregroundLook: {
-                await foregroundObserver?.finishQuitLooks()
-                await self.shutdownRestoreEvidenceOwners()
-            },
             performanceTraceDrain: {
+                await self.shutdownRestoreEvidenceOwners()
                 self.startupTraceRecorder.recordAppStartup(
                     "app.termination.ipc_drain", phase: "started", outcome: "started")
                 await self.drainAppIPCCredentialPersistence()

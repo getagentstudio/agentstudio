@@ -124,8 +124,6 @@ package actor TerminalActivityProjector {
     private let nowMilliseconds: @Sendable () -> Int64
     let continuousNow: @Sendable () -> ContinuousClock.Instant
     let wallNow: @Sendable () -> Date
-    let foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
-    var pendingForegroundEdges: [(ForegroundLookTrigger, UUID)] = []
     let activitySink: (@Sendable (PaneActivityOccurrence) -> Void)?
     let closeReadDurationSink: (@Sendable (Duration) -> Void)?
     private var outcomeSink: OutcomeSink?
@@ -160,7 +158,6 @@ package actor TerminalActivityProjector {
         wallNow: @escaping @Sendable () -> Date = Date.init,
         activitySink: (@Sendable (PaneActivityOccurrence) -> Void)? = nil,
         closeReadDurationSink: (@Sendable (Duration) -> Void)? = nil,
-        foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil,
         factSink: TerminalActivityProjectorFactSink? = nil
     ) {
         self.unseenQuietDuration = unseenQuietDuration
@@ -170,7 +167,6 @@ package actor TerminalActivityProjector {
         self.nowMilliseconds = nowMilliseconds
         self.continuousNow = continuousNow
         self.wallNow = wallNow
-        self.foregroundLookSink = foregroundLookSink
         self.activitySink = activitySink
         self.closeReadDurationSink = closeReadDurationSink
     }
@@ -220,7 +216,6 @@ package actor TerminalActivityProjector {
     ) async -> [TerminalActivityProjectionOutcome] {
         guard !isRestorePhaseActive(paneID: paneID) else { return [] }
 
-        queueForegroundClose(paneStates[paneID].flatMap { $0.surfaceID == surfaceID ? $0.activityWindow : nil })
         var closedWindow: ActivityWindow?
         if var state = paneStates[paneID], state.surfaceID == surfaceID,
             let window = state.unseenWindow, window.rowsAdded > 0
@@ -238,7 +233,6 @@ package actor TerminalActivityProjector {
             paneStates[paneID] = state
         }
 
-        await deliverForegroundEdges()
         let lastOutputLine = await resolveLastOutputLine(
             surfaceID: surfaceID,
             paneID: paneID
@@ -278,7 +272,6 @@ package actor TerminalActivityProjector {
         var state: PaneState
         var replacedSurfaceID: UUID?
         if let existingState = paneStates[paneID], existingState.surfaceID != surfaceID {
-            queueForegroundClose(existingState.activityWindow)
             cancelTimers(for: paneID)
             paneStates.removeValue(forKey: paneID)
             replacedSurfaceID = existingState.surfaceID
@@ -467,7 +460,6 @@ package actor TerminalActivityProjector {
         cancelUnseenWindow(for: paneID)
         cancelAgentCandidate(for: paneID)
         if var state = paneStates[paneID] {
-            queueForegroundClose(state.activityWindow)
             state.unseenWindow = nil
             state.activityWindow = nil
             state.agentCandidate = nil
@@ -479,7 +471,6 @@ package actor TerminalActivityProjector {
         cancelUnseenWindow(for: paneID)
         cancelAgentCandidate(for: paneID)
         if var state = paneStates[paneID] {
-            queueForegroundClose(state.activityWindow)
             state.outputBurst = outputBurstBaselineAfterRestorePhaseEnd(from: state.outputBurst)
             state.unseenWindow = nil
             state.activityWindow = nil
@@ -495,7 +486,6 @@ package actor TerminalActivityProjector {
     var restorePhaseGenerationsByPane: [UUID: RestoreGeneration] { restorePhaseByPane.mapValues(\.generation) }
 
     func retirePaneStatePermanently(for paneID: UUID) {
-        queueForegroundClose(paneStates[paneID]?.activityWindow)
         cancelTimers(for: paneID)
         paneStates.removeValue(forKey: paneID)
     }
@@ -542,14 +532,12 @@ package actor TerminalActivityProjector {
 
     private func closeSurfaceState(surfaceID: UUID, paneID: UUID?) {
         if let paneID, paneStates[paneID]?.surfaceID == surfaceID {
-            queueForegroundClose(paneStates[paneID]?.activityWindow)
             cancelTimers(for: paneID)
             paneStates.removeValue(forKey: paneID)
         }
     }
 
     func emit(_ outcomes: [TerminalActivityProjectionOutcome]) async {
-        await deliverForegroundEdges()
         guard !outcomes.isEmpty, let outcomeSink else { return }
         await outcomeSink(outcomes)
     }
@@ -563,7 +551,6 @@ package actor TerminalActivityProjector {
         agentCloseTasks.removeAll()
         unseenRetirementTasks.removeAll()
         agentRetirementTasks.removeAll()
-        for state in paneStates.values { queueForegroundClose(state.activityWindow) }
         paneStates.removeAll()
         // SR6b: without this, a pane armed when the router stops (e.g. app
         // shutdown mid-restore) would leave its entry in restorePhaseByPane
@@ -572,7 +559,6 @@ package actor TerminalActivityProjector {
         // is coming for a router that isn't running.
         for arm in restorePhaseByPane.values { arm.validity.invalidate() }
         restorePhaseByPane.removeAll()
-        await deliverForegroundEdges()
         outcomeSink = nil
         lastOutputLineReader = nil
         for task in closeTasks { await task.value }

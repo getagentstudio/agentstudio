@@ -8,7 +8,6 @@ import Synchronization
 enum ForegroundFIFOTransferFailure: Error, Equatable {
     case zeroProgressWrite(bytesWritten: Int, expectedBytes: Int)
     case prematureEOF(bytesRead: Int, expectedBytes: Int)
-    case unexpectedJobControlReply(expected: String, actual: String)
     case ownerExited(Int32)
     case ownerObservationEnded
     case protocolProducerExited
@@ -158,5 +157,36 @@ private final class ForegroundFIFORead: @unchecked Sendable {
                 return
             }
         }
+    }
+}
+
+final class ForegroundFIFOGroup: Sendable {
+    private let handles = Mutex<[ForegroundFIFOHandle]>([])
+    func add(_ handle: ForegroundFIFOHandle) { handles.withLock { $0.append(handle) } }
+    func closeAll() {
+        let owned = handles.withLock { handles in
+            defer { handles.removeAll() }
+            return handles
+        }
+        for handle in owned { handle.closeOnce() }
+    }
+}
+
+final class ForegroundFIFOHandle: Sendable {
+    private let state: Mutex<Int32?>
+    init(_ descriptor: Int32) { state = Mutex(descriptor) }
+    deinit { closeOnce() }
+    func descriptor() throws -> Int32 {
+        try state.withLock { descriptor in
+            guard let descriptor else { throw POSIXError(.EBADF) }
+            return descriptor
+        }
+    }
+    func closeOnce() {
+        let descriptor = state.withLock { descriptor in
+            defer { descriptor = nil }
+            return descriptor
+        }
+        if let descriptor { close(descriptor) }
     }
 }

@@ -17,10 +17,8 @@ The same pane tells different stories on different surfaces. The ⌘R card can s
 
 After an app restart, restore resumes a Codex pane into its exact conversation. But the pane's session binding stays *ended* until the person sends the next message.
 
-- **Why:** Codex holds its resume `SessionStart` hook until its next turn. Foreground process looks record evidence only; by design they never reopen or end a binding.
-- **Decision:**
-  - Should a resumed agent's live foreground process count as a live binding before its first hook?
-  - Or should the pane say "resumed, waiting for the agent" until that hook arrives?
+- **Why:** Cold restore ends the old binding, and Codex holds its resume `SessionStart` hook until its next turn. Under session-restore specification revision 13, the resume decision uses that ended binding, closed-app reports and the launch boot. Process observation does not reopen a binding.
+- **Decision:** how should the pane present a successful resume before Codex's first hook, for example "resumed, waiting for the agent"? A different binding transition needs its own design. This refactor leaves the presentation gap open.
 - Claude restores cleanly; this is Codex-only.
 
 ### Agent status model (#68)
@@ -109,28 +107,17 @@ Under heavy machine load, headless Chrome for the BridgeWeb E2E lane can fail to
 
 ### Restore cost with many panes
 
-Measure the existing six restore-cost phases with 15–20 panes.
+Measure restore cost with 15–20 panes across the two off-main phases (outbox import and resume decision) and two MainActor allowances (mount apply and resumed-start end).
 
 - **Next:** run a debug-app restore on the M4. Read the diagnostics through the observability verifier, not JSONL.
 
 ## Code cleanup
 
-### Two readers of process arguments (`KERN_PROCARGS2`)
+### Process arguments share one reader (completed)
 
-Two separate code paths read a process's argument list with `sysctl(KERN_PROCARGS2)`. They use different strategies:
+The election walk's argv0 fallback and ColdStartObserver's startup-token handshake use [ProcessArgumentsReader](../../Sources/AgentStudio/Core/RuntimeEventSystem/Runtime/ProcessArgumentsReader.swift) in `Core/RuntimeEventSystem/Runtime/`.
 
-| Reader | Strategy |
-| --- | --- |
-| `DarwinColdStartObserverSyscalls.singleProcessArgumentsRead(pid:)` in `ColdStartObserverSyscalls.swift` | One data read into a zero-filled buffer sized by the cached `KERN_ARGMAX` (falling back to 256 KiB). `readProcessArgumentsBuffer` retries failed reads. |
-| `DarwinProcessChainExecutableReader.argumentZero(of:)`, using `DarwinProcessChainArgumentsReader`, in `DarwinProcessChainExecutableReader.swift` | Queries the size, caps it at `ARG_MAX`, fetches that capacity, then queries the size again. It also compares the fetched byte count rounded to an `Int32` boundary with the original size. A mismatch returns `nil`, rejecting a possibly raced read. |
-
-Both pass the bytes to the shared `ProcessArgumentsBufferParser`. The cost is two answers to the same kernel question: a fix to one, such as a new failure mode or a size rule, won't reach the other.
-
-**Next:**
-
-1. Pick one reader and one owner in `Core/RuntimeEventSystem/Runtime/`.
-2. Keep the consistency check.
-3. Move both callers to it.
+It queries the exact size, caps it at `ARG_MAX`, fetches that capacity and checks the aligned fetch count and a second size query. It retries only `EIO` and consistency failures within `AppPolicies.Restore.processArgumentsReadAttempts`, preserving other errno values. The cached maximum-size buffer and duplicate reader are removed. Argv0 and full-vector parsing retain their separate rules.
 
 ## Watching
 
