@@ -175,10 +175,13 @@ struct PaneContextPopoverGeometryTests {
         let mounted = PaneContextNativePopoverWindow(
             paneId: pane, readers: readers,
             location: .sidebar, wallNow: Date(timeIntervalSince1970: 1_800_000_000))
+        await mounted.observeDetailReads(from: ports)
         do {
             try mounted.press("pane-context.messages.needsYou")
-            try await ports.reads.expectNext(in: 0, .started(.init(paneId: pane, page: .first)))
+            try await mounted.detailReadStarted(
+                0, request: .init(paneId: pane, page: .first), producer: .opening(0))
             mounted.layout()
+            try await mounted.renderedNote("Loading…")
             let loadingPanel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
             #expect(loadingPanel.bounds.width == 380)
             #expect(mounted.labels().contains("Loading…"))
@@ -191,7 +194,11 @@ struct PaneContextPopoverGeometryTests {
                 await ports.enqueue(.unavailable(.databaseUnavailable))
                 await mounted.controller?.refresh()
                 mounted.layout()
+                try await mounted.rendered()
                 #expect(mounted.controller?.state == original)
+            }
+            if initiallyUnavailable {
+                try await mounted.renderedNote("Context unavailable: database unavailable")
             }
             let failedPanel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
             #expect(failedPanel.bounds.width == 380)

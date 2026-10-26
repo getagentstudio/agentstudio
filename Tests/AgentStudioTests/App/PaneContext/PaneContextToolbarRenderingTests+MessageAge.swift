@@ -37,6 +37,7 @@ extension PaneContextToolbarRenderingTests {
                 clock.advance(by: .seconds(55))
                 try await clock.registered(
                     clock.now.advanced(by: .seconds(60)), pane: pane.uuid, currentInput: nil)
+                try await clock.applied(pane: pane.uuid, input: nil)
 
                 mounted.host.layoutSubtreeIfNeeded()
                 mounted.host.displayIfNeeded()
@@ -49,6 +50,7 @@ extension PaneContextToolbarRenderingTests {
                     clock.advance(by: .seconds(advance))
                     try await clock.registered(
                         clock.now.advanced(by: .seconds(next)), pane: pane.uuid, currentInput: nil)
+                    try await clock.applied(pane: pane.uuid, input: nil)
                     mounted.host.layoutSubtreeIfNeeded()
                     mounted.host.displayIfNeeded()
                     try expectFullAge(expectedAge, in: mounted, width: width)

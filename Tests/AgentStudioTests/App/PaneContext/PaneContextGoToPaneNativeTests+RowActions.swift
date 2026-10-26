@@ -71,8 +71,11 @@ extension PaneContextGoToPaneNativeTests {
             let identifier = "pane-context.go-to-pane.\(paneId.uuid).\(request.messageId.uuid).0"
             #expect(popover.isVisible)
             #expect(fixture.effects.contexts.isEmpty)
+            let visibility = PaneContextNativeWindowVisibility(popover)
             try mounted.press(identifier)
             try await mounted.actionCompleted()
+            if focusSucceeds { try await visibility.hidden() }
+            if !focusSucceeds { try await mounted.rendered() }
             mounted.layout()
             #expect(
                 fixture.effects.contexts == [
@@ -95,6 +98,7 @@ extension PaneContextGoToPaneNativeTests {
                 #expect(controller.actionFeedback == "Pane gone")
                 #expect(mounted.labels().contains("Pane gone"))
             }
+            try await visibility.finish()
             try await mounted.close()
         } catch {
             try? await mounted.close()

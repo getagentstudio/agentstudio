@@ -397,7 +397,9 @@ struct PaneContextToolbarRenderingTests {
                     PaneContextToolbarControls(
                         paneId: pane, readers: readers, octiconLoader: loader, clock: clock,
                         wallNow: Date(timeIntervalSince1970: 1_800_000_125),
-                        onRelativeTimeEvent: { clock.observeOwner($0) }, onGoToPane: { _ in })), width: width))
+                        onRelativeTimeEvent: { clock.observeOwner($0) },
+                        onRelativeTimeReady: { clock.observePreparation($0, id: $1) },
+                        onGoToPane: { _ in })), width: width))
         host.frame = CGRect(x: 0, y: 0, width: width, height: host.fittingSize.height)
         let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
@@ -424,6 +426,7 @@ struct PaneContextToolbarRenderingTests {
                 }
                 try await clock.facts.expectNext(in: 1, .workerEnded(pane.uuid, nil, cancelled: false))
             }
+            try await clock.applied(pane: pane.uuid, input: nil)
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
             return mounted

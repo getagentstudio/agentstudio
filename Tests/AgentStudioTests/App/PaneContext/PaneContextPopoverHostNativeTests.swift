@@ -1,13 +1,9 @@
 import AgentStudioCore
 import AgentStudioInfrastructure
-import AgentStudioRepoExplorer
 import AgentStudioSessions
 import AgentStudioSharedComponents
-import AgentStudioTestHarness
 import AgentStudioTestSupport
-import AppKit
 import Foundation
-import SwiftUI
 import Testing
 
 @testable import AgentStudio
@@ -22,6 +18,7 @@ struct PaneContextPopoverHostNativeTests {
                 catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
                 interactionAtom: atoms.workspaceTabLayout)
             let pane = store.createPane(title: "Owner terminal")
+            defer { store.removePane(pane.id) }
             let paneId = PaneId(existingUUID: pane.id)
             let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: paneId))
             var adapter: PaneContextUIAdapter?
@@ -33,55 +30,32 @@ struct PaneContextPopoverHostNativeTests {
                     providerReadCount += 1
                     return adapter
                 })
-            let completed = FactRecorder<Int, PopoverReleaseFact>(
-                vocabulary: .init(
-                    describeScope: { "host open \($0)" }, describeFact: { String(describing: $0) },
-                    isClosing: { _, _ in true }))
-            var openNumber = 0
-            var controller: PaneContextPopoverController?
-            let host = NSHostingView(
-                rootView: PaneContextPopoverHost(
-                    paneId: paneId,
-                    presentation: .kind(.init(kind: .needsYou, count: 1)),
-                    location: .pane, readers: readers, octiconLoader: makeTestOcticonLoader(),
-                    onGoToPane: { _ in },
-                    onReadCompleted: { _, value in
-                        controller = value
-                        completed.append(scope: openNumber, fact: .released)
-                        openNumber += 1
-                    }))
-            host.frame = CGRect(x: 0, y: 0, width: 200, height: 60)
-            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.contentView = host
-            window.makeKeyAndOrderFront(nil)
-            defer {
-                controller?.close()
-                window.contentView = nil
-                window.close()
+            let mounted = PaneContextNativePopoverWindow(
+                paneId: paneId, readers: readers, location: .pane, wallNow: Date(timeIntervalSince1970: 2))
+            do {
+                let button = try #require(
+                    mounted.find("pane-context.messages.needsYou") as? AccessibilityPressBridgeView)
+                #expect(button.accessibilityLabel() == LocalActionSpec.showPaneMessages.actionSpec.label)
+                #expect(providerReadCount == 0)
+                try mounted.press("pane-context.messages.needsYou")
+                try await mounted.readCompleted()
+                #expect(mounted.controller == nil)
+                #expect(providerReadCount == 1)
+                adapter = .init(reader: ports, person: ports)
+                try mounted.press("pane-context.messages.needsYou")
+                try await mounted.readCompleted()
+                #expect(mounted.controller?.paneId == paneId)
+                #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
+                try await mounted.close()
+                try await ports.finish()
+            } catch {
+                try? await mounted.close()
+                try? await ports.finish()
+                throw error
             }
-            host.layoutSubtreeIfNeeded()
-            var visited = Set<ObjectIdentifier>()
-            let button = try #require(
-                Self.find(host, identifier: "pane-context.messages.needsYou", visited: &visited)
-                    as? AccessibilityPressBridgeView
-            )
-            #expect(button.accessibilityLabel() == LocalActionSpec.showPaneMessages.actionSpec.label)
-            #expect(providerReadCount == 0)
-            #expect(button.accessibilityPerformPress())
-            try await completed.expectNext(in: 0, .released)
-            #expect(controller == nil)
-            #expect(providerReadCount == 1)
-            adapter = .init(reader: ports, person: ports)
-            #expect(button.accessibilityPerformPress())
-            try await completed.expectNext(in: 1, .released)
-            #expect(controller?.paneId == paneId)
-            #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
-            controller?.close()
-            try await completed.finish()
-            try await ports.finish()
         }
     }
+
     @Test
     func manualChipPressOpensOwnerDetailWithTitledDrawerAsk() async throws {
         try await withAsyncTestCoreAtoms { atoms in
@@ -90,6 +64,10 @@ struct PaneContextPopoverHostNativeTests {
                 interactionAtom: atoms.workspaceTabLayout)
             let owner = store.createPane(title: "Owner")
             let drawer = store.createPane(title: "Review drawer")
+            defer {
+                store.removePane(owner.id)
+                store.removePane(drawer.id)
+            }
             let paneId = PaneId(existingUUID: owner.id)
             let drawerId = PaneId(existingUUID: drawer.id)
             let message = try PaneContextPopoverShapingTests.message(
@@ -98,66 +76,26 @@ struct PaneContextPopoverHostNativeTests {
                 importance: .info)
             let ports = PaneContextPopoverTestPorts(
                 PaneContextPopoverShapingTests.detail(
-                    paneId: paneId,
-                    drawers: [.init(sourcePaneId: drawerId, messages: [message])]))
+                    paneId: paneId, drawers: [.init(sourcePaneId: drawerId, messages: [message])]))
             let adapter = PaneContextUIAdapter(reader: ports, person: ports)
             let readers = PaneContextUIReaders(
                 sessionStatus: SessionStatusAtom(), presentation: atoms.paneContextPresentation,
                 pane: { store.paneAtom.pane($0.uuid) }, serviceProvider: { adapter })
-            let completed = FactRecorder<Int, PopoverReleaseFact>(
-                vocabulary: .init(
-                    describeScope: { "drawer message open \($0)" }, describeFact: { String(describing: $0) },
-                    isClosing: { _, _ in true }))
-            var controller: PaneContextPopoverController?
-            let host = NSHostingView(
-                rootView: PaneContextPopoverHost(
-                    paneId: paneId,
-                    presentation: .kind(.init(kind: .needsYou, count: 1)),
-                    location: .pane, readers: readers, octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
-                    onReadCompleted: { _, value in
-                        controller = value
-                        completed.append(scope: 0, fact: .released)
-                    }
-                ))
-            host.frame = CGRect(x: 0, y: 0, width: 200, height: 60)
-            let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-            window.isReleasedWhenClosed = false
-            window.contentView = host
-            window.makeKeyAndOrderFront(nil)
-            defer {
-                controller?.close()
-                window.contentView = nil
-                window.close()
-            }
-            host.layoutSubtreeIfNeeded()
-            var visited = Set<ObjectIdentifier>()
-            let button = try #require(
-                Self.find(host, identifier: "pane-context.messages.needsYou", visited: &visited)
-                    as? AccessibilityPressBridgeView
-            )
-            #expect(button.accessibilityPerformPress())
-            try await completed.expectNext(in: 0, .released)
-            #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
-            #expect(controller?.state?.messages.messageRows.first?.sourceLabel == "Review drawer")
-            #expect(controller?.state?.messages.messageRows.first?.id == message.id.uuid)
-            controller?.close()
-            try await completed.finish()
-            try await ports.finish()
-        }
-    }
-    private static func find(_ element: AnyObject, identifier: String, visited: inout Set<ObjectIdentifier>)
-        -> AnyObject?
-    {
-        guard visited.insert(ObjectIdentifier(element)).inserted else { return nil }
-        if let accessible = element as? any NSAccessibilityProtocol {
-            if accessible.accessibilityIdentifier() == identifier { return element }
-            for child in accessible.accessibilityChildren() ?? [] {
-                if let found = find(child as AnyObject, identifier: identifier, visited: &visited) { return found }
+            let mounted = PaneContextNativePopoverWindow(
+                paneId: paneId, readers: readers, location: .pane, wallNow: Date(timeIntervalSince1970: 2))
+            do {
+                try mounted.press("pane-context.messages.needsYou")
+                try await mounted.readCompleted()
+                #expect(await ports.requests == [.init(paneId: paneId, page: .first)])
+                #expect(mounted.controller?.state?.messages.messageRows.first?.sourceLabel == "Review drawer")
+                #expect(mounted.controller?.state?.messages.messageRows.first?.id == message.id.uuid)
+                try await mounted.close()
+                try await ports.finish()
+            } catch {
+                try? await mounted.close()
+                try? await ports.finish()
+                throw error
             }
         }
-        for child in (element as? NSView)?.subviews ?? [] {
-            if let found = find(child, identifier: identifier, visited: &visited) { return found }
-        }
-        return nil
     }
 }

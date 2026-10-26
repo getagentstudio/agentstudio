@@ -23,6 +23,7 @@ extension PaneManagementIdentityHostTests {
             try #require(try await clock.nextOperation(pane: pane, input: nil) == .started)
             try await clock.entered(pane: pane, input: nil)
             try await clock.registered(start.advanced(by: .seconds(86_400)), pane: pane, currentInput: nil)
+            try await clock.applied(pane: pane, input: nil)
             try fixture.expectRendered(age: "[8 days ago]", activity: nil)
             let read = await fixture.composition.composition.paneContextService.readDetail(
                 .init(paneId: .init(existingUUID: pane), page: .first))
@@ -58,27 +59,33 @@ extension PaneManagementIdentityHostTests {
             try #require(try await clock.nextOperation(pane: pane, input: input) == .started)
             try await clock.entered(pane: pane, input: input)
             try await clock.registered(start.advanced(by: .seconds(55)), pane: pane, currentInput: input)
+            try await clock.applied(pane: pane, input: input)
             try fixture.expectRendered(age: "[2 min ago]", activity: hasActivity ? "Now" : nil)
             let identity = ObjectIdentifier(fixture.host)
 
             clock.advance(by: .seconds(55))
             try await clock.registered(
                 start.advanced(by: .seconds(hasActivity ? 60 : 115)), pane: pane, currentInput: input)
+            try await clock.applied(pane: pane, input: input)
             try fixture.expectRendered(age: "[3 min ago]", activity: hasActivity ? "Now" : nil)
             #expect(ObjectIdentifier(fixture.host) == identity)
             if hasActivity {
                 clock.advance(by: .seconds(5))
                 try await clock.registered(start.advanced(by: .seconds(115)), pane: pane, currentInput: input)
+                try await clock.applied(pane: pane, input: input)
                 try fixture.expectRendered(age: "[3 min ago]", activity: "1 min ago")
             }
             clock.advance(by: .seconds(hasActivity ? 3540 : 3545))
             try await clock.registered(start.advanced(by: .seconds(7075)), pane: pane, currentInput: input)
+            try await clock.applied(pane: pane, input: input)
             try fixture.expectRendered(age: "[1 hr ago]", activity: hasActivity ? "1 hr ago" : nil)
             clock.advance(by: .seconds(82_800))
             try await clock.registered(start.advanced(by: .seconds(172_675)), pane: pane, currentInput: input)
+            try await clock.applied(pane: pane, input: input)
             try fixture.expectRendered(age: "[1 day ago]", activity: hasActivity ? "1 day ago" : nil)
             clock.advance(by: .seconds(86_400))
             try await clock.registered(start.advanced(by: .seconds(259_075)), pane: pane, currentInput: input)
+            try await clock.applied(pane: pane, input: input)
             try fixture.expectRendered(age: "[2 days ago]", activity: hasActivity ? "2 days ago" : nil)
             let read = await fixture.composition.composition.paneContextService.readDetail(
                 .init(paneId: .init(existingUUID: pane), page: .first))
@@ -133,7 +140,8 @@ private final class StoredMessageCardFixture {
             rootView: AnyView(
                 ManagementPaneIdentityOverlay(
                     context: context, octiconLoader: loader, store: store, clock: clock, wallNow: wallNow,
-                    onRelativeTimeEvent: { clock.observeOwner($0) }
+                    onRelativeTimeEvent: { clock.observeOwner($0) },
+                    onRelativeTimeReady: { clock.observePreparation($0, id: $1) }
                 )
                 .environment(\.paneContextUIReaders, readers)
                 .frame(width: 1000, height: 360, alignment: .topLeading)

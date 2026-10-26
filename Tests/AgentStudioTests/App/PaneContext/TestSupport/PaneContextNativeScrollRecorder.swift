@@ -1,21 +1,25 @@
+import AgentStudioInfrastructure
 import AgentStudioTestHarness
+import AppKit
 import Foundation
 import Testing
 
 @testable import AgentStudio
 
-/// Joins the actual scroll producer before a test samples native geometry.
+/// Separates the scroll sender's outcome from observed native viewport application.
 @MainActor
 final class PaneContextNativeScrollRecorder {
     enum Scope: Hashable, Sendable {
         case starts
         case operation(UUID)
+        case viewport(UUID)
     }
     enum Fact: Equatable, Sendable {
         case started(PaneContextPopoverScrollOperation)
         case ended(PaneContextPopoverScrollOutcome)
         case producerEnded
         case retired
+        case boundsChanged(CGRect)
     }
     let facts = FactRecorder<Scope, Fact>(
         vocabulary: .init(
@@ -28,6 +32,7 @@ final class PaneContextNativeScrollRecorder {
     private var monitors: [Task<Void, Never>] = []
     private var endedProducers: Set<UUID> = []
     private var retired = false
+    private var viewportScopes: Set<Scope> = []
     private(set) var operations: [PaneContextPopoverScrollOperation] = []
     private(set) var outcomes: [UUID: [PaneContextPopoverScrollOutcome]] = [:]
 
@@ -71,14 +76,46 @@ final class PaneContextNativeScrollRecorder {
         guard !retired else { return }
         retired = true
         facts.append(scope: .starts, fact: .retired)
+        for scope in viewportScopes { facts.append(scope: scope, fact: .retired) }
         for operation in operations where !endedProducers.contains(operation.id) {
             facts.append(scope: .operation(operation.id), fact: .retired)
         }
     }
 
-    func joinAnnouncedProducers() async {
-        let announced = Array(tasks.values)
-        for task in announced { await task.value }
+    /// NSClipView owns the observable state; a sender task returning does not apply layout.
+    func viewport(
+        _ scroll: NSScrollView, matches predicate: (CGRect) -> Bool
+    ) async throws {
+        let scope = Scope.viewport(UUIDv7.generate())
+        guard !retired else { throw ScrollFailure.unexpected(.retired) }
+        viewportScopes.insert(scope)
+        let clip = scroll.contentView
+        let window = try #require(scroll.window, "The native scroll view retired before viewport observation")
+        let previouslyPosted = clip.postsBoundsChangedNotifications
+        clip.postsBoundsChangedNotifications = true
+        let bounds = NotificationCenter.default.addObserver(
+            forName: NSView.boundsDidChangeNotification, object: clip, queue: .main
+        ) { [facts] _ in
+            MainActor.assumeIsolated {
+                facts.append(scope: scope, fact: .boundsChanged(scroll.documentVisibleRect))
+            }
+        }
+        let retirement = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [facts] _ in facts.append(scope: scope, fact: .retired) }
+        defer {
+            NotificationCenter.default.removeObserver(bounds)
+            NotificationCenter.default.removeObserver(retirement)
+            clip.postsBoundsChangedNotifications = previouslyPosted
+            viewportScopes.remove(scope)
+        }
+        facts.append(scope: scope, fact: .boundsChanged(scroll.documentVisibleRect))
+        while true {
+            let observed = try await facts.expectNext(
+                in: scope, where: { _ in true }, "native clip bounds matching destination or view retirement")
+            guard case .boundsChanged(let visible) = observed else { throw ScrollFailure.unexpected(observed) }
+            if predicate(visible) { return }
+        }
     }
 
     func finish() async throws {

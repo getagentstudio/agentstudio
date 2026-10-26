@@ -61,6 +61,7 @@ extension PaneContextToolbarRenderingTests {
                     let registration = try await clock.facts.expectNext(
                         in: 0, where: { _ in true }, "line deadline registration or owner end")
                     guard case .registered = registration else { throw LiveToolbarFailure.unexpectedFact(registration) }
+                    try await clock.applied(pane: pane.id, input: nil)
                     mounted.host.layoutSubtreeIfNeeded()
                     mounted.host.displayIfNeeded()
                     #expect(buttonFrames(in: mounted.host)["pane-context.messages.info"] == nil)
@@ -75,6 +76,7 @@ extension PaneContextToolbarRenderingTests {
                     try #require(
                         try await clock.nextOperation(pane: pane.id, input: nil) == .replaced(cancelRequested: true))
                     try await consumeLineClear(clock, pane: pane.id)
+                    try await clock.applied(pane: pane.id, input: nil)
                     mounted.host.layoutSubtreeIfNeeded()
                     mounted.host.displayIfNeeded()
                     #expect(ObjectIdentifier(mounted.host) == identity)

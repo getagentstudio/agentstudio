@@ -14,6 +14,11 @@ enum NativeCardClockFact: Sendable, Equatable {
     case workerEnded(UUID, ContinuousClock.Instant?, cancelled: Bool)
     case drained
     case retired
+    case applied(PaneRelativeTimeRefresh.Application)
+    case applicationRetired(PaneRelativeTimeRefresh.Application)
+    case unchangedEvaluation(PaneRelativeTimeRefresh.Application)
+    case applicationHidden(UUID?, PaneRelativeTimeRefresh.HideResult)
+    case applicationWorkerEnded(UUID, PaneManagementIdentityCapture.VisibleInput, cancelled: Bool)
 }
 
 /// Keeps the canonical instant domain while advancing only through TestPushClock.
@@ -37,6 +42,15 @@ final class NativeCardTestClock: Clock {
     private let controlledOrigin: TestPushClock.Instant
     private let canonicalOrigin: ContinuousClock.Instant
     private let sleeps = Mutex(SleepState())
+    @MainActor private var lastApplied: PaneRelativeTimeRefresh.Application?
+    private struct Preparation {
+        let input: PaneManagementIdentityCapture.VisibleInput
+        let ordinal: UInt64
+    }
+    @MainActor private var applicationWorkerId: UUID?
+    @MainActor private var preparationOrdinal: UInt64 = 0
+    @MainActor private var preparations: [UUID: Preparation] = [:]
+    @MainActor private var consumedPreparations: [UUID: UInt64] = [:]
 
     init() {
         let facts = FactRecorder<Int, NativeCardClockFact>(
@@ -74,19 +88,30 @@ final class NativeCardTestClock: Clock {
     @MainActor
     func observeOwner(_ event: PaneRelativeTimeRefresh.Event) {
         switch event {
-        case .operation(let input, let result, _):
-            if result != .unchanged { sleeps.withLock { $0.workerTasks += 1 } }
+        case .applied(let application):
+            facts.append(scope: 3, fact: .applied(application))
+        case .applicationRetired(let application):
+            facts.append(scope: 3, fact: .applicationRetired(application))
+        case .unchangedEvaluation(let application):
+            facts.append(scope: 3, fact: .unchangedEvaluation(application))
+        case .operation(let input, let result, let id):
+            if result != .unchanged {
+                applicationWorkerId = id
+                sleeps.withLock { $0.workerTasks += 1 }
+            }
             facts.append(scope: 1, fact: .operation(input.paneId, input.activityTime?.orderingInstant, result))
         case .hidden(let result):
             facts.append(scope: 1, fact: .hidden(result))
+            facts.append(scope: 3, fact: .applicationHidden(applicationWorkerId, result))
         case .entered(let input, _):
             facts.append(scope: 1, fact: .entered(input.paneId, input.activityTime?.orderingInstant))
-        case .ended(let input, let outcome, _):
+        case .ended(let input, let outcome, let id):
             let terminal = NativeCardClockFact.workerEnded(
                 input.paneId, input.activityTime?.orderingInstant, cancelled: outcome == .cancelled)
             facts.append(
                 scope: 1, fact: terminal)
             facts.append(scope: 0, fact: terminal)
+            facts.append(scope: 3, fact: .applicationWorkerEnded(id, input, cancelled: outcome == .cancelled))
             let drained = sleeps.withLock { state in
                 state.workerTasks -= 1
                 return Self.markDrainedIfRetired(&state)
@@ -95,7 +120,53 @@ final class NativeCardTestClock: Clock {
         }
     }
 
+    @MainActor
+    func observePreparation(_ input: PaneManagementIdentityCapture.VisibleInput, id: UUID) {
+        preparationOrdinal += 1
+        preparations[id] = Preparation(input: input, ordinal: preparationOrdinal)
+    }
+
     func advance(by duration: Duration) { controlled.advance(by: duration) }
+
+    @MainActor
+    @discardableResult
+    func applied(pane: UUID, input: Instant?) async throws -> PaneManagementIdentityCapture.VisiblePresentation {
+        guard let expectedWorker = applicationWorkerId else {
+            throw NativeCardClockFailure(description: "Native application has no announced worker")
+        }
+        while true {
+            let fact = try await facts.expectNext(
+                in: 3, where: { _ in true }, "native presentation applied or retired")
+            switch fact {
+            case .applied(let application) where application.operationId != expectedWorker:
+                continue
+            case .applied(let application):
+                guard application.input.paneId == pane, application.input.activityTime?.orderingInstant == input else {
+                    throw NativeCardClockFailure(description: "Wrong native application: \(application)")
+                }
+                lastApplied = application
+                consumedPreparations[expectedWorker] = preparations[expectedWorker]?.ordinal
+                return application.value
+            case .applicationRetired(let application) where application.operationId != expectedWorker:
+                continue
+            case .applicationRetired(let application)
+            where application.operationId == lastApplied?.operationId && application.value == lastApplied?.value:
+                continue
+            case .applicationHidden(let worker, _) where worker != expectedWorker:
+                continue
+            case .applicationWorkerEnded(let worker, _, _) where worker != expectedWorker:
+                continue
+            case .applicationWorkerEnded(let worker, let preparedInput, false)
+            where preparations[worker]?.input == preparedInput
+                && (preparations[worker]?.ordinal ?? 0) > (consumedPreparations[worker] ?? 0):
+                // A finite projection can finish while its prepared native frame
+                // is in flight. Only an unconsumed preparation permits this.
+                continue
+            default:
+                throw NativeCardClockFailure(description: "Native presentation ended before application: \(fact)")
+            }
+        }
+    }
 
     @MainActor
     func nextOperation(pane: UUID, input: Instant?) async throws -> PaneRelativeTimeRefresh.StartResult {
@@ -241,6 +312,7 @@ final class NativeCardTestClock: Clock {
         try await facts.expectNext(in: 2, .drained)
         facts.append(scope: 0, fact: .retired)
         facts.append(scope: 1, fact: .retired)
+        facts.append(scope: 3, fact: .retired)
         facts.receive(.ended)
     }
 

@@ -41,7 +41,10 @@ struct PaneContextCardControllerTests {
         let ports = PaneContextPopoverTestPorts(old)
         await ports.configureExactReads([.found(old.messages[0]), .found(newer.messages[0])], held: [0])
         let controller = makePopoverController(ports: ports, location: .card)
-        let oldRead = Task { await controller.openCard(pane, selection: .ask(source: pane, message: first)) }
+        let oldRead = Task {
+            await controller.openCard(pane, selection: .ask(source: pane, message: first))
+            await ports.exactProducerEnded(beforeRead: 0)
+        }
         do {
             try await ports.exactReads.expectNext(in: 0, .started(pane, first))
             #expect(controller.selectedAsk == nil)

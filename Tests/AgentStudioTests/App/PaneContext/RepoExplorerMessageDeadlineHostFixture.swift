@@ -30,6 +30,7 @@ final class RepoExplorerMessageDeadlineHostFixture {
         composition: CompositionFactoryFixture, store: WorkspaceStore, atoms: CoreAtoms,
         written: AgentLineDetail, display: PaneContextDisplay, surface: SidebarSurface,
         statuses: SessionStatusAtom,
+        onReadTaskStarted: @escaping PaneContextReadTaskObserver,
         onOpen: (@MainActor (RepoExplorerPaneContextControlPresentation, PaneContextPopoverController?) -> Void)?
     ) {
         self.composition = composition
@@ -79,7 +80,8 @@ final class RepoExplorerMessageDeadlineHostFixture {
                 PaneContextPopoverHost(
                     paneId: pane, presentation: .init(control), location: .sidebar, readers: readers,
                     octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in },
-                    onReadCompleted: { _, controller in onOpen(control, controller) }))
+                    onReadCompleted: { _, controller in onOpen(control, controller) },
+                    onReadTaskStarted: onReadTaskStarted, clock: ContinuousClock()))
         }
         paneContextControl = controls
         host = RepoExplorerMessageDeadlineTableHost(adapter: adapter, paneContextControl: controls)
@@ -90,6 +92,7 @@ final class RepoExplorerMessageDeadlineHostFixture {
         atoms: CoreAtoms, surface: SidebarSurface = .panes,
         statuses: SessionStatusAtom? = nil,
         associated: Bool = true,
+        onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
         onOpen: (@MainActor (RepoExplorerPaneContextControlPresentation, PaneContextPopoverController?) -> Void)? = nil
     ) async throws -> RepoExplorerMessageDeadlineHostFixture {
         let store = WorkspaceStore(
@@ -127,7 +130,8 @@ final class RepoExplorerMessageDeadlineHostFixture {
             let written = try #require(display.agentLine)
             let fixture = RepoExplorerMessageDeadlineHostFixture(
                 composition: composition, store: store, atoms: atoms, written: written, display: display,
-                surface: surface, statuses: statuses ?? SessionStatusAtom(), onOpen: onOpen)
+                surface: surface, statuses: statuses ?? SessionStatusAtom(),
+                onReadTaskStarted: onReadTaskStarted, onOpen: onOpen)
             try #require(fixture.adapter.registerMaterializationHost(fixture.host.host))
             return fixture
         } catch {
@@ -220,11 +224,24 @@ final class RepoExplorerMessageDeadlineHostFixture {
         cell.hostingView.layoutSubtreeIfNeeded()
         cell.hostingView.displayIfNeeded()
         #expect(cell.currentBindingIdentity?.rowID == row.id)
-        let label = try #require(findAgeView(in: cell.hostingView))
-        #expect(label.accessibilityLabel() == age)
-        let visibleFrame = materializer.scrollView.contentView.convert(label.bounds, from: label)
-        #expect(!visibleFrame.isEmpty && materializer.scrollView.contentView.bounds.intersects(visibleFrame))
+        let binding = try #require(cell.hostingView.rootView.slot.binding)
+        #expect(binding.row == row, "The real materializer must install the complete new row value")
+        // D34: table acceptance closes our binding effect, not SwiftUI's later
+        // consumption of the persistent slot. Paint the actual prepared value
+        // synchronously; persistent-host consumption remains unverified.
         let rendering = PaneContextToolbarRenderingTests()
+        let prepared = rendering.mountCard(
+            AnyView(
+                RepoExplorerMaterializedRowView(
+                    row: binding.row, commandPresentationSnapshot: binding.commandPresentationSnapshot,
+                    octiconLoader: makeTestOcticonLoader(), onCommandRequest: { _ in },
+                    onToggleGroup: { _ in }, onFocusPane: { _ in })),
+            width: cell.hostingView.bounds.width)
+        defer { prepared.window.close() }
+        let label = try #require(findAgeView(in: prepared.host))
+        #expect(label.accessibilityLabel() == age)
+        let visibleFrame = prepared.host.convert(label.bounds, from: label)
+        #expect(!visibleFrame.isEmpty && prepared.host.bounds.intersects(visibleFrame))
         let reference = rendering.mountCard(
             AnyView(
                 Text(age).font(.system(size: AppStyles.Shell.Sidebar.branchFontSize)).foregroundStyle(Color.secondary)
@@ -234,8 +251,8 @@ final class RepoExplorerMessageDeadlineHostFixture {
         #expect(
             rendering.containsTextInk(
                 try rendering.ink(in: reference.host, minimumBrightness: 60),
-                in: try rendering.ink(in: cell.hostingView, minimumBrightness: 60)),
-            "The full expected message age must paint in the materialized visible row")
+                in: try rendering.ink(in: prepared.host, minimumBrightness: 60)),
+            "The full expected message age must paint from the real materialized row value")
         return row.id
     }
 

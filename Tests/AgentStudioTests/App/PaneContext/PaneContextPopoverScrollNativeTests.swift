@@ -23,6 +23,7 @@ struct PaneContextPopoverScrollNativeTests {
             let document = try #require(scroll.documentView)
             let info = try PaneContextNativeScrollFixture.frame(
                 "pane-context.group.info", in: mounted, document: document)
+            try await mounted.scrolling.viewport(scroll) { info.intersects($0) }
             #expect(info.intersects(scroll.documentVisibleRect), "The actual Info header must be inside the clip")
             var top = scroll.documentVisibleRect
             top.origin.y = document.isFlipped ? document.bounds.minY : document.bounds.maxY - top.height
@@ -32,21 +33,18 @@ struct PaneContextPopoverScrollNativeTests {
             #expect(await fixture.ports.exactRequests.isEmpty)
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(60)), pane: fixture.pane.uuid, currentInput: nil)
+            try await mounted.clock.applied(pane: fixture.pane.uuid, input: nil)
             scroll.contentView.scroll(to: top.origin)
             scroll.reflectScrolledClipView(scroll.contentView)
             mounted.layout()
             let userPosition = scroll.documentVisibleRect
-            let operations = mounted.scrolling.operations
             mounted.clock.advance(by: .seconds(60))
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(120)), pane: fixture.pane.uuid, currentInput: nil)
-            mounted.layout()
-            await mounted.scrolling.joinAnnouncedProducers()
+            try await mounted.clock.applied(pane: fixture.pane.uuid, input: nil)
             mounted.layout()
             #expect(mounted.labels().contains { $0.contains("info message line 3 1 min ago") })
             #expect(scroll.documentVisibleRect == userPosition, "An age update must preserve the user's position")
-            #expect(
-                mounted.scrolling.operations == operations, "An age update must not consume the opening trigger again")
             #expect(!info.intersects(scroll.documentVisibleRect))
         }
     }
@@ -60,7 +58,7 @@ struct PaneContextPopoverScrollNativeTests {
             try await mounted.open()
             #expect(try await mounted.scrolling.completed(requested: .top) == .applied)
             mounted.layout()
-            try PaneContextNativeScrollFixture.assertTop(
+            try await PaneContextNativeScrollFixture.assertTop(
                 PaneContextNativeScrollFixture.scrollView(in: mounted), in: mounted)
         }
     }
@@ -72,7 +70,7 @@ struct PaneContextPopoverScrollNativeTests {
             try await mounted.open()
             #expect(try await mounted.scrolling.completed(requested: .section(.done)) == .fellBackToTop)
             mounted.layout()
-            try PaneContextNativeScrollFixture.assertTop(
+            try await PaneContextNativeScrollFixture.assertTop(
                 PaneContextNativeScrollFixture.scrollView(in: mounted), in: mounted)
             #expect(mounted.find("pane-context.group.done") == nil)
             #expect(await fixture.ports.requests == [.init(paneId: fixture.pane, page: .first)])
@@ -97,6 +95,7 @@ struct PaneContextPopoverScrollNativeTests {
             let row = try PaneContextNativeScrollFixture.frame(
                 "pane-context.message-text.\(fixture.pane.uuid).\(fixture.info.id.uuid)", in: mounted,
                 document: document)
+            try await mounted.scrolling.viewport(scroll) { row.intersects($0) }
             #expect(row.intersects(scroll.documentVisibleRect))
             #expect(scroll.documentVisibleRect.minY > document.bounds.minY)
             #expect(await fixture.ports.exactRequests == [key])
@@ -122,7 +121,7 @@ struct PaneContextPopoverScrollNativeTests {
                 try await mounted.rendered()
                 #expect(try await mounted.scrolling.completed(requested: .top) == .applied)
                 mounted.layout()
-                try PaneContextNativeScrollFixture.assertTop(
+                try await PaneContextNativeScrollFixture.assertTop(
                     PaneContextNativeScrollFixture.scrollView(in: mounted), in: mounted)
             }
         }

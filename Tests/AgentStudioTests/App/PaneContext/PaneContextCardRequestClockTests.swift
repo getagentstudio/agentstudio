@@ -24,7 +24,9 @@ struct PaneContextCardRequestClockTests {
         defer { store.removePane(owner.id) }
         let fixture = try await CompositionFactoryFixture.make(ownerId: .init(existingUUID: owner.id))
         let clock = NativeCardTestClock()
-        let refresh = PaneRelativeTimeRefresh(onEvent: { clock.observeOwner($0) })
+        let refresh = PaneRelativeTimeRefresh(
+            onEvent: { clock.observeOwner($0) },
+            onPresentationReady: { clock.observePreparation($0, id: $1) })
         var mounted: PaneContextToolbarTestHost?
         var controller: PaneContextPopoverController?
         do {
@@ -68,10 +70,12 @@ struct PaneContextCardRequestClockTests {
             try await clock.registered(
                 origin.advanced(by: .seconds(knownActivity ? 15 : 60)), pane: owner.id,
                 currentInput: knownActivity ? origin : nil)
+            try await clock.applied(pane: owner.id, input: knownActivity ? origin : nil)
             try assertAge("Now", in: host, render: render)
             if knownActivity {
                 clock.advance(by: .seconds(15))
                 try await clock.registered(origin.advanced(by: .seconds(60)), pane: owner.id, currentInput: origin)
+                try await clock.applied(pane: owner.id, input: origin)
                 try assertAge("Now", in: host, render: render)
                 #expect(render.accessibilityLabels(in: host.host).contains("ACTIVE 1 min ago"))
             }
@@ -87,6 +91,7 @@ struct PaneContextCardRequestClockTests {
                 try await clock.registered(
                     origin.advanced(by: .seconds(step.deadline)), pane: owner.id,
                     currentInput: knownActivity ? origin : nil)
+                try await clock.applied(pane: owner.id, input: knownActivity ? origin : nil)
                 try assertAge(step.words, in: host, render: render)
                 #expect(active.selectedAsk?.detail.sentAt == fixture.now)
             }
@@ -140,6 +145,12 @@ private struct CardRequestClockView: View {
                 controller: controller, readers: readers, onGoToPane: { _ in })
         )
         .frame(height: 600, alignment: .topLeading)
+        .background {
+            if let value = refresh.value, let application = refresh.application(for: value) {
+                NativePresentationApplication(
+                    value: application, onApplied: refresh.didApply, onRetired: refresh.didRetire)
+            }
+        }
         .onAppear { refresh.startOrReplace(input, clock: clock, wallNow: wallNow) }
     }
 }

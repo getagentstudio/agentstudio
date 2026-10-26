@@ -85,8 +85,12 @@ struct PaneContextNativeScrollFixture {
         return document.convert(view.bounds, from: view)
     }
 
-    static func assertTop(_ scroll: NSScrollView, in mounted: PaneContextNativePopoverWindow) throws {
+    static func assertTop(_ scroll: NSScrollView, in mounted: PaneContextNativePopoverWindow) async throws {
         let document = try #require(scroll.documentView)
+        try await mounted.scrolling.viewport(scroll) { visible in
+            document.isFlipped
+                ? visible.minY == document.bounds.minY : visible.maxY == document.bounds.maxY
+        }
         let visible = scroll.documentVisibleRect
         if document.isFlipped {
             #expect(visible.minY == document.bounds.minY)

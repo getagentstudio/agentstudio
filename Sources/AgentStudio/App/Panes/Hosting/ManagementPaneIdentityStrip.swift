@@ -27,6 +27,7 @@ struct ManagementPaneIdentityStrip: View {
     var onReadCompleted: PaneContextReadCompletionObserver = { _, _ in }
     var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
+    var onNoteApplication: PaneContextNoteApplicationObserver = { _ in }
     var onActionCompleted: @MainActor () -> Void = {}
     var onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
     var onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
@@ -59,7 +60,7 @@ struct ManagementPaneIdentityStrip: View {
                     request: cardModel.request, actions: actions, readers: readers,
                     owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
                     onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-                    onScrollEvent: onScrollEvent,
+                    onScrollEvent: onScrollEvent, onNoteApplication: onNoteApplication,
                     onActionCompleted: onActionCompleted,
                     onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
                     onRelativeTimeReady: onRelativeTimeReady)
@@ -291,7 +292,7 @@ struct ManagementPaneIdentityStrip: View {
             location: .pane, readers: readers, octiconLoader: octiconLoader,
             onGoToPane: onGoToPane, includingDrawers: !isDrawerPane,
             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-            onScrollEvent: onScrollEvent,
+            onScrollEvent: onScrollEvent, onNoteApplication: onNoteApplication,
             onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
             onRelativeTimeEvent: onRelativeTimeEvent,
@@ -312,6 +313,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let onReadCompleted: PaneContextReadCompletionObserver
     let onReadTaskStarted: PaneContextReadTaskObserver
     let onScrollEvent: PaneContextPopoverScrollObserver
+    let onNoteApplication: PaneContextNoteApplicationObserver
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
@@ -336,6 +338,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         },
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
+        onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) {
@@ -348,6 +351,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         self.onReadCompleted = onReadCompleted
         self.onReadTaskStarted = onReadTaskStarted
         self.onScrollEvent = onScrollEvent
+        self.onNoteApplication = onNoteApplication
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.onRelativeTimeEvent = onRelativeTimeEvent
@@ -384,13 +388,23 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
             feedback: cardController?.unavailableNote ?? cardController?.actionFeedback,
             onGoToPane: onGoToPane,
             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-            onScrollEvent: onScrollEvent,
+            onScrollEvent: onScrollEvent, onNoteApplication: onNoteApplication,
             onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
             onRelativeTimeReady: onRelativeTimeReady
         )
         .frame(maxWidth: .infinity)
         .background(AppStyles.Shell.PaneChrome.background)
+        .background {
+            if let card,
+                let application = relativeTimeRefresh.application(
+                    for: .card(card), feedback: cardController?.unavailableNote ?? cardController?.actionFeedback)
+            {
+                NativePresentationApplication(
+                    value: application, onApplied: relativeTimeRefresh.didApply,
+                    onRetired: relativeTimeRefresh.didRetire)
+            }
+        }
         .onAppear { relativeTimeRefresh.startOrReplace(input, clock: clock, wallNow: wallNow) }
         .onChange(of: input) { _, changed in relativeTimeRefresh.startOrReplace(changed, clock: clock, wallNow: wallNow)
         }

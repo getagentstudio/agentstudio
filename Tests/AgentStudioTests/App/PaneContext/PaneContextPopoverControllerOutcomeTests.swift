@@ -158,20 +158,32 @@ struct PaneContextPopoverControllerOutcomeTests {
             try PaneContextPopoverControllerTests.askDetail(
                 pane: pane, id: id, state: .answered(by: .localUser, value: .text("First"), receipt: .notYetConfirmed),
                 revision: 2))
-        let first = Task { await controller.answer(messageId: id, source: pane, value: .text("First")) }
-        try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
-        await controller.answer(messageId: id, source: pane, value: .text("Second"))
-        await ports.release(1)
-        await first.value
-        #expect(await ports.answers.count == 2)
-        #expect(controller.actionFeedback == "Already answered")
-        #expect(
-            PaneContextPopoverControllerTests.firstRow(controller)?.shape
-                == .ask(
-                    reason: .question, form: .freeText(placeholder: "Reply"), waiting: .nonBlocking,
-                    state: .answered(by: .localUser, value: .text("First"), receipt: .notYetConfirmed)))
-        controller.close()
-        try await ports.finish()
+        let first = Task {
+            await controller.answer(messageId: id, source: pane, value: .text("First"))
+            await ports.detailProducerEnded(beforeRead: 1)
+        }
+        do {
+            try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
+            await controller.answer(messageId: id, source: pane, value: .text("Second"))
+            await ports.release(1)
+            await first.value
+            #expect(await ports.answers.count == 2)
+            #expect(controller.actionFeedback == "Already answered")
+            #expect(
+                PaneContextPopoverControllerTests.firstRow(controller)?.shape
+                    == .ask(
+                        reason: .question, form: .freeText(placeholder: "Reply"), waiting: .nonBlocking,
+                        state: .answered(by: .localUser, value: .text("First"), receipt: .notYetConfirmed)))
+            controller.close()
+            try await ports.finish()
+        } catch {
+            controller.close()
+            await ports.release(1)
+            first.cancel()
+            await first.value
+            try? await ports.finish()
+            throw error
+        }
     }
 
     @Test

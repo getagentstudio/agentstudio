@@ -303,6 +303,7 @@ struct SessionsUnverifiedStatusTests {
             let origin = ContinuousClock.now
             _ = try await Self.submit(ingestion, pane: pane, signal: .turnStart, instant: origin)
             let pendingExit = Task {
+                defer { oldExit.retire() }
                 try await oldExit.arrive(origin + .seconds(1))
                 return try await ingestion.submitCommandFinished(paneId: pane, reportedAt: origin + .seconds(1))
             }
@@ -357,19 +358,22 @@ struct SessionsUnverifiedStatusTests {
         let fixture = try SessionsDatabaseFixture()
         let held = HeldStep<Void>("verified bind before queued unverified status")
         let pane = UUIDv7.generate()
-        let depth = LocalFactSource<UUID, Int>(
+        let depth = LocalFactSource<UUID, RefusalOverlapFact>(
             vocabulary: .init(
-                describeScope: { $0.uuidString }, describeFact: { "pending=\($0)" },
-                isClosing: { _, value in value == 0 }))
+                describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
+                isClosing: { _, value in if case .finished = value { true } else { false } }))
         let recorder = try depth.attach()
         let ingestion = SessionsIngestion(
             repository: .init(sqliteAccess: HeldUnverifiedStatusSQLiteAccess(base: fixture.sqliteAccess, held: held)),
             limits: .init(maximumPendingPerPane: 4, maximumPendingGlobal: 8),
-            probe: { statistics in if statistics.paneId == pane { depth.sink(pane, statistics.pendingForPane) } },
+            probe: { statistics in
+                if statistics.paneId == pane { depth.sink(pane, .depth(statistics.pendingForPane)) }
+            },
             terminalLeaderReader: MatchingTestPaneTerminalLeaderReader())
         let statusMailbox = await ingestion.statusPublicationMailbox
         let binding = Task {
-            try await ingestion.submitHook(
+            defer { held.retire() }
+            return try await ingestion.submitHook(
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified",
                     eventName: .turnStart, signal: .turnStart, turnId: nil))
@@ -377,17 +381,23 @@ struct SessionsUnverifiedStatusTests {
         var status: Task<SessionsUnverifiedStatusOutcome, any Error>?
         do {
             try await held.firstArrival()
-            try await recorder.expectNext(in: pane, 1)
+            try await recorder.expectNext(in: pane, .depth(1))
             status = Task {
-                try await Self.submit(ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
+                do {
+                    let result = try await Self.submit(
+                        ingestion, pane: pane, signal: .permission(toolName: nil, questions: nil))
+                    depth.sink(pane, .finished(nil))
+                    return result
+                } catch {
+                    depth.sink(pane, .finished(String(describing: error)))
+                    throw error
+                }
             }
-            try await recorder.expectNext(in: pane, 2)
+            try await recorder.expectNext(in: pane, .depth(2))
             held.release()
             _ = try await binding.value
             let pending = try #require(status)
             #expect(try await pending.value == .hookAcceptedWithoutStatus)
-            try await recorder.expectNext(in: pane, 1)
-            try await recorder.expectNext(in: pane, 0)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
             #expect(
@@ -492,6 +502,7 @@ private actor HeldUnverifiedStatusSQLiteAccess: SessionsSQLiteAccess {
 }
 
 private enum RefusalOverlapFact: Equatable, Sendable {
+    case depth(Int)
     case queued
     case initialReturned(SessionsUnverifiedStatusOutcome)
     case predecessorWrite

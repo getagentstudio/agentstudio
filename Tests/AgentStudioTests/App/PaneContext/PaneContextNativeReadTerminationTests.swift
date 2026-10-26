@@ -25,7 +25,7 @@ struct PaneContextNativeReadTerminationTests {
             wallNow: fixture.now, cancelReadsOnStart: !retire)
         do {
             try mounted.press("pane-context.messages.needsYou")
-            if retire { mounted.retireView() }
+            if retire { mounted.window.close() }
             do {
                 try await mounted.readCompleted()
                 Issue.record("A read without its completion callback must fail the native witness")

@@ -24,6 +24,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         paneId: PaneId, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
         clock: AgeClock, wallNow: Date? = nil,
         onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in },
         onGoToPane: @escaping @MainActor (UUID) -> Void
     ) {
         self.paneId = paneId
@@ -32,7 +33,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.clock = clock
         self.wallNow = wallNow
         self.onGoToPane = onGoToPane
-        _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
+        _relativeTimeRefresh = State(
+            initialValue: PaneRelativeTimeRefresh(
+                onEvent: onRelativeTimeEvent, onPresentationReady: onRelativeTimeReady))
     }
 
     var body: some View {
@@ -50,6 +53,15 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 }
             }
             Color.clear.frame(width: 0, height: 0)
+        }
+        .background {
+            if let prepared = relativeTimeRefresh.presentation,
+                let application = relativeTimeRefresh.application(for: .pane(prepared))
+            {
+                NativePresentationApplication(
+                    value: application, onApplied: relativeTimeRefresh.didApply,
+                    onRetired: relativeTimeRefresh.didRetire)
+            }
         }
         .onAppear { refresh(input) }
         .onChange(of: input) { _, changed in refresh(changed) }

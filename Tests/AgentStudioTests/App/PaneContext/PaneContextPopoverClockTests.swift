@@ -72,6 +72,7 @@ struct PaneContextPopoverClockTests {
             try await mounted.clock.entered(pane: fixture.ownerId.uuid, input: nil)
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(60)), pane: fixture.ownerId.uuid, currentInput: nil)
+            try await mounted.clock.applied(pane: fixture.ownerId.uuid, input: nil)
             mounted.layout()
             assertAge("Now", bracketed: agentLine, in: mounted)
             let original = mounted.controller?.state?.revision
@@ -84,6 +85,7 @@ struct PaneContextPopoverClockTests {
                 try await mounted.clock.registered(
                     origin.advanced(by: .seconds(step.deadline)),
                     pane: fixture.ownerId.uuid, currentInput: nil)
+                try await mounted.clock.applied(pane: fixture.ownerId.uuid, input: nil)
                 mounted.layout()
                 assertAge(step.text, bracketed: agentLine, in: mounted)
                 #expect(mounted.controller?.state?.revision == original)
@@ -141,11 +143,13 @@ struct PaneContextPopoverClockTests {
             try await mounted.clock.entered(pane: fixture.ownerId.uuid, input: nil)
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(86_400)), pane: fixture.ownerId.uuid, currentInput: nil)
+            try await mounted.clock.applied(pane: fixture.ownerId.uuid, input: nil)
             mounted.layout()
             assertAge("8 days ago", bracketed: true, in: mounted)
             mounted.clock.advance(by: .seconds(86_400))
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(172_800)), pane: fixture.ownerId.uuid, currentInput: nil)
+            try await mounted.clock.applied(pane: fixture.ownerId.uuid, input: nil)
             mounted.layout()
             assertAge("9 days ago", bracketed: true, in: mounted)
             guard case .detail(let stored) = await service.readDetail(.init(paneId: fixture.ownerId, page: .first))

@@ -2,6 +2,7 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
 import Foundation
@@ -20,6 +21,8 @@ struct PaneContextApprovalDraftIdentityTests {
         let fixture = try await CompositionFactoryFixture.make()
         var window: NSWindow?
         var controller: PaneContextPopoverController?
+        var subjectModel: ApprovalDraftSubjectModel?
+        var subjectHost: NSHostingView<ApprovalDraftSubject>?
         do {
             let service = fixture.composition.paneContextService
             let binding = try await fixture.bind(paneId: fixture.ownerId)
@@ -41,6 +44,7 @@ struct PaneContextApprovalDraftIdentityTests {
             controller = live
             await live.openCard(fixture.ownerId, selection: .ask(source: fixture.ownerId, message: first))
             let model = ApprovalDraftSubjectModel(request: try request(live, id: first))
+            subjectModel = model
             let actions = PaneContextPopoverHostActions.messages(
                 controller: live, readers: readers, onGoToPane: { _ in }, onActionCompleted: {},
                 onActionTaskStarted: { _ in })
@@ -48,12 +52,14 @@ struct PaneContextApprovalDraftIdentityTests {
                 rootView: ApprovalDraftSubject(
                     model: model, actions: actions, readers: readers, owner: fixture.ownerId))
             host.frame = .init(x: 0, y: 0, width: 390, height: 400)
+            subjectHost = host
             let mounted = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
             mounted.isReleasedWhenClosed = false
             mounted.contentView = host
             window = mounted
             mounted.makeKeyAndOrderFront(nil)
             host.layoutSubtreeIfNeeded()
+            try await model.applications.expectNext(in: 0, .applied(model.request))
             let initial = try #require(fields(in: host).first)
             try typeReason("Do not reuse this reason", in: initial, window: mounted)
             #expect(initial.stringValue == "Do not reuse this reason")
@@ -65,6 +71,7 @@ struct PaneContextApprovalDraftIdentityTests {
             model.request = try request(live, id: second)
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
+            try await model.applications.expectNext(in: 0, .applied(model.request))
 
             var visited = Set<ObjectIdentifier>()
             try #require(
@@ -75,15 +82,24 @@ struct PaneContextApprovalDraftIdentityTests {
             #expect(next.placeholderString == "Reason (optional)")
             #expect(next.stringValue.isEmpty, "The next approval inherited the previous request's reason")
             #expect(live.selectedAsk?.key == .init(paneId: fixture.ownerId, messageId: second))
+            model.isVisible = false
+            host.layoutSubtreeIfNeeded()
+            try await model.applications.expectNext(in: 0, .retired)
             controller?.close()
             mounted.contentView = nil
             mounted.close()
+            model.applications.receive(.ended)
+            try await model.applications.finish()
             window = nil
             try await fixture.close()
         } catch {
+            subjectModel?.isVisible = false
+            subjectHost?.layoutSubtreeIfNeeded()
             controller?.close()
             window?.contentView = nil
             window?.close()
+            subjectModel?.applications.receive(.ended)
+            try? await subjectModel?.applications.finish()
             try? await fixture.close()
             throw error
         }
@@ -128,7 +144,12 @@ struct PaneContextApprovalDraftIdentityTests {
 @MainActor
 @Observable
 private final class ApprovalDraftSubjectModel {
+    var isVisible = true
     var request: CardModel.Request
+    let applications = FactRecorder<Int, ApprovalDraftApplication>(
+        vocabulary: .init(
+            describeScope: { "native approval draft \($0)" }, describeFact: { String(describing: $0) },
+            isClosing: { _, fact in fact == .retired }))
     init(request: CardModel.Request) { self.request = request }
 }
 
@@ -138,9 +159,23 @@ private struct ApprovalDraftSubject: View {
     let readers: PaneContextUIReaders
     let owner: PaneId
     var body: some View {
-        PaneContextCardRequestBlock(
-            request: model.request, actions: actions, readers: readers, owner: owner,
-            octiconLoader: makeTestOcticonLoader(), onReadCompleted: { _, _ in }, onActionCompleted: {},
-            onActionTaskStarted: { _ in }, onRelativeTimeEvent: { _ in })
+        if model.isVisible {
+            PaneContextCardRequestBlock(
+                request: model.request, actions: actions, readers: readers, owner: owner,
+                octiconLoader: makeTestOcticonLoader(), onReadCompleted: { _, _ in }, onActionCompleted: {},
+                onActionTaskStarted: { _ in }, onRelativeTimeEvent: { _ in }
+            )
+            .background {
+                NativePresentationApplication(
+                    value: model.request,
+                    onApplied: { model.applications.append(scope: 0, fact: .applied($0)) },
+                    onRetired: { _ in model.applications.append(scope: 0, fact: .retired) })
+            }
+        }
     }
+}
+
+private enum ApprovalDraftApplication: Equatable, Sendable {
+    case applied(CardModel.Request)
+    case retired
 }

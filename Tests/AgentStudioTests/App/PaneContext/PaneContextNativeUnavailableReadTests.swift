@@ -51,6 +51,7 @@ struct PaneContextNativeUnavailableReadTests {
             try mounted.press("pane-context.card-messages")
             try await mounted.readCompleted()
             mounted.layout()
+            try await mounted.renderedNote("Not available right now")
             #expect(readers.refreshKey(for: fixture.ownerId) == key, "Unavailable service does not change facts")
             #expect(mounted.controller == nil, "Messages must retain its own nil completion")
             #expect(mounted.labels().contains("Not available right now"))

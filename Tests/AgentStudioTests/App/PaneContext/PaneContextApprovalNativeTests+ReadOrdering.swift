@@ -8,8 +8,10 @@ import Testing
 @testable import AgentStudioSessions
 
 extension PaneContextApprovalNativeTests {
-    @Test("a native settlement wait joins the later winning read before accepting cached form state")
-    func settlementWaitsForWinningRead() async throws {
+    @Test(
+        "a native settlement wait joins or rejects the winning read before accepting cached form state",
+        arguments: [false, true])
+    func settlementWaitsForWinningRead(cancelWinningRead: Bool) async throws {
         let pane = PaneId.generateUUIDv7()
         let message = try PaneContextPopoverShapingTests.message(
             paneId: pane, shape: .ask(.approval, .approval, .nonBlocking, .open), importance: .attention)
@@ -30,17 +32,20 @@ extension PaneContextApprovalNativeTests {
             paneId: pane, readers: readers, location: .pane,
             wallNow: Date(timeIntervalSince1970: 1_800_000_000))
         var rendering: Task<Void, any Error>?
+        await mounted.observeDetailReads(from: ports)
         do {
             try await mounted.open()
             await ports.setDetail(PaneContextPopoverShapingTests.detail(paneId: pane, messages: [settled]))
             try mounted.press("pane-context.approve.\(pane.uuid).\(message.id.uuid)")
-            try await ports.reads.expectNext(in: 1, .started(.init(paneId: pane, page: .first)))
+            try await mounted.detailReadStarted(
+                1, request: .init(paneId: pane, page: .first), producer: .action(0))
             status.apply([pane: .set(.init(status: .working(.active), evidence: .verifiedLive, promptListRevision: 1))])
             mounted.layout()
-            try await ports.reads.expectNext(in: 2, .started(.init(paneId: pane, page: .first)))
+            try await mounted.detailReadStarted(
+                2, request: .init(paneId: pane, page: .first), producer: .opening(1))
             await ports.release(1)
             try await mounted.actionCompleted()
-            #expect(mounted.editableFields.count == 1)
+            #expect(mounted.controller?.state?.messages.messageRows.filter { $0.availability == .askForm }.count == 1)
             let waiter = Task {
                 defer { mounted.facts.append(scope: .projectionWait, fact: .taskEnded) }
                 try await mounted.rendered()
@@ -48,11 +53,13 @@ extension PaneContextApprovalNativeTests {
             rendering = waiter
             let first = try await mounted.facts.expectNext(
                 in: .projectionWait, where: { _ in true }, "read-wait entry or render-task terminal outcome")
-            #expect(first == .waitingForRead(1), "The held later read must precede native rebind: \(first)")
-            await ports.release(2)
-            if first != .waitingForRead(1) { try await mounted.readCompleted() }
-            try await waiter.value
-            if first == .waitingForRead(1) {
+            try #require(first == .waitingForRead(1), "The held later read must precede native rebind: \(first)")
+            if cancelWinningRead {
+                mounted.cancelReads()
+                await #expect(throws: (any Error).self) { try await waiter.value }
+            } else {
+                await ports.release(2)
+                try await waiter.value
                 #expect(mounted.editableFields.isEmpty)
                 #expect(mounted.find("pane-context.approve.\(pane.uuid).\(message.id.uuid)") == nil)
             }

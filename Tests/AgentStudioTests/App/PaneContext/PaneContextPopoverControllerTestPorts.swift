@@ -9,6 +9,7 @@ import Foundation
 enum PopoverReadFact: Sendable, Equatable {
     case started(PaneContextReadRequest)
     case finished
+    case producerEndedWithoutRead
 }
 enum PopoverReleaseFact: Sendable, Equatable {
     case released
@@ -16,17 +17,18 @@ enum PopoverReleaseFact: Sendable, Equatable {
 enum PopoverExactReadFact: Sendable, Equatable {
     case started(PaneId, AgentMessageId)
     case finished
+    case producerEndedWithoutRead
 }
 
 actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonActing {
     let exactReads = FactRecorder<Int, PopoverExactReadFact>(
         vocabulary: .init(
             describeScope: { "exact read \($0)" }, describeFact: { String(describing: $0) },
-            isClosing: { _, fact in fact == .finished }))
+            isClosing: { _, fact in fact == .finished || fact == .producerEndedWithoutRead }))
     let reads = FactRecorder<Int, PopoverReadFact>(
         vocabulary: .init(
             describeScope: { "read \($0)" }, describeFact: { String(describing: $0) },
-            isClosing: { _, fact in fact == .finished }))
+            isClosing: { _, fact in fact == .finished || fact == .producerEndedWithoutRead }))
     let releases = FactRecorder<Int, PopoverReleaseFact>(
         vocabulary: .init(
             describeScope: { "release \($0)" }, describeFact: { String(describing: $0) },
@@ -35,6 +37,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     private var fallback: PaneContextDetail
     private let heldReads: Set<Int>
     private var readNumber = 0
+    private var onDetailReadFact: (@Sendable (Int, PopoverReadFact) -> Void)?
     private var exactNumber = 0
     private var exactResults: [MessageReadResult] = []
     private var heldExactReads: Set<Int> = []
@@ -71,19 +74,36 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     func releaseExact(_ number: Int) { releases.append(scope: 1000 + number, fact: .released) }
     func release(_ number: Int) { releases.append(scope: number, fact: .released) }
 
+    func observeDetailReadFacts(_ observer: @escaping @Sendable (Int, PopoverReadFact) -> Void) {
+        onDetailReadFact = observer
+    }
+
+    private func recordDetailRead(_ number: Int, _ fact: PopoverReadFact) {
+        reads.append(scope: number, fact: fact)
+        onDetailReadFact?(number, fact)
+    }
+
+    func detailProducerEnded(beforeRead number: Int) {
+        if readNumber <= number { recordDetailRead(number, .producerEndedWithoutRead) }
+    }
+
+    func exactProducerEnded(beforeRead number: Int) {
+        if exactNumber <= number { exactReads.append(scope: number, fact: .producerEndedWithoutRead) }
+    }
+
     func readDetail(_ request: PaneContextReadRequest) async -> PaneContextReadResult {
         let number = readNumber
         readNumber += 1
         requests.append(request)
         let result = results.isEmpty ? .detail(fallback) : results.removeFirst()
-        reads.append(scope: number, fact: .started(request))
+        recordDetailRead(number, .started(request))
         if heldReads.contains(number) {
             do { try await releases.expectNext(in: number, .released) } catch {
-                reads.append(scope: number, fact: .finished)
+                recordDetailRead(number, .finished)
                 return .unavailable(.databaseUnavailable)
             }
         }
-        reads.append(scope: number, fact: .finished)
+        recordDetailRead(number, .finished)
         return result
     }
     func answer(_ request: AnswerAskRequest) async -> AnswerAskResult {
@@ -126,6 +146,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         return dismissAllResult
     }
     func finish() async throws {
+        onDetailReadFact = nil
         try await reads.finish()
         try await releases.finish()
         try await exactReads.finish()

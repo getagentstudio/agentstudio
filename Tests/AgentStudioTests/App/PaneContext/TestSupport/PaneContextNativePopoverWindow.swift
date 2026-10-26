@@ -11,6 +11,7 @@ import Testing
 @testable import AgentStudio
 
 enum NativePopoverFact: Equatable, Sendable {
+    case detailRead(PopoverReadFact)
     case waitingForRead(Int)
     case readStarted(Int)
     case opened
@@ -21,9 +22,12 @@ enum NativePopoverFact: Equatable, Sendable {
     case worker(PaneRelativeTimeRefresh.Event)
     case presentationReady(PaneManagementIdentityCapture.VisibleInput)
     case projectionEnded(operation: Int, PaneRelativeTimeRefresh.WorkerOutcome)
+    case note(PaneContextNoteApplication)
 }
 
 enum NativePopoverScope: Hashable, Sendable {
+    case readAnnouncement(Int)
+    case detailRead(Int)
     case projectionWait
     case readSources([PaneContextRefreshKey.Source])
     case cardReadSources([PaneContextRefreshKey.Source])
@@ -32,12 +36,13 @@ enum NativePopoverScope: Hashable, Sendable {
     case worker
     case publication
     case popoverPublication
+    case notePublication
 }
 
 /// Mounts the production entry and popover, retaining its live controller binding.
 @MainActor
 final class PaneContextNativePopoverWindow {
-    @MainActor private final class Sink {
+    @MainActor final class Sink {
         struct ReadOperation {
             let operation: PaneContextReadOperation
             var key: PaneContextRefreshKey { operation.key }
@@ -50,6 +55,7 @@ final class PaneContextNativePopoverWindow {
         }
         var reads: [ReadOperation] = []
         var readMonitors: [Task<Void, Never>] = []
+        var pendingReadWaitScopes: Set<NativePopoverScope> = []
         var endedReads: Set<Int> = []
         var retired = false
         var cancelReadsOnStart = false
@@ -57,6 +63,9 @@ final class PaneContextNativePopoverWindow {
         var cardController: PaneContextPopoverController?
         var operations: [ProjectionOperation] = []
         var publishedOperations: Set<UUID> = []
+        var appliedApplications: [UUID: PaneRelativeTimeRefresh.Application] = [:]
+        var noteSequence = 0
+        var appliedNote: (value: PaneContextNoteApplication.Value, sequence: Int)?
         var completedActions = 0
         var actionTasks: [Task<Void, Never>] = []
         var goToPaneTargets: [UUID] = []
@@ -77,6 +86,7 @@ final class PaneContextNativePopoverWindow {
             let index = reads.count
             reads.append(.init(operation: operation, scope: scope, task: task))
             facts.append(scope: scope, fact: .readStarted(index))
+            facts.append(scope: .readAnnouncement(index), fact: .readStarted(index))
             if cancelReadsOnStart { task.cancel() }
             readMonitors.append(
                 Task {
@@ -98,6 +108,15 @@ final class PaneContextNativePopoverWindow {
         func observe(_ event: PaneRelativeTimeRefresh.Event) {
             facts.append(scope: .worker, fact: .worker(event))
             switch event {
+            case .applied(let application):
+                appliedApplications[application.operationId] = application
+                if let scope = publicationScope(application.input) {
+                    facts.append(scope: scope, fact: .worker(event))
+                }
+            case .applicationRetired(let application):
+                if let scope = publicationScope(application.input) {
+                    facts.append(scope: scope, fact: .worker(event))
+                }
             case .operation(let input, let result, let id):
                 if result != .unchanged { operations.append(.init(input: input, id: id)) }
                 if let scope = publicationScope(input) { facts.append(scope: scope, fact: .worker(event)) }
@@ -105,7 +124,7 @@ final class PaneContextNativePopoverWindow {
                 guard let index = operations.lastIndex(where: { $0.id == id }), let scope = publicationScope(input)
                 else { return }
                 facts.append(scope: scope, fact: .projectionEnded(operation: index, outcome))
-            case .entered, .hidden: break
+            case .entered, .hidden, .unchangedEvaluation: break
             }
         }
 
@@ -119,6 +138,17 @@ final class PaneContextNativePopoverWindow {
             facts.append(scope: scope, fact: .presentationReady(input))
         }
 
+        func observeNote(_ event: PaneContextNoteApplication) {
+            switch event {
+            case .applied(let value):
+                noteSequence += 1
+                appliedNote = (value, noteSequence)
+            case .retired(let value):
+                if appliedNote?.value == value { appliedNote = nil }
+            }
+            facts.append(scope: .notePublication, fact: .note(event))
+        }
+
         private func publicationScope(_ input: PaneManagementIdentityCapture.VisibleInput) -> NativePopoverScope? {
             switch input {
             case .card: .publication
@@ -130,11 +160,13 @@ final class PaneContextNativePopoverWindow {
     let clock: NativeCardTestClock
     let window: NSWindow
     let scrolling: PaneContextNativeScrollRecorder
-    private let sink: Sink
+    let sink: Sink
     private let isCard: Bool
     private let messageEntryKind: KindChipModel.Kind
     private let messageEntryIdentifier: String?
     private var isPresentingMessages = false
+    private var noteSequenceBeforePress = 0
+    private var windowRetirementObserver: NSObjectProtocol?
     private var verifiedReads: [NativePopoverScope: Int] = [:]
     private let currentReadKey: @MainActor () -> PaneContextRefreshKey
     var controller: PaneContextPopoverController? {
@@ -172,7 +204,10 @@ final class PaneContextNativePopoverWindow {
                     context: card.context,
                     octiconLoader: makeTestOcticonLoader(), store: card.store, clock: clock, wallNow: wallNow,
                     onRelativeTimeEvent: onRelativeTimeEvent,
-                    onRelativeTimeReady: { input, id in sink.published(input, id: id) },
+                    onRelativeTimeReady: { input, id in
+                        clock.observePreparation(input, id: id)
+                        sink.published(input, id: id)
+                    },
                     onGoToPane: { sink.goToPaneTargets.append($0) },
                     onReadCompleted: { read, value in
                         if read.location == .card {
@@ -187,6 +222,7 @@ final class PaneContextNativePopoverWindow {
                         onReadStarted(read)
                     },
                     onScrollEvent: { scrolling.observe($0) },
+                    onNoteApplication: { sink.observeNote($0) },
                     onActionCompleted: {
                         sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
                         sink.completedActions += 1
@@ -209,6 +245,7 @@ final class PaneContextNativePopoverWindow {
                         onReadStarted(read)
                     },
                     onScrollEvent: { scrolling.observe($0) },
+                    onNoteApplication: { sink.observeNote($0) },
                     onActionCompleted: {
                         sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
                         sink.completedActions += 1
@@ -220,7 +257,10 @@ final class PaneContextNativePopoverWindow {
                         return wallNow.addingTimeInterval(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
                     },
                     onRelativeTimeEvent: onRelativeTimeEvent,
-                    onRelativeTimeReady: { input, id in sink.published(input, id: id) }))
+                    onRelativeTimeReady: { input, id in
+                        clock.observePreparation(input, id: id)
+                        sink.published(input, id: id)
+                    }))
         }
         let content = viewportWidth.map { AnyView(root.frame(width: $0)) } ?? root
         let host = NSHostingView(rootView: content)
@@ -243,6 +283,19 @@ final class PaneContextNativePopoverWindow {
         currentReadKey = { readers.refreshKey(for: paneId) }
         window.makeKeyAndOrderFront(nil)
         layout()
+        observeWindowRetirement()
+    }
+
+    private func observeWindowRetirement() {
+        windowRetirementObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.retireView(closeWindow: false) }
+        }
+    }
+
+    isolated deinit {
+        if let windowRetirementObserver { NotificationCenter.default.removeObserver(windowRetirementObserver) }
     }
 
     func actionCompleted(_ number: Int = 0) async throws {
@@ -348,6 +401,22 @@ final class PaneContextNativePopoverWindow {
             }(), "Expected an observed card publication")
     }
 
+    func renderedNote(_ text: String) async throws {
+        while true {
+            layout()
+            if let applied = sink.appliedNote, applied.sequence > noteSequenceBeforePress, applied.value.text == text {
+                return
+            }
+            let fact = try await facts.expectNext(
+                in: .notePublication, where: { _ in true }, "native note application or retirement: \(text)")
+            switch fact {
+            case .note(.applied): continue
+            case .note(.retired(let value)) where value.text != text: continue
+            default: throw NativePopoverRenderFailure.unexpectedOutcome(fact)
+            }
+        }
+    }
+
     private func waitForPublication(
         in scope: NativePopoverScope, currentOperation: @MainActor () throws -> Int
     ) async throws -> Sink.ProjectionOperation {
@@ -364,11 +433,16 @@ final class PaneContextNativePopoverWindow {
             layout()
             let index = try currentOperation()
             let operation = sink.operations[index]
-            if sink.publishedOperations.contains(operation.id) { return operation }
+            let controller = scope == .publication ? sink.cardController : sink.controller
+            let feedback = controller?.unavailableNote ?? controller?.actionFeedback
+            if let application = sink.appliedApplications[operation.id], application.feedback == feedback {
+                return operation
+            }
             let fact = try await facts.expectNext(
                 in: scope, where: { _ in true }, "current worker publication, terminal outcome or view retirement")
             switch fact {
-            case .presentationReady, .worker(.operation): continue
+            case .presentationReady, .worker(.operation), .worker(.applied): continue
+            case .worker(.applicationRetired(let application)) where application.operationId != operation.id: continue
             case .projectionEnded(let ended, _) where ended < index: continue
             case .projectionEnded(let ended, _) where ended > index:
                 // The expected snapshot can be superseded while its publication wait is suspended.
@@ -381,6 +455,7 @@ final class PaneContextNativePopoverWindow {
     }
 
     func press(_ identifier: String) throws {
+        noteSequenceBeforePress = sink.noteSequence
         let button = try #require(
             find(identifier) as? any NSAccessibilityProtocol, "Missing native control: \(identifier)")
         if ["pane-context.card-messages", "pane-context.card-more", "pane-context.answer-in-messages"].contains(
@@ -389,52 +464,6 @@ final class PaneContextNativePopoverWindow {
             isPresentingMessages = true
         }
         try #require(button.accessibilityPerformPress(), "Native press refused: \(identifier)")
-    }
-
-    var editableFields: [NSTextField] { roots.flatMap { descendants(NSTextField.self, in: $0) }.filter(\.isEditable) }
-    var nativeButtons: [NSButton] { roots.flatMap { descendants(NSButton.self, in: $0) } }
-
-    func typeText(placeholder: String, value: String) throws {
-        let matches = editableFields.filter { $0.placeholderString == placeholder }
-        try #require(
-            matches.count == 1,
-            "Expected one native field with placeholder \(placeholder); fields=\(editableFields.map { $0.placeholderString ?? "<nil>" })"
-        )
-        let field = matches[0]
-        try #require(field.window?.makeFirstResponder(field) == true)
-        let editor = try #require(field.currentEditor() as? NSTextView)
-        editor.selectAll(nil)
-        editor.insertText(value, replacementRange: NSRange(location: NSNotFound, length: 0))
-        field.window?.makeFirstResponder(nil)
-        #expect(field.stringValue == value)
-        layout()
-    }
-
-    private func descendants<Child: NSView>(_ type: Child.Type, in root: NSView) -> [Child] {
-        if let child = root as? Child { return [child] }
-        return root.subviews.flatMap { descendants(type, in: $0) }
-    }
-
-    func find(_ identifier: String) -> AnyObject? {
-        var visited = Set<ObjectIdentifier>()
-        for root in roots {
-            if let element = find(root, matching: { $0.accessibilityIdentifier() == identifier }, visited: &visited) {
-                return element
-            }
-        }
-        return nil
-    }
-
-    var popoverWindow: NSWindow? {
-        NSApp.windows.first { $0 != window && $0.isVisible && $0.contentView != nil }
-    }
-    var roots: [NSView] { NSApp.windows.filter(\.isVisible).compactMap(\.contentView) }
-
-    func labels() -> [String] {
-        var visited = Set<ObjectIdentifier>()
-        var result: [String] = []
-        for root in roots { collectLabels(root, visited: &visited, result: &result) }
-        return result
     }
 
     func layout() {
@@ -447,6 +476,8 @@ final class PaneContextNativePopoverWindow {
 
     func close() async throws {
         retireView()
+        if let windowRetirementObserver { NotificationCenter.default.removeObserver(windowRetirementObserver) }
+        windowRetirementObserver = nil
         sink.controller?.close()
         sink.cardController?.close()
         for read in sink.reads {
@@ -468,54 +499,30 @@ final class PaneContextNativePopoverWindow {
     func cancelReads() { for read in sink.reads { read.task.cancel() } }
 
     func retireView() {
+        retireView(closeWindow: true)
+    }
+
+    private func retireView(closeWindow: Bool) {
         guard !sink.retired else { return }
         sink.retired = true
         scrolling.retire()
+        for scope in sink.pendingReadWaitScopes { facts.append(scope: scope, fact: .viewRetired) }
         let scopes = Set(sink.reads.map(\.scope)).union([
             .cardReadSources(currentReadKey().sources), .readSources(currentReadKey().sources),
         ])
         for scope in scopes { facts.append(scope: scope, fact: .viewRetired) }
         facts.append(scope: .publication, fact: .viewRetired)
         facts.append(scope: .popoverPublication, fact: .viewRetired)
+        facts.append(scope: .notePublication, fact: .viewRetired)
         facts.append(scope: .projectionWait, fact: .viewRetired)
         for index in sink.reads.indices where !sink.endedReads.contains(index) {
             facts.append(scope: .readOperation(index), fact: .viewRetired)
         }
         cancelReads()
         window.contentView = nil
-        window.close()
+        if closeWindow { window.close() }
     }
 
-    private func find(
-        _ element: AnyObject, matching predicate: (any NSAccessibilityProtocol) -> Bool,
-        visited: inout Set<ObjectIdentifier>
-    ) -> AnyObject? {
-        guard visited.insert(ObjectIdentifier(element)).inserted else { return nil }
-        if let accessible = element as? any NSAccessibilityProtocol {
-            if predicate(accessible) { return element }
-            for child in accessible.accessibilityChildren() ?? [] {
-                if let found = find(child as AnyObject, matching: predicate, visited: &visited) { return found }
-            }
-        }
-        for child in (element as? NSView)?.subviews ?? [] {
-            if let found = find(child, matching: predicate, visited: &visited) { return found }
-        }
-        return nil
-    }
-
-    private func collectLabels(_ element: AnyObject, visited: inout Set<ObjectIdentifier>, result: inout [String]) {
-        guard visited.insert(ObjectIdentifier(element)).inserted else { return }
-        if let accessible = element as? any NSAccessibilityProtocol {
-            if let label = accessible.accessibilityLabel(), !label.isEmpty { result.append(label) }
-            if let value = accessible.accessibilityValue() as? String, !value.isEmpty { result.append(value) }
-            for child in accessible.accessibilityChildren() ?? [] {
-                collectLabels(child as AnyObject, visited: &visited, result: &result)
-            }
-        }
-        for child in (element as? NSView)?.subviews ?? [] {
-            collectLabels(child, visited: &visited, result: &result)
-        }
-    }
 }
 
 private enum NativePopoverRenderFailure: Error { case unexpectedOutcome(NativePopoverFact) }

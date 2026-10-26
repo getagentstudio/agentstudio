@@ -18,14 +18,26 @@ struct PaneContextPopoverControllerTests {
             PaneContextPopoverShapingTests.detail(paneId: second),
             results: [.detail(PaneContextPopoverShapingTests.detail(paneId: first))], heldReads: [0])
         let controller = makePopoverController(ports: ports)
-        let oldOpen = Task { await controller.open(first) }
-        try await ports.reads.expectNext(in: 0, .started(.init(paneId: first, page: .first)))
-        await controller.open(second)
-        await ports.release(0)
-        await oldOpen.value
-        #expect(controller.state?.paneId == second)
-        controller.close()
-        try await ports.finish()
+        let oldOpen = Task {
+            await controller.open(first)
+            await ports.detailProducerEnded(beforeRead: 0)
+        }
+        do {
+            try await ports.reads.expectNext(in: 0, .started(.init(paneId: first, page: .first)))
+            await controller.open(second)
+            await ports.release(0)
+            await oldOpen.value
+            #expect(controller.state?.paneId == second)
+            controller.close()
+            try await ports.finish()
+        } catch {
+            controller.close()
+            await ports.release(0)
+            oldOpen.cancel()
+            await oldOpen.value
+            try? await ports.finish()
+            throw error
+        }
     }
 
     @Test

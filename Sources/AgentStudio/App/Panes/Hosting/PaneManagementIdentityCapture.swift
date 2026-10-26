@@ -122,6 +122,7 @@ enum PaneManagementIdentityCapture {
     @concurrent nonisolated static func watch<C: Clock>(
         _ input: VisibleInput, clock: C,
         wallNow suppliedWallDate: Date? = nil,
+        onUnchanged: (@MainActor @Sendable (VisiblePresentation) -> Void)? = nil,
         publish: @MainActor @Sendable (VisiblePresentation) -> Void
     ) async where C.Duration == Duration {
         let clockReference = clock.now
@@ -138,6 +139,8 @@ enum PaneManagementIdentityCapture {
                 guard !Task.isCancelled else { return }
                 await publish(projected.value)
                 previous = projected.value
+            } else if let onUnchanged {
+                await onUnchanged(projected.value)
             }
             guard let nextDate = projected.nextChange else { return }
             let deadline = clockReference.advanced(
@@ -205,6 +208,23 @@ enum PaneManagementIdentityCapture {
 @MainActor
 @Observable
 final class PaneRelativeTimeRefresh {
+    struct Application: Equatable, Sendable {
+        let input: PaneManagementIdentityCapture.VisibleInput
+        let value: PaneManagementIdentityCapture.VisiblePresentation
+        let operationId: UUID
+        let feedback: String?
+
+        init(
+            input: PaneManagementIdentityCapture.VisibleInput,
+            value: PaneManagementIdentityCapture.VisiblePresentation,
+            operationId: UUID, feedback: String? = nil
+        ) {
+            self.input = input
+            self.value = value
+            self.operationId = operationId
+            self.feedback = feedback
+        }
+    }
     typealias PresentationReadyObserver =
         @MainActor @Sendable (PaneManagementIdentityCapture.VisibleInput, UUID) -> Void
     enum StartResult: Equatable, Sendable {
@@ -225,6 +245,9 @@ final class PaneRelativeTimeRefresh {
         case hidden(HideResult)
         case entered(PaneManagementIdentityCapture.VisibleInput, id: UUID)
         case ended(PaneManagementIdentityCapture.VisibleInput, WorkerOutcome, id: UUID)
+        case applied(Application)
+        case applicationRetired(Application)
+        case unchangedEvaluation(Application)
     }
 
     private struct Worker: Sendable {
@@ -250,6 +273,7 @@ final class PaneRelativeTimeRefresh {
         return nil
     }
     @ObservationIgnored private var worker: Worker?
+    private var latestApplication: Application?
     @ObservationIgnored private let onEvent: @MainActor @Sendable (Event) -> Void
     @ObservationIgnored private let onPresentationReady: PresentationReadyObserver
 
@@ -262,6 +286,26 @@ final class PaneRelativeTimeRefresh {
     }
 
     isolated deinit { worker?.task.cancel() }
+
+    func application(for value: PaneManagementIdentityCapture.VisiblePresentation, feedback: String? = nil)
+        -> Application?
+    {
+        guard let latestApplication, latestApplication.value == value else { return nil }
+        return .init(
+            input: latestApplication.input, value: value, operationId: latestApplication.operationId, feedback: feedback
+        )
+    }
+
+    func didApply(_ application: Application) {
+        guard latestApplication?.operationId == application.operationId, value == application.value else { return }
+        onEvent(.applied(application))
+    }
+
+    func didRetire(_ application: Application) {
+        guard latestApplication?.operationId == application.operationId, value == application.value else { return }
+        latestApplication = nil
+        onEvent(.applicationRetired(application))
+    }
 
     @discardableResult
     func startOrReplace<C: Clock>(
@@ -294,12 +338,18 @@ final class PaneRelativeTimeRefresh {
                 onEvent(.ended(input, Task.isCancelled ? .cancelled : .completed, id: id))
             }
             await PaneManagementIdentityCapture.watch(
-                input, clock: clock, wallNow: wallNow
-            ) { [weak self] prepared in
-                guard let self, !Task.isCancelled, self.worker?.id == id else { return }
-                if self.value != prepared { self.value = prepared }
-                self.onPresentationReady(input, id)
-            }
+                input, clock: clock, wallNow: wallNow,
+                onUnchanged: { [weak self] prepared in
+                    guard let self, !Task.isCancelled, self.worker?.id == id else { return }
+                    self.onEvent(.unchangedEvaluation(.init(input: input, value: prepared, operationId: id)))
+                },
+                publish: { [weak self] prepared in
+                    guard let self, !Task.isCancelled, self.worker?.id == id else { return }
+                    if let previous = self.latestApplication { self.onEvent(.applicationRetired(previous)) }
+                    self.latestApplication = .init(input: input, value: prepared, operationId: id)
+                    if self.value != prepared { self.value = prepared }
+                    self.onPresentationReady(input, id)
+                })
         }
         worker = Worker(input: input, id: id, task: task)
         onEvent(.operation(input, result, id: id))
@@ -308,6 +358,7 @@ final class PaneRelativeTimeRefresh {
 
     @discardableResult
     func hide() -> HideResult {
+        if let previous = latestApplication { didRetire(previous) }
         value = nil
         guard let previous = worker else {
             onEvent(.hidden(.notRunning))

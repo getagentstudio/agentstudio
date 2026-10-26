@@ -25,6 +25,7 @@ struct PaneManagementIdentityHostTests {
             try await clock.entered(pane: pane, input: initialInput)
             let firstDeadline = initialInput.advanced(by: .seconds(60))
             try await clock.registered(firstDeadline, pane: pane, currentInput: initialInput)
+            try await clock.applied(pane: pane, input: initialInput)
             try fixture.expectRendered(text: "Now")
             let hostIdentity = ObjectIdentifier(fixture.host)
 
@@ -32,6 +33,7 @@ struct PaneManagementIdentityHostTests {
 
             let secondDeadline = firstDeadline.advanced(by: .seconds(60))
             try await clock.registered(secondDeadline, pane: pane, currentInput: initialInput)
+            try await clock.applied(pane: pane, input: initialInput)
             #expect(ObjectIdentifier(fixture.host) == hostIdentity)
             try fixture.expectRendered(text: "1 min ago")
 
@@ -44,6 +46,7 @@ struct PaneManagementIdentityHostTests {
             try await clock.replacedWorkers(pane: pane, oldInput: initialInput, newInput: replacementInput)
             try await clock.registered(
                 secondDeadline, pane: pane, currentInput: replacementInput, retiredInput: initialInput)
+            try await clock.applied(pane: pane, input: replacementInput)
             #expect(clock.pendingSleepCount == 1)
             try fixture.expectRendered(text: "Now")
 
@@ -53,6 +56,7 @@ struct PaneManagementIdentityHostTests {
             let thirdDeadline = secondDeadline.advanced(by: .seconds(60))
             try await clock.registered(
                 thirdDeadline, pane: pane, currentInput: replacementInput)
+            try await clock.applied(pane: pane, input: replacementInput)
             #expect(ObjectIdentifier(fixture.host) == hostIdentity)
             try fixture.expectRendered(text: "1 min ago")
 
@@ -97,7 +101,8 @@ private struct NativeCardRoot: View {
             if visibility.isVisible {
                 ManagementPaneIdentityOverlay(
                     context: context, octiconLoader: loader, store: store, clock: clock, wallNow: visibility.wallDate,
-                    onRelativeTimeEvent: { clock.observeOwner($0) })
+                    onRelativeTimeEvent: { clock.observeOwner($0) },
+                    onRelativeTimeReady: { clock.observePreparation($0, id: $1) })
             }
         }
         .frame(width: 1000, height: 320, alignment: .topLeading)

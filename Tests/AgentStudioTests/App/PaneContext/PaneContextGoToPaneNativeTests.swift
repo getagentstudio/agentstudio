@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioRepoExplorer
 import AgentStudioSessions
 import AgentStudioSharedComponents
+import AgentStudioTestHarness
 import AgentStudioTestSupport
 import AppKit
 import Foundation
@@ -13,6 +14,46 @@ import Testing
 @MainActor
 @Suite("Go to pane closes native popovers", .serialized)
 struct PaneContextGoToPaneNativeTests {
+    @Test("The native visibility witness observes a later window hide or fails when its producer ends")
+    func nativeVisibilityObservesLaterHide() async throws {
+        _ = NSApplication.shared
+        let window = NSWindow(
+            contentRect: CGRect(x: 0, y: 0, width: 120, height: 80), styleMask: [.titled],
+            backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.makeKeyAndOrderFront(nil)
+        defer { window.close() }
+        try #require(window.isVisible)
+        let visibility = PaneContextNativeWindowVisibility(window)
+        let release = HeldStep<Void>("native window orderOut")
+        let producer = Task {
+            defer {
+                release.retire()
+                visibility.producerEnded()
+            }
+            try await release.arrive(())
+            window.orderOut(nil)
+        }
+        let waiter = Task { try await visibility.hidden() }
+        do {
+            _ = try await release.firstArrival()
+            try await visibility.facts.expectNext(in: 1, .waiting)
+            release.release()
+            try await producer.value
+            try await waiter.value
+            #expect(!window.isVisible)
+            try await visibility.finish()
+        } catch {
+            release.retire()
+            producer.cancel()
+            waiter.cancel()
+            try? await producer.value
+            try? await waiter.value
+            try? await visibility.finish()
+            throw error
+        }
+    }
+
     enum Surface: Sendable, CaseIterable {
         case messages, agentLine, cardMessages
     }
@@ -67,12 +108,15 @@ struct PaneContextGoToPaneNativeTests {
                 let popover = try #require(mounted.popoverWindow)
                 #expect(popover.isVisible)
                 #expect(mounted.goToPaneTargets.isEmpty)
+                let visibility = PaneContextNativeWindowVisibility(popover)
                 try mounted.press("pane-context.go-to-pane")
+                try await visibility.hidden()
                 mounted.layout()
                 #expect(mounted.goToPaneTargets == [pane.id])
                 #expect(!popover.isVisible, "Go to pane must dismiss the actual popover window")
                 #expect(mounted.find("pane-context.go-to-pane") == nil)
                 #expect(mounted.controller?.paneId == nil)
+                try await visibility.finish()
                 try await mounted.close()
                 try await ports.finish()
             } catch {

@@ -23,37 +23,66 @@ struct PaneContextSidebarRenderingTests {
             let opens = FactRecorder<Int, SidebarOpenFact>(
                 vocabulary: .init(
                     describeScope: { "sidebar press \($0)" }, describeFact: { String(describing: $0) },
-                    isClosing: { _, _ in true }))
+                    isClosing: { _, fact in
+                        switch fact {
+                        case .opened, .producerEnded, .viewRetired: true
+                        }
+                    }))
             var press = 0
+            var closedReadScopes: Set<Int> = []
+            let recordReadEnd: @MainActor (Int, SidebarOpenFact) -> Void = { scope, fact in
+                guard closedReadScopes.insert(scope).inserted else { return }
+                opens.append(scope: scope, fact: fact)
+            }
             var controllers: [PaneContextPopoverController] = []
+            var readTasks: [Task<Void, Never>] = []
+            var readMonitors: [Task<Void, Never>] = []
             let fixture = try await RepoExplorerMessageDeadlineHostFixture.make(
                 atoms: atoms, statuses: statuses, associated: associated,
+                onReadTaskStarted: { _, task in
+                    let opening = press
+                    readTasks.append(task)
+                    readMonitors.append(
+                        Task {
+                            await task.value
+                            recordReadEnd(opening, .producerEnded(cancelled: task.isCancelled))
+                        })
+                },
                 onOpen: { _, controller in
                     if let controller { controllers.append(controller) }
-                    opens.append(
-                        scope: press,
-                        fact: .opened(
+                    recordReadEnd(
+                        press,
+                        .opened(
                             pane: controller?.paneId?.uuid,
                             bodies: Set(controller?.state?.messages.messageRows.map(\.body) ?? []),
                             line: controller?.state?.agentLine?.summary))
                     press += 1
                 })
+            var nativeWindow: NSWindow?
             do {
                 let pane = fixture.composition.ownerId
                 statuses.apply([pane: .set(.init(status: .working(.active), evidence: .verifiedLive))])
                 try await sendFourNotices(fixture)
                 let row = try await capturedRow(fixture)
                 let mounted = mount(row, controls: fixture.paneContextControl, width: 260)
+                nativeWindow = mounted.window
                 defer { mounted.window.close() }
-                let identity = ObjectIdentifier(mounted.cell.hostingView)
+                let entryIdentifiers =
+                    ["failure", "needsYou", "done", "info"].map { "pane-context.messages." + $0 }
+                    + ["pane-context.agent-line"]
+                let retirement = NotificationCenter.default.addObserver(
+                    forName: NSWindow.willCloseNotification, object: mounted.window, queue: .main
+                ) { _ in
+                    MainActor.assumeIsolated {
+                        for scope in entryIdentifiers.indices { recordReadEnd(scope, .viewRetired) }
+                    }
+                }
+                defer { NotificationCenter.default.removeObserver(retirement) }
                 try assertOrderedPaint(in: mounted.cell.hostingView, associated: associated)
                 try assertChipPalette(row, in: mounted.cell.hostingView)
-                for (index, identifier)
-                    in (["failure", "needsYou", "done", "info"].map({ "pane-context.messages." + $0 })
-                    + ["pane-context.agent-line"]).enumerated()
-                {
+                for (index, identifier) in entryIdentifiers.enumerated() {
                     let button = try #require(pressBridge(in: mounted.cell.hostingView, identifier: identifier))
-                    #expect(button.accessibilityPerformPress())
+                    try #require(button.accessibilityPerformPress(), "The sidebar entry refused its press")
                     try await opens.expectNext(
                         in: index,
                         .opened(
@@ -61,28 +90,46 @@ struct PaneContextSidebarRenderingTests {
                             line: "Quiet stored message"))
                     controllers.last?.close()
                 }
-                fixture.store.paneAtom.updatePaneTitle(fixture.paneID, title: "✳ Changed title")
-                let changed = try await capturedRow(fixture)
-                mounted.cell.bind(row: changed, visibleGeneration: 2)
-                mounted.cell.hostingView.layoutSubtreeIfNeeded()
-                let title = try #require(label(in: mounted.cell.hostingView, identifier: "paneContext.title"))
-                #expect(title.accessibilityLabel() == "Changed title")
-                #expect(ObjectIdentifier(mounted.cell.hostingView) == identity)
-                try expectText(
-                    "Changed title", font: .system(size: 13, weight: .semibold), in: mounted.cell.hostingView)
+                try await assertTitleRebind(fixture, cell: mounted.cell)
                 try await assertAbsentLines(fixture, statuses: statuses, fullHeight: mounted.cell.bounds.height)
+                mounted.window.contentView = nil
+                mounted.window.close()
                 for controller in controllers { controller.close() }
+                for task in readTasks { await task.value }
+                for monitor in readMonitors { await monitor.value }
                 try await fixture.closeProducers()
                 try await fixture.finishFacts()
                 try await opens.finish()
             } catch {
+                nativeWindow?.contentView = nil
+                nativeWindow?.close()
                 for controller in controllers { controller.close() }
+                for task in readTasks { task.cancel() }
+                for task in readTasks { await task.value }
+                for monitor in readMonitors { await monitor.value }
                 try? await fixture.closeProducers()
                 try? await fixture.finishFacts()
                 try? await opens.finish()
                 throw error
             }
         }
+    }
+
+    private func assertTitleRebind(
+        _ fixture: RepoExplorerMessageDeadlineHostFixture, cell: RepoExplorerTableRowCell
+    ) async throws {
+        let identity = ObjectIdentifier(cell.hostingView)
+        fixture.store.paneAtom.updatePaneTitle(fixture.paneID, title: "✳ Changed title")
+        let changed = try await capturedRow(fixture)
+        cell.bind(row: changed, visibleGeneration: 2)
+        #expect(ObjectIdentifier(cell.hostingView) == identity)
+        let binding = try #require(cell.hostingView.rootView.slot.binding)
+        #expect(binding.row == changed)
+        let prepared = mount(binding.row, controls: fixture.paneContextControl, width: 260)
+        defer { prepared.window.close() }
+        let title = try #require(label(in: prepared.cell.hostingView, identifier: "paneContext.title"))
+        #expect(title.accessibilityLabel() == "Changed title")
+        try expectText("Changed title", font: .system(size: 13, weight: .semibold), in: prepared.cell.hostingView)
     }
 
     private func sendFourNotices(_ fixture: RepoExplorerMessageDeadlineHostFixture) async throws {
@@ -252,5 +299,7 @@ struct PaneContextSidebarRenderingTests {
 
 private enum SidebarOpenFact: Equatable, Sendable {
     case opened(pane: UUID?, bodies: Set<String>, line: String?)
+    case producerEnded(cancelled: Bool)
+    case viewRetired
 }
 private enum SidebarRenderingFailure: Error { case lineEpochUnavailable }

@@ -4,6 +4,18 @@ import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import SwiftUI
 
+enum PaneContextNoteApplication: Equatable, Sendable {
+    struct Value: Equatable, Sendable {
+        let paneId: PaneId
+        let location: PaneContextPopoverLocation
+        let openRequest: UInt64
+        let text: String
+    }
+    case applied(Value)
+    case retired(Value)
+}
+typealias PaneContextNoteApplicationObserver = @MainActor (PaneContextNoteApplication) -> Void
+
 /// Local presentation state; providers resolve effects only when the person opens or acts.
 struct PaneContextPopoverHost<AgeClock: Clock>: View
 where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant {
@@ -17,6 +29,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let onReadCompleted: PaneContextReadCompletionObserver
     let onReadTaskStarted: PaneContextReadTaskObserver
     let onScrollEvent: PaneContextPopoverScrollObserver
+    let onNoteApplication: PaneContextNoteApplicationObserver
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let clock: AgeClock
@@ -36,6 +49,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         },
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
+        onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
@@ -52,6 +66,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.onReadCompleted = onReadCompleted
         self.onReadTaskStarted = onReadTaskStarted
         self.onScrollEvent = onScrollEvent
+        self.onNoteApplication = onNoteApplication
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.clock = clock
@@ -157,6 +172,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                             })
                     }
                 }
+                .background { applicationReceipt(for: .popover(visible)) }
             case .agentLine:
                 if let line = visible.agentLine {
                     AgentLinePopover(
@@ -164,6 +180,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                     ) {
                         goToPaneAndDismissPopover(paneId.uuid)
                     }
+                    .background { applicationReceipt(for: .popover(visible)) }
                 }
             }
         } else if let note = controller?.unavailableNote {
@@ -175,6 +192,17 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     private func requestOpen() {
         isPresented = true
         openRequest &+= 1
+    }
+    @ViewBuilder private func applicationReceipt(for value: PaneManagementIdentityCapture.VisiblePresentation)
+        -> some View
+    {
+        if let application = relativeTimeRefresh.application(
+            for: value, feedback: controller?.unavailableNote ?? controller?.actionFeedback)
+        {
+            NativePresentationApplication(
+                value: application, onApplied: relativeTimeRefresh.didApply,
+                onRetired: relativeTimeRefresh.didRetire)
+        }
     }
     private func goToPaneAndDismissPopover(_ targetPaneId: UUID) {
         onGoToPane(targetPaneId)
@@ -221,10 +249,18 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         relativeTimeRefresh.startOrReplace(.popover(shape, content), clock: clock, wallNow: wallNow())
     }
     private func note(_ text: String) -> some View {
-        PopoverPanel { PaneContextPopoverNote(text) }
+        let application = PaneContextNoteApplication.Value(
+            paneId: paneId, location: location, openRequest: openRequest, text: text)
+        return PopoverPanel { PaneContextPopoverNote(text) }
             .frame(width: AppStyles.Components.PaneContext.popoverWidth)
             .background {
                 AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group)
+            }
+            .background {
+                NativePresentationApplication(
+                    value: application,
+                    onApplied: { onNoteApplication(.applied($0)) },
+                    onRetired: { onNoteApplication(.retired($0)) })
             }
     }
 }
@@ -236,13 +272,15 @@ extension PaneContextPopoverHost where AgeClock == ContinuousClock {
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
+        onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) {
         self.init(
             paneId: paneId, presentation: presentation, location: location, readers: readers,
             octiconLoader: octiconLoader, onGoToPane: onGoToPane, includingDrawers: includingDrawers,
-            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+            onReadCompleted: onReadCompleted, onNoteApplication: onNoteApplication,
+            onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock())
     }
 }

@@ -12,6 +12,7 @@ struct PaneContextCardRequestBlock: View {
     let onReadCompleted: PaneContextReadCompletionObserver
     var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
+    var onNoteApplication: PaneContextNoteApplicationObserver = { _ in }
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
@@ -64,6 +65,7 @@ struct PaneContextCardRequestBlock: View {
                             onGoToPane: actions.goToPane,
                             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
                             onScrollEvent: onScrollEvent,
+                            onNoteApplication: onNoteApplication,
                             onActionCompleted: onActionCompleted,
                             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
                             onRelativeTimeEvent: onRelativeTimeEvent, onRelativeTimeReady: onRelativeTimeReady)

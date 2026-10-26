@@ -101,8 +101,8 @@ private final class PaneSurfaceCaptureFixture {
             describeScope: { $0.uuidString }, describeFact: { String(describing: $0) },
             isClosing: { _, event in
                 switch event {
-                case .ended, .hidden: true
-                case .operation, .entered: false
+                case .ended(_, .cancelled, _), .hidden, .applicationRetired: true
+                case .operation, .entered, .ended(_, .completed, _), .applied, .unchangedEvaluation: false
                 }
             }))
     let editorChooser = EditorChooserState()
@@ -179,7 +179,21 @@ private final class PaneSurfaceCaptureFixture {
                 try #require(input.activityTime == nil && input.agentLine == nil, "Fixture must have no deadline")
                 try await relativeTimeFacts.expectNext(in: paneId, .operation(input, .started, id: operation.id))
                 try await relativeTimeFacts.expectNext(in: paneId, .entered(input, id: operation.id))
-                try await relativeTimeFacts.expectNext(in: paneId, .ended(input, .completed, id: operation.id))
+                var completed = false
+                var applied = false
+                while !completed || !applied {
+                    let event = try await relativeTimeFacts.expectNext(
+                        in: paneId, where: { _ in true }, "native card application and projection completion")
+                    switch event {
+                    case .ended(input, .completed, id: operation.id) where !completed:
+                        completed = true
+                    case .applied(let application)
+                    where application.input == input && application.operationId == operation.id && !applied:
+                        applied = true
+                    default:
+                        throw WindowSurfaceApplicationFailure.unexpectedOutcome(event)
+                    }
+                }
             }
             try await relativeTimeFacts.finish()
         } catch {
@@ -279,4 +293,8 @@ private final class PaneSurfaceCaptureFixture {
         }
         return walk(host)
     }
+}
+
+private enum WindowSurfaceApplicationFailure: Error {
+    case unexpectedOutcome(PaneRelativeTimeRefresh.Event)
 }
