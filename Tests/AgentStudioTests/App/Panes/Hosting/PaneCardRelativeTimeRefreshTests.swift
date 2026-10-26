@@ -35,8 +35,10 @@ struct PaneCardRelativeTimeRefreshTests {
         let clockOpening = await clock.facts.mark(0)
         let ownerOpening = await clock.facts.mark(1)
         do {
-            try #require(refresh.startOrReplace(initial, clock: clock) == .started)
-            try #require(refresh.startOrReplace(initial, clock: clock) == .unchanged)
+            try #require(
+                refresh.startOrReplace(initial, clock: clock, wallNow: initial.activityTime?.wallTime) == .started)
+            try #require(
+                refresh.startOrReplace(initial, clock: clock, wallNow: initial.activityTime?.wallTime) == .unchanged)
             try #require(refresh.startOrReplace(replacement, clock: clock) == .replaced(cancelRequested: true))
             try #require(refresh.hide() == .cancelled(requested: true))
             try await clock.retire()
@@ -72,13 +74,15 @@ struct PaneCardRelativeTimeRefreshTests {
         let initialTime = clock.now
         let initial = input(at: initialTime)
         do {
-            try #require(refresh.startOrReplace(initial, clock: clock) == .started)
+            try #require(
+                refresh.startOrReplace(initial, clock: clock, wallNow: initial.activityTime?.wallTime) == .started)
             #expect(try await clock.nextOperation(pane: initial.paneId, input: initialTime) == .started)
             try await clock.entered(pane: initial.paneId, input: initialTime)
             try await clock.registered(
                 initialTime.advanced(by: .seconds(60)), pane: initial.paneId, currentInput: initialTime)
 
-            try #require(refresh.startOrReplace(initial, clock: clock) == .unchanged)
+            try #require(
+                refresh.startOrReplace(initial, clock: clock, wallNow: initial.activityTime?.wallTime) == .unchanged)
             #expect(try await clock.nextOperation(pane: initial.paneId, input: initialTime) == .unchanged)
             #expect(clock.pendingSleepCount == 1)
 
@@ -87,7 +91,7 @@ struct PaneCardRelativeTimeRefreshTests {
             var changed = initial
             changed.activityTime = .init(orderingInstant: changedTime, wallTime: .now, source: .hook)
 
-            let replacement = refresh.startOrReplace(changed, clock: clock)
+            let replacement = refresh.startOrReplace(changed, clock: clock, wallNow: changed.activityTime?.wallTime)
             // The wrong-key fault returns unchanged here. Do not await a missing new worker.
             try #require(
                 replacement == .replaced(cancelRequested: true), "Replacement must request old worker cancellation")
@@ -151,7 +155,8 @@ struct PaneCardRelativeTimeRefreshTests {
         let reference = clock.now
         let initial = input(at: reference)
         do {
-            try #require(refresh?.startOrReplace(initial, clock: clock) == .started)
+            try #require(
+                refresh?.startOrReplace(initial, clock: clock, wallNow: initial.activityTime?.wallTime) == .started)
             _ = try await clock.nextOperation(pane: initial.paneId, input: reference)
             try await clock.entered(pane: initial.paneId, input: reference)
             try await clock.registered(

@@ -23,7 +23,7 @@ extension PaneManagementIdentityHostTests {
             try #require(try await clock.nextOperation(pane: pane, input: nil) == .started)
             try await clock.entered(pane: pane, input: nil)
             try await clock.registered(start.advanced(by: .seconds(86_400)), pane: pane, currentInput: nil)
-            try fixture.expectRendered(age: "[8 days ago]", chip: "—")
+            try fixture.expectRendered(age: "[8 days ago]", activity: nil)
             let read = await fixture.composition.composition.paneContextService.readDetail(
                 .init(paneId: .init(existingUUID: pane), page: .first))
             guard case .detail(let detail) = read else { throw StoredMessageCardFailure.missingDetail }
@@ -58,19 +58,28 @@ extension PaneManagementIdentityHostTests {
             try #require(try await clock.nextOperation(pane: pane, input: input) == .started)
             try await clock.entered(pane: pane, input: input)
             try await clock.registered(start.advanced(by: .seconds(55)), pane: pane, currentInput: input)
-            try fixture.expectRendered(age: "[2 min ago]", chip: hasActivity ? "Now" : "—")
+            try fixture.expectRendered(age: "[2 min ago]", activity: hasActivity ? "Now" : nil)
             let identity = ObjectIdentifier(fixture.host)
 
             clock.advance(by: .seconds(55))
             try await clock.registered(
                 start.advanced(by: .seconds(hasActivity ? 60 : 115)), pane: pane, currentInput: input)
-            try fixture.expectRendered(age: "[3 min ago]", chip: hasActivity ? "Now" : "—")
+            try fixture.expectRendered(age: "[3 min ago]", activity: hasActivity ? "Now" : nil)
             #expect(ObjectIdentifier(fixture.host) == identity)
             if hasActivity {
                 clock.advance(by: .seconds(5))
                 try await clock.registered(start.advanced(by: .seconds(115)), pane: pane, currentInput: input)
-                try fixture.expectRendered(age: "[3 min ago]", chip: "1m")
+                try fixture.expectRendered(age: "[3 min ago]", activity: "1 min ago")
             }
+            clock.advance(by: .seconds(hasActivity ? 3540 : 3545))
+            try await clock.registered(start.advanced(by: .seconds(7075)), pane: pane, currentInput: input)
+            try fixture.expectRendered(age: "[1 hr ago]", activity: hasActivity ? "1 hr ago" : nil)
+            clock.advance(by: .seconds(82_800))
+            try await clock.registered(start.advanced(by: .seconds(172_675)), pane: pane, currentInput: input)
+            try fixture.expectRendered(age: "[1 day ago]", activity: hasActivity ? "1 day ago" : nil)
+            clock.advance(by: .seconds(86_400))
+            try await clock.registered(start.advanced(by: .seconds(259_075)), pane: pane, currentInput: input)
+            try fixture.expectRendered(age: "[2 days ago]", activity: hasActivity ? "2 days ago" : nil)
             let read = await fixture.composition.composition.paneContextService.readDetail(
                 .init(paneId: .init(existingUUID: pane), page: .first))
             guard case .detail(let detail) = read else {
@@ -237,7 +246,7 @@ private final class StoredMessageCardFixture {
         try await composition.close()
     }
 
-    func expectRendered(age: String, chip: String) throws {
+    func expectRendered(age: String, activity: String?) throws {
         try PaneIdentityCardFixture.expectContained(in: host)
         let rendering = PaneContextToolbarRenderingTests()
         let labels = rendering.accessibilityLabels(in: host)
@@ -253,21 +262,20 @@ private final class StoredMessageCardFixture {
         #expect(
             rendering.containsTextInk(needle, in: try rendering.ink(in: host, minimumBrightness: 60)),
             "The stored message's complete literal age must paint in the actual mounted card")
-        let clockReference = rendering.mountCard(
-            AnyView(
-                SidebarChip(
-                    icon: .system(.clock), octiconLoader: loader, text: chip,
-                    style: chip == "—" ? .neutral : .accent(AppStyles.Shell.Sidebar.chipInfoColor)
-                )
-                .background(Color.white.opacity(AppStyles.General.Fill.muted))
-                .background(AppStyles.Shell.PaneChrome.background)), width: nil)
-        defer { clockReference.window.close() }
-        let chipNeedle = try PaneManagementIdentityTestInk.ink(in: clockReference.host, maximumX: nil)
-        #expect(chipNeedle.points.contains(true))
-        #expect(
-            PaneManagementIdentityTestInk.contains(
-                chipNeedle,
-                in: try PaneManagementIdentityTestInk.ink(in: host, maximumX: nil)),
-            "The activity chip must paint its own literal value independently of the message age")
+        if let activity {
+            #expect(labels.contains("ACTIVE \(activity)"))
+            let activityReference = rendering.mountCard(
+                AnyView(
+                    Text(activity)
+                        .font(.system(size: AppStyles.Shell.Sidebar.branchFontSize)).fixedSize()), width: nil)
+            defer { activityReference.window.close() }
+            let activityNeedle = try rendering.ink(in: activityReference.host, minimumBrightness: 60)
+            #expect(activityNeedle.mask.contains(true))
+            #expect(
+                rendering.containsTextInk(activityNeedle, in: try rendering.ink(in: host, minimumBrightness: 60)),
+                "The ACTIVE metadata age must paint independently of the Agent Line age")
+        } else {
+            #expect(PaneIdentityCardFixture.frames(in: host)["activity"] == nil)
+        }
     }
 }

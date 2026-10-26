@@ -13,8 +13,16 @@ enum PopoverReadFact: Sendable, Equatable {
 enum PopoverReleaseFact: Sendable, Equatable {
     case released
 }
+enum PopoverExactReadFact: Sendable, Equatable {
+    case started(PaneId, AgentMessageId)
+    case finished
+}
 
 actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonActing {
+    let exactReads = FactRecorder<Int, PopoverExactReadFact>(
+        vocabulary: .init(
+            describeScope: { "exact read \($0)" }, describeFact: { String(describing: $0) },
+            isClosing: { _, fact in fact == .finished }))
     let reads = FactRecorder<Int, PopoverReadFact>(
         vocabulary: .init(
             describeScope: { "read \($0)" }, describeFact: { String(describing: $0) },
@@ -27,6 +35,9 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     private var fallback: PaneContextDetail
     private let heldReads: Set<Int>
     private var readNumber = 0
+    private var exactNumber = 0
+    private var exactResults: [MessageReadResult] = []
+    private var heldExactReads: Set<Int> = []
     private(set) var requests: [PaneContextReadRequest] = []
     private(set) var answers: [AnswerAskRequest] = []
     private(set) var dismissals: [(AgentMessageId, PaneId)] = []
@@ -52,6 +63,11 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     func configureMarkRead(_ result: MarkReadResult) { markReadResult = result }
     func configureAction(_ result: MessageActionResult) { actionResult = result }
     func configureDismissAll(_ result: DismissAllNoticesResult) { dismissAllResult = result }
+    func configureExactReads(_ results: [MessageReadResult], held: Set<Int> = []) {
+        exactResults = results
+        heldExactReads = held
+    }
+    func releaseExact(_ number: Int) { releases.append(scope: 1000 + number, fact: .released) }
     func release(_ number: Int) { releases.append(scope: number, fact: .released) }
 
     func readDetail(_ request: PaneContextReadRequest) async -> PaneContextReadResult {
@@ -73,6 +89,24 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         answers.append(request)
         return answerResults.isEmpty ? answerResult : answerResults.removeFirst()
     }
+    func readMessage(source: PaneId, message: AgentMessageId) async -> MessageReadResult {
+        let number = exactNumber
+        exactNumber += 1
+        let rows = fallback.messages + fallback.drawerMessages.flatMap(\.messages)
+        let result: MessageReadResult =
+            exactResults.isEmpty
+            ? rows.first(where: { $0.sourcePaneId == source && $0.id == message }).map { .found($0) } ?? .notFound
+            : exactResults.removeFirst()
+        exactReads.append(scope: number, fact: .started(source, message))
+        if heldExactReads.contains(number) {
+            do { try await releases.expectNext(in: 1000 + number, .released) } catch {
+                exactReads.append(scope: number, fact: .finished)
+                return .unavailable(.databaseUnavailable)
+            }
+        }
+        exactReads.append(scope: number, fact: .finished)
+        return result
+    }
     func dismiss(messageId: AgentMessageId, paneId: PaneId) async -> DismissResult {
         dismissals.append((messageId, paneId))
         return dismissResult
@@ -92,6 +126,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     func finish() async throws {
         try await reads.finish()
         try await releases.finish()
+        try await exactReads.finish()
     }
 }
 

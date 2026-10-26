@@ -73,12 +73,13 @@ struct PaneContextPopoverPromptRefreshTests {
 }
 
 @MainActor
-private final class PromptRefreshHost {
+final class PromptRefreshHost {
     let fixture: CompositionFactoryFixture
     let store: WorkspaceStore
     let status: SessionStatusAtom
     let readers: PaneContextUIReaders
     let window: PaneContextNativePopoverWindow
+    let cardMode: Bool
 
     var prompts: [ProviderPromptRowModel] {
         window.controller?.state.map(PaneContextPopoverShapingTests.prompts) ?? []
@@ -86,16 +87,17 @@ private final class PromptRefreshHost {
 
     private init(
         fixture: CompositionFactoryFixture, store: WorkspaceStore, status: SessionStatusAtom,
-        readers: PaneContextUIReaders, window: PaneContextNativePopoverWindow
+        readers: PaneContextUIReaders, window: PaneContextNativePopoverWindow, cardMode: Bool
     ) {
         self.fixture = fixture
         self.store = store
         self.status = status
         self.readers = readers
         self.window = window
+        self.cardMode = cardMode
     }
 
-    static func make(atoms: CoreAtoms) async throws -> PromptRefreshHost {
+    static func make(atoms: CoreAtoms, cardMode: Bool = false) async throws -> PromptRefreshHost {
         let store = WorkspaceStore(
             catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
             interactionAtom: atoms.workspaceTabLayout)
@@ -122,8 +124,10 @@ private final class PromptRefreshHost {
             await fixture.composition.presentationLane.publishPending()
             let window = PaneContextNativePopoverWindow(
                 paneId: fixture.ownerId, readers: readers,
-                location: .sidebar, wallNow: fixture.now)
-            return .init(fixture: fixture, store: store, status: status, readers: readers, window: window)
+                location: cardMode ? .card : .sidebar, wallNow: fixture.now,
+                card: cardMode ? (.project(paneId: owner.id, store: store), store) : nil)
+            return .init(
+                fixture: fixture, store: store, status: status, readers: readers, window: window, cardMode: cardMode)
         } catch {
             try? await fixture.close()
             throw error
@@ -160,7 +164,7 @@ private final class PromptRefreshHost {
             "The actual host key must observe every scoped prompt-list revision")
         try await window.readCompleted()
         window.layout()
-        try await window.rendered()
+        if cardMode { try await window.renderedCard() } else { try await window.rendered() }
     }
 
     func addMember() async throws -> PaneId {
@@ -189,13 +193,14 @@ private final class PromptRefreshHost {
             ])
         try await window.readCompleted()
         window.layout()
-        try await window.rendered()
+        if cardMode { try await window.renderedCard() } else { try await window.rendered() }
         return addedId
     }
 
     func close() async throws {
         try await window.close()
         try await fixture.close()
+        store.removePane(fixture.ownerId.uuid)
     }
 }
 

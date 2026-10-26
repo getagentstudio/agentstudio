@@ -16,7 +16,7 @@ extension PaneContextPresentationRules {
         return shellName.flatMap { $0.isEmpty ? nil : $0 } ?? "zsh"
     }
 
-    private static func strippingTitleSpinners(_ raw: String) -> String {
+    package static func strippingTitleSpinners(_ raw: String) -> String {
         var title = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         while let character = title.first, let scalar = character.unicodeScalars.first,
             scalar.value == 0x2733 || (0x2800...0x28FF).contains(scalar.value)

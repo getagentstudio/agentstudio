@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioSharedComponents
 import Foundation
 
 enum PaneContextPopoverFeedback {
@@ -12,9 +13,15 @@ enum PaneContextPopoverFeedback {
         case .decodeFailed(let field): "decode failed: \(field)"
         }
     }
-    @concurrent nonisolated static func answer(_ result: AnswerAskResult) async -> String {
+    @concurrent nonisolated static func answer(_ result: AnswerAskResult, location: PaneContextPopoverLocation) async
+        -> String?
+    {
         switch result {
-        case .answered: "Answered"
+        case .answered:
+            switch location {
+            case .card: nil
+            case .sidebar, .pane: "Answered"
+            }
         case .unavailable(let failure): "Answer unavailable: \(storage(failure))"
         case .refused(let refusal): refusalText(refusal)
         }
@@ -39,11 +46,16 @@ enum PaneContextPopoverFeedback {
         }
     }
     @concurrent nonisolated static func dismiss(
-        _ result: DismissResult, messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?
-    ) async -> String {
+        _ result: DismissResult, messageId: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot,
+        location: PaneContextPopoverLocation
+    ) async -> String? {
         switch result {
         case .done:
-            if let message = PaneContextPopoverAnswerParsing.message(messageId, source: source, detail: detail),
+            switch location {
+            case .card: return nil
+            case .sidebar, .pane: break
+            }
+            if let message = PaneContextPopoverAnswerParsing.message(messageId, source: source, snapshot: snapshot),
                 case .ask(_, _, .blocking, _) = message.shape
             {
                 return "Handed back"

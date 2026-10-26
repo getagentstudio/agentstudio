@@ -25,6 +25,12 @@ enum PaneManagementIdentityCapture {
         let agentLine: AgentLineDetail?
         let sessionPresentation: PaneAgentStatusPresentation?
         var activityTime: PaneActivityTime?
+        var contextDisplay: PaneContextDisplay?
+        var scopedPresentations: [PaneContextCardScopePresentation] = []
+        var selectedAsk: PaneContextSelectedAsk?
+        var selectedSourceTitle: String?
+        var cardUnavailable = false
+        var detailMessages: MessagesPopoverModel?
     }
 
     enum VisibleInput: Equatable, Sendable {
@@ -58,14 +64,12 @@ enum PaneManagementIdentityCapture {
 
     enum VisiblePresentation: Equatable, Sendable {
         case pane(Presentation)
+        case card(CardModel)
         case popover(PaneContextPopoverShape)
     }
 
     struct Presentation: Equatable, Sendable {
         let lines: [RepoExplorerPaneRowLine]
-        let recencyText: String
-        let recencyTier: RepoExplorerPaneRecencyTier
-        let isActive: Bool
         var toolbarItem: ToolbarItemModel = .none
     }
 
@@ -75,6 +79,10 @@ enum PaneManagementIdentityCapture {
         let paneId = PaneId(existingUUID: context.paneId)
         let pane = store.paneAtom.pane(context.paneId)
         let display = readers?.contextDisplayForPane(paneId)
+        let scope = readers?.scopeForPane(paneId) ?? [paneId]
+        let scopedPresentations = scope.map {
+            PaneContextCardScopePresentation(source: $0, presentation: readers?.sessionStatusForPane($0))
+        }
         return LineInput(
             paneId: context.paneId,
             terminalTitle: pane?.title ?? "Terminal", cwd: pane?.metadata.facets.cwd,
@@ -85,7 +93,8 @@ enum PaneManagementIdentityCapture {
             isDrawer: readers?.isDrawerPane(paneId) ?? false,
             agentLine: display?.agentLine,
             sessionPresentation: readers?.sessionStatusForPane(paneId),
-            activityTime: atom(\.paneActivityTime).value(for: context.paneId))
+            activityTime: atom(\.paneActivityTime).value(for: context.paneId), contextDisplay: display,
+            scopedPresentations: scopedPresentations)
     }
 
     @concurrent nonisolated static func lines(_ input: LineInput, now: Date) async
@@ -111,27 +120,11 @@ enum PaneManagementIdentityCapture {
     }
 
     @concurrent nonisolated static func watch<C: Clock>(
-        _ input: LineInput, clock: C,
-        referenceInstant suppliedReference: ContinuousClock.Instant? = nil,
-        wallNow suppliedWallDate: Date? = nil, calendar: Calendar = .current,
-        publish: @MainActor @Sendable (Presentation) -> Void
-    ) async where C.Duration == Duration {
-        await watch(
-            .card(input), clock: clock, referenceInstant: suppliedReference,
-            wallNow: suppliedWallDate, calendar: calendar
-        ) { value in
-            if case .pane(let presentation) = value { publish(presentation) }
-        }
-    }
-
-    @concurrent nonisolated static func watch<C: Clock>(
         _ input: VisibleInput, clock: C,
-        referenceInstant suppliedReference: ContinuousClock.Instant? = nil,
-        wallNow suppliedWallDate: Date? = nil, calendar: Calendar = .current,
+        wallNow suppliedWallDate: Date? = nil,
         publish: @MainActor @Sendable (VisiblePresentation) -> Void
     ) async where C.Duration == Duration {
         let clockReference = clock.now
-        let referenceInstant = suppliedReference ?? ContinuousClock.now
         let wallNow = suppliedWallDate ?? Date.now
         var previous: VisiblePresentation?
         while !Task.isCancelled {
@@ -140,9 +133,7 @@ enum PaneManagementIdentityCapture {
             let elapsedSeconds =
                 Double(parts.seconds) + Double(parts.attoseconds) / 1_000_000_000_000_000_000
             let currentWallDate = wallNow.addingTimeInterval(elapsedSeconds)
-            let projected = await visiblePresentation(
-                input, referenceInstant: referenceInstant.advanced(by: elapsed),
-                now: currentWallDate, calendar: calendar)
+            let projected = await visiblePresentation(input, now: currentWallDate)
             if projected.value != previous {
                 guard !Task.isCancelled else { return }
                 await publish(projected.value)
@@ -160,15 +151,12 @@ enum PaneManagementIdentityCapture {
     }
 
     @concurrent nonisolated private static func visiblePresentation(
-        _ input: VisibleInput, referenceInstant: ContinuousClock.Instant, now: Date, calendar: Calendar
+        _ input: VisibleInput, now: Date
     ) async -> (value: VisiblePresentation, nextChange: Date?) {
         if case .popover(let shape, let content) = input {
             let refreshed = await PaneContextPopoverShaping.refresh(shape, content: content, now: now)
             return (.popover(refreshed.shape), refreshed.nextChange)
         }
-        let activity = RepoExplorerPaneActivityProjection.make(
-            time: input.activityTime, referenceInstant: referenceInstant,
-            wallNow: now, calendar: calendar)
         let preparedLines: [RepoExplorerPaneRowLine]
         var toolbarItem: ToolbarItemModel = .none
         var toolbarDeadline: Date?
@@ -185,9 +173,7 @@ enum PaneManagementIdentityCapture {
             }
         case .popover: preconditionFailure("Popover handled before pane projection")
         }
-        let prepared = Presentation(
-            lines: preparedLines, recencyText: activity.clockText,
-            recencyTier: activity.recencyTier, isActive: activity.isActive, toolbarItem: toolbarItem)
+        let prepared = Presentation(lines: preparedLines, toolbarItem: toolbarItem)
         let messageDeadline: Date?
         if case .toolbar = input {
             messageDeadline = toolbarDeadline
@@ -196,7 +182,14 @@ enum PaneManagementIdentityCapture {
                 RepoExplorerPaneContextLine.nextMessageAgeChangeDate($0, now: now)
             }
         }
-        return (.pane(prepared), [activity.nextPresentationChangeDate, messageDeadline].compactMap(\.self).min())
+        if case .card(let card) = input {
+            let model = await CardProjection.project(card, now: now, information: prepared)
+            let activityDeadline = card.activityTime.map {
+                PaneContextPresentationRules.age(referenceDate: $0.wallTime, now: now).nextChange
+            }
+            return (.card(model), [activityDeadline, messageDeadline].compactMap(\.self).min())
+        }
+        return (.pane(prepared), messageDeadline)
     }
 }
 
@@ -232,11 +225,18 @@ final class PaneRelativeTimeRefresh {
 
     private(set) var value: PaneManagementIdentityCapture.VisiblePresentation?
     var presentation: PaneManagementIdentityCapture.Presentation? {
-        if case .pane(let presentation) = value { return presentation }
-        return nil
+        switch value {
+        case .pane(let presentation): presentation
+        case .card(let card): card.information
+        case .popover, nil: nil
+        }
     }
     var popoverShape: PaneContextPopoverShape? {
         if case .popover(let shape) = value { return shape }
+        return nil
+    }
+    var cardModel: CardModel? {
+        if case .card(let card) = value { return card }
         return nil
     }
     @ObservationIgnored private var worker: Worker?
@@ -279,7 +279,7 @@ final class PaneRelativeTimeRefresh {
                 onEvent(.ended(input, Task.isCancelled ? .cancelled : .completed))
             }
             await PaneManagementIdentityCapture.watch(
-                input, clock: clock, referenceInstant: clock.now, wallNow: wallNow
+                input, clock: clock, wallNow: wallNow
             ) { [weak self] prepared in
                 guard let self, !Task.isCancelled, self.worker?.id == id, self.value != prepared else { return }
                 self.value = prepared

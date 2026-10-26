@@ -58,11 +58,18 @@ struct PaneContextScenarioFacts: Sendable {
             importance = .attention
             let form: AskForm
             switch formInput {
-            case .singleChoice, .multipleChoice:
+            case .singleChoice:
                 form = .choice(
                     options: [
                         .init(id: try .init("red"), label: "red"), .init(id: try .init("blue"), label: "blue"),
-                    ], allowsMultiple: formInput == .multipleChoice)
+                    ], allowsMultiple: false)
+            case .multipleChoice:
+                form = .choice(
+                    options: [
+                        .init(id: try .init("swift"), label: "Swift"),
+                        .init(id: try .init("bridgeweb"), label: "BridgeWeb"),
+                        .init(id: try .init("e2e"), label: "E2E"),
+                    ], allowsMultiple: true)
             case .approval: throw ScenarioFactsFailure.approvalBelongsToP6
             }
             let state: AskState =

@@ -6,18 +6,24 @@ enum PaneContextPopoverParsedAnswer: Sendable {
     case failure(AnswerRefusal)
 }
 enum PaneContextPopoverAnswerParsing {
-    nonisolated static func message(_ id: AgentMessageId, source: PaneId, detail: PaneContextDetail?)
+    nonisolated static func message(_ id: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot)
         -> AgentMessageDetail?
     {
-        guard let detail else { return nil }
-        if source == detail.paneId { return detail.messages.first { $0.id == id && $0.sourcePaneId == source } }
-        return detail.drawerMessages.first { $0.sourcePaneId == source }?.messages.first { $0.id == id }
+        switch snapshot {
+        case .selectedAsk(let selected):
+            guard let selected, selected.key == .init(paneId: source, messageId: id) else { return nil }
+            return selected.detail
+        case .messages(let detail):
+            guard let detail else { return nil }
+            if source == detail.paneId { return detail.messages.first { $0.id == id && $0.sourcePaneId == source } }
+            return detail.drawerMessages.first { $0.sourcePaneId == source }?.messages.first { $0.id == id }
+        }
     }
 
     @concurrent nonisolated static func parse(
-        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, draft: AskFormDraft
+        messageId: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot, draft: AskFormDraft
     ) async -> PaneContextPopoverParsedAnswer {
-        guard let message = message(messageId, source: source, detail: detail) else { return .failure(.notFound) }
+        guard let message = message(messageId, source: source, snapshot: snapshot) else { return .failure(.notFound) }
         guard case .ask(_, let form, _, _) = message.shape else { return .failure(.invalidAnswer(.formMismatch)) }
         switch form {
         case .choice:
@@ -55,18 +61,20 @@ enum PaneContextPopoverAnswerParsing {
     }
 
     @concurrent nonisolated static func answerPresentation(
-        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
+        messageId: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot,
+        location: PaneContextPopoverLocation
     ) async -> PaneContextInteractionPresentation {
-        guard let message = message(messageId, source: source, detail: detail),
+        guard let message = message(messageId, source: source, snapshot: snapshot),
             case .ask(_, let form, _, _) = message.shape
         else { return .notApplicable }
         return location.presentation(for: .answer(PaneContextPopoverShaping.form(form)))
     }
 
     @concurrent nonisolated static func canDismiss(
-        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
+        messageId: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot,
+        location: PaneContextPopoverLocation
     ) async -> Bool {
-        guard let message = message(messageId, source: source, detail: detail) else { return false }
+        guard let message = message(messageId, source: source, snapshot: snapshot) else { return false }
         switch message.shape {
         case .notice: return location.presentation(for: .noticeActions) == .inline
         case .ask: return location.presentation(for: .dismissAsk) == .inline
@@ -74,9 +82,10 @@ enum PaneContextPopoverAnswerParsing {
     }
 
     @concurrent nonisolated static func canRunAction(
-        messageId: AgentMessageId, source: PaneId, detail: PaneContextDetail?, location: PaneContextPopoverLocation
+        messageId: AgentMessageId, source: PaneId, snapshot: PaneContextActionSnapshot,
+        location: PaneContextPopoverLocation
     ) async -> Bool {
-        guard let message = message(messageId, source: source, detail: detail),
+        guard let message = message(messageId, source: source, snapshot: snapshot),
             PaneContextPresentationRules.rowActionAvailability(message) == .noticeActions
         else { return false }
         return location.presentation(for: .noticeActions) == .inline

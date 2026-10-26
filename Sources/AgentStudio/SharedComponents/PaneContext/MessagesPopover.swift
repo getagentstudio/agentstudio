@@ -68,7 +68,9 @@ package struct MessagesPopover: View {
                         case .message(let row):
                             MessagePopoverRow(
                                 row: row, controls: controls, octiconLoader: octiconLoader,
-                                location: location, actions: actions)
+                                location: location, actions: actions
+                            )
+                            .id(row.key)
                         case .providerPrompt(let prompt):
                             ProviderPromptRow(prompt: prompt, octiconLoader: octiconLoader)
                         }

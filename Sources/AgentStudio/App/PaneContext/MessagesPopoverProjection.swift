@@ -103,7 +103,7 @@ enum MessagesPopoverProjection {
         return (model.replacingGroups(groups), nextChange)
     }
 
-    private nonisolated static func row(_ message: AgentMessageDetail, sourceLabel: String?, age: String)
+    nonisolated static func row(_ message: AgentMessageDetail, sourceLabel: String?, age: String)
         -> MessageRowModel
     {
         let kind: MessageKindPresentationModel
@@ -151,7 +151,10 @@ enum MessagesPopoverProjection {
         current.map { min($0, candidate) } ?? candidate
     }
     private nonisolated static func label(_ source: PaneId, owner: PaneId, titles: [PaneId: String]) -> String? {
-        source == owner ? nil : titles[source] ?? "Drawer pane"
+        source == owner ? nil : drawerSourceLabel(titles[source])
+    }
+    nonisolated static func drawerSourceLabel(_ title: String?) -> String {
+        title.map(PaneContextPresentationRules.strippingTitleSpinners) ?? "Drawer pane"
     }
     private nonisolated static func noticeKind(_ importance: MessageImportance) -> MessageKind {
         switch importance {

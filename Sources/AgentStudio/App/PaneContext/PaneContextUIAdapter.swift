@@ -17,6 +17,9 @@ struct PaneContextUIAdapter: PaneContextDetailReading, PaneContextPersonActing {
     func readDetail(_ request: PaneContextReadRequest) async -> PaneContextReadResult {
         await reader.readDetail(request)
     }
+    func readMessage(source: PaneId, message: AgentMessageId) async -> MessageReadResult {
+        await reader.readMessage(source: source, message: message)
+    }
     func answer(_ request: AnswerAskRequest) async -> AnswerAskResult {
         await person.answer(request)
     }

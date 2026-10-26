@@ -25,7 +25,7 @@ struct PaneManagementIdentityHostTests {
             try await clock.entered(pane: pane, input: initialInput)
             let firstDeadline = initialInput.advanced(by: .seconds(60))
             try await clock.registered(firstDeadline, pane: pane, currentInput: initialInput)
-            try fixture.expectRendered(text: "Now", active: true)
+            try fixture.expectRendered(text: "Now")
             let hostIdentity = ObjectIdentifier(fixture.host)
 
             clock.advance(by: .seconds(60))
@@ -33,7 +33,7 @@ struct PaneManagementIdentityHostTests {
             let secondDeadline = firstDeadline.advanced(by: .seconds(60))
             try await clock.registered(secondDeadline, pane: pane, currentInput: initialInput)
             #expect(ObjectIdentifier(fixture.host) == hostIdentity)
-            try fixture.expectRendered(text: "1m", active: false)
+            try fixture.expectRendered(text: "1 min ago")
 
             let replacementInput = clock.now
             fixture.replaceActivity()
@@ -45,7 +45,7 @@ struct PaneManagementIdentityHostTests {
             try await clock.registered(
                 secondDeadline, pane: pane, currentInput: replacementInput, retiredInput: initialInput)
             #expect(clock.pendingSleepCount == 1)
-            try fixture.expectRendered(text: "Now", active: true)
+            try fixture.expectRendered(text: "Now")
 
             // The old worker has ended and the new worker registered its own deadline.
             // Only now advance through the former deadline to exclude stale publication.
@@ -54,7 +54,7 @@ struct PaneManagementIdentityHostTests {
             try await clock.registered(
                 thirdDeadline, pane: pane, currentInput: replacementInput)
             #expect(ObjectIdentifier(fixture.host) == hostIdentity)
-            try fixture.expectRendered(text: "1m", active: false)
+            try fixture.expectRendered(text: "1 min ago")
 
             fixture.hide()
             let hidden = try await clock.nextHideResult()
@@ -81,6 +81,7 @@ struct PaneManagementIdentityHostTests {
 @Observable
 private final class NativeCardVisibility {
     var isVisible = true
+    var wallDate = Date(timeIntervalSince1970: 1_800_000_000)
 }
 
 @MainActor
@@ -95,7 +96,7 @@ private struct NativeCardRoot: View {
         Group {
             if visibility.isVisible {
                 ManagementPaneIdentityOverlay(
-                    context: context, octiconLoader: loader, store: store, clock: clock,
+                    context: context, octiconLoader: loader, store: store, clock: clock, wallNow: visibility.wallDate,
                     onRelativeTimeEvent: { clock.observeOwner($0) })
             }
         }
@@ -115,11 +116,13 @@ private final class NativeCardFixture {
     let host: NSHostingView<AnyView>
     let window: NSWindow
     private let atoms: CoreAtoms
+    private let initialInstant: ContinuousClock.Instant
 
     init() {
         let clock = NativeCardTestClock()
         let visibility = NativeCardVisibility()
         self.clock = clock
+        initialInstant = clock.now
         self.visibility = visibility
         // SwiftUI may evaluate outside the calling TaskLocal scope. Use the isolated
         // process's installed atom scope for both capture and native graph evaluation.
@@ -136,7 +139,7 @@ private final class NativeCardFixture {
         let loader = makeTestOcticonLoader()
         self.loader = loader
         atoms.paneActivityTime.apply([
-            .set(pane.id, .init(orderingInstant: clock.now, wallTime: .now, source: .terminal))
+            .set(pane.id, .init(orderingInstant: clock.now, wallTime: visibility.wallDate, source: .terminal))
         ])
         let root = NativeCardRoot(visibility: visibility, context: context, store: store, loader: loader, clock: clock)
         let host = NSHostingView(rootView: AnyView(root))
@@ -152,8 +155,12 @@ private final class NativeCardFixture {
     }
 
     func replaceActivity() {
+        let elapsed = initialInstant.duration(to: clock.now).components
+        let date = Date(timeIntervalSince1970: 1_800_000_000)
+            .addingTimeInterval(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
+        visibility.wallDate = date
         atoms.paneActivityTime.apply([
-            .set(context.paneId, .init(orderingInstant: clock.now, wallTime: .now, source: .terminal))
+            .set(context.paneId, .init(orderingInstant: clock.now, wallTime: date, source: .terminal))
         ])
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
@@ -165,20 +172,19 @@ private final class NativeCardFixture {
         host.displayIfNeeded()
     }
 
-    func expectRendered(text: String, active: Bool) throws {
+    func expectRendered(text: String) throws {
         let elements = PaneIdentityCardFixture.elements(in: host)
-        #expect(elements.contains { $0.label == "Activity \(text)" }, "The mounted activity value must match exactly")
+        #expect(elements.contains { $0.label == "ACTIVE \(text)" }, "The mounted metadata age must match exactly")
         try PaneIdentityCardFixture.expectContained(in: host)
-        // A second oracle bypasses the strip entirely: otherwise a strip that
-        // ignored its recency/active arguments could make both sides equally wrong.
+        // Independent references reject the retired compact clock and play chips.
         try expectIndependentChip(
             SidebarChip(
-                icon: .system(.clock), octiconLoader: loader, text: text,
-                style: .accent(AppStyles.Shell.Sidebar.chipInfoColor)), present: true, name: "clock-\(text)")
+                icon: .system(.clock), octiconLoader: loader, text: text == "Now" ? "Now" : "1m",
+                style: .accent(AppStyles.Shell.Sidebar.chipInfoColor)), present: false, name: "clock-\(text)")
         try expectIndependentChip(
             SidebarChip(
                 icon: .system(.playCircleFill), octiconLoader: loader,
-                text: nil, style: .accent(.accentColor)), present: active, name: "active-\(text)")
+                text: nil, style: .accent(.accentColor)), present: false, name: "active-\(text)")
     }
 
     func expectHidden() throws {

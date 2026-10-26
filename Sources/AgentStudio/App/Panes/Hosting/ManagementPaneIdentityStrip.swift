@@ -17,9 +17,17 @@ struct ManagementPaneIdentityStrip: View {
     let octiconLoader: OcticonLoader
     var lines: [RepoExplorerPaneRowLine] = []
     var isDrawerPane = false
-    var recencyText = "—"
-    var recencyTier: RepoExplorerPaneRecencyTier = .grey
-    var isActive = false
+    var activityText: String?
+    var unreadCount = 0
+    var cardModel: CardModel?
+    var readers: PaneContextUIReaders?
+    var actions: MessagesPopoverActions?
+    var feedback: String?
+    var onGoToPane: @MainActor (UUID) -> Void = { _ in }
+    var onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in }
+    var onActionCompleted: @MainActor () -> Void = {}
+    var onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
+    var onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
 
     private var presentation: ManagementPaneIdentityPresentation {
         ManagementPaneIdentityPresentation(context: context, lines: lines)
@@ -35,10 +43,34 @@ struct ManagementPaneIdentityStrip: View {
                 .controlHelp(ControlTooltipResolver.resolve(.dynamicData(.stateReadout, text: presentation.title)))
                 .background { identityBounds("title", label: presentation.title) }
             }
-            stateLine
+            if let status = presentation.status {
+                stateLine.background { identityBounds("status", label: status.text) }
+            }
             ForEach(presentation.secondaryLines, id: \.kind) { line in
                 secondaryLine(line)
                     .background { identityBounds(String(describing: line.kind), label: secondaryLabel(line)) }
+            }
+            if unreadCount > 0, let readers {
+                HStack(spacing: AppStyles.General.Spacing.tight) {
+                    Text("\(unreadCount) unread ·")
+                        .background { identityBounds("unread", label: "\(unreadCount) unread ·") }
+                    messagesEntry(
+                        .showPaneMessagesFromCard, identifier: "pane-context.card-messages",
+                        readers: readers)
+                }
+            }
+            if let feedback { PaneContextPopoverNote(feedback) }
+            if let cardModel, cardModel.request != .none, let readers, let actions {
+                PaneContextCardRequestBlock(
+                    request: cardModel.request, actions: actions, readers: readers,
+                    owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
+                    onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+                    onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent)
+                if cardModel.moreCount > 0 {
+                    messagesEntry(
+                        .showMorePaneNeedsYou(count: cardModel.moreCount), identifier: "pane-context.card-more",
+                        readers: readers)
+                }
             }
             identityFields
             if let statusChips = context.statusChips,
@@ -97,11 +129,7 @@ struct ManagementPaneIdentityStrip: View {
     private var stateLine: some View {
         SidebarStatusChipRow(isPendingPullRequestFacts: false) {
             if let status = presentation.status { statusChip(status) }
-            RepoExplorerPaneActivityChips(
-                recencyText: recencyText, recencyTier: recencyTier,
-                isActive: isActive, octiconLoader: octiconLoader)
         }
-        .background { identityBounds("activity", label: "Activity \(recencyText)") }
     }
 
     private var identityFields: some View {
@@ -125,6 +153,18 @@ struct ManagementPaneIdentityStrip: View {
                         .fixedSize()
                         .background { identityBounds("\(row.id).caption", label: "") }
                     fieldValue(row)
+                }
+            }
+            if let activityText {
+                GridRow {
+                    rowIcon(for: .system("clock"))
+                        .foregroundStyle(.secondary.opacity(0.92))
+                        .frame(width: AppStyles.Shell.Sidebar.rowLeadingIconColumnWidth, alignment: .leading)
+                    Text("ACTIVE")
+                        .font(.system(size: AppStyles.General.Typography.textXs, weight: .semibold))
+                        .foregroundStyle(.secondary.opacity(0.72))
+                    Text(activityText).font(.system(size: AppStyles.Shell.Sidebar.branchFontSize))
+                        .background { identityBounds("activity", label: "ACTIVE \(activityText)") }
                 }
             }
         }
@@ -196,7 +236,7 @@ struct ManagementPaneIdentityStrip: View {
         let style: SidebarChip.Style =
             switch line.tone {
             case .neutral: .neutral
-            case .accent: .accent(.accentColor)
+            case .accent: .accent(AppStyles.General.Accent.primaryColor)
             case .info: .info
             case .success: .success
             case .warning: .warning
@@ -211,7 +251,8 @@ struct ManagementPaneIdentityStrip: View {
         switch line {
         case .agentLine(let value):
             RepoExplorerPaneContextLineView(
-                line: value, isAgentLine: true, octiconLoader: octiconLoader, maximumLineCount: 2)
+                line: value, isAgentLine: true, octiconLoader: octiconLoader,
+                maximumLineCount: 1, maximumTextWidth: AppStyles.Shell.Sidebar.agentLineMaxWidth)
         case .connectionIssue(let value):
             RepoExplorerPaneContextLineView(line: value, isAgentLine: false, octiconLoader: octiconLoader)
         case .note(let text):
@@ -231,6 +272,22 @@ struct ManagementPaneIdentityStrip: View {
     private func identityBounds(_ identifier: String, label: String) -> some View {
         AccessibilityLabelBridge(identifier: "paneManagement.card.\(identifier)", label: label)
     }
+
+    private func messagesEntry(
+        _ action: LocalActionSpec, identifier: String,
+        readers: PaneContextUIReaders
+    ) -> some View {
+        PaneContextPopoverHost(
+            paneId: .init(existingUUID: context.paneId),
+            presentation: .messagesAction(
+                PaneContextPopoverControlProjection.control(action, identifier: identifier),
+                focusedMessage: nil),
+            location: .pane, readers: readers, octiconLoader: octiconLoader,
+            onGoToPane: onGoToPane, includingDrawers: !isDrawerPane,
+            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+            onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(), onRelativeTimeEvent: onRelativeTimeEvent
+        )
+    }
 }
 
 struct ManagementPaneIdentityOverlay<ActivityClock: Clock>: View
@@ -241,35 +298,72 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let store: WorkspaceStore
     let clock: ActivityClock
     let wallNow: Date?
+    let onGoToPane: @MainActor (UUID) -> Void
+    let onReadCompleted: @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void
+    let onActionCompleted: @MainActor () -> Void
+    let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
+    let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
     @State private var sessionIdentity = PaneManagementSessionIdentity()
     @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
+    @State private var cardController: PaneContextPopoverController?
+
+    private struct CardReadTrigger: Equatable {
+        let key: PaneContextRefreshKey?
+        let selection: CardRequestSelection?
+        let needsDetailRead: Bool
+    }
 
     init(
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
         clock: ActivityClock, wallNow: Date? = nil,
-        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
+        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in },
+        onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
+        },
+        onActionCompleted: @escaping @MainActor () -> Void = {},
+        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) {
         self.context = context
         self.octiconLoader = octiconLoader
         self.store = store
         self.clock = clock
         self.wallNow = wallNow
+        self.onGoToPane = onGoToPane
+        self.onReadCompleted = onReadCompleted
+        self.onActionCompleted = onActionCompleted
+        self.onActionTaskStarted = onActionTaskStarted
+        self.onRelativeTimeEvent = onRelativeTimeEvent
         _relativeTimeRefresh = State(initialValue: PaneRelativeTimeRefresh(onEvent: onRelativeTimeEvent))
     }
 
     var body: some View {
-        let input = PaneManagementIdentityCapture.input(
-            context: context, store: store, readers: readers)
+        let input = captureInput()
         let sessionReadTrigger = PaneManagementIdentityCapture.SessionReadTrigger(
             paneId: context.paneId, presentation: input.sessionPresentation)
-        let presentation = relativeTimeRefresh.presentation
+        let card = relativeTimeRefresh.cardModel
+        let presentation = card?.information
+        let paneId = PaneId(existingUUID: context.paneId)
+        let trigger = CardReadTrigger(
+            key: readers?.refreshKey(for: paneId), selection: card?.selection,
+            needsDetailRead: card?.needsDetailRead ?? false)
+        let actions = cardController.flatMap { controller in
+            readers.map {
+                PaneContextPopoverHostActions.messages(
+                    controller: controller, readers: $0,
+                    onGoToPane: onGoToPane, onActionCompleted: onActionCompleted,
+                    onActionTaskStarted: onActionTaskStarted)
+            }
+        }
         ManagementPaneIdentityStrip(
             context: context.includingVerifiedLiveSession(sessionIdentity.summary),
             octiconLoader: octiconLoader,
             lines: presentation?.lines ?? [], isDrawerPane: input.isDrawer,
-            recencyText: presentation?.recencyText ?? "—",
-            recencyTier: presentation?.recencyTier ?? .grey,
-            isActive: presentation?.isActive ?? false
+            activityText: card?.activityText, unreadCount: card?.unreadCount ?? 0,
+            cardModel: card, readers: readers, actions: actions,
+            feedback: cardController?.unavailableNote ?? cardController?.actionFeedback,
+            onGoToPane: onGoToPane,
+            onReadCompleted: onReadCompleted, onActionCompleted: onActionCompleted,
+            onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent
         )
         .frame(maxWidth: .infinity)
         .background(AppStyles.Shell.PaneChrome.background)
@@ -282,20 +376,55 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         .task(id: sessionReadTrigger) {
             await sessionIdentity.refresh(paneId: sessionReadTrigger.paneId, readers: readers)
         }
+        .task(id: trigger) {
+            guard let readers, let selection = trigger.selection else { return }
+            let key = readers.refreshKey(for: paneId)
+            guard trigger.needsDetailRead else {
+                cardController?.close()
+                onReadCompleted(key, cardController)
+                return
+            }
+            guard let adapter = readers.serviceProvider() else {
+                cardController?.close()
+                onReadCompleted(key, cardController)
+                return
+            }
+            let controller =
+                cardController
+                ?? readers.makePopoverController(
+                    reader: adapter, person: adapter,
+                    location: .card, includingDrawers: !input.isDrawer)
+            cardController = controller
+            guard controller.useCurrentService(adapter) else { return }
+            await controller.openCard(paneId, selection: selection)
+            guard !Task.isCancelled else { return }
+            onReadCompleted(key, controller)
+        }
         .onDisappear {
             relativeTimeRefresh.hide()
             sessionIdentity.close()
+            cardController?.close()
         }
+    }
+
+    private func captureInput() -> PaneManagementIdentityCapture.LineInput {
+        var input = PaneManagementIdentityCapture.input(context: context, store: store, readers: readers)
+        input.selectedAsk = cardController?.selectedAsk
+        input.selectedSourceTitle = cardController?.selectedAsk.flatMap { readers?.titleForPane($0.key.paneId) }
+        input.cardUnavailable = cardController?.unavailableNote != nil
+        input.detailMessages = cardController?.state?.messages
+        return input
     }
 }
 
 extension ManagementPaneIdentityOverlay where ActivityClock == ContinuousClock {
     init(
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
-        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil
+        onRelativeTimeEvent: (@MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void)? = nil,
+        onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in }
     ) {
         self.init(
             context: context, octiconLoader: octiconLoader, store: store, clock: ContinuousClock(),
-            onRelativeTimeEvent: onRelativeTimeEvent ?? { _ in })
+            onRelativeTimeEvent: onRelativeTimeEvent ?? { _ in }, onGoToPane: onGoToPane)
     }
 }

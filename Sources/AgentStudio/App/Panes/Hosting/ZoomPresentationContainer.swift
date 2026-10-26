@@ -209,7 +209,8 @@ struct ZoomPresentationContainer: View {
                                 context: sourceManagementContext,
                                 octiconLoader: octiconLoader,
                                 store: store,
-                                onRelativeTimeEvent: onRelativeTimeEvent
+                                onRelativeTimeEvent: onRelativeTimeEvent,
+                                onGoToPane: { commandDispatcher.dispatch(.focusPane, target: $0, targetType: .pane) }
                             )
                         }
                     }

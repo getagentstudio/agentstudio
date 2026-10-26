@@ -8,7 +8,7 @@ import SwiftUI
 struct PaneContextPopoverHost<AgeClock: Clock>: View
 where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant {
     let paneId: PaneId
-    let presentation: RepoExplorerPaneContextControlPresentation
+    let presentation: PaneContextPopoverEntry
     let location: PaneContextPopoverLocation
     let readers: PaneContextUIReaders
     let octiconLoader: OcticonLoader
@@ -27,7 +27,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     private var controls: PaneContextPopoverControls { PaneContextPopoverControlProjection.controls() }
 
     init(
-        paneId: PaneId, presentation: RepoExplorerPaneContextControlPresentation,
+        paneId: PaneId, presentation: PaneContextPopoverEntry,
         location: PaneContextPopoverLocation, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
         onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in
@@ -83,6 +83,8 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
 
     @ViewBuilder private var button: some View {
         switch presentation {
+        case .messagesAction(let control, _):
+            PaneContextActionButton(control, action: requestOpen)
         case .kind(let chip):
             PaneMessageKindChip(
                 model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
@@ -107,14 +109,25 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         } else if let controller, let state = controller.state {
             let visible = relativeTimeRefresh.popoverShape.flatMap { $0.revision == state.revision ? $0 : nil } ?? state
             switch presentation {
-            case .kind:
-                MessagesPopover(
-                    paneId: paneId.uuid, model: visible.messages, controls: controls, octiconLoader: octiconLoader,
-                    location: location,
-                    feedback: controller.unavailableNote ?? controller.actionFeedback,
-                    actions: PaneContextPopoverHostActions.messages(
-                        controller: controller, readers: readers, onGoToPane: onGoToPane,
-                        onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted))
+            case .kind, .messagesAction:
+                ScrollViewReader { proxy in
+                    MessagesPopover(
+                        paneId: paneId.uuid, model: visible.messages, controls: controls, octiconLoader: octiconLoader,
+                        location: location,
+                        feedback: controller.unavailableNote ?? controller.actionFeedback,
+                        actions: PaneContextPopoverHostActions.messages(
+                            controller: controller, readers: readers, onGoToPane: onGoToPane,
+                            onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
+                    )
+                    .task(id: visible.messages) {
+                        if case .messagesAction(_, let key?) = presentation {
+                            proxy.scrollTo(
+                                MessageRowModel.Key(
+                                    sourcePaneId: key.paneId.uuid,
+                                    messageId: key.messageId.uuid), anchor: .top)
+                        }
+                    }
+                }
             case .agentLine:
                 if let line = visible.agentLine {
                     AgentLinePopover(
@@ -152,7 +165,11 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 location: location, includingDrawers: includingDrawers, wallNow: wallNow)
         controller = active
         _ = active.useCurrentService(adapter)
-        await active.open(paneId)
+        if case .messagesAction(_, let key) = presentation {
+            await active.openMessages(paneId, focusedMessage: key)
+        } else {
+            await active.open(paneId)
+        }
         guard !Task.isCancelled else { return }
         onReadCompleted(key, active)
     }
@@ -164,7 +181,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         }
         let content: PaneManagementIdentityCapture.PopoverContent =
             switch presentation {
-            case .kind: .messages
+            case .kind, .messagesAction: .messages
             case .agentLine: .agentLine
             }
         relativeTimeRefresh.startOrReplace(.popover(shape, content), clock: clock, wallNow: wallNow())
@@ -180,7 +197,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
 
 extension PaneContextPopoverHost where AgeClock == ContinuousClock {
     init(
-        paneId: PaneId, presentation: RepoExplorerPaneContextControlPresentation,
+        paneId: PaneId, presentation: PaneContextPopoverEntry,
         location: PaneContextPopoverLocation, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
         onReadCompleted: @escaping @MainActor (PaneContextRefreshKey, PaneContextPopoverController?) -> Void = { _, _ in

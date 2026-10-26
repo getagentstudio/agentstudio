@@ -25,7 +25,7 @@ struct PaneContextScenarioPopoverTests {
     private func assertPopovers(_ scenario: PaneContextScenario) async throws {
         let facts = try await PaneContextScenarioFacts.make(scenario)
         #expect(facts.scoped.kinds == scenario.expected.counts)
-        let detail = try detail(scenario, facts: facts)
+        let detail = try Self.detail(scenario, facts: facts)
         let shape = await PaneContextPopoverShaping.shape(
             detail,
             sourceTitles: [facts.owner: "Owner", facts.drawer: "tests"], now: facts.now)
@@ -68,7 +68,7 @@ struct PaneContextScenarioPopoverTests {
         }
     }
 
-    private func detail(_ scenario: PaneContextScenario, facts: PaneContextScenarioFacts) throws -> PaneContextDetail {
+    static func detail(_ scenario: PaneContextScenario, facts: PaneContextScenarioFacts) throws -> PaneContextDetail {
         let own = facts.messages.map(\.detail).filter { $0.sourcePaneId == facts.owner }
         let drawer = facts.messages.map(\.detail).filter { $0.sourcePaneId == facts.drawer }
         var session = facts.session
@@ -105,7 +105,7 @@ struct PaneContextScenarioPopoverTests {
                 "Review the migration plan before I apply it", "Tests passed (412)", "Branch rebased onto main",
             ]
         case "S9", "S10-pending", "S10-confirmed": ["Pick a color for the test?"]
-        case "S14": ["Which checks should I run?"]
+        case "S14": ["Which suites should I rerun?"]
         case "S17":
             [
                 """

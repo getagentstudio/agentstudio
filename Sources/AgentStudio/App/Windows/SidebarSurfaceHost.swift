@@ -147,7 +147,8 @@ struct SidebarSurfaceHost: View {
                     guard let paneContextReaders else { return nil }
                     return AnyView(
                         PaneContextPopoverHost(
-                            paneId: pane, presentation: presentation, location: .sidebar, readers: paneContextReaders,
+                            paneId: pane, presentation: .init(presentation), location: .sidebar,
+                            readers: paneContextReaders,
                             octiconLoader: octiconLoader,
                             onGoToPane: { target in
                                 commandDispatcher.dispatch(.focusPane, target: target, targetType: .pane)

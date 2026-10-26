@@ -223,7 +223,7 @@ struct PaneContextScenario: Sendable, CustomStringConvertible {
         ),
         .init(
             id: "S14", session: .question, line: nil,
-            messages: [.ask(.multipleChoice, "Which checks should I run?", .open)], prompts: .absent,
+            messages: [.ask(.multipleChoice, "Which suites should I rerun?", .open)], prompts: .absent,
             expected: .init(
                 sidebarStatus: "Needs you · question", cardStatus: "Needs you · question", agentLine: nil,
                 bracketedAge: nil,

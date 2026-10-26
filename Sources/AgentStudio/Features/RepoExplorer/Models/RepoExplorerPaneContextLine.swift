@@ -60,7 +60,7 @@ package struct RepoExplorerPaneContextLine: Equatable, Sendable {
             tone: tone, glyphMotion: glyphMotion, ageText: nil)
     }
 
-    static func status(_ line: StatusLine, presentation: PaneAgentStatusPresentation?) -> Self? {
+    package static func status(_ line: StatusLine, presentation: PaneAgentStatusPresentation?) -> Self? {
         let source: AgentSessionStatus =
             switch line.kind {
             case .needsYou: .needsYou(presentation?.compactPrompt?.reason ?? .blocked)

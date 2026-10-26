@@ -19,6 +19,7 @@ enum NativePopoverFact: Equatable, Sendable {
 
 enum NativePopoverScope: Hashable, Sendable {
     case readSources([PaneContextRefreshKey.Source])
+    case cardReadSources([PaneContextRefreshKey.Source])
     case action(Int)
     case worker
 }
@@ -28,9 +29,11 @@ enum NativePopoverScope: Hashable, Sendable {
 final class PaneContextNativePopoverWindow {
     private final class Sink {
         var controller: PaneContextPopoverController?
+        var cardController: PaneContextPopoverController?
         var operations: [PaneManagementIdentityCapture.VisibleInput] = []
         var completedActions = 0
         var actionTasks: [Task<Void, Never>] = []
+        var goToPaneTargets: [UUID] = []
         let facts = FactRecorder<NativePopoverScope, NativePopoverFact>(
             vocabulary: .init(
                 describeScope: { "native popover channel \($0)" }, describeFact: { String(describing: $0) },
@@ -44,15 +47,21 @@ final class PaneContextNativePopoverWindow {
     let clock: NativeCardTestClock
     let window: NSWindow
     private let sink: Sink
+    private let isCard: Bool
+    private var isPresentingMessages = false
     private var renderedInput: PaneManagementIdentityCapture.VisibleInput?
     private let currentReadKey: @MainActor () -> PaneContextRefreshKey
-    var controller: PaneContextPopoverController? { sink.controller }
+    var controller: PaneContextPopoverController? {
+        isCard && !isPresentingMessages ? sink.cardController : sink.controller
+    }
     var facts: FactRecorder<NativePopoverScope, NativePopoverFact> { sink.facts }
     var actionCompletionCount: Int { sink.completedActions }
+    var goToPaneTargets: [UUID] { sink.goToPaneTargets }
 
     init(
         paneId: PaneId, readers: PaneContextUIReaders, location: PaneContextPopoverLocation,
-        wallNow: Date, agentLine: RepoExplorerPaneContextLine? = nil, includingDrawers: Bool = true
+        wallNow: Date, agentLine: RepoExplorerPaneContextLine? = nil, includingDrawers: Bool = true,
+        card: (context: PaneManagementContext, store: WorkspaceStore)? = nil
     ) {
         let clock = NativeCardTestClock()
         let sink = Sink()
@@ -60,35 +69,63 @@ final class PaneContextNativePopoverWindow {
         let presentation: RepoExplorerPaneContextControlPresentation =
             agentLine.map { .agentLine($0) }
             ?? .kind(.init(kind: .needsYou, count: 1))
-        let host = NSHostingView(
-            rootView: PaneContextPopoverHost(
-                paneId: paneId, presentation: presentation, location: location, readers: readers,
-                octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in }, includingDrawers: includingDrawers,
-                onReadCompleted: { key, value in
-                    sink.controller = value
-                    sink.facts.append(scope: .readSources(key.sources), fact: .opened)
-                },
-                onActionCompleted: {
-                    sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
-                    sink.completedActions += 1
-                },
-                onActionTaskStarted: { sink.actionTasks.append($0) },
-                clock: clock,
-                wallNow: {
-                    let elapsed = reference.duration(to: clock.now).components
-                    return wallNow.addingTimeInterval(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
-                },
-                onRelativeTimeEvent: { event in
-                    clock.observeOwner(event)
-                    if case .operation(let input, _) = event { sink.operations.append(input) }
-                    sink.facts.append(scope: .worker, fact: .worker(event))
-                }))
-        host.frame = CGRect(x: 0, y: 0, width: 280, height: 80)
+        let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { event in
+            clock.observeOwner(event)
+            if case .operation(let input, _) = event { sink.operations.append(input) }
+            sink.facts.append(scope: .worker, fact: .worker(event))
+        }
+        let root: AnyView
+        if let card {
+            root = AnyView(
+                ManagementPaneIdentityOverlay(
+                    context: card.context,
+                    octiconLoader: makeTestOcticonLoader(), store: card.store, clock: clock, wallNow: wallNow,
+                    onRelativeTimeEvent: onRelativeTimeEvent,
+                    onGoToPane: { sink.goToPaneTargets.append($0) },
+                    onReadCompleted: { key, value in
+                        if value?.location == .card {
+                            sink.cardController = value
+                            sink.facts.append(scope: .cardReadSources(key.sources), fact: .opened)
+                        } else {
+                            sink.controller = value
+                            sink.facts.append(scope: .readSources(key.sources), fact: .opened)
+                        }
+                    },
+                    onActionCompleted: {
+                        sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
+                        sink.completedActions += 1
+                    }, onActionTaskStarted: { sink.actionTasks.append($0) }
+                )
+                .environment(\.paneContextUIReaders, readers))
+        } else {
+            root = AnyView(
+                PaneContextPopoverHost(
+                    paneId: paneId, presentation: .init(presentation), location: location, readers: readers,
+                    octiconLoader: makeTestOcticonLoader(), onGoToPane: { _ in }, includingDrawers: includingDrawers,
+                    onReadCompleted: { key, value in
+                        sink.controller = value
+                        sink.facts.append(scope: .readSources(key.sources), fact: .opened)
+                    },
+                    onActionCompleted: {
+                        sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
+                        sink.completedActions += 1
+                    },
+                    onActionTaskStarted: { sink.actionTasks.append($0) },
+                    clock: clock,
+                    wallNow: {
+                        let elapsed = reference.duration(to: clock.now).components
+                        return wallNow.addingTimeInterval(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
+                    },
+                    onRelativeTimeEvent: onRelativeTimeEvent))
+        }
+        let host = NSHostingView(rootView: root)
+        host.frame = CGRect(x: 0, y: 0, width: card == nil ? 280 : 640, height: card == nil ? 80 : 900)
         let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
         self.clock = clock
         self.sink = sink
+        isCard = card != nil
         self.window = window
         currentReadKey = { readers.refreshKey(for: paneId) }
         window.makeKeyAndOrderFront(nil)
@@ -104,7 +141,10 @@ final class PaneContextNativePopoverWindow {
     }
 
     func readCompleted() async throws {
-        try await facts.expectNext(in: .readSources(currentReadKey().sources), .opened)
+        let scope: NativePopoverScope =
+            isCard && !isPresentingMessages
+            ? .cardReadSources(currentReadKey().sources) : .readSources(currentReadKey().sources)
+        try await facts.expectNext(in: scope, .opened)
     }
 
     func open(agentLine: Bool = false) async throws {
@@ -150,20 +190,65 @@ final class PaneContextNativePopoverWindow {
         }
     }
 
+    func renderedCard() async throws {
+        layout()
+        let controller = try #require(controller)
+        let selected = controller.selectedAsk
+        var expected = try #require(
+            sink.operations.last(where: { input in
+                if case .card(let card) = input {
+                    return card.selectedAsk == selected && card.detailMessages == controller.state?.messages
+                        && card.cardUnavailable == (controller.unavailableNote != nil)
+                }
+                return false
+            }), "The mounted card did not observe its completed read")
+        if case .card(let input) = expected {
+            try #require(
+                input.activityTime == nil && input.agentLine == nil,
+                "Request-only render witnesses require a finite worker; moving ages use the native clock fixture")
+        }
+        if renderedInput == expected { return }
+        while true {
+            let fact = try await facts.expectNext(
+                in: .worker, where: { _ in true }, "card worker entry or terminal outcome")
+            if case .worker(.ended(let actual, .completed)) = fact, actual == expected {
+                renderedInput = expected
+                layout()
+                return
+            }
+            if case .worker(.ended(let actual, .cancelled)) = fact, actual == expected {
+                layout()
+                let replacement = try #require(
+                    sink.operations.last(where: {
+                        if case .card = $0 { return true }
+                        return false
+                    }), "A cancelled visible card needs its replacement operation")
+                try #require(replacement != expected, "The current visible card was cancelled without replacement")
+                expected = replacement
+            }
+        }
+    }
+
     private func isOlder(
         _ actual: PaneManagementIdentityCapture.VisibleInput,
         than expected: PaneManagementIdentityCapture.VisibleInput
     ) -> Bool {
-        guard case .popover(let old, let oldContent) = actual,
-            case .popover(let current, let currentContent) = expected
+        guard actual != expected, let actualIndex = sink.operations.lastIndex(of: actual),
+            let expectedIndex = sink.operations.lastIndex(of: expected)
         else { return false }
-        return old.paneId == current.paneId && oldContent == currentContent
-            && old.revision.value < current.revision.value
+        // A focused read can supplement the first page at the same source revision.
+        // Require the expected production operation, then retire only recorded predecessors.
+        return actualIndex < expectedIndex
     }
 
     func press(_ identifier: String) throws {
         let button = try #require(
             find(identifier) as? any NSAccessibilityProtocol, "Missing native control: \(identifier)")
+        if ["pane-context.card-messages", "pane-context.card-more", "pane-context.answer-in-messages"].contains(
+            identifier)
+        {
+            isPresentingMessages = true
+        }
         try #require(button.accessibilityPerformPress(), "Native press refused: \(identifier)")
     }
 
@@ -223,6 +308,7 @@ final class PaneContextNativePopoverWindow {
 
     func close() async throws {
         sink.controller?.close()
+        sink.cardController?.close()
         for task in sink.actionTasks {
             task.cancel()
             await task.value

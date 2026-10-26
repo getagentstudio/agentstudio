@@ -131,6 +131,13 @@ package struct DrawerMessageGroup: Sendable, Equatable {
 
 package protocol PaneContextDetailReading: Sendable {
     func readDetail(_ request: PaneContextReadRequest) async -> PaneContextReadResult
+    func readMessage(source: PaneId, message: AgentMessageId) async -> MessageReadResult
+}
+
+package enum MessageReadResult: Sendable, Equatable {
+    case found(AgentMessageDetail)
+    case notFound
+    case unavailable(StorageFailureSummary)
 }
 package enum PaneContextReadPage: Sendable, Equatable {
     case first

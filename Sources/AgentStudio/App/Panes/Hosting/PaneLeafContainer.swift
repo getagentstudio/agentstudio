@@ -278,7 +278,10 @@ struct PaneLeafContainer: View {
                                     context: managementContext,
                                     octiconLoader: octiconLoader,
                                     store: store,
-                                    onRelativeTimeEvent: onRelativeTimeEvent
+                                    onRelativeTimeEvent: onRelativeTimeEvent,
+                                    onGoToPane: {
+                                        commandDispatcher.dispatch(.focusPane, target: $0, targetType: .pane)
+                                    }
                                 )
                             }
                         }
