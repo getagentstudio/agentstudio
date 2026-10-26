@@ -79,7 +79,11 @@ Payload definitions come from `IPCPaneMessageContracts.swift`,
 
 Native actions: single choice once; multiple Swift+BridgeWeb then Submit; free
 text exact body then Submit; schema Environment=staging/Dry run=true then Submit;
-approval Approve with reason and a separate Deny without. Inspect exact returned/
+approval optional reason above Approve/Deny: Approve with reason and a separate
+Deny without. D25's row head contains body + plain age and adjacent Dismiss,
+with form underneath; card unread summary stays below the entire request block.
+Check placement against the fixed S15 native witness at 390/520/1400 as well as
+the exact answer payload. Inspect exact returned/
 stored answer and one submission. On card schema, Answer… opens its exact row in
 Messages. Cover sidebar, pane and card permissions. A model/callback alone is not
 a real interaction. Refusal, invalid values and held failure cases stay with
@@ -276,7 +280,7 @@ The fixed spec/checklist stays intact and the owner reviews the V2 narrow result
 | --- | --- |
 | S1 | Verified turnDone then viewed/readied → Idle · ready; no E4/E5; known E6, compact activity/ACTIVE, empty toolbar. SessionStart alone may be unknown. |
 | S2 | Valid held turnStart/UserPromptSubmit → Working, no line; no toolbar status. |
-| S3 | Successful real line Running tests (3/7), [Now]; no sidebar activity chip; line in unread-free toolbar/card. |
+| S3 | Successful real line Running tests (3/7), [Now]; no sidebar activity chip; line in unread-free toolbar/card. Card line is one line with existing 220pt text cap and complete bracketed age (D23); add a long-line witness at 390/520/1400. |
 | S4 | Same write [2 min ago], no reopen/input; E6 may separately read Now. |
 | S5 | Add info Branch rebased onto main → info 1/unread 1; toolbar chips replace line. |
 | S6 | Add done Tests passed (412) → done 1/info 1, unread 2. |
@@ -288,7 +292,7 @@ The fixed spec/checklist stays intact and the owner reviews the V2 narrow result
 | S12 | Unbound, no line/messages, E6 9 min → compact 9m/ACTIVE 9 min ago, no status/SESSION/toolbar item. Exact aged activity needs declared fixture. |
 | S13 | Pane-written Deploy preview ready [5 min ago] plus info notice, unbound; line/count visible without status/SESSION. |
 | S14 | Multiple-choice helper → Swift+BridgeWeb then Submit; exact two-choice result. |
-| S15 | New approval CLI → Approve with reason, separate Deny without; exact decision stdout/settlement. |
+| S15 | New approval CLI → dated body + adjacent Dismiss row head → optional reason → Approve/Deny; card unread summary below the whole request (D25). Approve with reason, separate Deny without; exact decision stdout/settlement and native placement at 390/520/1400. |
 | S16a/b | E7 approval with/without summary, no E5/unread. b uses actual permission; a real-input cell UNKNOWN under G07. Supplement question-summary with its honest question label. |
 | S17 | Six-line failure/no target via actual notify; complete popover body, no target action. |
 | S18 | Exact 2 listed/+1 omitted and approval summary: real-input UNKNOWN under G07/G08; labelled synthetic product results, supplementary actual 16/1 only. |

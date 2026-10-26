@@ -90,9 +90,12 @@ observations, and its functional/taste verdicts:
   above. SESSION and PANE IDs may middle-truncate wherever the full ID does not
   fit, under J5's checks for readable prefix and suffix, full tooltip and
   always-visible inline copy icon. Adopted limits remain allowed: two-line
-  title/message with tail ellipsis for oversized text, middle-truncated oversized
-  field values with the full tooltip, and J4's truncatable message with a
-  **complete separate age**.
+  title with tail ellipsis for oversized text, middle-truncated oversized field
+  values with the full tooltip, and truncatable Agent Line text with a **complete
+  separate bracketed age**. D23's card Agent Line is **one line with a 220pt text
+  cap**, distinct from the toolbar's 360pt text cap; no two-line message allowance.
+  D25's dated request body and Dismiss share the row head; form below, approval
+  reason before decisions, card unread summary below the entire request block.
   Cite that boundary rather than excusing clipped ordinary content. Tooltips/AX
   full text do not prove the pixels painted or make a hidden age acceptable.
 - **Alignment:** compare local leading/trailing edges and baselines across panes

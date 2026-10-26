@@ -20,9 +20,9 @@ card rebound. Final-build entry anchors: `PaneLeafContainer`,
 | --- | --- |
 | Title | Same normalized/agent title as sidebar; leading terminal spinners absent. Preserve natural one/two-line title behavior and tooltip. |
 | Status | Known verified status icon/chip only. Scoped compact prompt supplies reason/optional summary. If the request block shows that summary, the chip omits it; if an E5 ask occupies the block, the prompt summary remains on the chip. No activity/play chips. |
-| Agent Line | Fixed neutral message icon, text and its bracketed age. No reserved empty line. Keep approved clamp/two-line boundary; age complete and adjacent. |
-| Request | Oldest open scoped ask with full body, correct form and Dismiss; otherwise first scoped provider prompt, optional actual summary, terminal instruction and Go to pane. +N more only for other needs-you items, opens Messages. |
-| Unread | N unread · Show messages only above zero, info included, E7 excluded. Press and inspect the actual Messages scope. |
+| Agent Line | One line: fixed neutral message icon, text clamped to existing `AppStyles.Shell.Sidebar.agentLineMaxWidth` (220pt), ellipsis before the complete adjacent bracketed age. No reserved second line or 360pt card cap (D23). |
+| Request | Oldest open scoped ask: row head has full body with plain age and Dismiss beside it; answer form below. Approval reason field precedes Approve/Deny. Otherwise first scoped provider prompt, optional actual summary, terminal instruction and Go to pane. +N more only for other needs-you items, opens Messages (D25). |
+| Unread | N unread · Show messages only above zero, **below the whole request block**, info included, E7 excluded. Press and inspect the actual Messages scope. |
 | Existing optional content | Warning and note retain their existing conditional placement. No warning in sidebar/toolbar. |
 | Metadata/git | Conditional identity rows remain, plus plain ACTIVE age when E6 known; no ACTIVE when unknown. Existing git chips stay last. |
 
@@ -38,9 +38,19 @@ UNKNOWN; product tests at the existing port seam remain separate.
 
 Use actual service-created forms from the scenario recipes. One single-choice
 press submits once; multiple choice toggles then Submit; free text then Submit;
-approval Approve/Deny with optional reason. Elicitation shows Answer… here and
+approval optional reason field first, then Approve/Deny. Dismiss belongs beside
+the dated body in the row head, never below the form; the unread summary follows
+the whole request block. Elicitation shows Answer… here and
 opens Messages with that exact request's inline schema. Exercise main/drawer
 source and all entry locations; callback equality is supporting proof only.
+
+For D23, retain a long-line native witness at 390/520/1400 with measured text
+width ≤220pt, one painted line, ellipsis on overflowing text and the whole
+bracketed age. A short fitting line needs no ellipsis. The cap constrains text,
+not the full icon/text/age extent. For D25, compare S15's real native frames at
+those widths with the approved render: dated body + adjacent Dismiss → optional
+reason → decisions → unread summary. The shared Messages ask row uses the same
+row-head Dismiss placement. Geometry/AX content alone cannot prove painted order.
 
 For pending/confirmed/unconfirmed, mount/hold the real card and settle through
 the service; await owner readback and live rebind. Every answer/dismiss control
@@ -63,8 +73,9 @@ HStack or abandoned blank rows. Git chips remain last.
 Copy icons follow values inline at the same small gap and stay visible without
 hover. Normal repo/branch fit at 420pt and wider. SESSION/PANE may middle-truncate
 with readable prefix/suffix, full-ID tooltip and always-visible inline copy.
-Oversized paths/branch keep adopted middle truncation; title/message keep their
-separate natural/two-line boundary. Nothing leaves the card's inner bounds.
+Oversized paths/branch keep adopted middle truncation. The title retains its
+independent natural/two-line boundary; the Agent Line follows D23's single line,
+220pt text cap and protected age. Nothing leaves the card's inner bounds.
 Record pointer outside the card; if pointer or hover route is unavailable,
 always-visible/tooltip remains UNKNOWN separately from measured layout.
 

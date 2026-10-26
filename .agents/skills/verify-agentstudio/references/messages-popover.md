@@ -37,7 +37,7 @@ and actions. S17's six lines are a specimen, never a permitted line cap.
 | --- | --- |
 | Groups | Needs you / Done / Info / Resolved; empty hidden; newest first, mixed E5/E7 and adopted ties. No old filters, Count informational or Mark read control. |
 | Notice | Kind icon/colour; full body, explanation if present, plain age, drawer source. Read rows dimmed; read attention/failure are Resolved/Read; read done/info stay in their kind groups. |
-| Open ask | Full body, correct form and Dismiss at sidebar/pane entries. Single choice submits on one press; multi/free-text use Submit; elicitation inline; approval has Approve/Deny and optional reason. |
+| Open ask | Full body + plain age in the row head with Dismiss beside it (D25); correct form below at sidebar/pane entries. Single choice submits on one press; multi/free-text use Submit; elicitation inline; approval optional reason field before Approve/Deny. |
 | Settled ask | Exact E5 label; no answer/dismiss/action controls for pending, confirmed, unconfirmed, handedBack, dismissed, expired, withdrawn or stale. Observe real reread/rebinding. |
 | Withdrawn/dismissed notice | Withdrawn is Resolved with its label and no actions. Dismissed notice is absent. |
 | E7 | Actual reason/optional summary, plain age, terminal instruction; all returned prompts and omitted count. No invented summary, message identity/form or repeated row Go to pane. |

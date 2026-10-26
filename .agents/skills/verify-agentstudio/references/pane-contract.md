@@ -53,6 +53,13 @@ scope wins, even beyond first-page budget; otherwise compact E7 plus terminal
 instruction and Go to pane. +N more counts other needs-you items including E7
 omissions, while N unread excludes E7 and includes info notices.
 
+D23: the card Agent Line inherits O12—one line, existing 220pt sidebar text cap,
+ellipsis before the complete bracketed age. The toolbar's 360pt cap does not
+apply to the card. D25: the ask row head has body + plain age with Dismiss beside
+it, then the form below; approval's optional reason precedes Approve/Deny. The
+card's unread summary follows the entire request block, as in approved S15.
+Apply that row-head Dismiss placement to shared Messages ask rows too.
+
 Single choice submits once on press. Multiple/free text use Submit. Approval
 has Approve/Deny and optional reason. Elicitation is inline in Messages and
 Answer… on the card opens that exact request in Messages. Every open ask is
@@ -85,7 +92,8 @@ at the same small gap, always visible. No width-based two-column card.
 
 Normal repo/branch fit at 420pt and wider. SESSION/PANE can middle-truncate with
 readable ends/full tooltip/inline copy. Oversized paths/branch keep adopted middle
-truncation; title/message retain natural one/two-line boundaries. Copy SESSION
+truncation; the title retains its natural one/two-line boundary and the Agent
+Line retains D23's single-line cap/whole-age boundary. Copy SESSION
 is only raw session reference; PANE is full UUID. Actual pasteboard readback is
 separate from PNG/AX. Retain J5's five actual-card-width matrix separately from
 V2's 1400/520/390 window matrix.
