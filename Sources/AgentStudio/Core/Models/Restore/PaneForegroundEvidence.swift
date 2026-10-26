@@ -1,6 +1,6 @@
 import Foundation
 
-/// Reported vetoes retain their binding and observation order just as looks do.
+/// A closed-app report retains its binding and durable recording order.
 package struct PaneForegroundEvidence: Equatable, Sendable {
     package let paneId: UUID
     package let bindingGenerationId: UUID?

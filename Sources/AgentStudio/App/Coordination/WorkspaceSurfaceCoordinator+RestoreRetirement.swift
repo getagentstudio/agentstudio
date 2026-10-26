@@ -5,18 +5,18 @@ import Foundation
 import os.log
 
 extension WorkspaceSurfaceCoordinator {
-    enum ForegroundRetirementRoute {
+    enum RestoreEvidenceRetirementRoute {
         case awaitingReady(pendingPaneIDs: Set<UUID>)
         case ready(sink: @Sendable (UUID) async -> Void)
     }
 
-    /// The sink and optional schema must both be installed before foreground delivery.
+    /// The sink and optional schema must both be installed before report/cold-resume retirement delivery.
     /// Reuse the owned retirement route; snapshot deletion on replay is idempotent.
-    func markRestoreForegroundRetirementReady() {
-        guard case .awaitingReady(let pendingPaneIDs) = restoreForegroundRetirementRoute,
+    func markRestoreEvidenceRetirementReady() {
+        guard case .awaitingReady(let pendingPaneIDs) = restoreEvidenceRetirementRoute,
             let sink = restorePaneRetirementSink
         else { return }
-        restoreForegroundRetirementRoute = .ready(sink: sink)
+        restoreEvidenceRetirementRoute = .ready(sink: sink)
         submitRestoreRetirement(pendingPaneIDs)
     }
 
@@ -26,16 +26,16 @@ extension WorkspaceSurfaceCoordinator {
         guard !paneIDs.isEmpty else { return }
         let snapshotter = scrollbackSnapshotter
         let scrollback = scrollbackStore
-        let retireForeground: (@Sendable (UUID) async -> Void)?
-        switch restoreForegroundRetirementRoute {
+        let retireReports: (@Sendable (UUID) async -> Void)?
+        switch restoreEvidenceRetirementRoute {
         case .awaitingReady(var pendingPaneIDs):
             pendingPaneIDs.formUnion(paneIDs)
-            restoreForegroundRetirementRoute = .awaitingReady(pendingPaneIDs: pendingPaneIDs)
-            retireForeground = nil
+            restoreEvidenceRetirementRoute = .awaitingReady(pendingPaneIDs: pendingPaneIDs)
+            retireReports = nil
         case .ready(let sink):
-            retireForeground = sink
+            retireReports = sink
         }
-        guard snapshotter != nil || scrollback != nil || retireForeground != nil else { return }
+        guard snapshotter != nil || scrollback != nil || retireReports != nil else { return }
         let operationID = UUIDv7.generate()
         restoreRetirementTasksByID[operationID] = Task { [weak self] in
             do {
@@ -48,7 +48,7 @@ extension WorkspaceSurfaceCoordinator {
                 // Never include captured data, paths or an OS error payload.
                 Self.logger.warning("Scrollback retirement could not delete a snapshot")
             }
-            for paneId in paneIDs { await retireForeground?(paneId) }
+            for paneId in paneIDs { await retireReports?(paneId) }
             self?.restoreRetirementTasksByID.removeValue(forKey: operationID)
         }
     }

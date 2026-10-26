@@ -11,13 +11,13 @@ import Testing
 struct ColdResumeTestPane: Sendable {
     let paneId: UUID
     let sessionId: String
-    let look: PaneForegroundLook
+    let zmxSessionId: ZmxSessionID
+    let bindingGenerationId: UUID
     let repository: SQLitePaneForegroundEvidenceRepository
 
     @MainActor static func make(
         harness: PaneCLIOutboxDrainHarness, provider: String = "codex", paneId: UUID = UUIDv7.generate(),
-        sessionId: String = UUIDv7.generate().uuidString, session: ZmxSessionID = .generateUUIDv7(),
-        bootId: String = "boot-A", program: ForegroundProgram = .codex, nativeIdentity: Data? = nil
+        sessionId: String = UUIDv7.generate().uuidString, session: ZmxSessionID = .generateUUIDv7()
     ) async throws -> Self {
         _ = await harness.drain()
         harness.membership.addPane(.init(existingUUID: paneId))
@@ -34,27 +34,17 @@ struct ColdResumeTestPane: Sendable {
         let observerId = UUIDv7.generate()
         let repository = SQLitePaneForegroundEvidenceRepository(
             access: WorkspaceForegroundEvidenceSQLiteAccess(sqliteAccess: harness.sqliteAccess),
-            observerLaunchId: observerId, paneSessions: { [paneId: session] })
-        let identity =
-            try nativeIdentity
-            ?? ZmxSessionIdentity(
-                version: 1, bootID: bootId, daemon: .init(pid: 3111, startSeconds: 1, startMicroseconds: 1),
-                terminalLeader: .init(pid: 3112, startSeconds: 1, startMicroseconds: 2),
-                processGroupID: 3112, sessionCreatedAt: 1
-            ).encoded()
-        let look = PaneForegroundLook(
-            paneId: paneId, zmxSessionId: session, sessionIdentity: identity,
-            bindingGenerationId: binding.bindingGenerationId, program: program,
-            observerLaunchId: observerId, sequence: 1, observedAt: Date(timeIntervalSince1970: 11))
-        #expect(try await repository.admit(look) == .admitted)
-        return Self(paneId: paneId, sessionId: sessionId, look: look, repository: repository)
+            observerLaunchId: observerId)
+        return Self(
+            paneId: paneId, sessionId: sessionId, zmxSessionId: session,
+            bindingGenerationId: binding.bindingGenerationId, repository: repository)
     }
 
     @MainActor func decision(
-        harness: PaneCLIOutboxDrainHarness, foreground: (any PaneForegroundEvidenceRepository)? = nil
+        harness: PaneCLIOutboxDrainHarness, reportRepository: (any PaneForegroundEvidenceRepository)? = nil
     ) -> ColdRestoreResumeDecision {
         .init(
-            ingestion: harness.ingestion, foregroundRepository: foreground ?? repository,
+            ingestion: harness.ingestion, reportRepository: reportRepository ?? repository,
             drain: harness.drainOwner, storeURL: harness.storeURL)
     }
 
@@ -63,7 +53,7 @@ struct ColdResumeTestPane: Sendable {
         currentBoot: String = "boot-B", inventory: ZmxSessionInventory = .complete([:])
     ) async -> ColdRestoreResumeVerdict {
         await decision.resolve(
-            paneId: paneId, sessionId: look.zmxSessionId, preRestoreLook: look,
+            paneId: paneId, sessionId: zmxSessionId,
             readiness: .ready, launchBoot: .init(previousBootId: previousBoot, currentBootId: currentBoot),
             inventory: inventory)
     }
@@ -84,12 +74,6 @@ actor HeldResumeEvidenceRepository: PaneForegroundEvidenceRepository {
         reads += 1
         if reads == heldRead { try await hold.arrive(value) }
         return value
-    }
-    func eligiblePanes() async throws -> [ForegroundPaneBinding] { try await base.eligiblePanes() }
-    func admit(_ look: PaneForegroundLook) async throws -> ForegroundEvidenceAdmission { try await base.admit(look) }
-    func load(paneId: UUID) async throws -> PaneForegroundLook? { try await base.load(paneId: paneId) }
-    func clearReportedEvidenceForChangedBinding(paneId: UUID) async throws {
-        try await base.clearReportedEvidenceForChangedBinding(paneId: paneId)
     }
     func retire(paneId: UUID) async throws { try await base.retire(paneId: paneId) }
 }

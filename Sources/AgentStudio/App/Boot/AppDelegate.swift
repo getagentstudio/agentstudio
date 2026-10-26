@@ -183,15 +183,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     var worktreeAnnotationOutputCoordinator: WorktreeAnnotationOutputCoordinatorActor!
     var workspaceCacheCoordinator: WorkspaceCacheCoordinator!
     let scrollbackStore = ScrollbackStore()
-    var restoreForegroundObserver: PaneForegroundObserver<ContinuousClock>?
-    var restoreForegroundExitWatcher: DarwinProcessExitWatcher?
     var restoreLaunchBoot: TerminalRestoreLaunchBoot?
-    var restoreForegroundEvidenceRepository: SQLitePaneForegroundEvidenceRepository?
-    var restoreForegroundLifecycleStream: AsyncStream<ForegroundLookTrigger>?
-    var restoreForegroundLifecycleContinuation: AsyncStream<ForegroundLookTrigger>.Continuation?
-    var restoreForegroundLifecycleTask: Task<Void, Never>?
-    var restoreForegroundTriggerSink: (@Sendable (ForegroundLookTrigger) -> Void)?
-    private var didForwardRestoreQuit = false
+    var restoreReportEvidenceRepository: SQLitePaneForegroundEvidenceRepository?
     var bridgeGitReadScheduler: BridgeGitReadScheduler!
     var bridgeWorktreeProductConstructionCoordinator: BridgeWorktreeProductConstructionCoordinator!
     var watchedFolderCommands: (any WatchedFolderCommandHandling)!
@@ -415,16 +408,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation, Observ
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        if !didForwardRestoreQuit {
-            didForwardRestoreQuit = true
-            if let restoreForegroundTriggerSink {
-                AgentStudioPerformanceTraceRecorder.measureRestoreSlice(
-                    .restoreQuitForward, recorder: performanceTraceRecorder
-                ) {
-                    restoreForegroundTriggerSink(.appQuitting)
-                }
-            }
-        }
+
         #if DEBUG
             sidebarPerformanceProofSession?.completeIdlePopulationForTermination()
         #endif

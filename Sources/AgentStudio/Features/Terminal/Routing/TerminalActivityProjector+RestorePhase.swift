@@ -7,7 +7,6 @@ extension TerminalActivityProjector {
     func armRestorePhase(paneID: UUID, generation: RestoreGeneration, resumeInvocation: ResumeInvocation? = nil) async {
         recordRestorePhaseGeneration(generation, for: paneID, resumeInvocation: resumeInvocation)
         discardOpenActivityWindowsForRestorePhaseArm(for: paneID)
-        await deliverForegroundEdges()
     }
 
     /// Claim once while keeping suppression active until the ordered end arrives.
@@ -31,7 +30,6 @@ extension TerminalActivityProjector {
             return false
         }
         resetPaneActivityBaselineAfterRestorePhaseEnd(for: paneID)
-        await deliverForegroundEdges()
         return true
     }
 
@@ -39,7 +37,6 @@ extension TerminalActivityProjector {
     func retirePanePermanently(paneID: UUID) async {
         clearRestorePhaseGeneration(for: paneID)
         retirePaneStatePermanently(for: paneID)
-        await deliverForegroundEdges()
     }
 
     func isRestorePhaseActive(paneID: UUID) -> Bool {

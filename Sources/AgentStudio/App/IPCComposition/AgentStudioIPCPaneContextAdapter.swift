@@ -14,18 +14,15 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
     private let service: PaneContextService
     private let ingestion: SessionsIngestion
     private let maximumEncodedReplyBytes: Int
-    private let foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
 
     /// Test seam; lowers only. Production composition passes no cap.
     init(
         service: PaneContextService, ingestion: SessionsIngestion,
         maximumEncodedReplyBytes: Int = min(
             IPCFramePolicy.maximumResponseFrameBytes, AppPolicies.IPC.maximumQueuedOutputBytes - 1),
-        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
-        foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)? = nil
+        performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil
     ) {
         self.performanceTraceRecorder = performanceTraceRecorder
-        self.foregroundLookSink = foregroundLookSink
         self.service = service
         self.ingestion = ingestion
         self.maximumEncodedReplyBytes = min(
@@ -59,7 +56,6 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
                 actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape),
             commitParticipant: commitParticipant)
         let response = try sendResult(result)
-        await noteCommittedMessage(result, paneId: paneId)
         return response
     }
 
@@ -89,7 +85,6 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
                 importance: PaneContextIPCMapping.importance(params.importance), body: params.body, why: params.why,
                 actions: try params.actions.map(PaneContextIPCMapping.action), shape: shape))
         _ = try sendResult(result)
-        await noteCommittedMessage(result, paneId: paneId)
         return try await waitForPaneContextAsk(
             service: service, paneId: pane, messageId: message, connectionEndCause: connectionEndCause)
     }
@@ -255,13 +250,6 @@ struct AgentStudioIPCPaneContextAdapter: AppIPCPaneContextPort {
         case .existing(let id): return .existing(id: id.uuid)
         case .refused(let reason): throw PaneContextIPCMapping.refusal(reason)
         case .unavailable: throw AppIPCPaneContextError(reason: .unavailable)
-        }
-    }
-
-    private func noteCommittedMessage(_ result: PaneMessageSendResult, paneId: UUID) async {
-        switch result {
-        case .created: await foregroundLookSink?(.agentMessage, paneId)
-        case .existing, .refused, .unavailable: break
         }
     }
 

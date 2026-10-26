@@ -18,7 +18,7 @@ struct RestoreResumeDecisionBoundaryTests {
             let pane = try await ColdResumeTestPane.make(harness: harness)
             let hold = HeldStep<PaneForegroundEvidence?>("first cold verdict evidence before final reread")
             let repository = HeldResumeEvidenceRepository(base: pane.repository, hold: hold, heldRead: 1)
-            let decision = pane.decision(harness: harness, foreground: repository)
+            let decision = pane.decision(harness: harness, reportRepository: repository)
             let operation = Task {
                 defer { hold.retire() }
                 return await pane.resolve(decision)
@@ -48,13 +48,13 @@ struct RestoreResumeDecisionBoundaryTests {
         }
     }
 
-    @Test("F10 uses the app's preceding boot even when the stored look is older")
-    func oldLookCannotSkipSameBootDecision() async throws {
+    @Test("a live end after cold end invalidates the same-boot decision")
+    func liveEndInvalidatesSameBootDecision() async throws {
         try await withPaneCLIOutboxDrainHarness { harness in
-            let pane = try await ColdResumeTestPane.make(harness: harness, bootId: "boot-A")
-            let hold = HeldStep<PaneForegroundEvidence?>("old look after cold end before B1")
+            let pane = try await ColdResumeTestPane.make(harness: harness)
+            let hold = HeldStep<PaneForegroundEvidence?>("report read after cold end before live cutoff")
             let repository = HeldResumeEvidenceRepository(base: pane.repository, hold: hold, heldRead: 1)
-            let decision = pane.decision(harness: harness, foreground: repository)
+            let decision = pane.decision(harness: harness, reportRepository: repository)
             let operation = Task {
                 defer { hold.retire() }
                 return await pane.resolve(decision, previousBoot: "boot-B", currentBoot: "boot-B")

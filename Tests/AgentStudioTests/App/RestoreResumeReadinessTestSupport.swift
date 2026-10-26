@@ -7,7 +7,8 @@ import Testing
 /// An unfixed publisher fails immediately, then cancels and joins its waiter.
 @MainActor
 func withPendingColdReadinessWait(
-    _ appDelegate: AppDelegate, operation: @MainActor () async throws -> Void
+    _ appDelegate: AppDelegate, expected: RestoreResumeReadinessResult = .unavailable,
+    operation: @MainActor () async throws -> Void
 ) async throws {
     let readiness = appDelegate.restoreResumeReadiness
     let waiter = Task { await readiness.wait(paneId: UUIDv7.generate()) }
@@ -16,7 +17,7 @@ func withPendingColdReadinessWait(
         let missingOutcome = await readiness.isPending
         #expect(!missingOutcome, "startup exited without publishing a cold-readiness result")
         if missingOutcome { waiter.cancel() }
-        #expect(await waiter.value == .unavailable)
+        #expect(await waiter.value == expected)
         await readiness.shutdown()
     } catch {
         waiter.cancel()

@@ -14,16 +14,15 @@ import Testing
 struct ResumeEvidenceZmxProof {
     let environment: ResumeEvidenceZmxEnvironment
     let data: ResumeEvidenceZmxData
-    let foreground: ZmxForegroundFixture
+    let binding: ResumeEvidenceZmxBinding
     let provider: String
     let sessionId: String
     let otherSessionId = UUIDv7.generate(timestamp: Date(timeIntervalSince1970: 1_500_000_000)).uuidString
     let drain: PaneCLIOutboxDrain
-    let refusedWatcher: DarwinProcessExitWatcher?
 
     static func make(
         environment: ResumeEvidenceZmxEnvironment, data: ResumeEvidenceZmxData, provider: String,
-        captureLook: Bool = true, watchRefused: Bool = false, successor: Bool = false, controlledJobs: Bool = false,
+        physicalAgent: Bool = false, controlledJobs: Bool = false,
         paneId: UUID? = nil, restoredSessionId: ZmxSessionID? = nil
     ) async throws -> Self {
         let pane = paneId ?? UUIDv7.generate()
@@ -31,76 +30,86 @@ struct ResumeEvidenceZmxProof {
         data.membership.addPane(.init(existingUUID: pane))
         let hook = try await data.liveHook(pane: pane, session: session, provider: provider, end: false)
         guard case .committed(let commit) = hook else { throw ResumeEvidenceFixtureFailure.bindingNotAdmitted }
-        let refused = watchRefused ? DarwinProcessExitWatcher(sourceMaker: ResumeRefusedSourceMaker()) : nil
-        let foreground = try await ZmxForegroundFixture.make(
-            ownership: environment, provider: provider == "codex" ? "codex" : "claude", successorProgram: successor,
-            bindingContext: .init(
-                paneID: pane, generationID: commit.binding.bindingGenerationId, database: data.database,
-                ownership: environment),
-            exitWatcher: refused, controlledJobStop: controlledJobs, restoredSessionId: restoredSessionId)
-        let drain = data.drain
-        _ = await drain.drain(storeURL: data.storeURL)
-        if captureLook {
-            let watch = try await foreground.initialLook()
-            if watchRefused {
-                let scope = ForegroundObserverFactScope(paneId: pane, operationId: watch)
-                try await foreground.facts.expectNext(in: scope, .watchUnavailable(.permissionDenied))
-                try await foreground.facts.expectNext(in: scope, .closed(.looked))
-                #expect(await foreground.observer.currentWatch(paneId: pane) == nil)
-            }
+        let sessionId = restoredSessionId ?? .generateUUIDv7()
+        let agentFixture: OwnedResumeAgentFixture?
+        if physicalAgent {
+            agentFixture = try await OwnedResumeAgentFixture.make(
+                ownership: environment, sessionId: sessionId, provider: provider == "codex" ? "codex" : "claude",
+                controlledJobStop: controlledJobs)
+        } else {
+            agentFixture = nil
+            let client = try await environment.launchSession(
+                sessionId,
+                arguments: [
+                    "/bin/sh", "-c",
+                    "IFS= read -r startup; printf '%s\\n' \"$startup\"; printf "
+                        + ResumeZmxProcessDriver.shellMarker + "; exec /bin/cat",
+                ])
+            try await client.sendStartupProbe()
+            _ = try await client.expectStartupGate()
+            _ = try await client.expectInteractiveShell()
         }
+        let repository = SQLitePaneForegroundEvidenceRepository(
+            access: TestForegroundSQLiteAccess(databaseQueue: data.database), observerLaunchId: UUIDv7.generate())
+        _ = await data.drain.drain(storeURL: data.storeURL)
         return Self(
-            environment: environment, data: data, foreground: foreground, provider: provider,
-            sessionId: session, drain: drain, refusedWatcher: refused)
+            environment: environment, data: data,
+            binding: .init(
+                paneId: pane, sessionId: sessionId,
+                generationId: commit.binding.bindingGenerationId, repository: repository, agentFixture: agentFixture),
+            provider: provider, sessionId: session, drain: data.drain)
     }
 
     func prepareCold() async throws {
-        await foreground.observer.shutdown()
-        try await foreground.killOwnedSession()
+        try await environment.killSession(binding.sessionId)
     }
 
-    func resolve() async throws -> ColdRestoreResumeVerdict {
-        let look = try await foreground.repository.load(paneId: foreground.paneId)
+    func resolve(inventory: ZmxSessionInventory? = nil) async throws -> ColdRestoreResumeVerdict {
         let report = await drain.drain(storeURL: data.storeURL)
         print("R3_READINESS outcome=\(report.readOutcome)")
         guard case .incomplete = report.readOutcome else {
             let readiness = RestoreResumeReadiness(clock: TestPushClock(), deadline: .seconds(1))
             await readiness.record(report.readOutcome)
-            let state = await readiness.wait(paneId: foreground.paneId)
+            let state = await readiness.wait(paneId: binding.paneId)
             await readiness.shutdown()
-            return await resolve(readiness: state, look: look)
+            return await resolve(readiness: state, inventory: inventory)
         }
         throw ResumeEvidenceFixtureFailure.incompleteInitialRead
     }
 
-    private func resolve(readiness: RestoreResumeReadinessResult, look: PaneForegroundLook?) async
+    private func resolve(readiness: RestoreResumeReadinessResult, inventory: ZmxSessionInventory?) async
         -> ColdRestoreResumeVerdict
     {
         let decision = ColdRestoreResumeDecision(
-            ingestion: data.ingestion, foregroundRepository: foreground.repository, drain: drain,
+            ingestion: data.ingestion, reportRepository: binding.repository, drain: drain,
             storeURL: data.storeURL)
+        let decisionInventory: ZmxSessionInventory
+        if let inventory {
+            decisionInventory = inventory
+        } else {
+            decisionInventory = await environment.backend.discoverSessionInventory()
+        }
         return await decision.resolve(
-            paneId: foreground.paneId, sessionId: foreground.sessionId, preRestoreLook: look,
+            paneId: binding.paneId, sessionId: binding.sessionId,
             readiness: readiness, launchBoot: data.launchBoot,
-            inventory: await environment.backend.discoverSessionInventory())
+            inventory: decisionInventory)
     }
 
     /// Counterfactual only: the same real cold end/E8/FIFO owners, with both reads replaced by verified-empty.
     func resolveWithEmptyDrain() async throws -> ColdRestoreResumeVerdict {
-        let look = try await foreground.repository.load(paneId: foreground.paneId)
-        let ended = try await data.ingestion.endLiveMainForColdRestore(paneId: foreground.paneId)
-        let evidence = try await foreground.repository.loadEvidence(paneId: foreground.paneId)
+        let ended = try await data.ingestion.endLiveMainForColdRestore(paneId: binding.paneId)
+        let evidence = try await binding.repository.loadEvidence(paneId: binding.paneId)
         let verdict = await SessionsResumeResolver().resumeEvidence(
             for: .init(
-                paneId: foreground.paneId, zmxSessionId: foreground.sessionId, coldEndedMain: ended,
-                evidence: evidence, preRestoreLook: look, launchBootId: data.launchBoot.currentBootId,
+                zmxSessionId: binding.sessionId, coldEndedMain: ended,
+                evidence: evidence, isSameBoot: data.launchBoot.isSameBoot,
                 inventory: await environment.backend.discoverSessionInventory()))
         if case .interruptedCandidate = verdict, data.launchBoot.isSameBoot, let ended {
             #expect(
                 try await data.ingestion.commitColdResume(
-                    paneId: foreground.paneId, bindingGenerationId: ended.bindingGenerationId))
+                    paneId: binding.paneId, bindingGenerationId: ended.bindingGenerationId))
         }
-        return .init(evidence: verdict, endedMain: ended, foreground: evidence)
+        return .init(evidence: verdict, endedMain: ended, reportEvidence: evidence)
     }
 
     func prove(
@@ -110,7 +119,7 @@ struct ResumeEvidenceZmxProof {
     ) async throws {
         let fixture = try ResumeZmxFixture(
             harness: environment.harness, providerIdentifier: provider, exitCode: 0,
-            restoreSessionID: foreground.sessionId,
+            restoreSessionID: binding.sessionId,
             reportsToFile: true, holdResume: whileRunning != nil, ownership: environment)
         let base = fixture.basePlan
         let planBase = TerminalColdRestorePlan(
@@ -154,7 +163,7 @@ struct ResumeEvidenceZmxProof {
                 if case .unknown = expected { #expect(output.contains("resume it manually")) }
                 if case .knownExited = expected { #expect(!output.contains("resume it manually")) }
             }
-            if case .reportedOtherStart(let other) = result.foreground?.value {
+            if case .reportedOtherStart(let other) = result.reportEvidence?.value {
                 #expect(output.contains(String(other.conversationId.prefix(8))))
                 #expect(other.conversationId.prefix(8) != sessionId.prefix(8))
             }
@@ -174,9 +183,17 @@ struct ResumeEvidenceZmxProof {
 
     func close() async throws {
         await data.access.setRejectsWrites(false)
-        defer { refusedWatcher?.shutdown() }
-        try await foreground.closeFixture()
+        try await environment.killSession(binding.sessionId)
+        binding.agentFixture?.closeHandles()
     }
+}
+
+struct ResumeEvidenceZmxBinding: Sendable {
+    let paneId: UUID
+    let sessionId: ZmxSessionID
+    let generationId: UUID
+    let repository: SQLitePaneForegroundEvidenceRepository
+    let agentFixture: OwnedResumeAgentFixture?
 }
 
 private struct ResumeEvidenceInvocationReceipt: Encodable {
@@ -187,8 +204,4 @@ private struct ResumeEvidenceInvocationReceipt: Encodable {
     let argv: [String]
     let calls: String
     let output: String
-}
-
-private struct ResumeRefusedSourceMaker: ProcessExitSourceMaking {
-    func makeSource(pid: Int32) throws -> any ProcessExitSource { throw POSIXError(.EPERM) }
 }

@@ -6,82 +6,91 @@ import Testing
 
 @testable import AgentStudioCore
 
-/// SR4, SR5; Program Design item 3, stage 2 (amended 2026-09-30): the retry
-/// policy `DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer(pid:)`
-/// applies after `sysctl(KERN_PROCARGS2)` returns `EIO` -- an intermediate
-/// exec racing the read, confirmed empirically against real zmx (30/30 EIO
-/// occurrences, 30/30 recovered on the very next read). Exercises the
-/// injectable retry loop directly, with a scripted single-read function, so
-/// this proves the policy itself without a real process or a real `sysctl`
-/// call -- the real syscall path is proven against real zmx in the E2E lane.
 @Suite("Darwin cold start observer syscalls")
 struct DarwinColdStartObserverSyscallsTests {
-    @Test("an EIO read followed by a success returns the successful read's buffer")
-    func eioReadFollowedBySuccessReturnsTheSuccessfulReadsBuffer() {
-        // Arrange
-        var callCount = 0
-        let expectedBuffer: [UInt8] = [1, 2, 3]
+    // One argv element, with the executable path and its alignment padding.
+    private static let startupBuffer: [UInt8] = [1, 0, 0, 0] + Array("/bin/sh\0\0/bin/sh\0".utf8)
+
+    @Test("startup handoff recovers from a transient EINVAL through the production adapter")
+    func startupRetriesTransientEINVAL() {
+        // Arrange: the kernel can report EINVAL while the leader is mid-exec.
+        let bytes = Self.startupBuffer
+        let calls = ScriptedArgumentsSyscalls(
+            sizes: [.success(24)], fetches: [.failure(POSIXErrorNumber(EINVAL)), .success(bytes.count)], bytes: bytes)
+        let syscalls = DarwinColdStartObserverSyscalls(argumentsReader: ProcessArgumentsReader(syscalls: calls))
 
         // Act
-        let result = DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer(
-            pid: 4242,
-            attempts: 3
-        ) { _ in
-            callCount += 1
-            return callCount == 1 ? .failure(POSIXErrorNumber(EIO)) : .success(expectedBuffer)
-        }
+        let result = syscalls.readProcessArgumentsBuffer(pid: 42)
 
-        // Assert
-        #expect(callCount == 2)
-        switch result {
-        case .success(let buffer): #expect(buffer == expectedBuffer)
-        case .failure: Issue.record("Expected the second, successful read to win")
-        }
+        // Assert: D18 restores startup's retry-any-errno policy, without size queries.
+        #expect(result == .success(bytes))
+        #expect(calls.fetchCount == 2)
+        #expect(calls.queryCount == 0)
+        #expect(calls.maximumSizeQueryCount == 1)
+        #expect(calls.requestedSizes == [64, 64])
     }
 
-    @Test("EIO on every attempt exhausts the retry budget and reports the last errno")
-    func eioOnEveryAttemptExhaustsTheRetryBudgetAndReportsTheLastErrno() {
-        // Arrange
-        var callCount = 0
+    @Test("startup handoff reads a complete snapshot without querying changing size metadata")
+    func startupDoesNotQueryChangingSizeMetadata() {
+        // Arrange: size-only responses would disagree across an exec; the data fetch is complete.
+        let bytes = Self.startupBuffer
+        let calls = ScriptedArgumentsSyscalls(
+            sizes: [.success(24), .success(28)], fetches: [.success(bytes.count)], bytes: bytes)
+        let syscalls = DarwinColdStartObserverSyscalls(argumentsReader: ProcessArgumentsReader(syscalls: calls))
 
         // Act
-        let result = DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer(
-            pid: 4242,
-            attempts: 3
-        ) { _ in
-            callCount += 1
-            return .failure(POSIXErrorNumber(EIO))
-        }
+        let result = syscalls.readProcessArgumentsBuffer(pid: 42)
 
-        // Assert: exactly `attempts` calls -- no fourth attempt, no early exit.
-        #expect(callCount == 3)
-        switch result {
-        case .success: Issue.record("Expected every attempt to fail")
-        case .failure(let errorNumber): #expect(errorNumber.rawValue == EIO)
-        }
+        // Assert: the known complete bytes are the oracle, independently of size metadata.
+        #expect(result == .success(bytes))
+        #expect(calls.fetchCount == 1)
+        #expect(calls.queryCount == 0)
+        #expect(calls.maximumSizeQueryCount == 1)
+        #expect(calls.requestedSizes == [64])
     }
 
-    @Test("a successful first read never retries")
-    func aSuccessfulFirstReadNeverRetries() {
-        // Arrange
-        var callCount = 0
-        let expectedBuffer: [UInt8] = [9]
+    @Test("startup handoff exhausts persistent EIO after exactly three maximum-capacity fetches")
+    func startupPersistentEIOExhaustsBudget() {
+        let calls = ScriptedArgumentsSyscalls(sizes: [.success(24)], fetches: [.failure(POSIXErrorNumber(EIO))])
+        let syscalls = DarwinColdStartObserverSyscalls(argumentsReader: ProcessArgumentsReader(syscalls: calls))
 
-        // Act
-        let result = DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer(
-            pid: 4242,
-            attempts: 3
-        ) { _ in
-            callCount += 1
-            return .success(expectedBuffer)
-        }
+        let result = syscalls.readProcessArgumentsBuffer(pid: 42)
 
-        // Assert
-        #expect(callCount == 1)
-        switch result {
-        case .success(let buffer): #expect(buffer == expectedBuffer)
-        case .failure: Issue.record("Expected the first read to succeed")
-        }
+        #expect(result == .failure(POSIXErrorNumber(EIO)))
+        #expect(calls.fetchCount == 3)
+        #expect(calls.queryCount == 0)
+        #expect(calls.maximumSizeQueryCount == 1)
+        #expect(calls.requestedSizes == [64, 64, 64])
+    }
+
+    @Test("startup handoff returns the last errno after retrying different failures")
+    func startupExhaustionReturnsLastErrno() {
+        let calls = ScriptedArgumentsSyscalls(
+            sizes: [.success(24)],
+            fetches: [
+                .failure(POSIXErrorNumber(EIO)), .failure(POSIXErrorNumber(EINVAL)), .failure(POSIXErrorNumber(ESRCH)),
+            ])
+        let syscalls = DarwinColdStartObserverSyscalls(argumentsReader: ProcessArgumentsReader(syscalls: calls))
+
+        let result = syscalls.readProcessArgumentsBuffer(pid: 42)
+
+        #expect(result == .failure(POSIXErrorNumber(ESRCH)))
+        #expect(calls.fetchCount == 3)
+        #expect(calls.queryCount == 0)
+        #expect(calls.requestedSizes == [64, 64, 64])
+    }
+
+    @Test("startup handoff uses the shared argument reader and preserves errno")
+    func sharedArgumentReaderPreservesResult() {
+        let bytes: [UInt8] = [1, 2, 3, 4, 5, 6, 7]
+        let calls = ScriptedArgumentsSyscalls(sizes: [.success(8)], fetches: [.success(7)], bytes: bytes)
+        let syscalls = DarwinColdStartObserverSyscalls(argumentsReader: ProcessArgumentsReader(syscalls: calls))
+        #expect(syscalls.readProcessArgumentsBuffer(pid: 42) == .success(bytes))
+        let refused = ScriptedArgumentsSyscalls(sizes: [.success(8)], fetches: [.failure(POSIXErrorNumber(ESRCH))])
+        let failed = DarwinColdStartObserverSyscalls(argumentsReader: ProcessArgumentsReader(syscalls: refused))
+        #expect(failed.readProcessArgumentsBuffer(pid: 42) == .failure(POSIXErrorNumber(ESRCH)))
+        #expect(refused.queryCount == 0)
+        #expect(refused.fetchCount == 3)
     }
 
     /// `leaderState`'s "pid was recycled" branch: a real, alive process

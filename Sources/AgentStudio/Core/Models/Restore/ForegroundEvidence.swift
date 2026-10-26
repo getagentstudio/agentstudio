@@ -1,7 +1,6 @@
 import Foundation
 
 package enum ForegroundEvidence: Equatable, Sendable {
-    case look(ForegroundProgram, sessionIdentity: Data)
     case reportedEnd
     case reportedOtherSessionEnd(ReportedSession)
     case reportedOtherStart(ReportedSession)

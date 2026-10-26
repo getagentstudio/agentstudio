@@ -23,7 +23,6 @@ struct SessionsPaneContextComposition: Sendable {
         var statusApplyMeasurement: SessionStatusApplyMeasurement = .init()
         var statusApplyProbe: @Sendable (SessionStatusApplySnapshot) -> Void = { _ in }
         var activityClock: PaneActivityClock?
-        var foregroundLookSink: (@Sendable (ForegroundLookTrigger, UUID) async -> Void)?
         var resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
         var terminalLeaderReader: (any PaneTerminalLeaderReading)?
         var processChainReader: (any ProcessChainReading)?
@@ -67,12 +66,10 @@ struct SessionsPaneContextComposition: Sendable {
                 ingestion: ingestion, now: inputs.wallNow,
                 activityClock: inputs.activityClock, ownerPaneLookup: ownerPaneLookup,
                 performanceTraceRecorder: inputs.performanceTraceRecorder,
-                foregroundLookSink: inputs.foregroundLookSink,
                 resumedSessionStartSink: inputs.resumedSessionStartSink,
                 processChainReader: inputs.processChainReader ?? DarwinProcessChainReader()),
             paneContextIPCAdapter: AgentStudioIPCPaneContextAdapter(
-                service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder,
-                foregroundLookSink: inputs.foregroundLookSink),
+                service: service, ingestion: ingestion, performanceTraceRecorder: inputs.performanceTraceRecorder),
             presentationLane: presentationLane, bridge: bridge)
         composition.connect()
         return composition

@@ -64,45 +64,10 @@ struct AppResumeSessionsFixture: Sendable {
     }
 }
 
-enum RecordedRestoreTrigger: Equatable, Sendable { case bindingChanged, agentMessage }
-
-struct CommittedRestoreTrigger: Equatable, Sendable {
-    let kind: RecordedRestoreTrigger
-    let paneId: UUID
-    let bindingId: UUID?
-    let sessionId: String?
-    let ended: Bool
-}
-
-final class RestoreSessionsTriggerLedger: Sendable {
-    private let state = Mutex<[CommittedRestoreTrigger]>([])
-    func snapshot() -> [CommittedRestoreTrigger] { state.withLock { $0 } }
-    func record(_ trigger: ForegroundLookTrigger, paneId: UUID, repository: SessionsRepository) async {
-        let kind: RecordedRestoreTrigger
-        switch trigger {
-        case .bindingChanged: kind = .bindingChanged
-        case .agentMessage: kind = .agentMessage
-        default: return
-        }
-        do {
-            let context = try await repository.statusContext(paneId: paneId)
-            state.withLock {
-                $0.append(
-                    .init(
-                        kind: kind, paneId: paneId, bindingId: context.currentBinding?.bindingGenerationId,
-                        sessionId: context.currentBinding?.providerConversationId,
-                        ended: context.currentBinding?.status == .ended))
-            }
-        } catch { Issue.record("Could not read the committed Sessions value at its foreground trigger: \(error)") }
-    }
-}
-
-func resumeProducerAdapter(
-    ingestion: SessionsIngestion, fixture: AppResumeSessionsFixture, ledger: RestoreSessionsTriggerLedger
-) -> AgentStudioIPCSessionsAdapter {
+func resumeProducerAdapter(ingestion: SessionsIngestion)
+    -> AgentStudioIPCSessionsAdapter
+{
     AgentStudioIPCSessionsAdapter(
         ingestion: ingestion, now: { Date(timeIntervalSince1970: 3) },
-        foregroundLookSink: { trigger, pane in
-            await ledger.record(trigger, paneId: pane, repository: fixture.repository)
-        }, processChainReader: EligibleTestProcessChainReader())
+        processChainReader: EligibleTestProcessChainReader())
 }

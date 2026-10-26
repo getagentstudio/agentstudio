@@ -270,7 +270,9 @@ struct AppIPCStartOutcomeTraceTests {
         await harness.shutdown()
     }
 
-    @Test("missing drain paths or evidence release cold readiness", arguments: [false, true])
+    @Test(
+        "missing paths release unavailable; an absent preinstalled report owner still starts the drain",
+        arguments: [false, true])
     func incompleteDrainConfigurationReleasesReadiness(missingPaths: Bool) async throws {
         let harness = try await makeServerCapableAppIPCTestHarness()
         do {
@@ -280,11 +282,20 @@ struct AppIPCStartOutcomeTraceTests {
             let pendingDelegate = AppDelegate()
             pendingDelegate.store = harness.store
             if !missingPaths { pendingDelegate.appIPCPaths = harness.appDelegate.appIPCPaths }
-            try await withPendingColdReadinessWait(pendingDelegate) {
+            try await withPendingColdReadinessWait(pendingDelegate, expected: missingPaths ? .unavailable : .ready) {
                 await pendingDelegate.startPaneCLIOutboxDrain(
                     sessionsComposition: composition, datastore: datastore)
+                if !missingPaths {
+                    let launchTask = pendingDelegate.paneCLIOutboxDrainTask
+                    let drain = await (try #require(launchTask)).value
+                    #expect(drain != nil)
+                }
             }
-            #expect(pendingDelegate.paneCLIOutboxDrainTask == nil)
+            let drainStarted = pendingDelegate.paneCLIOutboxDrainTask != nil
+            let reportsInstalled = pendingDelegate.restoreReportEvidenceRepository != nil
+            #expect(drainStarted == !missingPaths)
+            #expect(reportsInstalled == !missingPaths)
+            await pendingDelegate.shutdownRestoreEvidenceOwners()
         } catch {
             await harness.shutdown()
             throw error
@@ -303,14 +314,18 @@ struct AppIPCStartOutcomeTraceTests {
         )
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: harness.rootDirectory.path)
         do {
-            try await withPendingColdReadinessWait(harness.appDelegate) {
+            try await withPendingColdReadinessWait(harness.appDelegate, expected: .ready) {
                 harness.appDelegate.scheduleAppIPCInitialization()
                 let initializationTask = try #require(harness.appDelegate.appIPCInitializationTask)
                 await initializationTask.value
+                let launchTask = harness.appDelegate.paneCLIOutboxDrainTask
+                let drain = await (try #require(launchTask)).value
+                #expect(drain != nil)
             }
 
             #expect(harness.appDelegate.appIPCServer != nil)
-            #expect(harness.appDelegate.paneCLIOutboxDrainTask == nil)
+            let drainStarted = harness.appDelegate.paneCLIOutboxDrainTask != nil
+            #expect(drainStarted)
             #expect(try await trace.ipcStartRecords() == [.init(outcome: "started", reason: nil)])
         } catch {
             await harness.shutdown()

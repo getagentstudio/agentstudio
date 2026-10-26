@@ -490,7 +490,7 @@ final class ProcessExecutorTests {
 
             // Act — the same executor, now scoped to the probe phase.
             let scopedResult = try await AgentStudioPerformanceTraceRecorder.withRestorePhaseScope(
-                .restoreForegroundProbe
+                .restoreOutboxImport
             ) {
                 try await probedExecutor.execute(command: "true", args: [], cwd: nil, environment: nil)
             }
@@ -502,11 +502,11 @@ final class ProcessExecutorTests {
             // scalars, and no other restore phase's body.
             let contentsAfterScopedCall = try String(contentsOf: output, encoding: .utf8)
             #expect(scopedResult.succeeded)
-            #expect(contentsAfterScopedCall.contains("\"body\":\"performance.restore.foreground.probe\""))
+            #expect(contentsAfterScopedCall.contains("\"body\":\"performance.restore.outbox.import\""))
             #expect(contentsAfterScopedCall.contains("\"agentstudio.performance.restore.execution.count\":1"))
             let otherRestorePhaseBodies = [
-                "performance.restore.foreground.gather", "performance.restore.foreground.schedule",
-                "performance.restore.foreground.watch", "performance.restore.resume.decide",
+
+                "performance.restore.resume.decide"
             ]
             for otherPhaseBody in otherRestorePhaseBodies {
                 #expect(!contentsAfterScopedCall.contains("\"body\":\"\(otherPhaseBody)\""))

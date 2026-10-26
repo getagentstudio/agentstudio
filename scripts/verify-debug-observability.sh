@@ -573,16 +573,10 @@ fi
 # and one valid sample cannot hide a later main-thread execution or missing field.
 if [ "${AGENTSTUDIO_RESTORE_R3_COST_PROOF:-0}" = "1" ]; then
   restore_cost_phases=(
-    "performance.restore.foreground.gather"
-    "performance.restore.foreground.schedule"
-    "performance.restore.foreground.probe"
-    "performance.restore.foreground.watch"
     "performance.restore.outbox.import"
     "performance.restore.resume.decide"
   )
   restore_cost_allowances=(
-    "performance.restore.allowance.quit_forward"
-    "performance.restore.allowance.activation_forward"
     "performance.restore.allowance.mount_apply"
     "performance.restore.allowance.resumed_start_end"
   )

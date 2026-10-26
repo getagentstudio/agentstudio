@@ -3,11 +3,9 @@ import GRDB
 
 package struct ForegroundLatestBinding: Equatable, Sendable {
     package let bindingGenerationId: UUID
-    package let isLive: Bool
 
-    package init(bindingGenerationId: UUID, isLive: Bool) {
+    package init(bindingGenerationId: UUID) {
         self.bindingGenerationId = bindingGenerationId
-        self.isLive = isLive
     }
 }
 

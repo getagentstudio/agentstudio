@@ -54,7 +54,7 @@ extension ScrollbackWorkspaceLifecycleTests {
                 delegate.viewRegistry = fixture.coordinator.viewRegistry
                 delegate.workspaceSurfaceCoordinator = fixture.coordinator
                 delegate.workspaceSQLiteDatastore = fixture.datastore
-                delegate.restoreForegroundEvidenceRepository = repository
+                delegate.restoreReportEvidenceRepository = repository
                 delegate.workspaceSurfaceCoordinator.installUndoJournalRecovery(recovery)
                 try #require(fixture.coordinator.undoStack.count == 1)
                 if window == .afterSinkBeforeSchema {
@@ -87,7 +87,6 @@ extension ScrollbackWorkspaceLifecycleTests {
                 }
                 #expect(await AppIPCDeferredInitialization.prepareOptionalSchema(using: fixture.datastore))
                 delegate.replayBootRestoreRetirements()
-                delegate.startRestoreForegroundLifecycleConsumption()
                 await fixture.coordinator.shutdown()
                 let afterReady = try await retirementEvidenceCount(fixture, paneId: pane.id)
                 #expect(afterReady == 0)
@@ -102,8 +101,8 @@ extension ScrollbackWorkspaceLifecycleTests {
     }
 
     private func installRetirementOwners(_ delegate: AppDelegate, fixture: ScrollbackWorkspaceFixture) async throws {
-        await delegate.installRestoreEvidenceOwners(datastore: fixture.datastore, sessionDirectory: fixture.root.path)
-        try #require(delegate.restoreForegroundObserver != nil)
+        await delegate.installRestoreEvidenceOwners(datastore: fixture.datastore)
+        try #require(delegate.restoreReportEvidenceRepository != nil)
         delegate.acceptWorkspacePreparedContentMountCohort(
             .init(
                 generation: .init(), terminalActivationInput: .init(entries: []),

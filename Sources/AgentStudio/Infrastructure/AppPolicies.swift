@@ -401,9 +401,6 @@ package enum AppPolicies {
         package static let maximumConcurrentCaptures: Int = 4
         package static let snapshotByteCap: Int = 2 * 1024 * 1024
         package static let snapshotReadChunkByteCount: Int = 16_384
-        package static let lookSettleDelay: Duration = .seconds(5)
-        package static let lookMaxDelay: Duration = .seconds(60)
-        package static let quitLookDeadline: Duration = .seconds(1)
         package static let resumeReadinessDeadline: Duration = .seconds(2)
         package static let closedAppReadRetryDelay: Duration = .milliseconds(50)
         /// Bounds the one `zmx list` inventory probe `mount()` runs, off-main,
@@ -419,15 +416,8 @@ package enum AppPolicies {
         /// once. Matches this file's other small per-turn bounds (compare
         /// `NonterminalContentMount.maximumMountsPerMainActorTurn`).
         package static let maximumConcurrentIdentityObservations: Int = 4
-        /// `DarwinColdStartObserverSyscalls.readProcessArgumentsBuffer`'s
-        /// bound on immediate, no-backoff retries after `sysctl
-        /// (KERN_PROCARGS2)` returns `EIO` (Program Design item 3, stage 2,
-        /// amended 2026-09-30): a single read landing mid-exec races the
-        /// leader's own argument-space replacement, not a genuinely unread-
-        /// able process -- confirmed empirically against real zmx (30/30
-        /// EIO occurrences, 30/30 recovered on the very next read, `proc_pidinfo`
-        /// live throughout). Only exhausting every attempt counts as
-        /// `.processArgsUnreadable`.
+        /// Bounds startup argument fetches after any errno, and election transactions
+        /// after EIO or inconsistent size/fetch/requery during exec.
         package static let processArgumentsReadAttempts: Int = 3
         /// `ColdStartObserver`'s discovery-stage backoff, in milliseconds,
         /// after `ZmxSessionControl.observe` throws `.connectionRefused`

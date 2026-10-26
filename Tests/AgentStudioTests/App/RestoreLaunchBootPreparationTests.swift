@@ -31,9 +31,10 @@ struct RestoreLaunchBootPreparationTests {
             ipc.range(
                 of: "guard await AppIPCDeferredInitialization.prepareOptionalSchema(using: workspaceSQLiteDatastore)"))
         let replay = try #require(ipc.range(of: "replayBootRestoreRetirements()"))
-        let lifecycle = try #require(ipc.range(of: "startRestoreForegroundLifecycleConsumption()"))
+        let sessions = try #require(
+            ipc.range(of: "prepareAppIPCSessionsPaneContext(datastore: workspaceSQLiteDatastore)"))
         #expect(schema.lowerBound < replay.lowerBound)
-        #expect(replay.lowerBound < lifecycle.lowerBound)
+        #expect(replay.lowerBound < sessions.lowerBound)
     }
 
     @Test("the App boot-id seam reads and replaces the real application-local row")
