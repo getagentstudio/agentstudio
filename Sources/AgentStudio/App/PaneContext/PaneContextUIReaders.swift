@@ -60,6 +60,11 @@ struct PaneContextUIReaders {
         PaneContextPopoverController(
             reader: reader, person: person,
             location: location, includingDrawers: includingDrawers, titleForPane: titleForPane,
-            refreshKeyForPane: { refreshKey(for: $0) }, wallNow: wallNow)
+            refreshKeyForPane: { refreshKey(for: $0) },
+            countsForPane: { pane in
+                let display = contextDisplayForPane(pane)
+                return (includingDrawers && !isDrawerPane(pane) ? display?.includingDrawers : display?.own)?.kinds
+                    ?? .zero
+            }, wallNow: wallNow)
     }
 }

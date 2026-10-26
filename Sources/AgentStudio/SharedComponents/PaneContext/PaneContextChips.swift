@@ -48,6 +48,12 @@ package struct PaneMessageKindChip: View {
     }
 
     private var chipLabel: some View {
+        Self.label(model: model, control: control, octiconLoader: octiconLoader)
+    }
+
+    package static func label(
+        model: KindChipModel, control: PaneContextControlModel, octiconLoader: OcticonLoader
+    ) -> some View {
         SidebarChip(
             icon: control.icon.chipIcon, octiconLoader: octiconLoader,
             text: String(model.count), style: model.kind.style)

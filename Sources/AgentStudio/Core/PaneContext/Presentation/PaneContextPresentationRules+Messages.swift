@@ -14,7 +14,8 @@ extension PaneContextPresentationRules {
             return .resolved
         case .notice(.read), .notice(.unread):
             switch message.importance {
-            case .attention, .failure: return .needsYou
+            case .failure: return .failed
+            case .attention: return .needsYou
             case .done: return .done
             case .info: return .info
             }

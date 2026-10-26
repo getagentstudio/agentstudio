@@ -26,10 +26,15 @@ package struct MessagesPopoverModel: Sendable, Equatable {
 }
 
 package struct MessagesGroupModel: Sendable, Equatable {
+    package enum Header: Sendable, Equatable {
+        case plain
+        case kindChip(KindChipModel, PaneContextControlModel)
+    }
     package enum Kind: String, Hashable, Sendable {
-        case needsYou, done, info, resolved
+        case failed, needsYou, done, info, resolved
         package var title: String {
             switch self {
+            case .failed: "Failed"
             case .needsYou: "Needs you"
             case .done: "Done"
             case .info: "Info"
@@ -40,10 +45,12 @@ package struct MessagesGroupModel: Sendable, Equatable {
     package let kind: Kind
     package let items: [MessagesListItemModel]
     package let omittedPromptCount: Int
-    package init(kind: Kind, items: [MessagesListItemModel], omittedPromptCount: Int) {
+    package let header: Header
+    package init(kind: Kind, items: [MessagesListItemModel], omittedPromptCount: Int, header: Header = .plain) {
         self.kind = kind
         self.items = items
         self.omittedPromptCount = omittedPromptCount
+        self.header = header
     }
 }
 

@@ -28,7 +28,7 @@ struct PaneContextScenarioPopoverTests {
         let detail = try Self.detail(scenario, facts: facts)
         let shape = await PaneContextPopoverShaping.shape(
             detail,
-            sourceTitles: [facts.owner: "Owner", facts.drawer: "tests"], now: facts.now)
+            sourceTitles: [facts.owner: "Owner", facts.drawer: "tests"], counts: facts.scoped.kinds, now: facts.now)
         #expect(shape.messages.groups.map { $0.kind.title } == scenario.expected.groups)
         #expect(shape.agentLine?.summary == scenario.expected.agentLine)
         #expect(shape.agentLine?.age.text == scenario.expected.bracketedAge)

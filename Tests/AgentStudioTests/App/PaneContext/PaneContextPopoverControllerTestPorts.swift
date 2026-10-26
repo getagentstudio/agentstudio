@@ -135,10 +135,11 @@ func makePopoverController(
     ports: PaneContextPopoverTestPorts, location: PaneContextPopoverLocation = .pane,
     includingDrawers: Bool = true,
     titleForPane: @escaping @MainActor (PaneId) -> String? = { _ in nil },
-    revisionForPane: @escaping @MainActor (PaneId) -> PaneContextRevision? = { _ in nil }
+    revisionForPane: @escaping @MainActor (PaneId) -> PaneContextRevision? = { _ in nil },
+    countsForPane: @escaping @MainActor (PaneId) -> PaneMessageKindCounts = { _ in .zero }
 ) -> PaneContextPopoverController {
     PaneContextPopoverController(
         reader: ports, person: ports, location: location, includingDrawers: includingDrawers,
         titleForPane: titleForPane,
-        refreshKeyForPane: { .init(displayRevision: revisionForPane($0), sources: []) })
+        refreshKeyForPane: { .init(displayRevision: revisionForPane($0), sources: []) }, countsForPane: countsForPane)
 }

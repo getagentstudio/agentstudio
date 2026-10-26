@@ -57,12 +57,22 @@ package struct MessagesPopover: View {
             if let feedback { PaneContextPopoverNote(feedback) }
             ForEach(model.groups, id: \.kind) { group in
                 VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) {
-                    PopoverPanelSectionHeader(group.kind.title)
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "pane-context.group." + group.kind.rawValue,
-                                label: group.kind.title, role: .staticText)
+                    HStack(spacing: AppStyles.General.Spacing.standard) {
+                        PopoverPanelSectionHeader(group.kind.title)
+                        if case .kindChip(let model, let control) = group.header {
+                            PaneMessageKindChip.label(model: model, control: control, octiconLoader: octiconLoader)
+                                .background {
+                                    AccessibilityLabelBridge(
+                                        identifier: "pane-context.group-chip." + group.kind.rawValue,
+                                        label: String(model.count), role: .staticText)
+                                }
                         }
+                    }
+                    .background {
+                        AccessibilityLabelBridge(
+                            identifier: "pane-context.group." + group.kind.rawValue,
+                            label: group.kind.title, role: .staticText)
+                    }
                     ForEach(group.items) { item in
                         switch item {
                         case .message(let row):
@@ -84,6 +94,7 @@ package struct MessagesPopover: View {
                             }
                     }
                 }
+                .id(group.kind)
             }
             ForEach(model.pages.indices, id: \.self) { index in
                 PaneContextActionButton(controls.moreMessages, scope: model.pages[index].sourcePaneId.uuidString) {

@@ -131,6 +131,7 @@ final class PaneContextNativePopoverWindow {
     let window: NSWindow
     private let sink: Sink
     private let isCard: Bool
+    private let messageEntryKind: KindChipModel.Kind
     private var isPresentingMessages = false
     private var verifiedReads: [NativePopoverScope: Int] = [:]
     private let currentReadKey: @MainActor () -> PaneContextRefreshKey
@@ -146,7 +147,8 @@ final class PaneContextNativePopoverWindow {
         wallNow: Date, agentLine: RepoExplorerPaneContextLine? = nil, includingDrawers: Bool = true,
         card: (context: PaneManagementContext, store: WorkspaceStore)? = nil,
         viewportWidth: CGFloat? = nil, cancelReadsOnStart: Bool = false,
-        onReadStarted: @escaping @MainActor (PaneContextReadOperation) -> Void = { _ in }
+        onReadStarted: @escaping @MainActor (PaneContextReadOperation) -> Void = { _ in },
+        messageEntryKind: KindChipModel.Kind = .needsYou
     ) {
         let clock = NativeCardTestClock()
         let sink = Sink()
@@ -154,7 +156,7 @@ final class PaneContextNativePopoverWindow {
         let reference = clock.now
         let presentation: RepoExplorerPaneContextControlPresentation =
             agentLine.map { .agentLine($0) }
-            ?? .kind(.init(kind: .needsYou, count: 1))
+            ?? .kind(.init(kind: messageEntryKind, count: 1))
         let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { event in
             clock.observeOwner(event)
             sink.observe(event)
@@ -221,6 +223,7 @@ final class PaneContextNativePopoverWindow {
         window.contentView = host
         self.clock = clock
         self.sink = sink
+        self.messageEntryKind = messageEntryKind
         isCard = card != nil
         self.window = window
         currentReadKey = { readers.refreshKey(for: paneId) }
@@ -281,7 +284,7 @@ final class PaneContextNativePopoverWindow {
     }
 
     func open(agentLine: Bool = false) async throws {
-        try press(agentLine ? "pane-context.agent-line" : "pane-context.messages.needsYou")
+        try press(agentLine ? "pane-context.agent-line" : "pane-context.messages.\(messageEntryKind)")
         try await readCompleted()
         while controller?.state == nil {
             try #require(

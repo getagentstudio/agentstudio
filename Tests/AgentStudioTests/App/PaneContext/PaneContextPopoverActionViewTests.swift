@@ -27,19 +27,20 @@ struct PaneContextPopoverActionViewTests {
             shape: .ask(
                 .question, .choice(options: [.init(id: try .init("allow"), label: "Allow")], allowsMultiple: false),
                 .nonBlocking, .open))
+        let detail = PaneContextPopoverShapingTests.detail(
+            paneId: paneId,
+            messages: [
+                message,
+                .init(
+                    id: noticeId, sourcePaneId: paneId,
+                    sender: message.sender, sentAt: .distantPast, sourceOccurredAt: nil, importance: .info,
+                    body: "A targeted notice", why: nil, actions: message.actions, shape: .notice(.unread)),
+            ],
+            truncation: .init(
+                omitted: [.init(source: paneId, openAsks: 1, unreadNotices: 0, next: .init(rank: 0, position: 12))],
+                remainingLiveSources: 2, nextSourcesAfter: paneId))
         let shaped = await PaneContextPopoverShaping.shape(
-            PaneContextPopoverShapingTests.detail(
-                paneId: paneId,
-                messages: [
-                    message,
-                    .init(
-                        id: noticeId, sourcePaneId: paneId,
-                        sender: message.sender, sentAt: .distantPast, sourceOccurredAt: nil, importance: .info,
-                        body: "A targeted notice", why: nil, actions: message.actions, shape: .notice(.unread)),
-                ],
-                truncation: .init(
-                    omitted: [.init(source: paneId, openAsks: 1, unreadNotices: 0, next: .init(rank: 0, position: 12))],
-                    remainingLiveSources: 2, nextSourcesAfter: paneId)), sourceTitles: [:], now: .distantPast)
+            detail, sourceTitles: [:], counts: .zero, now: .distantPast)
         let controls = PaneContextPopoverControlProjection.controls()
         var submitted: AskFormDraft?
         var dismissed: UUID?
@@ -105,7 +106,7 @@ struct PaneContextPopoverActionViewTests {
             paneId: paneId, shape: .notice(.unread), importance: .info)
         let shaped = await PaneContextPopoverShaping.shape(
             PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]), sourceTitles: [:],
-            now: .distantPast)
+            counts: .zero, now: .distantPast)
         let controls = PaneContextPopoverControlProjection.controls()
         var dismissed = false
         var dismissedAll = false
@@ -139,7 +140,7 @@ struct PaneContextPopoverActionViewTests {
             importance: .attention)
         let shaped = await PaneContextPopoverShaping.shape(
             PaneContextPopoverShapingTests.detail(paneId: paneId, messages: [message]), sourceTitles: [:],
-            now: .distantPast)
+            counts: .zero, now: .distantPast)
         let controls = PaneContextPopoverControlProjection.controls()
         var focused: UUID?
         var answers = 0

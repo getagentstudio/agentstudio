@@ -25,8 +25,10 @@ struct PaneContextScenarioCardTests {
         input.cardUnavailable = failed
         if failed {
             let detail = try PaneContextScenarioPopoverTests.detail(scenario, facts: facts)
-            input.detailMessages = await PaneContextPopoverShaping.shape(detail, sourceTitles: [:], now: facts.now)
-                .messages
+            input.detailMessages = await PaneContextPopoverShaping.shape(
+                detail, sourceTitles: [:], counts: facts.scoped.kinds, now: facts.now
+            )
+            .messages
         }
         let card = await CardProjection.project(input, now: facts.now, information: .init(lines: [.title("Card")]))
         #expect(card.request == .none)
@@ -54,7 +56,7 @@ struct PaneContextScenarioCardTests {
         let facts = try await PaneContextScenarioFacts.make(scenario)
         let detail = try PaneContextScenarioPopoverTests.detail(scenario, facts: facts)
         let popover = await PaneContextPopoverShaping.shape(
-            detail, sourceTitles: [facts.drawer: "tests"], now: facts.now)
+            detail, sourceTitles: [facts.drawer: "tests"], counts: facts.scoped.kinds, now: facts.now)
         let display = PaneContextDisplay(
             revision: .init(1), agentTitle: nil, agentLine: facts.line,
             own: facts.own, includingDrawers: facts.scoped, pullRequests: .notApplicable)

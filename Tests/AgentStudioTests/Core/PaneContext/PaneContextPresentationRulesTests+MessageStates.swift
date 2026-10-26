@@ -16,7 +16,7 @@ extension PaneContextPresentationRulesTests {
         .init(importance: .info, shape: .notice(.unread), group: .info, label: nil, actions: .noticeActions),
         .init(importance: .done, shape: .notice(.unread), group: .done, label: nil, actions: .noticeActions),
         .init(importance: .attention, shape: .notice(.unread), group: .needsYou, label: nil, actions: .noticeActions),
-        .init(importance: .failure, shape: .notice(.unread), group: .needsYou, label: nil, actions: .noticeActions),
+        .init(importance: .failure, shape: .notice(.unread), group: .failed, label: nil, actions: .noticeActions),
         .init(importance: .info, shape: .notice(.read), group: .info, label: nil, actions: .noticeActions),
         .init(importance: .done, shape: .notice(.read), group: .done, label: nil, actions: .noticeActions),
         .init(importance: .attention, shape: .notice(.read), group: .resolved, label: "Read", actions: .noticeActions),

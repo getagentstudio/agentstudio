@@ -137,7 +137,7 @@ struct PaneContextPopoverGeometryTests {
                 location: .pane, wallNow: fixture.now)
             window = mounted
             try await mounted.open()
-            let headers = try ["needsYou", "done", "info", "resolved"].map { name -> CGRect in
+            let headers = try ["failed", "needsYou", "done", "info", "resolved"].map { name -> CGRect in
                 let view = try #require(mounted.find("pane-context.group." + name) as? NSView)
                 return view.convert(view.bounds, to: nil)
             }
@@ -148,7 +148,7 @@ struct PaneContextPopoverGeometryTests {
             let failure = try #require(
                 mounted.find("pane-context.message-text.\(fixture.ownerId.uuid).\(ids[0].uuid)") as? NSView)
             #expect(main.convert(main.bounds, to: nil).minY > drawer.convert(drawer.bounds, to: nil).maxY)
-            #expect(drawer.convert(drawer.bounds, to: nil).minY > failure.convert(failure.bounds, to: nil).maxY)
+            #expect(failure.convert(failure.bounds, to: nil).minY > main.convert(main.bounds, to: nil).maxY)
             #expect(mounted.labels().contains("Needs you · question: Main provider prompt Now"))
             #expect(mounted.labels().contains("Needs you · question: Drawer provider prompt Now"))
             try await mounted.close()

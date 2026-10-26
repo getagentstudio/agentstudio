@@ -124,7 +124,7 @@ struct PaneContextPopoverShapingValueTests {
                     providerPrompts: [
                         .init(reason: .question, observedAt: updatedAt, summary: "Provider question")
                     ],
-                    omittedPromptCount: 5)), sourceTitles: [:], now: updatedAt.addingTimeInterval(60))
+                    omittedPromptCount: 5)), sourceTitles: [:], counts: .zero, now: updatedAt.addingTimeInterval(60))
         #expect(
             shape.agentLine
                 == .init(
@@ -142,6 +142,7 @@ struct PaneContextPopoverShapingValueTests {
         #expect(prompts.first?.summary == "Provider question")
         #expect(prompts.first?.age.text == "1 min ago")
         #expect(shape.messages.groups.first?.omittedPromptCount == 5)
+        #expect(shape.messages.groups.first?.header == .plain)
 
     }
 

@@ -8,6 +8,7 @@ struct PaneContextPopoverShape: Sendable, Equatable {
     let agentTitle: String?
     let messages: MessagesPopoverModel
     let agentLine: AgentLinePopoverModel?
+    let messagesTarget: PaneContextMessagesTarget
 }
 
 /// Only immutable snapshots cross this boundary. The controller assigns its result.
@@ -24,7 +25,8 @@ enum PaneContextPopoverShaping {
             return (
                 .init(
                     paneId: shape.paneId, revision: shape.revision, agentTitle: shape.agentTitle,
-                    messages: updated.model, agentLine: shape.agentLine), updated.nextChange
+                    messages: updated.model, agentLine: shape.agentLine, messagesTarget: shape.messagesTarget),
+                updated.nextChange
             )
         case .agentLine:
             guard let line = shape.agentLine else { return (shape, nil) }
@@ -35,7 +37,8 @@ enum PaneContextPopoverShaping {
                     messages: shape.messages,
                     agentLine: line.replacingAge(
                         .init(
-                            text: PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now)))),
+                            text: PaneContextPresentationRules.agentLineAge(referenceDate: line.updatedAt, now: now))),
+                    messagesTarget: shape.messagesTarget),
                 age.nextChange
             )
         }
@@ -43,10 +46,17 @@ enum PaneContextPopoverShaping {
 
     @concurrent nonisolated static func shape(
         _ detail: PaneContextDetail,
-        sourceTitles: [PaneId: String], now: Date
+        sourceTitles: [PaneId: String], counts: PaneMessageKindCounts,
+        messagesTarget: PaneContextMessagesTarget = .top, now: Date
     ) async -> PaneContextPopoverShape {
         let messages = await MessagesPopoverProjection.project(
-            detail: detail, scopedSummaries: detail.scopedSessions, titles: sourceTitles, now: now)
+            detail: detail, counts: counts, scopedSummaries: detail.scopedSessions, titles: sourceTitles, now: now)
+        let resolvedTarget: PaneContextMessagesTarget
+        if case .section(let kind) = messagesTarget, !messages.model.groups.contains(where: { $0.kind == kind }) {
+            resolvedTarget = .top
+        } else {
+            resolvedTarget = messagesTarget
+        }
         return .init(
             paneId: detail.paneId, revision: detail.revision, agentTitle: detail.agentTitle,
             messages: messages.model,
@@ -54,6 +64,6 @@ enum PaneContextPopoverShaping {
                 .init(
                     summary: $0.summary, refs: $0.refs.map(action), writer: sender($0.writer), updatedAt: $0.updatedAt,
                     age: .init(text: PaneContextPresentationRules.agentLineAge(referenceDate: $0.updatedAt, now: now)))
-            })
+            }, messagesTarget: resolvedTarget)
     }
 }

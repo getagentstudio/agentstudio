@@ -30,7 +30,7 @@ struct PaneContextPopoverRealServiceTests {
             let controller = PaneContextPopoverController(
                 reader: service, person: service, location: .pane,
                 titleForPane: { $0 == fixture.drawerId ? "Review drawer" : "Owner" },
-                refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) })
+                refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) }, countsForPane: { _ in .zero })
             defer { controller.close() }
             await controller.open(fixture.ownerId)
             let shaped = try #require(controller.state)
@@ -70,7 +70,7 @@ struct PaneContextPopoverRealServiceTests {
                         shape: .ask(reason: .question, form: requestedForm, waiting: .nonBlocking))) == .created(id))
             let controller = PaneContextPopoverController(
                 reader: service, person: service, location: location, titleForPane: { _ in "Source" },
-                refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) })
+                refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) }, countsForPane: { _ in .zero })
             defer { controller.close() }
             await controller.open(fixture.ownerId)
             await controller.answerDraft(messageId: id, source: fixture.ownerId, draft: form.draft())

@@ -25,7 +25,7 @@ package enum ToolbarSelection: Sendable, Equatable {
     case agentLine(text: String, age: AgeText)
 }
 
-package enum MessageGroupKind: Sendable, Equatable { case needsYou, done, info, resolved }
+package enum MessageGroupKind: Sendable, Equatable { case failed, needsYou, done, info, resolved }
 
 package enum CardRequestSelection: Sendable, Equatable {
     // swiftlint:disable:next discouraged_none_name

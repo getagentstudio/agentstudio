@@ -1,0 +1,133 @@
+import AgentStudioInfrastructure
+import AgentStudioSessions
+import AgentStudioSharedComponents
+import AgentStudioTestSupport
+import AppKit
+import Foundation
+import SwiftUI
+import Testing
+
+@testable import AgentStudio
+@testable import AgentStudioCore
+@testable import AgentStudioRepoExplorer
+
+extension PaneContextPopoverGeometryTests {
+    @Test("S8 sections retain urgency order and the same scoped chips as the sidebar")
+    func s8HeadersMirrorSidebarKinds() async throws {
+        let fixture = try await CompositionFactoryFixture.make()
+        let service = fixture.composition.paneContextService
+        var window: PaneContextNativePopoverWindow?
+        do {
+            for (source, importance, body) in [
+                (fixture.ownerId, MessageImportance.failure, "Build failed: 3 errors"),
+                (fixture.ownerId, .attention, "Review the migration plan"),
+                (fixture.ownerId, .done, "Tests passed (412)"),
+                (fixture.drawerId, .info, "Branch rebased onto main"),
+            ] {
+                let id = AgentMessageId.generateUUIDv7()
+                try #require(
+                    await service.send(
+                        .init(
+                            paneId: source, messageId: id, sender: .pane(source), sourceOccurredAt: nil,
+                            importance: importance, body: body, why: nil, actions: [], shape: .notice)) == .created(id))
+            }
+            await fixture.composition.presentationLane.publishPending()
+            let display = try #require(fixture.presentationAtom.value(for: fixture.ownerId))
+            #expect(display.includingDrawers.kinds == .init(failure: 1, needsYou: 1, done: 1, info: 1))
+            #expect(display.own.kinds.info == 0)
+            let sidebar = RepoExplorerPaneRowVariants.make(
+                title: "Owner", counts: display.includingDrawers.kinds, now: fixture.now)
+            #expect(
+                sidebar.compact.chipModels == [
+                    .init(kind: .failure, count: 1), .init(kind: .needsYou, count: 1),
+                    .init(kind: .done, count: 1), .init(kind: .info, count: 1),
+                ])
+            let adapter = PaneContextUIAdapter(service: service)
+            let readers = PaneContextUIReaders(
+                sessionStatus: SessionStatusAtom(), presentation: fixture.presentationAtom,
+                pane: { _ in nil }, serviceProvider: { adapter })
+            let mounted = PaneContextNativePopoverWindow(
+                paneId: fixture.ownerId, readers: readers, location: .sidebar, wallNow: fixture.now,
+                messageEntryKind: .failure)
+            window = mounted
+            mounted.window.appearance = NSAppearance(named: .darkAqua)
+            try await mounted.open()
+            mounted.popoverWindow?.appearance = NSAppearance(named: .darkAqua)
+            mounted.layout()
+            let groups = try #require(mounted.controller?.state?.messages.groups)
+            #expect(groups.map(\.kind) == [.failed, .needsYou, .done, .info])
+            let headerModels = groups.compactMap { group -> KindChipModel? in
+                if case .kindChip(let model, _) = group.header { return model }
+                return nil
+            }
+            #expect(headerModels == sidebar.compact.chipModels)
+            var headerFrames: [CGRect] = []
+            for name in ["failed", "needsYou", "done", "info"] {
+                let header = try #require(mounted.find("pane-context.group." + name) as? NSView)
+                headerFrames.append(header.convert(header.bounds, to: nil))
+                let chip = mounted.find("pane-context.group-chip." + name) as? NSView
+                #expect(chip?.accessibilityLabel() == "1", "S8 header lost its painted \(name) count")
+                if let chip {
+                    let host = try #require(mounted.popoverWindow?.contentView)
+                    let rect = host.convert(chip.bounds, from: chip)
+                    let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
+                    let expected = try literalHeaderChipPixels(name, like: host, rect: rect)
+                    #expect(
+                        actual == expected, "The complete \(name) chip must paint its literal glyph, count and colour")
+                }
+            }
+            #expect(zip(headerFrames, headerFrames.dropFirst()).allSatisfy { $0.minY > $1.maxY })
+            #expect(mounted.find("pane-context.group.resolved") == nil)
+            try await mounted.close()
+            window = nil
+            try await fixture.close()
+        } catch {
+            try? await window?.close()
+            try? await fixture.close()
+            throw error
+        }
+    }
+
+    private func literalHeaderChipPixels(_ kind: String, like actual: NSView, rect: CGRect) throws -> Data {
+        let icon: String
+        let style: SidebarChip.Style
+        switch kind {
+        case "failed":
+            icon = "xmark"
+            style = .danger
+        case "needsYou":
+            icon = "flag"
+            style = .warning
+        case "done":
+            icon = "checkmark"
+            style = .success
+        default:
+            icon = "info.circle"
+            style = .neutral
+        }
+        let positionY = actual.isFlipped ? rect.midY : actual.bounds.height - rect.midY
+        let host = NSHostingView(
+            rootView: SidebarChip(
+                icon: .system(icon), octiconLoader: makeTestOcticonLoader(), text: "1", style: style
+            )
+            .position(x: rect.midX, y: positionY)
+            .frame(width: actual.bounds.width, height: actual.bounds.height)
+            .environment(\.colorScheme, .dark))
+        host.frame = CGRect(origin: .zero, size: actual.bounds.size)
+        let window = NSWindow(contentRect: host.bounds, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.appearance = actual.effectiveAppearance
+        window.backgroundColor = .black
+        window.contentView = host
+        window.orderFront(nil)
+        defer { window.close() }
+        window.layoutIfNeeded()
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        let crop = CGRect(
+            x: rect.minX,
+            y: actual.isFlipped == host.isFlipped ? rect.minY : actual.bounds.height - rect.maxY,
+            width: rect.width, height: rect.height)
+        return try PaneContextToolbarRenderingTests().pixels(in: host, rect: crop)
+    }
+}

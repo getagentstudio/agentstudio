@@ -91,7 +91,7 @@ struct PaneContextCardControllerTests {
         let ports = PaneContextPopoverTestPorts(PaneContextPopoverShapingTests.detail(paneId: pane))
         await ports.configureExactReads([.found(exact.messages[0])])
         let controller = makePopoverController(ports: ports)
-        await controller.openMessages(pane, focusedMessage: .init(paneId: pane, messageId: id))
+        await controller.openMessages(pane, target: .message(.init(paneId: pane, messageId: id)))
         #expect(controller.state?.messages.messageRows.map(\.id) == [id.uuid])
         var draft = AskFormDraft()
         draft.text = "Exact target"

@@ -135,8 +135,12 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                             controller: controller, readers: readers, onGoToPane: onGoToPane,
                             onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
                     )
-                    .task(id: visible.messages) {
-                        if case .messagesAction(_, let key?) = presentation {
+                    .task(id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages))
+                    {
+                        switch visible.messagesTarget {
+                        case .top: break
+                        case .section(let kind): proxy.scrollTo(kind, anchor: .top)
+                        case .message(let key):
                             proxy.scrollTo(
                                 MessageRowModel.Key(
                                     sourcePaneId: key.paneId.uuid,
@@ -180,10 +184,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 location: location, includingDrawers: includingDrawers, wallNow: wallNow)
         controller = active
         _ = active.useCurrentService(adapter)
-        if case .messagesAction(_, let key) = presentation {
-            await active.openMessages(paneId, focusedMessage: key)
-        } else {
-            await active.open(paneId)
+        switch presentation {
+        case .kind, .messagesAction: await active.openMessages(paneId, target: presentation.messagesTarget)
+        case .agentLine: await active.open(paneId)
         }
         guard !Task.isCancelled else { return }
         onReadCompleted(read, active)

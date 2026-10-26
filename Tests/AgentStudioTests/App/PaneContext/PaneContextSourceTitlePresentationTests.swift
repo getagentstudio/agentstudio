@@ -19,7 +19,8 @@ struct PaneContextSourceTitlePresentationTests {
             paneId: owner,
             drawers: [.init(sourcePaneId: drawer, messages: [message])])
         let now = Date(timeIntervalSince1970: 1_800_000_000)
-        let shaped = await PaneContextPopoverShaping.shape(detail, sourceTitles: [drawer: rawTitle], now: now)
+        let shaped = await PaneContextPopoverShaping.shape(
+            detail, sourceTitles: [drawer: rawTitle], counts: .zero, now: now)
         #expect(shaped.messages.messageRows.map(\.sourceLabel) == ["Drawer tests"])
         let key = PaneContextMessageKey(paneId: drawer, messageId: message.id)
         let counts = PaneMessageCounts(

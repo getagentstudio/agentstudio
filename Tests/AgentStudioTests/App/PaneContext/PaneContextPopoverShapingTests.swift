@@ -15,7 +15,7 @@ struct PaneContextPopoverShapingTests {
         let label: String?
     }
     static let notices: [NoticeCase] = [
-        .init(state: .unread, importance: .failure, group: .needsYou, kind: .failure, label: nil),
+        .init(state: .unread, importance: .failure, group: .failed, kind: .failure, label: nil),
         .init(state: .unread, importance: .attention, group: .needsYou, kind: .needsYou, label: nil),
         .init(state: .unread, importance: .done, group: .done, kind: .done, label: nil),
         .init(state: .unread, importance: .info, group: .info, kind: .info, label: nil),
@@ -65,7 +65,7 @@ struct PaneContextPopoverShapingTests {
         let message = try Self.message(paneId: pane, shape: .notice(scenario.state), importance: scenario.importance)
         let shape = await PaneContextPopoverShaping.shape(
             Self.detail(paneId: pane, messages: [message]),
-            sourceTitles: [:], now: Date(timeIntervalSince1970: 62))
+            sourceTitles: [:], counts: .zero, now: Date(timeIntervalSince1970: 62))
         guard let expectedGroup = scenario.group else {
             #expect(shape.messages.groups.isEmpty)
             #expect(!shape.messages.hasNotices)
@@ -90,7 +90,7 @@ struct PaneContextPopoverShapingTests {
                 shape: .ask(.question, .freeText(placeholder: nil), waiting, scenario.state), importance: importance)
             let shape = await PaneContextPopoverShaping.shape(
                 Self.detail(paneId: pane, messages: [message]),
-                sourceTitles: [:], now: .distantPast)
+                sourceTitles: [:], counts: .zero, now: .distantPast)
             #expect(shape.messages.groups.map(\.kind) == [scenario.group])
             let row = try #require(Self.rows(shape).first)
             #expect(row.kind == (scenario.state == .open ? .openAsk : .settledAsk))
@@ -114,8 +114,8 @@ struct PaneContextPopoverShapingTests {
         let shape = await PaneContextPopoverShaping.shape(
             Self.detail(
                 paneId: owner, messages: [older, newer], drawers: [.init(sourcePaneId: drawer, messages: [ask])]),
-            sourceTitles: [drawer: "Review"], now: .distantPast)
-        #expect(shape.messages.groups.map(\.kind) == [.needsYou, .info])
+            sourceTitles: [drawer: "Review"], counts: .zero, now: .distantPast)
+        #expect(shape.messages.groups.map(\.kind) == [.failed, .needsYou, .info])
         #expect(Self.rows(shape).map(\.id) == [newer.id.uuid, ask.id.uuid, older.id.uuid])
         #expect(Self.rows(shape).map(\.sourceLabel) == [nil, "Review", nil])
         #expect(Self.rows(shape).map(\.sourcePaneId) == [owner.uuid, drawer.uuid, owner.uuid])
@@ -130,9 +130,10 @@ struct PaneContextPopoverShapingTests {
         let detail = Self.detail(
             paneId: owner, messages: [own], drawers: [.init(sourcePaneId: drawer, messages: [child])])
         let titled = await PaneContextPopoverShaping.shape(
-            detail, sourceTitles: [owner: "Build", drawer: "Review"], now: .distantPast)
+            detail, sourceTitles: [owner: "Build", drawer: "Review"], counts: .zero, now: .distantPast)
         #expect(Self.rows(titled).map(\.sourceLabel) == ["Review", nil])
-        let fallback = await PaneContextPopoverShaping.shape(detail, sourceTitles: [:], now: .distantPast)
+        let fallback = await PaneContextPopoverShaping.shape(
+            detail, sourceTitles: [:], counts: .zero, now: .distantPast)
         #expect(Self.rows(fallback).map(\.sourceLabel) == ["Drawer pane", nil])
     }
 
@@ -140,12 +141,13 @@ struct PaneContextPopoverShapingTests {
     func truncationCarriesBothMessageAndSourceCursors() async {
         let owner = PaneId.generateUUIDv7()
         let drawer = PaneId.generateUUIDv7()
+        let detail = Self.detail(
+            paneId: owner,
+            truncation: .init(
+                omitted: [.init(source: drawer, openAsks: 3, unreadNotices: 2, next: .init(rank: 1, position: 42))],
+                remainingLiveSources: 5, nextSourcesAfter: drawer))
         let shape = await PaneContextPopoverShaping.shape(
-            Self.detail(
-                paneId: owner,
-                truncation: .init(
-                    omitted: [.init(source: drawer, openAsks: 3, unreadNotices: 2, next: .init(rank: 1, position: 42))],
-                    remainingLiveSources: 5, nextSourcesAfter: drawer)), sourceTitles: [:], now: .distantPast)
+            detail, sourceTitles: [:], counts: .zero, now: .distantPast)
         #expect(
             shape.messages.pages == [
                 .init(sourcePaneId: drawer.uuid, rank: 1, position: 42, openAsks: 3, unreadNotices: 2)
@@ -200,7 +202,8 @@ struct PaneContextPopoverShapingTests {
 
     static func onlyRow(_ message: AgentMessageDetail) async throws -> MessageRowModel {
         let shape = await PaneContextPopoverShaping.shape(
-            Self.detail(paneId: message.sourcePaneId, messages: [message]), sourceTitles: [:], now: .distantPast)
+            Self.detail(paneId: message.sourcePaneId, messages: [message]), sourceTitles: [:], counts: .zero,
+            now: .distantPast)
         return try #require(rows(shape).first)
     }
 }

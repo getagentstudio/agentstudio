@@ -18,12 +18,13 @@ final class PaneContextPopoverController {
     private var person: any PaneContextPersonActing
     private let titleForPane: @MainActor (PaneId) -> String?
     private let refreshKeyForPane: @MainActor (PaneId) -> PaneContextRefreshKey
+    private let countsForPane: @MainActor (PaneId) -> PaneMessageKindCounts
     private let wallNow: @Sendable () -> Date
     @ObservationIgnored private var generation: UInt64 = 0
     @ObservationIgnored private var detail: PaneContextDetail?
     @ObservationIgnored private var readKey: PaneContextRefreshKey?
     @ObservationIgnored private var cardSelection: CardRequestSelection = .none
-    @ObservationIgnored private var focusedMessage: PaneContextMessageKey?
+    @ObservationIgnored private var messagesTarget: PaneContextMessagesTarget = .top
 
     private var actionSnapshot: PaneContextActionSnapshot {
         switch location {
@@ -37,6 +38,7 @@ final class PaneContextPopoverController {
         location: PaneContextPopoverLocation, includingDrawers: Bool = true,
         titleForPane: @escaping @MainActor (PaneId) -> String?,
         refreshKeyForPane: @escaping @MainActor (PaneId) -> PaneContextRefreshKey,
+        countsForPane: @escaping @MainActor (PaneId) -> PaneMessageKindCounts,
         wallNow: @escaping @Sendable () -> Date = Date.init
     ) {
         self.reader = reader
@@ -45,6 +47,7 @@ final class PaneContextPopoverController {
         self.includingDrawers = includingDrawers
         self.titleForPane = titleForPane
         self.refreshKeyForPane = refreshKeyForPane
+        self.countsForPane = countsForPane
         self.wallNow = wallNow
     }
 
@@ -81,8 +84,8 @@ final class PaneContextPopoverController {
         await open(pane)
     }
 
-    func openMessages(_ pane: PaneId, focusedMessage: PaneContextMessageKey?) async {
-        self.focusedMessage = focusedMessage
+    func openMessages(_ pane: PaneId, target: PaneContextMessagesTarget) async {
+        messagesTarget = target
         await open(pane)
     }
 
@@ -93,7 +96,7 @@ final class PaneContextPopoverController {
         detail = nil
         selectedAsk = nil
         cardSelection = .none
-        focusedMessage = nil
+        messagesTarget = .top
         readKey = nil
         unavailableNote = nil
         actionFeedback = nil
@@ -108,7 +111,7 @@ final class PaneContextPopoverController {
         guard requestGeneration == generation, self.paneId == paneId, unavailableNote == nil else { return }
         if case .card = location {
             await readSelectedAsk(owner: paneId, generation: requestGeneration)
-        } else if let focusedMessage {
+        } else if case .message(let focusedMessage) = messagesTarget {
             await readFocusedMessage(focusedMessage, owner: paneId, generation: requestGeneration)
         }
     }
@@ -118,7 +121,7 @@ final class PaneContextPopoverController {
     {
         guard let detail, detail.scopedSessions.contains(where: { $0.sourcePaneId == key.paneId }) else { return }
         let result = await reader.readMessage(source: key.paneId, message: key.messageId)
-        guard generation == requestGeneration, paneId == owner, focusedMessage == key else { return }
+        guard generation == requestGeneration, paneId == owner, messagesTarget == .message(key) else { return }
         switch result {
         case .found(let message):
             guard message.sourcePaneId == key.paneId, message.id == key.messageId else { return }
@@ -222,7 +225,9 @@ final class PaneContextPopoverController {
         for source in snapshot.scopedSessions {
             titles[source.sourcePaneId] = titleForPane(source.sourcePaneId)
         }
-        let shaped = await PaneContextPopoverShaping.shape(snapshot, sourceTitles: titles, now: wallNow())
+        let counts = countsForPane(snapshot.paneId)
+        let shaped = await PaneContextPopoverShaping.shape(
+            snapshot, sourceTitles: titles, counts: counts, messagesTarget: messagesTarget, now: wallNow())
         guard !Task.isCancelled, requestGeneration == generation, paneId == snapshot.paneId else { return }
         detail = snapshot
         state = shaped

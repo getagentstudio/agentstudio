@@ -156,7 +156,7 @@ struct PaneContextScenario: Sendable, CustomStringConvertible {
                     .init(kind: .failure, count: 1), .init(kind: .needsYou, count: 1), .init(kind: .done, count: 1),
                     .init(kind: .info, count: 1),
                 ]),
-                activityChip: nil, groups: ["Needs you", "Done", "Info"], settledLabel: nil)),
+                activityChip: nil, groups: ["Failed", "Needs you", "Done", "Info"], settledLabel: nil)),
         .init(
             id: "S9", session: .question, line: .init(text: "Waiting for your answer", ageSeconds: 0),
             messages: [.ask(.singleChoice, "Pick a color for the test?", .open)], prompts: .absent,
@@ -206,7 +206,7 @@ struct PaneContextScenario: Sendable, CustomStringConvertible {
                     .init(kind: .failure, count: 1), .init(kind: .needsYou, count: 1), .init(kind: .done, count: 1),
                     .init(kind: .info, count: 1),
                 ]),
-                activityChip: nil, groups: ["Needs you", "Done", "Info"], settledLabel: nil)),
+                activityChip: nil, groups: ["Failed", "Needs you", "Done", "Info"], settledLabel: nil)),
         .init(
             activityAgeSeconds: 540, id: "S12", session: .unbound, line: nil, messages: [], prompts: .absent,
             expected: .init(
@@ -259,7 +259,7 @@ struct PaneContextScenario: Sendable, CustomStringConvertible {
             expected: .init(
                 sidebarStatus: "Working", cardStatus: "Working", agentLine: nil, bracketedAge: nil,
                 counts: .init(failure: 1, needsYou: 0, done: 0, info: 0), chips: [.init(kind: .failure, count: 1)],
-                toolbar: .chips([.init(kind: .failure, count: 1)]), activityChip: "Now", groups: ["Needs you"],
+                toolbar: .chips([.init(kind: .failure, count: 1)]), activityChip: "Now", groups: ["Failed"],
                 settledLabel: nil)),
         .init(
             id: "S18-synthetic-input", session: .approval, line: nil, messages: [],

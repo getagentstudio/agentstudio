@@ -32,7 +32,8 @@ struct PaneContextCardScopedServiceTests {
                 ]))
         let controller = PaneContextPopoverController(
             reader: service, person: service, location: .card,
-            titleForPane: { _ in nil }, refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) })
+            titleForPane: { _ in nil }, refreshKeyForPane: { _ in .init(displayRevision: nil, sources: []) },
+            countsForPane: { _ in .zero })
         do {
             let id = AgentMessageId.generateUUIDv7()
             // Drawer arrives first; receive-time ties still prefer the main pane.

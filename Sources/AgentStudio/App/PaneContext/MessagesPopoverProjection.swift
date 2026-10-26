@@ -1,4 +1,5 @@
 import AgentStudioCore
+import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import Foundation
 
@@ -13,7 +14,7 @@ enum MessagesPopoverProjection {
     }
 
     @concurrent nonisolated static func project(
-        detail: PaneContextDetail, scopedSummaries: [PaneContextScopedSessionSummary],
+        detail: PaneContextDetail, counts: PaneMessageKindCounts, scopedSummaries: [PaneContextScopedSessionSummary],
         titles: [PaneId: String], now: Date
     ) async -> (model: MessagesPopoverModel, nextChange: Date?) {
         let sourceOrder = Dictionary(
@@ -62,11 +63,14 @@ enum MessagesPopoverProjection {
             if $0.sourceOrder != $1.sourceOrder { return $0.sourceOrder < $1.sourceOrder }
             return $0.ordinal < $1.ordinal
         }
-        let groups = [MessageGroupKind.needsYou, .done, .info, .resolved].compactMap { kind -> MessagesGroupModel? in
+        let groupKinds: [MessageGroupKind] = [.failed, .needsYou, .done, .info, .resolved]
+        let groups = groupKinds.compactMap { kind -> MessagesGroupModel? in
             let items = records.filter { $0.group == kind }.map(\.item)
             let omittedCount = kind == .needsYou ? omitted : 0
             guard !items.isEmpty || omittedCount > 0 else { return nil }
-            return .init(kind: groupKind(kind), items: items, omittedPromptCount: omittedCount)
+            return .init(
+                kind: groupKind(kind), items: items, omittedPromptCount: omittedCount,
+                header: header(kind, counts: counts))
         }
         let pages =
             detail.truncation?.omitted.map {
@@ -98,7 +102,8 @@ enum MessagesPopoverProjection {
                     return .providerPrompt(row.replacingAge(.init(text: age.text)))
                 }
             }
-            return MessagesGroupModel(kind: group.kind, items: items, omittedPromptCount: group.omittedPromptCount)
+            return MessagesGroupModel(
+                kind: group.kind, items: items, omittedPromptCount: group.omittedPromptCount, header: group.header)
         }
         return (model.replacingGroups(groups), nextChange)
     }
@@ -174,11 +179,29 @@ enum MessagesPopoverProjection {
     }
     private nonisolated static func groupKind(_ kind: MessageGroupKind) -> MessagesGroupModel.Kind {
         switch kind {
+        case .failed: .failed
         case .needsYou: .needsYou
         case .done: .done
         case .info: .info
         case .resolved: .resolved
         }
+    }
+    private nonisolated static func header(_ kind: MessageGroupKind, counts: PaneMessageKindCounts)
+        -> MessagesGroupModel.Header
+    {
+        let messageKind: MessageKind
+        switch kind {
+        case .failed: messageKind = .failure
+        case .needsYou: messageKind = .needsYou
+        case .done: messageKind = .done
+        case .info: messageKind = .info
+        case .resolved: return .plain
+        }
+        guard let chip = PaneContextPresentationRules.kindChips(counts).first(where: { $0.kind == messageKind }) else {
+            return .plain
+        }
+        let model = RepoExplorerPaneKindChipProjection.model(chip)
+        return .kindChip(model, RepoExplorerPaneKindChipProjection.control(model))
     }
     private nonisolated static func importance(_ importance: MessageImportance) -> MessageImportanceModel {
         switch importance {
