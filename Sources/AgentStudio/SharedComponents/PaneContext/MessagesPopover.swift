@@ -53,7 +53,7 @@ package struct MessagesPopover: View {
 
     package var body: some View {
         PaneContextPopoverPanel {
-            PopoverPanelSectionHeader(controls.messages.label)
+            messagesHeader
             if let feedback { PaneContextPopoverNote(feedback) }
             ForEach(model.groups, id: \.kind) { group in
                 VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) {
@@ -117,6 +117,26 @@ package struct MessagesPopover: View {
             }
         }
     }
+
+    private var messagesHeader: some View {
+        HStack(spacing: AppStyles.General.Spacing.loose) {
+            Text(controls.messages.label)
+                .font(.system(size: AppStyles.General.Typography.textBase, weight: .semibold))
+                .foregroundStyle(.primary)
+            if model.unreadCount > 0 {
+                Text(String(model.unreadCount))
+                    .font(.system(size: AppStyles.General.Typography.textXs))
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .accessibilityAddTraits(.isHeader)
+        .background {
+            AccessibilityLabelBridge(
+                identifier: "pane-context.messages-header",
+                label: controls.messages.label + (model.unreadCount > 0 ? " \(model.unreadCount)" : ""),
+                role: .staticText)
+        }
+    }
 }
 
 private struct MessagePopoverRow: View {
@@ -136,7 +156,7 @@ private struct MessagePopoverRow: View {
                         identifier: "pane-context.message-text." + row.key.controlScope
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    if row.availability == .askForm, location.presentation(for: .dismissAsk) == .inline {
+                    if showsDismissInRowHead {
                         dismiss.fixedSize()
                     }
                 }
@@ -168,7 +188,6 @@ private struct MessagePopoverRow: View {
                         actions.runAction(row.id, row.sourcePaneId, action)
                     }
                 }
-                dismiss
             }
         case .askForm:
             if case .ask(_, let form, _, _) = row.shape {
@@ -178,6 +197,14 @@ private struct MessagePopoverRow: View {
                     }
                 }
             }
+        }
+    }
+
+    private var showsDismissInRowHead: Bool {
+        switch row.availability {
+        case .none: false
+        case .noticeActions: location.presentation(for: .noticeActions) == .inline
+        case .askForm: location.presentation(for: .dismissAsk) == .inline
         }
     }
 

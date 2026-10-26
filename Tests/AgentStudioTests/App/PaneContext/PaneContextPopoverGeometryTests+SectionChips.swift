@@ -18,18 +18,28 @@ extension PaneContextPopoverGeometryTests {
         let service = fixture.composition.paneContextService
         var window: PaneContextNativePopoverWindow?
         do {
+            var noticeKeys: [PaneContextMessageKey] = []
             for (source, importance, body) in [
-                (fixture.ownerId, MessageImportance.failure, "Build failed: 3 errors"),
+                (fixture.ownerId, MessageImportance.failure, "Build failed: 3 errors in SessionsIngestion.swift"),
                 (fixture.ownerId, .attention, "Review the migration plan"),
                 (fixture.ownerId, .done, "Tests passed (412)"),
                 (fixture.drawerId, .info, "Branch rebased onto main"),
             ] {
                 let id = AgentMessageId.generateUUIDv7()
+                noticeKeys.append(.init(paneId: source, messageId: id))
+                let actions: [MessageAction] =
+                    importance == .failure
+                    ? [
+                        .openFile(
+                            path: "Sources/AgentStudio/Features/Sessions/Runtime/SessionsIngestion.swift", line: 142)
+                    ]
+                    : []
                 try #require(
                     await service.send(
                         .init(
                             paneId: source, messageId: id, sender: .pane(source), sourceOccurredAt: nil,
-                            importance: importance, body: body, why: nil, actions: [], shape: .notice)) == .created(id))
+                            importance: importance, body: body, why: nil, actions: actions, shape: .notice))
+                        == .created(id))
             }
             await fixture.composition.presentationLane.publishPending()
             let display = try #require(fixture.presentationAtom.value(for: fixture.ownerId))
@@ -78,6 +88,8 @@ extension PaneContextPopoverGeometryTests {
             }
             #expect(zip(headerFrames, headerFrames.dropFirst()).allSatisfy { $0.minY > $1.maxY })
             #expect(mounted.find("pane-context.group.resolved") == nil)
+            try assertNoticeRowHeads(mounted, keys: noticeKeys)
+            try assertMessagesTitle(mounted, count: 4)
             try await mounted.close()
             window = nil
             try await fixture.close()

@@ -81,7 +81,8 @@ enum MessagesPopoverProjection {
         let model = MessagesPopoverModel(
             groups: groups, pages: pages,
             remainingLiveSources: detail.truncation?.remainingLiveSources ?? 0,
-            nextSourcesAfter: detail.truncation?.nextSourcesAfter?.uuid, hasNotices: detail.hasDismissibleNotices)
+            nextSourcesAfter: detail.truncation?.nextSourcesAfter?.uuid, hasNotices: detail.hasDismissibleNotices,
+            unreadCount: counts.unread)
         return (model, nextChange)
     }
 

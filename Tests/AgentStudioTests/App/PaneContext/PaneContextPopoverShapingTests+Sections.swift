@@ -43,6 +43,9 @@ extension PaneContextPopoverShapingTests {
         #expect(shape.messages.groups.dropFirst().allSatisfy { $0.header == .plain })
         #expect(Self.rows(shape).filter { $0.isDimmed }.count == 3)
         #expect(shape.messages.pages.count == (unreadDone > 1 ? 1 : 0))
+        #expect(shape.messages.unreadCount == unreadDone)
+        let refreshed = await MessagesPopoverProjection.refresh(shape.messages, now: Date(timeIntervalSince1970: 62))
+        #expect(refreshed.model.unreadCount == unreadDone)
     }
 
     @Test("E7 prompts and their omitted count do not inflate the Needs you header chip")
@@ -74,5 +77,6 @@ extension PaneContextPopoverShapingTests {
         #expect(needsChip == .init(kind: .needsYou, count: 2))
         #expect(needsYou.items.count == 3)
         #expect(needsYou.omittedPromptCount == 4)
+        #expect(shape.messages.unreadCount == 3)
     }
 }

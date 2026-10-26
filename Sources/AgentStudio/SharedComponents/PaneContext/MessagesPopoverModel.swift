@@ -6,22 +6,24 @@ package struct MessagesPopoverModel: Sendable, Equatable {
     package let remainingLiveSources: Int
     package let nextSourcesAfter: UUID?
     package let hasNotices: Bool
+    package let unreadCount: Int
 
     package init(
         groups: [MessagesGroupModel], pages: [MessagePageCursorModel], remainingLiveSources: Int,
-        nextSourcesAfter: UUID?, hasNotices: Bool
+        nextSourcesAfter: UUID?, hasNotices: Bool, unreadCount: Int
     ) {
         self.groups = groups
         self.pages = pages
         self.remainingLiveSources = remainingLiveSources
         self.nextSourcesAfter = nextSourcesAfter
         self.hasNotices = hasNotices
+        self.unreadCount = unreadCount
     }
 
     package func replacingGroups(_ groups: [MessagesGroupModel]) -> Self {
         .init(
             groups: groups, pages: pages, remainingLiveSources: remainingLiveSources,
-            nextSourcesAfter: nextSourcesAfter, hasNotices: hasNotices)
+            nextSourcesAfter: nextSourcesAfter, hasNotices: hasNotices, unreadCount: unreadCount)
     }
 }
 
