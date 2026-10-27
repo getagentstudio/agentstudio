@@ -161,7 +161,12 @@ struct SessionsUnverifiedStatusTests {
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified",
                     eventName: .turnStart, signal: .turnStart, turnId: nil))
-            #expect(statusMailbox.takeBatch()[key] == .set(.init(status: .working(.active), evidence: .verifiedLive)))
+            let verifiedBindingId = try #require(
+                try await fixture.makeRepository().statusContext(paneId: pane).currentBinding?.bindingGenerationId)
+            #expect(
+                statusMailbox.takeBatch()[key]
+                    == .set(
+                        .init(status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId)))
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await Self.submit(ingestion, pane: pane, signal: .turnDone) == .hookAcceptedWithoutStatus)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
@@ -181,9 +186,12 @@ struct SessionsUnverifiedStatusTests {
                 makeHookAdmission(
                     paneId: pane, sessionId: "verified", eventName: .turnStart, signal: .turnStart, turnId: nil))
             let statusMailbox = await ingestion.statusPublicationMailbox
+            let verifiedBindingId = try #require(
+                try await fixture.makeRepository().statusContext(paneId: pane).currentBinding?.bindingGenerationId)
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]
-                    == .set(.init(status: .working(.active), evidence: .verifiedLive)))
+                    == .set(
+                        .init(status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId)))
             let protectedBefore = try await Self.protectedCounts(fixture)
             let outcome: SessionsUnverifiedStatusOutcome
             if refusalOnly {
@@ -400,9 +408,12 @@ struct SessionsUnverifiedStatusTests {
             #expect(try await pending.value == .hookAcceptedWithoutStatus)
             #expect(await ingestion.lastRefusal(paneId: pane) == nil)
             #expect(try await ingestion.sessionSummary(paneId: pane)?.status == .working(.active))
+            let verifiedBindingId = try #require(
+                try await fixture.makeRepository().statusContext(paneId: pane).currentBinding?.bindingGenerationId)
             #expect(
                 statusMailbox.takeBatch()[.init(existingUUID: pane)]
-                    == .set(.init(status: .working(.active), evidence: .verifiedLive)))
+                    == .set(
+                        .init(status: .working(.active), evidence: .verifiedLive, currentBindingId: verifiedBindingId)))
         } catch {
             held.release()
             _ = try? await binding.value

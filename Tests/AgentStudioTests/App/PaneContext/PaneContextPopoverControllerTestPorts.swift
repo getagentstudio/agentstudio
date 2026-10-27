@@ -36,6 +36,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
     private var results: [PaneContextReadResult]
     private var fallback: PaneContextDetail
     private let heldReads: Set<Int>
+    private var heldReadSteps: [Int: HeldStep<Void>] = [:]
     private var readNumber = 0
     private var onDetailReadFact: (@Sendable (Int, PopoverReadFact) -> Void)?
     private var exactNumber = 0
@@ -59,6 +60,7 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         self.results = results
         self.heldReads = heldReads
     }
+    func holdRead(_ number: Int, at step: HeldStep<Void>) { heldReadSteps[number] = step }
     func setDetail(_ detail: PaneContextDetail) { fallback = detail }
     func enqueue(_ result: PaneContextReadResult) { results.append(result) }
     func configureAnswers(_ results: [AnswerAskResult]) { answerResults = results }
@@ -97,7 +99,9 @@ actor PaneContextPopoverTestPorts: PaneContextDetailReading, PaneContextPersonAc
         requests.append(request)
         let result = results.isEmpty ? .detail(fallback) : results.removeFirst()
         recordDetailRead(number, .started(request))
-        if heldReads.contains(number) {
+        if let step = heldReadSteps.removeValue(forKey: number) {
+            try? await step.arrive(())
+        } else if heldReads.contains(number) {
             do { try await releases.expectNext(in: number, .released) } catch {
                 recordDetailRead(number, .finished)
                 return .unavailable(.databaseUnavailable)

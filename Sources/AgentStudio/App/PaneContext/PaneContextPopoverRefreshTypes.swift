@@ -1,0 +1,162 @@
+import AgentStudioCore
+import AgentStudioInfrastructure
+import AgentStudioSharedComponents
+import Foundation
+
+/// One host's demand, independent from other surfaces that happen to display the same pane.
+struct PaneContextPopoverConsumerKey: Hashable, Sendable {
+    enum Surface: Hashable, Sendable {
+        case sidebarMessages, paneMessages, cardMessages, agentLine, managementCard, toolbar
+    }
+    let hostId: UUID
+    let surface: Surface
+    let paneId: PaneId
+}
+
+struct PaneContextPopoverDemand: Equatable, Sendable {
+    enum Content: Equatable, Sendable {
+        case messages(PaneContextMessagesTarget)
+        case agentLine
+        case card
+        case toolbar
+    }
+    let content: Content
+    let location: PaneContextPopoverLocation
+    let includingDrawers: Bool
+    let screenVisibleWidth: Double
+}
+
+/// Canonical values copied from keyed owners. Equality and scope derivation run in the actor.
+struct PopoverSourceCapture: Equatable, Sendable {
+    struct Source: Equatable, Sendable {
+        let structuralFacts: PaneStructuralFacts?
+        let title: String?
+        let note: String?
+        let session: PaneAgentStatusPresentation?
+        let display: PaneContextDisplay?
+        let activity: PaneActivityTime?
+    }
+    let observationGeneration: UInt64
+    let serviceEpoch: UUID?
+    let sources: [PaneId: Source]
+}
+
+struct PaneContextPopoverServicePorts: Sendable {
+    let epoch: UUID
+    let reader: any PaneContextDetailReading
+    let invalidations: any PaneContextInvalidationReading
+    let person: any PaneContextPersonActing
+}
+
+struct PaneContextPopoverRequestIdentity: Equatable, Sendable {
+    let key: PaneContextPopoverConsumerKey
+    let openingEpoch: UInt64
+    let serviceEpoch: UUID
+    let requestGeneration: UInt64
+    let inputGeneration: UInt64
+    let ageGeneration: UInt64
+    let pageGeneration: UInt64
+}
+
+enum PaneContextPopoverSelectedAsk: Equatable, Sendable {
+    // swiftlint:disable:next discouraged_none_name
+    case none
+    case pendingRefresh(PaneContextMessageKey, retained: PaneContextSelectedAsk?)
+    case current(PaneContextSelectedAsk)
+    case notFound(PaneContextMessageKey)
+    case settled(PaneContextMessageKey)
+    case detached(PaneContextMessageKey)
+    case unavailable(PaneContextMessageKey, StorageFailureSummary)
+}
+
+struct PaneContextPopoverSnapshot: Sendable {
+    enum Loaded: Sendable {
+        case compact
+        case detail(PaneContextDetail, selectedAsk: PaneContextPopoverSelectedAsk)
+    }
+    enum State: Sendable {
+        case ready(Loaded)
+        case unavailable(StorageFailureSummary, retained: Loaded?)
+        case paneGone
+    }
+    let identity: PaneContextPopoverRequestIdentity
+    let demand: PaneContextPopoverDemand
+    let capture: PopoverSourceCapture
+    let state: State
+    let wallNow: Date
+    let frozenWidth: Double?
+}
+
+enum PaneContextPopoverProjectionOutcome: Sendable {
+    struct Accepted: Sendable {
+        let nextAgeBoundary: Date?
+        let openingWidth: Double
+    }
+    case published(Accepted)
+    case equal(Accepted)
+    case superseded
+    case cancelled
+}
+
+/// Hashable page demand preserves independent cursors before an assembled snapshot exists.
+enum PaneContextPopoverPageScope: Hashable, Sendable {
+    case messages(source: PaneId, rank: Int, position: UInt64)
+    case sources(after: PaneId)
+
+    nonisolated var readPage: PaneContextReadPage {
+        switch self {
+        case .messages(let source, let rank, let position):
+            .more(source: source, after: .init(rank: rank, position: position))
+        case .sources(let source): .moreSources(after: source)
+        }
+    }
+}
+
+enum PaneContextPopoverOwnerScope: Hashable, Sendable {
+    case consumer(PaneContextPopoverConsumerKey, opening: UInt64)
+    case execution(PaneContextPopoverConsumerKey, UUID)
+    case deadline(UInt64)
+    case input(UUID)
+    case page(UUID)
+}
+
+enum PaneContextPopoverOwnerFact: Equatable, Sendable {
+    enum Read: Equatable, Sendable {
+        case detail(PaneContextReadPage)
+        case message(PaneContextMessageKey)
+    }
+    enum ExecutionKind: Equatable, Sendable { case opening, background, age, action, page }
+    enum Finish: Equatable, Sendable { case published, equal, superseded, cancelled, failed }
+    enum PageFinish: Equatable, Sendable {
+        case loaded, restartedOnRevision, sourceRemoved, cancelled, paneGone
+        case unavailable(StorageFailureSummary)
+    }
+    case observed
+    case coalesced
+    case deferred
+    case admitted(ExecutionKind)
+    case readStarted(Read)
+    case readCompleted(Read)
+    case readFailed(StorageFailureSummary)
+    case projected
+    case published
+    case equal
+    case superseded
+    case cancelled
+    case finished(Finish)
+    case deadlineArmed
+    case deadlineEnded(cancelled: Bool)
+    case inputFinished
+    case pageFinished(PageFinish)
+    case retired
+}
+
+typealias PaneContextPopoverOwnerObserver =
+    @Sendable (PaneContextPopoverOwnerScope, PaneContextPopoverOwnerFact) -> Void
+
+/// The existing family supplies these capabilities after materializing this consumer's slot.
+struct PaneContextPopoverProjectionPort: Sendable {
+    let admit: @Sendable (PaneContextPopoverSnapshot) async -> PaneContextPopoverProjectionOutcome
+    let invalidate: @Sendable () -> Void
+    let retire: @Sendable () async -> Void
+}

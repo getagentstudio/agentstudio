@@ -273,7 +273,7 @@ extension SessionsIngestion: SessionOpenAskInput {
         statusPublicationMailbox.offer(
             .init(
                 status: status, connectionIssue: issue, evidence: evidence, compactPrompt: compact,
-                promptListRevision: revision),
+                promptListRevision: revision, currentBindingId: statusRuntime.currentBindingByPane[paneId]),
             for: .init(existingUUID: paneId))
     }
 }

@@ -7,16 +7,20 @@ package struct PaneAgentStatusPresentation: Sendable, Equatable {
     package let evidence: StatusEvidence
     package let compactPrompt: CompactProviderPrompt?
     package let promptListRevision: UInt64
+    /// The Sessions owner's current binding identity; runtime-only, never historical or IPC.
+    package let currentBindingId: UUID?
 
     package init(
         status: AgentSessionStatus, connectionIssue: AgentConnectionRefusalReason? = nil,
-        evidence: StatusEvidence = .none, compactPrompt: CompactProviderPrompt? = nil, promptListRevision: UInt64 = 0
+        evidence: StatusEvidence = .none, compactPrompt: CompactProviderPrompt? = nil, promptListRevision: UInt64 = 0,
+        currentBindingId: UUID? = nil
     ) {
         self.status = status
         self.connectionIssue = connectionIssue
         self.evidence = evidence
         self.compactPrompt = compactPrompt
         self.promptListRevision = promptListRevision
+        self.currentBindingId = currentBindingId
     }
 }
 

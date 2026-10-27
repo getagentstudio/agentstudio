@@ -25,7 +25,7 @@ private enum PaneContextMessageActionAdmission: Sendable {
 }
 
 /// Messages and current values share one application-local transaction boundary.
-package actor PaneContextService: PaneContextDetailReading, PaneContextPersonActing {
+package actor PaneContextService: PaneContextDetailReading, PaneContextPersonActing, PaneContextInvalidationReading {
     let sqliteAccess: any PaneContextSQLiteAccess
     let clock: any Clock<Duration> & Sendable
     let wallNow: @Sendable () -> Date
@@ -47,6 +47,9 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
     var deadlineScheduler: RepositoryRetentionScheduler?
     var deadlineRefreshGeneration: UInt64 = 0
     var waiters: [PaneContextMessageKey: [UUID: AsyncStream<AskOutcome>.Continuation]] = [:]
+    // Runtime-only commit invalidation generations; never storage or display revisions.
+    var invalidationGenerationBySource: [PaneId: UInt64] = [:]
+    var invalidationSubscribers: [UUID: PaneContextInvalidationSubscriber] = [:]
     var detailVersions: [PaneId: (version: PaneContextDetailVersion, revision: PaneContextRevision)] = [:]
     var membershipDrain: Task<Void, Never>?
     var membershipReconcile: Task<Void, Never>?
@@ -134,6 +137,12 @@ package actor PaneContextService: PaneContextDetailReading, PaneContextPersonAct
             return
         }
         didOpen = true
+        recordInvalidations(
+            Set(
+                startup.settlements.compactMap { key, commit in
+                    if case .settled = commit.result { return key.paneId }
+                    return nil
+                }))
         for (key, commit) in startup.settlements { await acceptSettlement(commit, key: key) }
         try await drainRetirements()
         await refreshDeadline()

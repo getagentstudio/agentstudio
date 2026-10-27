@@ -113,6 +113,7 @@ extension PaneContextService {
         let snapshot = try await sqliteAccess.write { database in
             try capturePaneContextDisplay(database, paneId: paneId, sources: sources, now: now)
         }
+        if let snapshot { recordInvalidations(snapshot.retentionChangedSources) }
         guard let snapshot, !isStopping, !isPendingRetirement(paneId) else { return nil }
         guard let current = captureMembershipView(paneId: paneId) else { return nil }
         guard current.sources == sources, current.revision == view.revision else {

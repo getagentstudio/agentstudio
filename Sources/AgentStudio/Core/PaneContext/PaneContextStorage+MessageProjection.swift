@@ -7,6 +7,7 @@ struct PaneContextDisplaySnapshot: Sendable {
     let sourceRevisions: [PaneContextRevision]
     let messages: [[PaneMessageCountInput]]
     let readTimeVersions: [PaneContextReadTimeVersion]
+    let retentionChangedSources: Set<PaneId>
 }
 
 private struct PaneContextMessageProjection: Sendable {
@@ -20,6 +21,7 @@ func capturePaneContextDisplay(
     guard try !PaneContextStorage.isRetired(database, paneId: paneId) else { return nil }
     let instant = now()
     var readTimeVersions: [PaneContextReadTimeVersion] = []
+    var retentionChangedSources: Set<PaneId> = []
     let messages: [[PaneMessageCountInput]] = try sources.map { source in
         guard try !PaneContextStorage.isRetired(database, paneId: source) else {
             readTimeVersions.append(.init(visibleSettledIds: []))
@@ -28,6 +30,7 @@ func capturePaneContextDisplay(
         let rows = try PaneContextStorage.messageProjections(database, paneId: source)
         let hidden = try PaneContextStorage.hideSettled(
             database, paneId: source, rows: rows.map(\.retention), now: instant)
+        if !hidden.isEmpty { retentionChangedSources.insert(source) }
         let visible = rows.filter { !$0.retention.displayHidden && !hidden.contains($0.retention.key) }
         readTimeVersions.append(
             PaneContextReadTimeVersion(
@@ -38,7 +41,7 @@ func capturePaneContextDisplay(
         title: try PaneContextStorage.title(database, paneId: paneId),
         line: try PaneContextStorage.line(database, paneId: paneId),
         sourceRevisions: try sources.map { try PaneContextStorage.revision(database, paneId: $0) },
-        messages: messages, readTimeVersions: readTimeVersions)
+        messages: messages, readTimeVersions: readTimeVersions, retentionChangedSources: retentionChangedSources)
 }
 
 extension PaneContextStorage {
