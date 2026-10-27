@@ -74,7 +74,7 @@ enum PaneContextPopoverAnswerParsing {
         guard let message = message(messageId, source: source, snapshot: snapshot),
             case .ask(_, let form, _, _) = message.shape
         else { return .notApplicable }
-        return location.presentation(for: .answer(PaneContextPopoverShaping.form(form)))
+        return location.presentation(for: .answer(PaneContextPopoverShapingKernel.form(form)))
     }
 
     @concurrent nonisolated static func canDismiss(

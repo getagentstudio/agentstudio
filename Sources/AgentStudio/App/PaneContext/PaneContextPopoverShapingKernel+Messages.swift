@@ -3,8 +3,8 @@ import AgentStudioRepoExplorer
 import AgentStudioSharedComponents
 import Foundation
 
-/// One scoped merge, ordered before publication. Views receive complete groups and actions.
-enum MessagesPopoverProjection {
+/// Complete message grouping and formatting; callers choose its off-main execution boundary.
+extension PaneContextPopoverShapingKernel {
     private struct TimedItem {
         let group: MessageGroupKind
         let item: MessagesListItemModel
@@ -13,10 +13,10 @@ enum MessagesPopoverProjection {
         let ordinal: Int
     }
 
-    @concurrent nonisolated static func project(
+    nonisolated static func messages(
         detail: PaneContextDetail, counts: PaneMessageKindCounts, scopedSummaries: [PaneContextScopedSessionSummary],
         titles: [PaneId: String], now: Date
-    ) async -> (model: MessagesPopoverModel, nextChange: Date?) {
+    ) -> (model: MessagesPopoverModel, nextChange: Date?) {
         let sourceOrder = Dictionary(
             uniqueKeysWithValues: scopedSummaries.enumerated().map { ($0.element.sourcePaneId, $0.offset) })
         let messages = detail.messages + detail.drawerMessages.flatMap(\.messages)
@@ -86,8 +86,8 @@ enum MessagesPopoverProjection {
         return (model, nextChange)
     }
 
-    @concurrent nonisolated static func refresh(_ model: MessagesPopoverModel, now: Date)
-        async -> (model: MessagesPopoverModel, nextChange: Date?)
+    nonisolated static func refreshMessages(_ model: MessagesPopoverModel, now: Date)
+        -> (model: MessagesPopoverModel, nextChange: Date?)
     {
         var nextChange: Date?
         let groups = model.groups.map { group in
@@ -132,8 +132,9 @@ enum MessagesPopoverProjection {
                 case .blocking(let deadline): .blocking(deadline: deadline)
                 }
             shape = .ask(
-                reason: PaneContextPopoverShaping.reason(reason), form: PaneContextPopoverShaping.form(form),
-                waiting: mappedWaiting, state: PaneContextPopoverShaping.askState(state))
+                reason: Self.reason(reason),
+                form: Self.form(form),
+                waiting: mappedWaiting, state: Self.askState(state))
             isDimmed = false
         }
         let availability: RowActionAvailabilityModel =
@@ -144,10 +145,10 @@ enum MessagesPopoverProjection {
             }
         return .init(
             id: message.id.uuid, sourcePaneId: message.sourcePaneId.uuid, sourceLabel: sourceLabel,
-            sender: PaneContextPopoverShaping.sender(message.sender), sentAt: message.sentAt,
+            sender: Self.sender(message.sender), sentAt: message.sentAt,
             sourceOccurredAt: message.sourceOccurredAt, body: message.body, why: message.why,
             importance: importance(message.importance), shape: shape,
-            actions: message.actions.map(PaneContextPopoverShaping.action),
+            actions: message.actions.map(Self.action),
             kind: kind, kindIcon: PaneContextPopoverControlProjection.icon(icon), age: .init(text: age),
             isDimmed: isDimmed,
             settledLabel: PaneContextPresentationRules.settledLabel(message), availability: availability)

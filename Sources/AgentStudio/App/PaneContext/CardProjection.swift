@@ -77,10 +77,10 @@ enum CardProjection {
                 case .ask(_, _, _, .open) = selected.detail.shape
             {
                 request = .ask(
-                    MessagesPopoverProjection.row(
+                    PaneContextPopoverShapingKernel.row(
                         selected.detail,
                         sourceLabel: source.uuid == input.paneId
-                            ? nil : MessagesPopoverProjection.drawerSourceLabel(input.selectedSourceTitle),
+                            ? nil : PaneContextPopoverShapingKernel.drawerSourceLabel(input.selectedSourceTitle),
                         age: PaneContextPresentationRules.age(referenceDate: selected.detail.sentAt, now: now).text))
             } else {
                 request = .none

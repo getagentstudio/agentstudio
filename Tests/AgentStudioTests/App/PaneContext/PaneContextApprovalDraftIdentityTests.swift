@@ -108,7 +108,7 @@ struct PaneContextApprovalDraftIdentityTests {
     private func request(_ controller: PaneContextPopoverController, id: AgentMessageId) throws -> CardModel.Request {
         let selected = try #require(controller.selectedAsk)
         try #require(selected.key.messageId == id)
-        return .ask(MessagesPopoverProjection.row(selected.detail, sourceLabel: nil, age: "Now"))
+        return .ask(PaneContextPopoverShapingKernel.row(selected.detail, sourceLabel: nil, age: "Now"))
     }
 
     private func fields(in root: NSView) -> [NSTextField] {

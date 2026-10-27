@@ -2,7 +2,7 @@ import AgentStudioCore
 import AgentStudioSharedComponents
 import Foundation
 
-extension PaneContextPopoverShaping {
+extension PaneContextPopoverShapingKernel {
     nonisolated static func sender(_ sender: AgentMessageSender) -> MessageSenderModel {
         switch sender {
         case .pane(let id): .pane(id.uuid)

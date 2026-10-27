@@ -44,7 +44,8 @@ extension PaneContextPopoverShapingTests {
         #expect(Self.rows(shape).filter { $0.isDimmed }.count == 3)
         #expect(shape.messages.pages.count == (unreadDone > 1 ? 1 : 0))
         #expect(shape.messages.unreadCount == unreadDone)
-        let refreshed = await MessagesPopoverProjection.refresh(shape.messages, now: Date(timeIntervalSince1970: 62))
+        let refreshed = PaneContextPopoverShapingKernel.refreshMessages(
+            shape.messages, now: Date(timeIntervalSince1970: 62))
         #expect(refreshed.model.unreadCount == unreadDone)
     }
 
