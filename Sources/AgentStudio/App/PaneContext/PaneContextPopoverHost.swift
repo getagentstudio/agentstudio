@@ -34,6 +34,9 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let clock: AgeClock
     let wallNow: @Sendable () -> Date
+    @State private var openingAnchor = PaneContextPopoverAnchor.Reference()
+    @State private var messagesWidth = MessagesPopoverWidthState.loading(
+        AppStyles.Components.PaneContext.messagesPopoverIdealWidth)
     @State private var controller: PaneContextPopoverController?
     @State private var isPresented = false
     @State private var unavailableNote: String?
@@ -78,6 +81,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
 
     var body: some View {
         button
+            .background { PaneContextPopoverAnchor(reference: openingAnchor) }
             .popover(isPresented: $isPresented, arrowEdge: .bottom) { popover }
             .task(id: openRequest) {
                 guard openRequest > 0 else { return }
@@ -108,7 +112,10 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
             .onChange(of: isPresented) { _, presented in
                 if !presented { controller?.close() }
             }
-            .onChange(of: controller?.state) { _, state in refreshAges(state) }
+            .onChange(of: controller?.state) { _, state in
+                if let state { selectContentWidth(state.messages) }
+                refreshAges(state)
+            }
             .onDisappear {
                 controller?.close()
                 relativeTimeRefresh.hide()
@@ -118,7 +125,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     @ViewBuilder private var button: some View {
         switch presentation {
         case .messagesAction(let control, _):
-            PaneContextActionButton(control, action: requestOpen)
+            PaneContextActionButton(control, role: .utility(octiconLoader), action: requestOpen)
         case .kind(let chip):
             PaneMessageKindChip(
                 model: chip, control: RepoExplorerPaneKindChipProjection.control(chip),
@@ -144,39 +151,47 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
             let visible = relativeTimeRefresh.popoverShape.flatMap { $0.revision == state.revision ? $0 : nil } ?? state
             switch presentation {
             case .kind, .messagesAction:
-                ScrollViewReader { proxy in
-                    MessagesPopover(
-                        paneId: paneId.uuid, model: visible.messages, controls: controls, octiconLoader: octiconLoader,
-                        location: location,
-                        feedback: controller.unavailableNote ?? controller.actionFeedback,
-                        actions: PaneContextPopoverHostActions.messages(
-                            controller: controller, readers: readers, onGoToPane: goToPaneAndDismissPopover,
-                            onDismissPopover: dismissPopover,
-                            onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
-                    )
-                    .task(id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages))
-                    {
-                        await PaneContextPopoverScrollObservation.perform(
-                            requested: presentation.messagesTarget, effective: visible.messagesTarget,
-                            isPresented: { isPresented && controller.paneId != nil }, observe: onScrollEvent,
-                            apply: {
-                                switch visible.messagesTarget {
-                                case .top: break
-                                case .section(let kind): proxy.scrollTo(kind, anchor: .top)
-                                case .message(let key):
-                                    proxy.scrollTo(
-                                        MessageRowModel.Key(
-                                            sourcePaneId: key.paneId.uuid,
-                                            messageId: key.messageId.uuid), anchor: .top)
-                                }
-                            })
+                if case .loading = messagesWidth {
+                    note("Loading…")
+                } else {
+                    ScrollViewReader { proxy in
+                        MessagesPopover(
+                            paneId: paneId.uuid, model: visible.messages, controls: controls,
+                            octiconLoader: octiconLoader,
+                            location: location,
+                            feedback: controller.unavailableNote ?? controller.actionFeedback,
+                            width: messagesWidth.width,
+                            actions: PaneContextPopoverHostActions.messages(
+                                controller: controller, readers: readers, onGoToPane: goToPaneAndDismissPopover,
+                                onDismissPopover: dismissPopover,
+                                onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
+                        )
+                        .task(
+                            id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages)
+                        ) {
+                            await PaneContextPopoverScrollObservation.perform(
+                                requested: presentation.messagesTarget, effective: visible.messagesTarget,
+                                isPresented: { isPresented && controller.paneId != nil }, observe: onScrollEvent,
+                                apply: {
+                                    switch visible.messagesTarget {
+                                    case .top: break
+                                    case .section(let kind): proxy.scrollTo(kind, anchor: .top)
+                                    case .message(let key):
+                                        proxy.scrollTo(
+                                            MessageRowModel.Key(
+                                                sourcePaneId: key.paneId.uuid,
+                                                messageId: key.messageId.uuid), anchor: .top)
+                                    }
+                                })
+                        }
                     }
+                    .background { applicationReceipt(for: .popover(visible)) }
                 }
-                .background { applicationReceipt(for: .popover(visible)) }
             case .agentLine:
                 if let line = visible.agentLine {
                     AgentLinePopover(
-                        model: line, goToPaneControl: controls.goToPane, feedback: controller.unavailableNote
+                        model: line, octiconLoader: octiconLoader, goToPaneControl: controls.goToPane,
+                        feedback: controller.unavailableNote
                     ) {
                         goToPaneAndDismissPopover(paneId.uuid)
                     }
@@ -190,6 +205,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         }
     }
     private func requestOpen() {
+        messagesWidth = .loading(screenVisibleWidth: openingAnchor.screenVisibleWidth)
         isPresented = true
         openRequest &+= 1
     }
@@ -233,7 +249,22 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         case .agentLine: await active.open(paneId)
         }
         guard !Task.isCancelled else { return }
+        if let state = active.state { selectContentWidth(state.messages) }
         onReadCompleted(read, active)
+    }
+
+    private func selectContentWidth(_ model: MessagesPopoverModel) {
+        guard case .loading = messagesWidth else { return }
+        messagesWidth = messagesWidth.receivingContent(
+            hasMultilineBody: MessagesPopoverWidthState.hasMultilineBody(in: model),
+            screenVisibleWidth: openingAnchor.screenVisibleWidth)
+    }
+
+    private var noteWidth: CGFloat {
+        switch presentation {
+        case .agentLine: AppStyles.Components.PaneContext.popoverWidth
+        case .kind, .messagesAction: messagesWidth.width
+        }
     }
 
     private func refreshAges(_ shape: PaneContextPopoverShape?) {
@@ -252,7 +283,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         let application = PaneContextNoteApplication.Value(
             paneId: paneId, location: location, openRequest: openRequest, text: text)
         return PopoverPanel { PaneContextPopoverNote(text) }
-            .frame(width: AppStyles.Components.PaneContext.popoverWidth)
+            .frame(width: noteWidth)
             .background {
                 AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group)
             }

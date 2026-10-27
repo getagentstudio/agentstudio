@@ -3,16 +3,18 @@ import Foundation
 import SwiftUI
 
 package struct AgentLinePopover: View {
+    private let octiconLoader: OcticonLoader
     private let model: AgentLinePopoverModel
     private let goToPaneControl: PaneContextControlModel
     private let onGoToPane: @MainActor () -> Void
     private let feedback: String?
     package init(
-        model: AgentLinePopoverModel,
+        model: AgentLinePopoverModel, octiconLoader: OcticonLoader,
         goToPaneControl: PaneContextControlModel, feedback: String? = nil,
         onGoToPane: @escaping @MainActor () -> Void
     ) {
         self.model = model
+        self.octiconLoader = octiconLoader
         self.goToPaneControl = goToPaneControl
         self.onGoToPane = onGoToPane
         self.feedback = feedback
@@ -33,7 +35,7 @@ package struct AgentLinePopover: View {
                 }
             }
         } footer: {
-            PaneContextActionButton(goToPaneControl, action: onGoToPane)
+            PaneContextActionButton(goToPaneControl, role: .utility(octiconLoader), action: onGoToPane)
         }
     }
 }

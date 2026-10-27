@@ -5,14 +5,27 @@ import SwiftUI
 package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
     private let content: Content
     private let footer: Footer
+    private let width: CGFloat
+    private let contentSpacing: CGFloat
+    private let separatesFooter: Bool
     @State private var rowsHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
-    package init(@ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer) {
+
+    package init(
+        width: CGFloat = AppStyles.Components.PaneContext.popoverWidth,
+        contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
+        separatesFooter: Bool = false,
+        @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
+    ) {
+        self.width = width
+        self.contentSpacing = contentSpacing
+        self.separatesFooter = separatesFooter
         self.content = content()
         self.footer = footer()
     }
+
     package var body: some View {
-        VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) {
+        VStack(alignment: .leading, spacing: separatesFooter ? 0 : AppStyles.Components.PopoverPanel.sectionSpacing) {
             ScrollView {
                 rows.onGeometryChange(for: CGFloat.self) {
                     $0.size.height
@@ -21,31 +34,48 @@ package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
                 }
             }
             .frame(height: visibleRowsHeight)
-            footer.onGeometryChange(for: CGFloat.self) {
+            .padding(.horizontal, AppStyles.Components.PopoverPanel.contentPadding)
+            .padding(.top, AppStyles.Components.PopoverPanel.contentPadding)
+            .padding(.bottom, separatesFooter ? AppStyles.Components.PopoverPanel.contentPadding : 0)
+            footerContent.onGeometryChange(for: CGFloat.self) {
                 $0.size.height
             } action: {
                 footerHeight = $0
             }
         }
-        .padding(AppStyles.Components.PopoverPanel.contentPadding)
-        .frame(width: AppStyles.Components.PaneContext.popoverWidth)
+        .frame(width: width)
         .frame(maxHeight: AppStyles.Components.PaneContext.popoverMaximumHeight)
         .fixedSize(horizontal: false, vertical: true)
         .background {
             AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group)
         }
     }
-    private var visibleRowsHeight: CGFloat {
-        min(
-            rowsHeight,
-            max(
-                0,
-                AppStyles.Components.PaneContext.popoverMaximumHeight
-                    - 2 * AppStyles.Components.PopoverPanel.contentPadding
-                    - AppStyles.Components.PopoverPanel.sectionSpacing - footerHeight))
+
+    private var footerContent: some View {
+        VStack(spacing: 0) {
+            if separatesFooter { Divider() }
+            footer
+                .padding(
+                    .horizontal,
+                    separatesFooter
+                        ? AppStyles.General.Spacing.standard : AppStyles.Components.PopoverPanel.contentPadding
+                )
+                .padding(.vertical, separatesFooter ? AppStyles.General.Spacing.standard : 0)
+                .padding(.bottom, separatesFooter ? 0 : AppStyles.Components.PopoverPanel.contentPadding)
+        }
     }
+
+    private var visibleRowsHeight: CGFloat {
+        let contentInsets = AppStyles.Components.PopoverPanel.contentPadding * (separatesFooter ? 2 : 1)
+        let footerSpacing = separatesFooter ? 0 : AppStyles.Components.PopoverPanel.sectionSpacing
+        return min(
+            rowsHeight,
+            max(0, AppStyles.Components.PaneContext.popoverMaximumHeight - contentInsets - footerSpacing - footerHeight)
+        )
+    }
+
     private var rows: some View {
-        VStack(alignment: .leading, spacing: AppStyles.Components.PopoverPanel.sectionSpacing) { content }
+        VStack(alignment: .leading, spacing: contentSpacing) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
@@ -71,20 +101,6 @@ package struct PaneContextDatedText: View {
             if let identifier {
                 AccessibilityLabelBridge(identifier: identifier, label: String(text.characters), role: .staticText)
             }
-        }
-    }
-}
-
-struct PaneContextRowGlyph: View {
-    let icon: PaneContextControlModel.Icon
-    let style: SidebarChip.Style
-    let octiconLoader: OcticonLoader
-    var body: some View {
-        switch icon {
-        case .system(let symbol): Image(systemName: symbol).foregroundStyle(style.foreground)
-        case .octicon(let symbol):
-            OcticonImage(name: symbol, size: AppStyles.General.Icon.compact, loader: octiconLoader)
-                .foregroundStyle(style.foreground)
         }
     }
 }

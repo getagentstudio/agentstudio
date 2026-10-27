@@ -27,7 +27,9 @@ struct PaneContextCardRequestBlock: View {
                 if let summary { Text(summary).textSelection(.enabled) }
                 if let sourceLabel { Text("Drawer · \(sourceLabel)").font(.caption).foregroundStyle(.secondary) }
                 Text("Answer in the agent's terminal").foregroundStyle(.secondary)
-                PaneContextActionButton(controls.goToPane) { actions.goToPane(source.uuid) }
+                PaneContextActionButton(controls.goToPane, role: .utility(octiconLoader)) {
+                    actions.goToPane(source.uuid)
+                }
             case .ask(let row):
                 HStack(alignment: .top, spacing: AppStyles.General.Spacing.standard) {
                     PaneContextDatedText(
@@ -36,7 +38,9 @@ struct PaneContextCardRequestBlock: View {
                     )
                     .frame(maxWidth: .infinity, alignment: .leading)
                     if row.availability == .askForm {
-                        PaneContextActionButton(controls.dismiss, scope: row.key.controlScope) {
+                        PaneContextActionButton(
+                            controls.dismiss, role: .rowDismiss(octiconLoader), scope: row.key.controlScope
+                        ) {
                             actions.dismiss(row.id, row.sourcePaneId)
                         }
                         .fixedSize()

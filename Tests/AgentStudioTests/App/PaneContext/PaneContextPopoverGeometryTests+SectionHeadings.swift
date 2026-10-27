@@ -12,8 +12,8 @@ import Testing
 @testable import AgentStudioRepoExplorer
 
 extension PaneContextPopoverGeometryTests {
-    @Test("S8 sections retain urgency order and the same scoped chips as the sidebar")
-    func s8HeadersMirrorSidebarKinds() async throws {
+    @Test("N2 sections retain scoped counts and urgency order as neutral content headings")
+    func contentHeadersRetainScopedSidebarCountsWithoutKindChips() async throws {
         let fixture = try await CompositionFactoryFixture.make()
         let service = fixture.composition.paneContextService
         var window: PaneContextNativePopoverWindow?
@@ -75,16 +75,18 @@ extension PaneContextPopoverGeometryTests {
             for name in ["failed", "needsYou", "done", "info"] {
                 let header = try #require(mounted.find("pane-context.group." + name) as? NSView)
                 headerFrames.append(header.convert(header.bounds, to: nil))
-                let chip = mounted.find("pane-context.group-chip." + name) as? NSView
-                #expect(chip?.accessibilityLabel() == "1", "S8 header lost its painted \(name) count")
-                if let chip {
-                    let host = try #require(mounted.popoverWindow?.contentView)
-                    let rect = host.convert(chip.bounds, from: chip)
-                    let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
-                    let expected = try literalHeaderChipPixels(name, like: host, rect: rect)
-                    #expect(
-                        actual == expected, "The complete \(name) chip must paint its literal glyph, count and colour")
-                }
+                #expect(
+                    mounted.find("pane-context.group-chip." + name) == nil, "N2 removes kind chips from section headers"
+                )
+                let title = try #require(groups.first { $0.kind.rawValue == name }?.kind.title)
+                #expect(header.accessibilityLabel() == title + " 1")
+                let host = try #require(mounted.popoverWindow?.contentView)
+                let rect = host.convert(header.bounds, from: header)
+                let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
+                let expected = try literalContentHeaderPixels(title, like: host, rect: rect)
+                #expect(
+                    actual == expected, "N2 heading must paint title-case 13pt medium text with a neutral regular count"
+                )
             }
             #expect(zip(headerFrames, headerFrames.dropFirst()).allSatisfy { $0.minY > $1.maxY })
             #expect(mounted.find("pane-context.group.resolved") == nil)
@@ -100,28 +102,13 @@ extension PaneContextPopoverGeometryTests {
         }
     }
 
-    private func literalHeaderChipPixels(_ kind: String, like actual: NSView, rect: CGRect) throws -> Data {
-        let icon: String
-        let style: SidebarChip.Style
-        switch kind {
-        case "failed":
-            icon = "xmark"
-            style = .danger
-        case "needsYou":
-            icon = "flag"
-            style = .warning
-        case "done":
-            icon = "checkmark"
-            style = .success
-        default:
-            icon = "info.circle"
-            style = .neutral
-        }
+    private func literalContentHeaderPixels(_ title: String, like actual: NSView, rect: CGRect) throws -> Data {
         let positionY = actual.isFlipped ? rect.midY : actual.bounds.height - rect.midY
         let host = NSHostingView(
-            rootView: SidebarChip(
-                icon: .system(icon), octiconLoader: makeTestOcticonLoader(), text: "1", style: style
-            )
+            rootView: HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
+                Text("1").font(.system(size: 13)).foregroundStyle(.secondary)
+            }
             .position(x: rect.midX, y: positionY)
             .frame(width: actual.bounds.width, height: actual.bounds.height)
             .environment(\.colorScheme, .dark))

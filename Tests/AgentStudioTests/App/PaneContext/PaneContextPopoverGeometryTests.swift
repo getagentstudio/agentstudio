@@ -44,7 +44,7 @@ struct PaneContextPopoverGeometryTests {
             let footer = try #require(mounted.find("pane-context.messages-footer") as? NSView)
             let text = try #require(
                 mounted.find("pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)") as? NSView)
-            #expect(panel.bounds.width == 380)
+            #expect(panel.bounds.width == (long ? 560 : 480))
             #expect(panel.bounds.height <= 480)
             #expect(panel.bounds.height > 80)
             #expect(mounted.labels().contains(body + "\nAn explanation after the full body Now"))
@@ -161,7 +161,7 @@ struct PaneContextPopoverGeometryTests {
         }
     }
 
-    @Test("G20 a held Loading read and unavailable outcomes preserve 380 points", arguments: [false, true])
+    @Test("G20 a held Loading read and unavailable outcomes preserve 480 points", arguments: [false, true])
     func loadingAndUnavailableKeepTheirWidth(initiallyUnavailable: Bool) async throws {
         let pane = PaneId.generateUUIDv7()
         let detail = PaneContextPopoverShapingTests.detail(paneId: pane)
@@ -183,7 +183,7 @@ struct PaneContextPopoverGeometryTests {
             mounted.layout()
             try await mounted.renderedNote("Loading…")
             let loadingPanel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
-            #expect(loadingPanel.bounds.width == 380)
+            #expect(loadingPanel.bounds.width == 480)
             #expect(mounted.labels().contains("Loading…"))
             await ports.release(0)
             try await mounted.readCompleted()
@@ -201,7 +201,7 @@ struct PaneContextPopoverGeometryTests {
                 try await mounted.renderedNote("Context unavailable: database unavailable")
             }
             let failedPanel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
-            #expect(failedPanel.bounds.width == 380)
+            #expect(failedPanel.bounds.width == 480)
             #expect(mounted.labels().contains("Context unavailable: database unavailable"))
             try await mounted.close()
             try await ports.finish()

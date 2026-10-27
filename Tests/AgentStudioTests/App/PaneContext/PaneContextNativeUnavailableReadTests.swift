@@ -56,7 +56,7 @@ struct PaneContextNativeUnavailableReadTests {
             #expect(mounted.controller == nil, "Messages must retain its own nil completion")
             #expect(mounted.labels().contains("Not available right now"))
             let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
-            #expect(panel.bounds.width == 380)
+            #expect(panel.bounds.width == 480)
             try await mounted.close()
             #expect(mounted.clock.pendingSleepCount == 0)
             window = nil

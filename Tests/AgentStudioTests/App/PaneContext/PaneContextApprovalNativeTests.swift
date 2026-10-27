@@ -73,7 +73,9 @@ struct PaneContextApprovalNativeTests {
             #expect(mounted.editableFields.count == 1)
             #expect(mounted.find("pane-context.submit.\(scope)") == nil)
             let reason = approve ? "Reviewed the migration" : nil
-            if let reason { try mounted.typeText(placeholder: "Reason (optional)", value: reason) }
+            if let reason {
+                try mounted.typeText(placeholder: location == .card ? "Reason (optional)" : "", value: reason)
+            }
 
             try mounted.press("pane-context.\(approve ? "approve" : "deny").\(scope)")
             try await mounted.actionCompleted()
@@ -115,7 +117,13 @@ struct PaneContextApprovalNativeTests {
         let reason = try #require(mounted.editableFields.first)
         if location != .card {
             let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
-            #expect(panel.bounds.width == 380)
+            #expect(panel.bounds.width == 480)
+            let reasonLabel = try #require(
+                mounted.find("pane-context.field." + scope + ".reason-label") as? any NSAccessibilityProtocol)
+            #expect(reasonLabel.accessibilityLabel() == "Reason (optional)")
+            #expect(
+                reasonLabel.accessibilityFrame().minY >= reason.accessibilityFrame().maxY,
+                "The persistent catalog label belongs above the blank native reason field")
         }
         let bodyFrame = body.accessibilityFrame()
         let dismissFrame = dismiss.accessibilityFrame()

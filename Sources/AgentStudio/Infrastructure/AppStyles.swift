@@ -14,6 +14,8 @@ package enum AppStyles {
             package static let primaryNSColor = NSColor(
                 srgbRed: 0x40 / 255.0, green: 0x9C / 255.0, blue: 0xFF / 255.0, alpha: 1.0)
             package static let primaryColor = Color(.sRGB, red: 0x40 / 255.0, green: 0x9C / 255.0, blue: 0xFF / 255.0)
+            package static let committingControlForeground = Color(
+                .sRGB, red: 0x1D / 255.0, green: 0x1F / 255.0, blue: 0x21 / 255.0)
             package static let selectedControlForeground = Color(
                 .sRGB, red: 0x89 / 255.0, green: 0xB4 / 255.0, blue: 0xFA / 255.0)
         }
@@ -501,6 +503,21 @@ package enum AppStyles {
     package enum Components {
         package enum PaneContext {
             package static let popoverWidth: CGFloat = 380
+            package static let messagesPopoverMinimumWidth: CGFloat = 440
+            package static let messagesPopoverIdealWidth: CGFloat = 480
+            package static let messagesPopoverMaximumWidth: CGFloat = 560
+            package static let popoverScreenInset: CGFloat = 16
+            package static let messageSectionSpacing: CGFloat = 16
+            package static let messageRowSpacing: CGFloat = 14
+            package static let bodyLineSpacing: CGFloat = 2
+            package static let monospacedLineSpacing: CGFloat = 3
+            package static let messageGlyphBoxSize: CGFloat = 16
+            package static let formControlCornerRadius: CGFloat = 6
+            package static let formActionHorizontalPadding: CGFloat = 10
+            package static let formActionVerticalPadding: CGFloat = 3
+            package static let formActionStrokeOpacity: CGFloat = 0.18
+            package static let formTopSpacing: CGFloat = 10
+            package static let reasonFieldMinimumHeight: CGFloat = 48
             package static let popoverMaximumHeight: CGFloat = 480
         }
 

@@ -8,15 +8,15 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneContextPopoverViewTests {
-    @Test(arguments: [false, true])
-    func choiceButtonsAndAnswerDriveTheRealFormDraft(allowsMultiple: Bool) throws {
+    @Test(arguments: [false, true], AskAnswerForm.Layout.allCases)
+    func choiceButtonsAndAnswerDriveTheRealFormDraft(allowsMultiple: Bool, layout: AskAnswerForm.Layout) throws {
         let options = [Self.choice("allow", label: "Allow"), Self.choice("deny", label: "Deny")]
         var submitted: AskFormDraft?
         var submissionCount = 0
         try Self.withMounted(
             AskAnswerForm(
                 form: .choice(options: options, allowsMultiple: allowsMultiple),
-                submitControl: Self.answerControl,
+                submitControl: Self.answerControl, layout: layout,
                 onSubmit: {
                     submitted = $0
                     submissionCount += 1
@@ -24,6 +24,16 @@ struct PaneContextPopoverViewTests {
         ) { host in
             let allow = try Self.button(in: host, identifier: "pane-context.choice.allow", label: "Allow")
             let deny = try Self.button(in: host, identifier: "pane-context.choice.deny", label: "Deny")
+            if !allowsMultiple {
+                let allowFrame = host.convert(allow.bounds, from: allow)
+                let denyFrame = host.convert(deny.bounds, from: deny)
+                if layout == .messages {
+                    #expect(allowFrame.minY == denyFrame.minY)
+                    #expect(denyFrame.minX > allowFrame.maxX)
+                } else {
+                    #expect(allowFrame.minY != denyFrame.minY)
+                }
+            }
             #expect(allow.accessibilityPerformPress())
             #expect(submissionCount == (allowsMultiple ? 0 : 1))
             host.layoutSubtreeIfNeeded()
@@ -38,6 +48,54 @@ struct PaneContextPopoverViewTests {
             #expect(submissionCount == (allowsMultiple ? 1 : 2))
             #expect(submitted?.selectedChoices == (allowsMultiple ? ["allow", "deny"] : ["deny"]))
         }
+    }
+
+    @Test(arguments: AskAnswerForm.Layout.allCases, [ApprovalDecisionModel.approve, .deny])
+    func bothLayoutsSubmitTheApprovalDecisionAndTypedReason(
+        layout: AskAnswerForm.Layout, decision: ApprovalDecisionModel
+    ) throws {
+        let approve = Self.formControl("approve", label: "Approve")
+        let deny = Self.formControl("deny", label: "Deny")
+        let reason = Self.formControl("reason", label: "Reason (optional)")
+        var submissions: [AskFormDraft] = []
+        try Self.withMounted(
+            AskAnswerForm(
+                form: .approval(approve: approve, deny: deny, reason: reason), submitControl: Self.answerControl,
+                layout: layout, onSubmit: { submissions.append($0) })
+        ) { host in
+            let field = try #require(Self.firstDescendant(NSTextField.self, in: host))
+            try #require(field.window?.makeFirstResponder(field) == true)
+            let editor = try #require(field.currentEditor() as? NSTextView)
+            editor.insertText("Reviewed carefully", replacementRange: NSRange(location: NSNotFound, length: 0))
+            let reasonWindow = try #require(field.window)
+            let returnKey = try #require(
+                makeKeyEvent(
+                    characters: "\r", charactersIgnoringModifiers: "\r", keyCode: 36,
+                    windowNumber: reasonWindow.windowNumber))
+            editor.keyDown(with: returnKey)
+            host.layoutSubtreeIfNeeded()
+            #expect(submissions.isEmpty, "Return in the reason field must not choose Approve or Deny")
+            try #require(field.window?.makeFirstResponder(field) == true)
+            let continuingEditor = try #require(field.currentEditor() as? NSTextView)
+            continuingEditor.selectAll(nil)
+            continuingEditor.insertText(
+                "Reviewed carefully", replacementRange: NSRange(location: NSNotFound, length: 0))
+            field.window?.makeFirstResponder(nil)
+            host.layoutSubtreeIfNeeded()
+            #expect(submissions.isEmpty, "Editing/committing the field must not approve or deny")
+            let control = decision == .approve ? approve : deny
+            let button = try Self.button(in: host, identifier: control.identifier, label: control.label)
+            #expect(button.accessibilityPerformPress())
+            #expect(submissions.count == 1)
+            #expect(submissions.first?.approvalDecision == decision)
+            #expect(submissions.first?.text == "Reviewed carefully")
+        }
+    }
+
+    private static func formControl(_ suffix: String, label: String) -> PaneContextControlModel {
+        .init(
+            identifier: "pane-context." + suffix, label: label, icon: .system("checkmark"),
+            tooltip: .init(text: label, shortcutDisplayText: nil))
     }
 
     @Test

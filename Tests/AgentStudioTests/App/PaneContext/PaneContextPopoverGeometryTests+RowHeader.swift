@@ -93,9 +93,9 @@ extension PaneContextPopoverGeometryTests {
         let positionY = actual.isFlipped ? rect.midY : actual.bounds.height - rect.midY
         let host = NSHostingView(
             rootView:
-                HStack(spacing: 8) {
+                HStack(spacing: 6) {
                     Text("Messages").font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
-                    if count > 0 { Text(String(count)).font(.system(size: 11)).foregroundStyle(.secondary) }
+                    if count > 0 { Text(String(count)).font(.system(size: 13)).foregroundStyle(.secondary) }
                 }
                 .position(x: rect.midX, y: positionY)
                 .frame(width: actual.bounds.width, height: actual.bounds.height)
