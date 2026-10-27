@@ -13,7 +13,7 @@ import Testing
 @Suite("Native Messages geometry", .serialized)
 struct PaneContextPopoverGeometryTests {
     @Test(
-        "G20 content grows to 480 then scrolls, retaining full body, explanation, drawer label and footer",
+        "D45 title and footer stay outside scrolling rows while full content grows to the 480 cap",
         arguments: [false, true])
     func fullContentAndPinnedFooter(long: Bool) async throws {
         let fixture = try await CompositionFactoryFixture.make()
@@ -42,6 +42,7 @@ struct PaneContextPopoverGeometryTests {
             try await mounted.open()
             let panel = try #require(mounted.find("pane-context.popover-panel") as? NSView)
             let footer = try #require(mounted.find("pane-context.messages-footer") as? NSView)
+            let header = try #require(mounted.find("pane-context.messages-header") as? NSView)
             let text = try #require(
                 mounted.find("pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)") as? NSView)
             #expect(panel.bounds.width == (long ? 560 : 480))
@@ -59,6 +60,10 @@ struct PaneContextPopoverGeometryTests {
             #expect(footerRect.contains(dismissAll.convert(dismissAll.bounds, to: nil)))
             #expect(footerRect.contains(goToPane.convert(goToPane.bounds, to: nil)))
             let scroll = try #require(mounted.roots.compactMap { descendant(NSScrollView.self, in: $0) }.first)
+            #expect(!header.isDescendant(of: scroll), "The Messages title must be outside the rows' scroll view")
+            #expect(!footer.isDescendant(of: scroll), "The footer must be outside the rows' scroll view")
+            #expect(panelRect.contains(header.convert(header.bounds, to: nil)))
+            #expect(!header.convert(header.bounds, to: nil).intersects(scroll.convert(scroll.bounds, to: nil)))
             if long {
                 #expect(panel.bounds.height == 480)
                 #expect(text.bounds.height > 480, "The full body must have more than a viewport of laid-out lines")
@@ -68,6 +73,7 @@ struct PaneContextPopoverGeometryTests {
                 scroll.reflectScrolledClipView(scroll.contentView)
                 mounted.layout()
                 #expect(scroll.contentView.bounds.minY > 0)
+                #expect(panel.convert(panel.bounds, to: nil).contains(header.convert(header.bounds, to: nil)))
                 #expect(panel.convert(panel.bounds, to: nil).contains(footer.convert(footer.bounds, to: nil)))
             } else {
                 #expect(panel.bounds.height < 480)

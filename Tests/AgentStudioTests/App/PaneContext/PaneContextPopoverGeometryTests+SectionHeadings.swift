@@ -75,6 +75,7 @@ extension PaneContextPopoverGeometryTests {
             for name in ["failed", "needsYou", "done", "info"] {
                 let header = try #require(mounted.find("pane-context.group." + name) as? NSView)
                 headerFrames.append(header.convert(header.bounds, to: nil))
+                #expect(header.bounds.width == 456, "D45 opaque heading spans the 480pt panel minus two 12pt insets")
                 #expect(
                     mounted.find("pane-context.group-chip." + name) == nil, "N2 removes kind chips from section headers"
                 )
@@ -109,6 +110,9 @@ extension PaneContextPopoverGeometryTests {
                 Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(.primary)
                 Text("1").font(.system(size: 13)).foregroundStyle(.secondary)
             }
+            .frame(width: rect.width, alignment: .leading)
+            .padding(.bottom, 8)
+            .background(Color(nsColor: .windowBackgroundColor))
             .position(x: rect.midX, y: positionY)
             .frame(width: actual.bounds.width, height: actual.bounds.height)
             .environment(\.colorScheme, .dark))

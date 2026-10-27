@@ -507,6 +507,7 @@ package enum AppStyles {
             package static let messagesPopoverIdealWidth: CGFloat = 480
             package static let messagesPopoverMaximumWidth: CGFloat = 560
             package static let popoverScreenInset: CGFloat = 16
+            package static let pinnedHeaderBackground = Color(nsColor: .windowBackgroundColor)
             package static let messageSectionSpacing: CGFloat = 16
             package static let messageRowSpacing: CGFloat = 14
             package static let bodyLineSpacing: CGFloat = 2

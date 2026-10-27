@@ -60,7 +60,7 @@ extension PaneContextApprovalNativeTests {
             } else {
                 await ports.release(2)
                 try await waiter.value
-                #expect(mounted.editableFields.isEmpty)
+                #expect(mounted.editableFields.isEmpty, "Native settlement: \(mounted.formDiagnostics())")
                 #expect(mounted.find("pane-context.approve.\(pane.uuid).\(message.id.uuid)") == nil)
             }
             try await mounted.close()

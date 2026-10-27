@@ -58,53 +58,52 @@ package struct MessagesPopover: View {
         PaneContextPopoverPanel(
             width: width, contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing, separatesFooter: true
         ) {
-            messagesHeader.id(PaneContextPopoverPanelAnchor.top)
-            if let feedback { PaneContextPopoverNote(feedback) }
-            ForEach(model.groups, id: \.kind) { group in
-                VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
-                    PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
-                        .background {
-                            AccessibilityLabelBridge(
-                                identifier: "pane-context.group." + group.kind.rawValue,
-                                label: group.kind.title + (headerCount(group).map { " \($0)" } ?? ""), role: .staticText
-                            )
-                        }
-                    VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageRowSpacing) {
-                        ForEach(group.items) { item in
-                            switch item {
-                            case .message(let row):
-                                MessagePopoverRow(
-                                    row: row, controls: controls, octiconLoader: octiconLoader,
-                                    location: location, actions: actions
+            messagesHeader
+        } content: {
+            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                Color.clear.frame(height: 0).id(PaneContextPopoverPanelAnchor.top).accessibilityHidden(true)
+                if let feedback {
+                    PaneContextPopoverNote(feedback).padding(
+                        .bottom, AppStyles.Components.PaneContext.messageSectionSpacing)
+                }
+                ForEach(model.groups, id: \.kind) { group in
+                    Section {
+                        // Rebind rows eagerly so settling an ask retires its old form controls.
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(group.items) { item in
+                                messageItem(item)
+                                    .padding(.bottom, spacing(after: item, in: group))
+                            }
+                            if group.omittedPromptCount > 0 {
+                                Text("+\(group.omittedPromptCount) more not shown").font(.caption).foregroundStyle(
+                                    .secondary
                                 )
-                                .id(row.key)
-                            case .providerPrompt(let prompt):
-                                ProviderPromptRow(prompt: prompt, octiconLoader: octiconLoader)
+                                .background {
+                                    AccessibilityLabelBridge(
+                                        identifier: "pane-context.omitted-prompts",
+                                        label: "+\(group.omittedPromptCount) more not shown", role: .staticText)
+                                }
+                                .padding(.bottom, spacing(after: group))
                             }
                         }
-                    }
-                    if group.omittedPromptCount > 0 {
-                        Text("+\(group.omittedPromptCount) more not shown").font(.caption).foregroundStyle(.secondary)
-                            .background {
-                                AccessibilityLabelBridge(
-                                    identifier: "pane-context.omitted-prompts",
-                                    label: "+\(group.omittedPromptCount) more not shown", role: .staticText)
-                            }
+                    } header: {
+                        sectionHeader(group)
                     }
                 }
-                .id(group.kind)
-            }
-            ForEach(model.pages.indices, id: \.self) { index in
-                PaneContextActionButton(
-                    controls.moreMessages, role: .utility(octiconLoader),
-                    scope: model.pages[index].sourcePaneId.uuidString
-                ) {
-                    actions.moreMessages(model.pages[index])
+                ForEach(model.pages.indices, id: \.self) { index in
+                    PaneContextActionButton(
+                        controls.moreMessages, role: .utility(octiconLoader),
+                        scope: model.pages[index].sourcePaneId.uuidString
+                    ) {
+                        actions.moreMessages(model.pages[index])
+                    }
+                    .padding(.top, AppStyles.Components.PaneContext.messageSectionSpacing)
                 }
-            }
-            if let after = model.nextSourcesAfter {
-                PaneContextActionButton(controls.moreSources, role: .utility(octiconLoader)) {
-                    actions.moreSources(after)
+                if let after = model.nextSourcesAfter {
+                    PaneContextActionButton(controls.moreSources, role: .utility(octiconLoader)) {
+                        actions.moreSources(after)
+                    }
+                    .padding(.top, AppStyles.Components.PaneContext.messageSectionSpacing)
                 }
             }
         } footer: {
@@ -120,6 +119,40 @@ package struct MessagesPopover: View {
                 AccessibilityLabelBridge(identifier: "pane-context.messages-footer", label: "", role: .group)
             }
         }
+    }
+
+    @ViewBuilder private func messageItem(_ item: MessagesListItemModel) -> some View {
+        switch item {
+        case .message(let row):
+            MessagePopoverRow(
+                row: row, controls: controls, octiconLoader: octiconLoader, location: location, actions: actions
+            )
+            .id(row.key)
+        case .providerPrompt(let prompt):
+            ProviderPromptRow(prompt: prompt, octiconLoader: octiconLoader)
+        }
+    }
+
+    private func sectionHeader(_ group: MessagesGroupModel) -> some View {
+        PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.bottom, AppStyles.General.Spacing.loose)
+            .background(AppStyles.Components.PaneContext.pinnedHeaderBackground)
+            .id(group.kind)
+            .background {
+                AccessibilityLabelBridge(
+                    identifier: "pane-context.group." + group.kind.rawValue,
+                    label: group.kind.title + (headerCount(group).map { " \($0)" } ?? ""), role: .staticText)
+            }
+    }
+
+    private func spacing(after item: MessagesListItemModel, in group: MessagesGroupModel) -> CGFloat {
+        if item.id != group.items.last?.id { return AppStyles.Components.PaneContext.messageRowSpacing }
+        return group.omittedPromptCount > 0 ? AppStyles.General.Spacing.loose : spacing(after: group)
+    }
+
+    private func spacing(after group: MessagesGroupModel) -> CGFloat {
+        group.kind == model.groups.last?.kind ? 0 : AppStyles.Components.PaneContext.messageSectionSpacing
     }
 
     private func headerCount(_ group: MessagesGroupModel) -> Int? {

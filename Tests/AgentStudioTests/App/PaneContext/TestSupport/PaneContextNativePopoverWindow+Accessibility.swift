@@ -1,6 +1,9 @@
+import AgentStudioSharedComponents
 import AppKit
 import Foundation
 import Testing
+
+@testable import AgentStudio
 
 extension PaneContextNativePopoverWindow {
     var editableFields: [NSTextField] { roots.flatMap { descendants(NSTextField.self, in: $0) }.filter(\.isEditable) }
@@ -64,6 +67,14 @@ extension PaneContextNativePopoverWindow {
             if let found = find(child, matching: predicate, visited: &visited) { return found }
         }
         return nil
+    }
+
+    func formDiagnostics() -> String {
+        let fields = editableFields.map { field in
+            "frame=\(field.convert(field.bounds, to: nil)) visibleRect=\(field.visibleRect) hidden=\(field.isHiddenOrHasHiddenAncestor) window=\(field.window?.isVisible == true)"
+        }
+        let rows = controller?.state?.messages.messageRows.map { "\($0.id):\($0.availability)" } ?? []
+        return "fields=\(fields); rows=\(rows); labels=\(labels())"
     }
 
     private func collectLabels(_ element: AnyObject, visited: inout Set<ObjectIdentifier>, result: inout [String]) {

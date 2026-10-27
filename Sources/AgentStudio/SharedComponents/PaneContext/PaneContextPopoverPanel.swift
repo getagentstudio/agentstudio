@@ -3,42 +3,58 @@ import SwiftUI
 
 package enum PaneContextPopoverPanelAnchor: Hashable, Sendable { case top }
 
-/// The content grows to its cap; only the rows scroll and the footer stays reachable.
-package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
+/// The content grows to its cap while title and footer remain outside the scrolling rows.
+package struct PaneContextPopoverPanel<Header: View, Content: View, Footer: View>: View {
+    private let header: Header?
     private let content: Content
     private let footer: Footer
     private let width: CGFloat
     private let contentSpacing: CGFloat
     private let separatesFooter: Bool
     @State private var rowsHeight: CGFloat = 0
+    @State private var headerHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
+    @State private var rowsAreScrolled = false
 
     package init(
         width: CGFloat = AppStyles.Components.PaneContext.popoverWidth,
         contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
         separatesFooter: Bool = false,
-        @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
+        @ViewBuilder header: () -> Header, @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
     ) {
+        self.init(
+            width: width, contentSpacing: contentSpacing, separatesFooter: separatesFooter,
+            header: header(), content: content(), footer: footer())
+    }
+
+    private init(
+        width: CGFloat, contentSpacing: CGFloat, separatesFooter: Bool,
+        header: Header?, content: Content, footer: Footer
+    ) {
+        self.header = header
         self.width = width
         self.contentSpacing = contentSpacing
         self.separatesFooter = separatesFooter
-        self.content = content()
-        self.footer = footer()
+        self.content = content
+        self.footer = footer
     }
 
     package var body: some View {
         VStack(alignment: .leading, spacing: separatesFooter ? 0 : AppStyles.Components.PopoverPanel.sectionSpacing) {
-            ScrollView {
-                rows.onGeometryChange(for: CGFloat.self) {
+            if let header {
+                VStack(alignment: .leading, spacing: 0) {
+                    header
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(AppStyles.Components.PopoverPanel.contentPadding)
+                    Divider().opacity(rowsAreScrolled ? 1 : 0)
+                }
+                .onGeometryChange(for: CGFloat.self) {
                     $0.size.height
                 } action: {
-                    rowsHeight = $0
+                    headerHeight = $0
                 }
             }
-            .frame(height: visibleRowsHeight)
-            .padding(.horizontal, AppStyles.Components.PopoverPanel.contentPadding)
-            .padding(.top, AppStyles.Components.PopoverPanel.contentPadding)
-            .padding(.bottom, separatesFooter ? AppStyles.Components.PopoverPanel.contentPadding : 0)
+            scrollableRows
             footerContent.onGeometryChange(for: CGFloat.self) {
                 $0.size.height
             } action: {
@@ -51,6 +67,32 @@ package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
         .background {
             AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group)
         }
+    }
+
+    @ViewBuilder private var scrollableRows: some View {
+        if header != nil {
+            rowsScrollView.onScrollGeometryChange(for: Bool.self) { geometry in
+                geometry.contentOffset.y > 0
+            } action: { _, scrolled in
+                rowsAreScrolled = scrolled
+            }
+        } else {
+            rowsScrollView
+        }
+    }
+
+    private var rowsScrollView: some View {
+        ScrollView {
+            rows.onGeometryChange(for: CGFloat.self) {
+                $0.size.height
+            } action: {
+                rowsHeight = $0
+            }
+        }
+        .frame(height: visibleRowsHeight)
+        .padding(.horizontal, AppStyles.Components.PopoverPanel.contentPadding)
+        .padding(.top, AppStyles.Components.PopoverPanel.contentPadding)
+        .padding(.bottom, separatesFooter ? AppStyles.Components.PopoverPanel.contentPadding : 0)
     }
 
     private var footerContent: some View {
@@ -72,13 +114,29 @@ package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
         let footerSpacing = separatesFooter ? 0 : AppStyles.Components.PopoverPanel.sectionSpacing
         return min(
             rowsHeight,
-            max(0, AppStyles.Components.PaneContext.popoverMaximumHeight - contentInsets - footerSpacing - footerHeight)
+            max(
+                0,
+                AppStyles.Components.PaneContext.popoverMaximumHeight - headerHeight - contentInsets - footerSpacing
+                    - footerHeight)
         )
     }
 
     private var rows: some View {
         VStack(alignment: .leading, spacing: contentSpacing) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+extension PaneContextPopoverPanel where Header == EmptyView {
+    package init(
+        width: CGFloat = AppStyles.Components.PaneContext.popoverWidth,
+        contentSpacing: CGFloat = AppStyles.Components.PopoverPanel.sectionSpacing,
+        separatesFooter: Bool = false,
+        @ViewBuilder content: () -> Content, @ViewBuilder footer: () -> Footer
+    ) {
+        self.init(
+            width: width, contentSpacing: contentSpacing, separatesFooter: separatesFooter,
+            header: nil, content: content(), footer: footer())
     }
 }
 
