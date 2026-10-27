@@ -250,6 +250,7 @@ final class PaneContextNativePopoverWindow {
                     onPresentationEvent: { presentationDecisions.observe($0) },
                     onScrollEvent: { scrolling.observe($0) },
                     onNoteApplication: { sink.observeNote($0) },
+                    onDatedLabelApplication: { clock.observeDatedLabel($0) },
                     onActionCompleted: {
                         sink.facts.append(scope: .action(sink.completedActions), fact: .actionCompleted)
                         sink.completedActions += 1

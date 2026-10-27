@@ -212,16 +212,19 @@ final class PaneRelativeTimeRefresh {
         let input: PaneManagementIdentityCapture.VisibleInput
         let value: PaneManagementIdentityCapture.VisiblePresentation
         let operationId: UUID
+        /// Identifies this prepared application independently of its long-lived worker.
+        let applicationId: UUID
         let feedback: String?
 
         init(
             input: PaneManagementIdentityCapture.VisibleInput,
             value: PaneManagementIdentityCapture.VisiblePresentation,
-            operationId: UUID, feedback: String? = nil
+            operationId: UUID, applicationId: UUID = UUIDv7.generate(), feedback: String? = nil
         ) {
             self.input = input
             self.value = value
             self.operationId = operationId
+            self.applicationId = applicationId
             self.feedback = feedback
         }
     }
@@ -292,17 +295,22 @@ final class PaneRelativeTimeRefresh {
     {
         guard let latestApplication, latestApplication.value == value else { return nil }
         return .init(
-            input: latestApplication.input, value: value, operationId: latestApplication.operationId, feedback: feedback
+            input: latestApplication.input, value: value, operationId: latestApplication.operationId,
+            applicationId: latestApplication.applicationId, feedback: feedback
         )
     }
 
     func didApply(_ application: Application) {
-        guard latestApplication?.operationId == application.operationId, value == application.value else { return }
+        guard latestApplication?.applicationId == application.applicationId,
+            latestApplication?.operationId == application.operationId, value == application.value
+        else { return }
         onEvent(.applied(application))
     }
 
     func didRetire(_ application: Application) {
-        guard latestApplication?.operationId == application.operationId, value == application.value else { return }
+        guard latestApplication?.applicationId == application.applicationId,
+            latestApplication?.operationId == application.operationId, value == application.value
+        else { return }
         latestApplication = nil
         onEvent(.applicationRetired(application))
     }

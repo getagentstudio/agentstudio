@@ -3,14 +3,17 @@ import Foundation
 import SwiftUI
 
 package struct AgentLinePopover: View {
+    package static let datedLabelIdentifier = "pane-context.agent-line-dated-text"
     private let octiconLoader: OcticonLoader
     private let model: AgentLinePopoverModel
     private let goToPaneControl: PaneContextControlModel
     private let onGoToPane: @MainActor () -> Void
     private let feedback: String?
+    private let labelApplication: AccessibilityLabelApplication?
     package init(
         model: AgentLinePopoverModel, octiconLoader: OcticonLoader,
         goToPaneControl: PaneContextControlModel, feedback: String? = nil,
+        labelApplication: AccessibilityLabelApplication? = nil,
         onGoToPane: @escaping @MainActor () -> Void
     ) {
         self.model = model
@@ -18,11 +21,15 @@ package struct AgentLinePopover: View {
         self.goToPaneControl = goToPaneControl
         self.onGoToPane = onGoToPane
         self.feedback = feedback
+        self.labelApplication = labelApplication
     }
     package var body: some View {
         PaneContextPopoverPanel {
             if let feedback { PaneContextPopoverNote(feedback) }
-            PaneContextDatedText(body: model.summary, age: model.age).font(.headline)
+            PaneContextDatedText(
+                body: model.summary, age: model.age, identifier: Self.datedLabelIdentifier,
+                application: labelApplication
+            ).font(.headline)
             MessageSenderLabel(sender: model.writer)
             ForEach(model.refs.indices, id: \.self) { index in
                 switch model.refs[index] {

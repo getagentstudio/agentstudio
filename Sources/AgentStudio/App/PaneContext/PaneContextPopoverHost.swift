@@ -31,6 +31,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let onPresentationEvent: PaneContextPopoverPresentationObserver?
     let onScrollEvent: PaneContextPopoverScrollObserver
     let onNoteApplication: PaneContextNoteApplicationObserver
+    let onDatedLabelApplication: @MainActor (AccessibilityLabelApplication.Event) -> Void
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
     let clock: AgeClock
@@ -55,6 +56,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
         onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
+        onDatedLabelApplication: @escaping @MainActor (AccessibilityLabelApplication.Event) -> Void = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
@@ -73,6 +75,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.onPresentationEvent = onPresentationEvent
         self.onScrollEvent = onScrollEvent
         self.onNoteApplication = onNoteApplication
+        self.onDatedLabelApplication = onDatedLabelApplication
         self.onActionCompleted = onActionCompleted
         self.onActionTaskStarted = onActionTaskStarted
         self.clock = clock
@@ -206,11 +209,11 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 if let line = visible.agentLine {
                     AgentLinePopover(
                         model: line, octiconLoader: octiconLoader, goToPaneControl: controls.goToPane,
-                        feedback: controller.unavailableNote
+                        feedback: controller.unavailableNote,
+                        labelApplication: datedLabelApplication(for: .popover(visible))
                     ) {
                         goToPaneAndDismissPopover(paneId.uuid)
                     }
-                    .background { applicationReceipt(for: .popover(visible)) }
                 }
             }
         } else if let note = controller?.unavailableNote {
@@ -235,6 +238,23 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 onRetired: relativeTimeRefresh.didRetire)
         }
     }
+    private func datedLabelApplication(for value: PaneManagementIdentityCapture.VisiblePresentation)
+        -> AccessibilityLabelApplication?
+    {
+        guard
+            let application = relativeTimeRefresh.application(
+                for: value, feedback: controller?.unavailableNote ?? controller?.actionFeedback)
+        else { return nil }
+        return .init(key: .init(producerId: application.operationId, valueId: application.applicationId)) { event in
+            switch event {
+            case .applied: relativeTimeRefresh.didApply(application)
+            case .retired: relativeTimeRefresh.didRetire(application)
+            case .updateEnded: break
+            }
+            onDatedLabelApplication(event)
+        }
+    }
+
     private var presentationObservation: PaneContextPopoverPresentationObservation? {
         onPresentationEvent.map { .init(isPresented: { isPresented }, observe: $0) }
     }

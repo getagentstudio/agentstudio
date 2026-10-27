@@ -209,7 +209,14 @@ struct PaneContextPopoverClockTests {
         let expected =
             (bracketed ? "A persistent Agent Line [" : "A persistent notice\nA full explanation ")
             + text + (bracketed ? "]" : "")
-        #expect(window.labels().contains(expected), "Missing dated native text: \(expected); labels=\(window.labels())")
+        if bracketed {
+            let actual = (window.find("pane-context.agent-line-dated-text") as? any NSAccessibilityProtocol)?
+                .accessibilityLabel()
+            #expect(actual == expected, "The Agent Line popover's own dated AX label must have applied")
+        } else {
+            #expect(
+                window.labels().contains(expected), "Missing dated native text: \(expected); labels=\(window.labels())")
+        }
     }
 }
 

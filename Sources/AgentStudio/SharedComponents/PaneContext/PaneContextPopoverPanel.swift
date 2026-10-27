@@ -85,8 +85,13 @@ package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
 package struct PaneContextDatedText: View {
     private let text: AttributedString
     private let identifier: String?
-    package init(body: String, explanation: String? = nil, age: AgeTextModel, identifier: String? = nil) {
+    private let application: AccessibilityLabelApplication?
+    package init(
+        body: String, explanation: String? = nil, age: AgeTextModel, identifier: String? = nil,
+        application: AccessibilityLabelApplication? = nil
+    ) {
         self.identifier = identifier
+        self.application = application
         var text = AttributedString(body)
         if let explanation {
             var explanationText = AttributedString("\n" + explanation)
@@ -101,7 +106,8 @@ package struct PaneContextDatedText: View {
     package var body: some View {
         Text(text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true).background {
             if let identifier {
-                AccessibilityLabelBridge(identifier: identifier, label: String(text.characters), role: .staticText)
+                AccessibilityLabelBridge(
+                    identifier: identifier, label: String(text.characters), role: .staticText, application: application)
             }
         }
     }

@@ -1,3 +1,4 @@
+import AgentStudioSharedComponents
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
@@ -15,10 +16,16 @@ enum NativeCardClockFact: Sendable, Equatable {
     case drained
     case retired
     case applied(PaneRelativeTimeRefresh.Application)
+    case datedLabel(AccessibilityLabelApplication.Event)
     case applicationRetired(PaneRelativeTimeRefresh.Application)
     case unchangedEvaluation(PaneRelativeTimeRefresh.Application)
     case applicationHidden(UUID?, PaneRelativeTimeRefresh.HideResult)
     case applicationWorkerEnded(UUID, PaneManagementIdentityCapture.VisibleInput, cancelled: Bool)
+}
+
+enum NativeCardApplicationWaitDecision: Equatable, Sendable {
+    case waitingForDatedLabel(UUID)
+    case returned(UUID)
 }
 
 /// Keeps the canonical instant domain while advancing only through TestPushClock.
@@ -43,6 +50,7 @@ final class NativeCardTestClock: Clock {
     private let canonicalOrigin: ContinuousClock.Instant
     private let sleeps = Mutex(SleepState())
     @MainActor private var lastApplied: PaneRelativeTimeRefresh.Application?
+    @MainActor var onApplicationWaitDecision: ((NativeCardApplicationWaitDecision) -> Void)?
     private struct Preparation {
         let input: PaneManagementIdentityCapture.VisibleInput
         let ordinal: UInt64
@@ -121,6 +129,11 @@ final class NativeCardTestClock: Clock {
     }
 
     @MainActor
+    func observeDatedLabel(_ event: AccessibilityLabelApplication.Event) {
+        facts.append(scope: 3, fact: .datedLabel(event))
+    }
+
+    @MainActor
     func observePreparation(_ input: PaneManagementIdentityCapture.VisibleInput, id: UUID) {
         preparationOrdinal += 1
         preparations[id] = Preparation(input: input, ordinal: preparationOrdinal)
@@ -134,38 +147,68 @@ final class NativeCardTestClock: Clock {
         guard let expectedWorker = applicationWorkerId else {
             throw NativeCardClockFailure(description: "Native application has no announced worker")
         }
+        var preparedApplication: PaneRelativeTimeRefresh.Application?
         while true {
             let fact = try await facts.expectNext(
-                in: 3, where: { _ in true }, "native presentation applied or retired")
+                in: 3, where: { _ in true }, "native presentation or its own dated AX label applied/retired")
             switch fact {
-            case .applied(let application) where application.operationId != expectedWorker:
-                continue
+            case .applied(let application) where application.operationId != expectedWorker: continue
+            case .applied(let application) where application == lastApplied: continue
             case .applied(let application):
                 guard application.input.paneId == pane, application.input.activityTime?.orderingInstant == input else {
                     throw NativeCardClockFailure(description: "Wrong native application: \(application)")
                 }
-                lastApplied = application
-                consumedPreparations[expectedWorker] = preparations[expectedWorker]?.ordinal
-                return application.value
-            case .applicationRetired(let application) where application.operationId != expectedWorker:
+                if case .popover(_, .agentLine) = application.input {
+                    preparedApplication = application
+                    onApplicationWaitDecision?(.waitingForDatedLabel(expectedWorker))
+                } else {
+                    return finishApplication(application)
+                }
+            case .datedLabel(.applied(let value)) where value.key.producerId != expectedWorker: continue
+            case .datedLabel(.applied(let value))
+            where value.key.valueId == lastApplied?.applicationId
+                && preparedApplication?.applicationId != value.key.valueId:
                 continue
+            case .datedLabel(.applied(let value)):
+                guard let application = preparedApplication,
+                    value.key.valueId == application.applicationId,
+                    value.identifier == AgentLinePopover.datedLabelIdentifier
+                else { throw NativeCardClockFailure(description: "Wrong dated AX label application: \(value)") }
+                return finishApplication(application)
+            case .datedLabel(.updateEnded(let key))
+            where key.producerId != expectedWorker || key.valueId == lastApplied?.applicationId:
+                continue
+            case .datedLabel(.updateEnded(let key)):
+                throw NativeCardClockFailure(description: "Dated AX label update ended without application: \(key)")
+            case .datedLabel(.retired(let value)) where value.key.producerId != expectedWorker: continue
+            case .datedLabel(.retired(let value)):
+                throw NativeCardClockFailure(
+                    description: "Agent Line dated AX label retired before application: \(value)")
+            case .applicationRetired(let application) where application.operationId != expectedWorker: continue
             case .applicationRetired(let application)
-            where application.operationId == lastApplied?.operationId && application.value == lastApplied?.value:
+            where application.operationId == lastApplied?.operationId
+                && application.applicationId == lastApplied?.applicationId:
                 continue
-            case .applicationHidden(let worker, _) where worker != expectedWorker:
-                continue
-            case .applicationWorkerEnded(let worker, _, _) where worker != expectedWorker:
-                continue
+            case .applicationHidden(let worker, _) where worker != expectedWorker: continue
+            case .applicationWorkerEnded(let worker, _, _) where worker != expectedWorker: continue
             case .applicationWorkerEnded(let worker, let preparedInput, false)
             where preparations[worker]?.input == preparedInput
                 && (preparations[worker]?.ordinal ?? 0) > (consumedPreparations[worker] ?? 0):
-                // A finite projection can finish while its prepared native frame
-                // is in flight. Only an unconsumed preparation permits this.
                 continue
             default:
                 throw NativeCardClockFailure(description: "Native presentation ended before application: \(fact)")
             }
         }
+    }
+
+    @MainActor
+    private func finishApplication(_ application: PaneRelativeTimeRefresh.Application)
+        -> PaneManagementIdentityCapture.VisiblePresentation
+    {
+        lastApplied = application
+        consumedPreparations[application.operationId] = preparations[application.operationId]?.ordinal
+        onApplicationWaitDecision?(.returned(application.operationId))
+        return application.value
     }
 
     @MainActor

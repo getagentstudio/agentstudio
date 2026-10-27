@@ -19,10 +19,11 @@ struct NativeCardApplicationWaitTests {
         let value = PaneManagementIdentityCapture.VisiblePresentation.pane(.init(lines: []))
         clock.observeOwner(.operation(input, .started, id: worker))
         clock.observePreparation(input, id: worker)
-        clock.observeOwner(.applied(.init(input: input, value: value, operationId: worker)))
+        let application = PaneRelativeTimeRefresh.Application(input: input, value: value, operationId: worker)
+        clock.observeOwner(.applied(application))
         #expect(try await clock.applied(pane: input.paneId, input: nil) == value)
 
-        clock.observeOwner(.applicationRetired(.init(input: input, value: value, operationId: worker)))
+        clock.observeOwner(.applicationRetired(application))
         clock.observeOwner(.hidden(.cancelled(requested: true)))
         clock.observeOwner(.ended(input, .cancelled, id: worker))
         // This correlated shutdown is also a fallback exit if a deliberate
