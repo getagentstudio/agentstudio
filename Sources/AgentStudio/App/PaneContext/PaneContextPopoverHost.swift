@@ -44,6 +44,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     @State private var unavailableNote: String?
     @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
     @State private var openRequest: UInt64 = 0
+    @State private var openingReadback: PaneContextPopoverOpeningReadback?
     private var controls: PaneContextPopoverControls { PaneContextPopoverControlProjection.controls() }
 
     init(
@@ -123,6 +124,8 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 refreshAges(state)
             }
             .onDisappear {
+                openingReadback?.retire()
+                openingReadback = nil
                 controller?.close()
                 relativeTimeRefresh.hide()
             }
@@ -226,6 +229,17 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         messagesWidth = .loading(screenVisibleWidth: openingAnchor.screenVisibleWidth)
         isPresented = true
         openRequest &+= 1
+        guard let onPresentationEvent else { return }
+        openingReadback?.retire()
+        let readback = PaneContextPopoverOpeningReadback(
+            ownerIdentity: ObjectIdentifier(openingAnchor), opening: openRequest,
+            read: {
+                .init(
+                    isPresented: isPresented, paneId: controller?.paneId,
+                    controllerIdentity: controller.map(ObjectIdentifier.init), openRequest: openRequest)
+            })
+        openingReadback = readback
+        onPresentationEvent(.opened(readback))
     }
     @ViewBuilder private func applicationReceipt(for value: PaneManagementIdentityCapture.VisiblePresentation)
         -> some View

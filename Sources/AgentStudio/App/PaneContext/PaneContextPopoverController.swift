@@ -28,7 +28,8 @@ final class PaneContextPopoverController {
 
     private var actionSnapshot: PaneContextActionSnapshot {
         switch location {
-        case .card: .selectedAsk(selectedAsk)
+        case .card:
+            .selectedAsk(selectedAsk.flatMap { $0.generation == generation ? $0 : nil })
         case .sidebar, .pane: .messages(detail)
         }
     }
@@ -71,6 +72,7 @@ final class PaneContextPopoverController {
         if paneId != pane {
             state = nil
             detail = nil
+            selectedAsk = nil
             actionFeedback = nil
             unavailableNote = nil
         }
@@ -79,7 +81,10 @@ final class PaneContextPopoverController {
     }
 
     func openCard(_ pane: PaneId, selection: CardRequestSelection) async {
-        if cardSelection != selection { actionFeedback = nil }
+        if cardSelection != selection {
+            selectedAsk = nil
+            actionFeedback = nil
+        }
         cardSelection = selection
         await open(pane)
     }
@@ -106,7 +111,13 @@ final class PaneContextPopoverController {
         guard let paneId, !Task.isCancelled else { return }
         generation &+= 1
         let requestGeneration = generation
-        if case .card = location { selectedAsk = nil }
+        if case .card = location,
+            case .ask(let source, let message) = cardSelection,
+            !sourceIsAttached(source, to: paneId)
+                || selectedAsk?.key != .init(paneId: source, messageId: message)
+        {
+            selectedAsk = nil
+        }
         await read(paneId, page: .first, generation: requestGeneration)
         guard requestGeneration == generation, self.paneId == paneId, unavailableNote == nil else { return }
         if case .card = location {
@@ -140,7 +151,9 @@ final class PaneContextPopoverController {
             selectedAsk = nil
             return
         }
-        guard detail?.scopedSessions.contains(where: { $0.sourcePaneId == source }) == true else {
+        guard sourceIsAttached(source, to: owner),
+            detail?.scopedSessions.contains(where: { $0.sourcePaneId == source }) == true
+        else {
             selectedAsk = nil
             return
         }
@@ -149,9 +162,15 @@ final class PaneContextPopoverController {
         guard !Task.isCancelled, requestGeneration == generation, paneId == owner, cardSelection == selection else {
             return
         }
+        guard sourceIsAttached(source, to: owner) else {
+            selectedAsk = nil
+            return
+        }
         switch result {
         case .found(let found):
-            guard found.id == message, found.sourcePaneId == source else {
+            guard found.id == message, found.sourcePaneId == source,
+                case .ask(_, _, _, .open) = found.shape
+            else {
                 selectedAsk = nil
                 return
             }
@@ -159,11 +178,16 @@ final class PaneContextPopoverController {
                 key: .init(paneId: source, messageId: message), detail: found, generation: requestGeneration)
         case .notFound: selectedAsk = nil
         case .unavailable(let failure):
+            selectedAsk = nil
             let note = await PaneContextPopoverFeedback.unavailable(failure)
             guard requestGeneration == generation else { return }
-            selectedAsk = nil
             unavailableNote = "Context unavailable: \(note)"
         }
+    }
+
+    private func sourceIsAttached(_ source: PaneId, to owner: PaneId) -> Bool {
+        source == owner
+            || (includingDrawers && refreshKeyForPane(owner).sources.contains { $0.paneId == source })
     }
 
     /// The host observes the display and every scoped prompt-list revision.
@@ -199,6 +223,7 @@ final class PaneContextPopoverController {
         case .paneGone:
             close()
         case .unavailable(let failure):
+            if case .card = location { selectedAsk = nil }
             let note = await PaneContextPopoverFeedback.unavailable(failure)
             guard requestGeneration == generation else { return }
             unavailableNote = "Context unavailable: \(note)"
@@ -236,9 +261,10 @@ final class PaneContextPopoverController {
 
     func answer(messageId: AgentMessageId, source: PaneId, value: AskAnswerValue) async {
         guard let owner = paneId else { return }
+        let actionGeneration = generation
         let presentation = await PaneContextPopoverAnswerParsing.answerPresentation(
             messageId: messageId, source: source, snapshot: actionSnapshot, location: location)
-        guard paneId == owner else { return }
+        guard paneId == owner, location != .card || generation == actionGeneration else { return }
         guard presentation == .inline else {
             actionFeedback = "Answer this ask in Messages"
             return
@@ -252,9 +278,10 @@ final class PaneContextPopoverController {
 
     func answerDraft(messageId: AgentMessageId, source: PaneId, draft: AskFormDraft) async {
         guard let owner = paneId else { return }
+        let actionGeneration = generation
         let answer = await PaneContextPopoverAnswerParsing.parse(
             messageId: messageId, source: source, snapshot: actionSnapshot, draft: draft)
-        guard paneId == owner else { return }
+        guard paneId == owner, location != .card || generation == actionGeneration else { return }
         switch answer {
         case .success(let value):
             await self.answer(messageId: messageId, source: source, value: value)
@@ -265,9 +292,10 @@ final class PaneContextPopoverController {
 
     func dismiss(messageId: AgentMessageId, source: PaneId) async {
         guard let owner = paneId else { return }
+        let actionGeneration = generation
         let permitted = await PaneContextPopoverAnswerParsing.canDismiss(
             messageId: messageId, source: source, snapshot: actionSnapshot, location: location)
-        guard paneId == owner else { return }
+        guard paneId == owner, location != .card || generation == actionGeneration else { return }
         guard permitted else {
             actionFeedback = "This message cannot be dismissed here"
             return
@@ -283,9 +311,10 @@ final class PaneContextPopoverController {
     @discardableResult
     func runAction(messageId: AgentMessageId, source: PaneId, action: MessageAction) async -> MessageActionResult? {
         guard let owner = paneId else { return nil }
+        let actionGeneration = generation
         let permitted = await PaneContextPopoverAnswerParsing.canRunAction(
             messageId: messageId, source: source, snapshot: actionSnapshot, location: location)
-        guard paneId == owner else { return nil }
+        guard paneId == owner, location != .card || generation == actionGeneration else { return nil }
         guard permitted else {
             actionFeedback = "This message action is not available here"
             return nil

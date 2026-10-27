@@ -23,6 +23,8 @@ final class PaneContextPresentationDecisionRecorder {
                 default: false
                 }
             }))
+    private var openings: [UUID: PaneContextPopoverOpeningReadback] = [:]
+    private var unattributedOpenings: [ObjectIdentifier] = []
     private var activePress: UUID?
     private var presses: Set<UUID> = []
     private var asynchronousPresses: Set<UUID> = []
@@ -50,6 +52,12 @@ final class PaneContextPresentationDecisionRecorder {
 
     func observe(_ event: PaneContextPopoverPresentationEvent) {
         switch event {
+        case .opened(let readback):
+            guard let press = activePress else {
+                unattributedOpenings.append(readback.ownerIdentity)
+                return
+            }
+            openings[press] = readback
         case .started(let operation, let producer):
             guard let press = activePress else {
                 unattributedOperations.append(operation)
@@ -76,6 +84,11 @@ final class PaneContextPresentationDecisionRecorder {
             }
             facts.append(scope: press, fact: .decided(isPresented: isPresented))
         }
+    }
+
+    func opening(for press: UUID) throws -> PaneContextPopoverOpeningReadback {
+        guard let opening = openings[press] else { throw DecisionFailure.endedWithoutOpening }
+        return opening
     }
 
     func decision(for press: UUID) async throws -> Bool {
@@ -110,6 +123,7 @@ final class PaneContextPresentationDecisionRecorder {
             await producer.value
         }
         for monitor in monitors { await monitor.value }
+        #expect(unattributedOpenings.isEmpty, "Every opening must originate at its native press")
         #expect(unattributedOperations.isEmpty, "Every presentation operation must originate at its correlated press")
         facts.receive(.ended)
         try await facts.finish()
@@ -117,6 +131,7 @@ final class PaneContextPresentationDecisionRecorder {
 }
 
 private enum DecisionFailure: Error {
+    case endedWithoutOpening
     case endedWithoutDecision(cancelled: Bool)
     case retired
 }
