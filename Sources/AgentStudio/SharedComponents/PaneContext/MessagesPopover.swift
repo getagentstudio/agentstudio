@@ -58,7 +58,7 @@ package struct MessagesPopover: View {
         PaneContextPopoverPanel(
             width: width, contentSpacing: AppStyles.Components.PaneContext.messageSectionSpacing, separatesFooter: true
         ) {
-            messagesHeader
+            messagesHeader.id(PaneContextPopoverPanelAnchor.top)
             if let feedback { PaneContextPopoverNote(feedback) }
             ForEach(model.groups, id: \.kind) { group in
                 VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {

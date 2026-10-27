@@ -160,6 +160,7 @@ final class PaneContextNativePopoverWindow {
     let clock: NativeCardTestClock
     let window: NSWindow
     let scrolling: PaneContextNativeScrollRecorder
+    let presentationDecisions: PaneContextPresentationDecisionRecorder
     let sink: Sink
     private let isCard: Bool
     private let messageEntryKind: KindChipModel.Kind
@@ -188,6 +189,7 @@ final class PaneContextNativePopoverWindow {
         let clock = NativeCardTestClock()
         let sink = Sink()
         let scrolling = PaneContextNativeScrollRecorder()
+        let presentationDecisions = PaneContextPresentationDecisionRecorder()
         sink.cancelReadsOnStart = cancelReadsOnStart
         let reference = clock.now
         let presentation: RepoExplorerPaneContextControlPresentation =
@@ -221,6 +223,7 @@ final class PaneContextNativePopoverWindow {
                         sink.started(read, task: task)
                         onReadStarted(read)
                     },
+                    onPresentationEvent: { presentationDecisions.observe($0) },
                     onScrollEvent: { scrolling.observe($0) },
                     onNoteApplication: { sink.observeNote($0) },
                     onActionCompleted: {
@@ -244,6 +247,7 @@ final class PaneContextNativePopoverWindow {
                         sink.started(read, task: task)
                         onReadStarted(read)
                     },
+                    onPresentationEvent: { presentationDecisions.observe($0) },
                     onScrollEvent: { scrolling.observe($0) },
                     onNoteApplication: { sink.observeNote($0) },
                     onActionCompleted: {
@@ -263,15 +267,11 @@ final class PaneContextNativePopoverWindow {
                     }))
         }
         let content = viewportWidth.map { AnyView(root.frame(width: $0)) } ?? root
-        let host = NSHostingView(rootView: content)
-        host.frame = CGRect(
-            x: 0, y: 0, width: viewportWidth ?? (card == nil ? 280 : 640), height: card == nil ? 80 : 900)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.contentView = host
+        let window = Self.makeWindow(content: content, viewportWidth: viewportWidth, isCard: card != nil)
         self.clock = clock
         self.sink = sink
         self.scrolling = scrolling
+        self.presentationDecisions = presentationDecisions
         self.messageEntryKind = messageEntryKind
         if case .messagesAction(let control, _) = messageEntry {
             messageEntryIdentifier = control.identifier
@@ -284,6 +284,16 @@ final class PaneContextNativePopoverWindow {
         window.makeKeyAndOrderFront(nil)
         layout()
         observeWindowRetirement()
+    }
+
+    private static func makeWindow(content: AnyView, viewportWidth: CGFloat?, isCard: Bool) -> NSWindow {
+        let host = NSHostingView(rootView: content)
+        host.frame = CGRect(
+            x: 0, y: 0, width: viewportWidth ?? (isCard ? 640 : 280), height: isCard ? 900 : 80)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        return window
     }
 
     private func observeWindowRetirement() {
@@ -454,7 +464,9 @@ final class PaneContextNativePopoverWindow {
         }
     }
 
-    func press(_ identifier: String) throws {
+    @discardableResult func press(_ identifier: String) throws -> UUID {
+        let press = try presentationDecisions.beginPress()
+        defer { presentationDecisions.pressReturned(press) }
         noteSequenceBeforePress = sink.noteSequence
         let button = try #require(
             find(identifier) as? any NSAccessibilityProtocol, "Missing native control: \(identifier)")
@@ -464,6 +476,7 @@ final class PaneContextNativePopoverWindow {
             isPresentingMessages = true
         }
         try #require(button.accessibilityPerformPress(), "Native press refused: \(identifier)")
+        return press
     }
 
     func layout() {
@@ -491,6 +504,7 @@ final class PaneContextNativePopoverWindow {
         }
         try await clock.retire()
         try await scrolling.finish()
+        try await presentationDecisions.finish()
         facts.receive(.ended)
         try await facts.finish()
         try await clock.facts.finish()
@@ -506,6 +520,7 @@ final class PaneContextNativePopoverWindow {
         guard !sink.retired else { return }
         sink.retired = true
         scrolling.retire()
+        presentationDecisions.retire()
         for scope in sink.pendingReadWaitScopes { facts.append(scope: scope, fact: .viewRetired) }
         let scopes = Set(sink.reads.map(\.scope)).union([
             .cardReadSources(currentReadKey().sources), .readSources(currentReadKey().sources),

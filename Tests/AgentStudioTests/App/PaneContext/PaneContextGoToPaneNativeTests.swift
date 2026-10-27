@@ -12,54 +12,16 @@ import Testing
 @testable import AgentStudioCore
 
 @MainActor
-@Suite("Go to pane closes native popovers", .serialized)
+@Suite("Go to pane owner presentation decisions", .serialized)
 struct PaneContextGoToPaneNativeTests {
-    @Test("The native visibility witness observes a later window hide or fails when its producer ends")
-    func nativeVisibilityObservesLaterHide() async throws {
-        _ = NSApplication.shared
-        let window = NSWindow(
-            contentRect: CGRect(x: 0, y: 0, width: 120, height: 80), styleMask: [.titled],
-            backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        window.makeKeyAndOrderFront(nil)
-        defer { window.close() }
-        try #require(window.isVisible)
-        let visibility = PaneContextNativeWindowVisibility(window)
-        let release = HeldStep<Void>("native window orderOut")
-        let producer = Task {
-            defer {
-                release.retire()
-                visibility.producerEnded()
-            }
-            try await release.arrive(())
-            window.orderOut(nil)
-        }
-        let waiter = Task { try await visibility.hidden() }
-        do {
-            _ = try await release.firstArrival()
-            try await visibility.facts.expectNext(in: 1, .waiting)
-            release.release()
-            try await producer.value
-            try await waiter.value
-            #expect(!window.isVisible)
-            try await visibility.finish()
-        } catch {
-            release.retire()
-            producer.cancel()
-            waiter.cancel()
-            try? await producer.value
-            try? await waiter.value
-            try? await visibility.finish()
-            throw error
-        }
-    }
-
     enum Surface: Sendable, CaseIterable {
         case messages, agentLine, cardMessages
     }
 
-    @Test("D32 Go to pane dispatches once and dismisses its actual popover", arguments: Surface.allCases)
-    func goToPaneClosesItsPopover(surface: Surface) async throws {
+    @Test(
+        "D44 Go to pane dispatches once and decides to dismiss its popover; physical hide is J9 journey proof",
+        arguments: Surface.allCases)
+    func goToPaneRequestsDismissal(surface: Surface) async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let store = WorkspaceStore(
                 catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
@@ -108,15 +70,11 @@ struct PaneContextGoToPaneNativeTests {
                 let popover = try #require(mounted.popoverWindow)
                 #expect(popover.isVisible)
                 #expect(mounted.goToPaneTargets.isEmpty)
-                let visibility = PaneContextNativeWindowVisibility(popover)
-                try mounted.press("pane-context.go-to-pane")
-                try await visibility.hidden()
-                mounted.layout()
+                let press = try mounted.press("pane-context.go-to-pane")
+                let isPresented = try await mounted.presentationDecisions.decision(for: press)
+                #expect(!isPresented, "Navigation dispatched but the host presentation remained true")
                 #expect(mounted.goToPaneTargets == [pane.id])
-                #expect(!popover.isVisible, "Go to pane must dismiss the actual popover window")
-                #expect(mounted.find("pane-context.go-to-pane") == nil)
-                #expect(mounted.controller?.paneId == nil)
-                try await visibility.finish()
+                // D44: actual window hiding and post-transition retirement are J9 journey proof.
                 try await mounted.close()
                 try await ports.finish()
             } catch {

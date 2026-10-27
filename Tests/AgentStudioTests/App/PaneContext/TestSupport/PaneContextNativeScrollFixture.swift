@@ -2,7 +2,6 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSessions
 import AgentStudioSharedComponents
-import AppKit
 import Foundation
 import Testing
 
@@ -73,34 +72,6 @@ struct PaneContextNativeScrollFixture {
         }
     }
 
-    static func scrollView(in mounted: PaneContextNativePopoverWindow) throws -> NSScrollView {
-        let root = try #require(mounted.popoverWindow?.contentView)
-        return try #require(descendant(NSScrollView.self, in: root))
-    }
-
-    static func frame(_ identifier: String, in mounted: PaneContextNativePopoverWindow, document: NSView) throws
-        -> CGRect
-    {
-        let view = try #require(mounted.find(identifier) as? NSView)
-        return document.convert(view.bounds, from: view)
-    }
-
-    static func assertTop(_ scroll: NSScrollView, in mounted: PaneContextNativePopoverWindow) async throws {
-        let document = try #require(scroll.documentView)
-        try await mounted.scrolling.viewport(scroll) { visible in
-            document.isFlipped
-                ? visible.minY == document.bounds.minY : visible.maxY == document.bounds.maxY
-        }
-        let visible = scroll.documentVisibleRect
-        if document.isFlipped {
-            #expect(visible.minY == document.bounds.minY)
-        } else {
-            #expect(visible.maxY == document.bounds.maxY)
-        }
-        #expect(try frame("pane-context.group.failed", in: mounted, document: document).intersects(visible))
-        #expect(try !frame("pane-context.group.info", in: mounted, document: document).intersects(visible))
-    }
-
     private static func message(
         _ pane: PaneId, importance: MessageImportance, state: NoticeState, lines: Int
     ) -> AgentMessageDetail {
@@ -111,11 +82,4 @@ struct PaneContextNativeScrollFixture {
             why: nil, actions: [], shape: .notice(state))
     }
 
-    private static func descendant<Child: NSView>(_ type: Child.Type, in root: NSView) -> Child? {
-        if let found = root as? Child { return found }
-        for view in root.subviews {
-            if let found = descendant(type, in: view) { return found }
-        }
-        return nil
-    }
 }

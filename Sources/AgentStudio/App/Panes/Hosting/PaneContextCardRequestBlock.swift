@@ -11,6 +11,7 @@ struct PaneContextCardRequestBlock: View {
     let octiconLoader: OcticonLoader
     let onReadCompleted: PaneContextReadCompletionObserver
     var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
+    var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
     var onNoteApplication: PaneContextNoteApplicationObserver = { _ in }
     let onActionCompleted: @MainActor () -> Void
@@ -68,7 +69,7 @@ struct PaneContextCardRequestBlock: View {
                             location: .pane, readers: readers, octiconLoader: octiconLoader,
                             onGoToPane: actions.goToPane,
                             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-                            onScrollEvent: onScrollEvent,
+                            onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
                             onNoteApplication: onNoteApplication,
                             onActionCompleted: onActionCompleted,
                             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),

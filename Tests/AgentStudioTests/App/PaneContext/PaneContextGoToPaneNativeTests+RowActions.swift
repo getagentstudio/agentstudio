@@ -13,13 +13,15 @@ extension PaneContextGoToPaneNativeTests {
         case messages, cardMessages
     }
 
-    @Test("F06 admitted row Go to pane dispatches once and closes Messages", arguments: RowSurface.allCases)
-    func rowGoToPaneClosesItsPopover(surface: RowSurface) async throws {
+    @Test(
+        "D44 admitted row Go to pane dispatches once and decides to dismiss Messages; physical hide is J9 journey proof",
+        arguments: RowSurface.allCases)
+    func rowGoToPaneRequestsDismissal(surface: RowSurface) async throws {
         try await exerciseRowGoToPane(surface: surface, focusSucceeds: true)
     }
 
-    @Test("F06 refused row focus preserves Messages and failure feedback", arguments: RowSurface.allCases)
-    func refusedRowGoToPaneKeepsItsPopover(surface: RowSurface) async throws {
+    @Test("D44 refused row focus retains presentation state and failure feedback", arguments: RowSurface.allCases)
+    func refusedRowGoToPaneRetainsPresentation(surface: RowSurface) async throws {
         try await exerciseRowGoToPane(surface: surface, focusSucceeds: false)
     }
 
@@ -71,10 +73,10 @@ extension PaneContextGoToPaneNativeTests {
             let identifier = "pane-context.go-to-pane.\(paneId.uuid).\(request.messageId.uuid).0"
             #expect(popover.isVisible)
             #expect(fixture.effects.contexts.isEmpty)
-            let visibility = PaneContextNativeWindowVisibility(popover)
-            try mounted.press(identifier)
+            let press = try mounted.press(identifier)
             try await mounted.actionCompleted()
-            if focusSucceeds { try await visibility.hidden() }
+            let isPresented = try await mounted.presentationDecisions.decision(for: press)
+            #expect(isPresented == !focusSucceeds, "Navigation completed with the wrong host presentation decision")
             if !focusSucceeds { try await mounted.rendered() }
             mounted.layout()
             #expect(
@@ -87,18 +89,13 @@ extension PaneContextGoToPaneNativeTests {
                     return false
                 } == [.targetedExecution(command: .focusPane, target: paneId.uuid, targetType: .pane)])
             #expect(mounted.goToPaneTargets.isEmpty, "Row navigation must not invoke the footer navigation callback")
-            if focusSucceeds {
-                #expect(!popover.isVisible, "Successful row Go to pane must dismiss the actual popover window")
-                #expect(mounted.find(identifier) == nil)
-                #expect(controller.paneId == nil, "Successful row navigation must close its controller")
-            } else {
-                #expect(popover.isVisible)
+            // D44: actual window hiding/control retirement are J9 journey proof, not gate proof.
+            if !focusSucceeds {
                 #expect(mounted.find(identifier) != nil)
                 #expect(controller.paneId == paneId)
                 #expect(controller.actionFeedback == "Pane gone")
                 #expect(mounted.labels().contains("Pane gone"))
             }
-            try await visibility.finish()
             try await mounted.close()
         } catch {
             try? await mounted.close()

@@ -28,6 +28,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let includingDrawers: Bool
     let onReadCompleted: PaneContextReadCompletionObserver
     let onReadTaskStarted: PaneContextReadTaskObserver
+    let onPresentationEvent: PaneContextPopoverPresentationObserver?
     let onScrollEvent: PaneContextPopoverScrollObserver
     let onNoteApplication: PaneContextNoteApplicationObserver
     let onActionCompleted: @MainActor () -> Void
@@ -51,6 +52,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
+        onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
         onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
@@ -68,6 +70,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         self.includingDrawers = includingDrawers
         self.onReadCompleted = onReadCompleted
         self.onReadTaskStarted = onReadTaskStarted
+        self.onPresentationEvent = onPresentationEvent
         self.onScrollEvent = onScrollEvent
         self.onNoteApplication = onNoteApplication
         self.onActionCompleted = onActionCompleted
@@ -164,7 +167,8 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                             actions: PaneContextPopoverHostActions.messages(
                                 controller: controller, readers: readers, onGoToPane: goToPaneAndDismissPopover,
                                 onDismissPopover: dismissPopover,
-                                onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted)
+                                onActionCompleted: onActionCompleted, onActionTaskStarted: onActionTaskStarted,
+                                presentationObservation: presentationObservation)
                         )
                         .task(
                             id: presentation.messagesScrollTrigger(openRequest: openRequest, messages: visible.messages)
@@ -172,15 +176,26 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                             await PaneContextPopoverScrollObservation.perform(
                                 requested: presentation.messagesTarget, effective: visible.messagesTarget,
                                 isPresented: { isPresented && controller.paneId != nil }, observe: onScrollEvent,
-                                apply: {
+                                apply: { operation in
                                     switch visible.messagesTarget {
-                                    case .top: break
-                                    case .section(let kind): proxy.scrollTo(kind, anchor: .top)
+                                    case .top:
+                                        proxy.scrollTo(
+                                            PaneContextPopoverScrollObservation.target(
+                                                PaneContextPopoverPanelAnchor.top, operation: operation,
+                                                observe: onScrollEvent),
+                                            anchor: .top)
+                                    case .section(let kind):
+                                        proxy.scrollTo(
+                                            PaneContextPopoverScrollObservation.target(
+                                                kind, operation: operation, observe: onScrollEvent),
+                                            anchor: .top)
                                     case .message(let key):
                                         proxy.scrollTo(
-                                            MessageRowModel.Key(
-                                                sourcePaneId: key.paneId.uuid,
-                                                messageId: key.messageId.uuid), anchor: .top)
+                                            PaneContextPopoverScrollObservation.target(
+                                                MessageRowModel.Key(
+                                                    sourcePaneId: key.paneId.uuid, messageId: key.messageId.uuid),
+                                                operation: operation, observe: onScrollEvent),
+                                            anchor: .top)
                                     }
                                 })
                         }
@@ -220,9 +235,15 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 onRetired: relativeTimeRefresh.didRetire)
         }
     }
+    private var presentationObservation: PaneContextPopoverPresentationObservation? {
+        onPresentationEvent.map { .init(isPresented: { isPresented }, observe: $0) }
+    }
     private func goToPaneAndDismissPopover(_ targetPaneId: UUID) {
+        let operation = presentationObservation?.operation()
+        operation?.started(.synchronous)
         onGoToPane(targetPaneId)
         dismissPopover()
+        operation?.decided()
     }
     private func dismissPopover() {
         isPresented = false
@@ -303,6 +324,7 @@ extension PaneContextPopoverHost where AgeClock == ContinuousClock {
         onGoToPane: @escaping @MainActor (UUID) -> Void, includingDrawers: Bool = true,
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
+        onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
         onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
@@ -310,7 +332,8 @@ extension PaneContextPopoverHost where AgeClock == ContinuousClock {
         self.init(
             paneId: paneId, presentation: presentation, location: location, readers: readers,
             octiconLoader: octiconLoader, onGoToPane: onGoToPane, includingDrawers: includingDrawers,
-            onReadCompleted: onReadCompleted, onNoteApplication: onNoteApplication,
+            onReadCompleted: onReadCompleted, onPresentationEvent: onPresentationEvent,
+            onNoteApplication: onNoteApplication,
             onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock())
     }

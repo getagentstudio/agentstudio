@@ -2,84 +2,65 @@ import AgentStudioCore
 import AgentStudioInfrastructure
 import AgentStudioSharedComponents
 import AgentStudioTestSupport
-import AppKit
 import Foundation
 import Testing
 
 @testable import AgentStudio
 
+// D44: gate assertions cover the exact request handed to the proxy. Actual Info/focused-row
+// clip placement and post-user-scroll position are J9 journey proof on the declared build.
 @MainActor
-@Suite("Messages scroll destinations", .serialized)
+@Suite("Messages scroll proxy requests", .serialized)
 struct PaneContextPopoverScrollNativeTests {
-    @Test("Info opens below the fold; an age refresh preserves the user's later scroll")
-    func infoChipScrollsIntoViewportAndAgeDoesNotJumpBack() async throws {
+    @Test("Info hands its section to the proxy and the age frame still refreshes; clip placement is J9 proof")
+    func infoChipRequestsItsSectionAndAgeRefreshes() async throws {
         let fixture = PaneContextNativeScrollFixture()
         try await fixture.run(fixture.window()) { mounted in
             let origin = mounted.clock.now
             try await mounted.open()
-            #expect(try await mounted.scrolling.completed(requested: .section(.info)) == .applied)
-            mounted.layout()
-            let scroll = try PaneContextNativeScrollFixture.scrollView(in: mounted)
-            let document = try #require(scroll.documentView)
-            let info = try PaneContextNativeScrollFixture.frame(
-                "pane-context.group.info", in: mounted, document: document)
-            try await mounted.scrolling.viewport(scroll) { info.intersects($0) }
-            #expect(info.intersects(scroll.documentVisibleRect), "The actual Info header must be inside the clip")
-            var top = scroll.documentVisibleRect
-            top.origin.y = document.isFlipped ? document.bounds.minY : document.bounds.maxY - top.height
-            #expect(!info.intersects(top), "Info must start outside the unscrolled viewport")
-            #expect(document.bounds.height > 2 * scroll.contentView.bounds.height)
+            let outcome = try await mounted.scrolling.completed(
+                requested: .section(.info), handingToProxy: .section(.info))
+            #expect(outcome == .applied)
             #expect(await fixture.ports.requests == [.init(paneId: fixture.pane, page: .first)])
             #expect(await fixture.ports.exactRequests.isEmpty)
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(60)), pane: fixture.pane.uuid, currentInput: nil)
             try await mounted.clock.applied(pane: fixture.pane.uuid, input: nil)
-            scroll.contentView.scroll(to: top.origin)
-            scroll.reflectScrolledClipView(scroll.contentView)
-            mounted.layout()
-            let userPosition = scroll.documentVisibleRect
             mounted.clock.advance(by: .seconds(60))
             try await mounted.clock.registered(
                 origin.advanced(by: .seconds(120)), pane: fixture.pane.uuid, currentInput: nil)
             try await mounted.clock.applied(pane: fixture.pane.uuid, input: nil)
-            mounted.layout()
             #expect(mounted.labels().contains { $0.contains("info message line 3 1 min ago") })
-            #expect(scroll.documentVisibleRect == userPosition, "An age update must preserve the user's position")
-            #expect(!info.intersects(scroll.documentVisibleRect))
         }
     }
 
-    @Test("The real Messages bell opens a long multi-section list at the top")
-    func bellOpensAtTop() async throws {
+    @Test("The Messages bell hands top to the scroll proxy")
+    func bellRequestsTop() async throws {
         let fixture = PaneContextNativeScrollFixture()
         let entry = PaneContextPopoverEntry.messagesAction(
             PaneContextPopoverControlProjection.controls().messages, focusedMessage: nil)
         try await fixture.run(fixture.window(entry: entry)) { mounted in
             try await mounted.open()
-            #expect(try await mounted.scrolling.completed(requested: .top) == .applied)
-            mounted.layout()
-            try await PaneContextNativeScrollFixture.assertTop(
-                PaneContextNativeScrollFixture.scrollView(in: mounted), in: mounted)
+            let outcome = try await mounted.scrolling.completed(requested: .top, handingToProxy: .top)
+            #expect(outcome == .applied)
         }
     }
 
-    @Test("An absent kind opens the actual viewport at the top without another page")
-    func absentSectionOpensAtTopWithoutExtraRead() async throws {
+    @Test("An absent kind hands top to the proxy without another page")
+    func absentSectionRequestsTopWithoutExtraRead() async throws {
         let fixture = PaneContextNativeScrollFixture(omitDone: true)
         try await fixture.run(fixture.window(kind: .done)) { mounted in
             try await mounted.open()
-            #expect(try await mounted.scrolling.completed(requested: .section(.done)) == .fellBackToTop)
-            mounted.layout()
-            try await PaneContextNativeScrollFixture.assertTop(
-                PaneContextNativeScrollFixture.scrollView(in: mounted), in: mounted)
+            let outcome = try await mounted.scrolling.completed(requested: .section(.done), handingToProxy: .top)
+            #expect(outcome == .fellBackToTop)
             #expect(mounted.find("pane-context.group.done") == nil)
             #expect(await fixture.ports.requests == [.init(paneId: fixture.pane, page: .first)])
             #expect(await fixture.ports.exactRequests.isEmpty)
         }
     }
 
-    @Test("The focused-message entry retains its actual row scroll destination")
-    func focusedMessageScrollsItsRowIntoViewport() async throws {
+    @Test("The focused-message entry hands its exact row identity to the proxy")
+    func focusedMessageRequestsItsExactRow() async throws {
         let fixture = PaneContextNativeScrollFixture()
         let key = PaneContextMessageKey(paneId: fixture.pane, messageId: fixture.info.id)
         let entry = PaneContextPopoverEntry.messagesAction(
@@ -88,22 +69,16 @@ struct PaneContextPopoverScrollNativeTests {
             focusedMessage: key)
         try await fixture.run(fixture.window(entry: entry)) { mounted in
             try await mounted.open()
-            #expect(try await mounted.scrolling.completed(requested: .message(key)) == .applied)
-            mounted.layout()
-            let scroll = try PaneContextNativeScrollFixture.scrollView(in: mounted)
-            let document = try #require(scroll.documentView)
-            let row = try PaneContextNativeScrollFixture.frame(
-                "pane-context.message-text.\(fixture.pane.uuid).\(fixture.info.id.uuid)", in: mounted,
-                document: document)
-            try await mounted.scrolling.viewport(scroll) { row.intersects($0) }
-            #expect(row.intersects(scroll.documentVisibleRect))
-            #expect(scroll.documentVisibleRect.minY > document.bounds.minY)
+            let outcome = try await mounted.scrolling.completed(
+                requested: .message(key),
+                handingToProxy: .message(.init(sourcePaneId: fixture.pane.uuid, messageId: fixture.info.id.uuid)))
+            #expect(outcome == .applied)
             #expect(await fixture.ports.exactRequests == [key])
         }
     }
 
-    @Test("The card's actual Show messages control opens at the top")
-    func cardMessagesOpensAtTop() async throws {
+    @Test("The card's Show messages control hands top to the proxy")
+    func cardMessagesRequestsTop() async throws {
         try await withAsyncTestCoreAtoms { atoms in
             let store = WorkspaceStore(
                 catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
@@ -119,10 +94,8 @@ struct PaneContextPopoverScrollNativeTests {
                 try mounted.press("pane-context.card-messages")
                 try await mounted.readCompleted()
                 try await mounted.rendered()
-                #expect(try await mounted.scrolling.completed(requested: .top) == .applied)
-                mounted.layout()
-                try await PaneContextNativeScrollFixture.assertTop(
-                    PaneContextNativeScrollFixture.scrollView(in: mounted), in: mounted)
+                let outcome = try await mounted.scrolling.completed(requested: .top, handingToProxy: .top)
+                #expect(outcome == .applied)
             }
         }
     }

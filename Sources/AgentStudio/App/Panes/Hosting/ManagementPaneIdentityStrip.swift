@@ -26,6 +26,7 @@ struct ManagementPaneIdentityStrip: View {
     var onGoToPane: @MainActor (UUID) -> Void = { _ in }
     var onReadCompleted: PaneContextReadCompletionObserver = { _, _ in }
     var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
+    var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
     var onNoteApplication: PaneContextNoteApplicationObserver = { _ in }
     var onActionCompleted: @MainActor () -> Void = {}
@@ -60,7 +61,8 @@ struct ManagementPaneIdentityStrip: View {
                     request: cardModel.request, actions: actions, readers: readers,
                     owner: .init(existingUUID: context.paneId), octiconLoader: octiconLoader,
                     onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-                    onScrollEvent: onScrollEvent, onNoteApplication: onNoteApplication,
+                    onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
+                    onNoteApplication: onNoteApplication,
                     onActionCompleted: onActionCompleted,
                     onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
                     onRelativeTimeReady: onRelativeTimeReady)
@@ -292,7 +294,8 @@ struct ManagementPaneIdentityStrip: View {
             location: .pane, readers: readers, octiconLoader: octiconLoader,
             onGoToPane: onGoToPane, includingDrawers: !isDrawerPane,
             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-            onScrollEvent: onScrollEvent, onNoteApplication: onNoteApplication,
+            onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
+            onNoteApplication: onNoteApplication,
             onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, clock: ContinuousClock(),
             onRelativeTimeEvent: onRelativeTimeEvent,
@@ -312,6 +315,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let onGoToPane: @MainActor (UUID) -> Void
     let onReadCompleted: PaneContextReadCompletionObserver
     let onReadTaskStarted: PaneContextReadTaskObserver
+    let onPresentationEvent: PaneContextPopoverPresentationObserver?
     let onScrollEvent: PaneContextPopoverScrollObserver
     let onNoteApplication: PaneContextNoteApplicationObserver
     let onActionCompleted: @MainActor () -> Void
@@ -337,6 +341,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
+        onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
         onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
@@ -350,6 +355,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         self.onGoToPane = onGoToPane
         self.onReadCompleted = onReadCompleted
         self.onReadTaskStarted = onReadTaskStarted
+        self.onPresentationEvent = onPresentationEvent
         self.onScrollEvent = onScrollEvent
         self.onNoteApplication = onNoteApplication
         self.onActionCompleted = onActionCompleted
@@ -388,7 +394,8 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
             feedback: cardController?.unavailableNote ?? cardController?.actionFeedback,
             onGoToPane: onGoToPane,
             onReadCompleted: onReadCompleted, onReadTaskStarted: onReadTaskStarted,
-            onScrollEvent: onScrollEvent, onNoteApplication: onNoteApplication,
+            onPresentationEvent: onPresentationEvent, onScrollEvent: onScrollEvent,
+            onNoteApplication: onNoteApplication,
             onActionCompleted: onActionCompleted,
             onActionTaskStarted: onActionTaskStarted, onRelativeTimeEvent: onRelativeTimeEvent,
             onRelativeTimeReady: onRelativeTimeReady

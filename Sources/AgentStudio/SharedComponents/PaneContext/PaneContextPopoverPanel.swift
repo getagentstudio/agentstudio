@@ -1,6 +1,8 @@
 import AgentStudioInfrastructure
 import SwiftUI
 
+package enum PaneContextPopoverPanelAnchor: Hashable, Sendable { case top }
+
 /// The content grows to its cap; only the rows scroll and the footer stays reachable.
 package struct PaneContextPopoverPanel<Content: View, Footer: View>: View {
     private let content: Content

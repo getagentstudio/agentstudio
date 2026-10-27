@@ -35,30 +35,43 @@ enum PaneContextPopoverHostActions {
         onGoToPane: @escaping @MainActor (UUID) -> Void,
         onDismissPopover: @escaping @MainActor () -> Void = {},
         onActionCompleted: @escaping @MainActor () -> Void = {},
-        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
+        onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
+        presentationObservation: PaneContextPopoverPresentationObservation? = nil
     ) -> MessagesPopoverActions {
         MessagesPopoverActions(
             answer: { message, pane, draft in
-                start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
+                start(
+                    onCompleted: onActionCompleted, onStarted: onActionTaskStarted,
+                    presentation: presentationObservation
+                ) {
                     guard controller.useCurrentService(readers.serviceProvider()) else { return }
                     await controller.answerDraft(
                         messageId: .init(existingUUID: message), source: .init(existingUUID: pane), draft: draft)
                 }
             },
             dismiss: { message, pane in
-                start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
+                start(
+                    onCompleted: onActionCompleted, onStarted: onActionTaskStarted,
+                    presentation: presentationObservation
+                ) {
                     guard controller.useCurrentService(readers.serviceProvider()) else { return }
                     await controller.dismiss(messageId: .init(existingUUID: message), source: .init(existingUUID: pane))
                 }
             },
             dismissAllNotices: {
-                start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
+                start(
+                    onCompleted: onActionCompleted, onStarted: onActionTaskStarted,
+                    presentation: presentationObservation
+                ) {
                     guard controller.useCurrentService(readers.serviceProvider()) else { return }
                     await controller.dismissAllNotices()
                 }
             },
             runAction: { message, pane, action in
-                start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
+                start(
+                    onCompleted: onActionCompleted, onStarted: onActionTaskStarted,
+                    presentation: presentationObservation
+                ) {
                     guard controller.useCurrentService(readers.serviceProvider()), let action = await coreAction(action)
                     else { return }
                     let result = await controller.runAction(
@@ -69,7 +82,10 @@ enum PaneContextPopoverHostActions {
 
             goToPane: onGoToPane,
             moreMessages: { cursor in
-                start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
+                start(
+                    onCompleted: onActionCompleted, onStarted: onActionTaskStarted,
+                    presentation: presentationObservation
+                ) {
                     guard controller.useCurrentService(readers.serviceProvider()) else { return }
                     await controller.moreMessages(
                         source: .init(existingUUID: cursor.sourcePaneId),
@@ -77,7 +93,10 @@ enum PaneContextPopoverHostActions {
                 }
             },
             moreSources: { source in
-                start(onCompleted: onActionCompleted, onStarted: onActionTaskStarted) {
+                start(
+                    onCompleted: onActionCompleted, onStarted: onActionTaskStarted,
+                    presentation: presentationObservation
+                ) {
                     guard controller.useCurrentService(readers.serviceProvider()) else { return }
                     await controller.moreSources(after: .init(existingUUID: source))
                 }
@@ -86,12 +105,18 @@ enum PaneContextPopoverHostActions {
     private static func start(
         onCompleted: @escaping @MainActor () -> Void,
         onStarted: @escaping @MainActor (Task<Void, Never>) -> Void,
+        presentation: PaneContextPopoverPresentationObservation?,
         operation: @escaping @MainActor () async -> Void
     ) {
+        let presentationOperation = presentation?.operation()
         let task = Task {
-            defer { onCompleted() }
+            defer {
+                presentationOperation?.decided()
+                onCompleted()
+            }
             await operation()
         }
+        presentationOperation?.started(.task(task))
         onStarted(task)
     }
 
