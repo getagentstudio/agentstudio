@@ -184,7 +184,8 @@ final class PaneContextNativePopoverWindow {
         viewportWidth: CGFloat? = nil, cancelReadsOnStart: Bool = false,
         onReadStarted: @escaping @MainActor (PaneContextReadOperation) -> Void = { _ in },
         messageEntryKind: KindChipModel.Kind = .needsYou,
-        messageEntry: PaneContextPopoverEntry? = nil
+        messageEntry: PaneContextPopoverEntry? = nil,
+        observesRelativeTimeApplications: Bool = true
     ) {
         let clock = NativeCardTestClock()
         let sink = Sink()
@@ -199,17 +200,19 @@ final class PaneContextNativePopoverWindow {
             clock.observeOwner(event)
             sink.observe(event)
         }
+        let onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { input, id in
+            guard observesRelativeTimeApplications else { return }
+            clock.observePreparation(input, id: id)
+            sink.published(input, id: id)
+        }
         let root: AnyView
         if let card {
             root = AnyView(
                 ManagementPaneIdentityOverlay(
                     context: card.context,
                     octiconLoader: makeTestOcticonLoader(), store: card.store, clock: clock, wallNow: wallNow,
-                    onRelativeTimeEvent: onRelativeTimeEvent,
-                    onRelativeTimeReady: { input, id in
-                        clock.observePreparation(input, id: id)
-                        sink.published(input, id: id)
-                    },
+                    onRelativeTimeEvent: observesRelativeTimeApplications ? onRelativeTimeEvent : nil,
+                    onRelativeTimeReady: onRelativeTimeReady,
                     onGoToPane: { sink.goToPaneTargets.append($0) },
                     onReadCompleted: { read, value in
                         if read.location == .card {
@@ -261,11 +264,8 @@ final class PaneContextNativePopoverWindow {
                         let elapsed = reference.duration(to: clock.now).components
                         return wallNow.addingTimeInterval(Double(elapsed.seconds) + Double(elapsed.attoseconds) / 1e18)
                     },
-                    onRelativeTimeEvent: onRelativeTimeEvent,
-                    onRelativeTimeReady: { input, id in
-                        clock.observePreparation(input, id: id)
-                        sink.published(input, id: id)
-                    }))
+                    onRelativeTimeEvent: observesRelativeTimeApplications ? onRelativeTimeEvent : nil,
+                    onRelativeTimeReady: onRelativeTimeReady))
         }
         let content = viewportWidth.map { AnyView(root.frame(width: $0)) } ?? root
         let window = Self.makeWindow(content: content, viewportWidth: viewportWidth, isCard: card != nil)

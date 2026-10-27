@@ -30,7 +30,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     let onReadTaskStarted: PaneContextReadTaskObserver
     let onPresentationEvent: PaneContextPopoverPresentationObserver?
     let onScrollEvent: PaneContextPopoverScrollObserver
-    let onNoteApplication: PaneContextNoteApplicationObserver
+    let onNoteApplication: PaneContextNoteApplicationObserver?
     let onDatedLabelApplication: @MainActor (AccessibilityLabelApplication.Event) -> Void
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
@@ -56,12 +56,12 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
         onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
-        onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
+        onNoteApplication: PaneContextNoteApplicationObserver? = nil,
         onDatedLabelApplication: @escaping @MainActor (AccessibilityLabelApplication.Event) -> Void = { _ in },
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in },
         clock: AgeClock, wallNow: @escaping @Sendable () -> Date = Date.init,
-        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer? = nil,
         onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
     ) {
         self.paneId = paneId
@@ -343,10 +343,12 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
                 AccessibilityLabelBridge(identifier: "pane-context.popover-panel", label: "", role: .group)
             }
             .background {
-                NativePresentationApplication(
-                    value: application,
-                    onApplied: { onNoteApplication(.applied($0)) },
-                    onRetired: { onNoteApplication(.retired($0)) })
+                if let onNoteApplication {
+                    NativePresentationApplication(
+                        value: application,
+                        onApplied: { onNoteApplication(.applied($0)) },
+                        onRetired: { onNoteApplication(.retired($0)) })
+                }
             }
     }
 }
@@ -359,7 +361,7 @@ extension PaneContextPopoverHost where AgeClock == ContinuousClock {
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
         },
         onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
-        onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
+        onNoteApplication: PaneContextNoteApplicationObserver? = nil,
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) {

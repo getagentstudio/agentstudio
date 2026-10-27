@@ -28,10 +28,10 @@ struct ManagementPaneIdentityStrip: View {
     var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
     var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
-    var onNoteApplication: PaneContextNoteApplicationObserver = { _ in }
+    var onNoteApplication: PaneContextNoteApplicationObserver?
     var onActionCompleted: @MainActor () -> Void = {}
     var onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void = { _ in }
-    var onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in }
+    var onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer?
     var onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
 
     private var presentation: ManagementPaneIdentityPresentation {
@@ -317,10 +317,10 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     let onReadTaskStarted: PaneContextReadTaskObserver
     let onPresentationEvent: PaneContextPopoverPresentationObserver?
     let onScrollEvent: PaneContextPopoverScrollObserver
-    let onNoteApplication: PaneContextNoteApplicationObserver
+    let onNoteApplication: PaneContextNoteApplicationObserver?
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
-    let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
+    let onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer?
     let onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver
     @State private var sessionIdentity = PaneManagementSessionIdentity()
     @State private var relativeTimeRefresh: PaneRelativeTimeRefresh
@@ -335,7 +335,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
     init(
         context: PaneManagementContext, octiconLoader: OcticonLoader, store: WorkspaceStore,
         clock: ActivityClock, wallNow: Date? = nil,
-        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer? = nil,
         onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in },
         onGoToPane: @escaping @MainActor (UUID) -> Void = { _ in },
         onReadCompleted: @escaping PaneContextReadCompletionObserver = { _, _ in
@@ -343,7 +343,7 @@ where ActivityClock.Duration == Duration, ActivityClock.Instant == ContinuousClo
         onReadTaskStarted: @escaping PaneContextReadTaskObserver = { _, _ in },
         onPresentationEvent: PaneContextPopoverPresentationObserver? = nil,
         onScrollEvent: @escaping PaneContextPopoverScrollObserver = { _ in },
-        onNoteApplication: @escaping PaneContextNoteApplicationObserver = { _ in },
+        onNoteApplication: PaneContextNoteApplicationObserver? = nil,
         onActionCompleted: @escaping @MainActor () -> Void = {},
         onActionTaskStarted: @escaping @MainActor (Task<Void, Never>) -> Void = { _ in }
     ) {
@@ -482,6 +482,6 @@ extension ManagementPaneIdentityOverlay where ActivityClock == ContinuousClock {
     ) {
         self.init(
             context: context, octiconLoader: octiconLoader, store: store, clock: ContinuousClock(),
-            onRelativeTimeEvent: onRelativeTimeEvent ?? { _ in }, onGoToPane: onGoToPane)
+            onRelativeTimeEvent: onRelativeTimeEvent, onGoToPane: onGoToPane)
     }
 }

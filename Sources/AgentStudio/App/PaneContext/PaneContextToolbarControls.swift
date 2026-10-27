@@ -23,7 +23,7 @@ where AgeClock.Duration == Duration, AgeClock.Instant == ContinuousClock.Instant
     init(
         paneId: PaneId, readers: PaneContextUIReaders, octiconLoader: OcticonLoader,
         clock: AgeClock, wallNow: Date? = nil,
-        onRelativeTimeEvent: @escaping @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void = { _ in },
+        onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer? = nil,
         onRelativeTimeReady: @escaping PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in },
         onGoToPane: @escaping @MainActor (UUID) -> Void
     ) {

@@ -228,6 +228,7 @@ final class PaneRelativeTimeRefresh {
             self.feedback = feedback
         }
     }
+    typealias Observer = @MainActor @Sendable (Event) -> Void
     typealias PresentationReadyObserver =
         @MainActor @Sendable (PaneManagementIdentityCapture.VisibleInput, UUID) -> Void
     enum StartResult: Equatable, Sendable {
@@ -277,14 +278,16 @@ final class PaneRelativeTimeRefresh {
     }
     @ObservationIgnored private var worker: Worker?
     private var latestApplication: Application?
+    @ObservationIgnored private let observesApplications: Bool
     @ObservationIgnored private let onEvent: @MainActor @Sendable (Event) -> Void
     @ObservationIgnored private let onPresentationReady: PresentationReadyObserver
 
     init(
-        onEvent: @escaping @MainActor @Sendable (Event) -> Void = { _ in },
+        onEvent: Observer? = nil,
         onPresentationReady: @escaping PresentationReadyObserver = { _, _ in }
     ) {
-        self.onEvent = onEvent
+        self.observesApplications = onEvent != nil
+        self.onEvent = onEvent ?? { _ in }
         self.onPresentationReady = onPresentationReady
     }
 
@@ -293,7 +296,7 @@ final class PaneRelativeTimeRefresh {
     func application(for value: PaneManagementIdentityCapture.VisiblePresentation, feedback: String? = nil)
         -> Application?
     {
-        guard let latestApplication, latestApplication.value == value else { return nil }
+        guard observesApplications, let latestApplication, latestApplication.value == value else { return nil }
         return .init(
             input: latestApplication.input, value: value, operationId: latestApplication.operationId,
             applicationId: latestApplication.applicationId, feedback: feedback

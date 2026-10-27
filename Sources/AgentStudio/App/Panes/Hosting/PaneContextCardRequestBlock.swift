@@ -13,10 +13,10 @@ struct PaneContextCardRequestBlock: View {
     var onReadTaskStarted: PaneContextReadTaskObserver = { _, _ in }
     var onPresentationEvent: PaneContextPopoverPresentationObserver?
     var onScrollEvent: PaneContextPopoverScrollObserver = { _ in }
-    var onNoteApplication: PaneContextNoteApplicationObserver = { _ in }
+    var onNoteApplication: PaneContextNoteApplicationObserver?
     let onActionCompleted: @MainActor () -> Void
     let onActionTaskStarted: @MainActor (Task<Void, Never>) -> Void
-    let onRelativeTimeEvent: @MainActor @Sendable (PaneRelativeTimeRefresh.Event) -> Void
+    let onRelativeTimeEvent: PaneRelativeTimeRefresh.Observer?
     var onRelativeTimeReady: PaneRelativeTimeRefresh.PresentationReadyObserver = { _, _ in }
     private var controls: PaneContextPopoverControls { PaneContextPopoverControlProjection.controls() }
 
