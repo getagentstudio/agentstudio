@@ -235,7 +235,10 @@ package enum LocalActionSpec {
             return ActionSpec(
                 label: "Show %d more lines", helpText: "Show the full message", icon: .system(.chevronDown))
         case .showFewerPaneMessageLines:
-            return ActionSpec(label: "Show less", helpText: "Show the first six lines", icon: .system(.chevronUp))
+            return ActionSpec(
+                label: "Show less",
+                helpText: "Show the first \(AppPolicies.PaneContext.collapsedMessageBodyLines) lines",
+                icon: .system(.chevronUp))
         case .choosePaneMessageOption:
             return ActionSpec(label: "Choose…", helpText: "Choose an answer", icon: .system(.chevronDown))
         case .paneMessageRequiredField:
