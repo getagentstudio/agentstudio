@@ -83,7 +83,7 @@ extension PaneContextPopoverShapingKernel {
             groups: groups, pages: pages,
             remainingLiveSources: detail.truncation?.remainingLiveSources ?? 0,
             nextSourcesAfter: detail.truncation?.nextSourcesAfter?.uuid, hasNotices: detail.hasDismissibleNotices,
-            unreadCount: counts.unread, filters: filters(groups, unreadCount: counts.unread))
+            unreadCount: counts.unread, filters: filters(groups, counts: counts))
         return (model, nextChange)
     }
 
@@ -107,29 +107,37 @@ extension PaneContextPopoverShapingKernel {
             return MessagesGroupModel(
                 kind: group.kind, items: items, omittedPromptCount: group.omittedPromptCount, header: group.header)
         }
-        return (model.replacingGroups(groups, filters: filters(groups, unreadCount: model.unreadCount)), nextChange)
+        return (model.replacingGroups(groups), nextChange)
     }
 
-    nonisolated static func filters(_ groups: [MessagesGroupModel], unreadCount: Int) -> [MessagesFilterModel] {
+    nonisolated static func filters(_ groups: [MessagesGroupModel], counts: PaneMessageKindCounts)
+        -> [MessagesFilterModel]
+    {
         let controls = PaneContextPopoverControlProjection.controls().filters
         let kinds: [MessagesGroupModel.Kind?] = [nil, .needsYou, .failed, .done, .info]
         return kinds.enumerated().map { index, kind in
             let visible = kind.map { selected in groups.filter { $0.kind == selected } } ?? groups
             let count: Int
-            if kind == nil {
-                count = unreadCount
-            } else if let header = visible.first?.header, case .kindChip(let chip, _) = header {
-                count = chip.count
-            } else {
-                count = 0
+            switch kind {
+            case nil: count = counts.unread
+            case .needsYou?: count = counts.needsYou
+            case .failed?: count = counts.failure
+            case .done?: count = counts.done
+            case .info?: count = counts.info
+            case .resolved?: count = 0
             }
+            let hasLoadedContent = visible.contains { !$0.items.isEmpty || $0.omittedPromptCount > 0 }
             let control = controls[index]
             return .init(
                 id: index,
                 control: .init(
                     identifier: control.identifier, label: control.label + " " + String(count),
                     icon: control.icon, tooltip: control.tooltip),
-                groups: visible, isEnabled: index == 0 || count > 0)
+                groups: visible, isEnabled: index == 0 || hasLoadedContent || count > 0,
+                noLoadedContent: hasLoadedContent
+                    ? nil
+                    : PaneContextPopoverControlProjection.control(
+                        .paneMessageFilterNoLoadedContent, identifier: "pane-context.filter-no-loaded"))
         }
     }
 

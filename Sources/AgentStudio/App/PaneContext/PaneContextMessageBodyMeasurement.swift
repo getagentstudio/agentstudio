@@ -122,6 +122,6 @@ extension PaneContextPopoverShapingKernel {
                 kind: group.kind, items: items,
                 omittedPromptCount: group.omittedPromptCount, header: group.header)
         }
-        return (model.replacingGroups(groups, filters: filters(groups, unreadCount: model.unreadCount)), measurements)
+        return (model.replacingGroups(groups), measurements)
     }
 }

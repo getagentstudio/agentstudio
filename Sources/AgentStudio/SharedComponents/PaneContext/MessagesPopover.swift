@@ -78,6 +78,14 @@ package struct MessagesPopover: View {
         } content: {
             VStack(alignment: .leading, spacing: AppStyles.Components.PaneContext.messageSectionSpacing) {
                 if let feedback { PaneContextPopoverNote(feedback) }
+                if let status = model.filters[selectedFilter].noLoadedContent {
+                    Text(status.label).foregroundStyle(.secondary)
+                        .controlHelp(status.tooltip)
+                        .background {
+                            AccessibilityLabelBridge(
+                                identifier: status.identifier, label: status.label, role: .staticText)
+                        }
+                }
                 ForEach(model.filters[selectedFilter].groups, id: \.kind) { group in
                     VStack(alignment: .leading, spacing: AppStyles.General.Spacing.loose) {
                         PopoverPanelSectionHeader(group.kind.title, variant: .content(count: headerCount(group)))

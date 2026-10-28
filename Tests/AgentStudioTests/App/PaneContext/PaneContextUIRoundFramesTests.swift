@@ -82,6 +82,47 @@ struct PaneContextUIRoundFramesTests {
         }
     }
 
+    @Test(
+        "Compositor capture of F5 loaded-zero filters and no-loaded status",
+        .enabled(if: ProcessInfo.processInfo.environment["AGENTSTUDIO_UI_ROUND_REVIEW"] == "1"))
+    func interactiveF5FilterAvailability() async throws {
+        enum FrameFailure: Error { case missingNotice }
+        try FileManager.default.createDirectory(at: output, withIntermediateDirectories: true)
+        let scene = try await PaneContextInteractionTestScene.make()
+        do {
+            let service = scene.fixture.composition.paneContextService
+            try #require(await service.markRead(messageId: scene.notice, paneId: scene.fixture.ownerId) == .done)
+            await scene.fixture.composition.presentationLane.publishPending()
+            try await scene.host.refresh()
+            try await scene.host.rendered()
+            for root in scene.host.native.roots { root.window?.appearance = NSAppearance(named: .darkAqua) }
+            let menuPanel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
+            try save(menuPanel, name: "f5-menu-ready")
+            try await reviewWindow(scene.host, panel: menuPanel, name: "f5-menu-ready")
+
+            try await scene.filter(4)
+            guard
+                case .found(let original) = await service.readMessage(
+                    source: scene.fixture.ownerId, message: scene.notice)
+            else {
+                throw FrameFailure.missingNotice
+            }
+            try #require(
+                await service.withdraw(messageId: scene.notice, paneId: scene.fixture.ownerId, writer: original.sender)
+                    == .withdrawn)
+            await scene.fixture.composition.presentationLane.publishPending()
+            try await scene.host.refresh()
+            try await scene.host.rendered()
+            let emptyPanel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
+            try save(emptyPanel, name: "f5-no-loaded-info")
+            try await reviewWindow(scene.host, panel: emptyPanel, name: "f5-no-loaded-info")
+            try await scene.close()
+        } catch {
+            try? await scene.close()
+            throw error
+        }
+    }
+
     @Test("Render shared-shell Arrangements and Agent Line comparators", arguments: [true, false])
     func renderComparators(dark: Bool) throws {
         installTestCoreAtomsIfNeeded()

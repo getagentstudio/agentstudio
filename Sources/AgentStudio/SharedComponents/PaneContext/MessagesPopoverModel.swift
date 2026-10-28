@@ -22,8 +22,16 @@ package struct MessagesPopoverModel: Sendable, Equatable {
         self.filters = filters
     }
 
-    package func replacingGroups(_ groups: [MessagesGroupModel], filters: [MessagesFilterModel]) -> Self {
-        .init(
+    /// Age and body-layout changes replace rows without changing scoped counts or group membership.
+    package func replacingGroups(_ groups: [MessagesGroupModel]) -> Self {
+        let replacements = Dictionary(uniqueKeysWithValues: groups.map { ($0.kind, $0) })
+        let filters = filters.map { filter in
+            MessagesFilterModel(
+                id: filter.id, control: filter.control,
+                groups: filter.groups.compactMap { replacements[$0.kind] }, isEnabled: filter.isEnabled,
+                noLoadedContent: filter.noLoadedContent)
+        }
+        return .init(
             groups: groups, pages: pages, remainingLiveSources: remainingLiveSources,
             nextSourcesAfter: nextSourcesAfter, hasNotices: hasNotices, unreadCount: unreadCount, filters: filters)
     }
@@ -34,11 +42,16 @@ package struct MessagesFilterModel: Sendable, Equatable, Identifiable {
     package let control: PaneContextControlModel
     package let groups: [MessagesGroupModel]
     package let isEnabled: Bool
-    package init(id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], isEnabled: Bool) {
+    package let noLoadedContent: PaneContextControlModel?
+    package init(
+        id: Int, control: PaneContextControlModel, groups: [MessagesGroupModel], isEnabled: Bool,
+        noLoadedContent: PaneContextControlModel?
+    ) {
         self.id = id
         self.control = control
         self.groups = groups
         self.isEnabled = isEnabled
+        self.noLoadedContent = noLoadedContent
     }
 }
 

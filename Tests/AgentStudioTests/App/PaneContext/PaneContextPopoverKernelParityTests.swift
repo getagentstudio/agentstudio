@@ -112,11 +112,14 @@ struct PaneContextPopoverKernelParityTests {
             let labels = ["All 0", "Needs you 0", "Failed 0", "Done 0", "Info 0"]
             let selections = [groups, [groups[1]], [groups[0]], [], [groups[2]]]
             let filters = labels.enumerated().map { index, label in
-                MessagesFilterModel(
-                    id: index,
-                    control: .init(
-                        identifier: controls[index].identifier, label: label, icon: controls[index].icon,
-                        tooltip: controls[index].tooltip), groups: selections[index], isEnabled: index == 0)
+                let control = PaneContextControlModel(
+                    identifier: controls[index].identifier, label: label, icon: controls[index].icon,
+                    tooltip: controls[index].tooltip)
+                let status = PaneContextPopoverControlProjection.control(
+                    .paneMessageFilterNoLoadedContent, identifier: "pane-context.filter-no-loaded")
+                return MessagesFilterModel(
+                    id: index, control: control, groups: selections[index], isEnabled: index != 3,
+                    noLoadedContent: index == 3 ? status : nil)
             }
             return .init(
                 paneId: owner, revision: .init(1), agentTitle: "Agent",
