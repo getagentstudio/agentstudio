@@ -77,7 +77,7 @@ struct PaneContextPopoverBindingRefreshTests {
             #expect(admitted.capture.sources[fixture.ownerId]?.session?.currentBindingId == rebound.bindingGenerationId)
             await harness.owner.close(otherKey)
             try await harness.bridge.facts.expectNone(
-                of: { fact in if case .owner(.admitted) = fact { true } else { false } },
+                of: { fact in if case .admitted? = fact.ownerFact { true } else { false } },
                 "work for the unaffected drawer consumer", from: untouched, closedBy: { $0 == .owner(.retired) })
             try await harness.finish()
             try await fixture.close()

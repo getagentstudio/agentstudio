@@ -76,7 +76,7 @@ struct PaneContextPopoverHostBindingsTests {
             #expect(await bindings.owner.latestExecution(for: otherKey)?.id == other.opening.initialExecution.id)
             await bindings.beginClose(otherKey).value
             try await bridge.facts.expectNone(
-                of: { fact in if case .owner(.admitted) = fact { true } else { false } },
+                of: { fact in if case .admitted? = fact.ownerFact { true } else { false } },
                 "work for the unrelated demanded drawer", from: untouched, closedBy: { $0 == .owner(.retired) })
             await bindings.stop()
             #expect(clock.pendingSleepCount == 0)
@@ -254,11 +254,17 @@ struct PaneContextPopoverHostBindingsTests {
         try #require(
             bridge.didFinish(.execution(handle.key, execution.id)),
             "The initial producer ended without its terminal fact")
-        let scope = PopoverOwnerProofScope(channel: .lifetime(handle.key, handle.opening.epoch))
+        let scope = PopoverOwnerProofScope(channel: .owner(.execution(handle.key, execution.id)))
         while true {
             let fact = try await bridge.facts.expectNext(
                 in: scope, where: { _ in true }, "the initial producer's terminal fact")
-            if case .owner(.finished) = fact { return }
+            if case .owner(.finished(let outcome)) = fact {
+                try #require(
+                    outcome == .published || outcome == .equal,
+                    "The actual initial producer must publish or confirm its current family value")
+                try await bridge.acknowledgeLifetime(execution, key: handle.key)
+                return
+            }
         }
     }
 

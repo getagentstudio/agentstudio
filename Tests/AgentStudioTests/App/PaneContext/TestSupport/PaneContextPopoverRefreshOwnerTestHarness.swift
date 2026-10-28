@@ -18,8 +18,16 @@ struct PopoverOwnerProofScope: Hashable, Sendable {
 }
 enum PopoverOwnerProofFact: Equatable, Sendable {
     case owner(PaneContextPopoverOwnerFact)
+    case execution(UUID, PaneContextPopoverOwnerFact)
     case clockRegistered(TestPushClock.Instant)
     case producerEnded
+
+    var ownerFact: PaneContextPopoverOwnerFact? {
+        switch self {
+        case .owner(let fact), .execution(_, let fact): fact
+        case .clockRegistered, .producerEnded: nil
+        }
+    }
 }
 
 final class PopoverOwnerFactBridge: Sendable {
@@ -27,6 +35,8 @@ final class PopoverOwnerFactBridge: Sendable {
         var timerSequence: UInt64 = 0
         var openings: [PaneContextPopoverConsumerKey: UInt64] = [:]
         var completed: Set<PaneContextPopoverOwnerScope> = []
+        var lifetimeTerminals: Set<UUID> = []
+        var acknowledgedLifetimeExecutions: Set<UUID> = []
     }
     private let state = Mutex(State())
     let facts = FactRecorder<PopoverOwnerProofScope, PopoverOwnerProofFact>(
@@ -61,7 +71,14 @@ final class PopoverOwnerFactBridge: Sendable {
             }
         }
         facts.append(scope: .init(channel: .owner(scope)), fact: .owner(fact))
-        if let lifetime { facts.append(scope: lifetime, fact: .owner(fact)) }
+        if let lifetime {
+            if case .execution(_, let id) = scope {
+                facts.append(scope: lifetime, fact: .execution(id, fact))
+                if case .finished = fact { state.withLock { _ = $0.lifetimeTerminals.insert(id) } }
+            } else {
+                facts.append(scope: lifetime, fact: .owner(fact))
+            }
+        }
     }
 
     var observedConsumers: [PaneContextPopoverConsumerKey: UInt64] {
@@ -70,6 +87,30 @@ final class PopoverOwnerFactBridge: Sendable {
 
     func didFinish(_ scope: PaneContextPopoverOwnerScope) -> Bool {
         state.withLock { $0.completed.contains(scope) }
+    }
+
+    func didRecordLifetimeTerminal(_ id: UUID) -> Bool {
+        state.withLock { $0.lifetimeTerminals.contains(id) }
+    }
+
+    /// Acknowledge duplicated history only; the returned outcome comes from the exact owner scope above.
+    func acknowledgeLifetime(
+        _ execution: PaneContextPopoverExecution, key: PaneContextPopoverConsumerKey
+    ) async throws {
+        if state.withLock({ $0.acknowledgedLifetimeExecutions.contains(execution.id) }) { return }
+        try #require(
+            didRecordLifetimeTerminal(execution.id),
+            "The execution producer ended without its duplicated lifetime terminal")
+        let scope = PopoverOwnerProofScope(channel: .lifetime(key, execution.opening))
+        while true {
+            let next = try await facts.expectNext(
+                in: scope, where: { _ in true }, "lifetime duplicates through the requested execution")
+            try #require(next != .owner(.retired), "The lifetime closed before the requested execution duplicate")
+            if case .execution(let id, .finished) = next {
+                state.withLock { _ = $0.acknowledgedLifetimeExecutions.insert(id) }
+                if id == execution.id { return }
+            }
+        }
     }
 
     func observeClock(_ fact: TestPushClock.PendingSleepFact) {
@@ -309,11 +350,14 @@ final class PopoverOwnerHarness: Sendable {
         try #require(
             bridge.didFinish(.execution(key ?? self.key, execution.id)),
             "The execution producer ended without its terminal owner fact")
-        let scope = PopoverOwnerProofScope(channel: .lifetime(key ?? self.key, execution.opening))
+        let scope = PopoverOwnerProofScope(channel: .owner(.execution(key ?? self.key, execution.id)))
         while true {
             let next = try await bridge.facts.expectNext(
                 in: scope, where: { _ in true }, "execution's own terminal outcome")
-            if case .owner(.finished(let result)) = next { return result }
+            if case .owner(.finished(let result)) = next {
+                try await bridge.acknowledgeLifetime(execution, key: key ?? self.key)
+                return result
+            }
         }
     }
 

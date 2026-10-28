@@ -303,8 +303,10 @@ final class PaneContextPreparedNativeHost {
         #expect(clock.pendingSleepCount == 1, "The actual owner must register only one useful deadline")
         clock.advance(by: duration)
         await wake.task.value
-        let next = try #require(await bindings.owner.latestExecution(for: handle.key))
-        try #require(next.id != previous.id, "Deadline producer ended without the correlated age execution")
+        let owner = try #require(bindings.owner as? PaneContextPopoverRefreshOwner<TestPushClock>)
+        let next = try await awaitDueNativeExecution(
+            on: owner, key: handle.key, opening: handle.opening.epoch,
+            after: previous.id, retiredWake: wake.sequence)
         try await consumePublished(next, handle: handle)
     }
 

@@ -162,15 +162,19 @@ final class PromptRefreshHost {
         }
     }
 
-    func applyPublicationAndRender() async throws {
-        let handle = try #require(window.handle)
-        let mailbox = await fixture.composition.ingestion.statusPublicationMailbox
-        let batch = mailbox.takeBatch()
-        try #require(!batch.isEmpty, "The real Sessions owner must publish the prompt change")
-        status.apply(batch)
-        let forwarding = window.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
-        try await window.canonicalChangeCompleted(forwarding)
-        if cardMode { try await window.renderedCard() } else { try await window.rendered() }
+    func applyPublicationAndRender(fileID: String = #fileID, line: Int = #line) async throws {
+        do {
+            let handle = try #require(window.handle)
+            let mailbox = await fixture.composition.ingestion.statusPublicationMailbox
+            let batch = mailbox.takeBatch()
+            try #require(!batch.isEmpty, "The real Sessions owner must publish the prompt change")
+            status.apply(batch)
+            let forwarding = window.bindings.inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch)
+            try await window.canonicalChangeCompleted(forwarding)
+            if cardMode { try await window.renderedCard() } else { try await window.rendered() }
+        } catch {
+            throw PromptPublicationFailure(callSite: "\(fileID):\(line)", underlying: error)
+        }
     }
 
     func addMember() async throws -> PaneId {
@@ -208,3 +212,8 @@ final class PromptRefreshHost {
 }
 
 private enum PromptRefreshProofFailure: Error { case hookNotCommitted }
+
+private struct PromptPublicationFailure: Error {
+    let callSite: String
+    let underlying: any Error
+}

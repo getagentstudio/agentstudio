@@ -65,7 +65,8 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
     var serviceEpoch: UUID
     var consumers: [PaneContextPopoverConsumerKey: Consumer] = [:]
     var retirements: [PaneContextPopoverConsumerKey: Retirement] = [:]
-    var sourceGenerations: [PaneId: UInt64] = [:]
+    // Only generations whose invalidation has dirtied every affected consumer belong here.
+    var fannedOutSourceGenerations: [PaneId: UInt64] = [:]
     var personTasks: [UUID: Task<PaneContextPopoverPersonCompletion, Never>] = [:]
     var pageWaiters: [UUID: CheckedContinuation<PaneContextPopoverOwnerFact.PageFinish, Never>] = [:]
     var openingSequence: UInt64 = 0
@@ -177,7 +178,7 @@ actor PaneContextPopoverRefreshOwner<SourceClock: Clock> where SourceClock.Durat
         service = next
         serviceEpoch = next?.epoch ?? UUIDv7.generate()
         let replacingEpoch = serviceEpoch
-        sourceGenerations.removeAll()
+        fannedOutSourceGenerations.removeAll()
         var retiring: [Task<Void, Never>] = []
         for key in Array(consumers.keys) {
             guard !stopping, serviceEpoch == replacingEpoch, var consumer = consumers[key] else { break }

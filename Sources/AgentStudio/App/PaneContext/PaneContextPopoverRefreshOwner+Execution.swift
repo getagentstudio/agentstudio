@@ -54,9 +54,6 @@ extension PaneContextPopoverRefreshOwner {
                 else { return }
                 let versions = await service.invalidations.invalidationGenerations(for: consumer.sources)
                 guard current() else { return }
-                for (source, version) in versions {
-                    sourceGenerations[source] = max(sourceGenerations[source] ?? 0, version)
-                }
                 if case .card = consumer.demand.content {
                     observe(.execution(key, id), .readStarted(.liveSession(key.paneId)))
                     liveSession = await service.readLiveSession(key.paneId)

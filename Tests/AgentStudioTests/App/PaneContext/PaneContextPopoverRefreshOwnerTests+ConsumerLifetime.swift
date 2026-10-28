@@ -23,7 +23,7 @@ extension PaneContextPopoverRefreshOwnerTests {
             #expect(await harness.owner.latestExecution(for: harness.key)?.id == current.id)
             await harness.owner.close(harness.key, opening: second.epoch)
             try await harness.bridge.facts.expectNone(
-                of: { fact in if case .owner(.admitted) = fact { true } else { false } },
+                of: { fact in if case .admitted? = fact.ownerFact { true } else { false } },
                 "work caused by an old opening's close", from: quiet, closedBy: { $0 == .owner(.retired) })
             try await harness.finish()
         } catch {

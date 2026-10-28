@@ -73,8 +73,8 @@ extension PaneContextPopoverRefreshOwner {
     }
 
     func mergeSourceGeneration(_ source: PaneId, generation: UInt64, epoch: UUID) {
-        guard !stopping, epoch == serviceEpoch, generation > (sourceGenerations[source] ?? 0) else { return }
-        sourceGenerations[source] = generation
+        guard !stopping, epoch == serviceEpoch, generation > (fannedOutSourceGenerations[source] ?? 0) else { return }
+        fannedOutSourceGenerations[source] = generation
         for key in Array(consumers.keys) {
             guard let consumer = consumers[key], consumer.sources.contains(source) else { continue }
             observe(.consumer(key, opening: consumer.opening), .observed)

@@ -16,9 +16,7 @@ struct PaneContextInvalidationTests {
             try await fixture.sendCreated(message, to: service)
             #expect(await service.invalidationGenerations(for: [fixture.paneId]) == [fixture.paneId: 1])
             #expect(try await fixture.detail(service).messages.first?.id == message.messageId)
-            await service.stop()
-            var observed: [PaneContextSourceInvalidation] = []
-            for await change in stream { observed.append(change) }
+            let observed = try await Self.stopAndCollectInvalidations(service, stream: stream)
             #expect(observed == [.init(sourcePaneId: fixture.paneId, generation: 1)])
         }
     }
@@ -38,9 +36,7 @@ struct PaneContextInvalidationTests {
             #expect(after[fixture.paneId] == (before[fixture.paneId] ?? 0) + 1)
             #expect(await service.send(notice) == .existing(notice.messageId))
             #expect(await service.invalidationGenerations(for: [fixture.paneId]) == after)
-            await service.stop()
-            var observed: [PaneContextSourceInvalidation] = []
-            for await change in stream { observed.append(change) }
+            let observed = try await Self.stopAndCollectInvalidations(service, stream: stream)
             #expect(observed == [.init(sourcePaneId: fixture.paneId, generation: (before[fixture.paneId] ?? 0) + 1)])
         }
     }
@@ -73,9 +69,7 @@ struct PaneContextInvalidationTests {
             try await facts.expectNext(in: 0, .downstreamEntered)
             #expect(await service.invalidationGenerations(for: [fixture.paneId]) == [fixture.paneId: 1])
             // Shutdown closes the real source even if a broken subject never emitted.
-            await service.stop()
-            var observed: [PaneContextSourceInvalidation] = []
-            for await change in stream { observed.append(change) }
+            let observed = try await Self.stopAndCollectInvalidations(service, stream: stream)
             #expect(observed == [.init(sourcePaneId: fixture.paneId, generation: 1)])
             held.release()
             #expect(await task.value == .created(request.messageId))

@@ -151,8 +151,8 @@ struct PaneContextPopoverRefreshOwnerTests {
 
     private var isWork: @Sendable (PopoverOwnerProofFact) -> Bool {
         { fact in
-            switch fact {
-            case .owner(.admitted), .owner(.readStarted), .owner(.projected), .owner(.published): true
+            switch fact.ownerFact {
+            case .admitted?, .readStarted?, .projected?, .published?: true
             default: false
             }
         }

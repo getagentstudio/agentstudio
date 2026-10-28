@@ -44,7 +44,7 @@ extension PaneContextPopoverRefreshOwnerTests {
             #expect(await harness.ports.requests.isEmpty)
             await harness.owner.close(otherKey)
             try await harness.bridge.facts.expectNone(
-                of: { fact in if case .owner(.admitted) = fact { true } else { false } },
+                of: { fact in if case .admitted? = fact.ownerFact { true } else { false } },
                 "work from another pane's canonical change", from: quiet, closedBy: { $0 == .owner(.retired) })
             try await harness.finish()
         } catch {
@@ -86,7 +86,7 @@ extension PaneContextPopoverRefreshOwnerTests {
             #expect(await harness.owner.scheduledWake() == nil)
             await harness.owner.close(harness.key)
             try await harness.bridge.facts.expectNone(
-                of: { fact in if case .owner(.admitted) = fact { true } else { false } },
+                of: { fact in if case .admitted? = fact.ownerFact { true } else { false } },
                 "work from a detached source", from: quiet, closedBy: { $0 == .owner(.retired) })
             #expect(await harness.ports.requests.isEmpty)
             try await harness.finish()

@@ -39,9 +39,7 @@ extension PaneContextInvalidationTests {
                 await service.invalidationGenerations(for: [fixture.paneId, unrelated]) == [
                     fixture.paneId: next, unrelated: 0,
                 ])
-            await service.stop()
-            var observed: [PaneContextSourceInvalidation] = []
-            for await change in stream { observed.append(change) }
+            let observed = try await Self.stopAndCollectInvalidations(service, stream: stream)
             #expect(observed == [.init(sourcePaneId: fixture.paneId, generation: next)])
         }
     }
