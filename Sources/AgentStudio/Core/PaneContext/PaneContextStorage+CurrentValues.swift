@@ -2,6 +2,12 @@ import AgentStudioInfrastructure
 import Foundation
 import GRDB
 
+enum PaneContextEpochClaimCommit: Sendable {
+    case created(UInt64)
+    case existing(UInt64)
+    case refused(PaneContextWriteRefusal)
+}
+
 extension PaneContextStorage {
     static func title(_ database: Database, paneId: PaneId) throws -> String? {
         let statement = try database.cachedStatement(
@@ -81,7 +87,7 @@ extension PaneContextStorage {
     }
 
     static func claimEpoch(_ request: PaneEpochClaimRequest, database: Database, now: Date) throws
-        -> PaneEpochClaimResult
+        -> PaneContextEpochClaimCommit
     {
         if let existing = try Row.fetchOne(
             database, sql: "SELECT * FROM pane_epoch_claim WHERE claim_id = ?", arguments: [request.claimId.uuidString])
@@ -90,7 +96,7 @@ extension PaneContextStorage {
                 try required(existing, "writer_key") as String == writerKey(request.writer),
                 try required(existing, "stream") as String == streamName(request.stream)
             else { return .refused(.conflict) }
-            return .claimed(try unsigned(existing, "epoch"))
+            return .existing(try unsigned(existing, "epoch"))
         }
         let arguments: StatementArguments = [
             request.paneId.uuidString, writerKey(request.writer), streamName(request.stream),
@@ -116,7 +122,7 @@ extension PaneContextStorage {
                 "writer_key": sqlValue(writerKey(request.writer)), "stream": sqlValue(streamName(request.stream)),
                 "epoch": sqlValue(next), "claimed_at": sqlValue(try timestamp(now)),
             ])
-        return .claimed(UInt64(next))
+        return .created(UInt64(next))
     }
 
     static func admitWrite(

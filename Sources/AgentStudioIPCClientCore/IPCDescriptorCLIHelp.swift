@@ -87,6 +87,10 @@ enum IPCDescriptorCLIHelp {
             if verb == .ask {
                 lines.append("--wait defaults to 60 seconds; its transport limit is the timeout + 2 seconds.")
             }
+            if verb == .approval {
+                lines.append(
+                    "Always waits; --timeout defaults to 60 seconds. Its transport limit is the timeout + 2 seconds.")
+            }
             lines.append("Acts on handle: \"self\". Run it inside the owning pane.")
         }
         if case .object(let fields) = try entry.parameterSchema(), !fields.isEmpty {

@@ -9,7 +9,7 @@ extension PaneContextService {
             let admission = scopeAdmission()
             let binding = currentBindingGeneration
             let now = wallNow
-            return try await sqliteAccess.write { database in
+            let result: PaneContextEpochClaimCommit = try await sqliteAccess.write { database in
                 guard try admission(request.paneId, database) else { return .refused(.paneGone) }
                 if case .session(_, _, let generation) = request.writer,
                     try binding(request.paneId, database) != generation
@@ -17,6 +17,13 @@ extension PaneContextService {
                     return .refused(.writerReplaced)
                 }
                 return try PaneContextStorage.claimEpoch(request, database: database, now: now())
+            }
+            switch result {
+            case .created(let epoch):
+                recordInvalidations([request.paneId])
+                return .claimed(epoch)
+            case .existing(let epoch): return .claimed(epoch)
+            case .refused(let refusal): return .refused(refusal)
             }
         } catch { return .unavailable(storageFailure(error, writing: true)) }
     }
@@ -46,6 +53,7 @@ extension PaneContextService {
                 try PaneContextStorage.writeTitle(request, database: database, now: now())
                 return .applied
             }
+            if result == .applied { recordInvalidations([request.paneId]) }
             if result == .applied { await publishAffectedSources([request.paneId]) }
             return result
         } catch { return .unavailable(storageFailure(error, writing: true)) }
@@ -74,6 +82,7 @@ extension PaneContextService {
                 try PaneContextStorage.writeLine(request, database: database, now: now())
                 return .applied
             }
+            if result == .applied { recordInvalidations([request.paneId]) }
             if result == .applied {
                 await publishAffectedSources([request.paneId])
             }

@@ -4,6 +4,7 @@ import GRDB
 extension PaneContextStorage {
     static func answerFields(_ answer: AskAnswerValue) -> [String: DatabaseValue] {
         switch answer {
+        case .decision(_, let reason): ["answer_kind": sqlValue("decision"), "answer_text": sqlValue(reason)]
         case .text(let text): ["answer_kind": sqlValue("text"), "answer_text": sqlValue(text)]
         case .choices: ["answer_kind": sqlValue("choices")]
         case .form: ["answer_kind": sqlValue("form")]
@@ -12,6 +13,14 @@ extension PaneContextStorage {
 
     static func saveAnswer(_ answer: AskAnswerValue, database: Database, requestId: UUID) throws {
         switch answer {
+        case .decision(let decision, _):
+            try insert(
+                database, table: "pane_request_answer_value",
+                fields: [
+                    "request_id": sqlValue(requestId.uuidString), "ordinal": sqlValue(0),
+                    "field_name": sqlValue("decision"), "value_kind": sqlValue("decision"),
+                    "text_value": sqlValue(decision.rawValue),
+                ])
         case .text: break
         case .choices(let choices):
             for (ordinal, choice) in choices.enumerated() {
@@ -52,6 +61,15 @@ extension PaneContextStorage {
         let kind: String = try required(row, .answerKind)
         if kind == "text" { return .text(try required(row, .answerText)) }
         let rows = children.answers[try uuid(row, .id)] ?? []
+        if kind == "decision" {
+            guard rows.count == 1,
+                try required(rows[0], .ordinal) as Int == 0,
+                try required(rows[0], .fieldName) as String == "decision",
+                try required(rows[0], .valueKind) as String == "decision",
+                let decision = PaneMessageApprovalDecision(rawValue: try required(rows[0], .textValue))
+            else { throw PaneContextStorageFailure.decode("answer_decision") }
+            return .decision(decision, reason: try optional(row, .answerText))
+        }
         if kind == "choices" {
             let choices = try rows.map { value in
                 guard try required(value, .valueKind) as String == "choice" else {

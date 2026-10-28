@@ -69,7 +69,7 @@ extension PaneContextDetailPagingTests {
             let display = await service.readDisplay(paneId: fixture.paneId)
             #expect(display?.agentLine == afterSweep.agentLine)
             #expect(display?.revision == afterSweep.revision)
-            #expect(display?.own.attentionCount == 1)
+            #expect(display?.own.kinds.needsYou == 1)
         }
     }
 

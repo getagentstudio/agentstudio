@@ -18,7 +18,7 @@ enum PaneContextAdmission {
                 return .tooLarge(.choiceLabel)
             }
             if options.isEmpty || Set(options.map(\.id)).count != options.count { return .invalidField(.form) }
-        case .freeText: break
+        case .approval, .freeText: break
         case .elicitation(let schema):
             if schema.properties.count > limits.maximumFormProperties { return .tooLarge(.form) }
             let names = Set(schema.properties.map(\.name))
@@ -46,6 +46,7 @@ enum PaneContextAdmission {
     static func answerInvalidity(_ answer: AskAnswerValue, form: AskForm) -> AnswerInvalidity? {
         if answerBytes(answer) > AppPolicies.PaneContext.maximumAnswerBytes { return .textTooLarge }
         switch (form, answer) {
+        case (.approval, .decision): return nil
         case (.freeText, .text): return nil
         case (.choice(let options, let multiple), .choices(let choices)):
             let allowed = Set(options.map(\.id))
@@ -88,6 +89,7 @@ enum PaneContextAdmission {
 
     static func formBytes(_ form: AskForm) -> Int {
         switch form {
+        case .approval: return encodedBytes(["kind": "approval"])
         case .freeText(let placeholder):
             var fields: [String: Any] = ["kind": "freeText"]
             if let placeholder { fields["placeholder"] = placeholder }
@@ -107,6 +109,7 @@ enum PaneContextAdmission {
 
     static func answerBytes(_ answer: AskAnswerValue) -> Int {
         switch answer {
+        case .decision(let decision, let reason): decision.rawValue.utf8.count + (reason?.utf8.count ?? 0)
         case .text(let text): text.utf8.count
         case .choices(let ids): ids.reduce(0) { $0 + $1.value.utf8.count }
         case .form(let values):

@@ -1,71 +1,82 @@
 import Foundation
 
 package struct MessagesPopoverModel: Sendable, Equatable {
-    package let partitions: MessagePartitionModel
+    package let groups: [MessagesGroupModel]
     package let pages: [MessagePageCursorModel]
     package let remainingLiveSources: Int
     package let nextSourcesAfter: UUID?
+    package let hasNotices: Bool
+    package let unreadCount: Int
 
     package init(
-        partitions: MessagePartitionModel, pages: [MessagePageCursorModel], remainingLiveSources: Int,
-        nextSourcesAfter: UUID?
+        groups: [MessagesGroupModel], pages: [MessagePageCursorModel], remainingLiveSources: Int,
+        nextSourcesAfter: UUID?, hasNotices: Bool, unreadCount: Int
     ) {
-        self.partitions = partitions
+        self.groups = groups
         self.pages = pages
         self.remainingLiveSources = remainingLiveSources
         self.nextSourcesAfter = nextSourcesAfter
+        self.hasNotices = hasNotices
+        self.unreadCount = unreadCount
     }
 
+    package func replacingGroups(_ groups: [MessagesGroupModel]) -> Self {
+        .init(
+            groups: groups, pages: pages, remainingLiveSources: remainingLiveSources,
+            nextSourcesAfter: nextSourcesAfter, hasNotices: hasNotices, unreadCount: unreadCount)
+    }
 }
-package struct MessagePartitionModel: Sendable, Equatable {
-    package let all: [MessageSourceGroupModel]
-    package let needsApproval: [MessageSourceGroupModel]
-    package let needsReply: [MessageSourceGroupModel]
-    package let attention: [MessageSourceGroupModel]
-    package let informational: [MessageSourceGroupModel]
 
-    package init(
-        all: [MessageSourceGroupModel], needsApproval: [MessageSourceGroupModel], needsReply: [MessageSourceGroupModel],
-        attention: [MessageSourceGroupModel], informational: [MessageSourceGroupModel]
-    ) {
-        self.all = all
-        self.needsApproval = needsApproval
-        self.needsReply = needsReply
-        self.attention = attention
-        self.informational = informational
+package struct MessagesGroupModel: Sendable, Equatable {
+    package enum Header: Sendable, Equatable {
+        case plain
+        case kindChip(KindChipModel, PaneContextControlModel)
     }
-
-    /// A UI filter selects one prepared value; it never filters message rows.
-    package func groups(for attentionType: MessageAttentionTypeModel?) -> [MessageSourceGroupModel] {
-        switch attentionType {
-        case nil: all
-        case .needsApproval: needsApproval
-        case .needsReply: needsReply
-        case .attention: attention
-        case .informational: informational
+    package enum Kind: String, Hashable, Sendable {
+        case failed, needsYou, done, info, resolved
+        package var title: String {
+            switch self {
+            case .failed: "Failed"
+            case .needsYou: "Needs you"
+            case .done: "Done"
+            case .info: "Info"
+            case .resolved: "Resolved"
+            }
         }
     }
-
-}
-package struct MessageSourceGroupModel: Sendable, Equatable {
-    package let sourcePaneId: UUID
-    package let sourceLabel: String
-    package let rows: [MessageRowModel]
-
-    package init(sourcePaneId: UUID, sourceLabel: String, rows: [MessageRowModel]) {
-        self.sourcePaneId = sourcePaneId
-        self.sourceLabel = sourceLabel
-        self.rows = rows
+    package let kind: Kind
+    package let items: [MessagesListItemModel]
+    package let omittedPromptCount: Int
+    package let header: Header
+    package init(kind: Kind, items: [MessagesListItemModel], omittedPromptCount: Int, header: Header = .plain) {
+        self.kind = kind
+        self.items = items
+        self.omittedPromptCount = omittedPromptCount
+        self.header = header
     }
-
 }
+
+package enum MessagesListItemModel: Sendable, Equatable, Identifiable {
+    package enum ItemIdentity: Hashable, Sendable {
+        case message(MessageRowModel.Key)
+        case providerPrompt(source: UUID, ordinal: Int)
+    }
+    case message(MessageRowModel)
+    case providerPrompt(ProviderPromptRowModel)
+    package var id: ItemIdentity {
+        switch self {
+        case .message(let row): .message(row.key)
+        case .providerPrompt(let row): .providerPrompt(source: row.sourcePaneId, ordinal: row.ordinal)
+        }
+    }
+}
+
 package struct MessagePageCursorModel: Sendable, Equatable {
     package let sourcePaneId: UUID
     package let rank: Int
     package let position: UInt64
     package let openAsks: Int
     package let unreadNotices: Int
-
     package init(sourcePaneId: UUID, rank: Int, position: UInt64, openAsks: Int, unreadNotices: Int) {
         self.sourcePaneId = sourcePaneId
         self.rank = rank
@@ -73,5 +84,4 @@ package struct MessagePageCursorModel: Sendable, Equatable {
         self.openAsks = openAsks
         self.unreadNotices = unreadNotices
     }
-
 }

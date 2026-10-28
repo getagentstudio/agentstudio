@@ -7,7 +7,7 @@ import Testing
 
 extension RepoExplorerPaneProjectionTests {
     @Test(
-        "worktree panes retain detached, unknown and normal branch context",
+        "worktree panes retain branch facts without adding a retired branch line to O12",
         arguments: [
             ("detached HEAD", "agent-studio · detached"),
             (" detached HEAD\n", "agent-studio · detached"),
@@ -26,8 +26,10 @@ extension RepoExplorerPaneProjectionTests {
         let row = try #require(projection.paneRowsByGroupId.values.flatMap { $0 }.first)
 
         #expect(row.branchContextText == expectedText)
-        #expect(row.variants?.compact.lines.contains(.worktreeBranch(expectedText)) == true)
-        #expect(row.variants?.expanded.lines.contains(.worktreeBranch(expectedText)) == true)
+        // O12: with no status, Agent Line or chips, the title is the entire visible stack.
+        let expected = RepoExplorerPaneRowVariant(lines: [.title(row.primaryText)])
+        #expect(row.variants?.compact == expected)
+        #expect(row.variants?.expanded == expected)
     }
 
     @Test("a worktree pane shows no branch line until its branch facts arrive")

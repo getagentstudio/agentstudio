@@ -21,7 +21,7 @@ Use the supplied helper when present. Bare `agentstudio` can launch the GUI. Loc
 
 For pane work, `self` identifies the caller's pane. `pane.current` identifies the focused pane and can change when the person moves focus. Preserve the supplied environment and provider session identity; never borrow credentials, fabricate session IDs or retarget through focus.
 
-A Claude background session (`CLAUDE_CODE_SESSION_KIND=bg` or nonempty `CLAUDE_JOB_DIR`) can inherit pane variables without being attached. Keep those markers intact and report progress in chat. `notify`, `ask`, `line`, `title` and their raw reporting methods refuse with `background session: not attached to a pane`. Reads, answers and withdrawal retain their normal authentication/scope rules.
+A Claude background session (`CLAUDE_CODE_SESSION_KIND=bg` or nonempty `CLAUDE_JOB_DIR`) can inherit pane variables without being attached. Keep those markers intact and report progress in chat. `notify`, `ask`, `approval`, `line`, `title` and their raw reporting methods refuse with `background session: not attached to a pane`. Reads, answers and withdrawal retain their normal authentication/scope rules.
 
 Continue only when the intended local repository or app target and requested effect are identified. Discovery does not expand task authority. In particular, terminal input, closing a pane and worktree removal need authorization for their actual effects.
 
@@ -48,6 +48,8 @@ For chezmoi or another dotfiles workflow, offer `"$AS_CLI" package snippet PROVI
 After a requested install or uninstall, read status again and report the resulting verdict, every remaining problem and any native Codex review still needed. Configuration status does not establish that a running provider has loaded or sent hooks. For syntax, use `"$AS_CLI" package --help`.
 
 ## Load the detail for the requested work
+
+The eight pane verbs are `notify`, `ask`, `approval`, `withdraw`, `answers`, `line`, `title` and `pane`. `approval` always waits for an Approve or Deny decision with an optional reason; it uses the same timeout and terminal outcomes as `ask --wait`.
 
 Use the resolved `"$AS_CLI"` in every command below and in the references. Examples with uppercase placeholders require real values from the task or returned state; do not execute them literally.
 

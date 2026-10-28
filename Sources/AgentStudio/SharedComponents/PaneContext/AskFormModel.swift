@@ -14,6 +14,7 @@ package struct AskChoiceModel: Sendable, Equatable {
 }
 
 package enum AskFormModel: Sendable, Equatable {
+    case approval(approve: PaneContextControlModel, deny: PaneContextControlModel, reason: PaneContextControlModel)
     case choice(options: [AskChoiceModel], allowsMultiple: Bool)
     case freeText(placeholder: String?)
     case elicitation([ElicitationPropertyModel])
@@ -48,9 +49,14 @@ package enum ElicitationStringFormatModel: Sendable, Equatable {
     case date
 }
 package enum AskAnswerModel: Sendable, Equatable {
+    case decision(ApprovalDecisionModel, reason: String?)
     case choices([String])
     case text(String)
     case form([String: ElicitationValueModel])
+}
+package enum ApprovalDecisionModel: Sendable, Equatable {
+    case approve
+    case deny
 }
 package enum ElicitationValueModel: Sendable, Equatable {
     case string(String)

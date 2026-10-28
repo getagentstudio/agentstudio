@@ -358,6 +358,8 @@ extension AppDelegate {
         let viewedMailbox = atomStore.sessionsPaneViewedMailbox
         let applyMeasurement = SessionStatusApplyMeasurement()
         let traceRecorder = performanceTraceRecorder
+        let messageActions = PaneContextMessageActionRunner.make(
+            store: store, editorPreference: atomStore.editorPreference, dispatcher: commandDispatcherForBoot())
         let composition = SessionsPaneContextComposition.make(
             inputs: .init(
                 datastore: datastore,
@@ -397,7 +399,8 @@ extension AppDelegate {
                 activityClock: paneActivityClock,
                 resumedSessionStartSink: terminalActivityRouter?.resumedSessionStartSink,
                 terminalLeaderReader: appIPCTerminalLeaderReader,
-                processChainReader: appIPCProcessChainReader)
+                processChainReader: appIPCProcessChainReader,
+                messageActionRunner: { await messageActions.run($0) })
         )
         guard !Task.isCancelled else {
             await composition.shutdown()
@@ -406,8 +409,17 @@ extension AppDelegate {
         workspaceSurfaceCoordinator?.sessionsPaneViewedMailbox = viewedMailbox
         workspaceSurfaceCoordinator?.sessionsIngestion = composition.ingestion
         workspaceSurfaceCoordinator?.paneContextService = composition.paneContextService
-        appIPCPaneContextUIAdapter = PaneContextUIAdapter(service: composition.paneContextService)
+        let ingestion = composition.ingestion
+        appIPCPaneContextUIAdapter = PaneContextUIAdapter(
+            service: composition.paneContextService,
+            readLiveSession: { pane in
+                guard let result = try? await ingestion.readSessionStatus(paneId: pane.uuid),
+                    case .live(let summary) = result
+                else { return nil }
+                return summary
+            })
         appIPCSessionsPaneContextComposition = composition
+        if let bindings = appPaneContextPopoverBindings { await bindings.serviceDidChange().value }
         return composition
     }
 
@@ -417,6 +429,7 @@ extension AppDelegate {
         workspaceSurfaceCoordinator?.sessionsIngestion = nil
         workspaceSurfaceCoordinator?.paneContextService = nil
         appIPCPaneContextUIAdapter = nil
+        if let bindings = appPaneContextPopoverBindings { await bindings.serviceDidChange().value }
         await composition.shutdown()
     }
 

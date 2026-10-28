@@ -95,9 +95,16 @@ struct PaneCLICommandRunner: Sendable {
                         reason: draft.reason, form: draft.form,
                         waiting: .blocking(deadline: draft.message.createdAt.addingTimeInterval(timeout))),
                     correlationId: correlationID)
-                try write(
-                    try result(
-                        client.call(invocation("pane.message.ask", parameters: parameters, descriptors: descriptors))))
+                let response = try result(
+                    client.call(invocation("pane.message.ask", parameters: parameters, descriptors: descriptors)))
+                if draft.form == .approval,
+                    case .answered(.decision(let decision, let reason)) = try JSONDecoder().decode(
+                        IPCPaneAskOutcome.self, from: response)
+                {
+                    try write(JSONEncoder().encode(PaneCLIApprovalAnswer(decision: decision, reason: reason)))
+                } else {
+                    try write(response)
+                }
             } else {
                 let parameters = IPCPaneMessageSendParams(
                     handle: "self", messageId: props.identifierGenerator(), writer: writer,
@@ -410,6 +417,11 @@ struct PaneCLICommandRunner: Sendable {
         guard let text = String(data: bytes, encoding: .utf8) else { throw PaneCLIIntent.invalid() }
         props.standardOutputSink(text)
     }
+}
+
+private struct PaneCLIApprovalAnswer: Encodable {
+    let decision: IPCPaneApprovalDecision
+    let reason: String?
 }
 
 enum PaneCLICommandFailure: Error {

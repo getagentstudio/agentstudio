@@ -1,12 +1,17 @@
 import Foundation
 
 struct PaneMessageCountInput: Sendable {
+    enum CountedState: Sendable {
+        case openAsk(AskWaiting)
+        case unreadNotice(MessageImportance)
+        case settled
+    }
     let id: AgentMessageId
     let sourcePaneId: PaneId
     let sentAt: Date
     let position: UInt64
     let displayHidden: Bool
-    let attention: AgentMessageAttentionType?
+    let state: CountedState
 }
 
 extension PaneMessageCountInput {
@@ -17,10 +22,16 @@ extension PaneMessageCountInput {
         position = message.position
         displayHidden = message.displayHidden
         switch message.detail.shape {
-        case .ask(_, _, _, .open), .notice(.unread):
-            attention = AgentMessageAttentionType.classify(
-                shape: message.detail.shape, importance: message.detail.importance)
-        default: attention = nil
+        case .ask(_, _, let waiting, let askState):
+            switch askState {
+            case .open: state = .openAsk(waiting)
+            case .answered, .handedBack, .dismissed, .expired, .withdrawn, .stale: state = .settled
+            }
+        case .notice(let noticeState):
+            switch noticeState {
+            case .unread: state = .unreadNotice(message.detail.importance)
+            case .read, .dismissed, .withdrawn: state = .settled
+            }
         }
     }
 }
@@ -32,28 +43,48 @@ enum PaneMessageCountFold {
 
     static func summarize(inputs: [PaneMessageCountInput], sourceOrder: [PaneId]) -> PaneMessageCounts {
         let sourceRanks = Dictionary(uniqueKeysWithValues: sourceOrder.enumerated().map { ($0.element, $0.offset) })
-        var approvals = 0
-        var replies = 0
-        var attention = 0
-        var informational = 0
+        var failure = 0
+        var needsYou = 0
+        var done = 0
+        var info = 0
         var newest: PaneMessageCountInput?
+        var oldest: PaneMessageCountInput?
         for message in inputs where !message.displayHidden && sourceRanks[message.sourcePaneId] != nil {
-            switch message.attention {
-            case .some(.needsApproval):
-                approvals += 1
-                if newest.map({ isNewer(message, than: $0, sourceRanks: sourceRanks) }) ?? true {
+            switch message.state {
+            case .openAsk(let waiting):
+                needsYou += 1
+                if oldest.map({ isOlder(message, than: $0, sourceRanks: sourceRanks) }) ?? true { oldest = message }
+                if case .blocking = waiting,
+                    newest.map({ isNewer(message, than: $0, sourceRanks: sourceRanks) }) ?? true
+                {
                     newest = message
                 }
-            case .some(.needsReply): replies += 1
-            case .some(.attention): attention += 1
-            case .some(.informational): informational += 1
-            case nil: break
+            case .unreadNotice(let importance):
+                switch importance {
+                case .failure: failure += 1
+                case .attention: needsYou += 1
+                case .done: done += 1
+                case .info: info += 1
+                }
+            case .settled: break
             }
 
         }
         return PaneMessageCounts(
-            needsApprovalCount: approvals, needsReplyCount: replies, attentionCount: attention,
-            informationalCount: informational, newestOpenBlockingAskId: newest?.id)
+            kinds: .init(failure: failure, needsYou: needsYou, done: done, info: info),
+            newestOpenBlockingAskId: newest?.id,
+            oldestOpenAsk: oldest.map { .init(paneId: $0.sourcePaneId, messageId: $0.id) })
+    }
+
+    private static func isOlder(
+        _ candidate: PaneMessageCountInput, than current: PaneMessageCountInput, sourceRanks: [PaneId: Int]
+    ) -> Bool {
+        if candidate.sentAt != current.sentAt { return candidate.sentAt < current.sentAt }
+        if candidate.sourcePaneId != current.sourcePaneId {
+            return (sourceRanks[candidate.sourcePaneId] ?? sourceRanks.count)
+                < (sourceRanks[current.sourcePaneId] ?? sourceRanks.count)
+        }
+        return candidate.position < current.position
     }
 
     private static func isNewer(

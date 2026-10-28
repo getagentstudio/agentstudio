@@ -43,7 +43,7 @@ struct CLIPaneContextStatusFallbackTests {
                 #expect(value.agentLine?.summary == "second")
                 #expect(context.port.lineWriteCount == 2)
             }
-            #expect(value.session?.sessionRef.value == context.writer.conversationId)
+            #expect(value.ownSession?.sessionRef.value == context.writer.conversationId)
             #expect(context.port.messages.isEmpty)
         }
     }
@@ -63,7 +63,7 @@ struct CLIPaneContextStatusFallbackTests {
                 Issue.record("Missing unbound pane detail")
                 return
             }
-            #expect(detail.session == nil)
+            #expect(detail.ownSession == nil)
             if verb == "title" {
                 #expect(detail.agentTitle == "visible status")
             } else {
@@ -191,7 +191,10 @@ struct CLIPaneContextStatusFallbackTests {
             #expect(await context.domain.ingestion.lastRefusal(paneId: context.domain.paneId) == refusal)
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
-                    == .set(.init(status: .working(.active), connectionIssue: .credentialNotRecognized)))
+                    == .set(
+                        .init(
+                            status: .working(.active), connectionIssue: .credentialNotRecognized,
+                            evidence: .unverified, compactPrompt: nil, promptListRevision: 0)))
             for verb in ["title", "line"] {
                 #expect(
                     await runFallbackCLI(context, arguments: [verb, "still working"], environment: environment).exitCode
@@ -216,7 +219,10 @@ struct CLIPaneContextStatusFallbackTests {
             let mailbox = await context.domain.ingestion.statusPublicationMailbox
             #expect(
                 mailbox.takeBatch()[.init(existingUUID: context.domain.paneId)]
-                    == .set(.init(status: .working(.active))))
+                    == .set(
+                        .init(
+                            status: .working(.active), evidence: .unverified,
+                            compactPrompt: nil, promptListRevision: 0)))
         }
     }
 

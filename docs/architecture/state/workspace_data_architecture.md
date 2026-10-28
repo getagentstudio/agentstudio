@@ -725,8 +725,13 @@ subgroup top spacing without changing leaf alignment.
 This is not a broad live join: each store has one job and capture declares the
 keys being combined. MainActor binds prepared results; grouping, activity
 aggregation, sorting, deadline selection, and row derivation stay detached.
-Existing focus/recency chips remain. Unseen dots, running animations, zmx IPC,
-and vendor changes are outside this sidebar slice.
+Pane rows show nonzero message-kind chips in failure, needs you, done, info
+order, separate from the status line. With no Agent Line, a known activity age
+appears as a compact chip alongside any kind chips. Agent Line ages stay
+adjacent to their text in brackets; activity ages are plain. The drawer toolbar
+chooses kind chips before the Agent Line, and the pane card shows activity in its ACTIVE
+metadata row. Pane context has no running or play chip. Unseen dots, running
+animations, zmx IPC, and vendor changes are outside this sidebar slice.
 
 Branch display: `WorktreeEnrichment.branch` from cache, falling back to `"detached HEAD"`. No branch field on the `Worktree` model itself.
 

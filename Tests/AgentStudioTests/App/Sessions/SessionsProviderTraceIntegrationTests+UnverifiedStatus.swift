@@ -51,7 +51,10 @@ extension SessionsProviderTraceIntegrationTests {
                 #expect(read.lastRefusal == nil)
                 #expect(
                     statusMailbox.takeBatch()[.init(existingUUID: pane)]
-                        == .set(.init(status: .needsYou(.approval))))
+                        == .set(
+                            .init(
+                                status: .needsYou(.approval), connectionIssue: nil, evidence: .unverified,
+                                compactPrompt: nil, promptListRevision: 0)))
                 let context = try await ingestion.repository.statusContext(paneId: pane)
                 #expect(context.bindings.isEmpty)
                 #expect(context.evidence.isEmpty)
@@ -68,7 +71,8 @@ extension SessionsProviderTraceIntegrationTests {
                             == .set(
                                 .init(
                                     status: .needsYou(.approval),
-                                    connectionIssue: AgentStudioIPCSessionsAdapter.domainRefusal(reason))))
+                                    connectionIssue: AgentStudioIPCSessionsAdapter.domainRefusal(reason),
+                                    evidence: .unverified, compactPrompt: nil, promptListRevision: 0)))
                 }
                 #expect(activity.withLock { $0.count } == 2)
             }
@@ -98,8 +102,15 @@ extension SessionsProviderTraceIntegrationTests {
                             name: .turnStart, conversationId: "verified", turnId: nil,
                             requestId: nil, toolId: nil, subagentId: nil, occurrenceId: UUIDv7.generate()),
                         correlationId: UUIDv7.generate()), provenance: .matchingPane)
+                let bindingId = try #require(
+                    try await ingestion.repository.statusContext(paneId: pane).currentBinding?.bindingGenerationId)
                 let statusMailbox = await ingestion.statusPublicationMailbox
-                #expect(statusMailbox.takeBatch()[.init(existingUUID: pane)] == .set(.init(status: .working(.active))))
+                #expect(
+                    statusMailbox.takeBatch()[.init(existingUUID: pane)]
+                        == .set(
+                            .init(
+                                status: .working(.active), connectionIssue: nil, evidence: .verifiedLive,
+                                compactPrompt: nil, promptListRevision: 0, currentBindingId: bindingId)))
                 let before = activity.withLock { $0.count }
                 let reply = try await adapter.recordUnverifiedStatus(
                     paneId: pane,

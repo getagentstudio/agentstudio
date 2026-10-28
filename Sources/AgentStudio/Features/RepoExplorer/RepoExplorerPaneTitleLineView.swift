@@ -41,6 +41,9 @@ package struct RepoExplorerPaneTitleLineView: View {
                 .layoutPriority(1)
                 .foregroundStyle(.primary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+                .background {
+                    AccessibilityLabelBridge(identifier: "paneContext.title", label: text, role: .staticText)
+                }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .sidebarShortcutHint(

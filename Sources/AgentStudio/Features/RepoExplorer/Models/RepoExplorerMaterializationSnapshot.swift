@@ -65,6 +65,7 @@ struct RepoExplorerMaterializedWorktreePresentation: Equatable, Sendable {
 }
 
 struct RepoExplorerUnassociatedPanePresentation: Equatable, Sendable {
+    var variant: RepoExplorerPaneRowVariant = .init(lines: [])
     let destination: RepoExplorerUnassociatedPaneDestination
     let primaryText: String
     let secondaryLine: RepoExplorerPaneSecondaryLine?
@@ -237,9 +238,9 @@ struct RepoExplorerRowLayout: Equatable, Sendable {
                 pane.displayVariant == .expanded
                 ? pane.variants?.expanded : pane.variants?.compact
             facts.metadataLineCount =
-                displayedVariant.map { CGFloat(max(0, $0.fallbackLineCount - 2)) }
+                displayedVariant.map { CGFloat(max(0, $0.lines.count - 1)) }
                 ?? (pane.secondaryLine == nil ? 0 : 1) + (pane.branchContextText == nil ? 0 : 1)
-            facts.chipLineCount = 1
+            facts.chipLineCount = displayedVariant?.showsChipLine == true ? 1 : 0
             facts.verticalInset = AppStyles.Shell.Sidebar.nativeRowVerticalInset
             return facts
         case .unassociatedPane(let pane):
@@ -248,8 +249,8 @@ struct RepoExplorerRowLayout: Equatable, Sendable {
                 primaryLineHeight: AppStyles.Shell.Sidebar.nativePrimaryTextLineHeight
             )
             facts.leadingInset = AppStyles.Shell.Sidebar.nativeGroupChildRowLeadingInset
-            facts.metadataLineCount = pane.secondaryLine == nil ? 0 : 1
-            facts.chipLineCount = 1
+            facts.metadataLineCount = CGFloat(max(0, pane.variant.lines.count - 1))
+            facts.chipLineCount = pane.variant.showsChipLine ? 1 : 0
             facts.verticalInset = AppStyles.Shell.Sidebar.nativeRowVerticalInset
             return facts
         case .topologyFault, .unresolved:
@@ -604,6 +605,10 @@ extension RepoExplorerMaterializationSnapshot {
             let paneFacts = inputs.paneRowFactsByPaneID[destination.paneId]
             return .unassociatedPane(
                 RepoExplorerUnassociatedPanePresentation(
+                    variant: RepoExplorerPaneRowVariants.make(
+                        title: paneFacts?.sidebarTerminalTitle ?? "Pane \(destination.paneIndexInTab + 1)",
+                        activityDate: paneFacts?.activityAt, now: inputs.snapshot.referenceDate
+                    ).compact,
                     destination: destination,
                     primaryText: paneFacts?.sidebarTerminalTitle ?? "Pane \(destination.paneIndexInTab + 1)",
                     secondaryLine: paneFacts?.secondaryLine,

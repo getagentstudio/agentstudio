@@ -48,8 +48,11 @@ Message bodies allow 4 KiB UTF-8; choices at most 12 with labels at most 200 byt
 ## Waiting for a decision
 
 ```sh
+"$AS_CLI" approval "May I deploy to staging?" --timeout 30
 "$AS_CLI" ask "May I deploy to staging?" --reason approval --choice allow,deny --wait --timeout 30
 ```
+
+`approval REQUEST [--timeout SECONDS]` always waits. The person sees Approve and Deny plus a Reason (optional) field. An answered approval prints `{"decision":"approve"|"deny","reason"?:string}`; Deny also exits 0. Only an explicit `approve` supplies approval. Other outcomes and failures print and exit exactly as `ask --wait` does; they supply no decision.
 
 Default wait is 60 seconds; the friendly blocking ask's transport budget is timeout plus two seconds. This exception does not apply to arbitrary raw IPC waits. Connection EOF withdraws a blocking ask; stopping can make it stale; the first committed settlement wins.
 

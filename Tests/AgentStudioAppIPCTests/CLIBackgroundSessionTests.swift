@@ -17,6 +17,7 @@ struct CLIBackgroundSessionTests {
             let commands = [
                 ["line", "background line"], ["title", "background title"],
                 ["notify", "background notice"], ["ask", "background question", "--reason", "blocked"],
+                ["approval", "background approval"],
             ]
             for arguments in commands {
                 let output = try await runCLI(
@@ -37,7 +38,7 @@ struct CLIBackgroundSessionTests {
         }
     }
 
-    @Test("background refusal precedes endpoint discovery", arguments: ["line", "title", "notify", "ask"])
+    @Test("background refusal precedes endpoint discovery", arguments: ["line", "title", "notify", "ask", "approval"])
     func backgroundRefusalNeedsNoEndpoint(verb: String) async throws {
         let output = try await runCLI(
             executableURL: cliExecutableURL(), arguments: [verb, "background intent"],

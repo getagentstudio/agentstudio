@@ -7,52 +7,33 @@ import Testing
 
 @Suite("Repo Explorer pane row variants")
 struct RepoExplorerPaneRowVariantTests {
-    @Test("compact and expanded line sets keep notes and order chips without terminal output")
+    @Test("sidebar lines omit card metadata and duplicate drawer, Git and active marks")
     func variantsHaveFixedLinesAndChipOrder() {
-        let branchStatus = GitBranchStatus(
-            isDirty: true,
-            syncState: .ahead(2),
-            prCount: 2,
-            linesAdded: 29,
-            linesDeleted: 1,
-            untrackedFileCount: 0
-        )
-
         let variants = RepoExplorerPaneRowVariants.make(
             title: "build pane",
-            branchContext: "agent-studio · main",
-            note: "Review the diff",
-            isDrawer: true,
-            branchStatus: branchStatus,
-            isActive: true, now: .distantPast)
+            now: .distantPast)
 
         let expectedLines: [RepoExplorerPaneRowLine] = [
-            .title("build pane"),
-            .worktreeBranch("agent-studio · main"),
-            .note("Review the diff"),
+            .title("build pane")
         ]
         #expect(variants.compact.lines == expectedLines)
         #expect(variants.expanded.lines == expectedLines)
-        #expect(variants.compact.chips == [.drawer, .gitPR, .clock, .active])
-        #expect(variants.expanded.chips == [.drawer, .gitPR, .changes, .sync, .clock, .active])
-        #expect(variants.compact.fallbackLineCount == 4)
-        #expect(variants.expanded.fallbackLineCount == 4)
+        #expect(variants.compact.chips.isEmpty)
+        #expect(variants.expanded.chips.isEmpty)
+        #expect(variants.compact.fallbackLineCount == 1)
+        #expect(variants.expanded.fallbackLineCount == 1)
     }
 
-    @Test("unknown activity still reserves one clock chip line")
+    @Test("unknown activity leaves no empty chip line")
     func unknownActivityKeepsStableChipLine() {
         let variants = RepoExplorerPaneRowVariants.make(
             title: "quiet pane",
-            branchContext: nil,
-            note: nil,
-            isDrawer: false,
-            branchStatus: nil,
-            isActive: false, now: .distantPast)
+            now: .distantPast)
 
         #expect(variants.compact.lines == [.title("quiet pane")])
-        #expect(variants.compact.chips == [.clock])
-        #expect(variants.expanded.chips == [.clock])
-        #expect(variants.compact.fallbackLineCount == 2)
+        #expect(variants.compact.chips.isEmpty)
+        #expect(variants.expanded.chips.isEmpty)
+        #expect(variants.compact.fallbackLineCount == 1)
     }
 
     @Test("projection carries both prepared variants on each pane row")
@@ -90,11 +71,11 @@ struct RepoExplorerPaneRowVariantTests {
         let groupID = try #require(projection.resolvedGroups.first?.id)
         let row = try #require(projection.paneRowsByGroupId[groupID]?.first)
 
-        #expect(row.variants?.compact.lines == [.title("review pane"), .note("Check the output")])
-        #expect(row.variants?.expanded.lines == [.title("review pane"), .note("Check the output")])
-        #expect(row.variants?.compact.chips == [.clock])
-        #expect(row.variants?.expanded.chips == [.clock])
-        #expect(row.variants?.compact.fallbackLineCount == 3)
+        #expect(row.variants?.compact.lines == [.title("review pane")])
+        #expect(row.variants?.expanded.lines == [.title("review pane")])
+        #expect(row.variants?.compact.chips.isEmpty == true)
+        #expect(row.variants?.expanded.chips.isEmpty == true)
+        #expect(row.variants?.compact.fallbackLineCount == 1)
     }
 
     @Test("materialization uses the prepared selected variant's fallback height")
@@ -113,14 +94,10 @@ struct RepoExplorerPaneRowVariantTests {
         )
         row.variants = RepoExplorerPaneRowVariants(
             compact: RepoExplorerPaneRowVariant(
-                lines: [.title("pane")],
-                chips: [.clock],
-                fallbackLineCount: 2
+                lines: [.title("pane")]
             ),
             expanded: RepoExplorerPaneRowVariant(
-                lines: [.title("pane"), .note("Review")],
-                chips: [.clock],
-                fallbackLineCount: 3
+                lines: [.title("pane"), .worktreeBranch("repo · main"), .note("Review")]
             )
         )
         let compactHeight = RepoExplorerRowLayout.make(for: .pane(row)).metrics.fallbackHeight

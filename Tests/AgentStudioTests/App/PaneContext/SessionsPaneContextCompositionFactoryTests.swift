@@ -38,11 +38,11 @@ struct SessionsPaneContextCompositionFactoryTests {
             let read = await composition.paneContextService.readDetail(.init(paneId: fixture.ownerId, page: .first))
             let detail: PaneContextDetail?
             if case .detail(let value) = read { detail = value } else { detail = nil }
-            #expect(try #require(detail).session?.bindingGeneration == binding.bindingGenerationId)
+            #expect(try #require(detail).ownSession?.bindingGeneration == binding.bindingGenerationId)
             #expect(try #require(detail).messages.count == 1)
             #expect(try #require(detail).messages.first?.id.uuid == messageId)
             await composition.presentationLane.publishPending()
-            #expect(await fixture.presentationAtom.value(for: fixture.ownerId)?.own.needsReplyCount == 1)
+            #expect(await fixture.presentationAtom.value(for: fixture.ownerId)?.own.kinds.needsYou == 1)
         }
     }
 
@@ -321,7 +321,10 @@ struct CompositionFactoryFixture: Sendable {
     @concurrent static func make(
         performanceTraceRecorder: AgentStudioPerformanceTraceRecorder? = nil,
         ownerId: PaneId = .generateUUIDv7(),
-        wallNow: (@Sendable () -> Date)? = nil
+        wallNow: (@Sendable () -> Date)? = nil,
+        messageActionRunner: @escaping @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
+            .unavailable(.databaseUnavailable)
+        }
     ) async throws -> Self {
         let statements = PaneContextSQLStatementRecorder()
         let (root, corePool, localPool) = try await withoutBlockingCooperativePool {
@@ -378,7 +381,7 @@ struct CompositionFactoryFixture: Sendable {
                 paneViewedMailbox: .init(), presentationAtom: presentationAtom,
                 performanceTraceRecorder: performanceTraceRecorder,
                 terminalLeaderReader: MatchingTestPaneTerminalLeaderReader(),
-                processChainReader: EligibleTestProcessChainReader()))
+                processChainReader: EligibleTestProcessChainReader(), messageActionRunner: messageActionRunner))
         return Self(
             root: root, corePool: corePool, localPool: localPool, statements: statements, composition: composition,
             directory: directory,

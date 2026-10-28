@@ -360,6 +360,7 @@ package actor SessionsIngestion {
         await statusPublicationLane?.publishPending()
         refusalByPane.removeAll()
         unverifiedStatusRuntime.panes.removeAll()
+        statusRuntime.publishedPromptLists.removeAll()
         paneViewedMailbox.close()
         statusIngressTask?.cancel()
         await statusIngressTask?.value

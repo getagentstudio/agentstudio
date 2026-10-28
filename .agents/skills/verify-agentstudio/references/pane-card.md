@@ -1,204 +1,147 @@
-# J5 — one field per line, distinct clocks and exact copy values
+# J5 — pane card, requests, distinct clocks and exact copy
 
-Oracle: `pane-contract.md`, card and message/activity clock sections. The card
-has one field per line; PANE always appears, SESSION only for a verified live
-binding. Select current or explicitly declared historical warning policy before
-driving. Source/build evidence is required for the target, not copied from an
-older image.
+Oracle: specification r5 O1–O8/O30–O33/V3/V5, owner R1/R8–R10 and
+`pane-contract.md`. Load shared setup, scenario recipes and visual quality.
+Keep target/CLI provenance, owned pane, permission/evidence and current owner
+facts. No target is established by the recipe itself. Use `focusPane` followed
+by window-scoped `toggleManagementLayer`; confirm it opened. Close explicitly
+with `managementLayerExit` under the action grant.
 
-Inputs: shared target receipt, held pane/readbacks, Working hook status, original
-row/card/toolbar frames, an unverified failed-action fixture and a verified-live
-identity positive. Require shared setup's observation grant; static app-rendered
-layout/age works while locked. Actual copy/pasteboard observation still needs a
-separately granted interaction route and stays UNKNOWN when unavailable.
-`focusPane` selects the proof pane and the
-window-scoped `toggleManagementLayer` opens its card. Retain the applied receipt
-and verify it is open. Close only when allowed with `managementLayerExit`.
+Production capture reads keyed facts then shapes off-main; the card's live
+request controller reads the selected source/message through the real service.
+A mounted snapshot or a controller's changed model does not prove the actual
+card rebound. Final-build entry anchors: `PaneLeafContainer`,
+`PaneManagementIdentityCapture`, `ManagementPaneIdentityStrip`,
+`PaneContextPopoverController` and `PaneContextService`.
 
-## Current card: same order and shape at every width
-
-Use the shared quality procedure at its required widths and tolerance.
-Headless split/equalize produces equal widths; there is no ratio verb for
-different-width siblings. Their side-by-side comparison needs a separately
-granted native divider drag on an already unlocked screen. Without that route,
-Sibling spacing and Same shape stay UNKNOWN. Sequential single-pane frames,
-normalized to each card's origin, can still judge local alignment.
-Keep off-target layout frames as calibration, labelled with measured width;
-further layout attempts are allowed, and only a frame within ±2 pt fills a cell.
-A frame showing a product defect keeps its verdict and is never replaced or
-hidden.
-
-Use J4's no-message, fresh-message, same-message-aged and 200-byte long-message
-states; also cover note, real warning, verified/unverified session, no-repo,
-long-title and long-branch fixtures. Preserve the real producer's icons and
-conditional fields; don't manufacture a verified session with a warning that
-the real policy suppresses. Keep a comparator and the original frames.
-
-Each populated field takes its own line in this fixed order at every width:
+## One card, current facts
 
 | Order | Deciding observation |
 | --- | --- |
-| Title | Same agent/normalized terminal title as the sidebar; natural one- or two-line height. Oversized titles tail-truncate after two lines with full tooltip; normal titles fit at 420pt. |
-| State | Hook status chip, existing activity-age chip and active glyph together on one line. They match the same sidebar pane at the same instant; no detached age-only extra row. |
-| Message | Fixed neutral message icon, message and its own age; message may wrap to **two lines**, with no reserved blank second line when short. |
-| Warning | Existing plain connection/credential warning on its own line, in the **card only** after #57. |
-| Note | Pane note on its own line when present. |
-| Caption grid | One field per Grid row: icon, fixed caption column, value and inline copy where applicable. Same caption/value edges across all cards. |
-| Git chips | Existing git chips last, only when present. The owner's retained git chip in the drawer is not a duplicate to remove. |
+| Title | Same normalized/agent title as sidebar; leading terminal spinners absent. Preserve natural one/two-line title behavior and tooltip. |
+| Status | Known verified status icon/chip only. Scoped compact prompt supplies reason/optional summary. If the request block shows that summary, the chip omits it; if an E5 ask occupies the block, the prompt summary remains on the chip. No activity/play chips. |
+| Agent Line | One line: fixed neutral message icon, text clamped to existing `AppStyles.Shell.Sidebar.agentLineMaxWidth` (220pt), ellipsis before the complete adjacent bracketed age. No reserved second line or 360pt card cap (D23). |
+| Request | Oldest open scoped ask: row head has full body with plain age and Dismiss beside it; answer form below. Approval reason field precedes Approve/Deny. Otherwise first scoped provider prompt, optional actual summary, terminal instruction and Go to pane. +N more only for other needs-you items, opens Messages (D25). |
+| Unread | N unread · Show messages only above zero, **below the whole request block**, info included, E7 excluded. Press and inspect the actual Messages scope. |
+| Existing optional content | Warning and note retain their existing conditional placement. No warning in sidebar/toolbar. |
+| Metadata/git | Conditional identity rows remain, plus plain ACTIVE age when E6 known; no ACTIVE when unknown. Existing git chips stay last. |
 
-Caption-grid field order is **REPO, BRANCH, WORKTREE, CWD, SESSION, PANE**.
-WORKTREE appears only when its name differs from REPO. CWD appears only when it
-differs from the worktree root. SESSION appears only for a verified live binding;
-PANE always appears. Include the real fallback row for a pane without a repo.
-The caption column is sized for **WORKTREE in every card**, even if omitted in
-that card, so all values share the same local x. No width-based switch to an
-HStack/two-column card; the Grid is only the three-column field-line alignment.
+Asks take priority over provider prompts, even when the oldest ask is outside the
+first detail page or comes from a drawer. Selection tie order is the adopted
+source order/position. Do not page until a convenient ask appears. Observe actual
+selected message identity and exact settlement; failed refresh must remove its
+actionable form. Hide/retirement cancels the controller; old returns must not
+restore a form. Missing runtime failure fixture leaves failure-path observation
+UNKNOWN; product tests at the existing port seam remain separate.
 
-Check natural heights and matching sibling gaps. Copy buttons follow their
-values at the same small gap. When a value fits, its icon sits right after the
-last character, and the row's spare space comes after the icon. Normal repo and
-branch must be fully readable at 420pt and wider. SESSION and PANE IDs may
-middle-truncate at any width where the full ID does not fit. Keep a readable
-prefix and suffix around the ellipsis, the full ID in the tooltip, and a small
-inline copy icon right after the value at the same small gap, always visible.
-An ID cut off at the edge without an ellipsis, a copy icon separated from the
-value's last painted glyph or ellipsis by more than the gap the same field shows
-at a required width where its value fits (or the same field on a sibling card),
-a hidden or hover-only copy icon, or truncation of a normal repo or branch at
-420pt is **FAIL**. Judge always-visible from a frame with no pointer over the
-card, and record the pointer position outside the card's frame; if the pointer
-position can't be recorded, always-visible is UNKNOWN.
-A truncated ID fills its row, so its icon can sit at the value column's trailing
-edge; that is correct when the gap is the small gap. Oversized path/branch values
-may use the adopted **middle truncation** with full tooltip. A long title/message
-follows its separate two-line tail boundary. Every element stays inside the
-card's inner bounds; no abandoned column or empty reserved row.
+## Forms and settlement
 
-On every original, also verify:
+Use actual service-created forms from the scenario recipes. One single-choice
+press submits once; multiple choice toggles then Submit; free text then Submit;
+approval optional reason field first, then Approve/Deny. Dismiss belongs beside
+the dated body in the row head, never below the form; the unread summary follows
+the whole request block. Elicitation shows Answer… here and
+opens Messages with that exact request's inline schema. Exercise main/drawer
+source and all entry locations; callback equality is supporting proof only.
 
-- State precedes message; title stays above both. The message has one fixed
-  spec-owned icon, neutral paint and no motion, not another session-status dot.
-- Message age follows the message in row/card/toolbar. Its labels are **just now**,
-  **1 min ago**, **N min ago**, **N hr ago**, **N days ago**. No message means no
-  message icon or message-age suffix; activity chips may still have deadlines.
-- The card retains a plain warning for a real refusal. The sidebar and toolbar
-  have **no warning/error line** after #57. A matching empty row is insufficient:
-  require the retained refusal data and the positive card warning through J6.
-  No raw credentialNotRecognized text or “?” placeholder chip is user-facing.
-- PANE always appears. SESSION appears only for a verified-live binding, with
-  `session.query`/reader evidence taken immediately before capture for that same
-  pane. Compare SESSION to that verified-live owner fact; Working alone does
-  not establish it. Test an unverified negative and a verified positive.
-  At all five required widths, read every character where an
-  ID paints completely. Where it middle-truncates, its visible prefix and suffix
-  must match that owner fact; that decides identity. The full value is proved by
-  the separate copy-payload check below, which stays UNKNOWN without its route.
-  App renders omit tooltips: record the tooltip UNKNOWN unless the commission
-  grants a hover route on an already-unlocked screen. The tooltip and
-  always-visible are their own observations; their UNKNOWN does not change the
-  layout/identity verdict.
-  A tooltip never replaces the copy-payload check. Compare PANE to that same
-  pane's owner ID.
-  AX full values can hide truncation; judge the painted frame. Include lineless
-  and long-message layouts and a comparator.
-- Activity recency/active chips match the same sidebar row at the same instant.
-  **Message age uses message.updatedAt; activity chips use pane activity.** Their
-  unit transitions share the adopted pure projection, not a common timestamp.
-  The message has no age-dependent tone/motion; keep chip color tiers unchanged.
+For D23, retain a long-line native witness at 390/520/1400 with measured text
+width ≤220pt, one painted line, ellipsis on overflowing text and the whole
+bracketed age. A short fitting line needs no ellipsis. The cap constrains text,
+not the full icon/text/age extent. For D25, compare S15's real native frames at
+those widths with the approved render: dated body + adjacent Dismiss → optional
+reason → decisions → unread summary. The shared Messages ask row uses the same
+row-head Dismiss placement. Geometry/AX content alone cannot prove painted order.
 
-## Copy SESSION means only the session ID
+For pending/confirmed/unconfirmed, mount/hold the real card and settle through
+the service; await owner readback and live rebind. Every answer/dismiss control
+for the settled request must be absent, not just disabled or hidden in a model.
+The next oldest open ask may legitimately replace it: identify controls by source
+and message, and check the correct request. A real independent prompt must keep
+Needs you after answering; the UI never manufactures E3. Follow the held-receipt
+recipe: confirmation requires the agent's reported cursor, not answer success.
 
-Use an owned verified-live fixture with a known session reference from its
-authorized public reader. Record that **raw reference** separately from the
-displayed `provider · reference`. Invoke the real card's **Copy Session ID**
-control through the run's permitted UI route, then read/paste the string that
-action wrote to the pasteboard. It must equal the reference **exactly**, with no
-provider prefix, separator, caption, extra whitespace or truncation. A label,
-tooltip or expected producer value alone cannot pass this check; don't set the
-pasteboard directly to supply the answer. Also check Copy Pane ID against its
-full UUID and ensure an unverified pane has no SESSION/copy control.
+## Conditional fields and copy, unchanged
 
-Retain action/reader receipts and the comparison, using only owned fixture
-values. If the real control or pasteboard observation cannot be exercised within
-the run grant, copy is UNKNOWN independently of layout. The raw-reference
-oracle does not change when an older implementation copies the display string.
-Bind the declared binary to the actual copyValue producer/handler before use.
+Field order is REPO, BRANCH, WORKTREE, CWD, SESSION, PANE; ACTIVE is the added
+plain-age metadata row. WORKTREE appears only when different from REPO; CWD only
+when different from worktree root. SESSION retains the existing verified-live
+identity rule; verified-ended may still show Idle · ended without SESSION.
+PANE always appears; include no-repo fallback. One caption column sized for
+WORKTREE keeps value edges aligned even when that row is absent. No width-based
+HStack or abandoned blank rows. Git chips remain last.
 
-## Message age: one successful write, then no input
+Copy icons follow values inline at the same small gap and stay visible without
+hover. Normal repo/branch fit at 420pt and wider. SESSION/PANE may middle-truncate
+with readable prefix/suffix, full-ID tooltip and always-visible inline copy.
+Oversized paths/branch keep adopted middle truncation. The title retains its
+independent natural/two-line boundary; the Agent Line follows D23's single line,
+220pt text cap and protected age. Nothing leaves the card's inner bounds.
+Record pointer outside the card; if pointer or hover route is unavailable,
+always-visible/tooltip remains UNKNOWN separately from measured layout.
 
-This message-age observation uses the successful message write as t0, never
-the hook/activity time.
+Take `session.query`/reader evidence immediately before each capture for the same
+pane; Working alone is not verified identity. Compare painted SESSION prefix/
+suffix and full characters where fitting to that owner fact. Compare PANE to the
+actual pane UUID. AX full values are not painted-ID evidence.
 
-1. Finish all resizing/setup, establish Working and open the card once **before**
-   the message write. Keep row/card/toolbar visible. Use shared setup's actual
-   fixture-shell or commissioned foreground-hold route. Record high-precision UTC
-   directly before the **line CLI subprocess** and after its exit-0/applied
-   completion. With the foreground holder, retain the matching exit-0 `hold.line`
-   and its `t_before`/`t_after` plus `mono_before`/`mono_after`; the holder stays
-   foreground and alive throughout the pair.
-   These bound message.updatedAt as **t0=[earliest,latest]**: the owning service
-   takes wall time inside the admitted SQLite write. An outer `terminal.send`
-   receipt, provider hook time or first screenshot is not this interval.
-2. Include timestamp precision in the bounds. A whole-second end string means
-   latest=end+1s, not that exact fractional instant. Include source timestamp
-   rounding too (the pinned storage codec rounds to microseconds; ±1µs is a
-   conservative allowance when reusing that source). Retain a monotonic interval
-   alongside UTC to detect wall-clock discontinuity. Recheck the final target's
-   wall-clock/codec mapping; if it is not established, return UNKNOWN rather
-   than assume it. No denied pane.context.get or authentication bypass is needed.
-   A permitted exact persisted updatedAt read can tighten the same interval.
-3. Leave the already open card and all three surfaces unchanged. After the write,
-   the consumer waits 3 s and takes one `window.render` with start/end UTC bounds.
-   This settle does not supply t0 or a timer oracle. Accept **just now** only when
-   the entire computed message-age window is below 60s. Keep the line text and
-   write receipt.
-4. Send no new hook, terminal input, line/title, focus, toggle or reopen command.
-   Schedule one settled render of the same message in the **1 min ago** bucket,
-   [t0+60s,t0+120s), with no intermediate renders. Aim safely inside it; t0 is not
-   the first screenshot. A fresh frame at 59.5s followed 61s later legitimately
-   has age 120.5s and reads 2 min ago.
-5. Verify no message replacement/clear or timestamp reset and no card close.
-   Compute **[capture-start − latest t0, capture-end − earliest t0]** for every
-   frame. Every point in that interval must belong to the asserted label bucket.
-   Read row/card/toolbar age text independently; one changing surface cannot
-   substitute for another. Keep unchanged message/writer/order evidence where
-   available through the authorized reader or retained write/continuity receipts.
+Press the actual Copy Session ID control, then read/paste its real pasteboard
+payload under the interaction grant. It equals **only the raw session reference**,
+no provider, caption, separator, whitespace or ellipsis. Copy Pane ID equals the
+full UUID. Do not set the clipboard to expected data. No SESSION/copy control on
+an unverified pane. PNG, expected copyValue and tooltip cannot substitute for
+this round trip; no pasteboard route means copy UNKNOWN.
 
-Expected message unit boundaries: just now below 60s; floor(minutes) from 60s to
-60m; floor(hours) from 60m to 24h; whole days thereafter, with the adopted expanded
-labels above. The chip keeps its compact labels Now/1m/Nm/Nh/Nd. Future dates clamp
-as the pure projection specifies. A hook/activity change must not reset message
-age or mutate its updatedAt; changing age alone must not reorder pane activity.
+## Widths and continuously-open clocks
 
-If the interval straddles a boundary, lies outside the asserted bucket, or has
-unknown clock mapping, the timing attempt is **INVALID/UNKNOWN**, not a product
-failure. Stop this attempt and report its bounds; do not automatically retake,
-write a new line or request input to repair the missed bucket. In a valid
-1-minute interval, a retained just now, missing suffix or cross-surface mismatch
-is **FAIL**; do not call a visible
-product mismatch a timing error. No extra timer/input/reopen repairs the proof.
+V2 requires measured frames at 1400/520/390 **window** widths. The retained J5
+identity-layout matrix uses **actual card widths** 420/520/640/780/1000pt (±2pt).
+Keep those as separate dimensions; neither requested nor outer-window width
+proves card width. A frame can fill more than one cell only when both measured
+conditions hold. Shared quality/setup owns applied-size/calibration handling.
+Different-width side-by-side siblings require the granted native divider drag;
+headless equalize cannot supply that geometry. Keep unknown cells explicit.
 
-If only later buckets were captured, a valid later transition may support that
-narrow advancement claim; it does not create the missing fresh baseline.
-A locked run is eligible through the app-render route when state, clocks and
-lock probes are established. A stale/in-flight/blank result after the observed
-3 s settle fails; a longer wait, retry or unlock does not repair that attempt.
-A row-only crop adds row coverage only; never infer card, toolbar, PID, geometry
-or exact timing from it.
+Use no-line, fresh line, same aged line, long line, note, real warning,
+verified/unverified/ended, no-repo and long-title/branch fixtures, plus S1–S19's
+request/unread states. Do layout before each timing pair. Reuse actual real-path
+product tests for detailed clock boundaries where applicability is established;
+self-tests and pure formatting are not that observation.
 
-## Keep the activity clock separate
+1. Open once before writing the line. Bracket the **actual successful line CLI
+   subprocess** with precise UTC and monotonic times; foreground hold requires
+   its matching exit-0 `hold.line` fact and live holder. This is t0, not hook time,
+   `terminal.send` acknowledgement or first screenshot. The service assigns
+   updatedAt inside its SQLite write. Read exact updatedAt when authorized.
+2. Account for timestamp precision: whole-second end bounds extend by one
+   second, and source codec microsecond rounding needs its allowance. Keep
+   UTC/monotonic mapping; unknown/discontinuous mapping means timing UNKNOWN.
+3. After owner completion, the capture consumer observes its documented 3s
+   settle and one frame. Expect [Now] only when the **whole** computed age
+   interval is below 60s. Preserve line/writer/order/updatedAt evidence.
+4. With the same surfaces continuously open, no hook/input/focus/line/title/
+   reopen/resize, collect one frame in [60,120)s for [1 min ago], and S4's
+   same-write [120,180)s frame for [2 min ago] when commissioned. Compute
+   [capture-start − latest t0, capture-end − earliest t0] for every image.
+   Schedule through the consumer, not a correctness-budget test or poll.
+5. Independently read row/card/toolbar ages; popover ages need J9/J10 native
+   frames while open. One surface never proves another. Hook activity later
+   changes E6 but cannot reset E4 updatedAt or reorder activity on E4 age alone.
 
-For an activity-clock-only check, retain a fresh canonical hook activity and its
-send/admission interval as activity t0. With the same card continuously open,
-apply the same conservative per-frame age calculation to the compact chip:
-Now below 60s, 1m in [60,120)s, then later whole units. Match active state to the
-sidebar policy. No activity/input/reopen may intervene. A valid later-bucket
-pair supports only its measured activity advancement; it cannot supply a
-message-write interval or a missing same-attempt Now frame.
+Words are Now under 60s; floor minutes below 1h; floor hours below 24h; 1 day ago
+then N days ago. Only Agent Line age has brackets. ACTIVE and popover message/
+prompt ages are plain; sidebar activity stays compact. The owned offline copy
+covers an eight-day-old line without waiting or resetting the system clock.
 
-## Return
+A boundary-spanning/missed interval is INVALID/UNKNOWN; report bounds, never
+retake/rewrite/reopen to repair the attempt. A complete valid bucket with stale
+words, missing suffix or cross-surface mismatch is FAIL. A later valid bucket
+proves only its narrower advancement, not a missing fresh baseline. A stale or
+blank app render after the declared settle fails; no longer wait/retry fixes it.
 
-Return separate layout/identity, copy-payload, activity-clock and message-age
-verdicts, the shared quality result and each valid age interval. Missing real-
-path test coverage, if offered, is a separate gap for the Lead. Cleanup waits
-until the named operator no longer needs the owned pane.
+For E6-only evidence, retain canonical activity ingress t0 separately, hold the
+card open, and compare plain ACTIVE plus eligible compact sidebar activity. No
+message means no message icon/age; unknown activity means no placeholder chip.
+
+Return layout/identity, copy, request/settlement, unread-link, E4/E6 clocks and
+quality results separately, with original paths, owner facts, actual dimensions
+and time intervals. Cleanup waits for the sole fixture operator.

@@ -9,15 +9,13 @@ struct PaneContextPopoverControlTests {
     @Test
     func controlsUseTheLocalActionSpecs() {
         let controls = PaneContextPopoverControlProjection.controls()
-        #expect(controls.answer.label == LocalActionSpec.answerPaneMessage.actionSpec.label)
+        #expect(controls.submit.label == "Submit")
         #expect(controls.goToPane.label == LocalActionSpec.goToMessagePane.actionSpec.label)
         #expect(controls.messages.icon == .system(SystemSymbol.bell.rawValue))
         #expect(
-            controls.answer.tooltip
-                == LocalActionSpec.answerPaneMessage.actionSpec.controlTooltipRenderValue(
-                    provenance: .localAction(rawValue: LocalActionSpec.answerPaneMessage.actionSpec.label)))
-        #expect(
-            controls.filters.map(\.attentionType) == [nil, .needsApproval, .needsReply, .attention, .informational])
+            controls.submit.tooltip
+                == LocalActionSpec.submitPaneMessageAnswer.actionSpec.controlTooltipRenderValue(
+                    provenance: .localAction(rawValue: "Submit")))
     }
 
 }

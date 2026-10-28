@@ -26,6 +26,9 @@ struct SessionsPaneContextComposition: Sendable {
         var resumedSessionStartSink: (@Sendable (UUID, String, String) async -> Void)?
         var terminalLeaderReader: (any PaneTerminalLeaderReading)?
         var processChainReader: (any ProcessChainReading)?
+        var messageActionRunner: @Sendable (MessageActionContext) async -> MessageActionResult = { _ in
+            .unavailable(.databaseUnavailable)
+        }
     }
 
     let ingestion: SessionsIngestion
@@ -55,7 +58,7 @@ struct SessionsPaneContextComposition: Sendable {
             currentBindingGeneration: PaneContextSessionsBridge.currentBindingGeneration,
             sessionSummary: { paneId in try await bridge.sessionSummary(paneId: paneId) },
             openAskSink: { update in await bridge.receiveOpenAskSummary(update) },
-            presentationLane: presentationLane)
+            presentationLane: presentationLane, actionRunner: inputs.messageActionRunner)
         let ownerPaneLookup: @Sendable (PaneId) -> PaneId? = { directory.ownerPaneId(for: $0) }
         let composition = Self(
             ingestion: ingestion, paneContextService: service,
