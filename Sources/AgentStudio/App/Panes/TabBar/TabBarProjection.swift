@@ -13,7 +13,7 @@ struct TabBarItem: Identifiable, Equatable, Sendable {
     var activeArrangementBadgeNumber: Int?
     var arrangementCount: Int
     var colorHex: String?
-    var panes: [PaneVisibilityInfo]
+    var activePaneCount: Int
     var zoomMode: ArrangementPanelZoomMode?
     var arrangements: [ArrangementInfo]
     var minimizedCount: Int
@@ -68,7 +68,7 @@ enum TabBarProjector {
                     activeArrangementBadgeNumber: coreItem.activeArrangementBadgeNumber,
                     arrangementCount: coreItem.arrangementCount,
                     colorHex: coreItem.colorHex,
-                    panes: coreItem.panes,
+                    activePaneCount: coreItem.activePaneCount,
                     zoomMode: coreItem.zoomMode,
                     arrangements: coreItem.arrangements,
                     minimizedCount: coreItem.minimizedCount,

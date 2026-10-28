@@ -557,7 +557,10 @@ class PaneTabViewController: NSViewController, NSPopoverDelegate, WorkspaceComma
                             // fire-and-forget: UI handler; the executor serializes the gesture, no caller reads it
                             _ = self?.dispatchPaneAction(action)
                         },
-                        workspaceWindowId: workspaceWindowId
+                        workspaceWindowId: workspaceWindowId,
+                        arrangementPanelSources: ArrangementPanelSources(
+                            store: store, repoCache: repoCache, readers: paneContextReaders,
+                            performanceTraceRecorder: performanceTraceRecorder)
                     )
                 )
             case .selectTab:

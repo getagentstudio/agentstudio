@@ -23,7 +23,7 @@ extension AgentStudioOTLPPerformanceMetricEvent {
                 "surface",
                 [
                     "sidebar_messages", "pane_messages", "card_messages", "agent_line", "management_card", "toolbar",
-                    "shared",
+                    "shared", "arrangements",
                 ]
             ),
             ("kind", ["none", "opening", "background", "age", "action", "page"]),

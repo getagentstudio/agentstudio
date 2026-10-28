@@ -16,6 +16,7 @@ struct MinimizedPaneBarPresentation: Equatable {
 }
 
 struct FlatTabStripContainer: View {
+    @Environment(\.paneContextUIReaders) private var paneContextReaders
     let layout: AgentStudioCore.Layout
     let octiconLoader: OcticonLoader
     let tabId: UUID
@@ -288,6 +289,8 @@ struct FlatTabStripContainer: View {
                             actionDispatcher: actionDispatcher,
                             arrangementInlineRenameState: arrangementInlineRenameState,
                             commandActionResolver: commandActionResolver,
+                            arrangementPanelSources: ArrangementPanelSources(
+                                store: store, repoCache: repoCache, readers: paneContextReaders),
                             onFocus: { onFocusPane(paneId) },
                             dropTargetCoordinateSpace: "tabContainer",
                             workspaceWindowId: workspaceWindowId
