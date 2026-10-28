@@ -14,8 +14,9 @@ import Testing
 @MainActor
 @Suite(.serialized)
 struct PaneManagementIdentityHostTests {
-    @Test("the same native card advances, replaces activity and retires its task on hide")
-    func nativeHostOwnsActivityDeadlineLifetime() async throws {
+    @Test(
+        "the same native card advances, replaces activity and retires its task on hide", arguments: [false, true])
+    func nativeHostOwnsActivityDeadlineLifetime(forwardingAlreadyCompleted: Bool) async throws {
         let fixture = try await NativeCardFixture()
         let clock = fixture.rendering.clock
         let origin = clock.now
@@ -25,7 +26,7 @@ struct PaneManagementIdentityHostTests {
             try await fixture.rendering.advance(by: .seconds(60), registeredAt: origin.advanced(by: .seconds(60)))
             #expect(ObjectIdentifier(fixture.host) == identity)
             try fixture.expectRendered(text: "1 min ago")
-            try await fixture.replaceActivity()
+            try await fixture.replaceActivity(forwardingAlreadyCompleted: forwardingAlreadyCompleted)
             #expect(ObjectIdentifier(fixture.host) == identity)
             try fixture.expectRendered(text: "Now")
             // Canonical activity is background input: its trailing execution is at70s.
@@ -101,7 +102,8 @@ private final class NativeCardFixture {
         }
     }
 
-    func replaceActivity() async throws {
+    func replaceActivity(forwardingAlreadyCompleted: Bool) async throws {
+        let checkpoint = rendering.prepared.bridge.receivedInputs
         let elapsed = origin.duration(to: rendering.clock.now)
         atoms.paneActivityTime.apply([
             .set(
@@ -110,7 +112,15 @@ private final class NativeCardFixture {
                     orderingInstant: orderingOrigin.advanced(by: elapsed),
                     wallTime: rendering.time.now, source: .terminal))
         ])
-        try await rendering.canonicalChangeCompleted()
+        if forwardingAlreadyCompleted {
+            let handle = try #require(rendering.prepared.cardHandle)
+            let inputs = rendering.prepared.bindings.inputs
+            for producer in inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch) {
+                await producer.value
+            }
+            try #require(inputs.forwardingTasks(for: handle.key, opening: handle.opening.epoch).isEmpty)
+        }
+        try await rendering.canonicalChangeCompleted(since: checkpoint)
     }
     func expectRendered(text: String) throws {
         let elements = PaneIdentityCardFixture.elements(in: host)
