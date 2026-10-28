@@ -6,6 +6,9 @@ its verbatim `owner-rules-checklist.md` and storyboard/renders. Program Design r
 later contracts govern structure. The specification governs observable outcomes.
 Historical targets require their explicit oracle; current rendering cannot
 replace it. `pane-context-scenarios.md` links setup to its source owners.
+For the Messages interior redesign, J9 names the accepted boards, implementation
+brief and D42/D43/D43a overrides; those later outcomes replace the older popover
+width, row, heading and form appearance rules only.
 
 ## Shared facts and ages
 
@@ -17,7 +20,8 @@ Actions retain source pane/message identity. First scoped prompt is the same
 newest/stably ordered prompt on row/card/list; asks take priority on the card.
 
 Ages: Now below 60s, N min ago below 1h, N hr ago below 24h, 1 day ago/N days ago.
-Ages sit one space after what they date. Square brackets decorate **Agent Line
+Ages sit one space after what they date except Messages, where age has its own
+secondary line under the body. Square brackets decorate **Agent Line
 ages only**, including its popover; other message/prompt/ACTIVE ages are plain.
 Sidebar activity uses compact Now/Nm/Nh/Nd. Text yields before complete age; no
 empty/zero/unknown marks or duplicate play glyph. E4 has no expiry.
@@ -58,7 +62,9 @@ ellipsis before the complete bracketed age. The toolbar's 360pt cap does not
 apply to the card. D25: the ask row head has body + plain age with Dismiss beside
 it, then the form below; approval's optional reason precedes Approve/Deny. The
 card's unread summary follows the entire request block, as in approved S15.
-Apply that row-head Dismiss placement to shared Messages ask rows too.
+D42 keeps that card arrangement while adopting the action roles in J9. Messages
+instead uses its board layout: separate age line, top-trailing icon-only Dismiss,
+and form actions aligned to the body text edge.
 
 Single choice submits once on press. Multiple/free text use Submit. Approval
 has Approve/Deny and optional reason. Elicitation is inline in Messages and
@@ -68,8 +74,11 @@ Settled asks have no answer/dismiss/action controls. Exact service labels/receip
 states come from the E5 table, never optimistic UI state. Failed card refresh
 removes stale actionable form. E3 changes only through its existing owner.
 
-Messages groups Needs you/Done/Info/Resolved; newest-first mixed E5/E7, empty
-hidden. Full body/explanation wraps without cap, followed by plain age/source.
+Messages groups Failed/Needs you/Done/Info/Resolved; newest-first mixed E5/E7,
+empty hidden. Headings are sentence case with a plain count and no chip.
+Full body/explanation wraps without cap, followed by its own plain age line/source.
+J9 owns the newline-only fixed-width body rule, first-line glyph/dismiss geometry,
+utility/alternative/commit roles and Messages form appearance checks.
 Read rows dim; read attention/failure move to Resolved/Read. Withdrawn notices
 have no actions; dismissed notices disappear. Remove filters/Count informational/
 Mark read controls. Footer: Dismiss all notices only with unread/read notices,
@@ -78,9 +87,13 @@ Under the r5 notice clarification, no UI read trigger replaces the removed
 disclosure. New notices stay unread/countable until dismissed; opening/scrolling
 does not mark read. Retained read-state presentation is unchanged, but read-notice
 journey setup is product-test-only/a named live gap, including S19's read failure.
-Loading/unavailable retain normal width. Agent Line popover shows full line,
-age/writer/refs/Go to pane, no E7. Program Design sizes are 380pt wide/max 480pt
-Messages height. Native capture must visibly include the actual popover.
+Under D43a, Loading starts at clamped 480pt. First ready content chooses Messages
+width once: 560pt with any multiline body, otherwise 480pt; that one change is
+allowed, then later updates/loading/unavailability retain the chosen width. Screen
+clamp/floor are unit-test coverage as distinguished from native width in J9.
+Messages height remains capped at 480pt. Agent Line popover remains 380pt wide,
+showing full line, age/writer/refs/Go to pane and no E7. Native capture must visibly
+include the actual popover.
 
 ## Metadata/copy and warning policy, unchanged
 

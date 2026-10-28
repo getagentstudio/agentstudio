@@ -17,6 +17,14 @@ Keep those independent from the retained J5 actual-card-width matrix below.
 Record requested and applied window dimensions and each surface's actual bounds;
 never equate them. J9/J10 require originals visibly including the native popover,
 with top and final-scroll content. Obscured/unreachable surfaces remain UNKNOWN.
+For the Messages interior redesign use J9's accepted N1b/N2/Q1/Q3/A1 boards and
+D42/D43/D43a. At first ready content measure 480pt one-line openings and 560pt
+multiline openings, plus unchanged width after later content changes. D43a allows
+one change from Loading's clamped 480pt to first ready content; do not mistake
+that transition for a width-freeze failure. D43 supersedes the board captions;
+screen clamp/floor is unit-proven, not native coverage in this taste pass. Keep
+that unit receipt separate and UNKNOWN until available. Retain original native
+frames beside board originals; their pixels must not be resized to fake a match.
 
 Audit every applicable original against the adopted **verbatim** owner checklist
 R1–R10 in `docs/specs/2026-10-24-pane-context-display/owner-rules-checklist.md`.
@@ -94,8 +102,10 @@ observations, and its functional/taste verdicts:
   values with the full tooltip, and truncatable Agent Line text with a **complete
   separate bracketed age**. D23's card Agent Line is **one line with a 220pt text
   cap**, distinct from the toolbar's 360pt text cap; no two-line message allowance.
-  D25's dated request body and Dismiss share the row head; form below, approval
+  D25's card request body and Dismiss share the row head; form below, approval
   reason before decisions, card unread summary below the entire request block.
+  D42 retains this card layout with the new action roles. Messages uses J9's
+  separate age line, first-line icon-only Dismiss and board form arrangement.
   Cite that boundary rather than excusing clipped ordinary content. Tooltips/AX
   full text do not prove the pixels painted or make a hidden age acceptable.
 - **Alignment:** compare local leading/trailing edges and baselines across panes
@@ -103,6 +113,12 @@ observations, and its functional/taste verdicts:
   even in cards without that field; values share its edge. Normalize positions
   to each card's origin before comparing. Sidebars/toolbars use their own shared
   edges; do not invent caption columns for those surfaces.
+  In Messages compare the 16pt glyph column, first-line centering, common text
+  edge and 24pt dismiss column; age and form/action rows follow the text edge.
+  Headings have a plain count with no chip. Match newline-bearing body spacing
+  and fixed-width font to N1b; a one-line body keeps the system font. Verify the
+  utility, outlined alternative and solid commit paints against J9 at rest and,
+  when granted, hover. The unanswered-question card keeps its D25 arrangement.
 - **Overlap:** text, chips, icons, copy buttons, boundaries and neighboring panes
   have distinct space. Check the longest message/branch/ID and narrowest width.
 - **Duplicated information or icons:** look for repeated repo/worktree/CWD
