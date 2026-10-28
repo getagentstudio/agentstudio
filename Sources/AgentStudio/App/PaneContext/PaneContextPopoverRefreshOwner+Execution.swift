@@ -245,7 +245,7 @@ extension PaneContextPopoverRefreshOwner {
         if case .ready(.detail(let detail, _)) = state {
             multiline =
                 (detail.messages + detail.drawerMessages.flatMap(\.messages)).contains {
-                    $0.body.contains(where: \.isNewline)
+                    PaneContextPresentationRules.messageGroup(for: $0) != nil && $0.body.contains(where: \.isNewline)
                 }
                 || detail.scopedSessions.contains { source in
                     source.session?.providerPrompts.contains { $0.summary?.contains(where: \.isNewline) == true }
