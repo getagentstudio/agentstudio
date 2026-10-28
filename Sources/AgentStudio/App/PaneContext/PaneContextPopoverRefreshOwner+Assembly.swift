@@ -275,8 +275,9 @@ extension PaneContextPopoverRefreshOwner {
         case (.messages(let left, let rankA, let positionA), .messages(let right, let rankB, let positionB)):
             if left != right { return (sourceOrder[left] ?? Int.max) < (sourceOrder[right] ?? Int.max) }
             return rankA == rankB ? positionA > positionB : rankA < rankB
-        case (.messages, .sources): return true
-        case (.sources, .messages): return false
+        // Discovery pages carry initial message cursors; replay them before their continuations.
+        case (.messages, .sources): return false
+        case (.sources, .messages): return true
         case (.sources(let left), .sources(let right)):
             return (sourceOrder[left] ?? Int.max) < (sourceOrder[right] ?? Int.max)
         }

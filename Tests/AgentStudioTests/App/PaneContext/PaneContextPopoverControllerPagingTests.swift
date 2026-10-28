@@ -98,11 +98,11 @@ struct PaneContextPopoverControllerPagingTests {
             #expect(handle.atom.value?.shape?.messages.pages.isEmpty == true)
             #expect(handle.atom.value?.shape?.messages.nextSourcesAfter == owner.uuid)
             await ports.enqueue(.detail(initial))
-            await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])))
             await ports.enqueue(
                 .detail(
                     PaneContextPopoverShapingTests.detail(
                         paneId: owner, drawers: [.init(sourcePaneId: drawer, messages: [third])])))
+            await ports.enqueue(.detail(PaneContextPopoverShapingTests.detail(paneId: owner, messages: [second])))
             #expect(await fixture.bindings.loadPage(.sources(after: owner), handle: handle) == .loaded)
             #expect(
                 handle.atom.value?.shape?.messages.messageRows.map(\.id) == [
@@ -112,7 +112,7 @@ struct PaneContextPopoverControllerPagingTests {
             #expect(
                 await ports.requests.map(\.page) == [
                     .first, .first, .more(source: owner, after: .init(rank: 1, position: 12)),
-                    .first, .more(source: owner, after: .init(rank: 1, position: 12)), .moreSources(after: owner),
+                    .first, .moreSources(after: owner), .more(source: owner, after: .init(rank: 1, position: 12)),
                 ])
         }
     }
