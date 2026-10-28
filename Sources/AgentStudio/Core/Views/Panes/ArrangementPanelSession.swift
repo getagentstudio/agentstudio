@@ -6,7 +6,13 @@ import Observation
 @MainActor
 @Observable
 package final class ArrangementPanelSession {
-    package private(set) var presentation: ArrangementTableProjection?
+    // Deliberately not Equatable: the worker is the sole content comparator, as in AtomLib's unconstrained values.
+    private struct PublishedProjection {
+        let value: ArrangementTableProjection
+    }
+
+    private var publishedProjection: PublishedProjection?
+    package var presentation: ArrangementTableProjection? { publishedProjection?.value }
     @ObservationIgnored private let sources: ArrangementPanelSources
     @ObservationIgnored private let project:
         @Sendable (ArrangementTableInput) async throws -> ArrangementTableProjection
@@ -67,7 +73,7 @@ package final class ArrangementPanelSession {
         continuation?.finish()
         continuation = nil
         producer?.cancel()
-        presentation = nil
+        if publishedProjection != nil { publishedProjection = nil }
         return producer
     }
 
@@ -104,7 +110,7 @@ package final class ArrangementPanelSession {
             return false
         }
         let started = ContinuousClock.now
-        presentation = value
+        publishedProjection = PublishedProjection(value: value)
         recordHeld("publication", since: started)
         return true
     }

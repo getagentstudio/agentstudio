@@ -2,6 +2,7 @@ import AgentStudioInfrastructure
 import AgentStudioTestHarness
 import AgentStudioTestSupport
 import Foundation
+import Observation
 import Synchronization
 import Testing
 
@@ -189,6 +190,74 @@ struct ArrangementPanelSessionTests {
             }
         }
     }
+
+    @Test("a last-row Line change notifies presentation readers while equal rows do not publish")
+    func lastRowChangePublishesObservedPresentation() async throws {
+        try await withAsyncTestCoreAtoms { atoms in
+            let fixture = ArrangementSessionFixture(atoms: atoms, paneCount: 3)
+            let lastPane = PaneId(existingUUID: try #require(fixture.paneIds.last))
+            let facts = arrangementSessionFacts()
+            let observations = Mutex(0)
+            let session = ArrangementPanelSession(
+                sources: fixture.sources, project: { try await ArrangementTableProjector.project($0) },
+                onCompletion: { facts.append(scope: 0, fact: .completed($0)) })
+            let producer = session.beginArrangementProjection(tabId: fixture.tabId)
+            let ended = Task {
+                await producer.value
+                facts.append(scope: 0, fact: .finished)
+                facts.receive(.ended)
+            }
+            @MainActor func publishLine(_ summary: String, revision: PaneContextRevision) {
+                atoms.paneContextPresentation.apply([
+                    lastPane: .set(
+                        .init(
+                            revision: revision, agentTitle: nil,
+                            agentLine: .init(
+                                summary: summary, refs: [], writer: .pane(lastPane), updatedAt: .distantPast),
+                            own: .zero, includingDrawers: .zero, pullRequests: .notApplicable))
+                ])
+            }
+            @MainActor func observePresentation() {
+                withObservationTracking {
+                    _ = session.presentation
+                } onChange: {
+                    observations.withLock { $0 += 1 }
+                }
+            }
+            do {
+                try await facts.expectNext(in: 0, .completed(true))
+                let initialRows = try #require(session.presentation?.panes)
+                #expect(initialRows.map(\.id) == fixture.paneIds)
+                observePresentation()
+
+                publishLine("Last row only", revision: .init(1))
+                try await facts.expectNext(in: 0, .completed(true))
+                #expect(observations.withLock { $0 } == 1)
+                #expect(session.presentation?.panes.last?.agentLine == "Last row only")
+                #expect(session.presentation?.panes.dropLast() == initialRows.dropLast())
+                observePresentation()
+
+                publishLine("Last row only", revision: .init(2))
+                try await facts.expectNext(in: 0, .completed(false))
+                #expect(observations.withLock { $0 } == 1)
+
+                publishLine("Last row updated", revision: .init(3))
+                try await facts.expectNext(in: 0, .completed(true))
+                #expect(observations.withLock { $0 } == 2)
+                #expect(session.presentation?.panes.last?.agentLine == "Last row updated")
+                #expect(session.presentation?.panes.dropLast() == initialRows.dropLast())
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try await facts.expectNext(in: 0, .finished)
+                try await facts.finish()
+            } catch {
+                await session.retireArrangementProjection()?.value
+                await ended.value
+                try? await facts.finish()
+                throw error
+            }
+        }
+    }
 }
 
 private enum ArrangementSessionFact: Equatable, Sendable {
@@ -211,17 +280,20 @@ private final class ArrangementCaptureCount { var value = 0 }
 private struct ArrangementSessionFixture {
     let store: WorkspaceStore
     let paneId: UUID
+    let paneIds: [UUID]
     let tabId: UUID
     let sources: ArrangementPanelSources
     let captures = ArrangementCaptureCount()
 
-    init(atoms: CoreAtoms) {
-        store = WorkspaceStore(
+    init(atoms: CoreAtoms, paneCount: Int = 1) {
+        let store = WorkspaceStore(
             catalogAtom: atoms.workspaceRepositoryTopology, graphAtom: atoms.workspacePane,
             interactionAtom: atoms.workspaceTabLayout)
-        let pane = store.createPane(title: "Original")
-        paneId = pane.id
-        let tab = Tab(paneId: pane.id)
+        self.store = store
+        paneIds = (0..<paneCount).map { store.createPane(title: $0 == 0 ? "Original" : "Pane \($0)").id }
+        paneId = paneIds[0]
+        let arrangement = PaneArrangement(name: "Default", isDefault: true, layout: .autoTiled(paneIds))
+        let tab = Tab(allPaneIds: paneIds, arrangements: [arrangement], activeArrangementId: arrangement.id)
         tabId = tab.id
         store.appendTab(tab)
         let counter = captures
