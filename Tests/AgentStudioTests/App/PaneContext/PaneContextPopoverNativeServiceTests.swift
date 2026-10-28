@@ -45,7 +45,7 @@ struct PaneContextPopoverNativeServiceTests {
             try await mounted.rendered()
             #expect(mounted.native.find("pane-context.dismiss-all-notices") == nil)
             let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
-            try fillAndSubmit(form, in: mounted.native, scope: scope)
+            try fillAndSubmit(form, in: mounted, row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
             try await mounted.actionCompleted()
             mounted.native.layout()
             try await mounted.rendered()
@@ -130,7 +130,8 @@ struct PaneContextPopoverNativeServiceTests {
             let ownerScope = "\(fixture.ownerId.uuid).\(id.uuid)"
             let drawerScope = "\(fixture.drawerId.uuid).\(id.uuid)"
             try mounted.native.press("pane-context.choice.red.\(ownerScope)")
-            try fillAndSubmit(.freeText, in: mounted.native, scope: drawerScope)
+            try fillAndSubmit(
+                .freeText, in: mounted, row: .init(sourcePaneId: fixture.drawerId.uuid, messageId: id.uuid))
             try await mounted.actionCompleted()
             mounted.native.layout()
             try await mounted.rendered()
@@ -199,7 +200,8 @@ struct PaneContextPopoverNativeServiceTests {
             try await mounted.open()
             try await mounted.rendered()
             let scope = "\(fixture.ownerId.uuid).\(id.uuid)"
-            try mounted.native.press("pane-context.choice.blue.\(scope)")
+            try mounted.bindSingleChoice("blue", row: .init(sourcePaneId: fixture.ownerId.uuid, messageId: id.uuid))
+            try mounted.native.press("pane-context.submit.\(scope)")
             try await mounted.actionCompleted()
             mounted.native.layout()
             try await mounted.rendered()
@@ -306,11 +308,15 @@ struct PaneContextPopoverNativeServiceTests {
     }
 
     private func fillAndSubmit(
-        _ form: ExistingPopoverForm, in window: PaneContextNativePopoverWindow,
-        scope: String
+        _ form: ExistingPopoverForm, in host: PaneContextPreparedNativeHost,
+        row: MessageRowModel.Key
     ) throws {
+        let window = host.native
+        let scope = row.controlScope
         switch form {
-        case .singleChoice: try window.press("pane-context.choice.blue.\(scope)")
+        case .singleChoice:
+            try host.bindSingleChoice("blue", row: row)
+            try window.press("pane-context.submit.\(scope)")
         case .multipleChoice:
             try window.press("pane-context.choice.blue.\(scope)")
             window.layout()
@@ -333,13 +339,25 @@ struct PaneContextPopoverNativeServiceTests {
         in window: PaneContextNativePopoverWindow, scope: String, otherChoicesRemain: Bool = false
     ) {
         #expect(window.editableFields.isEmpty)
-        if !otherChoicesRemain { #expect(window.nativeButtons.isEmpty) }
+        if !otherChoicesRemain {
+            let header = window.find("pane-context.messages-header") as? any NSAccessibilityProtocol
+            #expect(header != nil, "Current Messages chrome retains its pinned header")
+            #expect(window.nativeButtons.count == 1, "No native form button may remain besides the Filter menu")
+            #expect(
+                window.nativeButtons.allSatisfy {
+                    guard let headerFrame = header?.accessibilityFrame() else { return false }
+                    let buttonFrame = $0.accessibilityFrame()
+                    // AppKit's menu AX rect overhangs by one point; its center and vertical band stay inside.
+                    return headerFrame.contains(CGPoint(x: buttonFrame.midX, y: buttonFrame.midY))
+                        && buttonFrame.minY >= headerFrame.minY && buttonFrame.maxY <= headerFrame.maxY
+                }, "The sole native button must be the new menu within the pinned header, not a settled row control")
+        }
         for prefix in [
             "pane-context.choice.red", "pane-context.choice.blue", "pane-context.submit", "pane-context.dismiss",
         ] {
             #expect(window.find(prefix + "." + scope) == nil, "Settled row retained \(prefix)")
         }
-        for field in ["text", "project", "workers", "enabled"] {
+        for field in ["text", "project", "workers", "enabled", "choice"] {
             #expect(window.find("pane-context.field.\(scope).\(field)") == nil)
         }
     }

@@ -107,13 +107,16 @@ struct PaneContextUIRoundFramesTests {
             else {
                 throw FrameFailure.missingNotice
             }
+            try #require(original.shape == .notice(.read))
             try #require(
-                await service.withdraw(messageId: scene.notice, paneId: scene.fixture.ownerId, writer: original.sender)
-                    == .withdrawn)
+                await service.dismiss(messageId: scene.notice, paneId: scene.fixture.ownerId) == .done)
             await scene.fixture.composition.presentationLane.publishPending()
             try await scene.host.refresh()
             try await scene.host.rendered()
             let emptyPanel = try #require(scene.host.native.find("pane-context.popover-panel") as? NSView)
+            let noLoaded = try #require(
+                scene.host.native.find("pane-context.filter-no-loaded") as? any NSAccessibilityProtocol)
+            #expect(noLoaded.accessibilityLabel() == "No messages loaded for this filter.")
             try save(emptyPanel, name: "f5-no-loaded-info")
             try await reviewWindow(scene.host, panel: emptyPanel, name: "f5-no-loaded-info")
             try await scene.close()
@@ -180,10 +183,10 @@ struct PaneContextUIRoundFramesTests {
             mounted = host
             if holdFirstWidth {
                 let owner = host.bindings.owner
-                host.bindings.inputs.connectGeometry { key, opening, row, geometry, operation in
+                host.bindings.inputs.connectGeometry { key, opening, row, capture, operation in
                     do { try await widthDelivery.arrive(()) } catch { return }
                     await owner.receiveBodyGeometry(
-                        geometry, row: row, for: key, opening: opening, operation: operation)
+                        capture, row: row, for: key, opening: opening, operation: operation)
                 }
             }
             host.native.window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)

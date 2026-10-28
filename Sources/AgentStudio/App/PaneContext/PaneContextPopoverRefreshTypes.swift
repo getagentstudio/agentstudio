@@ -239,9 +239,15 @@ struct PaneContextPopoverWakeProducer: Sendable {
     let task: Task<Void, Never>
 }
 
+/// Source ordering travels with the value; actor arrival order cannot establish capture currentness.
+struct PaneContextPopoverBodyGeometryCapture: Sendable {
+    let sequence: UInt64
+    let geometry: PaneContextMessageBodyGeometry
+}
+
 protocol PaneContextPopoverRefreshing: Actor {
     func receiveBodyGeometry(
-        _ geometry: PaneContextMessageBodyGeometry, row: MessageRowModel.Key,
+        _ capture: PaneContextPopoverBodyGeometryCapture, row: MessageRowModel.Key,
         for key: PaneContextPopoverConsumerKey, opening: UInt64, operation: UUID
     ) async
     func open(

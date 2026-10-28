@@ -83,7 +83,12 @@ extension PaneContextPopoverGeometryTests {
         let expected = "Messages" + (count > 0 ? " \(count)" : "")
         #expect(header.accessibilityLabel() == expected)
         let host = try #require(mounted.popoverWindow?.contentView)
-        let rect = host.convert(header.bounds, from: header)
+        let headerRect = host.convert(header.bounds, from: header)
+        let literal = NSHostingView(rootView: literalMessagesTitle(count: count).fixedSize())
+        // D67 adds trailing Filter chrome. Compare the entire literal title/count ink region,
+        // retaining the original font/weight/colour oracle independently of that new menu.
+        let rect = CGRect(
+            x: headerRect.minX, y: headerRect.minY, width: literal.fittingSize.width, height: headerRect.height)
         let actual = try PaneContextToolbarRenderingTests().pixels(in: host, rect: rect)
         let reference = try literalMessagesTitlePixels(count: count, like: host, rect: rect)
         #expect(
@@ -94,10 +99,9 @@ extension PaneContextPopoverGeometryTests {
         let positionY = actual.isFlipped ? rect.midY : actual.bounds.height - rect.midY
         let host = NSHostingView(
             rootView:
-                HStack(spacing: 6) {
-                    Text("Messages").font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
-                    if count > 0 { Text(String(count)).font(.system(size: 13)).foregroundStyle(.secondary) }
-                }
+                literalMessagesTitle(count: count)
+                .fixedSize()
+                .frame(width: rect.width, height: rect.height, alignment: .leading)
                 .position(x: rect.midX, y: positionY)
                 .frame(width: actual.bounds.width, height: actual.bounds.height)
                 .environment(\.colorScheme, .dark))
@@ -116,5 +120,12 @@ extension PaneContextPopoverGeometryTests {
             x: rect.minX, y: actual.isFlipped == host.isFlipped ? rect.minY : actual.bounds.height - rect.maxY,
             width: rect.width, height: rect.height)
         return try PaneContextToolbarRenderingTests().pixels(in: host, rect: crop)
+    }
+
+    private func literalMessagesTitle(count: Int) -> some View {
+        HStack(spacing: 6) {
+            Text("Messages").font(.system(size: 13, weight: .semibold)).foregroundStyle(.primary)
+            if count > 0 { Text(String(count)).font(.system(size: 13)).foregroundStyle(.secondary) }
+        }
     }
 }

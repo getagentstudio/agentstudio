@@ -88,7 +88,7 @@ struct PaneContextCardNativeServiceTests {
             #expect(mounted.cardValue?.selectedAsk?.key == .init(paneId: source, messageId: id))
             try await mounted.renderedCard()
             let scope = "\(source.uuid).\(id.uuid)"
-            try fillAndSubmit(form, in: mounted.native, scope: scope)
+            try fillAndSubmit(form, in: mounted, row: .init(sourcePaneId: source.uuid, messageId: id.uuid))
             try await mounted.actionCompleted()
             try await mounted.renderedCard()
             #expect(
@@ -121,11 +121,17 @@ struct PaneContextCardNativeServiceTests {
         }
     }
 
-    private func fillAndSubmit(_ form: ExistingPopoverForm, in window: PaneContextNativePopoverWindow, scope: String)
+    private func fillAndSubmit(
+        _ form: ExistingPopoverForm, in host: PaneContextPreparedNativeHost, row: MessageRowModel.Key
+    )
         throws
     {
+        let window = host.native
+        let scope = row.controlScope
         switch form {
-        case .singleChoice: try window.press("pane-context.choice.blue.\(scope)")
+        case .singleChoice:
+            try host.bindSingleChoice("blue", row: row)
+            try window.press("pane-context.submit.\(scope)")
         case .multipleChoice:
             try window.press("pane-context.choice.blue.\(scope)")
             window.layout()

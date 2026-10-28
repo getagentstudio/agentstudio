@@ -39,6 +39,15 @@ struct PaneContextPopoverGeometryTests {
             window = mounted
             try await mounted.open()
             try await mounted.rendered()
+            if long {
+                try await mounted.bodyLayoutsPrepared()
+                let more = try #require(
+                    mounted.native.find(
+                        "pane-context.show-more-lines.pane-context.message-text.\(fixture.drawerId.uuid).\(id.uuid)")
+                        as? any NSAccessibilityProtocol)
+                try #require(more.accessibilityPerformPress())
+                try await mounted.bodyLayoutsPrepared()
+            }
             let panel = try #require(mounted.native.find("pane-context.popover-panel") as? NSView)
             let footer = try #require(mounted.native.find("pane-context.messages-footer") as? NSView)
             let header = try #require(mounted.native.find("pane-context.messages-header") as? NSView)

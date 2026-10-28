@@ -205,6 +205,27 @@ final class PaneContextPreparedNativeHost {
     var cardValue: PopoverDetail? { openings.cardHandle?.atom.value }
     var goToPaneTargets: [UUID] { openings.goToPaneTargets }
 
+    /// Supplies ordinary input through the production opening/version fence; native Submit still owns delivery.
+    /// Physical radio/picker selection is the separately commissioned native journey.
+    func bindSingleChoice(_ option: String, row: MessageRowModel.Key) throws {
+        let handle = try #require(handle)
+        let value = try currentValue(of: handle)
+        try #require(value.interactions.versions[row] != nil, "The exact row has no current input version")
+        let input = interactions.bindings(
+            versions: value.interactions.versions, opening: handle.opening.epoch,
+            currentVersions: { handle.atom.latestAcceptedValue?.interactions.versions })
+        let draft = input.draft(row)
+        var selected = draft.wrappedValue
+        selected.setChoice(option, selected: true, allowsMultiple: false)
+        draft.wrappedValue = selected
+        #expect(draft.wrappedValue.selectedChoices == [option])
+        native.layout()
+        let submit = try #require(
+            native.find("pane-context.submit." + row.controlScope) as? any NSAccessibilityProtocol,
+            "The native Submit control must remain present after local selection")
+        try #require(submit.isAccessibilityEnabled())
+    }
+
     func beginOpening(_ explicitIdentifier: String? = nil) throws -> OpeningProducer {
         let count = openings.renderingTasks.count
         let identifier: String

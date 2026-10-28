@@ -109,7 +109,9 @@ struct PaneContextMessageBodyPreparationTests {
             #expect(family.textLayoutCount == 0)
             let operation = UUIDv7.generate()
             await harness.owner.receiveBodyGeometry(
-                .init(effectiveWidth: 320, fontContext: EnvironmentValues().fontResolutionContext),
+                .init(
+                    sequence: 1,
+                    geometry: .init(effectiveWidth: 320, fontContext: EnvironmentValues().fontResolutionContext)),
                 row: .init(sourcePaneId: pane.uuid, messageId: message.id.uuid),
                 for: harness.key, opening: opening.epoch, operation: operation)
             let scope = PopoverOwnerProofScope(channel: .owner(.input(operation)))

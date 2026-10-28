@@ -13,8 +13,9 @@ import Testing
 @Suite("Popover Performance Lane emitter and mounted height proof", .serialized)
 struct PaneContextPopoverPerformanceTests {
     @Test(
-        "S6 archived 13 retained / 12 unread Info scene crosses a mounted minute with bounded height writes and no SQL")
-    func recordedInfoSceneHasBoundedMinuteHeightWrites() async throws {
+        "S6 an unchanged minute tick has one projection/publication, no TextKit layout or SQL, and bounded height writes"
+    )
+    func unchangedMinuteTickHasOneProjectionAndNoTextLayout() async throws {
         let trace = PaneContextPopoverTraceFixture()
         let fixture = try await CompositionFactoryFixture.make()
         var mounted: PaneContextPreparedNativeHost?
@@ -41,6 +42,7 @@ struct PaneContextPopoverPerformanceTests {
             _ = try host.appliedMessage(
                 row, expectedLabel: PaneContextF10Scene.initialNotice + " Now", age: "Now", isRead: false)
             try await host.rendered()
+            try await host.bodyLayoutsPrepared()
             let panel = try #require(host.native.find("pane-context.popover-panel") as? NSView)
             #expect(panel.bounds.height == 480)
             #expect(panel.bounds.width == 560)
@@ -48,6 +50,9 @@ struct PaneContextPopoverPerformanceTests {
             #expect(writes.contains { $0.region == .footer && $0.height > 0 })
             #expect(writes.contains { $0.region == .rows && $0.height > 480 })
             let openingWrites = writes.count
+            let openingRecords = try await trace.records()
+            let handle = try #require(host.handle)
+            assertOpeningAccounting(openingRecords, bridge: bridge, handle: handle)
             fixture.statements.begin()
             try await host.advance(by: .seconds(60), registeredAt: clock.now.advanced(by: .seconds(60)))
             _ = try host.appliedMessage(
@@ -59,14 +64,22 @@ struct PaneContextPopoverPerformanceTests {
                 writes.count <= 6,
                 "One-directional initial sizing plus one minute update is bounded by the three regions")
             #expect(panel.bounds.height == 480)
+            let minuteRecords = Array(try await trace.records().dropFirst(openingRecords.count))
+            for (stage, expected) in [
+                ("projection", 1), ("publication", 1), ("family_admission", 1),
+                ("input_publication", 0), ("text_layout", 0),
+            ] {
+                #expect(
+                    PaneContextPopoverTraceFixture.count(stage, in: minuteRecords) == expected,
+                    "Unchanged body/width/font minute work regressed at \(stage)")
+            }
             try await host.close()
             mounted = nil
             #expect(writes.count <= 6, "Height writes remain bounded through actual native retirement and owner drain")
             let records = try await trace.records()
             for (stage, expected) in [
-                ("admission", 2), ("execution", 2), ("projection", 2), ("publication", 2),
-                ("storage_read", 1), ("wake", 1), ("empty_wake", 0), ("input_publication", 0),
-                ("family_admission", 2), ("retired", 1), ("equal", 0),
+                ("admission", 2), ("execution", 2), ("storage_read", 1), ("wake", 1),
+                ("empty_wake", 0), ("retired", 1), ("equal", 0),
             ] { #expect(PaneContextPopoverTraceFixture.count(stage, in: records) == expected) }
             try assertSynchronousSpansAndSafety(records, pane: fixture.ownerId)
             try await fixture.close()
@@ -78,6 +91,46 @@ struct PaneContextPopoverPerformanceTests {
             try? await trace.close()
             throw error
         }
+    }
+
+    private func assertOpeningAccounting(
+        _ records: [[String: Any]], bridge: PopoverOwnerFactBridge, handle: PaneContextPopoverConsumerHandle
+    ) {
+        let count = { (stage: String) in PaneContextPopoverTraceFixture.count(stage, in: records) }
+        #expect(count("text_layout") == 13, "Each retained body's initial width needs exactly one TextKit layout")
+        let facts = bridge.observations
+        let execution = PaneContextPopoverOwnerScope.execution(handle.key, handle.opening.initialExecution.id)
+        #expect(facts.filter { $0.scope == execution && $0.fact == .admitted(.opening) }.count == 1)
+        #expect(facts.filter { $0.scope == execution && $0.fact == .finished(.published) }.count == 1)
+        let inputPublications = facts.filter {
+            if case .input = $0.scope { return $0.fact == .published }
+            return false
+        }.count
+        #expect(
+            count("input_publication") == inputPublications,
+            "Every input publication must have its correlated owner outcome")
+        for operation in bridge.receivedInputs {
+            #expect(bridge.didFinish(.input(operation)), "Opening input producer must finish before the minute phase")
+        }
+        let canonicalPublications = count("publication")
+        let geometryBeforeFinish = facts.prefix { !($0.scope == execution && $0.fact == .finished(.published)) }
+            .filter {
+                if case .input = $0.scope { return $0.fact == .observed }
+                return false
+            }.count
+        #expect(canonicalPublications >= 1)
+        #expect(
+            canonicalPublications <= 1 + geometryBeforeFinish,
+            "Only a distinct first-width geometry revision can retry the canonical projection")
+        let completed =
+            canonicalPublications + inputPublications + count("validation_publication")
+            + count("equal") + count("superseded") + count("cancelled")
+        #expect(count("family_admission") == completed, "Every admitted opening attempt has an accounted outcome")
+        #expect(count("projection") <= count("family_admission"), "Superseded pending admissions may skip worker work")
+        print(
+            "POPOVER_OPENING_ACCOUNT", "projection", count("projection"), "canonicalPublication", canonicalPublications,
+            "inputPublication", inputPublications, "familyAdmission", count("family_admission"),
+            "superseded", count("superseded"), "geometryBeforeFinish", geometryBeforeFinish, "textLayout", 13)
     }
 
     @Test("S6 empty and closed native lifetimes have no deadlines, reads, projections or publications")

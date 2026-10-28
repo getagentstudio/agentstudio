@@ -11,7 +11,7 @@ final class PaneContextPopoverInputCapture {
     typealias Sink = @Sendable (PaneContextPopoverConsumerKey, UInt64, PopoverSourceCapture) async -> Void
     typealias GeometrySink =
         @Sendable (
-            PaneContextPopoverConsumerKey, UInt64, MessageRowModel.Key, PaneContextMessageBodyGeometry, UUID
+            PaneContextPopoverConsumerKey, UInt64, MessageRowModel.Key, PaneContextPopoverBodyGeometryCapture, UUID
         ) async -> Void
 
     private struct Registration {
@@ -21,6 +21,7 @@ final class PaneContextPopoverInputCapture {
         var trackingId: UUID
         var generation: UInt64
         var observing: Bool
+        var geometrySequences: [MessageRowModel.Key: UInt64] = [:]
     }
     private struct Forwarding {
         let opening: UInt64
@@ -54,12 +55,17 @@ final class PaneContextPopoverInputCapture {
         for key: PaneContextPopoverConsumerKey, opening: UInt64
     ) -> Task<Void, Never>? {
         guard !stopped, registrations[key]?.opening == opening else { return nil }
+        registrations[key]?.geometrySequences[row, default: 0] += 1
+        guard let sequence = registrations[key]?.geometrySequences[row] else {
+            preconditionFailure("Admitted geometry capture has no source sequence")
+        }
+        let capture = PaneContextPopoverBodyGeometryCapture(sequence: sequence, geometry: geometry)
         let operation = UUIDv7.generate()
         let sink = geometryChanged
         // Delivery must escape UI isolation; this task forwards captured values to the existing actor only.
         // swiftlint:disable:next no_task_detached
         let task = Task.detached { [weak self] in
-            await sink?(key, opening, row, geometry, operation)
+            await sink?(key, opening, row, capture, operation)
             await self?.removeForwarding(operation, for: key)
         }
         forwarding[key, default: [:]][operation] = .init(opening: opening, task: task)
@@ -81,12 +87,16 @@ final class PaneContextPopoverInputCapture {
                 return copyValues(current.sources, generation: current.generation)
             }
             if registrations[key]?.opening != opening || registrations[key]?.sources != sources {
+                var geometrySequences: [MessageRowModel.Key: UInt64] = [:]
+                if let current = registrations[key], current.opening == opening {
+                    geometrySequences = current.geometrySequences
+                }
                 observationSequence &+= 1
                 registrations[key] = .init(
                     opening: opening, requestGeneration: requestGeneration, sources: sources,
                     trackingId: UUIDv7.generate(),
                     generation: observationSequence,
-                    observing: false)
+                    observing: false, geometrySequences: geometrySequences)
             }
             guard var registration = registrations[key] else {
                 preconditionFailure("Capture registration was not installed")
